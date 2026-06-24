@@ -20,6 +20,8 @@ gsutil -m cp -r gs://gresearch/robotics/droid_raw/<episode_path> /path/to/droid_
 
 See the [official DROID dataset documentation](https://droid-dataset.github.io/droid/the-droid-dataset) for details on the dataset format and downloading the necessary files for your use case.
 
+For an executable walkthrough, see the [DROID helper notebook](https://github.com/Eventual-Inc/Daft/blob/main/examples/droid.ipynb). For lower-level HDF5 file usage patterns, see the [HDF5 file usage notebook](https://github.com/Eventual-Inc/Daft/blob/main/examples/hdf5_file_usage.ipynb).
+
 ## Quickstart
 
 The simplest way to get started is to load a small sample of data from the public source:
@@ -68,10 +70,39 @@ import daft
     daft.datasets.droid.raw()
     .where(daft.col("success"))
     .where(daft.col("building") == "Ross")
-    .select("uuid", "current_task", "trajectory_length", "wrist_video")
+    .select("uuid", "current_task", "trajectory_length", "wrist_cam_video")
     .limit(10)
 )
 ```
+
+### Reading trajectories and camera frames
+
+Use `trajectory()` to read selected HDF5 datasets into tensor columns, then use `camera_frames()` to decode MP4 camera frames when you need image data:
+
+```python
+import daft
+
+episodes = (
+    daft.datasets.droid.raw()
+    .where(daft.col("success"))
+    .limit(10)
+)
+
+traj = daft.datasets.droid.trajectory(
+    episodes,
+    fields=["joint_position", "gripper_position"],
+)
+
+frames = daft.datasets.droid.camera_frames(
+    traj,
+    cameras=["wrist", "ext1", "ext2"],
+    width=224,
+    height=224,
+    sample_interval_seconds=0.5,
+)
+```
+
+`camera_frames()` decodes all three cameras by default. Pass a single camera name such as `cameras="wrist"` or a list of camera names to narrow the output.
 
 ## Episode layout
 
@@ -92,9 +123,9 @@ episode/
 [`daft.datasets.droid.raw()`][daft.datasets.droid.raw] currently attaches lazy references to:
 
 - `trajectory`: the episode's `trajectory.h5` file
-- `wrist_video`: wrist camera MP4
-- `ext1_video`: external camera 1 MP4 (often the left view)
-- `ext2_video`: external camera 2 MP4 (often the right view)
+- `wrist_cam_video`: wrist camera MP4
+- `ext1_cam_video`: external camera 1 MP4 (often the left view)
+- `ext2_cam_video`: external camera 2 MP4 (often the right view)
 
 Stereo MP4 and raw SVO recordings are not yet exposed as columns.
 
@@ -124,16 +155,18 @@ Stereo MP4 and raw SVO recordings are not yet exposed as columns.
 | `ext1_cam_extrinsics` | List[Float64] | External camera 1 extrinsics |
 | `ext2_cam_extrinsics` | List[Float64] | External camera 2 extrinsics |
 | `trajectory` | File | Lazy reference to `trajectory.h5` |
-| `wrist_video` | VideoFile | Lazy reference to the wrist camera MP4 |
-| `ext1_video` | VideoFile | Lazy reference to external camera 1 MP4 |
-| `ext2_video` | VideoFile | Lazy reference to external camera 2 MP4 |
+| `wrist_cam_video` | VideoFile | Lazy reference to the wrist camera MP4 |
+| `ext1_cam_video` | VideoFile | Lazy reference to external camera 1 MP4 |
+| `ext2_cam_video` | VideoFile | Lazy reference to external camera 2 MP4 |
 
-Additional path columns from the metadata JSON (such as `hdf5_path`, `wrist_mp4_path`, and `ext1_mp4_path`) are also available as top-level columns.
+The raw metadata JSON includes additional path fields such as `hdf5_path`, `wrist_mp4_path`, and `ext1_mp4_path`; `raw()` exposes the constructed file columns instead.
 
 <!-- TODO: Include interesting examples of working with the data. -->
 
 ## Next steps
 
+- Run the [DROID helper notebook](https://github.com/Eventual-Inc/Daft/blob/main/examples/droid.ipynb) for an end-to-end example of metadata filtering, trajectory loading, and camera frame decoding.
+- Run the [HDF5 file usage notebook](https://github.com/Eventual-Inc/Daft/blob/main/examples/hdf5_file_usage.ipynb) for lower-level examples of inspecting and reading HDF5 files.
 - See the [Videos modality guide](../modalities/videos.md) for decoding frames with [`video_frames`][daft.functions.video_frames] and working with [`daft.VideoFile`](../api/datatypes/file_types.md).
 - See the [Files modality guide](../modalities/files.md) for reading trajectory HDF5 files with [`daft.File`](../api/datatypes/file_types.md).
 - Visit the [official DROID project page](https://droid-dataset.github.io/) for hardware setup, policy learning code, and additional dataset formats.

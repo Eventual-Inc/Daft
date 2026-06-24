@@ -8,14 +8,14 @@ use daft_core::{
     series::IntoSeries,
     with_match_file_types,
 };
-use daft_dsl::functions::{AsyncScalarUDF, UnaryArg, prelude::*};
+use daft_dsl::functions::{UnaryArg, prelude::*};
 use daft_io::IOConfig;
 use daft_schema::media_type::MediaType;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     file::{BUFFER_SIZE_SNIFF, DaftFile, HDF5_MIME},
-    meta::file_exists,
+    meta::file_exists_blocking,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -532,13 +532,12 @@ impl ScalarUDF for Size {
 pub struct FileExists;
 
 #[typetag::serde]
-#[async_trait::async_trait]
-impl AsyncScalarUDF for FileExists {
+impl ScalarUDF for FileExists {
     fn name(&self) -> &'static str {
         "file_exists"
     }
 
-    async fn call(
+    fn call(
         &self,
         args: FunctionArgs<Series>,
         _ctx: &daft_dsl::functions::scalar::EvalContext,
@@ -548,13 +547,13 @@ impl AsyncScalarUDF for FileExists {
         with_match_file_types!(input.data_type(), |$P| {
             let s = input.file::<$P>()?;
 
-            let out = futures::future::try_join_all(s.into_iter().map(|f| async {
+            let out = s.into_iter().map(|f| {
                 if let Some(f) = f {
-                    file_exists(f).await.map(Some)
+                    file_exists_blocking(f).map(Some)
                 } else {
                     Ok(None)
                 }
-            })).await?;
+            }).collect::<DaftResult<Vec<_>>>()?;
 
             Ok(daft_core::prelude::BooleanArray::from_iter(s.name(), out.into_iter()).into_series())
         })
