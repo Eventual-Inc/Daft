@@ -59,8 +59,8 @@ def build_geo_metadata(
 def detect_geo_columns(geo_json: str, schema: Schema) -> list[str]:
     """Return column names that should be re-typed to ``DataType.geometry()``.
 
-    Parses *geo_json* (value of the ``daft.geo`` field metadata or table property)
-    and returns column names whose:
+    Parses *geo_json* (the value of the ``daft.geo`` Delta field metadata, or
+    the Parquet footer ``"geo"`` metadata) and returns column names whose:
     - encoding is ``"WKB"`` (case-insensitive), and
     - current dtype in *schema* is ``Binary`` or ``Geometry`` (both are WKB-
       compatible).
