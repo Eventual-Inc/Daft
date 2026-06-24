@@ -50,3 +50,5 @@ def test_geometry_false_keeps_binary(tmp_path):
     assert df.schema()["geom"].dtype == daft.DataType.binary(), (
         f"Expected Binary dtype, got {df.schema()['geom'].dtype}"
     )
+    out = df.to_pydict()
+    assert all(isinstance(v, (bytes, bytearray)) for v in out["geom"])  # raw WKB bytes, not parsed geometry

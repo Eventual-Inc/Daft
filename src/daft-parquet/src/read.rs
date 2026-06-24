@@ -64,6 +64,13 @@ impl ParquetSchemaInferenceOptions {
         }
     }
 
+    /// Construct `ParquetSchemaInferenceOptions` from Python-level arguments.
+    ///
+    /// **Note**: `geometry` is always set to `true` here — this utility is used by
+    /// lower-level helpers (e.g. `read_parquet_into_pyarrow`) that do not expose a
+    /// geometry flag to Python callers.  Callers that need `geometry=false` must use
+    /// the full `read_parquet` code path, which threads `ParquetSourceConfig.geometry`
+    /// all the way through to `ParquetSchemaInferenceOptions`.
     #[cfg(feature = "python")]
     pub fn from_python(
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,

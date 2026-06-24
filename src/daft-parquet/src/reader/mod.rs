@@ -34,6 +34,7 @@ use util::{
 use crate::{
     ArrowSnafu,
     geo_metadata::detect_geo_columns,
+    retype_geo_schema,
     helpers::{
         bool_array_to_row_selection, build_offset_row_selection, build_single_rg_delete_selection,
         combine_selections, predicate_pushable_cols, prune_row_groups, refine_selection,
@@ -583,32 +584,20 @@ fn retype_geo_columns(
     if geo_col_names.is_empty() {
         return Ok(batch);
     }
+    let geo_set: HashSet<&str> = geo_col_names.iter().map(|s| s.as_ref()).collect();
     let new_columns: Vec<daft_core::series::Series> = batch
         .columns()
         .iter()
         .zip(batch.schema.fields())
         .map(|(col, field)| {
-            if geo_col_names.contains(&field.name.to_string()) {
+            if geo_set.contains(field.name.as_ref()) {
                 col.as_materialized_series().cast(&DataType::Geometry)
             } else {
                 Ok(col.as_materialized_series().clone())
             }
         })
         .collect::<DaftResult<Vec<_>>>()?;
-    let new_schema = Schema::new(
-        batch
-            .schema
-            .fields()
-            .iter()
-            .map(|f| {
-                if geo_col_names.contains(&f.name.to_string()) {
-                    Field::new(f.name.as_ref(), DataType::Geometry)
-                } else {
-                    f.clone()
-                }
-            })
-            .collect::<Vec<_>>(),
-    );
+    let new_schema = retype_geo_schema(&batch.schema, geo_col_names);
     RecordBatch::new_with_size(new_schema, new_columns, batch.len())
 }
 
@@ -672,19 +661,7 @@ pub async fn stream_parquet(
     let geo_return_schema: Arc<Schema> = if geo_cols.is_empty() {
         plan.return_daft_schema.clone()
     } else {
-        Arc::new(Schema::new(
-            plan.return_daft_schema
-                .fields()
-                .iter()
-                .map(|f| {
-                    if geo_cols.contains(&f.name.to_string()) {
-                        Field::new(f.name.as_ref(), DataType::Geometry)
-                    } else {
-                        f.clone()
-                    }
-                })
-                .collect::<Vec<_>>(),
-        ))
+        Arc::new(retype_geo_schema(&plan.return_daft_schema, &geo_cols))
     };
 
     if rg_indices.is_empty() {
