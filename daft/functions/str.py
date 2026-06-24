@@ -582,6 +582,46 @@ def strip(expr: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("strip", expr)
 
 
+def overlay(
+    expr: Expression,
+    replace: str | Expression,
+    pos: int | Expression,
+    len: int | Expression | None = None,
+) -> Expression:
+    """Overlay the `replace` string onto `expr` starting at position `pos`, replacing `len` characters.
+
+    Args:
+        expr: The source string expression to overlay onto.
+        replace: The replacement string to write over `expr`.
+        pos: The 1-indexed character position in `expr` where `replace` starts.
+        len: The number of characters in `expr` to replace. Defaults to the
+            length of `replace` when omitted or None.
+
+    Returns:
+        Expression: a String expression where `replace` has been written onto
+        `expr` starting at `pos`, replacing `len` characters.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import overlay
+        >>> df = daft.from_pydict({"src": ["AAAAAAAAAA", "hello world"]})
+        >>> df.with_column("out", overlay(df["src"], "BBB", 3)).collect()
+        ╭──────────────┬──────────────╮
+        │ src          ┆ out          │
+        │ ---          ┆ ---          │
+        │ String       ┆ String       │
+        ╞══════════════╪══════════════╡
+        │ AAAAAAAAAA   ┆ AABBBAAAAA   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ hello world  ┆ heBBB world  │
+        ╰──────────────┴──────────────╯
+        <BLANKLINE>
+        (Showing first 2 of 2 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("overlay", expr, replace, pos, len)
+
+
 def reverse(expr: Expression) -> Expression:
     """Reverse a UTF-8 string.
 
