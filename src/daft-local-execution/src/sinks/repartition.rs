@@ -11,8 +11,8 @@ use daft_micropartition::MicroPartition;
 use daft_partition_refs::FlightPartitionRef;
 use daft_recordbatch::RecordBatch;
 use daft_shuffles::{
-    oneshot_writer::write_partitions_one_shot, server::flight_server::ShuffleFlightServer,
-    shuffle_cache::CHUNK_TARGET_BYTES,
+    oneshot_writer::write_partitions_one_shot_streaming,
+    server::flight_server::ShuffleFlightServer, shuffle_cache::CHUNK_TARGET_BYTES,
 };
 use itertools::Itertools;
 use tracing::{Span, instrument};
@@ -340,26 +340,45 @@ impl BlockingSink for RepartitionSink {
                             compression,
                             ..
                         } => {
-                            // Flight: flush remaining pre-repartitioned data and read back any
-                            // spill stores in a blocking thread to avoid blocking the async runtime
-                            // on file IO.
-                            let schema_for_blocking = schema.clone();
-                            let (per_partition, input_id) = get_io_runtime(true)
-                                .spawn_blocking(move || -> DaftResult<_> {
-                                    states.iter_mut().try_for_each(
-                                        RepartitionAccState::flush_pre_partitioned,
-                                    )?;
-                                    flatten_per_partition(states, num_partitions, schema_for_blocking)
+                            // Flush remaining pre-repartitioned data in a blocking thread.
+                            let mut states = get_io_runtime(true)
+                                .spawn_blocking(move || -> DaftResult<Vec<RepartitionAccState>> {
+                                    states
+                                        .iter_mut()
+                                        .try_for_each(RepartitionAccState::flush_pre_partitioned)?;
+                                    Ok(states)
                                 })
                                 .await??;
 
-                            let partition_caches = write_partitions_one_shot(
+                            let input_id = states.first().map_or(0, |s| s.input_id);
+                            let part_schema = schema.clone();
+                            // Pull one partition at a time: read its spilled batches + take its
+                            // in-memory batches across all states. Bounds finalize to ~1 partition.
+                            let next_partition = move |p: usize| -> DaftResult<MicroPartition> {
+                                let mut chunks: Vec<RecordBatch> = Vec::new();
+                                for state in states.iter_mut() {
+                                    for store in &state.spill_stores {
+                                        if store.is_spilled(p) {
+                                            chunks.extend(store.read_bucket(p)?);
+                                        }
+                                    }
+                                    chunks.extend(std::mem::take(&mut state.post_repartitioned[p]));
+                                }
+                                Ok(MicroPartition::new_loaded(
+                                    part_schema.clone(),
+                                    Arc::new(chunks),
+                                    None,
+                                ))
+                            };
+
+                            let partition_caches = write_partitions_one_shot_streaming(
                                 input_id,
                                 shuffle_id,
                                 &shuffle_dirs,
                                 schema,
                                 compression,
-                                per_partition,
+                                num_partitions,
+                                next_partition,
                             )
                             .await?;
 
