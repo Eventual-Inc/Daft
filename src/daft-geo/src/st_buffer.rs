@@ -42,46 +42,65 @@ fn apply_buffer(g: &Geometry, distance: f64) -> Option<Geometry> {
             Some(Geometry::Polygon(geo::Polygon::new(ring, vec![])))
         }
 
-        // Polygon → real planar offset via geo_buffer straight-skeleton
+        // Polygon → real planar offset via geo_buffer straight-skeleton.
+        //
+        // `geo_buffer` / `i_overlay` can panic on certain degenerate polygon inputs
+        // (self-intersecting rings, zero-area spikes, etc.).  A panic inside a
+        // `ScalarUDF::call` would unwind across Daft's compute thread, which is far
+        // worse than returning an error or null.  We therefore wrap the call in
+        // `catch_unwind` so that any panic becomes `None`, consistent with the
+        // existing null-on-failure semantics used throughout this crate.  On the
+        // happy path `catch_unwind` adds essentially zero overhead.
         Geometry::Polygon(poly) => {
-            let mp = geo_buffer::buffer_polygon(poly, distance);
-            if mp.0.is_empty() {
-                // Fallback: bbox envelope (e.g. degenerate polygon or full shrink)
-                let bbox = g.bounding_rect()?;
-                let expanded = geo::Rect::new(
-                    geo::Coord {
-                        x: bbox.min().x - distance,
-                        y: bbox.min().y - distance,
-                    },
-                    geo::Coord {
-                        x: bbox.max().x + distance,
-                        y: bbox.max().y + distance,
-                    },
-                );
-                Some(Geometry::Rect(expanded))
-            } else {
-                Some(Geometry::MultiPolygon(mp))
+            // SAFETY: `poly` is a shared reference; `AssertUnwindSafe` is correct
+            // because we do not observe any side-effects from a potential panic.
+            let mp_opt = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                geo_buffer::buffer_polygon(poly, distance)
+            }))
+            .ok();
+            match mp_opt.filter(|mp| !mp.0.is_empty()) {
+                Some(mp) => Some(Geometry::MultiPolygon(mp)),
+                None => {
+                    // Fallback: bbox envelope (degenerate polygon, full shrink, or panic)
+                    let bbox = g.bounding_rect()?;
+                    let expanded = geo::Rect::new(
+                        geo::Coord {
+                            x: bbox.min().x - distance,
+                            y: bbox.min().y - distance,
+                        },
+                        geo::Coord {
+                            x: bbox.max().x + distance,
+                            y: bbox.max().y + distance,
+                        },
+                    );
+                    Some(Geometry::Rect(expanded))
+                }
             }
         }
 
-        // MultiPolygon → real planar offset via geo_buffer
+        // MultiPolygon → real planar offset via geo_buffer.
+        // Same catch_unwind rationale as the Polygon branch above.
         Geometry::MultiPolygon(mp) => {
-            let result = geo_buffer::buffer_multi_polygon(mp, distance);
-            if result.0.is_empty() {
-                let bbox = g.bounding_rect()?;
-                let expanded = geo::Rect::new(
-                    geo::Coord {
-                        x: bbox.min().x - distance,
-                        y: bbox.min().y - distance,
-                    },
-                    geo::Coord {
-                        x: bbox.max().x + distance,
-                        y: bbox.max().y + distance,
-                    },
-                );
-                Some(Geometry::Rect(expanded))
-            } else {
-                Some(Geometry::MultiPolygon(result))
+            let result_opt = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                geo_buffer::buffer_multi_polygon(mp, distance)
+            }))
+            .ok();
+            match result_opt.filter(|r| !r.0.is_empty()) {
+                Some(result) => Some(Geometry::MultiPolygon(result)),
+                None => {
+                    let bbox = g.bounding_rect()?;
+                    let expanded = geo::Rect::new(
+                        geo::Coord {
+                            x: bbox.min().x - distance,
+                            y: bbox.min().y - distance,
+                        },
+                        geo::Coord {
+                            x: bbox.max().x + distance,
+                            y: bbox.max().y + distance,
+                        },
+                    );
+                    Some(Geometry::Rect(expanded))
+                }
             }
         }
 

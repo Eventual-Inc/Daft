@@ -1,51 +1,5 @@
 use std::{io::Cursor, sync::Arc};
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Shared f64 literal helpers
-// ──────────────────────────────────────────────────────────────────────────────
-
-/// Extract a required f64 arg from `FunctionArgs<Series>` by positional index or name.
-///
-/// Used by `st_buffer` to read its `distance` argument at eval time.
-pub fn read_f64_arg(
-    inputs: &daft_dsl::functions::FunctionArgs<daft_core::series::Series>,
-    pos: usize,
-    name: &'static str,
-    fn_name: &'static str,
-) -> common_error::DaftResult<f64> {
-    let s = inputs.required(pos)?;
-    if s.len() == 1 {
-        // Cast to Float64 and extract the scalar
-        let casted = s.cast(&daft_core::prelude::DataType::Float64)?;
-        let arr = casted.f64()?;
-        if let Some(v) = arr.get(0) {
-            return Ok(v);
-        }
-    }
-    Err(common_error::DaftError::ValueError(format!(
-        "{fn_name}: {name} must be a numeric literal"
-    )))
-}
-
-/// Extract a required f64 arg from `FunctionArgs<ExprRef>` by positional index or name.
-///
-/// Used at planning time (`get_return_field`) by `st_buffer`.
-pub fn read_f64_arg_expr(
-    inputs: &daft_dsl::functions::FunctionArgs<daft_dsl::ExprRef>,
-    pos: usize,
-    name: &'static str,
-    fn_name: &'static str,
-) -> common_error::DaftResult<f64> {
-    let expr = inputs.required(pos)?;
-    expr.as_literal()
-        .and_then(|l| l.as_f64().or_else(|| l.as_i64().map(|v| v as f64)))
-        .ok_or_else(|| {
-            common_error::DaftError::ValueError(format!(
-                "{fn_name}: {name} must be a numeric literal"
-            ))
-        })
-}
-
 use arrow_buffer::NullBufferBuilder;
 use common_error::{DaftError, DaftResult};
 use daft_core::{
@@ -56,6 +10,54 @@ use daft_core::{
     series::Series,
 };
 use daft_dsl::{ExprRef, functions::FunctionArgs};
+use geo::Geometry;
+use wkb::wkb_to_geom;
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Shared f64 literal helpers
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Extract a required f64 arg from `FunctionArgs<Series>` by positional index or name.
+///
+/// Used by `st_buffer` to read its `distance` argument at eval time.
+pub fn read_f64_arg(
+    inputs: &FunctionArgs<Series>,
+    pos: usize,
+    name: &'static str,
+    fn_name: &'static str,
+) -> DaftResult<f64> {
+    let s = inputs.required(pos)?;
+    if s.len() == 1 {
+        // Cast to Float64 and extract the scalar
+        let casted = s.cast(&DataType::Float64)?;
+        let arr = casted.f64()?;
+        if let Some(v) = arr.get(0) {
+            return Ok(v);
+        }
+    }
+    Err(DaftError::ValueError(format!(
+        "{fn_name}: {name} must be a numeric literal"
+    )))
+}
+
+/// Extract a required f64 arg from `FunctionArgs<ExprRef>` by positional index or name.
+///
+/// Used at planning time (`get_return_field`) by `st_buffer`.
+pub fn read_f64_arg_expr(
+    inputs: &FunctionArgs<ExprRef>,
+    pos: usize,
+    name: &'static str,
+    fn_name: &'static str,
+) -> DaftResult<f64> {
+    let expr = inputs.required(pos)?;
+    expr.as_literal()
+        .and_then(|l| l.as_f64().or_else(|| l.as_i64().map(|v| v as f64)))
+        .ok_or_else(|| {
+            DaftError::ValueError(format!(
+                "{fn_name}: {name} must be a numeric literal"
+            ))
+        })
+}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Shared use_spheroid helpers
@@ -105,8 +107,6 @@ pub fn read_bool_arg_expr(
             }),
     }
 }
-use geo::Geometry;
-use wkb::wkb_to_geom;
 
 /// Strip EWKB SRID prefix so the standard `wkb` crate can parse it.
 ///
@@ -408,4 +408,3 @@ pub fn binary_geom_to_f64(
     let arr = Float64Array::from_field_and_values(field, values).with_nulls(validity.finish())?;
     Ok(arr.into_series())
 }
-
