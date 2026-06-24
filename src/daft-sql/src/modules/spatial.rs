@@ -5,7 +5,7 @@ use daft_dsl::{
     functions::{BuiltinScalarFn, BuiltinScalarFnVariant, FunctionArgs},
     lit,
 };
-use daft_geo::{StArea, StAsText, StBuffer, StCentroid, StContains, StConvexHull, StCrosses, StDifference, StDisjoint, StDistance, StEnvelope, StEquals, StGeohash, StGeometryType, StGeomFromGeoJson, StGeomFromText, StGeoJsonFromGeom, StIntersection, StIntersects, StIsValid, StLength, StOverlaps, StSimplify, StSymDifference, StTouches, StUnion, StWithin, StX, StY};
+use daft_geo::{StArea, StAsText, StBuffer, StCentroid, StContains, StConvexHull, StCrosses, StDifference, StDisjoint, StDistance, StEnvelope, StEquals, StGeohash, StGeometryType, StGeomFromGeoJson, StGeomFromText, StGeoJsonFromGeom, StIntersection, StIntersects, StIsValid, StLength, StMakeLine, StOverlaps, StPoint, StSimplify, StSymDifference, StTouches, StUnion, StWithin, StX, StY};
 use sqlparser::ast;
 
 use super::SQLModule;
@@ -40,6 +40,8 @@ impl SQLModule for SQLModuleSpatial {
         parent.add_fn("st_difference", SQLSpatialBinary(Arc::new(StDifference)));
         parent.add_fn("st_symdifference", SQLSpatialBinary(Arc::new(StSymDifference)));
         parent.add_fn("st_buffer", SQLStBuffer);
+        parent.add_fn("st_point", SQLStPoint);
+        parent.add_fn("st_makeline", SQLSpatialBinary(Arc::new(StMakeLine)));
         parent.add_fn("st_envelope", SQLSpatialUnary(Arc::new(StEnvelope)));
         parent.add_fn("st_convexhull", SQLSpatialUnary(Arc::new(StConvexHull)));
         parent.add_fn("st_simplify", SQLStSimplify);
@@ -323,5 +325,36 @@ impl SQLFunction for SQLStMeasureBinary {
 
     fn docstrings(&self, _alias: &str) -> String {
         "Minimum distance between A and B. Planar by default; WGS84 geodesic meters when use_spheroid=true.".to_string()
+    }
+}
+
+// ── st_point(x, y) ──────────────────────────────────────────────────────────
+
+/// SQL wrapper for st_point(x, y) — two numeric column args → Geometry Point.
+pub struct SQLStPoint;
+
+impl SQLFunction for SQLStPoint {
+    fn to_expr(
+        &self,
+        inputs: &[ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        if inputs.len() != 2 {
+            invalid_operation_err!("st_point expects 2 arguments (x, y), got {}", inputs.len());
+        }
+        let x = planner.plan_function_arg(&inputs[0])?.into_inner();
+        let y = planner.plan_function_arg(&inputs[1])?.into_inner();
+        Ok(BuiltinScalarFn {
+            func: BuiltinScalarFnVariant::Sync(Arc::new(StPoint)),
+            inputs: FunctionArgs::new_unchecked(vec![
+                daft_dsl::functions::FunctionArg::unnamed(x),
+                daft_dsl::functions::FunctionArg::unnamed(y),
+            ]),
+        }
+        .into())
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Constructs a Point geometry from x (longitude) and y (latitude) numeric columns.".to_string()
     }
 }

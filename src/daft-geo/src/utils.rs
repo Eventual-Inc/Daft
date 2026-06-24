@@ -265,28 +265,17 @@ pub fn unary_geom_to_utf8(
     Ok(Utf8Array::from_iter(out_name, values.iter().map(|v| v.as_deref())).into_series())
 }
 
-/// Apply a unary mapping over a geometry column → Geometry (WKB Binary) Series.
-pub fn unary_geom_to_geom(
-    series: &Series,
+/// Wrap a `Vec<Option<Vec<u8>>>` of WKB bytes into a Geometry logical Series.
+///
+/// This is the shared tail used by `unary_geom_to_geom`, `binary_geom_to_geom`,
+/// and `st_point` — any function that produces WKB-encoded geometries row-by-row.
+pub(crate) fn wkb_opts_to_geometry_series(
     out_name: &str,
-    f: impl Fn(&Geometry) -> Option<Geometry>,
+    wkb_values: Vec<Option<Vec<u8>>>,
 ) -> DaftResult<Series> {
-    use wkb::geom_to_wkb;
+    use daft_core::prelude::{GeometryType, LogicalArray};
 
-    let binary = get_geometry_binary(series)?;
-    let len = binary.len();
-    let mut wkb_values: Vec<Option<Vec<u8>>> = Vec::with_capacity(len);
-
-    for opt in binary.into_iter() {
-        let result = opt
-            .and_then(|b| parse_wkb(b).ok())
-            .and_then(|g| f(&g))
-            .and_then(|out_geom| {
-                geom_to_wkb(&out_geom).ok()
-            });
-        wkb_values.push(result);
-    }
-
+    let len = wkb_values.len();
     let field = Field::new(out_name, DataType::Geometry);
     let mut builder = arrow_buffer::NullBufferBuilder::new(len);
     let phys_values: Vec<Option<&[u8]>> = wkb_values
@@ -303,12 +292,32 @@ pub fn unary_geom_to_geom(
 
     let phys_field = Field::new(out_name, DataType::Binary);
     let phys_arr = BinaryArray::from_iter(&phys_field.name, phys_values.into_iter());
-
-    // Wrap as Geometry logical array
-    use daft_core::prelude::{GeometryType, LogicalArray};
     let logical =
         LogicalArray::<GeometryType>::new(field, phys_arr.with_nulls(builder.finish())?);
     Ok(logical.into_series())
+}
+
+/// Apply a unary mapping over a geometry column → Geometry (WKB Binary) Series.
+pub fn unary_geom_to_geom(
+    series: &Series,
+    out_name: &str,
+    f: impl Fn(&Geometry) -> Option<Geometry>,
+) -> DaftResult<Series> {
+    use wkb::geom_to_wkb;
+
+    let binary = get_geometry_binary(series)?;
+    let len = binary.len();
+    let mut wkb_values: Vec<Option<Vec<u8>>> = Vec::with_capacity(len);
+
+    for opt in binary.into_iter() {
+        let result = opt
+            .and_then(|b| parse_wkb(b).ok())
+            .and_then(|g| f(&g))
+            .and_then(|out_geom| geom_to_wkb(&out_geom).ok());
+        wkb_values.push(result);
+    }
+
+    wkb_opts_to_geometry_series(out_name, wkb_values)
 }
 
 /// Apply a binary predicate over two geometry columns → Boolean Series.
@@ -407,26 +416,7 @@ pub fn binary_geom_to_geom(
         }
     }
 
-    // Wrap as Geometry logical array (identical to unary_geom_to_geom's tail)
-    let field = Field::new(out_name, DataType::Geometry);
-    let mut builder = arrow_buffer::NullBufferBuilder::new(len);
-    let phys: Vec<Option<&[u8]>> = wkb_values
-        .iter()
-        .map(|v| {
-            if v.is_some() {
-                builder.append_non_null();
-            } else {
-                builder.append_null();
-            }
-            v.as_deref()
-        })
-        .collect();
-
-    let phys_field = Field::new(out_name, DataType::Binary);
-    let phys_arr = BinaryArray::from_iter(&phys_field.name, phys.into_iter());
-
-    use daft_core::prelude::{GeometryType, LogicalArray};
-    Ok(LogicalArray::<GeometryType>::new(field, phys_arr.with_nulls(builder.finish())?).into_series())
+    wkb_opts_to_geometry_series(out_name, wkb_values)
 }
 
 /// Apply a binary geometry → Float64 function (e.g. distance).

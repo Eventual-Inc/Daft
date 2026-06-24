@@ -301,6 +301,69 @@ def test_geodesic_length_polygon_returns_zero():
     assert result["geodesic"][0] == 0.0, f"geodesic polygon length should be 0.0, got {result['geodesic'][0]}"
 
 
+# ── st_point / st_makeline tests ────────────────────────────────────────────
+
+
+def test_st_point_roundtrip():
+    from daft.functions import st_point, st_x, st_y
+    df = daft.from_pydict({"x": [3.0], "y": [4.0]}).select(
+        st_x(st_point(daft.col("x"), daft.col("y"))).alias("px"),
+        st_y(st_point(daft.col("x"), daft.col("y"))).alias("py"),
+    ).to_pydict()
+    assert df["px"] == [3.0] and df["py"] == [4.0]
+
+
+def test_st_point_null_propagation():
+    from daft.functions import st_point, st_x, st_y
+    df = daft.from_pydict({"x": [1.0, None, 3.0], "y": [2.0, 2.0, None]}).select(
+        st_x(st_point(daft.col("x"), daft.col("y"))).alias("px"),
+        st_y(st_point(daft.col("x"), daft.col("y"))).alias("py"),
+    ).to_pydict()
+    assert df["px"] == [1.0, None, None]
+    assert df["py"] == [2.0, None, None]
+
+
+def test_st_point_sql():
+    result = daft.sql("SELECT st_x(st_point(3.0, 4.0)) AS px, st_y(st_point(3.0, 4.0)) AS py").to_pydict()
+    assert result["px"] == [3.0]
+    assert result["py"] == [4.0]
+
+
+def test_st_makeline_basic():
+    from daft.functions import st_makeline, st_geomfromtext, st_astext, st_length
+    df = daft.from_pydict({"a": ["POINT(0 0)"], "b": ["POINT(1 1)"]}).select(
+        st_makeline(
+            st_geomfromtext(daft.col("a")),
+            st_geomfromtext(daft.col("b")),
+        ).alias("line"),
+    )
+    result = df.select(
+        st_astext(daft.col("line")).alias("wkt"),
+        st_length(daft.col("line")).alias("len"),
+    ).to_pydict()
+    assert "LINESTRING" in result["wkt"][0]
+    assert result["len"][0] > 0.0
+
+
+def test_st_makeline_non_point_returns_null():
+    from daft.functions import st_makeline, st_geomfromtext, st_astext
+    # st_makeline of two polygons should return null
+    df = daft.from_pydict({"a": ["POLYGON((0 0,1 0,1 1,0 1,0 0))"], "b": ["POLYGON((2 2,3 2,3 3,2 3,2 2))"]}).select(
+        st_makeline(
+            st_geomfromtext(daft.col("a")),
+            st_geomfromtext(daft.col("b")),
+        ).alias("line"),
+    ).to_pydict()
+    assert df["line"] == [None]
+
+
+def test_st_makeline_sql():
+    result = daft.sql(
+        "SELECT st_astext(st_makeline(st_geomfromtext('POINT(0 0)'), st_geomfromtext('POINT(3 4)'))) AS wkt"
+    ).to_pydict()
+    assert "LINESTRING" in result["wkt"][0]
+
+
 # ── st_buffer tests ──────────────────────────────────────────────────────────
 
 

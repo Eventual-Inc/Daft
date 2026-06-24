@@ -378,6 +378,37 @@ def st_buffer(geom: Expression, distance: float) -> Expression:
     return Expression._call_builtin_scalar_fn("st_buffer", geom, distance)
 
 
+# ── Geometry constructors ───────────────────────────────────────────────────
+
+
+def st_point(x: Expression, y: Expression) -> Expression:
+    """Construct a Point geometry from x and y coordinate columns.
+
+    Args:
+        x: Numeric column of X (longitude) coordinates.
+        y: Numeric column of Y (latitude) coordinates.
+
+    Returns:
+        Geometry column containing Point geometries. Returns null for rows
+        where either coordinate is null.
+    """
+    return Expression._call_builtin_scalar_fn("st_point", x, y)
+
+
+def st_makeline(geom_a: Expression, geom_b: Expression) -> Expression:
+    """Construct a LineString geometry from two Point geometries.
+
+    Args:
+        geom_a: First Point geometry column (Geometry or Binary WKB).
+        geom_b: Second Point geometry column (Geometry or Binary WKB).
+
+    Returns:
+        Geometry column containing LineString geometries. Returns null for rows
+        where either input is not a Point geometry.
+    """
+    return Expression._call_builtin_scalar_fn("st_makeline", geom_a, geom_b)
+
+
 # ── Geohash functions ────────────────────────────────────────────────────────
 
 
