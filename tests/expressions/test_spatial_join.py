@@ -26,3 +26,4 @@ def test_sql_spatial_join_on():
     # only point 1 intersects the polygon
     assert result["pid"] == [1]
     assert result["qid"] == [10]
+    assert len(result["pid"]) == 1

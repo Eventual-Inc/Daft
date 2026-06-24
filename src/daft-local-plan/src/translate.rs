@@ -118,6 +118,9 @@ fn build_spatial_nested_loop_join(
                 _ => None,
             }
         }
+        // `filter_expr` has been rebound to `join.output_schema`, so its Column::Bound
+        // indices are positions in the concatenated [left | right] join output — for BOTH
+        // call sites (Filter predicate, and the JoinSide-stripped Join residual).
         if let Some(idx) = spatial_arg0_idx(filter_expr.inner()) {
             idx < left_schema_len
         } else {
