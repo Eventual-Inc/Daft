@@ -402,6 +402,10 @@ mod tests {
 
     #[test]
     fn test_spill_pool_default_is_fraction_of_total() {
+        // The default formula only applies when the env override is unset.
+        if std::env::var("DAFT_SPILL_POOL_BYTES").is_ok() {
+            return;
+        }
         let manager = MemoryManager::new();
         // Default pool is 0.3 of total, floored at 64 MiB.
         let expected =
@@ -482,6 +486,8 @@ mod tests {
         let mut r = manager.reservation();
         // resident 500 > pool 100, nothing to spill → returns Ok, bounded overshoot.
         reconcile_reservation(&mut Empty, &mut r, None).unwrap();
-        assert!(r.held() <= 100);
+        // Nothing was spillable and the pool (100) cannot fit resident (500), so nothing is
+        // charged — the data stays resident uncharged (bounded overshoot), held remains 0.
+        assert_eq!(r.held(), 0);
     }
 }
