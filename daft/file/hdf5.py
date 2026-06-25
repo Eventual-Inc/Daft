@@ -47,7 +47,7 @@ class Hdf5File(File):
                 "The 'daft[hdf5]' extra is required to read HDF5 files. "
                 "Please install it with: pip install 'daft[hdf5]'"
             )
-        if not np.module_available():  # ty:ignore[unresolved-attribute]
+        if not np.module_available():  # type: ignore[attr-defined]  # ty:ignore[unresolved-attribute]
             raise ImportError(
                 "The 'numpy' module is required to read HDF5 files and is included in the 'daft[hdf5]' extra. "
                 "Please install it with: pip install 'daft[hdf5]'"
@@ -148,12 +148,12 @@ class Hdf5File(File):
             return dict(h5[h5path].attrs)
 
     @overload
-    def visit(self, func: None = None, group: str = "/") -> list[str]: ...
+    def visit(self, *, group: str = "/") -> list[str]: ...
 
     @overload
-    def visit(self, func: Callable[[str], Any], group: str = "/") -> Any: ...
+    def visit(self, func: Callable[[str], Any], *, group: str = "/") -> Any: ...
 
-    def visit(self, func: Callable[[str], Any] | None = None, group: str = "/") -> Any:
+    def visit(self, func: Callable[[str], Any] | None = None, *, group: str = "/") -> Any:
         """Recursively visit object names below an HDF5 group.
 
         Thin wrapper around h5py ``Group.visit``. When ``func`` is provided, it
@@ -193,7 +193,7 @@ class Hdf5File(File):
     def read(self, dataset: str) -> np.ndarray[Any, Any]: ...
 
     @overload
-    def read(self, dataset: Sequence[str]) -> dict[str, np.ndarray[Any, Any]]: ...
+    def read(self, dataset: list[str]) -> dict[str, np.ndarray[Any, Any]]: ...
 
     @overload
     def read(self, dataset: Mapping[str, str]) -> dict[str, np.ndarray[Any, Any]]: ...

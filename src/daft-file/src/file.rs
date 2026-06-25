@@ -415,8 +415,10 @@ const MIME_SNIFF_BYTES: usize = 4 * 1024 + HDF5_MAGIC.len();
 fn guess_mimetype_from_url(url: &str) -> Option<String> {
     let url = Url::parse(url).ok()?;
     let path = url.path();
-    let lower_path = path.to_ascii_lowercase();
-    if lower_path.ends_with(".h5") || lower_path.ends_with(".hdf5") {
+    if std::path::Path::new(path)
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("h5") || ext.eq_ignore_ascii_case("hdf5"))
+    {
         return Some(HDF5_MIME.to_string());
     }
     let mime = mime_guess::from_path(path).first()?;

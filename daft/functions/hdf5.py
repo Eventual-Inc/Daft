@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import daft
 from daft.file.hdf5 import Hdf5File
@@ -69,7 +69,7 @@ def hdf5_keys(file_expr: Expression, group: str = "/") -> Expression:
     Returns:
         Expression containing a list of child names under the group.
     """
-    return hdf5_keys_fn(file_expr, group=group)  # type: ignore[arg-type]
+    return cast("Expression", hdf5_keys_fn(file_expr, group=group))
 
 
 def hdf5_visit_impl(file: Hdf5File, group: str = "/") -> list[str]:
@@ -103,7 +103,7 @@ def hdf5_visit(file_expr: Expression, group: str = "/") -> Expression:
     Returns:
         Expression containing a list of visited HDF5 object names.
     """
-    return hdf5_visit_fn(file_expr, group=group)  # type: ignore[arg-type]
+    return cast("Expression", hdf5_visit_fn(file_expr, group=group))
 
 
 def hdf5_read_impl(file: Hdf5File, dataset: str) -> np.ndarray:
@@ -137,7 +137,7 @@ def hdf5_read(file_expr: Expression, dataset: str) -> Expression:
     Returns:
         Expression containing the dataset values as a tensor.
     """
-    return hdf5_read_fn(file_expr, dataset=dataset)  # type: ignore[arg-type]
+    return cast("Expression", hdf5_read_fn(file_expr, dataset=dataset))
 
 
 def hdf5_read_many_impl(file: Hdf5File, datasets: dict[str, str]) -> dict[str, np.ndarray]:
@@ -163,9 +163,7 @@ def hdf5_read_many(file_expr: Expression, datasets: str | Sequence[str] | Mappin
     normalized = _normalize_datasets(datasets)
     read_many_fn = Func._from_func(
         hdf5_read_many_impl,
-        return_dtype=daft.DataType.struct(
-            {name: daft.DataType.tensor(daft.DataType.float64()) for name in normalized}
-        ),
+        return_dtype=daft.DataType.struct({name: daft.DataType.tensor(daft.DataType.float64()) for name in normalized}),
         unnest=False,
         use_process=False,
         is_batch=False,
@@ -174,4 +172,4 @@ def hdf5_read_many(file_expr: Expression, datasets: str | Sequence[str] | Mappin
         on_error=None,
         name_override="hdf5_read_many",
     )
-    return read_many_fn(file_expr, datasets=normalized)  # type: ignore[arg-type]
+    return cast("Expression", read_many_fn(file_expr, datasets=normalized))
