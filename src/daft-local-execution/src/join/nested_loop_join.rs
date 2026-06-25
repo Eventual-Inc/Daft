@@ -174,6 +174,11 @@ fn extract_dwithin_distance(expr: &ExprRef) -> Option<f64> {
 // ── R-tree construction helpers ───────────────────────────────────────────
 
 /// Build a single R-tree covering all rows in `tables` (original path).
+///
+/// Bbox fast-path: if the merged build batch contains precomputed
+/// `min_x/min_y/max_x/max_y` (or `bbox_min_x/…`) Float64 columns, their values
+/// are used directly instead of parsing WKB via `wkb_to_mbr`.  This mirrors the
+/// same detection done in `build_partitioned_rtrees`.
 fn build_rtree(
     tables: &[RecordBatch],
     build_col: usize,
@@ -185,19 +190,66 @@ fn build_rtree(
     if merged.is_empty() {
         return None;
     }
-    let series = merged.get_column(build_col);
-    let binary = get_geometry_binary(series).ok()?;
 
-    let entries: Vec<RTreeEntry> = (0..merged.len())
-        .filter_map(|i| {
-            let wkb = binary.get(i)?;
-            let [min_x, min_y, max_x, max_y] = wkb_to_mbr(wkb)?;
-            Some(RTreeEntry {
-                bbox: AABB::from_corners([min_x, min_y], [max_x, max_y]),
-                row_idx: i as u32,
-            })
+    // Detect precomputed bbox columns — same candidate sets as the partitioned path.
+    let bbox_cols: Option<[usize; 4]> = {
+        let schema = &merged.schema;
+        let try_find = |name: &str| schema.get_index(name).ok();
+        let candidates = [
+            ("min_x", "min_y", "max_x", "max_y"),
+            ("bbox_min_x", "bbox_min_y", "bbox_max_x", "bbox_max_y"),
+        ];
+        candidates.iter().find_map(|(mn_x, mn_y, mx_x, mx_y)| {
+            Some([
+                try_find(mn_x)?,
+                try_find(mn_y)?,
+                try_find(mx_x)?,
+                try_find(mx_y)?,
+            ])
         })
-        .collect();
+    };
+
+    let entries: Vec<RTreeEntry> = if let Some([ix, iy, ax, ay]) = bbox_cols {
+        // Fast path: use precomputed bbox columns.
+        // Use .get(i) (returns Option<f64>, None for nulls) so that null bbox
+        // fields are skipped rather than read as 0.0 (which `.values()[i]` would do).
+        let min_x_s = merged.get_column(ix).f64().ok()?;
+        let min_y_s = merged.get_column(iy).f64().ok()?;
+        let max_x_s = merged.get_column(ax).f64().ok()?;
+        let max_y_s = merged.get_column(ay).f64().ok()?;
+        (0..merged.len())
+            .filter_map(|i| {
+                let mn_x = min_x_s.get(i)?;
+                let mn_y = min_y_s.get(i)?;
+                let mx_x = max_x_s.get(i)?;
+                let mx_y = max_y_s.get(i)?;
+                if mn_x.is_finite() && mn_y.is_finite()
+                    && mx_x.is_finite() && mx_y.is_finite()
+                {
+                    Some(RTreeEntry {
+                        bbox: AABB::from_corners([mn_x, mn_y], [mx_x, mx_y]),
+                        row_idx: i as u32,
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect()
+    } else {
+        // Slow path: parse WKB bytes to extract MBR.
+        let series = merged.get_column(build_col);
+        let binary = get_geometry_binary(series).ok()?;
+        (0..merged.len())
+            .filter_map(|i| {
+                let wkb = binary.get(i)?;
+                let [min_x, min_y, max_x, max_y] = wkb_to_mbr(wkb)?;
+                Some(RTreeEntry {
+                    bbox: AABB::from_corners([min_x, min_y], [max_x, max_y]),
+                    row_idx: i as u32,
+                })
+            })
+            .collect()
+    };
 
     Some((merged, RTree::bulk_load(entries)))
 }
@@ -300,20 +352,18 @@ fn build_partitioned_rtrees(
 
             // Build R-tree entries — bbox fast-path when precomputed columns exist.
             let entries: Vec<RTreeEntry> = if let Some([ix, iy, ax, ay]) = bbox_cols {
+                // Use .get(i) (returns Option<f64>, None for nulls) so that null bbox
+                // fields are skipped rather than read as 0.0 (which `.values()[i]` would do).
                 let min_x_s = group_rb.get_column(ix).f64().ok()?;
                 let min_y_s = group_rb.get_column(iy).f64().ok()?;
                 let max_x_s = group_rb.get_column(ax).f64().ok()?;
                 let max_y_s = group_rb.get_column(ay).f64().ok()?;
-                let min_x_v = min_x_s.values();
-                let min_y_v = min_y_s.values();
-                let max_x_v = max_x_s.values();
-                let max_y_v = max_y_s.values();
                 (0..group_rb.len())
                     .filter_map(|i| {
-                        let mn_x = min_x_v[i];
-                        let mn_y = min_y_v[i];
-                        let mx_x = max_x_v[i];
-                        let mx_y = max_y_v[i];
+                        let mn_x = min_x_s.get(i)?;
+                        let mn_y = min_y_s.get(i)?;
+                        let mx_x = max_x_s.get(i)?;
+                        let mx_y = max_y_s.get(i)?;
                         if mn_x.is_finite() && mn_y.is_finite()
                             && mx_x.is_finite() && mx_y.is_finite()
                         {
