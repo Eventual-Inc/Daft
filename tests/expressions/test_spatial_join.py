@@ -47,3 +47,22 @@ def test_python_join_on_predicate_rejects_outer():
     pts, polys = _points_polys()
     with pytest.raises(ValueError, match="inner"):
         pts.join(polys, on=st_intersects(pts["pgeom"], polys["qgeom"]), how="left")
+
+
+def test_python_join_st_dwithin():
+    from daft.functions import st_dwithin, st_point
+
+    left = daft.from_pydict({"lid": [1, 2], "lx": [0.0, 0.0], "ly": [0.0, 0.0]}).select(
+        daft.col("lid"), st_point(daft.col("lx"), daft.col("ly")).alias("lg")
+    )
+    right = daft.from_pydict({"rid": [10, 11], "rx": [3.0, 100.0], "ry": [4.0, 100.0]}).select(
+        daft.col("rid"), st_point(daft.col("rx"), daft.col("ry")).alias("rg")
+    )
+    # distance lid->rid: (1,10)=5, (1,11)=~141, (2,10)=5, (2,11)=~141
+    result = (
+        left.join(right, on=st_dwithin(left["lg"], right["rg"], 5.0))
+        .select("lid", "rid")
+        .sort(["lid", "rid"])
+        .to_pydict()
+    )
+    assert list(zip(result["lid"], result["rid"])) == [(1, 10), (2, 10)]

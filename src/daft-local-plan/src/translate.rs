@@ -33,6 +33,7 @@ const SPATIAL_PREDICATES: &[&str] = &[
     "st_overlaps",
     "st_crosses",
     "st_equals",
+    "st_dwithin",
 ];
 
 fn is_spatial_predicate(expr: &ExprRef) -> bool {

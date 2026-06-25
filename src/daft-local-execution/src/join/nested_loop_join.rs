@@ -77,7 +77,7 @@ struct PartitionedRTreeState {
 const SPATIAL_FNS: &[&str] = &[
     "st_intersects", "st_contains", "st_within", "st_covers",
     "st_covered_by", "st_disjoint", "st_touches", "st_overlaps",
-    "st_crosses", "st_equals",
+    "st_crosses", "st_equals", "st_dwithin",
 ];
 
 // ── Column-index extraction (no TreeNode dependency) ─────────────────────
@@ -149,6 +149,26 @@ fn extract_geom_col_indices(
     build_n: usize,
 ) -> Option<(usize, usize)> {
     extract_from_expr(filter.inner(), build_side, output_schema_len, build_n)
+}
+
+/// Walk `expr` looking for an `st_dwithin` call and return its third argument
+/// (distance) as `f64`. Handles `BinaryOp` / `Not` wrappers like `extract_from_expr`.
+fn extract_dwithin_distance(expr: &ExprRef) -> Option<f64> {
+    match expr.as_ref() {
+        Expr::ScalarFn(daft_dsl::functions::scalar::ScalarFn::Builtin(sf))
+            if sf.name() == "st_dwithin" =>
+        {
+            let d = sf.inputs.required(2).ok()?;
+            d.as_literal().and_then(|l| {
+                l.as_f64().or_else(|| l.as_i64().map(|v| v as f64))
+            })
+        }
+        Expr::BinaryOp { left, right, .. } => {
+            extract_dwithin_distance(left).or_else(|| extract_dwithin_distance(right))
+        }
+        Expr::Not(inner) => extract_dwithin_distance(inner),
+        _ => None,
+    }
 }
 
 // ── R-tree construction helpers ───────────────────────────────────────────
@@ -356,6 +376,10 @@ pub struct NestedLoopJoinOperator {
     geom_cols: Option<(usize, usize)>,
     /// `Some((build_key_col, probe_key_col))` when equality partition key is present.
     partition_key: Option<(usize, usize)>,
+    /// For `st_dwithin` predicates: the distance `d` by which to pad the probe
+    /// query AABB on all sides before querying the R-tree.  `None` (or `0.0`)
+    /// for topological predicates whose query box is the exact probe MBR.
+    dwithin_distance: Option<f64>,
 }
 
 impl NestedLoopJoinOperator {
@@ -373,7 +397,8 @@ impl NestedLoopJoinOperator {
             output_schema.len(),
             build_n_cols,
         );
-        Self { filter, output_schema, build_side, geom_cols, partition_key }
+        let dwithin_distance = extract_dwithin_distance(filter.inner());
+        Self { filter, output_schema, build_side, geom_cols, partition_key, dwithin_distance }
     }
 }
 
@@ -480,6 +505,7 @@ impl JoinOperator for NestedLoopJoinOperator {
         let output_schema = self.output_schema.clone();
         let filter = self.filter.clone();
         let build_side = self.build_side;
+        let pad = self.dwithin_distance.unwrap_or(0.0);
 
         spawner
             .spawn(
@@ -519,8 +545,8 @@ impl JoinOperator for NestedLoopJoinOperator {
                                                 return vec![];
                                             };
                                             let q = AABB::from_corners(
-                                                [min_x, min_y],
-                                                [max_x, max_y],
+                                                [min_x - pad, min_y - pad],
+                                                [max_x + pad, max_y + pad],
                                             );
                                             group_tree
                                                 .locate_in_envelope_intersecting(&q)
@@ -590,8 +616,8 @@ impl JoinOperator for NestedLoopJoinOperator {
                                         return vec![];
                                     };
                                     let q = AABB::from_corners(
-                                        [min_x, min_y],
-                                        [max_x, max_y],
+                                        [min_x - pad, min_y - pad],
+                                        [max_x + pad, max_y + pad],
                                     );
                                     rtree
                                         .locate_in_envelope_intersecting(&q)
