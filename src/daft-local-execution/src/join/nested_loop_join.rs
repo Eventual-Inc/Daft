@@ -20,7 +20,7 @@ static PROBE_POOL: LazyLock<rayon::ThreadPool> = LazyLock::new(|| {
     let cpus = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(4);
-    let threads = (cpus / 2).max(2);
+    let threads = (cpus / 2).max(4);
     rayon::ThreadPoolBuilder::new()
         .num_threads(threads)
         .thread_name(|i| format!("daft-rtree-probe-{i}"))
