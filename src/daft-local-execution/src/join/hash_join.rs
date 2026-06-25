@@ -258,7 +258,18 @@ fn build_probe_state_from_batches(
         builder.add_table(&keys)?;
     }
     let pt = builder.build();
-    Ok(ProbeState::new(pt, tables.to_vec()))
+    // A build partition can receive zero rows while the matching probe partition has rows
+    // (e.g. probe keys that hash here but have no build-side match). The downstream probe
+    // (`GrowableRecordBatch::new`) requires at least one build table to carry the schema, so
+    // seed a single empty batch when this partition is empty. Probing against it yields no
+    // matches — correct for every join type — and mirrors how the non-partitioned build path
+    // (`add_tables`) seeds an empty table when it receives no input.
+    let resident = if tables.is_empty() {
+        vec![RecordBatch::empty(Some(op.build_schema().clone()))]
+    } else {
+        tables.to_vec()
+    };
+    Ok(ProbeState::new(pt, resident))
 }
 
 // ─── Params + operator ───────────────────────────────────────────────────────

@@ -294,6 +294,29 @@ def test_hash_join_spills_by_default():
         assert out["w"] == list(range(20000))
 
 
+@pytest.mark.parametrize("how", ["inner", "left", "right", "outer", "semi", "anti"])
+def test_hash_join_partial_overlap_default_config(how):
+    # Regression for the partitioned-hash-join deadlock: under the default (spill-enabled) config the
+    # hash join runs in partitioned mode. A probe key that hashes to a partition with NO matching
+    # build rows produced an *empty* in-memory build partition, which made the probe error with
+    # "Need at least 1 Table for GrowableTable"; that error was not propagated, so the query hung
+    # silently. Small, partially-overlapping data keeps the join partitioned without actually
+    # spilling, exercising exactly that empty-build-partition path. (The pre-existing
+    # test_hash_join_spills_by_default uses fully-overlapping keys and never hits it.)
+    left = daft.from_pydict({"k": [1, 2, 3], "va": ["a", "b", "c"]})
+    right = daft.from_pydict({"k": [2, 3, 4], "vb": ["x", "y", "z"]})
+    got = sorted(left.join(right, on="k", how=how).to_pydict()["k"])
+    expected = {
+        "inner": [2, 3],
+        "left": [1, 2, 3],
+        "right": [2, 3, 4],
+        "outer": [1, 2, 3, 4],
+        "semi": [2, 3],
+        "anti": [1],
+    }[how]
+    assert got == expected
+
+
 def test_dedup_spills_and_matches_in_memory():
     data = {"a": [i % 5000 for i in range(50000)]}
     expected = sorted(set(data["a"]))
