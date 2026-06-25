@@ -939,6 +939,29 @@ def test_deltalake_delete_table(tmp_path):
     assert not path.exists()
 
 
+def test_resolve_deltalake_from_write_result(tmp_path):
+    deltalake = pytest.importorskip("deltalake")
+    path = tmp_path / "table_to_resolve"
+
+    write_df = daft.from_pydict({"a": [1, 2, 3]}).write_deltalake(str(path), mode="overwrite")
+    resolved_path, resolved_table = write_df.resolve_deltalake()
+
+    assert resolved_path == str(path)
+    assert isinstance(resolved_table, deltalake.DeltaTable)
+    assert resolved_table.to_pyarrow_table().num_rows == 3
+
+
+def test_drop_deltalake_with_resolved_path(tmp_path):
+    pytest.importorskip("deltalake")
+    path = tmp_path / "table_to_delete_with_resolver"
+
+    write_df = daft.from_pydict({"a": [1, 2, 3]}).write_deltalake(str(path), mode="overwrite")
+    resolved_path, _ = write_df.resolve_deltalake()
+    daft.DataFrame.drop_deltalake(str(resolved_path))
+
+    assert not path.exists()
+
+
 def test_deltalake_delete_table_pathlib(tmp_path):
     """Test deleting a Delta Lake table using pathlib.Path."""
     pytest.importorskip("deltalake")

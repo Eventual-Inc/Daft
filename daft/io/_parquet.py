@@ -13,6 +13,7 @@ from daft.daft import (
 )
 from daft.dataframe import DataFrame
 from daft.datatype import DataType, TimeUnit
+from daft.filesystem import _resolve_paths_and_filesystem
 from daft.io._checkpoint import attach_checkpoint
 from daft.io.common import get_tabular_files_scan
 
@@ -121,4 +122,8 @@ def read_parquet(
 
     builder = attach_checkpoint(builder, checkpoint)
 
-    return DataFrame(builder)
+    df = DataFrame(builder)
+    if isinstance(path, str):
+        resolved_paths, _ = _resolve_paths_and_filesystem(path, io_config=io_config)
+        df._resolved_parquet_path = resolved_paths[0].rstrip("/")
+    return df

@@ -93,7 +93,10 @@ def read_deltalake(
 
     handle = ScanOperatorHandle.from_python_scan_operator(delta_lake_operator)
     builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
-    return DataFrame(builder)
+    df = DataFrame(builder)
+    df._resolved_deltalake_path = table_uri
+    df._resolved_deltalake_io_config = io_config
+    return df
 
 
 def _resolve_deltalake_table_and_storage_options(
