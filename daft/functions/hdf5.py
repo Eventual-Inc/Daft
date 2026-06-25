@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import daft
 from daft.file.hdf5 import Hdf5File
@@ -106,7 +106,7 @@ def hdf5_visit(file_expr: Expression, group: str = "/") -> Expression:
     return cast("Expression", hdf5_visit_fn(file_expr, group=group))
 
 
-def hdf5_read_impl(file: Hdf5File, dataset: str) -> np.ndarray:
+def hdf5_read_impl(file: Hdf5File, dataset: str) -> np.ndarray[Any, Any]:
     return file.read(dataset)
 
 
@@ -140,7 +140,7 @@ def hdf5_read(file_expr: Expression, dataset: str) -> Expression:
     return cast("Expression", hdf5_read_fn(file_expr, dataset=dataset))
 
 
-def hdf5_read_many_impl(file: Hdf5File, datasets: dict[str, str]) -> dict[str, np.ndarray]:
+def hdf5_read_many_impl(file: Hdf5File, datasets: dict[str, str]) -> dict[str, np.ndarray[Any, Any]]:
     return file.read(datasets)
 
 
