@@ -99,7 +99,7 @@ class IcebergScanOperator(ScanOperator):
         self._storage_config = storage_config
 
         field_id_mapping = visit(iceberg_schema, SchemaFieldIdMappingVisitor())
-        self._parquet_file_format_config = FileFormatConfig.from_parquet_config(
+        self._file_format_config = FileFormatConfig.from_parquet_config(
             ParquetSourceConfig(
                 field_id_mapping=field_id_mapping,
                 ignore_corrupt_files=ignore_corrupt_files,
@@ -207,9 +207,7 @@ class IcebergScanOperator(ScanOperator):
             path = file.file_path
             record_count = file.record_count
             file_format = file.file_format
-            if file_format == "PARQUET":
-                file_format_config = self._parquet_file_format_config
-            else:
+            if file_format != "PARQUET":
                 # TODO: Support ORC and AVRO when we can read it
                 raise NotImplementedError(f"{file_format} for iceberg not implemented!")
 
@@ -219,7 +217,7 @@ class IcebergScanOperator(ScanOperator):
             pspec = self._iceberg_record_to_partition_spec(self._iceberg_table.specs()[file.spec_id], file.partition)
             st = ScanTask.catalog_scan_task(
                 file=path,
-                file_format=file_format_config,
+                file_format=self._file_format_config,
                 schema=self._schema._schema,
                 num_rows=record_count,
                 storage_config=self._storage_config,
