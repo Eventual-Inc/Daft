@@ -3719,29 +3719,35 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
-    def with_spatial_bbox(self, geom_col: str, *, prefix: str = "") -> "DataFrame":
-        """Add ``{prefix}min_x``, ``{prefix}min_y``, ``{prefix}max_x``, ``{prefix}max_y`` Float64 columns
+    def with_spatial_bbox(self, geom_col: str) -> "DataFrame":
+        """Add ``rtree_min_x``, ``rtree_min_y``, ``rtree_max_x``, ``rtree_max_y`` Float64 columns
         holding the bounding box of ``geom_col``.
 
         These are the column names the native spatial-join operator detects as a precomputed
-        index, letting it skip per-row WKB bounding-box extraction during the join.
+        R-tree index, letting it skip per-row WKB bounding-box extraction during the join. When the
+        DataFrame is used as a side of a spatial join (e.g. ``df.join(other, on=st_intersects(...))``),
+        the engine preserves these columns through to the join's build side automatically — so you
+        do not need to keep them in your final projection for the index to take effect. They are
+        dropped from the join output unless you select them explicitly.
+
+        The ``rtree_*``-named columns also persist through Parquet/Delta writes, so a table written
+        with them carries its spatial index for fast joins on read-back.
 
         Args:
             geom_col: name of a Geometry (or WKB Binary) column.
-            prefix: optional prefix for the four output column names (e.g. ``"bbox_"``).
 
         Returns:
-            DataFrame: DataFrame with four new Float64 columns for the bounding box.
+            DataFrame: DataFrame with four new Float64 columns (``rtree_min_x`` … ``rtree_max_y``).
         """
         from daft.functions import st_bbox
 
         bbox = st_bbox(col(geom_col))
         return self.with_columns(
             {
-                f"{prefix}min_x": bbox.get("min_x"),
-                f"{prefix}min_y": bbox.get("min_y"),
-                f"{prefix}max_x": bbox.get("max_x"),
-                f"{prefix}max_y": bbox.get("max_y"),
+                "rtree_min_x": bbox.get("min_x"),
+                "rtree_min_y": bbox.get("min_y"),
+                "rtree_max_x": bbox.get("max_x"),
+                "rtree_max_y": bbox.get("max_y"),
             }
         )
 

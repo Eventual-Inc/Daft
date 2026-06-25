@@ -195,7 +195,11 @@ fn build_rtree(
     let bbox_cols: Option<[usize; 4]> = {
         let schema = &merged.schema;
         let try_find = |name: &str| schema.get_index(name).ok();
+        // `rtree_*` is the canonical name set produced by `df.with_spatial_bbox()` and the one
+        // preserved through a spatial join by the optimizer. `min_*`/`bbox_*` are accepted for
+        // backward compatibility with externally-materialized bbox columns.
         let candidates = [
+            ("rtree_min_x", "rtree_min_y", "rtree_max_x", "rtree_max_y"),
             ("min_x", "min_y", "max_x", "max_y"),
             ("bbox_min_x", "bbox_min_y", "bbox_max_x", "bbox_max_y"),
         ];
@@ -286,7 +290,11 @@ fn build_partitioned_rtrees(
     let bbox_cols: Option<[usize; 4]> = {
         let schema = &tables[0].schema;
         let try_find = |name: &str| schema.get_index(name).ok();
+        // `rtree_*` is the canonical name set produced by `df.with_spatial_bbox()` and the one
+        // preserved through a spatial join by the optimizer. `min_*`/`bbox_*` are accepted for
+        // backward compatibility with externally-materialized bbox columns.
         let candidates = [
+            ("rtree_min_x", "rtree_min_y", "rtree_max_x", "rtree_max_y"),
             ("min_x", "min_y", "max_x", "max_y"),
             ("bbox_min_x", "bbox_min_y", "bbox_max_x", "bbox_max_y"),
         ];

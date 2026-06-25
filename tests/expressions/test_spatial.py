@@ -780,8 +780,8 @@ def test_with_spatial_bbox():
     df = daft.from_pydict({"x": [1.0, 5.0], "y": [2.0, 6.0]}).select(
         st_point(daft.col("x"), daft.col("y")).alias("g")
     )
-    out = df.with_spatial_bbox("g").select("min_x", "min_y", "max_x", "max_y").to_pydict()
-    assert out["min_x"] == [1.0, 5.0]
-    assert out["min_y"] == [2.0, 6.0]
-    assert out["max_x"] == [1.0, 5.0]
-    assert out["max_y"] == [2.0, 6.0]
+    out = df.with_spatial_bbox("g").select("rtree_min_x", "rtree_min_y", "rtree_max_x", "rtree_max_y").to_pydict()
+    assert out["rtree_min_x"] == [1.0, 5.0]
+    assert out["rtree_min_y"] == [2.0, 6.0]
+    assert out["rtree_max_x"] == [1.0, 5.0]
+    assert out["rtree_max_y"] == [2.0, 6.0]

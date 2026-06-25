@@ -61,23 +61,22 @@ result = pts.join(
 )
 ```
 
-## Optional: precompute bounding boxes
+## Optional: precompute a bounding-box (R-tree) index
 
-[df.with_spatial_bbox()][daft.DataFrame.with_spatial_bbox] adds `min_x`, `min_y`, `max_x`, `max_y` Float64 columns to a DataFrame. When **all four columns are present on the build side at execution time**, the spatial-join operator uses them as a precomputed bounding-box index, skipping per-row WKB bounding-box computation during the join:
+[df.with_spatial_bbox()][daft.DataFrame.with_spatial_bbox] adds `rtree_min_x`, `rtree_min_y`, `rtree_max_x`, `rtree_max_y` Float64 columns to a DataFrame. The spatial-join operator detects these columns on its build side and uses them as a precomputed bounding-box index, skipping per-row WKB bounding-box computation when building the R-tree:
 
 ```python
-# Precompute bbox once on the build side (polygons)
+# Precompute the index once on the build side (polygons)
 polys_idx = polys.with_spatial_bbox("qg")
 
-# Keep all four bbox columns in the projection so the fast-path engages (see note below)
-result = pts.join(polys_idx, on=st_intersects(polys_idx["qg"], pts["pg"])).select(
-    "pid", "qid", "min_x", "min_y", "max_x", "max_y"
-)
+# The rtree_* columns are preserved through the join automatically — no need to keep them
+# in your projection. They are dropped from the output unless you select them explicitly.
+result = pts.join(polys_idx, on=st_intersects(polys_idx["qg"], pts["pg"])).select("pid", "qid")
 ```
 
-> **Note — column pruning caveat:** Daft's column-pruning optimizer removes unused columns before execution. If the four bbox columns are not referenced in your final projection (e.g. you only select `pid` and `qid`), the optimizer drops them and the join transparently falls back to computing bounding boxes from the geometry — giving correct results but no speedup. To benefit from the fast-path, keep `min_x`, `min_y`, `max_x`, and `max_y` referenced in your projection through to the join. Transparent preservation of these columns is a planned enhancement.
+The engine preserves the `rtree_*` columns through to the spatial join's build side automatically (they are exempt from the column-pruning that would otherwise drop unused columns), so the fast-path engages even when your final projection does not reference them. Results are identical with or without the index.
 
-This is most beneficial when the build side is reused across multiple joins (e.g. cached or persisted), since the bounding-box values are computed once. Results are identical with or without the index.
+Because the columns are plain `rtree_*`-named floats, they also persist through Parquet and Delta writes. A table written with `with_spatial_bbox` therefore carries its spatial index, and spatial joins on the read-back table use it directly — most beneficial when the build side is reused across many joins.
 
 ## Geometry constructors
 

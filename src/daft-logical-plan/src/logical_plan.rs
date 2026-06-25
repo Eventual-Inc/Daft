@@ -26,6 +26,44 @@ use snafu::Snafu;
 pub use crate::ops::*;
 use crate::stats::{PlanStats, StatsState};
 
+/// Bbox spatial-index columns produced by `df.with_spatial_bbox()`. When a join carries a spatial
+/// predicate, these columns are preserved through the join (kept on the build side so the native
+/// R-tree spatial-join operator can use them as a precomputed index) instead of being pruned.
+pub(crate) const RTREE_BBOX_COLS: [&str; 4] =
+    ["rtree_min_x", "rtree_min_y", "rtree_max_x", "rtree_max_y"];
+
+/// Spatial predicate functions the native engine accelerates with an R-tree nested-loop join.
+const SPATIAL_JOIN_FNS: &[&str] = &[
+    "st_intersects",
+    "st_contains",
+    "st_within",
+    "st_covers",
+    "st_covered_by",
+    "st_disjoint",
+    "st_touches",
+    "st_overlaps",
+    "st_crosses",
+    "st_equals",
+    "st_dwithin",
+];
+
+/// Whether `expr` contains a spatial predicate function call (used to decide whether to preserve
+/// the `rtree_*` bbox index columns through a join's column pruning).
+fn expr_has_spatial_fn(expr: &daft_dsl::ExprRef) -> bool {
+    let mut found = false;
+    let _ = expr.apply(|e| {
+        if let daft_dsl::Expr::ScalarFn(daft_dsl::functions::scalar::ScalarFn::Builtin(sf)) =
+            e.as_ref()
+            && SPATIAL_JOIN_FNS.contains(&sf.name())
+        {
+            found = true;
+            return Ok(TreeNodeRecursion::Stop);
+        }
+        Ok(TreeNodeRecursion::Continue)
+    });
+    found
+}
+
 /// Logical plan for a Daft query.
 #[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
@@ -323,6 +361,26 @@ impl LogicalPlan {
                     })
                     .unwrap();
                 }
+
+                // Transparent spatial-index preservation: when the join carries a spatial
+                // predicate, keep any `rtree_*` bbox index columns present on either side so they
+                // survive column pruning and reach the native R-tree operator's build side. They
+                // flow to the join output and are pruned by the projection above it.
+                if let Some(pred) = join.on.inner()
+                    && expr_has_spatial_fn(pred)
+                {
+                    let left_schema = join.left.schema();
+                    let right_schema = join.right.schema();
+                    for name in RTREE_BBOX_COLS {
+                        if left_schema.has_field(name) {
+                            left.insert(name.to_string());
+                        }
+                        if right_schema.has_field(name) {
+                            right.insert(name.to_string());
+                        }
+                    }
+                }
+
                 RequiredCols::new(left, Some(right))
             }
             Self::AsofJoin(AsofJoin {

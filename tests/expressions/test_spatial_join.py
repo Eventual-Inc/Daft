@@ -127,21 +127,25 @@ def test_spatial_join_partitioned_by_key():
 # ── Bbox-index equivalence test ───────────────────────────────────────────────
 
 
-def test_spatial_join_bbox_index_equivalence():
-    """with_spatial_bbox() on the build side (polys) must yield the same join rows as the WKB baseline.
-
-    IMPORTANT: the four bbox columns (min_x, min_y, max_x, max_y) MUST be kept in the output
-    projection so that Daft's column-pruning optimizer does not drop them before the join
-    operator executes.  Without them in the projection, column pruning silently removes all four
-    columns and the join falls back to the WKB path — making the test vacuous.  Listing them
-    explicitly in .select() is what causes the precomputed-bbox fast-path to genuinely engage.
-    """
+def _pts_polys_for_bbox():
     pts = daft.from_pydict({"pid": [1, 2, 3], "x": [1.0, 9.0, 0.5], "y": [1.0, 9.0, 0.5]}).select(
         daft.col("pid"), st_point(daft.col("x"), daft.col("y")).alias("pg")
     )
     polys = daft.from_pydict(
-        {"qid": [10], "wkt": ["POLYGON((0 0,2 0,2 2,0 2,0 0))"]}
-    ).select(daft.col("qid"), st_geomfromtext(daft.col("wkt")).alias("qg"))
+        {"qid": [10], "wkt": ["POLYGON((0 0,2 0,2 2,0 2,0 0))"], "shift": [1000.0]}
+    ).select(daft.col("qid"), st_geomfromtext(daft.col("wkt")).alias("qg"), daft.col("shift"))
+    return pts, polys
+
+
+def test_spatial_join_bbox_index_equivalence():
+    """with_spatial_bbox() on the build side yields the same join rows as the WKB baseline.
+
+    The `rtree_*` columns are preserved through the spatial join transparently (the optimizer keeps
+    them on the build side), so they need NOT be listed in the final projection — selecting only the
+    non-bbox columns still engages the precomputed-bbox fast-path, and the bbox columns are dropped
+    from the output.
+    """
+    pts, polys = _pts_polys_for_bbox()
 
     # Baseline: spatial join without precomputed bbox — operator derives MBRs from WKB.
     base = (
@@ -151,18 +155,42 @@ def test_spatial_join_bbox_index_equivalence():
         .to_pydict()
     )
 
-    # Indexed: precompute bbox on the build side (polys) AND retain all four bbox columns in
-    # the projection.  Keeping them referenced is REQUIRED for the fast-path to engage — column
-    # pruning otherwise drops them before the operator runs (see module docstring above).
+    # Indexed: precompute bbox on the build side; select ONLY non-bbox columns. Transparent
+    # preservation keeps rtree_* on the build side anyway, so results must match the baseline,
+    # and the rtree_* columns must NOT appear in the output.
     polys_idx = polys.with_spatial_bbox("qg")
-    indexed = (
-        pts.join(polys_idx, on=st_intersects(polys_idx["qg"], pts["pg"]))
-        # min_x/min_y/max_x/max_y are listed here intentionally: this prevents column pruning
-        # from dropping them and is what causes the precomputed-bbox fast-path to actually run.
-        .select("pid", "qid", "min_x", "min_y", "max_x", "max_y")
-        .sort(["pid", "qid"])
-        .to_pydict()
-    )
+    joined = pts.join(polys_idx, on=st_intersects(polys_idx["qg"], pts["pg"])).select("pid", "qid")
+    assert not any(c.startswith("rtree_") for c in joined.column_names), "rtree_* leaked into output"
+    indexed = joined.sort(["pid", "qid"]).to_pydict()
 
     assert len(base["pid"]) > 0, "baseline returned no rows — test would be vacuous"
     assert list(zip(base["pid"], base["qid"])) == list(zip(indexed["pid"], indexed["qid"]))
+
+
+def test_spatial_join_bbox_index_is_actually_used():
+    """Adversarial proof the preserved rtree_* index is genuinely used by the operator.
+
+    Corrupt the rtree_* bbox columns (shift them far away) on the build side and select only the
+    non-bbox columns. Because transparent preservation keeps the columns on the build side and the
+    operator builds its R-tree from them, the corrupted bbox makes the probe find no candidates →
+    NO matches. If the columns were pruned (or ignored), the join would fall back to WKB and return
+    the correct match — so an empty result is what proves the precomputed index is in effect.
+    """
+    pts, polys = _pts_polys_for_bbox()
+    pts = pts.where(daft.col("pid") == 1)  # single point (1,1), inside the polygon
+
+    wrong = polys.with_spatial_bbox("qg").with_columns(
+        {
+            "rtree_min_x": daft.col("rtree_min_x") + daft.col("shift"),
+            "rtree_min_y": daft.col("rtree_min_y") + daft.col("shift"),
+            "rtree_max_x": daft.col("rtree_max_x") + daft.col("shift"),
+            "rtree_max_y": daft.col("rtree_max_y") + daft.col("shift"),
+        }
+    )
+    out = pts.join(wrong, on=st_intersects(wrong["qg"], pts["pg"])).select("pid", "qid").to_pydict()
+    assert out["pid"] == [], "corrupted rtree_* bbox was ignored — the precomputed index is not being used"
+
+    # Sanity: with the CORRECT precomputed bbox, the same join finds the match.
+    correct = polys.with_spatial_bbox("qg")
+    ok = pts.join(correct, on=st_intersects(correct["qg"], pts["pg"])).select("pid", "qid").to_pydict()
+    assert ok["pid"] == [1]
