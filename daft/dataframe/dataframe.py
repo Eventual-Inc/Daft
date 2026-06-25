@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import partial, reduce
 from typing import TYPE_CHECKING, Any, Concatenate, Literal, ParamSpec, TypeVar, Union, overload
+from urllib.parse import urlparse
 
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
@@ -255,6 +256,11 @@ class DataFrame:
         self._preview = Preview(partition=None, total_rows=None)
         self._metadata: ExecutionMetadata | None = None
         self._num_preview_rows = get_context().daft_execution_config.num_preview_rows
+        # Internal write-target hints for resolver utilities.
+        self._resolved_parquet_path: str | None = None
+        self._resolved_deltalake_path: str | None = None
+        self._resolved_deltalake_table: Any | None = None
+        self._resolved_deltalake_io_config: IOConfig | None = None
 
     @property
     def _builder(self) -> LogicalPlanBuilder:
@@ -1100,6 +1106,8 @@ class DataFrame:
             See also [`df.write_csv()`][daft.DataFrame.write_csv] and [`df.write_json()`][daft.DataFrame.write_json]
             Other formats for writing DataFrames
         """
+        from daft.filesystem import _resolve_paths_and_filesystem
+
         if write_mode not in ["append", "overwrite", "overwrite-partitions"]:
             raise ValueError(
                 f"Only support `append`, `overwrite`, or `overwrite-partitions` mode. {write_mode} is unsupported"
@@ -1144,7 +1152,52 @@ class DataFrame:
         result_df._result_cache = write_df._result_cache
         result_df._preview = write_df._preview
         result_df._metadata = write_df._metadata
+        resolved_paths, _ = _resolve_paths_and_filesystem(str(root_dir), io_config=io_config)
+        result_df._resolved_parquet_path = resolved_paths[0].rstrip("/")
         return result_df
+
+    def resolve_parquet(self) -> str:
+        """Resolve the parquet table path associated with this DataFrame.
+
+        This is an internal utility intended for DataFrames returned by
+        :meth:`write_parquet`.
+
+        Returns:
+            str: Resolved parquet root path.
+
+        Raises:
+            ValueError: If the DataFrame cannot be mapped to a parquet table path.
+
+        Examples:
+            >>> import daft  # doctest: +SKIP
+            >>> write_df = daft.from_pydict({"x": [1, 2]}).write_parquet("/tmp/my_parquet")  # doctest: +SKIP
+            >>> parquet_path = write_df.resolve_parquet()  # doctest: +SKIP
+            >>> daft.DataFrame.drop_parquet(str(parquet_path))  # doctest: +SKIP
+        """
+        if self._resolved_parquet_path is not None:
+            return self._resolved_parquet_path
+
+        schema_names = [field.name for field in self.schema()]
+        if "path" not in schema_names:
+            raise ValueError(
+                "Could not resolve parquet path from this DataFrame. "
+                "Use DataFrames returned by write_parquet() for resolve_parquet()."
+            )
+
+        rows = self.to_pydict()
+        paths = [p for p in rows.get("path", []) if isinstance(p, str) and p]
+        if not paths:
+            raise ValueError("Could not resolve parquet path because no written file paths were found.")
+
+        parsed = [urlparse(p) for p in paths]
+        if all(p.scheme for p in parsed):
+            first = parsed[0]
+            if any((p.scheme != first.scheme or p.netloc != first.netloc) for p in parsed[1:]):
+                raise ValueError("Could not resolve parquet path because written files span multiple authorities.")
+            common_path = os.path.commonpath([p.path for p in parsed])
+            return f"{first.scheme}://{first.netloc}{common_path}".rstrip("/")
+
+        return os.path.commonpath(paths).rstrip("/")
 
     @DataframePublicAPI
     def write_csv(
@@ -2109,6 +2162,10 @@ class DataFrame:
                 )
             table.update_incremental()
 
+        resolved_deltatable: Any | None = table
+        if resolved_deltatable is None:
+            resolved_deltatable = deltalake.DeltaTable(table_uri, storage_options=storage_options)
+
         with_operations = from_pydict(
             {
                 "operation": pa.array(operations, type=pa.string()),
@@ -2118,7 +2175,54 @@ class DataFrame:
             }
         )
         with_operations._metadata = write_df._metadata
+        with_operations._resolved_deltalake_path = table_uri
+        with_operations._resolved_deltalake_table = resolved_deltatable
+        with_operations._resolved_deltalake_io_config = io_config
         return with_operations
+
+    def resolve_deltalake(self) -> tuple[str, "deltalake.DeltaTable"]:
+        """Resolve the Delta Lake table path and table object for this DataFrame.
+
+        This is an internal utility intended for DataFrames returned by
+        :meth:`write_deltalake`.
+
+        Returns:
+            tuple[str, deltalake.DeltaTable]: ``(table_path, delta_table)``.
+
+        Raises:
+            ValueError: If the DataFrame cannot be mapped to a Delta Lake table.
+
+        Examples:
+            >>> import daft  # doctest: +SKIP
+            >>> write_df = daft.from_pydict({"id": [1]}).write_deltalake("/tmp/my_delta")  # doctest: +SKIP
+            >>> table_path, delta_table = write_df.resolve_deltalake()  # doctest: +SKIP
+            >>> _ = delta_table.version()  # doctest: +SKIP
+            >>> daft.DataFrame.drop_deltalake(str(table_path))  # doctest: +SKIP
+        """
+        try:
+            import deltalake
+        except ImportError:
+            raise ImportError(
+                "deltalake is required to use resolve_deltalake. Install it with: `pip install deltalake`"
+            )
+
+        from daft.io.delta_lake._deltalake import _resolve_deltalake_table_and_storage_options
+
+        if self._resolved_deltalake_path is not None and self._resolved_deltalake_table is not None:
+            return self._resolved_deltalake_path, self._resolved_deltalake_table
+
+        if self._resolved_deltalake_path is not None:
+            resolved_table, _ = _resolve_deltalake_table_and_storage_options(
+                self._resolved_deltalake_path,
+                self._resolved_deltalake_io_config,
+            )
+            self._resolved_deltalake_table = resolved_table
+            return self._resolved_deltalake_path, resolved_table
+
+        raise ValueError(
+            "Could not resolve Delta Lake table from this DataFrame. "
+            "Use DataFrames returned by write_deltalake() for resolve_deltalake()."
+        )
 
     @DataframePublicAPI
     def merge_deltalake(
@@ -2227,6 +2331,9 @@ class DataFrame:
             >>> import daft
             >>> daft.DataFrame.drop_deltalake("path/to/table")  # doctest: +SKIP
             >>> daft.DataFrame.drop_deltalake("/tmp/my_delta_table")  # doctest: +SKIP
+            >>> write_df = daft.from_pydict({"id": [1]}).write_deltalake("/tmp/my_delta_table")  # doctest: +SKIP
+            >>> table_path, _ = write_df.resolve_deltalake()  # doctest: +SKIP
+            >>> daft.DataFrame.drop_deltalake(str(table_path))  # doctest: +SKIP
         """
         import pyarrow.fs as pafs
 
@@ -2296,6 +2403,9 @@ class DataFrame:
             >>> import daft
             >>> daft.DataFrame.drop_parquet("path/to/parquet_dataset")  # doctest: +SKIP
             >>> daft.DataFrame.drop_parquet("s3://bucket/path/to/file.parquet", io_config=...)  # doctest: +SKIP
+            >>> write_df = daft.from_pydict({"x": [1]}).write_parquet("/tmp/my_parquet")  # doctest: +SKIP
+            >>> parquet_path = write_df.resolve_parquet()  # doctest: +SKIP
+            >>> daft.DataFrame.drop_parquet(str(parquet_path))  # doctest: +SKIP
         """
         import pyarrow.fs as pafs
 
