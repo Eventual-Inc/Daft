@@ -95,6 +95,7 @@ def test_spatial_join_matches_oracle(predicate_name):
         .sort(["pid", "qid"])
         .to_pydict()
     )
+    assert len(oracle["pid"]) > 0, "oracle returned no rows — test would be vacuous"
     assert list(zip(got["pid"], got["qid"])) == list(zip(oracle["pid"], oracle["qid"]))
 
 

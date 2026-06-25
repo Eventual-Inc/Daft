@@ -1,6 +1,6 @@
 # Spatial Joins
 
-Daft supports spatial joins via the [df.join()][daft.DataFrame.join] `on=` predicate and SQL `JOIN ... ON ST_*`. Both routes the join to the R-tree nested-loop operator — no hash join shuffle is involved.
+Daft supports spatial joins via the [df.join()][daft.DataFrame.join] `on=` predicate and SQL `JOIN ... ON ST_*`. Both route the join to the R-tree nested-loop operator — no hash join shuffle is involved.
 
 ## Python API
 
