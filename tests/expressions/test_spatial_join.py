@@ -128,7 +128,14 @@ def test_spatial_join_partitioned_by_key():
 
 
 def test_spatial_join_bbox_index_equivalence():
-    """A join with vs. without with_spatial_bbox() on the build side yields identical rows."""
+    """with_spatial_bbox() on the build side (polys) must yield the same join rows as the WKB baseline.
+
+    IMPORTANT: the four bbox columns (min_x, min_y, max_x, max_y) MUST be kept in the output
+    projection so that Daft's column-pruning optimizer does not drop them before the join
+    operator executes.  Without them in the projection, column pruning silently removes all four
+    columns and the join falls back to the WKB path — making the test vacuous.  Listing them
+    explicitly in .select() is what causes the precomputed-bbox fast-path to genuinely engage.
+    """
     pts = daft.from_pydict({"pid": [1, 2, 3], "x": [1.0, 9.0, 0.5], "y": [1.0, 9.0, 0.5]}).select(
         daft.col("pid"), st_point(daft.col("x"), daft.col("y")).alias("pg")
     )
@@ -136,9 +143,26 @@ def test_spatial_join_bbox_index_equivalence():
         {"qid": [10], "wkt": ["POLYGON((0 0,2 0,2 2,0 2,0 0))"]}
     ).select(daft.col("qid"), st_geomfromtext(daft.col("wkt")).alias("qg"))
 
-    # baseline: no bbox index columns on build side
-    base = pts.join(polys, on=st_intersects(polys["qg"], pts["pg"])).select("pid", "qid").sort("pid").to_pydict()
-    # fast-path: materialize bbox index columns the join operator auto-detects
+    # Baseline: spatial join without precomputed bbox — operator derives MBRs from WKB.
+    base = (
+        pts.join(polys, on=st_intersects(polys["qg"], pts["pg"]))
+        .select("pid", "qid")
+        .sort(["pid", "qid"])
+        .to_pydict()
+    )
+
+    # Indexed: precompute bbox on the build side (polys) AND retain all four bbox columns in
+    # the projection.  Keeping them referenced is REQUIRED for the fast-path to engage — column
+    # pruning otherwise drops them before the operator runs (see module docstring above).
     polys_idx = polys.with_spatial_bbox("qg")
-    indexed = pts.join(polys_idx, on=st_intersects(polys_idx["qg"], pts["pg"])).select("pid", "qid").sort("pid").to_pydict()
-    assert base == indexed
+    indexed = (
+        pts.join(polys_idx, on=st_intersects(polys_idx["qg"], pts["pg"]))
+        # min_x/min_y/max_x/max_y are listed here intentionally: this prevents column pruning
+        # from dropping them and is what causes the precomputed-bbox fast-path to actually run.
+        .select("pid", "qid", "min_x", "min_y", "max_x", "max_y")
+        .sort(["pid", "qid"])
+        .to_pydict()
+    )
+
+    assert len(base["pid"]) > 0, "baseline returned no rows — test would be vacuous"
+    assert list(zip(base["pid"], base["qid"])) == list(zip(indexed["pid"], indexed["qid"]))

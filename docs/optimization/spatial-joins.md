@@ -63,15 +63,19 @@ result = pts.join(
 
 ## Optional: precompute bounding boxes
 
-[df.with_spatial_bbox()][daft.DataFrame.with_spatial_bbox] adds `min_x`, `min_y`, `max_x`, `max_y` Float64 columns to a DataFrame. The spatial-join operator detects these columns on the build side and uses them as a precomputed bounding-box index, skipping per-row WKB extraction during the join:
+[df.with_spatial_bbox()][daft.DataFrame.with_spatial_bbox] adds `min_x`, `min_y`, `max_x`, `max_y` Float64 columns to a DataFrame. When **all four columns are present on the build side at execution time**, the spatial-join operator uses them as a precomputed bounding-box index, skipping per-row WKB bounding-box computation during the join:
 
 ```python
 # Precompute bbox once on the build side (polygons)
 polys_idx = polys.with_spatial_bbox("qg")
 
-# The join operator auto-detects min_x/min_y/max_x/max_y and uses them as an index
-result = pts.join(polys_idx, on=st_intersects(polys_idx["qg"], pts["pg"]))
+# Keep all four bbox columns in the projection so the fast-path engages (see note below)
+result = pts.join(polys_idx, on=st_intersects(polys_idx["qg"], pts["pg"])).select(
+    "pid", "qid", "min_x", "min_y", "max_x", "max_y"
+)
 ```
+
+> **Note — column pruning caveat:** Daft's column-pruning optimizer removes unused columns before execution. If the four bbox columns are not referenced in your final projection (e.g. you only select `pid` and `qid`), the optimizer drops them and the join transparently falls back to computing bounding boxes from the geometry — giving correct results but no speedup. To benefit from the fast-path, keep `min_x`, `min_y`, `max_x`, and `max_y` referenced in your projection through to the join. Transparent preservation of these columns is a planned enhancement.
 
 This is most beneficial when the build side is reused across multiple joins (e.g. cached or persisted), since the bounding-box values are computed once. Results are identical with or without the index.
 
