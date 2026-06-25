@@ -785,3 +785,27 @@ def test_with_spatial_bbox():
     assert out["rtree_min_y"] == [2.0, 6.0]
     assert out["rtree_max_x"] == [1.0, 5.0]
     assert out["rtree_max_y"] == [2.0, 6.0]
+
+
+def test_geom_constructors_return_geometry():
+    """st_geomfromtext / st_geomfromgeojson return Geometry (not raw Binary), so WKT/GeoJSON text
+    flows directly into Geometry-typed columns (GeoParquet emit, spatial joins, etc.) without a cast."""
+    import daft
+    from daft.functions import st_geomfromtext, st_geomfromgeojson, st_astext
+
+    df = daft.from_pydict(
+        {
+            "wkt": ["POINT(1 2)", None],
+            "gj": ['{"type":"Point","coordinates":[3,4]}', None],
+        }
+    ).select(
+        st_geomfromtext(daft.col("wkt")).alias("g1"),
+        st_geomfromgeojson(daft.col("gj")).alias("g2"),
+    )
+    assert df.schema()["g1"].dtype == daft.DataType.geometry()
+    assert df.schema()["g2"].dtype == daft.DataType.geometry()
+
+    # Round-trips through st_astext, and nulls are preserved.
+    out = df.select(st_astext(daft.col("g1")).alias("w1"), st_astext(daft.col("g2")).alias("w2")).to_pydict()
+    assert out["w1"][0].upper().startswith("POINT") and out["w1"][1] is None
+    assert out["w2"][0].upper().startswith("POINT") and out["w2"][1] is None

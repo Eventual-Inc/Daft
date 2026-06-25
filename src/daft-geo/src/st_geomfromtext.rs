@@ -1,7 +1,6 @@
-use arrow_buffer::NullBufferBuilder;
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    prelude::{BinaryArray, DataType, Field, IntoSeries, Schema},
+    prelude::{DataType, Field, Schema},
     series::Series,
 };
 use daft_dsl::{
@@ -40,25 +39,10 @@ impl ScalarUDF for StGeomFromText {
             ))
         })?;
 
-        let len = utf8.len();
-        let mut values: Vec<Option<Vec<u8>>> = Vec::with_capacity(len);
-        let mut validity = NullBufferBuilder::new(len);
+        let values: Vec<Option<Vec<u8>>> =
+            utf8.into_iter().map(|opt| opt.and_then(wkt_to_wkb)).collect();
 
-        for opt in utf8.into_iter() {
-            match opt.and_then(wkt_to_wkb) {
-                Some(wkb) => {
-                    values.push(Some(wkb));
-                    validity.append_non_null();
-                }
-                None => {
-                    values.push(None);
-                    validity.append_null();
-                }
-            }
-        }
-
-        let arr = BinaryArray::from_iter(self.name(), values.iter().map(|v| v.as_deref()));
-        Ok(arr.into_series())
+        crate::utils::wkb_opts_to_geometry_series(self.name(), values)
     }
 
     fn get_return_field(
@@ -73,11 +57,11 @@ impl ScalarUDF for StGeomFromText {
                 f.dtype
             )));
         }
-        Ok(Field::new(self.name(), DataType::Binary))
+        Ok(Field::new(self.name(), DataType::Geometry))
     }
 
     fn docstring(&self) -> &'static str {
-        "Parses a Well-Known Text (WKT) string and returns a WKB geometry."
+        "Parses a Well-Known Text (WKT) string and returns a Geometry."
     }
 }
 
