@@ -36,7 +36,7 @@ def test_droid_unnests_metadata_columns(droid_raw_df) -> None:
 
 def test_droid_adds_trajectory_and_video_file_columns(droid_raw_df) -> None:
     schema = {field.name: field.dtype for field in droid_raw_df.schema()}
-    assert schema["trajectory"] == DataType.file()
+    assert schema["trajectory"] == DataType.file(MediaType.hdf5())
     assert schema["wrist_video"] == DataType.file(MediaType.video())
     assert schema["ext1_video"] == DataType.file(MediaType.video())
     assert schema["ext2_video"] == DataType.file(MediaType.video())
@@ -62,6 +62,6 @@ def test_droid_adds_trajectory_and_video_file_columns(droid_raw_df) -> None:
     trajectory_path = result["trajectory_path"][0]
     assert trajectory_path == f"{episode_dir}/trajectory.h5"
 
-    assert result["wrist_video_path"][0] == f"{episode_dir}/{result['wrist_cam_serial'][0]}.mp4"
-    assert result["ext1_video_path"][0] == f"{episode_dir}/{result['ext1_cam_serial'][0]}.mp4"
-    assert result["ext2_video_path"][0] == f"{episode_dir}/{result['ext2_cam_serial'][0]}.mp4"
+    assert result["wrist_video_path"][0] == f"{episode_dir}/recordings/MP4/{result['wrist_cam_serial'][0]}.mp4"
+    assert result["ext1_video_path"][0] == f"{episode_dir}/recordings/MP4/{result['ext1_cam_serial'][0]}.mp4"
+    assert result["ext2_video_path"][0] == f"{episode_dir}/recordings/MP4/{result['ext2_cam_serial'][0]}.mp4"

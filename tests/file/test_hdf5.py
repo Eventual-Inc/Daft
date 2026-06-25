@@ -7,6 +7,7 @@ pytest.importorskip("h5py")
 import numpy as np
 
 import daft
+from daft.file.hdf5 import HDF5_DEFAULT_BUFFER_SIZE
 from daft.functions.hdf5 import (
     _field_name_from_dataset,
     _normalize_datasets,
@@ -42,6 +43,10 @@ def test_hdf5_file_standalone(sample_hdf5_path):
     file = daft.Hdf5File(sample_hdf5_path)
     assert file.keys() == ["action", "observation", "values"]
     assert file.keys(group="action") == ["proprio"]
+
+
+def test_hdf5_file_open_uses_hdf5_buffer_default():
+    assert daft.Hdf5File.open.__defaults__ == (HDF5_DEFAULT_BUFFER_SIZE,)
 
 
 def test_hdf5_file_read_many_and_attrs(sample_hdf5_path):

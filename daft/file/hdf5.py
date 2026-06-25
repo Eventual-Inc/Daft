@@ -13,10 +13,11 @@ from daft.file.typing import Hdf5ObjectMetadata
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
-    from daft.daft import PyFileReference
+    from daft.daft import PyDaftFile, PyFileReference
     from daft.io import IOConfig
 
 _HDF5_EXTENSIONS = (".h5", ".hdf5")
+HDF5_DEFAULT_BUFFER_SIZE = 64 * 1024
 
 
 def _join_h5path(group: str, name: str) -> str:
@@ -31,8 +32,9 @@ class Hdf5File(File):
 
     This class keeps ``File.open()`` as the inherited raw byte-stream API and
     provides HDF5-specific helpers that mirror common h5py ``File`` and
-    ``Group`` operations. HDF5 access materializes remote files to a local
-    temporary file before opening with h5py.
+    ``Group`` operations. HDF5 access uses a smaller default file buffer than
+    the generic ``File`` type because h5py performs frequent small reads after
+    seeks while traversing metadata and chunk indexes.
     """
 
     @staticmethod
@@ -58,9 +60,12 @@ class Hdf5File(File):
         if not self.is_hdf5():
             raise ValueError(f"File {self} is not an HDF5 file")
 
+    def open(self, buffer_size: int | None = HDF5_DEFAULT_BUFFER_SIZE) -> PyDaftFile:
+        return super().open(buffer_size=buffer_size)
+
     @contextmanager
-    def _open_local_h5py(self) -> Iterator[Any]:
-        with super().to_tempfile() as tmp, h5py.File(tmp.name, "r") as h5:
+    def _open_h5py(self) -> Iterator[Any]:
+        with self.open() as file, h5py.File(file, "r") as h5:
             yield h5
 
     def metadata(self, group: str = "/") -> list[Hdf5ObjectMetadata]:
@@ -80,7 +85,7 @@ class Hdf5File(File):
         Raises:
             TypeError: If ``group`` resolves to a dataset instead of a group.
         """
-        with self._open_local_h5py() as h5:
+        with self._open_h5py() as h5:
             node = h5[group]
             if not hasattr(node, "visititems"):
                 raise TypeError(f"{group} is not an HDF5 group")
@@ -127,7 +132,7 @@ class Hdf5File(File):
         Returns:
             Names of child groups and datasets directly under ``group``.
         """
-        with self._open_local_h5py() as h5:
+        with self._open_h5py() as h5:
             node = h5[group]
             return list(node.keys())
 
@@ -144,7 +149,7 @@ class Hdf5File(File):
             A dictionary of attribute names to values. Values follow h5py's
             normal conversion rules, such as NumPy scalars or arrays.
         """
-        with self._open_local_h5py() as h5:
+        with self._open_h5py() as h5:
             return dict(h5[h5path].attrs)
 
     @overload
@@ -174,7 +179,7 @@ class Hdf5File(File):
             visitor completed without one. If ``func`` is omitted, returns
             ``list[str]``.
         """
-        with self._open_local_h5py() as h5:
+        with self._open_h5py() as h5:
             node = h5[group]
             if func is None:
                 names: list[str] = []
@@ -220,7 +225,7 @@ class Hdf5File(File):
             TypeError: If any requested path resolves to a group instead of a
                 dataset.
         """
-        with self._open_local_h5py() as h5:
+        with self._open_h5py() as h5:
             if isinstance(dataset, str):
                 return self._read_dataset(h5, dataset)
             if isinstance(dataset, MappingABC):
