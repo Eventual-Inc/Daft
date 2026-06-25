@@ -638,24 +638,30 @@ def _build_h3_index(
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     # ── Pass 1: MBR extraction (cheap path first) ─────────────────────────
-    # If the file has pre-computed bbox columns (min_x/min_y/max_x/max_y)
-    # we read only those 4 float columns — no WKB parsing, minimal memory.
+    # If the file has pre-computed bbox columns we read only those 4 float columns — no WKB
+    # parsing, minimal memory. We prefer the canonical ``rtree_*`` set produced by
+    # ``df.with_spatial_bbox()`` and fall back to the legacy ``min_*``/``bbox_*`` names.
     # Otherwise we read only the geometry column and parse WKBs.
     # We also detect pure-point files (all 21-byte WKBs) for pass 2.
-    _BBOX_COLS = ("min_x", "min_y", "max_x", "max_y")
+    _BBOX_COL_SETS = (
+        ("rtree_min_x", "rtree_min_y", "rtree_max_x", "rtree_max_y"),
+        ("min_x", "min_y", "max_x", "max_y"),
+        ("bbox_min_x", "bbox_min_y", "bbox_max_x", "bbox_max_y"),
+    )
 
     def _scan_file(fpath: str):
         """Return (mbr, is_all_points).  Never caches raw WKBs."""
         pf = pq.ParquetFile(fpath)
         schema_names = {f.name for f in pf.schema_arrow}
 
-        if _BBOX_COLS[0] in schema_names and all(c in schema_names for c in _BBOX_COLS):
+        bbox_cols = next((s for s in _BBOX_COL_SETS if all(c in schema_names for c in s)), None)
+        if bbox_cols is not None:
             # Fast path: read pre-computed bbox floats only
-            tbl = pf.read(columns=list(_BBOX_COLS))
-            xs0 = [v for v in tbl["min_x"].to_pylist() if v is not None]
-            ys0 = [v for v in tbl["min_y"].to_pylist() if v is not None]
-            xs1 = [v for v in tbl["max_x"].to_pylist() if v is not None]
-            ys1 = [v for v in tbl["max_y"].to_pylist() if v is not None]
+            tbl = pf.read(columns=list(bbox_cols))
+            xs0 = [v for v in tbl[bbox_cols[0]].to_pylist() if v is not None]
+            ys0 = [v for v in tbl[bbox_cols[1]].to_pylist() if v is not None]
+            xs1 = [v for v in tbl[bbox_cols[2]].to_pylist() if v is not None]
+            ys1 = [v for v in tbl[bbox_cols[3]].to_pylist() if v is not None]
             if not xs0:
                 return None, False
             mbr = (min(xs0), min(ys0), max(xs1), max(ys1))

@@ -10,8 +10,123 @@ use daft_core::{
     series::Series,
 };
 use daft_dsl::{ExprRef, functions::FunctionArgs};
-use geo::Geometry;
+use geo::{Geometry, MultiPolygon};
 use wkb::wkb_to_geom;
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Shared f64 literal helpers
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Extract a required f64 arg from `FunctionArgs<Series>` by positional index or name.
+///
+/// Used by `st_buffer` to read its `distance` argument at eval time.
+pub fn read_f64_arg(
+    inputs: &FunctionArgs<Series>,
+    pos: usize,
+    name: &'static str,
+    fn_name: &'static str,
+) -> DaftResult<f64> {
+    let s = inputs.required(pos)?;
+    if s.len() == 1 {
+        // Cast to Float64 and extract the scalar
+        let casted = s.cast(&DataType::Float64)?;
+        let arr = casted.f64()?;
+        if arr.get(0).is_none() && arr.len() == 1 {
+            // The value is present but null (e.g. lit(None))
+            return Err(DaftError::ValueError(format!(
+                "{fn_name}: {name} must not be null"
+            )));
+        }
+        if let Some(v) = arr.get(0) {
+            return Ok(v);
+        }
+    }
+    Err(DaftError::ValueError(format!(
+        "{fn_name}: {name} must be a numeric literal"
+    )))
+}
+
+/// Extract a required f64 arg from `FunctionArgs<ExprRef>` by positional index or name.
+///
+/// Used at planning time (`get_return_field`) by `st_buffer`.
+pub fn read_f64_arg_expr(
+    inputs: &FunctionArgs<ExprRef>,
+    pos: usize,
+    name: &'static str,
+    fn_name: &'static str,
+) -> DaftResult<f64> {
+    let expr = inputs.required(pos)?;
+    expr.as_literal()
+        .and_then(|l| l.as_f64().or_else(|| l.as_i64().map(|v| v as f64)))
+        .ok_or_else(|| {
+            DaftError::ValueError(format!(
+                "{fn_name}: {name} must be a numeric literal"
+            ))
+        })
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Shared overlay operation helper
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Convert a Geometry to a MultiPolygon if it is a Polygon or MultiPolygon.
+/// Returns None for non-polygon geometries.
+pub(crate) fn as_multipolygon(g: &Geometry) -> Option<MultiPolygon> {
+    match g {
+        Geometry::Polygon(p) => Some(MultiPolygon(vec![p.clone()])),
+        Geometry::MultiPolygon(mp) => Some(mp.clone()),
+        _ => None,
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Shared use_spheroid helpers
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Extract an optional boolean arg from `FunctionArgs<Series>` by positional index or name.
+///
+/// Used by `st_area`, `st_length`, and `st_distance` to read their `use_spheroid` argument.
+pub fn read_bool_arg(
+    inputs: &FunctionArgs<Series>,
+    pos: usize,
+    name: &'static str,
+    fn_name: &'static str,
+) -> DaftResult<bool> {
+    let opt = inputs.optional((pos, name))?;
+    match opt {
+        None => Ok(false),
+        Some(s) => {
+            if s.data_type().is_boolean() && s.len() == 1 {
+                Ok(s.bool().unwrap().get(0).unwrap_or(false))
+            } else {
+                Err(DaftError::ValueError(format!(
+                    "{fn_name}: {name} must be a boolean literal"
+                )))
+            }
+        }
+    }
+}
+
+/// Extract an optional boolean arg from `FunctionArgs<ExprRef>` by positional index or name.
+///
+/// Used at planning time (`get_return_field`) by `st_area`, `st_length`, and `st_distance`.
+pub fn read_bool_arg_expr(
+    inputs: &FunctionArgs<ExprRef>,
+    pos: usize,
+    name: &'static str,
+    fn_name: &'static str,
+) -> DaftResult<bool> {
+    let opt = inputs.optional((pos, name))?;
+    match opt {
+        None => Ok(false),
+        Some(expr) => expr
+            .as_literal()
+            .and_then(|l| l.as_bool())
+            .ok_or_else(|| {
+                DaftError::ValueError(format!("{fn_name}: {name} must be a boolean literal"))
+            }),
+    }
+}
 
 /// Strip EWKB SRID prefix so the standard `wkb` crate can parse it.
 ///
@@ -156,28 +271,17 @@ pub fn unary_geom_to_utf8(
     Ok(Utf8Array::from_iter(out_name, values.iter().map(|v| v.as_deref())).into_series())
 }
 
-/// Apply a unary mapping over a geometry column → Geometry (WKB Binary) Series.
-pub fn unary_geom_to_geom(
-    series: &Series,
+/// Wrap a `Vec<Option<Vec<u8>>>` of WKB bytes into a Geometry logical Series.
+///
+/// This is the shared tail used by `unary_geom_to_geom`, `binary_geom_to_geom`,
+/// and `st_point` — any function that produces WKB-encoded geometries row-by-row.
+pub(crate) fn wkb_opts_to_geometry_series(
     out_name: &str,
-    f: impl Fn(&Geometry) -> Option<Geometry>,
+    wkb_values: Vec<Option<Vec<u8>>>,
 ) -> DaftResult<Series> {
-    use wkb::geom_to_wkb;
+    use daft_core::prelude::{GeometryType, LogicalArray};
 
-    let binary = get_geometry_binary(series)?;
-    let len = binary.len();
-    let mut wkb_values: Vec<Option<Vec<u8>>> = Vec::with_capacity(len);
-
-    for opt in binary.into_iter() {
-        let result = opt
-            .and_then(|b| parse_wkb(b).ok())
-            .and_then(|g| f(&g))
-            .and_then(|out_geom| {
-                geom_to_wkb(&out_geom).ok()
-            });
-        wkb_values.push(result);
-    }
-
+    let len = wkb_values.len();
     let field = Field::new(out_name, DataType::Geometry);
     let mut builder = arrow_buffer::NullBufferBuilder::new(len);
     let phys_values: Vec<Option<&[u8]>> = wkb_values
@@ -194,12 +298,32 @@ pub fn unary_geom_to_geom(
 
     let phys_field = Field::new(out_name, DataType::Binary);
     let phys_arr = BinaryArray::from_iter(&phys_field.name, phys_values.into_iter());
-
-    // Wrap as Geometry logical array
-    use daft_core::prelude::{GeometryType, LogicalArray};
     let logical =
         LogicalArray::<GeometryType>::new(field, phys_arr.with_nulls(builder.finish())?);
     Ok(logical.into_series())
+}
+
+/// Apply a unary mapping over a geometry column → Geometry (WKB Binary) Series.
+pub fn unary_geom_to_geom(
+    series: &Series,
+    out_name: &str,
+    f: impl Fn(&Geometry) -> Option<Geometry>,
+) -> DaftResult<Series> {
+    use wkb::geom_to_wkb;
+
+    let binary = get_geometry_binary(series)?;
+    let len = binary.len();
+    let mut wkb_values: Vec<Option<Vec<u8>>> = Vec::with_capacity(len);
+
+    for opt in binary.into_iter() {
+        let result = opt
+            .and_then(|b| parse_wkb(b).ok())
+            .and_then(|g| f(&g))
+            .and_then(|out_geom| geom_to_wkb(&out_geom).ok());
+        wkb_values.push(result);
+    }
+
+    wkb_opts_to_geometry_series(out_name, wkb_values)
 }
 
 /// Apply a binary predicate over two geometry columns → Boolean Series.
@@ -249,6 +373,56 @@ pub fn binary_geom_to_bool(
     };
 
     Ok(BooleanArray::from_iter(out_name, values.into_iter()).into_series())
+}
+
+/// Apply a binary mapping over two geometry columns → Geometry (WKB) Series.
+pub fn binary_geom_to_geom(
+    lhs: &Series,
+    rhs: &Series,
+    out_name: &str,
+    f: impl Fn(&Geometry, &Geometry) -> Option<Geometry>,
+) -> DaftResult<Series> {
+    use wkb::geom_to_wkb;
+
+    let lhs_bin = get_geometry_binary(lhs)?;
+    let rhs_bin = get_geometry_binary(rhs)?;
+
+    // support scalar broadcast: rhs may be length 1
+    let rhs_scalar = rhs_bin.len() == 1;
+
+    let rhs_geom_scalar: Option<Option<Geometry>> = if rhs_scalar {
+        Some(
+            rhs_bin
+                .into_iter()
+                .next()
+                .flatten()
+                .and_then(|b| parse_wkb(b).ok()),
+        )
+    } else {
+        None
+    };
+
+    let len = lhs_bin.len();
+    let mut wkb_values: Vec<Option<Vec<u8>>> = Vec::with_capacity(len);
+
+    let compute = |lopt: Option<&[u8]>, rg: Option<&Geometry>| -> Option<Vec<u8>> {
+        let lg = lopt.and_then(|b| parse_wkb(b).ok())?;
+        let rg = rg?;
+        f(&lg, rg).and_then(|g| geom_to_wkb(&g).ok())
+    };
+
+    if let Some(rhs_opt) = rhs_geom_scalar {
+        for lopt in lhs_bin.into_iter() {
+            wkb_values.push(compute(lopt, rhs_opt.as_ref()));
+        }
+    } else {
+        for (lopt, ropt) in lhs_bin.into_iter().zip(rhs_bin.into_iter()) {
+            let rg = ropt.and_then(|b| parse_wkb(b).ok());
+            wkb_values.push(compute(lopt, rg.as_ref()));
+        }
+    }
+
+    wkb_opts_to_geometry_series(out_name, wkb_values)
 }
 
 /// Apply a binary geometry → Float64 function (e.g. distance).
@@ -313,4 +487,3 @@ pub fn binary_geom_to_f64(
     let arr = Float64Array::from_field_and_values(field, values).with_nulls(validity.finish())?;
     Ok(arr.into_series())
 }
-

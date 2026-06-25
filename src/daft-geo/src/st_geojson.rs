@@ -1,6 +1,6 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    prelude::{BinaryArray, DataType, Field, IntoSeries, Schema},
+    prelude::{DataType, Field, Schema},
     series::Series,
 };
 use daft_dsl::{
@@ -51,8 +51,7 @@ impl ScalarUDF for StGeomFromGeoJson {
             .map(|opt| opt.and_then(geojson_to_wkb))
             .collect();
 
-        let arr = BinaryArray::from_iter(self.name(), values.iter().map(|v| v.as_deref()));
-        Ok(arr.into_series())
+        crate::utils::wkb_opts_to_geometry_series(self.name(), values)
     }
 
     fn get_return_field(
@@ -67,11 +66,11 @@ impl ScalarUDF for StGeomFromGeoJson {
                 f.dtype
             )));
         }
-        Ok(Field::new(self.name(), DataType::Binary))
+        Ok(Field::new(self.name(), DataType::Geometry))
     }
 
     fn docstring(&self) -> &'static str {
-        "Parses a GeoJSON string and returns a WKB geometry."
+        "Parses a GeoJSON string and returns a Geometry."
     }
 }
 

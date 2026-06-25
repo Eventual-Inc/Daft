@@ -92,6 +92,10 @@ pub struct ParquetSourceConfig {
     /// format errors (bad magic bytes, truncated footer, corrupt row-group data) are ignored;
     /// network errors and permission errors are still raised.
     pub ignore_corrupt_files: bool,
+    /// When true (default), WKB columns declared in the GeoParquet `"geo"` footer metadata are
+    /// automatically re-typed from `Binary` to `Geometry` on read. Set to false to keep the raw
+    /// Binary dtype and suppress geo detection.
+    pub geometry: bool,
 }
 
 impl ParquetSourceConfig {
@@ -143,6 +147,7 @@ impl Default for ParquetSourceConfig {
             row_groups: None,
             chunk_size: None,
             ignore_corrupt_files: false,
+            geometry: true,
         }
     }
 }
@@ -152,13 +157,14 @@ impl Default for ParquetSourceConfig {
 impl ParquetSourceConfig {
     /// Create a config for a Parquet data source.
     #[new]
-    #[pyo3(signature = (coerce_int96_timestamp_unit=None, field_id_mapping=None, row_groups=None, chunk_size=None, ignore_corrupt_files=false))]
+    #[pyo3(signature = (coerce_int96_timestamp_unit=None, field_id_mapping=None, row_groups=None, chunk_size=None, ignore_corrupt_files=false, geometry=true))]
     fn new(
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
         field_id_mapping: Option<BTreeMap<i32, PyField>>,
         row_groups: Option<Vec<Option<Vec<i64>>>>,
         chunk_size: Option<usize>,
         ignore_corrupt_files: bool,
+        geometry: bool,
     ) -> Self {
         Self {
             coerce_int96_timestamp_unit: coerce_int96_timestamp_unit
@@ -169,6 +175,7 @@ impl ParquetSourceConfig {
             row_groups,
             chunk_size,
             ignore_corrupt_files,
+            geometry,
         }
     }
 

@@ -9,7 +9,11 @@ use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 
 use super::blocking_sink::BlockingSinkOutput;
-use crate::spill::{SpillConfig, SpillStore, SpillWriter};
+use crate::{
+    resource_manager::{MemoryReservation, SpillableBuckets, get_or_init_memory_manager,
+        reconcile_reservation},
+    spill::{SpillConfig, SpillStore, SpillWriter},
+};
 
 /// Shared state for a single partition (hash bucket) in window operations.
 #[derive(Default)]
@@ -27,24 +31,27 @@ pub struct WindowBaseState {
     inner_states: Vec<Option<SinglePartitionWindowState>>,
     /// Spill destinations; `None` disables spilling for this sink.
     spill_dirs: Option<Vec<String>>,
-    /// Per-bucket in-memory budget before spilling raw rows to disk.
-    budget_per_bucket: usize,
     /// Lazily created on first spill (one IPC file per hash bucket).
     spill_writer: Option<SpillWriter>,
+    /// Shared memory reservation from the pool-based spill manager.
+    reservation: MemoryReservation,
+    /// Optional cap on resident bytes before spilling is triggered.
+    cap: Option<u64>,
 }
 
 impl WindowBaseState {
     pub fn make_base_state(
         num_partitions: usize,
         spill_dirs: Option<Vec<String>>,
-        budget_per_bucket: usize,
+        cap: Option<u64>,
     ) -> DaftResult<Self> {
         let inner_states = (0..num_partitions).map(|_| None).collect::<Vec<_>>();
         Ok(Self {
             inner_states,
             spill_dirs,
-            budget_per_bucket,
             spill_writer: None,
+            reservation: get_or_init_memory_manager().reservation(),
+            cap,
         })
     }
 
@@ -57,8 +64,9 @@ impl WindowBaseState {
         let Self {
             inner_states,
             spill_dirs,
-            budget_per_bucket,
             spill_writer,
+            reservation,
+            cap,
         } = self;
 
         let partitioned = input.partition_by_hash(partition_by, inner_states.len())?;
@@ -70,55 +78,73 @@ impl WindowBaseState {
             }
         }
 
-        // Spill any bucket that has grown past the per-bucket budget.
         if let Some(dirs) = spill_dirs.as_ref() {
-            Self::maybe_spill(inner_states, spill_writer, dirs, *budget_per_bucket)?;
+            let mut buckets = WindowBuckets {
+                inner_states,
+                spill_writer,
+                spill_dirs: dirs.clone(),
+            };
+            reconcile_reservation(&mut buckets, reservation, *cap)?;
         }
         Ok(())
     }
 
-    /// Spill (and reset) any bucket whose resident bytes exceed `budget`, writing its raw rows to
-    /// disk. Read back per-bucket during finalize.
-    fn maybe_spill(
-        inner_states: &mut [Option<SinglePartitionWindowState>],
-        spill_writer: &mut Option<SpillWriter>,
-        spill_dirs: &[String],
-        budget: usize,
-    ) -> DaftResult<()> {
-        let num_buckets = inner_states.len();
-        for p in 0..num_buckets {
-            let Some(st) = inner_states[p].as_mut() else {
-                continue;
-            };
-            if st.bytes <= budget {
-                continue;
-            }
-            let batches = std::mem::take(&mut st.partitions);
-            st.bytes = 0;
-            if batches.is_empty() {
-                continue;
-            }
-            let writer = match spill_writer {
-                Some(w) => w,
-                None => {
-                    let schema = batches[0].schema.clone();
-                    let w = SpillWriter::new(
-                        num_buckets,
-                        &schema,
-                        spill_dirs.to_vec(),
-                        "daft_window_spill_",
-                    )?;
-                    *spill_writer = Some(w);
-                    spill_writer.as_mut().unwrap()
-                }
-            };
-            for b in &batches {
-                writer.write_batch(p, b)?;
-            }
-        }
-        Ok(())
+}
+
+/// Adapter so `reconcile_reservation` can spill window buckets (raw rows; window fns aren't
+/// decomposable). Spills the single heaviest bucket per call.
+struct WindowBuckets<'a> {
+    inner_states: &'a mut [Option<SinglePartitionWindowState>],
+    spill_writer: &'a mut Option<SpillWriter>,
+    spill_dirs: Vec<String>,
+}
+
+impl SpillableBuckets for WindowBuckets<'_> {
+    fn resident_bytes(&self) -> u64 {
+        self.inner_states
+            .iter()
+            .flatten()
+            .map(|st| st.bytes as u64)
+            .sum()
     }
 
+    fn spill_largest_bucket(&mut self) -> DaftResult<bool> {
+        let num_buckets = self.inner_states.len();
+        let Some(p) = (0..num_buckets)
+            .filter(|&p| self.inner_states[p].as_ref().is_some_and(|st| st.bytes > 0))
+            .max_by_key(|&p| self.inner_states[p].as_ref().unwrap().bytes)
+        else {
+            return Ok(false);
+        };
+        let st = self.inner_states[p].as_mut().unwrap();
+        let batches = std::mem::take(&mut st.partitions);
+        st.bytes = 0;
+        debug_assert!(!batches.is_empty(), "window bucket selected with bytes>0 but no resident data (counter drift)");
+        if batches.is_empty() {
+            return Ok(true);
+        }
+        let writer = match self.spill_writer {
+            Some(w) => w,
+            None => {
+                let schema = batches[0].schema.clone();
+                let w = SpillWriter::new(
+                    num_buckets,
+                    &schema,
+                    self.spill_dirs.clone(),
+                    "daft_window_spill_",
+                )?;
+                *self.spill_writer = Some(w);
+                self.spill_writer.as_mut().unwrap()
+            }
+        };
+        for b in &batches {
+            writer.write_batch(p, b)?;
+        }
+        Ok(true)
+    }
+}
+
+impl WindowBaseState {
     /// Consume the state for finalize: take the per-bucket in-memory rows and seal the spill writer
     /// into an immutable store.
     fn into_finalize_parts(
@@ -222,18 +248,6 @@ where
     Ok(BlockingSinkOutput::Partitions(vec![
         MicroPartition::new_loaded(original_schema, results.into(), None),
     ]))
-}
-
-/// Per-bucket spill budget for a window sink: the total budget split across all hash buckets
-/// (`num_partitions` states × `num_partitions` buckets). Returns 0 when spilling is disabled.
-pub(super) fn window_bucket_budget(spill_config: &Option<SpillConfig>) -> usize {
-    spill_config
-        .as_ref()
-        .map(|sc| {
-            let n = get_compute_pool_num_threads().max(1);
-            (sc.threshold_bytes / (n * n)).max(1)
-        })
-        .unwrap_or(0)
 }
 
 /// Build the optional spill dirs (None when spilling disabled) to seed a `WindowBaseState`.

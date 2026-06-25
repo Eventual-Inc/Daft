@@ -33,6 +33,8 @@ use util::{
 
 use crate::{
     ArrowSnafu,
+    geo_metadata::detect_geo_columns,
+    retype_geo_schema,
     helpers::{
         bool_array_to_row_selection, build_offset_row_selection, build_single_rg_delete_selection,
         combine_selections, predicate_pushable_cols, prune_row_groups, refine_selection,
@@ -571,12 +573,68 @@ fn apply_cross_rg_limit(
     Box::pin(bounded)
 }
 
+/// Re-type Binary columns declared in GeoParquet metadata to `DataType::Geometry`.
+///
+/// Applies a logical re-wrap on each named column — the underlying WKB bytes are
+/// unchanged; only the Daft dtype changes from `Binary` to `Geometry`.
+fn retype_geo_columns(
+    batch: RecordBatch,
+    geo_col_names: &[String],
+) -> DaftResult<RecordBatch> {
+    if geo_col_names.is_empty() {
+        return Ok(batch);
+    }
+    let geo_set: HashSet<&str> = geo_col_names.iter().map(|s| s.as_ref()).collect();
+    let new_columns: Vec<daft_core::series::Series> = batch
+        .columns()
+        .iter()
+        .zip(batch.schema.fields())
+        .map(|(col, field)| {
+            if geo_set.contains(field.name.as_ref()) {
+                col.as_materialized_series().cast(&DataType::Geometry)
+            } else {
+                Ok(col.as_materialized_series().clone())
+            }
+        })
+        .collect::<DaftResult<Vec<_>>>()?;
+    let new_schema = retype_geo_schema(&batch.schema, geo_col_names);
+    RecordBatch::new_with_size(new_schema, new_columns, batch.len())
+}
+
 pub async fn stream_parquet(
     source: ParquetSource<'_>,
     opts: &ParquetReadOptions,
 ) -> DaftResult<(Arc<Schema>, BoxStream<'static, DaftResult<RecordBatch>>)> {
     let (cs_builder, arrow_metadata) = open_chunk_source(&source, opts).await?;
     let path = cs_builder.path().clone();
+
+    // Extract geo columns from the footer before any modifications to parquet_metadata.
+    let geo_cols: Vec<String> = if opts.schema_infer.geometry {
+        let kv_meta = arrow_metadata.metadata().file_metadata().key_value_metadata();
+        kv_meta
+            .and_then(|kv| {
+                kv.iter()
+                    .find(|e| e.key == "geo")
+                    .and_then(|e| e.value.clone())
+            })
+            .map(|geo_json| {
+                // We need the daft schema from arrow for detect_geo_columns; build it here.
+                // At this point the arrow_metadata hasn't been mutated yet, so just use
+                // parquet_to_arrow_schema to get a quick schema for detection purposes.
+                let arrow_schema_for_detect = parquet::arrow::parquet_to_arrow_schema(
+                    arrow_metadata.metadata().file_metadata().schema_descr(),
+                    arrow_metadata.metadata().file_metadata().key_value_metadata(),
+                )
+                .ok()
+                .and_then(|s| Schema::try_from(&s).ok());
+                arrow_schema_for_detect
+                    .map(|s| detect_geo_columns(&geo_json, &s))
+                    .unwrap_or_default()
+            })
+            .unwrap_or_default()
+    } else {
+        vec![]
+    };
 
     let chunk_size = opts.batch_size.unwrap_or(DEFAULT_BATCH_SIZE).max(1);
     let prepared = prepare_metadata(
@@ -599,13 +657,20 @@ pub async fn stream_parquet(
         &plan.read_daft_schema,
         source.label(),
     )?;
+    // Build geo-retyped schema once, used by all exit paths.
+    let geo_return_schema: Arc<Schema> = if geo_cols.is_empty() {
+        plan.return_daft_schema.clone()
+    } else {
+        Arc::new(retype_geo_schema(&plan.return_daft_schema, &geo_cols))
+    };
+
     if rg_indices.is_empty() {
         // Empty stream — NOT a single empty batch. Downstream sinks
         // (e.g. iceberg writer) treat any received batch as "there's
         // something to write" and emit metadata for it; a 0-row batch
         // would still land an empty snapshot.
         return Ok((
-            plan.return_daft_schema.clone(),
+            geo_return_schema,
             futures::stream::empty().boxed(),
         ));
     }
@@ -614,7 +679,7 @@ pub async fn stream_parquet(
             &prepared.parquet_metadata,
             &rg_indices,
             opts.num_rows,
-            plan.return_daft_schema,
+            geo_return_schema,
         );
     }
 
@@ -632,7 +697,6 @@ pub async fn stream_parquet(
     )
     .await?;
 
-    let return_schema = plan.return_daft_schema.clone();
     let ctx = Arc::new(RgTaskCtx {
         path,
         chunk_source,
@@ -643,6 +707,15 @@ pub async fn stream_parquet(
         chunk_size,
     });
     let stream = build_rg_stream(ctx, rg_indices, rg_inputs);
+    let limited = apply_cross_rg_limit(stream, opts.num_rows);
 
-    Ok((return_schema, apply_cross_rg_limit(stream, opts.num_rows)))
+    // Apply geo re-typing: cast Binary → Geometry for WKB columns declared in GeoParquet footer.
+    if geo_cols.is_empty() {
+        return Ok((geo_return_schema, limited));
+    }
+    let geo_cols_arc: Arc<Vec<String>> = Arc::new(geo_cols);
+    let geo_stream = limited
+        .map(move |res| res.and_then(|b| retype_geo_columns(b, &geo_cols_arc)))
+        .boxed();
+    Ok((geo_return_schema, geo_stream))
 }

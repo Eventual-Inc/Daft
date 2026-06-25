@@ -27,6 +27,8 @@ use crate::{
         outer_join::{finalize_outer, probe_outer},
     },
     pipeline::NodeName,
+    resource_manager::{MemoryReservation, SpillableBuckets, get_or_init_memory_manager,
+        reconcile_reservation},
     spill::{SpillConfig, SpillStore, SpillWriter},
 };
 
@@ -36,8 +38,9 @@ struct PartitionedBuildData {
     partition_count: usize,
     per_partition_tables: Vec<Vec<RecordBatch>>,
     per_partition_size_bytes: Vec<usize>,
-    threshold_per_partition: usize,
     spill_writer: SpillWriter,
+    reservation: MemoryReservation,
+    cap: Option<u64>,
 }
 
 pub(crate) struct HashJoinBuildState {
@@ -99,7 +102,6 @@ impl HashJoinBuildState {
         config: &SpillConfig,
     ) -> DaftResult<Self> {
         let partition_count = config.partition_count();
-        let threshold_per_partition = (config.threshold_bytes / partition_count).max(1);
         let spill_writer = SpillWriter::new(
             partition_count,
             build_schema,
@@ -117,8 +119,9 @@ impl HashJoinBuildState {
                 partition_count,
                 per_partition_tables: vec![Vec::new(); partition_count],
                 per_partition_size_bytes: vec![0; partition_count],
-                threshold_per_partition,
                 spill_writer,
+                reservation: get_or_init_memory_manager().reservation(),
+                cap: config.cap(),
             }),
         })
     }
@@ -132,18 +135,24 @@ impl HashJoinBuildState {
                     if sub_batch.is_empty() {
                         continue;
                     }
-                    let byte_size = sub_batch.size_bytes();
-                    pd.per_partition_size_bytes[p] += byte_size;
+                    pd.per_partition_size_bytes[p] += sub_batch.size_bytes();
                     pd.per_partition_tables[p].push(sub_batch);
-                    if pd.per_partition_size_bytes[p] > pd.threshold_per_partition {
-                        let batches = std::mem::take(&mut pd.per_partition_tables[p]);
-                        for b in &batches {
-                            pd.spill_writer.write_batch(p, b)?;
-                        }
-                        pd.per_partition_size_bytes[p] = 0;
-                    }
                 }
             }
+            let cap = pd.cap;
+            let PartitionedBuildData {
+                per_partition_tables,
+                per_partition_size_bytes,
+                spill_writer,
+                reservation,
+                ..
+            } = pd;
+            let mut buckets = JoinBuildBuckets {
+                per_partition_tables,
+                per_partition_size_bytes,
+                spill_writer,
+            };
+            reconcile_reservation(&mut buckets, reservation, cap)?;
         } else {
             let input_tables = input.record_batches();
             if input_tables.is_empty() {
@@ -203,6 +212,38 @@ impl HashJoinBuildState {
     }
 }
 
+/// Adapter so `reconcile_reservation` can spill hash-join build partitions: spills the heaviest
+/// in-memory partition's batches to its bucket file.
+struct JoinBuildBuckets<'a> {
+    per_partition_tables: &'a mut Vec<Vec<RecordBatch>>,
+    per_partition_size_bytes: &'a mut Vec<usize>,
+    spill_writer: &'a mut SpillWriter,
+}
+
+impl SpillableBuckets for JoinBuildBuckets<'_> {
+    fn resident_bytes(&self) -> u64 {
+        self.per_partition_size_bytes.iter().map(|b| *b as u64).sum()
+    }
+
+    fn spill_largest_bucket(&mut self) -> DaftResult<bool> {
+        let Some((p, _)) = self
+            .per_partition_size_bytes
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| **b > 0)
+            .max_by_key(|(_, b)| **b)
+        else {
+            return Ok(false);
+        };
+        let batches = std::mem::take(&mut self.per_partition_tables[p]);
+        for b in &batches {
+            self.spill_writer.write_batch(p, b)?;
+        }
+        self.per_partition_size_bytes[p] = 0;
+        Ok(true)
+    }
+}
+
 fn build_probe_state_from_batches(
     tables: &[RecordBatch],
     op: &HashJoinOperator,
@@ -217,7 +258,18 @@ fn build_probe_state_from_batches(
         builder.add_table(&keys)?;
     }
     let pt = builder.build();
-    Ok(ProbeState::new(pt, tables.to_vec()))
+    // A build partition can receive zero rows while the matching probe partition has rows
+    // (e.g. probe keys that hash here but have no build-side match). The downstream probe
+    // (`GrowableRecordBatch::new`) requires at least one build table to carry the schema, so
+    // seed a single empty batch when this partition is empty. Probing against it yields no
+    // matches — correct for every join type — and mirrors how the non-partitioned build path
+    // (`add_tables`) seeds an empty table when it receives no input.
+    let resident = if tables.is_empty() {
+        vec![RecordBatch::empty(Some(op.build_schema().clone()))]
+    } else {
+        tables.to_vec()
+    };
+    Ok(ProbeState::new(pt, resident))
 }
 
 // ─── Params + operator ───────────────────────────────────────────────────────
@@ -711,8 +763,8 @@ impl JoinOperator for HashJoinOperator {
         }
         if let Some(sc) = &self.params.spill_config {
             display.push(format!(
-                "Spill: threshold={}B, partitions={}",
-                sc.threshold_bytes,
+                "Spill: pool={}B, partitions={}",
+                sc.pool_bytes,
                 sc.partition_count()
             ));
         }

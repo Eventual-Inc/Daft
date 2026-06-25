@@ -48,6 +48,9 @@ impl std::str::FromStr for StringEncoding {
 pub struct ParquetSchemaInferenceOptions {
     pub coerce_int96_timestamp_unit: TimeUnit,
     pub string_encoding: StringEncoding,
+    /// When true (default), WKB columns declared in the GeoParquet `"geo"` footer metadata
+    /// are automatically re-typed from `Binary` to `Geometry` on read.
+    pub geometry: bool,
 }
 
 impl ParquetSchemaInferenceOptions {
@@ -57,9 +60,17 @@ impl ParquetSchemaInferenceOptions {
             coerce_int96_timestamp_unit: coerce_int96_timestamp_unit
                 .unwrap_or(TimeUnit::Nanoseconds),
             string_encoding: StringEncoding::Utf8,
+            geometry: true,
         }
     }
 
+    /// Construct `ParquetSchemaInferenceOptions` from Python-level arguments.
+    ///
+    /// **Note**: `geometry` is always set to `true` here — this utility is used by
+    /// lower-level helpers (e.g. `read_parquet_into_pyarrow`) that do not expose a
+    /// geometry flag to Python callers.  Callers that need `geometry=false` must use
+    /// the full `read_parquet` code path, which threads `ParquetSourceConfig.geometry`
+    /// all the way through to `ParquetSchemaInferenceOptions`.
     #[cfg(feature = "python")]
     pub fn from_python(
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
@@ -69,6 +80,7 @@ impl ParquetSchemaInferenceOptions {
             coerce_int96_timestamp_unit: coerce_int96_timestamp_unit
                 .map_or(TimeUnit::Nanoseconds, From::from),
             string_encoding: string_encoding.parse()?,
+            geometry: true,
         })
     }
 }
@@ -78,6 +90,7 @@ impl Default for ParquetSchemaInferenceOptions {
         Self {
             coerce_int96_timestamp_unit: TimeUnit::Nanoseconds,
             string_encoding: StringEncoding::Utf8,
+            geometry: true,
         }
     }
 }

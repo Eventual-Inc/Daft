@@ -337,15 +337,19 @@ impl<Op: JoinOperator + 'static> ProbeExecutionContext<Op> {
 
                             let bridge = self.build_state_bridge.clone();
                             tasks.spawn(async move {
+                                // The bridge delivers a `DaftResult`: `Err` when the build side
+                                // failed (poisoned), so the probe propagates that error instead of
+                                // waiting forever. The outer `?` handles a dropped sender; the inner
+                                // `?` handles a build-side failure.
                                 let finalized = match bridge.subscribe(input_id) {
                                     FinalizedBuildStateReceiver::Receiver(rx) => {
                                         rx.await.map_err(|e| {
                                             common_error::DaftError::ValueError(format!(
                                                 "Failed to receive finalized build state: {e}"
                                             ))
-                                        })?
+                                        })??
                                     }
-                                    FinalizedBuildStateReceiver::Ready(v) => v,
+                                    FinalizedBuildStateReceiver::Ready(v) => v?,
                                 };
                                 Ok(TaskOutput::BuildStateReady {
                                     input_id,

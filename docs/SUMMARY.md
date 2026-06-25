@@ -82,6 +82,7 @@
             * [Partitioning and Batching](optimization/partitioning.md)
             * [Shuffle Algorithms](optimization/shuffle.md)
             * [Join Strategies](optimization/join-strategies.md)
+            * [Spatial Joins](optimization/spatial-joins.md)
     * Observability
         * [Dashboard](observability/dashboard.md)
         * [Progress Indicators](observability/progress-indicators.md)

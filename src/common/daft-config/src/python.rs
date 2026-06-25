@@ -127,7 +127,10 @@ impl PyDaftExecutionConfig {
         hash_join_spill_threshold_bytes=None,
         sort_spill_threshold_bytes=None,
         agg_spill_threshold_bytes=None,
+        dedup_spill_threshold_bytes=None,
         window_spill_threshold_bytes=None,
+        repartition_spill_threshold_bytes=None,
+        spill_pool_bytes=None,
     ))]
     fn with_config_values(
         &self,
@@ -169,7 +172,10 @@ impl PyDaftExecutionConfig {
         hash_join_spill_threshold_bytes: Option<usize>,
         sort_spill_threshold_bytes: Option<usize>,
         agg_spill_threshold_bytes: Option<usize>,
+        dedup_spill_threshold_bytes: Option<usize>,
         window_spill_threshold_bytes: Option<usize>,
+        repartition_spill_threshold_bytes: Option<usize>,
+        spill_pool_bytes: Option<usize>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
@@ -337,8 +343,20 @@ impl PyDaftExecutionConfig {
             config.agg_spill_threshold_bytes = Some(agg_spill_threshold_bytes);
         }
 
+        if let Some(dedup_spill_threshold_bytes) = dedup_spill_threshold_bytes {
+            config.dedup_spill_threshold_bytes = Some(dedup_spill_threshold_bytes);
+        }
+
         if let Some(window_spill_threshold_bytes) = window_spill_threshold_bytes {
             config.window_spill_threshold_bytes = Some(window_spill_threshold_bytes);
+        }
+
+        if let Some(repartition_spill_threshold_bytes) = repartition_spill_threshold_bytes {
+            config.repartition_spill_threshold_bytes = Some(repartition_spill_threshold_bytes);
+        }
+
+        if let Some(spill_pool_bytes) = spill_pool_bytes {
+            config.spill_pool_bytes = Some(spill_pool_bytes);
         }
 
         Ok(Self {
@@ -520,10 +538,25 @@ impl PyDaftExecutionConfig {
     }
 
     #[getter]
+    fn dedup_spill_threshold_bytes(&self) -> PyResult<Option<usize>> {
+        Ok(self.config.dedup_spill_threshold_bytes)
+    }
+
+    #[getter]
     fn window_spill_threshold_bytes(&self) -> PyResult<Option<usize>> {
         Ok(self.config.window_spill_threshold_bytes)
     }
-    
+
+    #[getter]
+    fn repartition_spill_threshold_bytes(&self) -> PyResult<Option<usize>> {
+        Ok(self.config.repartition_spill_threshold_bytes)
+    }
+
+    #[getter]
+    fn spill_pool_bytes(&self) -> PyResult<Option<usize>> {
+        Ok(self.config.spill_pool_bytes)
+    }
+
     #[getter]
     fn flight_shuffle_compression(&self) -> PyResult<Option<&str>> {
         Ok(self.config.flight_shuffle_compression.as_deref())

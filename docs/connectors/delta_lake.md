@@ -88,6 +88,36 @@ You can use [`df.write_deltalake()`][daft.DataFrame.write_deltalake] to write a 
 
 Daft supports multiple write modes. See the API docs for [`df.write_deltalake()`][daft.DataFrame.write_deltalake] for more details.
 
+## Geometry / GeoParquet
+
+Daft supports a geometry round-trip through Delta Lake for `DataType.geometry()` columns (WKB-encoded geometries).
+
+**How it works:**
+
+- Geometry columns are stored as WKB `LargeBinary` in the underlying Parquet files (Delta has no native geometry type).
+- The GeoParquet 1.1.0 `"geo"` JSON is persisted as **Arrow field metadata** under the key `daft.geo` on each geometry column's Arrow field. This is a Daft convention: delta-rs 1.6 rejects custom table `configuration` keys, but preserves Arrow field metadata through write → read intact.
+- On read, `daft.read_deltalake()` scans the Arrow field metadata for the `daft.geo` key and automatically re-types those `Binary` columns back to `Geometry`.
+- WKB encoding only. No CRS transforms are performed.
+
+=== "🐍 Python"
+
+    ```python
+    import daft
+    from daft.functions import st_point, st_x
+
+    df = daft.from_pydict({"x": [1.0, 2.0], "y": [3.0, 4.0]}).select(
+        st_point(daft.col("x"), daft.col("y")).alias("geom")
+    )
+
+    # Write: geometry stored as WKB LargeBinary; "geo" JSON saved as Arrow field metadata (daft.geo)
+    df.write_deltalake("my-geo-table", mode="overwrite")
+
+    # Read: daft.geo field metadata detected → geom column re-typed to Geometry automatically
+    df2 = daft.read_deltalake("my-geo-table")
+    assert df2.schema()["geom"].dtype == daft.DataType.geometry()
+    df2.select(st_x(daft.col("geom"))).show()
+    ```
+
 ## Type System
 
 Daft and Delta Lake have compatible type systems. Here are how types are converted across the two systems.

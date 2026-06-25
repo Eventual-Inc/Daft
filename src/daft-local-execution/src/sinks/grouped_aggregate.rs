@@ -22,6 +22,8 @@ use super::blocking_sink::{
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{InputId, NodeName},
+    resource_manager::{MemoryReservation, SpillableBuckets, get_or_init_memory_manager,
+        reconcile_reservation},
     spill::{SpillConfig, SpillStore, SpillWriter},
 };
 
@@ -138,10 +140,12 @@ pub(crate) enum GroupedAggregateState {
         high_cardinality_threshold_ratio: f64,
         /// Spill destinations; `None` disables spilling for this sink.
         spill_dirs: Option<Vec<String>>,
-        /// Per-hash-bucket in-memory budget before spilling.
-        budget_per_bucket: usize,
         /// Lazily created on first spill (one IPC file per hash bucket).
         spill_writer: Option<SpillWriter>,
+        /// Shared spill-pool reservation held for the lifetime of this state.
+        reservation: MemoryReservation,
+        /// Per-operator cap (from `SpillConfig::cap()`); `None` means pool-only trigger.
+        cap: Option<u64>,
     },
 }
 
@@ -151,7 +155,8 @@ impl GroupedAggregateState {
         partial_agg_threshold: usize,
         high_cardinality_threshold_ratio: f64,
         spill_dirs: Option<Vec<String>>,
-        budget_per_bucket: usize,
+        reservation: MemoryReservation,
+        cap: Option<u64>,
     ) -> Self {
         let inner_states = (0..num_partitions).map(|_| None).collect::<Vec<_>>();
         Self::Accumulating {
@@ -160,8 +165,9 @@ impl GroupedAggregateState {
             partial_agg_threshold,
             high_cardinality_threshold_ratio,
             spill_dirs,
-            budget_per_bucket,
             spill_writer: None,
+            reservation,
+            cap,
         }
     }
 
@@ -171,111 +177,50 @@ impl GroupedAggregateState {
         params: &GroupedAggregateParams,
         global_strategy_lock: &Arc<Mutex<Option<AggStrategy>>>,
     ) -> DaftResult<()> {
-        let Self::Accumulating {
-            inner_states,
-            strategy,
-            partial_agg_threshold,
-            high_cardinality_threshold_ratio,
-            spill_dirs,
-            budget_per_bucket,
-            spill_writer,
-        } = self;
-
-        // If we have determined a strategy, execute it.
-        if let Some(strategy) = strategy {
-            strategy.execute_strategy(inner_states, input, params)?;
-        } else {
-            // Otherwise, determine the strategy and execute
-            let decided_strategy = Self::determine_agg_strategy(
-                &input,
-                params,
-                *high_cardinality_threshold_ratio,
-                *partial_agg_threshold,
+        let spill_enabled = matches!(
+            self,
+            Self::Accumulating { spill_dirs: Some(_), .. }
+        );
+        {
+            let Self::Accumulating {
+                inner_states,
                 strategy,
-                global_strategy_lock,
-            )?;
-            decided_strategy.execute_strategy(inner_states, input, params)?;
+                partial_agg_threshold,
+                high_cardinality_threshold_ratio,
+                ..
+            } = self;
+            if let Some(strategy) = strategy {
+                strategy.execute_strategy(inner_states, input, params)?;
+            } else {
+                let decided = Self::determine_agg_strategy(
+                    &input,
+                    params,
+                    *high_cardinality_threshold_ratio,
+                    *partial_agg_threshold,
+                    strategy,
+                    global_strategy_lock,
+                )?;
+                decided.execute_strategy(inner_states, input, params)?;
+            }
         }
-
-        // Spill any bucket that has grown past the per-bucket budget.
-        if let Some(dirs) = spill_dirs.as_ref() {
-            Self::maybe_spill(
+        if spill_enabled {
+            let Self::Accumulating {
+                inner_states,
+                spill_dirs,
+                spill_writer,
+                reservation,
+                cap,
+                ..
+            } = self;
+            let decomposable = !params.partial_agg_exprs.is_empty();
+            let mut buckets = AggBuckets {
                 inner_states,
                 spill_writer,
-                dirs,
-                *budget_per_bucket,
+                spill_dirs: spill_dirs.as_ref().unwrap().as_slice(),
+                decomposable,
                 params,
-            )?;
-        }
-        Ok(())
-    }
-
-    /// Spill (and reset) any hash bucket whose resident bytes exceed `budget`. For decomposable
-    /// aggregations the bucket is first compacted to one partial-aggregate row per group (so the
-    /// spilled bytes are small); for non-decomposable aggregations (`MapGroups`/`AggFn`) the raw
-    /// partitioned rows are spilled as-is.
-    fn maybe_spill(
-        inner_states: &mut [Option<SinglePartitionAggregateState>],
-        spill_writer: &mut Option<SpillWriter>,
-        spill_dirs: &[String],
-        budget: usize,
-        params: &GroupedAggregateParams,
-    ) -> DaftResult<()> {
-        let decomposable = !params.partial_agg_exprs.is_empty();
-        let num_buckets = inner_states.len();
-        for p in 0..num_buckets {
-            let Some(st) = inner_states[p].as_mut() else {
-                continue;
             };
-            if st.partial_bytes + st.unagg_bytes <= budget {
-                continue;
-            }
-
-            let to_spill: MicroPartition = if decomposable {
-                let mut partials = std::mem::take(&mut st.partially_aggregated);
-                let unagg = std::mem::take(&mut st.unaggregated);
-                st.unaggregated_size = 0;
-                st.partial_bytes = 0;
-                st.unagg_bytes = 0;
-                if !unagg.is_empty() {
-                    partials.push(
-                        MicroPartition::concat(unagg)?
-                            .agg(&params.partial_agg_exprs, &params.group_by)?,
-                    );
-                }
-                if partials.is_empty() {
-                    continue;
-                }
-                // Combine to one partial row per group via the associative combine step.
-                MicroPartition::concat(partials)?
-                    .agg(&params.final_agg_exprs, &params.final_group_by)?
-            } else {
-                let unagg = std::mem::take(&mut st.unaggregated);
-                st.unaggregated_size = 0;
-                st.unagg_bytes = 0;
-                if unagg.is_empty() {
-                    continue;
-                }
-                MicroPartition::concat(unagg)?
-            };
-
-            if to_spill.len() == 0 {
-                continue;
-            }
-
-            let writer = match spill_writer {
-                Some(w) => w,
-                None => {
-                    let schema = to_spill.schema();
-                    let w =
-                        SpillWriter::new(num_buckets, &schema, spill_dirs.to_vec(), "daft_agg_spill_")?;
-                    *spill_writer = Some(w);
-                    spill_writer.as_mut().unwrap()
-                }
-            };
-            for rb in to_spill.record_batches() {
-                writer.write_batch(p, rb)?;
-            }
+            reconcile_reservation(&mut buckets, reservation, *cap)?;
         }
         Ok(())
     }
@@ -336,6 +281,98 @@ impl GroupedAggregateState {
     }
 }
 
+/// Adapter that lets `reconcile_reservation` drive grace-aggregation spilling: resident bytes are
+/// summed across buckets; `spill_largest_bucket` spills the heaviest bucket (compacting decomposable
+/// aggregates first, exactly as the previous `maybe_spill` did).
+struct AggBuckets<'a> {
+    inner_states: &'a mut [Option<SinglePartitionAggregateState>],
+    spill_writer: &'a mut Option<SpillWriter>,
+    spill_dirs: &'a [String],
+    decomposable: bool,
+    params: &'a GroupedAggregateParams,
+}
+
+impl SpillableBuckets for AggBuckets<'_> {
+    fn resident_bytes(&self) -> u64 {
+        self.inner_states
+            .iter()
+            .flatten()
+            .map(|st| (st.partial_bytes + st.unagg_bytes) as u64)
+            .sum()
+    }
+
+    fn spill_largest_bucket(&mut self) -> DaftResult<bool> {
+        let num_buckets = self.inner_states.len();
+        let Some(p) = (0..num_buckets)
+            .filter(|&p| {
+                self.inner_states[p]
+                    .as_ref()
+                    .is_some_and(|st| st.partial_bytes + st.unagg_bytes > 0)
+            })
+            .max_by_key(|&p| {
+                let st = self.inner_states[p].as_ref().unwrap();
+                st.partial_bytes + st.unagg_bytes
+            })
+        else {
+            return Ok(false);
+        };
+        let st = self.inner_states[p].as_mut().unwrap();
+
+        let to_spill: MicroPartition = if self.decomposable {
+            let mut partials = std::mem::take(&mut st.partially_aggregated);
+            let unagg = std::mem::take(&mut st.unaggregated);
+            st.unaggregated_size = 0;
+            st.partial_bytes = 0;
+            st.unagg_bytes = 0;
+            if !unagg.is_empty() {
+                partials.push(
+                    MicroPartition::concat(unagg)?
+                        .agg(&self.params.partial_agg_exprs, &self.params.group_by)?,
+                );
+            }
+            debug_assert!(!partials.is_empty(), "agg bucket selected with bytes>0 but no resident data (counter drift)");
+            if partials.is_empty() {
+                return Ok(true);
+            }
+            MicroPartition::concat(partials)?
+                .agg(&self.params.final_agg_exprs, &self.params.final_group_by)?
+        } else {
+            let unagg = std::mem::take(&mut st.unaggregated);
+            st.unaggregated_size = 0;
+            st.unagg_bytes = 0;
+            st.partial_bytes = 0;
+            debug_assert!(!unagg.is_empty(), "agg bucket selected with bytes>0 but no resident data (counter drift)");
+            if unagg.is_empty() {
+                return Ok(true);
+            }
+            MicroPartition::concat(unagg)?
+        };
+
+        if to_spill.len() == 0 {
+            return Ok(true);
+        }
+
+        let writer = match self.spill_writer {
+            Some(w) => w,
+            None => {
+                let schema = to_spill.schema();
+                let w = SpillWriter::new(
+                    num_buckets,
+                    &schema,
+                    self.spill_dirs.to_vec(),
+                    "daft_agg_spill_",
+                )?;
+                *self.spill_writer = Some(w);
+                self.spill_writer.as_mut().unwrap()
+            }
+        };
+        for rb in to_spill.record_batches() {
+            writer.write_batch(p, rb)?;
+        }
+        Ok(true)
+    }
+}
+
 struct GroupedAggregateParams {
     // Input schema, used to materialize a correctly-typed empty result when there are no rows.
     input_schema: SchemaRef,
@@ -357,9 +394,6 @@ pub struct GroupedAggregateSink {
     global_strategy_lock: Arc<Mutex<Option<AggStrategy>>>,
     /// `Some` enables grace-aggregation spill-to-disk.
     spill_config: Option<SpillConfig>,
-    /// Per-hash-bucket budget derived from the configured total spill budget and the number of
-    /// hash buckets.
-    budget_per_bucket: usize,
 }
 
 impl GroupedAggregateSink {
@@ -418,14 +452,6 @@ impl GroupedAggregateSink {
             None
         };
 
-        // Split the total spill budget across all hash buckets (one bucket per concurrency slot,
-        // per state, so `num_partitions^2` buckets total across the operator).
-        let num_partitions = get_compute_pool_num_threads();
-        let budget_per_bucket = spill_config
-            .as_ref()
-            .map(|sc| (sc.threshold_bytes / (num_partitions * num_partitions).max(1)).max(1))
-            .unwrap_or(0);
-
         Ok(Self {
             grouped_aggregate_params: Arc::new(GroupedAggregateParams {
                 input_schema: input_schema.clone(),
@@ -440,7 +466,6 @@ impl GroupedAggregateSink {
             high_cardinality_threshold_ratio: cfg.high_cardinality_aggregation_threshold,
             global_strategy_lock: Arc::new(Mutex::new(strategy)),
             spill_config,
-            budget_per_bucket,
         })
     }
 
@@ -481,10 +506,9 @@ impl BlockingSink for GroupedAggregateSink {
         let params = self.grouped_aggregate_params.clone();
         let num_partitions = self.num_partitions();
         // No spill => no recursion (unbounded budget keeps the original single-pass behavior).
-        let recursion_budget = if self.spill_config.is_some() {
-            self.budget_per_bucket
-        } else {
-            usize::MAX
+        let recursion_budget = match &self.spill_config {
+            Some(sc) => (sc.pool_bytes / num_partitions.max(1)).max(1),
+            None => usize::MAX,
         };
         spawner
             .spawn(
@@ -605,7 +629,8 @@ impl BlockingSink for GroupedAggregateSink {
             self.partial_agg_threshold,
             self.high_cardinality_threshold_ratio,
             self.spill_config.as_ref().map(|sc| sc.spill_dirs.clone()),
-            self.budget_per_bucket,
+            get_or_init_memory_manager().reservation(),
+            self.spill_config.as_ref().and_then(|sc| sc.cap()),
         ))
     }
 }

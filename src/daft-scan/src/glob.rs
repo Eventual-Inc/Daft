@@ -205,10 +205,12 @@ impl GlobScanOperator {
                     coerce_int96_timestamp_unit,
                     ref field_id_mapping,
                     ignore_corrupt_files,
+                    geometry,
                     ..
                 }) => {
                     let inference_options = ParquetSchemaInferenceOptions {
                         coerce_int96_timestamp_unit,
+                        geometry,
                         ..Default::default()
                     };
                     // Try the first candidate. If it is corrupt and ignore_corrupt_files is set,

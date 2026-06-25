@@ -20,7 +20,7 @@ static PROBE_POOL: LazyLock<rayon::ThreadPool> = LazyLock::new(|| {
     let cpus = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(4);
-    let threads = (cpus / 2).max(2);
+    let threads = (cpus / 2).max(4);
     rayon::ThreadPoolBuilder::new()
         .num_threads(threads)
         .thread_name(|i| format!("daft-rtree-probe-{i}"))
@@ -77,7 +77,7 @@ struct PartitionedRTreeState {
 const SPATIAL_FNS: &[&str] = &[
     "st_intersects", "st_contains", "st_within", "st_covers",
     "st_covered_by", "st_disjoint", "st_touches", "st_overlaps",
-    "st_crosses", "st_equals",
+    "st_crosses", "st_equals", "st_dwithin",
 ];
 
 // ── Column-index extraction (no TreeNode dependency) ─────────────────────
@@ -151,9 +151,34 @@ fn extract_geom_col_indices(
     extract_from_expr(filter.inner(), build_side, output_schema_len, build_n)
 }
 
+/// Walk `expr` looking for an `st_dwithin` call and return its third argument
+/// (distance) as `f64`. Handles `BinaryOp` / `Not` wrappers like `extract_from_expr`.
+fn extract_dwithin_distance(expr: &ExprRef) -> Option<f64> {
+    match expr.as_ref() {
+        Expr::ScalarFn(daft_dsl::functions::scalar::ScalarFn::Builtin(sf))
+            if sf.name() == "st_dwithin" =>
+        {
+            let d = sf.inputs.required(2).ok()?;
+            d.as_literal().and_then(|l| {
+                l.as_f64().or_else(|| l.as_i64().map(|v| v as f64))
+            })
+        }
+        Expr::BinaryOp { left, right, .. } => {
+            extract_dwithin_distance(left).or_else(|| extract_dwithin_distance(right))
+        }
+        Expr::Not(inner) => extract_dwithin_distance(inner),
+        _ => None,
+    }
+}
+
 // ── R-tree construction helpers ───────────────────────────────────────────
 
 /// Build a single R-tree covering all rows in `tables` (original path).
+///
+/// Bbox fast-path: if the merged build batch contains precomputed
+/// `min_x/min_y/max_x/max_y` (or `bbox_min_x/…`) Float64 columns, their values
+/// are used directly instead of parsing WKB via `wkb_to_mbr`.  This mirrors the
+/// same detection done in `build_partitioned_rtrees`.
 fn build_rtree(
     tables: &[RecordBatch],
     build_col: usize,
@@ -165,19 +190,70 @@ fn build_rtree(
     if merged.is_empty() {
         return None;
     }
-    let series = merged.get_column(build_col);
-    let binary = get_geometry_binary(series).ok()?;
 
-    let entries: Vec<RTreeEntry> = (0..merged.len())
-        .filter_map(|i| {
-            let wkb = binary.get(i)?;
-            let [min_x, min_y, max_x, max_y] = wkb_to_mbr(wkb)?;
-            Some(RTreeEntry {
-                bbox: AABB::from_corners([min_x, min_y], [max_x, max_y]),
-                row_idx: i as u32,
-            })
+    // Detect precomputed bbox columns — same candidate sets as the partitioned path.
+    let bbox_cols: Option<[usize; 4]> = {
+        let schema = &merged.schema;
+        let try_find = |name: &str| schema.get_index(name).ok();
+        // `rtree_*` is the canonical name set produced by `df.with_spatial_bbox()` and the one
+        // preserved through a spatial join by the optimizer. `min_*`/`bbox_*` are accepted for
+        // backward compatibility with externally-materialized bbox columns.
+        let candidates = [
+            ("rtree_min_x", "rtree_min_y", "rtree_max_x", "rtree_max_y"),
+            ("min_x", "min_y", "max_x", "max_y"),
+            ("bbox_min_x", "bbox_min_y", "bbox_max_x", "bbox_max_y"),
+        ];
+        candidates.iter().find_map(|(mn_x, mn_y, mx_x, mx_y)| {
+            Some([
+                try_find(mn_x)?,
+                try_find(mn_y)?,
+                try_find(mx_x)?,
+                try_find(mx_y)?,
+            ])
         })
-        .collect();
+    };
+
+    let entries: Vec<RTreeEntry> = if let Some([ix, iy, ax, ay]) = bbox_cols {
+        // Fast path: use precomputed bbox columns.
+        // Use .get(i) (returns Option<f64>, None for nulls) so that null bbox
+        // fields are skipped rather than read as 0.0 (which `.values()[i]` would do).
+        let min_x_s = merged.get_column(ix).f64().ok()?;
+        let min_y_s = merged.get_column(iy).f64().ok()?;
+        let max_x_s = merged.get_column(ax).f64().ok()?;
+        let max_y_s = merged.get_column(ay).f64().ok()?;
+        (0..merged.len())
+            .filter_map(|i| {
+                let mn_x = min_x_s.get(i)?;
+                let mn_y = min_y_s.get(i)?;
+                let mx_x = max_x_s.get(i)?;
+                let mx_y = max_y_s.get(i)?;
+                if mn_x.is_finite() && mn_y.is_finite()
+                    && mx_x.is_finite() && mx_y.is_finite()
+                {
+                    Some(RTreeEntry {
+                        bbox: AABB::from_corners([mn_x, mn_y], [mx_x, mx_y]),
+                        row_idx: i as u32,
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect()
+    } else {
+        // Slow path: parse WKB bytes to extract MBR.
+        let series = merged.get_column(build_col);
+        let binary = get_geometry_binary(series).ok()?;
+        (0..merged.len())
+            .filter_map(|i| {
+                let wkb = binary.get(i)?;
+                let [min_x, min_y, max_x, max_y] = wkb_to_mbr(wkb)?;
+                Some(RTreeEntry {
+                    bbox: AABB::from_corners([min_x, min_y], [max_x, max_y]),
+                    row_idx: i as u32,
+                })
+            })
+            .collect()
+    };
 
     Some((merged, RTree::bulk_load(entries)))
 }
@@ -214,7 +290,11 @@ fn build_partitioned_rtrees(
     let bbox_cols: Option<[usize; 4]> = {
         let schema = &tables[0].schema;
         let try_find = |name: &str| schema.get_index(name).ok();
+        // `rtree_*` is the canonical name set produced by `df.with_spatial_bbox()` and the one
+        // preserved through a spatial join by the optimizer. `min_*`/`bbox_*` are accepted for
+        // backward compatibility with externally-materialized bbox columns.
         let candidates = [
+            ("rtree_min_x", "rtree_min_y", "rtree_max_x", "rtree_max_y"),
             ("min_x", "min_y", "max_x", "max_y"),
             ("bbox_min_x", "bbox_min_y", "bbox_max_x", "bbox_max_y"),
         ];
@@ -280,20 +360,18 @@ fn build_partitioned_rtrees(
 
             // Build R-tree entries — bbox fast-path when precomputed columns exist.
             let entries: Vec<RTreeEntry> = if let Some([ix, iy, ax, ay]) = bbox_cols {
+                // Use .get(i) (returns Option<f64>, None for nulls) so that null bbox
+                // fields are skipped rather than read as 0.0 (which `.values()[i]` would do).
                 let min_x_s = group_rb.get_column(ix).f64().ok()?;
                 let min_y_s = group_rb.get_column(iy).f64().ok()?;
                 let max_x_s = group_rb.get_column(ax).f64().ok()?;
                 let max_y_s = group_rb.get_column(ay).f64().ok()?;
-                let min_x_v = min_x_s.values();
-                let min_y_v = min_y_s.values();
-                let max_x_v = max_x_s.values();
-                let max_y_v = max_y_s.values();
                 (0..group_rb.len())
                     .filter_map(|i| {
-                        let mn_x = min_x_v[i];
-                        let mn_y = min_y_v[i];
-                        let mx_x = max_x_v[i];
-                        let mx_y = max_y_v[i];
+                        let mn_x = min_x_s.get(i)?;
+                        let mn_y = min_y_s.get(i)?;
+                        let mx_x = max_x_s.get(i)?;
+                        let mx_y = max_y_s.get(i)?;
                         if mn_x.is_finite() && mn_y.is_finite()
                             && mx_x.is_finite() && mx_y.is_finite()
                         {
@@ -356,6 +434,10 @@ pub struct NestedLoopJoinOperator {
     geom_cols: Option<(usize, usize)>,
     /// `Some((build_key_col, probe_key_col))` when equality partition key is present.
     partition_key: Option<(usize, usize)>,
+    /// For `st_dwithin` predicates: the distance `d` by which to pad the probe
+    /// query AABB on all sides before querying the R-tree.  `None` (or `0.0`)
+    /// for topological predicates whose query box is the exact probe MBR.
+    dwithin_distance: Option<f64>,
 }
 
 impl NestedLoopJoinOperator {
@@ -373,7 +455,8 @@ impl NestedLoopJoinOperator {
             output_schema.len(),
             build_n_cols,
         );
-        Self { filter, output_schema, build_side, geom_cols, partition_key }
+        let dwithin_distance = extract_dwithin_distance(filter.inner());
+        Self { filter, output_schema, build_side, geom_cols, partition_key, dwithin_distance }
     }
 }
 
@@ -480,6 +563,7 @@ impl JoinOperator for NestedLoopJoinOperator {
         let output_schema = self.output_schema.clone();
         let filter = self.filter.clone();
         let build_side = self.build_side;
+        let pad = self.dwithin_distance.unwrap_or(0.0);
 
         spawner
             .spawn(
@@ -519,8 +603,8 @@ impl JoinOperator for NestedLoopJoinOperator {
                                                 return vec![];
                                             };
                                             let q = AABB::from_corners(
-                                                [min_x, min_y],
-                                                [max_x, max_y],
+                                                [min_x - pad, min_y - pad],
+                                                [max_x + pad, max_y + pad],
                                             );
                                             group_tree
                                                 .locate_in_envelope_intersecting(&q)
@@ -590,8 +674,8 @@ impl JoinOperator for NestedLoopJoinOperator {
                                         return vec![];
                                     };
                                     let q = AABB::from_corners(
-                                        [min_x, min_y],
-                                        [max_x, max_y],
+                                        [min_x - pad, min_y - pad],
+                                        [max_x + pad, max_y + pad],
                                     );
                                     rtree
                                         .locate_in_envelope_intersecting(&q)

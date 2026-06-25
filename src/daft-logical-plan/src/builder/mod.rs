@@ -1493,6 +1493,7 @@ impl PyLogicalPlanBuilder {
         prefix,
         suffix,
         key_filtering_config=None,
+        on_predicate=None,
     ))]
     pub fn join(
         &self,
@@ -1504,6 +1505,7 @@ impl PyLogicalPlanBuilder {
         prefix: Option<String>,
         suffix: Option<String>,
         key_filtering_config: Option<ops::PyKeyFilteringConfig>,
+        on_predicate: Option<PyExpr>,
     ) -> PyResult<Self> {
         let key_filtering_config = match (join_strategy, key_filtering_config) {
             (Some(JoinStrategy::KeyFiltering), Some(config)) => {
@@ -1552,6 +1554,19 @@ impl PyLogicalPlanBuilder {
             }
             (_, None) => None,
         };
+
+        // Predicate join path (e.g. spatial join via st_intersects)
+        if let Some(pred) = on_predicate {
+            let result = self.builder.join(
+                &right.builder,
+                Some(pred.into()),
+                vec![],
+                join_type,
+                join_strategy,
+                JoinOptions { prefix, suffix },
+            )?;
+            return Ok(result.into());
+        }
 
         let left_on = left_on.into_iter().map(|expr| expr.expr);
         let right_on = right_on.into_iter().map(|expr| expr.expr);

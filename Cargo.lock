@@ -2957,7 +2957,8 @@ dependencies = [
  "common-error",
  "daft-core",
  "daft-dsl",
- "geo",
+ "geo 0.33.1",
+ "geo-buffer",
  "geohash",
  "geojson",
  "h3o",
@@ -3299,6 +3300,7 @@ dependencies = [
  "daft-dsl",
  "daft-io",
  "daft-recordbatch",
+ "daft-schema",
  "daft-stats",
  "fastrand 2.3.0",
  "futures",
@@ -3473,6 +3475,7 @@ dependencies = [
  "daft-schema",
  "daft-writers",
  "futures",
+ "tempfile",
  "tokio",
  "tonic",
 ]
@@ -3596,6 +3599,7 @@ dependencies = [
  "daft-logical-plan",
  "daft-micropartition",
  "daft-recordbatch",
+ "daft-schema",
  "hashbrown 0.16.1",
  "parking_lot 0.12.5",
  "parquet",
@@ -4062,6 +4066,12 @@ checksum = "28a80e3145d8ad11ba0995949bbcf48b9df2be62772b3d351ef017dff6ecb853"
 
 [[package]]
 name = "float_next_after"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8bf7cc16383c4b8d58b9905a8509f02926ce3058053c056376248d958c9df1e8"
+
+[[package]]
+name = "float_next_after"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37007738a80ea34f969af54a3390dd72cacdef654974cfd449c9f6f72dbaac10"
@@ -4251,12 +4261,27 @@ dependencies = [
 
 [[package]]
 name = "geo"
+version = "0.24.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7d640a4dd1d1c98b45f4653c841a8ec15f461a71b86bc30533ae64c6f20f268"
+dependencies = [
+ "float_next_after 1.0.0",
+ "geo-types",
+ "geographiclib-rs",
+ "log",
+ "num-traits",
+ "robust 0.2.3",
+ "rstar 0.10.0",
+]
+
+[[package]]
+name = "geo"
 version = "0.33.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "30eb1fdc57c1e5cfd11826fe0caec4b9dc7901f3758263bb506228d88c8d9e9a"
 dependencies = [
  "earcut",
- "float_next_after",
+ "float_next_after 2.0.0",
  "geo-types",
  "geographiclib-rs",
  "i_overlay",
@@ -4264,10 +4289,20 @@ dependencies = [
  "num-traits",
  "rand 0.10.1",
  "rand_pcg",
- "robust",
+ "robust 1.2.0",
  "rstar 0.12.2",
  "sif-itree",
  "spade",
+]
+
+[[package]]
+name = "geo-buffer"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "267bf0373df2f0b0b05065ebc0c84b97ccd221e19e0cb9442bcffe8fce04c130"
+dependencies = [
+ "geo 0.24.1",
+ "geo-types",
 ]
 
 [[package]]
@@ -7395,6 +7430,12 @@ dependencies = [
 
 [[package]]
 name = "robust"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5864e7ef1a6b7bcf1d6ca3f655e65e724ed3b52546a0d0a663c991522f552ea"
+
+[[package]]
+name = "robust"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e27ee8bb91ca0adcf0ecb116293afa12d393f9c2b9b9cd54d33e8078fe19839"
@@ -8004,7 +8045,7 @@ checksum = "9699399fd9349b00b184f5635b074f9ec93afffef30c853f8c875b32c0f8c7fa"
 dependencies = [
  "hashbrown 0.16.1",
  "num-traits",
- "robust",
+ "robust 1.2.0",
  "smallvec",
 ]
 

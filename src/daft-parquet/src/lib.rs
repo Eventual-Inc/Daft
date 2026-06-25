@@ -1,6 +1,7 @@
 use common_error::DaftError;
 use snafu::Snafu;
 
+pub mod geo_metadata;
 mod helpers;
 pub mod metadata;
 mod metadata_adapter;
@@ -15,6 +16,35 @@ mod statistics;
 pub use python::register_modules;
 pub use statistics::row_group_metadata_to_table_stats;
 
+/// Return a copy of `schema` with the named columns' dtype set to `Geometry`.
+///
+/// Any field whose name appears in `geo_cols` is replaced by a new field with
+/// `DataType::Geometry`; all other fields are left unchanged.  If `geo_cols` is
+/// empty the original schema is returned unmodified (zero allocation).
+pub(crate) fn retype_geo_schema(
+    schema: &daft_core::prelude::Schema,
+    geo_cols: &[String],
+) -> daft_core::prelude::Schema {
+    if geo_cols.is_empty() {
+        return schema.clone();
+    }
+    let new_fields: Vec<daft_core::prelude::Field> = schema
+        .fields()
+        .iter()
+        .map(|f| {
+            if geo_cols.contains(&f.name.to_string()) {
+                daft_core::prelude::Field::new(
+                    f.name.as_ref(),
+                    daft_core::prelude::DataType::Geometry,
+                )
+            } else {
+                f.clone()
+            }
+        })
+        .collect();
+    daft_core::prelude::Schema::new(new_fields)
+}
+
 pub fn infer_schema_from_daft_metadata(
     metadata: &DaftParquetMetadata,
     options: read::ParquetSchemaInferenceOptions,
@@ -25,7 +55,16 @@ pub fn infer_schema_from_daft_metadata(
         options.string_encoding == read::StringEncoding::Raw,
     )
     .map_err(|e| common_error::DaftError::External(e.into()))?;
-    daft_core::prelude::Schema::try_from(&arrow_schema)
+    let mut schema = daft_core::prelude::Schema::try_from(&arrow_schema)?;
+    if options.geometry {
+        if let Some(geo_json) = metadata.geo_metadata() {
+            let geo_cols = geo_metadata::detect_geo_columns(&geo_json, &schema);
+            if !geo_cols.is_empty() {
+                schema = retype_geo_schema(&schema, &geo_cols);
+            }
+        }
+    }
+    Ok(schema)
 }
 
 /// Errors raised while reading parquet files.

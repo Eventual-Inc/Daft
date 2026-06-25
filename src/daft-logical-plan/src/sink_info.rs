@@ -366,6 +366,12 @@ pub struct ParquetFormatOption {
     /// Per-column compression overrides, the type matches the parquet writer builder
     /// method for setting column compression. The writer will parse the codec names.
     pub column_compression: Option<Vec<(String, String)>>,
+    /// Optional CRS identifier to embed in the GeoParquet `"geo"` metadata (e.g. "OGC:CRS84").
+    /// When `None`, the CRS key is omitted (GeoParquet default: OGC:CRS84 lon/lat WGS84).
+    pub crs: Option<String>,
+    /// Optional explicit list of geometry column names to include in GeoParquet metadata.
+    /// When `None`, all columns with `DataType::Geometry` are included automatically.
+    pub geometry_columns: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -448,13 +454,19 @@ impl PyFormatSinkOption {
     }
 
     #[classmethod]
-    #[pyo3(signature = (column_compression=None))]
+    #[pyo3(signature = (column_compression=None, crs=None, geometry_columns=None))]
     pub fn parquet(
         _cls: &pyo3::prelude::Bound<pyo3::types::PyType>,
         column_compression: Option<Vec<(String, String)>>,
+        crs: Option<String>,
+        geometry_columns: Option<Vec<String>>,
     ) -> Self {
         Self {
-            inner: FormatSinkOption::Parquet(ParquetFormatOption { column_compression }),
+            inner: FormatSinkOption::Parquet(ParquetFormatOption {
+                column_compression,
+                crs,
+                geometry_columns,
+            }),
         }
     }
 }
