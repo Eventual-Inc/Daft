@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_metrics::{Meter, ops::NodeInfo};
 use common_runtime::{OrderingAwareJoinSet, get_compute_pool_num_threads};
 use daft_micropartition::MicroPartition;
@@ -18,23 +18,36 @@ use crate::{
 };
 
 enum BuildStateSlot<T> {
-    Sender(oneshot::Sender<T>),
+    // The channel carries a `DaftResult` so a build-side failure can be delivered to a waiting
+    // probe (via `poison`) instead of leaving it blocked forever.
+    Sender(oneshot::Sender<DaftResult<T>>),
+    // Successfully finalized build state, waiting to be picked up by a (later) subscriber.
     Ready(T),
 }
 
+struct BridgeState<T> {
+    channels: HashMap<InputId, BuildStateSlot<T>>,
+    /// Set when the build side fails. Once poisoned, every current and future subscriber receives
+    /// this error rather than waiting indefinitely for a finalized build state that never arrives.
+    poisoned: Option<String>,
+}
+
 pub(crate) enum FinalizedBuildStateReceiver<Op: JoinOperator> {
-    Receiver(oneshot::Receiver<Op::FinalizedBuildState>),
-    Ready(Op::FinalizedBuildState),
+    Receiver(oneshot::Receiver<DaftResult<Op::FinalizedBuildState>>),
+    Ready(DaftResult<Op::FinalizedBuildState>),
 }
 
 pub(crate) struct BuildStateBridge<Op: JoinOperator> {
-    channels: Mutex<HashMap<InputId, BuildStateSlot<Op::FinalizedBuildState>>>,
+    state: Mutex<BridgeState<Op::FinalizedBuildState>>,
 }
 
 impl<Op: JoinOperator> BuildStateBridge<Op> {
     pub(crate) fn new() -> Self {
         Self {
-            channels: Mutex::new(HashMap::new()),
+            state: Mutex::new(BridgeState {
+                channels: HashMap::new(),
+                poisoned: None,
+            }),
         }
     }
 
@@ -43,20 +56,41 @@ impl<Op: JoinOperator> BuildStateBridge<Op> {
         input_id: InputId,
         finalized: Op::FinalizedBuildState,
     ) {
-        let mut channels = self.channels.lock().unwrap();
-        if let Some(slot) = channels.remove(&input_id) {
+        let mut state = self.state.lock().unwrap();
+        if state.poisoned.is_some() {
+            return;
+        }
+        if let Some(slot) = state.channels.remove(&input_id) {
             if let BuildStateSlot::Sender(tx) = slot {
-                let _ = tx.send(finalized);
+                let _ = tx.send(Ok(finalized));
             }
         } else {
-            channels.insert(input_id, BuildStateSlot::Ready(finalized));
+            state.channels.insert(input_id, BuildStateSlot::Ready(finalized));
+        }
+    }
+
+    /// Mark the bridge as failed: deliver `msg` to every currently-waiting subscriber and to any
+    /// future subscriber, so the probe side never blocks forever on a build that won't finalize.
+    pub(crate) fn poison(&self, msg: String) {
+        let mut state = self.state.lock().unwrap();
+        if state.poisoned.is_some() {
+            return;
+        }
+        state.poisoned = Some(msg.clone());
+        for (_, slot) in state.channels.drain() {
+            if let BuildStateSlot::Sender(tx) = slot {
+                let _ = tx.send(Err(DaftError::ComputeError(msg.clone())));
+            }
         }
     }
 
     pub(crate) fn subscribe(&self, input_id: InputId) -> FinalizedBuildStateReceiver<Op> {
-        let mut channels = self.channels.lock().unwrap();
+        let mut state = self.state.lock().unwrap();
+        if let Some(msg) = &state.poisoned {
+            return FinalizedBuildStateReceiver::Ready(Err(DaftError::ComputeError(msg.clone())));
+        }
         let (tx, rx) = oneshot::channel();
-        match channels.entry(input_id) {
+        match state.channels.entry(input_id) {
             Entry::Vacant(e) => {
                 e.insert(BuildStateSlot::Sender(tx));
                 FinalizedBuildStateReceiver::Receiver(rx)
@@ -64,9 +98,9 @@ impl<Op: JoinOperator> BuildStateBridge<Op> {
             Entry::Occupied(e) => {
                 let slot = e.remove();
                 match slot {
-                    BuildStateSlot::Ready(v) => FinalizedBuildStateReceiver::Ready(v),
+                    BuildStateSlot::Ready(v) => FinalizedBuildStateReceiver::Ready(Ok(v)),
                     BuildStateSlot::Sender(_) => {
-                        channels.insert(input_id, BuildStateSlot::Sender(tx));
+                        state.channels.insert(input_id, BuildStateSlot::Sender(tx));
                         FinalizedBuildStateReceiver::Receiver(rx)
                     }
                 }
@@ -162,23 +196,33 @@ impl<Op: JoinOperator + 'static> BuildExecutionContext<Op> {
         }
     }
 
-    fn try_finalize(&self, per_input: PerBuildInput<Op>, input_id: InputId) {
+    fn try_finalize(&self, per_input: PerBuildInput<Op>, input_id: InputId) -> DaftResult<()> {
         let state = per_input.state.expect("must be idle when finalizing");
-        match self.op.finalize_build(state) {
-            Ok(finalized) => {
-                self.build_state_bridge
-                    .send_finalized_build_state(input_id, finalized);
-            }
-            Err(e) => {
-                tracing::error!("finalize_build failed: {e}");
-                // Log the error; the build state bridge will never be fulfilled,
-                // causing the probe side to wait indefinitely. This is a pre-existing
-                // limitation of the error-handling architecture.
-            }
-        }
+        // Propagate a finalize failure: the caller returns it from `process_build_input`, which
+        // poisons the bridge so the probe side is unblocked and the error surfaces to the consumer
+        // (rather than silently hanging on a build state that will never arrive).
+        let finalized = self.op.finalize_build(state)?;
+        self.build_state_bridge
+            .send_finalized_build_state(input_id, finalized);
+        Ok(())
     }
 
+    /// Drive the build side. On any failure, poison the build-state bridge so the concurrently
+    /// running probe side stops waiting for a finalized build state and the error propagates to the
+    /// consumer instead of deadlocking.
     pub(crate) async fn process_build_input(
+        &self,
+        receiver: Receiver<PipelineMessage>,
+    ) -> DaftResult<()> {
+        let result = self.process_build_input_inner(receiver).await;
+        if let Err(e) = &result {
+            self.build_state_bridge
+                .poison(format!("hash join build side failed: {e}"));
+        }
+        result
+    }
+
+    async fn process_build_input_inner(
         &self,
         receiver: Receiver<PipelineMessage>,
     ) -> DaftResult<()> {
@@ -203,7 +247,7 @@ impl<Op: JoinOperator + 'static> BuildExecutionContext<Op> {
                     per_input.flush_pending(&mut tasks, &self.op, &self.task_spawner, input_id)?;
 
                     if inputs.get(&input_id).is_some_and(|p| p.ready_to_finalize()) {
-                        self.try_finalize(inputs.remove(&input_id).unwrap(), input_id);
+                        self.try_finalize(inputs.remove(&input_id).unwrap(), input_id)?;
                     }
                 }
                 PipelineEvent::Morsel {
@@ -243,7 +287,7 @@ impl<Op: JoinOperator + 'static> BuildExecutionContext<Op> {
                         p.flushed = true;
                     }
                     if inputs.get(&input_id).is_some_and(|p| p.ready_to_finalize()) {
-                        self.try_finalize(inputs.remove(&input_id).unwrap(), input_id);
+                        self.try_finalize(inputs.remove(&input_id).unwrap(), input_id)?;
                     }
                 }
                 PipelineEvent::FlightPartitionRef => {
@@ -262,7 +306,7 @@ impl<Op: JoinOperator + 'static> BuildExecutionContext<Op> {
                         .collect();
                     for input_id in ready_ids {
                         let per_input = inputs.remove(&input_id).unwrap();
-                        self.try_finalize(per_input, input_id);
+                        self.try_finalize(per_input, input_id)?;
                     }
                 }
             }

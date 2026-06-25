@@ -282,6 +282,24 @@ def test_window_spill_files_cleaned_up(tmp_path):
 # ─────────────────── Shared spill pool / new operator coverage ───────────────
 
 
+@pytest.mark.timeout(60)
+def test_hash_join_build_error_surfaces_not_hangs():
+    # Force the hash-join build side to spill into a directory that cannot be created. The spill
+    # write fails, so the build side errors. Previously that error was swallowed and the probe
+    # side waited on the build-state bridge forever — the query hung silently. After the fix the
+    # bridge is "poisoned" on build failure, so the error propagates and the query RAISES instead
+    # of hanging. (pytest-timeout turns a regression back into a hang->failure, not a frozen suite.)
+    bad_dir = "/nonexistent_daft_spill_dir_xyz/sub"
+    with daft.context.execution_config_ctx(
+        hash_join_spill_threshold_bytes=1,  # spill aggressively → write to bad_dir → error
+        flight_shuffle_dirs=[bad_dir],
+    ):
+        left = daft.from_pydict({"k": list(range(2000)), "v": list(range(2000))})
+        right = daft.from_pydict({"k": list(range(2000)), "w": list(range(2000))})
+        with pytest.raises(Exception):
+            left.join(right, on="k").to_pydict()
+
+
 def test_hash_join_spills_by_default():
     # No explicit hash_join_spill_threshold_bytes — must spill via the shared pool.
     # 1 MiB pool is far too small for 20 000-row tables, so spilling is forced.
