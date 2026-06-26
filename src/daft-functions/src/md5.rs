@@ -60,10 +60,14 @@ fn literal_to_bytes(lit: &Literal) -> DaftResult<Vec<u8>> {
             Ok(n.to_string().into_bytes())
         }
         Literal::Float32(f) => {
-            Ok(f.to_string().into_bytes())
+            // Use bit representation for unique handling of NaN, Infinity, -0.0
+            let bits = f.to_bits();
+            Ok(format!("f32_{}", bits).into_bytes())
         }
         Literal::Float64(f) => {
-            Ok(f.to_string().into_bytes())
+            // Use bit representation for unique handling of NaN, Infinity, -0.0
+            let bits = f.to_bits();
+            Ok(format!("f64_{}", bits).into_bytes())
         }
         Literal::List(series) => {
             // For lists, we need to sort the elements deterministically
@@ -130,40 +134,54 @@ fn literal_to_bytes(lit: &Literal) -> DaftResult<Vec<u8>> {
             Ok(json_str.into_bytes())
         }
         Literal::Date(d) => {
+            // Use ISO format for deterministic date representation
             Ok(d.to_string().into_bytes())
         }
         Literal::Time(t, tu) => {
-            Ok(format!("{:?}_{:?}", t, tu).into_bytes())
+            // Include time unit for uniqueness
+            Ok(format!("time_{:?}_{:?}", t, tu).into_bytes())
         }
         Literal::Timestamp(ts, tu, tz) => {
-            let tz_str = tz.as_ref().map(|s| s.as_str()).unwrap_or("");
-            Ok(format!("{}_{:?}_{}", ts, tu, tz_str).into_bytes())
+            // Include all timestamp components for uniqueness
+            let tz_str = tz.as_ref().map(|s| s.as_str()).unwrap_or("UTC");
+            Ok(format!("timestamp_{:?}_{:?}_{}", ts, tu, tz_str).into_bytes())
         }
         Literal::Duration(d, tu) => {
-            Ok(format!("{:?}_{:?}", d, tu).into_bytes())
+            // Include duration unit for uniqueness
+            Ok(format!("duration_{:?}_{:?}", d, tu).into_bytes())
         }
         Literal::Decimal(n, precision, scale) => {
-            Ok(format!("{}_{:?}_{:?}", n, precision, scale).into_bytes())
+            // Include full decimal representation for uniqueness
+            Ok(format!("decimal_{}_{:?}_{:?}", n, precision, scale).into_bytes())
         }
         Literal::Uuid(uuid) => {
             Ok(uuid.to_string().into_bytes())
         }
         Literal::Tensor { data, shape } => {
-            // Serialize tensor metadata and data
-            let data_json = json!({
+            // Include actual data in hash for uniqueness
+            let json_obj = json!({
                 "shape": shape,
-                "type": data.data_type().to_string()
+                "type": data.data_type().to_string(),
+                "data": format!("{:?}", data)
             });
-            Ok(data_json.to_string().into_bytes())
+            Ok(json_obj.to_string().into_bytes())
         }
         Literal::Embedding(series) => {
-            // Serialize embedding type
+            // Include actual embedding values, not just type
             let type_str = series.data_type().to_string();
-            Ok(format!("embedding_{}", type_str).into_bytes())
+            let data_str = format!("{:?}", series);
+            let embedding_json = json!({
+                "type": type_str,
+                "data": data_str
+            });
+            Ok(embedding_json.to_string().into_bytes())
         }
-        Literal::Image(_) => {
-            // For image, use a placeholder (actual image comparison is complex)
-            Ok(b"image".to_vec())
+        Literal::Image(img_meta) => {
+            // Include actual image metadata/path for uniqueness
+            let img_json = json!({
+                "image_meta": format!("{:?}", img_meta)
+            });
+            Ok(img_json.to_string().into_bytes())
         }
         Literal::File(fr) => {
             Ok(format!("{:?}", fr).into_bytes())
@@ -174,10 +192,13 @@ fn literal_to_bytes(lit: &Literal) -> DaftResult<Vec<u8>> {
             shape,
             indices_offset,
         } => {
+            // Include actual values in hash for uniqueness
+            let values_str = format!("{:?}", values);
             let sparse_json = json!({
                 "shape": shape,
                 "indices_offset": indices_offset,
-                "dtype": values.data_type().to_string()
+                "dtype": values.data_type().to_string(),
+                "values": values_str
             });
             Ok(sparse_json.to_string().into_bytes())
         }
@@ -185,7 +206,9 @@ fn literal_to_bytes(lit: &Literal) -> DaftResult<Vec<u8>> {
             Ok(format!("{:?}", iv).into_bytes())
         }
         Literal::Float16(f) => {
-            Ok(f.to_string().into_bytes())
+            // Use bit representation for unique handling of NaN, Infinity, -0.0
+            let bits = f.to_bits();
+            Ok(format!("f16_{}", bits).into_bytes())
         }
         #[cfg(feature = "python")]
         Literal::Python(_) => {
@@ -273,8 +296,9 @@ impl ScalarUDF for Md5Function {
     fn get_return_field(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         let UnaryArg { input } = inputs.try_into()?;
         let field = input.to_field(schema)?;
-
-        // MD5 always returns a UTF8 string, regardless of input type
+        
+        // MD5 accepts all data types including utf8, binary, list, struct, map, numeric, etc.
+        // Just return UTF8 output type without any input type validation
         Ok(Field::new(field.name, DataType::Utf8))
     }
 
