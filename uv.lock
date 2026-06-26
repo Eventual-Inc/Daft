@@ -1768,7 +1768,7 @@ requires-dist = [
     { name = "deltalake", marker = "extra == 'unity'", specifier = ">=1.5.0,<1.7.0" },
     { name = "fsspec", specifier = "<2026.5.0" },
     { name = "google-genai", marker = "extra == 'google'", specifier = "<2.7.0" },
-    { name = "h5py", marker = "extra == 'hdf5'", specifier = "==3.16.0" },
+    { name = "h5py", marker = "extra == 'hdf5'", specifier = ">=3.16.0,<4.0.0" },
     { name = "httpx", marker = "extra == 'unity'", specifier = "<=0.28.1" },
     { name = "huggingface-hub", marker = "extra == 'huggingface'", specifier = "<1.17.0" },
     { name = "librosa", marker = "extra == 'audio'", specifier = ">=0.11.0,<0.12.0" },
