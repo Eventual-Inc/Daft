@@ -288,12 +288,13 @@ impl GlobScanOperator {
                         Err(e) => return Err(e),
                     };
 
-                    // Sum the per-column uncompressed sizes across all row groups, keyed by
-                    // top-level column name. Storing per-column (rather than a single total)
-                    // lets size estimates respect column-projection pushdown.
+                    // Sum the per-column materialized (in-memory) sizes across all row
+                    // groups, keyed by top-level column name. Storing per-column (rather
+                    // than a single total) lets size estimates respect column-projection
+                    // pushdown.
                     let mut column_sizes: BTreeMap<String, u64> = BTreeMap::new();
                     for (_, rg) in metadata.row_groups() {
-                        for (name, bytes) in rg.column_uncompressed_sizes() {
+                        for (name, bytes) in rg.column_materialized_sizes() {
                             *column_sizes.entry(name).or_insert(0) += bytes;
                         }
                     }
