@@ -71,17 +71,17 @@ impl Window {
                 };
                 if window_spec.partition_by.is_empty() {
                     return Err(common_error::DaftError::ValueError(
-                        format!("{func_label} requires a partition_by in the window spec — use Window().partition_by(...).order_by(...).rows_between(...)"),
+                        format!("{func_label} require a partition_by in the window spec — use Window().partition_by(...).order_by(...).rows_between(...)"),
                     ).into());
                 }
                 if window_spec.order_by.is_empty() {
                     return Err(common_error::DaftError::ValueError(
-                        format!("{func_label} requires an order_by in the window spec — use Window().partition_by(...).order_by(...).rows_between(...)"),
+                        format!("{func_label} require an order_by in the window spec — use Window().partition_by(...).order_by(...).rows_between(...)"),
                     ).into());
                 }
                 if window_spec.frame.is_none() {
                     return Err(common_error::DaftError::ValueError(
-                        format!("{func_label} requires a frame (rows_between) in the window spec — use Window().partition_by(...).order_by(...).rows_between(...)"),
+                        format!("{func_label} require a frame (rows_between) in the window spec — use Window().partition_by(...).order_by(...).rows_between(...)"),
                     ).into());
                 }
             }
