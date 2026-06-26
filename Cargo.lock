@@ -2942,9 +2942,12 @@ name = "daft-hash"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
+ "crc32fast",
+ "md-5 0.10.6",
  "mur3",
  "serde",
  "sha1",
+ "sha2",
  "xxhash-rust",
 ]
 

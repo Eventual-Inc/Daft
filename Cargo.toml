@@ -347,6 +347,9 @@ rstest = "0.26.1"
 reqwest = {version = "0.12.19", default-features = false, features = ["json"]}
 serde_json = "1.0.145"
 sha1 = "0.10.6"
+sha2 = "0.10.8"
+md-5 = "0.10.6"
+crc32fast = "1.4.2"
 simdutf8 = "0.1.5"
 sketches-ddsketch = {version = "0.2.2", features = ["use_serde"]}
 smallvec = {version = "1.15.1", features = ["serde", "impl_bincode"]}
