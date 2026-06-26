@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 from daft.daft import PyDaftFile, PyFileReference
 from daft.datatype import MediaType
-from daft.dependencies import av, pil_image, sf
+from daft.dependencies import av, h5py, pil_image, sf
 
 BUFFER_SNIFF: int = 4096
 BUFFER_METADATA: int = 65536
@@ -282,8 +282,6 @@ class File:
 
     def as_hdf5(self) -> Hdf5File:
         """Convert to Hdf5File if this file contains HDF5 data."""
-        from daft.dependencies import h5py
-
         if not h5py.module_available():  # ty:ignore[unresolved-attribute]
             raise ImportError(
                 "The 'h5py' module is required to convert files to HDF5. Please install it with: pip install 'h5py'"

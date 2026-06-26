@@ -7,6 +7,7 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, cast
 
 import daft
+from daft.datatype import DataTypeLike
 from daft.file.hdf5 import Hdf5File
 from daft.udf.udf_v2 import Func
 
@@ -39,6 +40,30 @@ def _normalize_datasets(datasets: str | Sequence[str] | Mapping[str, str]) -> di
     return normalized
 
 
+def _tensor_return_dtype(dtype: DataTypeLike | None) -> daft.DataType:
+    if dtype is None:
+        return daft.DataType.python()
+
+    resolved = daft.DataType._infer(dtype)
+    if resolved.is_tensor():
+        return resolved
+    return daft.DataType.tensor(resolved)
+
+
+def _read_many_return_dtype(
+    datasets: Mapping[str, str],
+    dtypes: Mapping[str, DataTypeLike] | None,
+) -> daft.DataType:
+    if dtypes is None:
+        return daft.DataType.struct({name: daft.DataType.python() for name in datasets})
+
+    missing = set(datasets) - set(dtypes)
+    extra = set(dtypes) - set(datasets)
+    if missing or extra:
+        raise ValueError(f"dtypes must match dataset output names; missing={sorted(missing)}, extra={sorted(extra)}")
+    return daft.DataType.struct({name: _tensor_return_dtype(dtypes[name]) for name in datasets})
+
+
 def hdf5_keys_impl(file: Hdf5File, group: str = "/") -> list[str]:
     return file.keys(group)
 
@@ -47,7 +72,7 @@ hdf5_keys_fn = Func._from_func(
     hdf5_keys_impl,
     return_dtype=daft.DataType.list(daft.DataType.string()),
     unnest=False,
-    use_process=None,
+    use_process=False,
     is_batch=False,
     batch_size=None,
     max_retries=None,
@@ -76,33 +101,37 @@ def hdf5_read_impl(file: Hdf5File, dataset: str) -> np.ndarray[Any, Any]:
     return file.read(dataset)
 
 
-hdf5_read_fn = Func._from_func(
-    hdf5_read_impl,
-    return_dtype=daft.DataType.tensor(daft.DataType.float64()),
-    unnest=False,
-    use_process=False,
-    is_batch=False,
-    batch_size=None,
-    max_retries=None,
-    on_error=None,
-    name_override="hdf5_read",
-)
-
-
-def hdf5_read(file_expr: Expression, dataset: str) -> Expression:
+def hdf5_read(file_expr: Expression, dataset: str, dtype: DataTypeLike | None = None) -> Expression:
     """Read an HDF5 dataset into a tensor column.
 
     Expression wrapper for ``Hdf5File.read(dataset)``. The read follows h5py's
     full-dataset access pattern, equivalent to ``h5[dataset][()]`` for each
-    input file.
+    input file. If ``dtype`` is omitted, the result is a Python object column
+    so h5py's NumPy dtype is preserved. Pass a metadata-derived dtype to get a
+    typed tensor column.
 
     Args:
         file_expr: ``Hdf5File`` expression.
         dataset: Dataset path within the file (for example ``action/proprio``).
+        dtype: Optional Daft dtype for the dataset values. This is the tensor
+            inner dtype, such as ``DataType.float32()`` or
+            ``DataType.from_numpy_dtype(np.dtype("int64"))``.
 
     Returns:
-        Expression containing the dataset values as a tensor.
+        Expression containing the dataset values as a Python object when
+        ``dtype`` is omitted, or as a tensor when ``dtype`` is provided.
     """
+    hdf5_read_fn = Func._from_func(
+        hdf5_read_impl,
+        return_dtype=_tensor_return_dtype(dtype),
+        unnest=False,
+        use_process=False,
+        is_batch=False,
+        batch_size=None,
+        max_retries=None,
+        on_error=None,
+        name_override="hdf5_read",
+    )
     return cast("Expression", hdf5_read_fn(file_expr, dataset=dataset))
 
 
@@ -110,26 +139,34 @@ def hdf5_read_many_impl(file: Hdf5File, datasets: dict[str, str]) -> dict[str, n
     return file.read(datasets)
 
 
-def hdf5_read_many(file_expr: Expression, datasets: str | Sequence[str] | Mapping[str, str]) -> Expression:
+def hdf5_read_many(
+    file_expr: Expression,
+    datasets: str | Sequence[str] | Mapping[str, str],
+    dtypes: Mapping[str, DataTypeLike] | None = None,
+) -> Expression:
     """Read multiple HDF5 datasets with one open per input file.
 
     Expression wrapper for ``Hdf5File.read(datasets)``. Passing a mapping is
     the most stable DataFrame form because the mapping keys become struct field
-    names.
+    names. If ``dtypes`` is omitted, each struct field is a Python object so
+    h5py's NumPy dtype is preserved. Pass metadata-derived dtypes keyed by
+    output field name to get typed tensor fields.
 
     Args:
         file_expr: ``Hdf5File`` expression.
         datasets: Either a dataset path, a sequence of dataset paths, or a mapping
             of output field names to dataset paths. The mapping form is preferred
             for stable DataFrame schemas.
+        dtypes: Optional mapping from output field names to tensor inner dtypes.
+            Keys must match the output names after normalizing ``datasets``.
 
     Returns:
-        Expression containing a struct with one tensor field per requested dataset.
+        Expression containing a struct with one field per requested dataset.
     """
     normalized = _normalize_datasets(datasets)
     read_many_fn = Func._from_func(
         hdf5_read_many_impl,
-        return_dtype=daft.DataType.struct({name: daft.DataType.tensor(daft.DataType.float64()) for name in normalized}),
+        return_dtype=_read_many_return_dtype(normalized, dtypes),
         unnest=False,
         use_process=False,
         is_batch=False,
