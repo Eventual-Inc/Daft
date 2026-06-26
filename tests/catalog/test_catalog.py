@@ -172,11 +172,9 @@ class MockCatalog(Catalog):
     def _get_table(self, identifier: Identifier) -> Table:
         return self._tables[str(identifier)]
 
-    def _list_namespaces(self, prefix: Identifier | None = None) -> list[Identifier]:
-        names = sorted(self._namespaces)
-        if prefix is not None:
-            names = [ns for ns in names if ns.startswith(str(prefix))]
-        return [Identifier.from_str(ns) for ns in names]
+    def _list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
+        # Pattern matching not implemented; returns all namespaces.
+        return [Identifier.from_str(ns) for ns in sorted(self._namespaces)]
 
     def _list_tables(self, prefix: Identifier | None = None) -> list[Identifier]:
         raise NotImplementedError
