@@ -5,6 +5,7 @@ mod buffer;
 mod channel;
 mod checkpoint_terminus;
 mod concat;
+mod cse;
 mod dynamic_batching;
 mod input_sender;
 mod intermediate_ops;
