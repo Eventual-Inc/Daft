@@ -10,10 +10,9 @@ pub struct SQLRowNumber;
 
 impl SQLFunction for SQLRowNumber {
     fn to_expr(&self, inputs: &[FunctionArg], _planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
-        assert!(
-            inputs.is_empty(),
-            "ROW_NUMBER() does not take any arguments"
-        );
+        if !inputs.is_empty() {
+            invalid_operation_err!("ROW_NUMBER() does not take any arguments");
+        }
         Ok(Expr::WindowFunction(WindowExpr::RowNumber).arced())
     }
 
@@ -32,7 +31,9 @@ pub struct SQLRank;
 
 impl SQLFunction for SQLRank {
     fn to_expr(&self, inputs: &[FunctionArg], _planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
-        assert!(inputs.is_empty(), "RANK() does not take any arguments");
+        if !inputs.is_empty() {
+            invalid_operation_err!("RANK() does not take any arguments");
+        }
         Ok(Expr::WindowFunction(WindowExpr::Rank).arced())
     }
 
@@ -49,10 +50,9 @@ pub struct SQLDenseRank;
 
 impl SQLFunction for SQLDenseRank {
     fn to_expr(&self, inputs: &[FunctionArg], _planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
-        assert!(
-            inputs.is_empty(),
-            "DENSE_RANK() does not take any arguments"
-        );
+        if !inputs.is_empty() {
+            invalid_operation_err!("DENSE_RANK() does not take any arguments");
+        }
         Ok(Expr::WindowFunction(WindowExpr::DenseRank).arced())
     }
 
@@ -69,10 +69,9 @@ pub struct SQLLag;
 
 impl SQLFunction for SQLLag {
     fn to_expr(&self, inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
-        assert!(
-            !inputs.is_empty() && inputs.len() <= 3,
-            "LAG() takes 1, 2 or 3 arguments: LAG(value, offset, default)"
-        );
+        if inputs.is_empty() || inputs.len() > 3 {
+            invalid_operation_err!("LAG() takes 1, 2 or 3 arguments: LAG(value, offset, default)");
+        }
 
         let value = planner.plan_function_arg(&inputs[0])?.into_inner();
 
@@ -118,10 +117,11 @@ pub struct SQLLead;
 
 impl SQLFunction for SQLLead {
     fn to_expr(&self, inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
-        assert!(
-            !inputs.is_empty() && inputs.len() <= 3,
-            "LEAD() takes 1, 2 or 3 arguments: LEAD(value, offset, default)"
-        );
+        if inputs.is_empty() || inputs.len() > 3 {
+            invalid_operation_err!(
+                "LEAD() takes 1, 2 or 3 arguments: LEAD(value, offset, default)"
+            );
+        }
 
         let value = planner.plan_function_arg(&inputs[0])?.into_inner();
 
@@ -165,7 +165,9 @@ pub struct SQLCumeDist;
 
 impl SQLFunction for SQLCumeDist {
     fn to_expr(&self, inputs: &[FunctionArg], _planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
-        assert!(inputs.is_empty(), "CUME_DIST() does not take any arguments");
+        if !inputs.is_empty() {
+            invalid_operation_err!("CUME_DIST() does not take any arguments");
+        }
         Ok(Expr::WindowFunction(WindowExpr::CumeDist).arced())
     }
 
@@ -184,10 +186,9 @@ pub struct SQLPercentRank;
 
 impl SQLFunction for SQLPercentRank {
     fn to_expr(&self, inputs: &[FunctionArg], _planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
-        assert!(
-            inputs.is_empty(),
-            "PERCENT_RANK() does not take any arguments"
-        );
+        if !inputs.is_empty() {
+            invalid_operation_err!("PERCENT_RANK() does not take any arguments");
+        }
         Ok(Expr::WindowFunction(WindowExpr::PercentRank).arced())
     }
 

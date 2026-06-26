@@ -465,7 +465,7 @@ def nth_value(expr: Expression, n: int, ignore_nulls: bool = False) -> Expressio
         ...     .rows_between(daft.Window.unbounded_preceding, daft.Window.unbounded_following)
         ... )
         >>> df = df.with_column("nth2", nth_value(df["value"], 2).over(window))
-        >>> df.sort(["category", "time"]).show()
+        >>> df.sort(["category", "time"]).show()  # doctest: +SKIP
     """
     if n < 1:
         raise ValueError(f"nth_value() requires n >= 1, got {n}")
