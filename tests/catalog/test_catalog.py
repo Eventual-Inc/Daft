@@ -137,6 +137,8 @@ class MockCatalog(Catalog):
 
     def __init__(self):
         self._tables = {}
+        self._namespaces: set[str] = set()
+        self.create_namespace_calls: list[Identifier] = []
 
     @property
     def name(self) -> str:
@@ -144,7 +146,7 @@ class MockCatalog(Catalog):
 
     def _create_namespace(self, identifier: Identifier):
         self.create_namespace_calls.append(identifier)
-        self.namespaces.add(str(identifier))
+        self._namespaces.add(str(identifier))
 
     def _create_table(
         self,
@@ -159,7 +161,10 @@ class MockCatalog(Catalog):
         return t
 
     def _drop_namespace(self, identifier: Identifier):
-        raise NotImplementedError
+        key = str(identifier)
+        if key not in self._namespaces:
+            raise NotFoundError(f"Namespace '{identifier}' not found")
+        self._namespaces.remove(key)
 
     def _drop_table(self, identifier: Identifier):
         del self._tables[str(identifier)]
@@ -168,7 +173,10 @@ class MockCatalog(Catalog):
         return self._tables[str(identifier)]
 
     def _list_namespaces(self, prefix: Identifier | None = None) -> list[Identifier]:
-        raise NotImplementedError
+        names = sorted(self._namespaces)
+        if prefix is not None:
+            names = [ns for ns in names if ns.startswith(str(prefix))]
+        return [Identifier.from_str(ns) for ns in names]
 
     def _list_tables(self, prefix: Identifier | None = None) -> list[Identifier]:
         raise NotImplementedError
@@ -180,7 +188,7 @@ class MockCatalog(Catalog):
         raise NotFoundError(f"Function '{ident}' not found")
 
     def _has_namespace(self, ident):
-        raise NotImplementedError
+        return str(ident) in self._namespaces
 
     def _has_table(self, ident):
         return str(ident) in self._tables
@@ -340,3 +348,161 @@ def test_drop_table_catalog_qualified():
 
     sess.drop_table("my_cat.my_schema.my_table")
     assert not catalog.has_table("my_schema.my_table")
+
+
+def test_create_namespace_catalog_qualified():
+    """Test that create_namespace routes to the correct catalog when using a catalog-qualified identifier."""
+    from daft.session import Session
+
+    catalog = MockCatalog()
+    sess = Session()
+    sess.attach_catalog(catalog, alias="my_cat")
+
+    sess.create_namespace("my_cat.my_ns")
+
+    assert catalog.has_namespace("my_ns")
+    assert len(catalog.create_namespace_calls) == 1
+    assert str(catalog.create_namespace_calls[0]) == "my_ns"
+
+
+def test_create_namespace_if_not_exists_catalog_qualified():
+    """Test that create_namespace_if_not_exists routes to the correct catalog and is idempotent."""
+    from daft.session import Session
+
+    catalog = MockCatalog()
+    sess = Session()
+    sess.attach_catalog(catalog, alias="my_cat")
+
+    sess.create_namespace_if_not_exists("my_cat.my_ns")
+    sess.create_namespace_if_not_exists("my_cat.my_ns")
+
+    assert catalog.has_namespace("my_ns")
+    assert len(catalog.create_namespace_calls) == 1
+
+
+def test_drop_namespace_catalog_qualified():
+    """Test that drop_namespace routes to the correct catalog when using a catalog-qualified identifier."""
+    from daft.session import Session
+
+    catalog = MockCatalog()
+    sess = Session()
+    sess.attach_catalog(catalog, alias="my_cat")
+
+    sess.create_namespace("my_cat.my_ns")
+    assert catalog.has_namespace("my_ns")
+
+    sess.drop_namespace("my_cat.my_ns")
+    assert not catalog.has_namespace("my_ns")
+
+
+def test_has_namespace_catalog_qualified():
+    """Test that has_namespace routes to the correct catalog when using a catalog-qualified identifier."""
+    from daft.session import Session
+
+    catalog = MockCatalog()
+    sess = Session()
+    sess.attach_catalog(catalog, alias="my_cat")
+
+    assert not sess.has_namespace("my_cat.my_ns")
+
+    sess.create_namespace("my_cat.my_ns")
+    assert sess.has_namespace("my_cat.my_ns")
+
+
+def test_drop_table_with_current_namespace():
+    """Test that drop_table joins unqualified single-part identifiers with the current namespace."""
+    from daft.session import Session
+
+    catalog = MockCatalog()
+    sess = Session()
+    sess.attach_catalog(catalog, alias="my_cat")
+    sess.set_namespace("my_ns")
+
+    schema = Schema.from_pydict({"a": dt.int64()})
+    sess.create_table("my_table", schema)
+    assert catalog.has_table("my_ns.my_table")
+
+    sess.drop_table("my_table")
+    assert not catalog.has_table("my_ns.my_table")
+
+
+def test_namespace_catalog_qualified_multiple_catalogs():
+    """Test that namespace operations are isolated to the specified catalog."""
+    from daft.session import Session
+
+    cat1 = MockCatalog()
+    cat2 = MockCatalog()
+    sess = Session()
+    sess.attach_catalog(cat1, alias="cat1")
+    sess.attach_catalog(cat2, alias="cat2")
+
+    sess.create_namespace("cat1.shared_ns")
+    sess.create_namespace("cat2.shared_ns")
+
+    assert cat1.has_namespace("shared_ns")
+    assert cat2.has_namespace("shared_ns")
+
+    sess.drop_namespace("cat1.shared_ns")
+    assert not cat1.has_namespace("shared_ns")
+    assert cat2.has_namespace("shared_ns")
+
+
+def test_create_namespace_catalog_qualified_without_current_catalog():
+    """Test that catalog-qualified namespace creation works even without a current catalog set."""
+    from daft.session import Session
+
+    catalog = MockCatalog()
+    sess = Session()
+    sess.attach_catalog(catalog, alias="my_cat")
+    sess.set_catalog(None)
+
+    sess.create_namespace("my_cat.my_ns")
+    assert catalog.has_namespace("my_ns")
+
+    with pytest.raises(ValueError, match="Cannot create a namespace without a current catalog"):
+        sess.create_namespace("other_ns")
+
+
+def test_namespace_unqualified_uses_current_catalog():
+    """Test that unqualified namespace identifiers fall back to the current catalog."""
+    from daft.session import Session
+
+    catalog = MockCatalog()
+    sess = Session()
+    sess.attach_catalog(catalog, alias="my_cat")
+    sess.set_catalog("my_cat")
+
+    sess.create_namespace("my_ns")
+    assert catalog.has_namespace("my_ns")
+    assert sess.has_namespace("my_ns")
+    sess.drop_namespace("my_ns")
+    assert not catalog.has_namespace("my_ns")
+
+
+def test_drop_namespace_nonexistent_raises():
+    """Test that dropping a non-existent namespace raises an error."""
+    from daft.catalog import NotFoundError
+    from daft.session import Session
+
+    catalog = MockCatalog()
+    sess = Session()
+    sess.attach_catalog(catalog, alias="my_cat")
+
+    with pytest.raises(NotFoundError, match="Namespace 'my_ns' not found"):
+        sess.drop_namespace("my_cat.my_ns")
+
+
+def test_namespace_with_identifier_object():
+    """Test that namespace methods accept Identifier objects, not just strings."""
+    from daft.session import Session
+
+    catalog = MockCatalog()
+    sess = Session()
+    sess.attach_catalog(catalog, alias="my_cat")
+
+    ident = Identifier("my_cat", "my_ns")
+    sess.create_namespace(ident)
+    assert catalog.has_namespace("my_ns")
+    assert sess.has_namespace(Identifier("my_cat", "my_ns"))
+    sess.drop_namespace(Identifier("my_cat", "my_ns"))
+    assert not catalog.has_namespace("my_ns")
