@@ -482,6 +482,55 @@ def simhash(
     return Expression._call_builtin_scalar_fn("simhash", text, ngram_size=ngram_size, hash_function=hash_function)
 
 
+def md5(expr: Expression) -> Expression:
+    """Computes the MD5 digest for the input expression.
+
+    Supports all Daft data types. For lists, elements are sorted before hashing to enable
+    order-insensitive comparison.
+
+    Args:
+        expr (Expression): The expression to hash. Can be any data type: string, numeric, list, struct, map, etc.
+
+    Returns:
+        Expression (Utf8 Expression): A 32-character hexadecimal MD5 hash string. Returns None for null inputs.
+
+    Note:
+        - For Lists: Elements are sorted before hashing, so [1,2,3] and [3,2,1] produce the same MD5.
+        - For Struct/Map: Keys are sorted alphabetically for deterministic hashing.
+        - Null values propagate as None (null input -> null output).
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import md5
+        >>> df = daft.from_pydict({"text": ["hello", "world"]})
+        >>> df = df.select(df["text"], md5(df["text"]).alias("hash"))
+        >>> df.show()  # doctest: +SKIP
+        ╭───────┬──────────────────────────────────╮
+        │ text  ┆ hash                             │
+        │ ---   ┆ ---                              │
+        │ Utf8  ┆ Utf8                             │
+        ╞═══════╪══════════════════════════════════╡
+        │ hello ┆ 5d41402abc4b2a76b9719d911017c... │
+        ├╌╌╌╌╌╌╌┼──────────────────────────────────┤
+        │ world ┆ 7d793037a0760186574b0282f2f43... │
+        ╰───────┴──────────────────────────────────╯
+        <BLANKLINE>
+
+        Order-insensitive list hashing:
+
+        >>> df = daft.from_pydict({"items": [[1, 2, 3], [3, 2, 1], [5, 6, 7]]})
+        >>> df = df.select(df["items"], md5(df["items"]).alias("hash"))
+        >>> # First two rows will have the same hash since lists contain same items
+
+        Struct hashing:
+
+        >>> df = daft.from_pydict({"id": [1, 2], "name": ["alice", "bob"]})
+        >>> df = df.select(md5(daft.functions.to_struct(id=df["id"], name=df["name"])).alias("record_hash"))
+    """
+    expr = Expression._to_expression(expr)
+    return Expression._call_builtin_scalar_fn("md5", expr)
+
+
 def length(expr: Expression) -> Expression:
     """Retrieves the length of the given expression.
 

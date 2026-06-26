@@ -140,3 +140,141 @@ def test_select_struct_wildcard():
     expected = {"name": ["Alice", "Bob", "Charlie"], "age": [30, 25, 35]}
 
     assert actual == expected
+
+
+def test_select_md5_numeric_types():
+    """Test MD5 with numeric types"""
+    df = daft.from_pydict({
+        "i": [1, 2, 3],
+        "f": [1.5, 2.5, 3.5],
+        "b": [True, False, None]
+    })
+    
+    actual = df.select(
+        daft.functions.md5(daft.col("i")).alias("i_md5"),
+        daft.functions.md5(daft.col("f")).alias("f_md5"),
+        daft.functions.md5(daft.col("b")).alias("b_md5")
+    ).collect()
+    
+    result = actual.to_pydict()
+    # Verify all are non-null except the null case
+    assert result["i_md5"][0] is not None
+    assert result["i_md5"][1] is not None
+    assert result["f_md5"][0] is not None
+    assert result["b_md5"][2] is None  # Null input returns null
+
+
+def test_select_md5_struct():
+    """Test MD5 with struct types"""
+    df = daft.from_pydict({
+        "x": [1, 2],
+        "y": ["a", "b"]
+    })
+    
+    actual = df.select(
+        daft.functions.to_struct(x=daft.col("x"), y=daft.col("y"))
+        .alias("s")
+    ).select(
+        daft.functions.md5(daft.col("s")).alias("s_md5")
+    ).collect()
+    
+    result = actual.to_pydict()
+    # Verify MD5 hashes are computed
+    assert result["s_md5"][0] is not None
+    assert result["s_md5"][1] is not None
+    assert result["s_md5"][0] != result["s_md5"][1]  # Different structs
+
+
+def test_select_md5_list_order_insensitive():
+    """Test that MD5 of lists with same elements in different order is equal"""
+    # Create two lists with same elements but different order
+    df = daft.from_pydict({
+        "col": [
+            None,
+            [1, 2, 3],
+            [3, 2, 1],  # Same elements, different order
+            ["a", "b", "c"],
+            ["c", "b", "a"],  # Same elements, different order
+        ]
+    })
+    
+    actual = df.select(
+        daft.functions.md5(daft.col("col")).alias("hash")
+    ).collect()
+    
+    result = actual.to_pydict()
+    # Null should produce null
+    assert result["hash"][0] is None
+    
+    # Lists with same elements in different order should have same MD5
+    # (because we sort elements before hashing)
+    assert result["hash"][1] == result["hash"][2], \
+        f"Lists [1,2,3] and [3,2,1] should have same MD5, got {result['hash'][1]} vs {result['hash'][2]}"
+    
+    assert result["hash"][3] == result["hash"][4], \
+        f"Lists ['a','b','c'] and ['c','b','a'] should have same MD5, got {result['hash'][3]} vs {result['hash'][4]}"
+
+
+def test_select_md5_map():
+    """Test MD5 with map types"""
+    df = daft.from_arrow(
+        pa.table({
+            "m": pa.array(
+                [
+                    [('a', 1), ('b', 2)],
+                    [('b', 2), ('a', 1)]  # Same entries, different order
+                ],
+                type=pa.map_(pa.string(), pa.int64())
+            )
+        })
+    )
+    
+    actual = df.select(
+        daft.functions.md5(daft.col("m")).alias("m_md5")
+    ).collect()
+    
+    result = actual.to_pydict()
+    assert result["m_md5"][0] is not None
+    assert result["m_md5"][1] is not None
+    # Maps with same key-value pairs (different order) should have same MD5
+    # because keys are sorted before hashing
+    assert result["m_md5"][0] == result["m_md5"][1], \
+        "Maps with same entries should have same MD5"
+
+
+def test_select_md5_complex_nested():
+    """Test MD5 with complex nested structures"""
+    df = daft.from_pydict({
+        "x": [1, 2],
+        "y": [10, 20],
+    })
+    
+    actual = df.select(
+        daft.functions.to_struct(
+            list_field=daft.lit([1, 2, 3]),
+            scalar_field=daft.col("x")
+        ).alias("s")
+    ).select(
+        daft.functions.md5(daft.col("s")).alias("s_md5")
+    ).collect()
+    
+    result = actual.to_pydict()
+    assert result["s_md5"][0] is not None
+    assert result["s_md5"][1] is not None
+
+
+def test_select_md5_null_handling():
+    """Test MD5 with null values"""
+    df = daft.from_pydict({
+        "col": [None, "hello", None, 42]
+    })
+    
+    actual = df.select(
+        daft.functions.md5(daft.col("col")).alias("hash")
+    ).collect()
+    
+    result = actual.to_pydict()
+    assert result["hash"][0] is None
+    assert result["hash"][1] is not None
+    assert result["hash"][2] is None
+    assert result["hash"][3] is not None
