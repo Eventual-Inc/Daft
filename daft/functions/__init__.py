@@ -305,7 +305,7 @@ from .struct import unnest, to_struct
 from .url import download, upload, parse_url
 from .audio import audio_metadata, resample
 from .video import video_metadata, video_keyframes, video_frames
-from .hdf5 import hdf5_keys, hdf5_read, hdf5_read_many, hdf5_visit
+from .hdf5 import hdf5_keys, hdf5_read, hdf5_read_many
 from .window import (
     row_number,
     rank,
@@ -441,7 +441,6 @@ __all__ = [
     "hdf5_keys",
     "hdf5_read",
     "hdf5_read_many",
-    "hdf5_visit",
     "hour",
     "hypot",
     "ilike",

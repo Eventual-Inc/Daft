@@ -14,7 +14,6 @@ from daft.functions.hdf5 import (
     hdf5_keys_impl,
     hdf5_read_impl,
     hdf5_read_many_impl,
-    hdf5_visit_impl,
 )
 
 
@@ -177,24 +176,10 @@ def test_hdf5_read_many_expression(sample_hdf5_path):
     assert result["datasets"][0]["proprio"].shape == (4, 7)
 
 
-def test_hdf5_visit_expression(sample_hdf5_path):
-    df = daft.from_pydict({"path": [sample_hdf5_path]})
-    df = df.select(
-        daft.functions.hdf5_visit(
-            daft.functions.hdf5_file(daft.col("path")),
-            group="/",
-        ).alias("objects")
-    )
-
-    objects = df.collect().to_pydict()["objects"][0]
-    assert "action/proprio" in objects
-
-
 def test_hdf5_function_impls(sample_hdf5_path):
     file = daft.Hdf5File(sample_hdf5_path)
 
     assert hdf5_keys_impl(file, group="/") == ["action", "observation", "values"]
-    assert "action/proprio" in hdf5_visit_impl(file, group="/")
     assert np.allclose(hdf5_read_impl(file, dataset="values"), [1.0, 2.0, 3.0])
     data = hdf5_read_many_impl(file, datasets={"values": "values"})
     assert np.allclose(data["values"], [1.0, 2.0, 3.0])
@@ -231,9 +216,9 @@ def test_hdf5_read_many_rejects_invalid_dataset_inputs():
     with pytest.raises(ValueError, match="at least one"):
         _normalize_datasets([])
     with pytest.raises(TypeError, match="string aliases"):
-        _normalize_datasets({1: "values"})
+        _normalize_datasets({1: "values"})  # ty: ignore[invalid-argument-type]
     with pytest.raises(TypeError, match="string aliases"):
-        _normalize_datasets({"values": 1})
+        _normalize_datasets({"values": 1})  # ty: ignore[invalid-argument-type]
 
 
 def test_as_hdf5_from_generic_file(sample_hdf5_path):

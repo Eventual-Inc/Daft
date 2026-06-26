@@ -64,8 +64,8 @@ class Hdf5File(File):
         return super().open(buffer_size=buffer_size)
 
     @contextmanager
-    def _open_h5py(self) -> Iterator[Any]:
-        with self.open() as file, h5py.File(file, "r") as h5:
+    def _open_h5py(self, buffer_size: int | None = HDF5_DEFAULT_BUFFER_SIZE) -> Iterator[h5py.File]:
+        with self.open(buffer_size=buffer_size) as file, h5py.File(file, "r") as h5:
             yield h5
 
     def metadata(self, group: str = "/") -> list[Hdf5ObjectMetadata]:

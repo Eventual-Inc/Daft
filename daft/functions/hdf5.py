@@ -72,40 +72,6 @@ def hdf5_keys(file_expr: Expression, group: str = "/") -> Expression:
     return cast("Expression", hdf5_keys_fn(file_expr, group=group))
 
 
-def hdf5_visit_impl(file: Hdf5File, group: str = "/") -> list[str]:
-    return file.visit(group=group)
-
-
-hdf5_visit_fn = Func._from_func(
-    hdf5_visit_impl,
-    return_dtype=daft.DataType.list(daft.DataType.string()),
-    unnest=False,
-    use_process=False,
-    is_batch=False,
-    batch_size=None,
-    max_retries=None,
-    on_error=None,
-    name_override="hdf5_visit",
-)
-
-
-def hdf5_visit(file_expr: Expression, group: str = "/") -> Expression:
-    """Recursively visit HDF5 object names under a group.
-
-    Expression wrapper for ``Hdf5File.visit(group=...)`` without a callback.
-    This follows h5py ``Group.visit`` traversal semantics and returns the
-    visited object names as ``list[str]``.
-
-    Args:
-        file_expr: ``Hdf5File`` expression.
-        group: Group path where traversal starts. Defaults to ``/``.
-
-    Returns:
-        Expression containing a list of visited HDF5 object names.
-    """
-    return cast("Expression", hdf5_visit_fn(file_expr, group=group))
-
-
 def hdf5_read_impl(file: Hdf5File, dataset: str) -> np.ndarray[Any, Any]:
     return file.read(dataset)
 
