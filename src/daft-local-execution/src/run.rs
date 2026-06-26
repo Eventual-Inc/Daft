@@ -487,6 +487,35 @@ impl NativeExecutor {
             None
         };
 
+        // If a plan with this fingerprint already exists but its execution
+        // task has died (e.g. a UDF on a previous input raised), surface the
+        // real error from `task_handle` rather than masking it with a generic
+        // InternalError when the next input tries to enqueue.
+        let dead_plan_state = self
+            .plans
+            .get(&fingerprint)
+            .map(|s| s.enqueue_input_sender.is_closed())
+            .unwrap_or(false)
+            .then(|| self.plans.remove(&fingerprint).unwrap());
+        if let Some(plan_state) = dead_plan_state {
+            return Ok((
+                fingerprint,
+                async move {
+                    drop(plan_state.enqueue_input_sender);
+                    // Propagate the original pipeline error (e.g. user UDF
+                    // exception) instead of "Plan execution task has died".
+                    plan_state.task_handle.await??;
+                    // The execution task completed without error, yet the
+                    // enqueue channel is closed. This should not happen in
+                    // practice; fall back to a descriptive InternalError.
+                    Err(common_error::DaftError::InternalError(
+                        "Plan execution task ended before new input could be enqueued".to_string(),
+                    ))
+                }
+                .boxed(),
+            ));
+        }
+
         if !self.plans.contains_key(&fingerprint) {
             let cancel = self.cancel.clone();
             let additional_context = additional_context.unwrap_or_default();
@@ -550,6 +579,10 @@ impl NativeExecutor {
                     result_sender: result_tx,
                 };
                 if enqueue_input_sender.send(enqueue_msg).await.is_err() {
+                    // The pipeline died between the closed-channel check above
+                    // and this enqueue attempt. The real error will be observed
+                    // by the next call into `run`/`try_finish` for this plan,
+                    // but we also surface a clear message to the current caller.
                     return Err(common_error::DaftError::InternalError(
                         "Plan execution task has died; cannot enqueue new input".to_string(),
                     ));
