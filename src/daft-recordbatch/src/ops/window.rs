@@ -747,4 +747,178 @@ impl RecordBatch {
 
         Ok(result_col.rename(name))
     }
+
+    /// Compute the cumulative distribution within an ordered partition.
+    ///
+    /// `cume_dist` returns, for each row, the fraction of rows whose ORDER BY
+    /// values are less than or equal to the current row's, where rows that are
+    /// equal under ORDER BY share the same value.
+    /// Result domain is (0, 1]; the result type is Float64.
+    pub fn window_cume_dist_col(&self, name: &str, order_by: &[BoundExpr]) -> DaftResult<Series> {
+        let total = self.len();
+        if total == 0 {
+            return Ok(Float64Array::from_iter(
+                Field::new(name, DataType::Float64),
+                std::iter::empty::<Option<f64>>(),
+            )
+            .into_series());
+        }
+
+        // Identify peer groups using ORDER BY columns equality.
+        let order_by_table = self.eval_expression_list(order_by)?;
+        let order_by_cols: Vec<Series> = order_by_table
+            .as_materialized_series()
+            .into_iter()
+            .cloned()
+            .collect();
+        let comparator: Box<dyn Fn(usize, usize) -> bool + Send + Sync> =
+            build_multi_array_is_equal(
+                order_by_cols.as_slice(),
+                order_by_cols.as_slice(),
+                &vec![true; order_by_cols.len()],
+                &vec![true; order_by_cols.len()],
+            )?;
+
+        // First pass: compute cumulative count at the end of each peer group.
+        // peer_end[i] = number of rows whose ORDER BY value <= row i's.
+        let mut peer_end_count = vec![0u64; total];
+        let total_f64 = total as f64;
+
+        let mut i = 0usize;
+        while i < total {
+            // Advance group_end to the end of the peer group starting at i.
+            let mut group_end = i + 1;
+            while group_end < total && comparator(i, group_end) {
+                group_end += 1;
+            }
+            let end_count = group_end as u64;
+            for slot in &mut peer_end_count[i..group_end] {
+                *slot = end_count;
+            }
+            i = group_end;
+        }
+
+        let values: Vec<Option<f64>> = peer_end_count
+            .iter()
+            .map(|c| Some((*c as f64) / total_f64))
+            .collect();
+
+        Ok(Float64Array::from_iter(Field::new(name, DataType::Float64), values).into_series())
+    }
+
+    /// Compute the percent rank within an ordered partition.
+    ///
+    /// `percent_rank` returns `(rank - 1) / (total_rows - 1)` for each row,
+    /// where `rank` is the regular `RANK()` value. When the partition has a
+    /// single row, the result is 0.0. Result type is Float64.
+    pub fn window_percent_rank_col(
+        &self,
+        name: &str,
+        order_by: &[BoundExpr],
+    ) -> DaftResult<Series> {
+        let total = self.len();
+        if total == 0 {
+            return Ok(Float64Array::from_iter(
+                Field::new(name, DataType::Float64),
+                std::iter::empty::<Option<f64>>(),
+            )
+            .into_series());
+        }
+        if total == 1 {
+            return Ok(Float64Array::from_iter(
+                Field::new(name, DataType::Float64),
+                std::iter::once(Some(0.0_f64)),
+            )
+            .into_series());
+        }
+
+        let order_by_table = self.eval_expression_list(order_by)?;
+        let order_by_cols: Vec<Series> = order_by_table
+            .as_materialized_series()
+            .into_iter()
+            .cloned()
+            .collect();
+        let comparator: Box<dyn Fn(usize, usize) -> bool + Send + Sync> =
+            build_multi_array_is_equal(
+                order_by_cols.as_slice(),
+                order_by_cols.as_slice(),
+                &vec![true; order_by_cols.len()],
+                &vec![true; order_by_cols.len()],
+            )?;
+
+        let denom = (total - 1) as f64;
+        let mut values: Vec<Option<f64>> = Vec::with_capacity(total);
+        // First row always has rank 1 -> 0.0.
+        let mut cur_rank: u64 = 1;
+        let mut next_rank: u64 = 1;
+        values.push(Some(0.0));
+        for idx in 1..total {
+            next_rank += 1;
+            if !comparator(idx - 1, idx) {
+                cur_rank = next_rank;
+            }
+            values.push(Some(((cur_rank - 1) as f64) / denom));
+        }
+
+        Ok(Float64Array::from_iter(Field::new(name, DataType::Float64), values).into_series())
+    }
+
+    /// Compute the NTILE bucket assignment within an ordered partition.
+    ///
+    /// Spark/ANSI semantics:
+    /// - Rows are split into `n` buckets as evenly as possible (1-based).
+    /// - The first `partition_size mod n` buckets receive one extra row.
+    /// - Bucket numbers are assigned in ORDER BY order; tied rows are NOT
+    ///   guaranteed to share the same bucket (matches Spark/Postgres behavior).
+    pub fn window_ntile_col(&self, name: &str, n_buckets: i64) -> DaftResult<Series> {
+        if n_buckets < 1 {
+            return Err(DaftError::ValueError(format!(
+                "ntile() requires n >= 1, got {n_buckets}"
+            )));
+        }
+        let total = self.len();
+        if total == 0 {
+            return Ok(UInt64Array::from_vec(name, Vec::<u64>::new()).into_series());
+        }
+        let n = n_buckets as u64;
+        let total_u64 = total as u64;
+
+        // base_size = total / n, extra = total % n.
+        // First `extra` buckets each have (base_size + 1) rows; the remaining
+        // (n - extra) buckets each have base_size rows.
+        let base_size = total_u64 / n;
+        let extra = total_u64 % n;
+
+        let mut out = Vec::<u64>::with_capacity(total);
+        let mut current_bucket: u64 = 1;
+        let mut current_capacity: u64 = if extra > 0 { base_size + 1 } else { base_size };
+        let mut filled: u64 = 0;
+        for _ in 0..total {
+            if current_capacity == 0 {
+                // Should not happen because total = sum(capacities), but guard anyway.
+                current_bucket += 1;
+                current_capacity = if current_bucket <= extra {
+                    base_size + 1
+                } else {
+                    base_size
+                };
+                filled = 0;
+            }
+            out.push(current_bucket);
+            filled += 1;
+            if filled == current_capacity {
+                current_bucket += 1;
+                if current_bucket <= n {
+                    current_capacity = if current_bucket <= extra {
+                        base_size + 1
+                    } else {
+                        base_size
+                    };
+                    filled = 0;
+                }
+            }
+        }
+
+        Ok(UInt64Array::from_vec(name, out).into_series())
+    }
 }

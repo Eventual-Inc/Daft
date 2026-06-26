@@ -529,6 +529,18 @@ pub enum WindowExpr {
 
     #[display("last_value({_0}, ignore_nulls={_1})")]
     LastValue(ExprRef, bool),
+
+    #[display("nth_value({_0}, {_1}, ignore_nulls={_2})")]
+    NthValue(ExprRef, i64, bool),
+
+    #[display("cume_dist")]
+    CumeDist,
+
+    #[display("percent_rank")]
+    PercentRank,
+
+    #[display("ntile({_0})")]
+    Ntile(i64),
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -1114,6 +1126,10 @@ impl WindowExpr {
                 default: _,
             } => input.name(),
             Self::FirstValue(expr, _) | Self::LastValue(expr, _) => expr.name(),
+            Self::NthValue(expr, _, _) => expr.name(),
+            Self::CumeDist => "cume_dist",
+            Self::PercentRank => "percent_rank",
+            Self::Ntile(_) => "ntile",
         }
     }
 
@@ -1149,6 +1165,15 @@ impl WindowExpr {
                     "{child_id}.last_value(ignore_nulls={ignore_nulls})"
                 ))
             }
+            Self::NthValue(expr, n, ignore_nulls) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!(
+                    "{child_id}.nth_value(n={n},ignore_nulls={ignore_nulls})"
+                ))
+            }
+            Self::CumeDist => FieldID::new("cume_dist"),
+            Self::PercentRank => FieldID::new("percent_rank"),
+            Self::Ntile(n) => FieldID::new(format!("ntile(n={n})")),
         }
     }
 
@@ -1170,6 +1195,8 @@ impl WindowExpr {
                 children
             }
             Self::FirstValue(expr, _) | Self::LastValue(expr, _) => vec![expr.clone()],
+            Self::NthValue(expr, _, _) => vec![expr.clone()],
+            Self::CumeDist | Self::PercentRank | Self::Ntile(_) => vec![],
         }
     }
 
@@ -1210,6 +1237,13 @@ impl WindowExpr {
                 assert_eq!(children.len(), 1);
                 Self::LastValue(children.first().unwrap().clone(), *ignore_nulls)
             }
+            Self::NthValue(_, n, ignore_nulls) => {
+                assert_eq!(children.len(), 1);
+                Self::NthValue(children.first().unwrap().clone(), *n, *ignore_nulls)
+            }
+            Self::CumeDist => Self::CumeDist,
+            Self::PercentRank => Self::PercentRank,
+            Self::Ntile(n) => Self::Ntile(*n),
         }
     }
 
@@ -1228,6 +1262,13 @@ impl WindowExpr {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(field.name.as_ref(), field.dtype))
             }
+            Self::NthValue(expr, _, _) => {
+                let field = expr.to_field(schema)?;
+                Ok(Field::new(field.name.as_ref(), field.dtype))
+            }
+            Self::CumeDist => Ok(Field::new("cume_dist", DataType::Float64)),
+            Self::PercentRank => Ok(Field::new("percent_rank", DataType::Float64)),
+            Self::Ntile(_) => Ok(Field::new("ntile", DataType::UInt64)),
         }
     }
 }
@@ -1453,6 +1494,22 @@ impl Expr {
 
     pub fn dense_rank() -> ExprRef {
         Self::WindowFunction(WindowExpr::DenseRank).into()
+    }
+
+    pub fn cume_dist() -> ExprRef {
+        Self::WindowFunction(WindowExpr::CumeDist).into()
+    }
+
+    pub fn percent_rank() -> ExprRef {
+        Self::WindowFunction(WindowExpr::PercentRank).into()
+    }
+
+    pub fn ntile(n: i64) -> ExprRef {
+        Self::WindowFunction(WindowExpr::Ntile(n)).into()
+    }
+
+    pub fn nth_value(self: ExprRef, n: i64, ignore_nulls: bool) -> ExprRef {
+        Self::WindowFunction(WindowExpr::NthValue(self, n, ignore_nulls)).into()
     }
 
     pub fn offset(self: ExprRef, offset: isize, default: Option<ExprRef>) -> ExprRef {

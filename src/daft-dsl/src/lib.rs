@@ -57,6 +57,9 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction!(python::row_number, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::rank, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::dense_rank, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::cume_dist, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::percent_rank, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::ntile, parent)?)?;
 
     Ok(())
 }
