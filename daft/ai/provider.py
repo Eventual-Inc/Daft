@@ -19,7 +19,6 @@ if TYPE_CHECKING:
         ImageEmbedderDescriptor,
         PrompterDescriptor,
         TextClassifierDescriptor,
-        TextEmbedderDescriptor,
     )
     from daft.ai.typing import (
         ClassifyImageOptions,
@@ -28,6 +27,7 @@ if TYPE_CHECKING:
         EmbedTextOptions,
         PromptOptions,
     )
+    from daft.expressions import Expression
 
 
 class ProviderImportError(ImportError):
@@ -120,10 +120,10 @@ class Provider(ABC):
         """Returns the provider's name."""
         ...
 
-    def get_text_embedder(
+    def create_text_embedder(
         self, model: str | None = None, dimensions: int | None = None, **options: Unpack[EmbedTextOptions]
-    ) -> TextEmbedderDescriptor:
-        """Returns a TextEmbedderDescriptor for this provider."""
+    ) -> Expression:
+        """Returns a UDF expression for text embedding for this provider."""
         raise not_implemented_err(self, method="embed_text")
 
     def get_image_embedder(

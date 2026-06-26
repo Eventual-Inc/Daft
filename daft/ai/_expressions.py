@@ -25,10 +25,12 @@ if TYPE_CHECKING:
 class _TextEmbedderExpression:
     """Function expression implementation for a TextEmbedder protocol."""
 
+    descriptor: TextEmbedderDescriptor
     text_embedder: TextEmbedder
 
-    def __init__(self, text_embedder: TextEmbedderDescriptor):
-        self.text_embedder = text_embedder.instantiate()
+    def __init__(self, descriptor: TextEmbedderDescriptor):
+        self.descriptor = descriptor
+        self.text_embedder = descriptor.instantiate()
 
     def _call_sync(self, text_series: Series) -> list[Embedding]:
         text = text_series.to_pylist()

@@ -12,13 +12,20 @@ from __future__ import annotations
 import os
 import time
 from collections import defaultdict
+from collections.abc import Callable, Mapping
+from typing import Any
 
 import pytest
 from pydantic import BaseModel, Field
 
 import daft
+import daft.context
+from daft.daft import PyMicroPartition
 from daft.functions.ai import prompt
-from daft.recordbatch import RecordBatch
+from daft.subscribers import StatType, Subscriber
+from tests.conftest import get_tests_daft_runner_name
+
+RUNNER_IS_NATIVE = get_tests_daft_runner_name() == "native"
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -37,9 +44,57 @@ def session(skip_no_credential):
         yield
 
 
-def _collect_metrics(metrics: list[dict]) -> dict[str, int]:
+class PromptMetricsSubscriber(Subscriber):
+    def __init__(self) -> None:
+        self.query_ids: list[str] = []
+        self.node_stats: defaultdict[str, defaultdict[int, dict[str, tuple[StatType, Any]]]] = defaultdict(
+            lambda: defaultdict(dict)
+        )
+
+    def on_query_start(self, query_id: str, metadata: Any) -> None:
+        self.query_ids.append(query_id)
+
+    def on_exec_emit_stats(
+        self,
+        query_id: str,
+        all_stats: Mapping[int, Mapping[str, tuple[StatType, Any]]],
+    ) -> None:  # type: ignore[override]
+        for node_id, stats in all_stats.items():
+            self.node_stats[query_id][node_id] = dict(stats)
+
+    def on_query_end(self, query_id: str, result: Any) -> None:
+        pass
+
+    def on_result_out(self, query_id: str, result: PyMicroPartition) -> None:
+        pass
+
+    def on_optimization_start(self, query_id: str) -> None:
+        pass
+
+    def on_optimization_end(self, query_id: str, optimized_plan: str) -> None:
+        pass
+
+    def on_exec_start(self, query_id: str, physical_plan: str) -> None:
+        pass
+
+    def on_exec_operator_start(self, query_id: str, node_id: int) -> None:
+        pass
+
+    def on_exec_operator_end(self, query_id: str, node_id: int) -> None:
+        pass
+
+    def on_exec_end(self, query_id: str) -> None:
+        pass
+
+
+def _collect_metrics(subscriber: PromptMetricsSubscriber) -> dict[str, int]:
+    if not subscriber.query_ids:
+        return {}
+
     aggregated: defaultdict[str, int] = defaultdict(int)
-    for stats in metrics:
+    query_id = subscriber.query_ids[-1]
+
+    for stats in subscriber.node_stats[query_id].values():
         for name, (_stat_type, value) in stats.items():
             if isinstance(value, (int, float)):
                 aggregated[name] += int(value)
@@ -47,7 +102,11 @@ def _collect_metrics(metrics: list[dict]) -> dict[str, int]:
     return dict(aggregated)
 
 
-def _assert_prompt_metrics_recorded(metrics: RecordBatch | None) -> None:
+def _assert_prompt_metrics_recorded(metrics: dict[str, int]) -> None:
+    if not RUNNER_IS_NATIVE:
+        # Ray runner does not support metrics collection yet
+        return
+
     required = {
         "requests",
         "input tokens",
@@ -55,18 +114,28 @@ def _assert_prompt_metrics_recorded(metrics: RecordBatch | None) -> None:
         "total tokens",
     }
 
-    assert metrics is not None
-    metrics_list = _collect_metrics(metrics.to_pylist())
-
     for name in required:
-        assert name in metrics_list, f"Expected metric '{name}' to be recorded."
-        assert metrics_list[name] >= 0
+        assert name in metrics, f"Expected metric '{name}' to be recorded."
+        assert metrics[name] >= 0
 
-    assert metrics_list["requests"] >= 1
+    assert metrics["requests"] >= 1
+
+
+@pytest.fixture()
+def metrics() -> Callable[[], dict[str, int]]:
+    ctx = daft.context.get_context()
+    subscriber = PromptMetricsSubscriber()
+    sub_name = f"prompt-metrics-{id(subscriber)}"
+    ctx.attach_subscriber(sub_name, subscriber)
+
+    try:
+        yield lambda: _collect_metrics(subscriber)
+    finally:
+        ctx.detach_subscriber(sub_name)
 
 
 @pytest.mark.integration()
-def test_prompt_plain_text(session):
+def test_prompt_plain_text(session, metrics):
     """Test prompt function with plain text response."""
     df = daft.from_pydict(
         {
@@ -88,7 +157,7 @@ def test_prompt_plain_text(session):
     )
 
     answers = df.to_pydict()["answer"]
-    _assert_prompt_metrics_recorded(df.metrics)
+    _assert_prompt_metrics_recorded(metrics())
 
     # Basic sanity checks - responses should be non-empty strings
     assert len(answers) == 3
@@ -100,7 +169,7 @@ def test_prompt_plain_text(session):
 
 
 @pytest.mark.integration()
-def test_prompt_structured_output(session):
+def test_prompt_structured_output(session, metrics):
     """Test prompt function with structured output (Pydantic model)."""
 
     class MovieReview(BaseModel):
@@ -131,7 +200,7 @@ def test_prompt_structured_output(session):
     )
 
     reviews = df.to_pydict()["review"]
-    _assert_prompt_metrics_recorded(df.metrics)
+    _assert_prompt_metrics_recorded(metrics())
 
     # Verify structured output
     assert len(reviews) == 3
@@ -144,7 +213,7 @@ def test_prompt_structured_output(session):
 
 
 @pytest.mark.integration()
-def test_prompt_with_image(session):
+def test_prompt_with_image(session, metrics):
     """Test prompt function with image input."""
     import numpy as np
 
@@ -171,7 +240,7 @@ def test_prompt_with_image(session):
     )
 
     answers = df.to_pydict()["answer"]
-    _assert_prompt_metrics_recorded(df.metrics)
+    _assert_prompt_metrics_recorded(metrics())
 
     # Basic sanity checks - responses should be non-empty strings
     # and should mention red/reddish color
@@ -186,7 +255,7 @@ def test_prompt_with_image(session):
 
 
 @pytest.mark.integration()
-def test_prompt_with_image_from_bytes(session):
+def test_prompt_with_image_from_bytes(session, metrics):
     """Test prompt function with image input from bytes column."""
     import io
 
@@ -222,7 +291,7 @@ def test_prompt_with_image_from_bytes(session):
     )
 
     answers = df.to_pydict()["answer"]
-    _assert_prompt_metrics_recorded(df.metrics)
+    _assert_prompt_metrics_recorded(metrics())
 
     # Basic sanity checks - responses should be non-empty strings
     assert len(answers) == 1
@@ -236,7 +305,7 @@ def test_prompt_with_image_from_bytes(session):
 
 
 @pytest.mark.integration()
-def test_prompt_with_image_from_file(session):
+def test_prompt_with_image_from_file(session, metrics):
     """Test prompt function with image input from File column."""
     import tempfile
 
@@ -274,7 +343,7 @@ def test_prompt_with_image_from_file(session):
         )
 
         answers = df.to_pydict()["answer"]
-        _assert_prompt_metrics_recorded(df.metrics)
+        _assert_prompt_metrics_recorded(metrics())
 
         # Basic sanity checks - responses should be non-empty strings
         assert len(answers) == 1
@@ -294,7 +363,7 @@ def test_prompt_with_image_from_file(session):
 
 
 @pytest.mark.integration()
-def test_prompt_with_text_document(session):
+def test_prompt_with_text_document(session, metrics):
     """Test prompt function with plain text document input."""
     import tempfile
 
@@ -324,7 +393,7 @@ def test_prompt_with_text_document(session):
         )
 
         answers = df.to_pydict()["answer"]
-        _assert_prompt_metrics_recorded(df.metrics)
+        _assert_prompt_metrics_recorded(metrics())
 
         assert len(answers) == 1
         for answer in answers:
@@ -340,7 +409,7 @@ def test_prompt_with_text_document(session):
 
 
 @pytest.mark.integration()
-def test_prompt_with_pdf_document(session):
+def test_prompt_with_pdf_document(session, metrics):
     """Test prompt function with PDF file input."""
     import tempfile
 
@@ -378,7 +447,7 @@ def test_prompt_with_pdf_document(session):
         )
 
         answers = df.to_pydict()["answer"]
-        _assert_prompt_metrics_recorded(df.metrics)
+        _assert_prompt_metrics_recorded(metrics())
 
         # Basic sanity checks
         assert len(answers) == 1
@@ -400,7 +469,7 @@ def test_prompt_with_pdf_document(session):
 
 
 @pytest.mark.integration()
-def test_prompt_with_image_structured_output(session):
+def test_prompt_with_image_structured_output(session, metrics):
     """Test prompt function with image input and structured output."""
     import numpy as np
 
@@ -432,7 +501,7 @@ def test_prompt_with_image_structured_output(session):
     )
 
     analyses = df.to_pydict()["analysis"]
-    _assert_prompt_metrics_recorded(df.metrics)
+    _assert_prompt_metrics_recorded(metrics())
 
     # Verify structured output
     assert len(analyses) == 1
@@ -449,7 +518,7 @@ def test_prompt_with_image_structured_output(session):
 
 
 @pytest.mark.integration()
-def test_prompt_with_mixed_image_and_document(session):
+def test_prompt_with_mixed_image_and_document(session, metrics):
     """Test prompt function with both image and PDF document inputs."""
     import tempfile
 
@@ -493,7 +562,7 @@ def test_prompt_with_mixed_image_and_document(session):
         )
 
         answers = df.to_pydict()["answer"]
-        _assert_prompt_metrics_recorded(df.metrics)
+        _assert_prompt_metrics_recorded(metrics())
 
         # Basic sanity checks
         assert len(answers) == 1
