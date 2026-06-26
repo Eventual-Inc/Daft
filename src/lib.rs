@@ -176,6 +176,8 @@ pub mod pylib {
         functions_registry.register::<daft_geo::SpatialFunctions>();
 
         functions_registry.add_fn(daft_functions::coalesce::Coalesce);
+        functions_registry.add_fn(daft_functions::greatest::Greatest);
+        functions_registry.add_fn(daft_functions::greatest::Least);
         functions_registry.add_fn(daft_file::File);
         functions_registry.add_fn(daft_file::FilePath);
         functions_registry.add_async_fn(daft_file::FileExists);

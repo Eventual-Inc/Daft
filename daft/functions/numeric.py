@@ -306,6 +306,96 @@ def conv(expr: Expression, from_base: int, to_base: int) -> Expression:
     return Expression._call_builtin_scalar_fn("conv", expr, from_base, to_base)
 
 
+def bround(expr: Expression, decimals: Expression | int = 0) -> Expression:
+    """Rounds a numeric expression to ``decimals`` places using HALF_EVEN (banker's) rounding.
+
+    Negative ``decimals`` rounds to powers of 10 above the decimal point
+    (e.g. ``bround(125, -1) == 120`` because 12.5 rounds to even -> 12).
+
+    Args:
+        expr: The expression to round.
+        decimals: Number of decimal places to round to. Defaults to 0.
+    """
+    return Expression._call_builtin_scalar_fn("bround", expr, decimals)
+
+
+def hex(expr: Expression) -> Expression:
+    """Converts an integer/string/binary expression to its uppercase hexadecimal string.
+
+    For integer inputs, negatives are encoded as 64-bit two's complement
+    (``hex(-1) == 'FFFFFFFFFFFFFFFF'``). For string and binary inputs, returns
+    the uppercase hex of the underlying bytes (``hex('Spark') == '537061726B'``).
+    """
+    return Expression._call_builtin_scalar_fn("hex", expr)
+
+
+def unhex(expr: Expression) -> Expression:
+    r"""Inverse of :func:`hex`: decodes a hexadecimal string into binary bytes.
+
+    Odd-length inputs are left-padded with ``'0'`` (``unhex('F') == b'\x0f'``).
+    Returns NULL when the input contains characters outside ``[0-9a-fA-F]``.
+    """
+    return Expression._call_builtin_scalar_fn("unhex", expr)
+
+
+def greatest(*exprs: Expression) -> Expression:
+    """Returns the largest value among the inputs, skipping NULLs row-wise.
+
+    Returns NULL only when all inputs in a row are NULL. Inputs are promoted
+    to a common supertype before comparison. Requires at least one argument.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import greatest
+        >>> df = daft.from_pydict({"a": [1, None, 3], "b": [2, 5, 1], "c": [None, 4, 6]})
+        >>> df = df.with_column("g", greatest(df["a"], df["b"], df["c"]))
+        >>> df.show()
+        ╭───────┬───────┬───────┬───────╮
+        │ a     ┆ b     ┆ c     ┆ g     │
+        │ ---   ┆ ---   ┆ ---   ┆ ---   │
+        │ Int64 ┆ Int64 ┆ Int64 ┆ Int64 │
+        ╞═══════╪═══════╪═══════╪═══════╡
+        │ 1     ┆ 2     ┆ None  ┆ 2     │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ None  ┆ 5     ┆ 4     ┆ 5     │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 3     ┆ 1     ┆ 6     ┆ 6     │
+        ╰───────┴───────┴───────┴───────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    return Expression._call_builtin_scalar_fn("greatest", *exprs)
+
+
+def least(*exprs: Expression) -> Expression:
+    """Returns the smallest value among the inputs, skipping NULLs row-wise.
+
+    Returns NULL only when all inputs in a row are NULL. Inputs are promoted
+    to a common supertype before comparison. Requires at least one argument.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import least
+        >>> df = daft.from_pydict({"a": [1, None, 3], "b": [2, 5, 1], "c": [None, 4, 6]})
+        >>> df = df.with_column("l", least(df["a"], df["b"], df["c"]))
+        >>> df.show()
+        ╭───────┬───────┬───────┬───────╮
+        │ a     ┆ b     ┆ c     ┆ l     │
+        │ ---   ┆ ---   ┆ ---   ┆ ---   │
+        │ Int64 ┆ Int64 ┆ Int64 ┆ Int64 │
+        ╞═══════╪═══════╪═══════╪═══════╡
+        │ 1     ┆ 2     ┆ None  ┆ 1     │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ None  ┆ 5     ┆ 4     ┆ 4     │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 3     ┆ 1     ┆ 6     ┆ 1     │
+        ╰───────┴───────┴───────┴───────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+    """
+    return Expression._call_builtin_scalar_fn("least", *exprs)
+
+
 def is_nan(expr: Expression) -> Expression:
     """Checks if values are NaN (a special float value indicating not-a-number).
 
