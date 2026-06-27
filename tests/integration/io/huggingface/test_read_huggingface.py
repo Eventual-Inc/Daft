@@ -9,6 +9,7 @@ from datasets import load_dataset
 import daft
 from daft import DataType as dt
 from daft.exceptions import DaftCoreException
+from tests._hf_retry import call_with_hf_retry
 from tests.conftest import assert_df_equals
 
 
@@ -16,7 +17,9 @@ from tests.conftest import assert_df_equals
 def test_read_huggingface_datasets_doesnt_fail():
     # run it multiple times to ensure it doesn't fail
     for _ in range(10):
-        df = daft.read_huggingface("huggingface/documentation-images")
+        # read_huggingface hits the HF Hub parquet API which is occasionally
+        # rate-limited (HTTP 429) on shared CI runners.
+        df = call_with_hf_retry(daft.read_huggingface, "huggingface/documentation-images")
         schema = df.schema()
         expected = daft.Schema.from_pydict({"image": dt.struct({"bytes": dt.binary(), "path": dt.string()})})
         assert schema == expected
@@ -32,11 +35,13 @@ def test_read_huggingface_datasets_doesnt_fail():
     ],
 )
 def test_read_huggingface(path, sort_key):
-    # Load all splits and concatenate them to match what daft.read_huggingface() does
-    ds = load_dataset(path)
+    # Load all splits and concatenate them to match what daft.read_huggingface() does.
+    # Both load_dataset and daft.read_huggingface go through the HF Hub and can
+    # be rate-limited (HTTP 429) on shared CI runners.
+    ds = call_with_hf_retry(load_dataset, path)
     expected = pd.concat([ds[s].with_format("arrow").to_pandas() for s in ds.keys()], ignore_index=True)
 
-    df = daft.read_huggingface(path)
+    df = call_with_hf_retry(daft.read_huggingface, path)
     actual = df.to_pandas()
 
     assert_df_equals(actual, expected, sort_key)
@@ -55,14 +60,16 @@ def test_read_huggingface_fallback_on_400_error():
             f'reqwest::Error {{ kind: Status(400, None), url: "https://huggingface.co/api/datasets/{repo}/parquet" }}'
         )
 
-        # This should trigger the fallback to datasets library
-        df = daft.read_huggingface(repo)
+        # This should trigger the fallback to datasets library, which itself
+        # hits the HF Hub and can flake on transient network errors
+        # (TLS handshake / connect timeouts) on shared CI runners.
+        df = call_with_hf_retry(daft.read_huggingface, repo)
 
         # Verify read_parquet was called with the correct HF path
         mock_read_parquet.assert_called_once_with(f"hf://datasets/{repo}", io_config=None)
 
         # Load expected data using datasets library (all splits)
-        ds = load_dataset(repo)
+        ds = call_with_hf_retry(load_dataset, repo)
         expected = pd.concat([ds[s].with_format("arrow").to_pandas() for s in ds.keys()], ignore_index=True)
 
         # Compare the results
@@ -79,8 +86,9 @@ def test_read_huggingface_multi_split_dataset():
     """
     repo = "stanfordnlp/imdb"
 
-    # Main path: read_huggingface uses read_parquet internally
-    df_main = daft.read_huggingface(repo)
+    # Main path: read_huggingface uses read_parquet internally. The HF Hub
+    # parquet API is occasionally rate-limited (HTTP 429) on shared CI runners.
+    df_main = call_with_hf_retry(daft.read_huggingface, repo)
     main_result = df_main.to_pandas()
 
     # Fallback path: mock read_parquet to force fallback to datasets library
@@ -90,7 +98,10 @@ def test_read_huggingface_multi_split_dataset():
             f'reqwest::Error {{ kind: Status(400, None), url: "https://huggingface.co/api/datasets/{repo}/parquet" }}'
         )
 
-        df_fallback = daft.read_huggingface(repo)
+        # Fallback uses the datasets library, which hits the HF Hub and can
+        # flake on transient network errors (TLS handshake / connect
+        # timeouts) on shared CI runners.
+        df_fallback = call_with_hf_retry(daft.read_huggingface, repo)
         fallback_result = df_fallback.to_pandas()
 
     # Both paths should return the same data

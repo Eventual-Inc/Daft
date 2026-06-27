@@ -28,6 +28,7 @@ pub use file_format_config::{
     CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig, TextSourceConfig,
     WarcSourceConfig,
 };
+pub mod clustering;
 pub mod glob;
 mod hive;
 mod partitioning;
@@ -39,6 +40,7 @@ pub mod scan_task_iters;
 mod sharder;
 mod source_config;
 pub mod statistics;
+pub use clustering::ClusteringKeys;
 pub use expr_rewriter::{PredicateGroups, rewrite_predicate_for_partitioning};
 pub use partitioning::{PartitionField, PartitionTransform};
 pub use pushdowns::{Pushdowns, SupportsPushdownFilters};
@@ -409,19 +411,31 @@ impl ScanTask {
                 .all(|s| s.partition_spec == sources.first().unwrap().partition_spec),
             "ScanTask sources must all have the same PartitionSpec at construction",
         );
-        let (length, size_bytes_on_disk, statistics) = sources
+        let (length, column_sizes, size_bytes_on_disk, statistics) = sources
             .iter()
             .map(|s| {
                 (
                     s.metadata.as_ref().map(|m| m.length),
+                    s.metadata.as_ref().and_then(|m| m.column_sizes.clone()),
                     s.size_bytes,
                     s.statistics.clone(),
                 )
             })
             .reduce(
-                |(acc_len, acc_size, acc_stats), (curr_len, curr_size, curr_stats)| {
+                |(acc_len, acc_col_sizes, acc_size, acc_stats),
+                 (curr_len, curr_col_sizes, curr_size, curr_stats)| {
                     (
                         acc_len.and_then(|acc_len| curr_len.map(|curr_len| acc_len + curr_len)),
+                        // All-or-nothing: only retain per-column sizes if every source has them,
+                        // summing each column across sources.
+                        acc_col_sizes.and_then(|mut acc| {
+                            curr_col_sizes.map(|curr| {
+                                for (name, bytes) in curr {
+                                    *acc.entry(name).or_insert(0) += bytes;
+                                }
+                                acc
+                            })
+                        }),
                         acc_size
                             .and_then(|acc_size| curr_size.map(|curr_size| acc_size + curr_size)),
                         acc_stats.and_then(|acc_stats| {
@@ -442,7 +456,10 @@ impl ScanTask {
                 },
             )
             .unwrap();
-        let metadata = length.map(|l| TableMetadata { length: l });
+        let metadata = length.map(|l| TableMetadata {
+            length: l,
+            column_sizes,
+        });
         Self {
             sources,
             schema,
@@ -754,7 +771,45 @@ impl ScanTask {
                     })
                 })
                 .or_else(|| {
-                    // use approximate number of rows multiplied by an approximate bytes-per-row
+                    // Use per-column uncompressed sizes from file metadata (e.g. Parquet
+                    // column-chunk totals) when available. This is more accurate than the
+                    // schema-based estimate for data with dictionary encoding, low-cardinality
+                    // columns, or variable-length nested types (e.g. List) where the schema
+                    // heuristic assumes a fixed element count.
+                    //
+                    // We restrict the sum to the materialized (projected) columns so the
+                    // estimate respects column-projection pushdown, and convert to a per-row
+                    // size scaled by `approx_num_rows`, so limit/filter pushdowns are honored
+                    // the same way as the schema-based fallback below.
+                    let metadata = self.metadata.as_ref()?;
+                    let column_sizes = metadata.column_sizes.as_ref()?;
+                    if metadata.length == 0 {
+                        return None;
+                    }
+                    let projected_bytes: u64 = mat_schema
+                        .field_names()
+                        .filter_map(|name| column_sizes.get(name).copied())
+                        .sum();
+                    // No projected column was found in the metadata (e.g. the scan only reads
+                    // generated/partition columns); defer to the schema-based estimate.
+                    if projected_bytes == 0 {
+                        return None;
+                    }
+                    let row_size = (projected_bytes as f64) / (metadata.length as f64);
+                    self.approx_num_rows(config).map(|approx_num_rows| {
+                        let estimate_f64 = approx_num_rows * row_size;
+                        if estimate_f64.is_nan()
+                            || estimate_f64.is_infinite()
+                            || estimate_f64 > REASONABLE_SIZE_BYTES as f64
+                        {
+                            REASONABLE_SIZE_BYTES
+                        } else {
+                            estimate_f64 as usize
+                        }
+                    })
+                })
+                .or_else(|| {
+                    // Fall back to approximate number of rows multiplied by an approximate bytes-per-row
                     self.approx_num_rows(config).map(|approx_num_rows| {
                         let row_size = mat_schema.estimate_row_size_bytes();
 
@@ -872,7 +927,7 @@ Pushdowns = {pushdowns}
 
 #[cfg(test)]
 mod test {
-    use std::sync::Arc;
+    use std::{collections::BTreeMap, sync::Arc};
 
     use common_display::{DisplayAs, DisplayLevel};
     use common_error::DaftResult;
@@ -907,6 +962,7 @@ mod test {
             field_id_mapping: None,
             row_groups: None,
             chunk_size: None,
+            ignore_corrupt_files: false,
         }));
 
         ScanTask::new(
@@ -925,6 +981,7 @@ mod test {
             field_id_mapping: None,
             row_groups: None,
             chunk_size: None,
+            ignore_corrupt_files: false,
         });
 
         let mut sources: Vec<String> = Vec::new();
@@ -1041,6 +1098,7 @@ mod test {
             size_bytes: Some(1_000_000),
             metadata: Some(TableMetadata {
                 length: usize::MAX, // Extremely large row count
+                column_sizes: None,
             }),
             statistics: None,
             partition_spec: None,
@@ -1128,6 +1186,7 @@ mod test {
             size_bytes: Some(10_000_000), // 10MB
             metadata: Some(TableMetadata {
                 length: 1000, // 1000 rows
+                column_sizes: None,
             }),
             statistics: None,
             partition_spec: None,
@@ -1171,6 +1230,7 @@ mod test {
             size_bytes: Some(1_000_000),
             metadata: Some(TableMetadata {
                 length: usize::MAX, // Extremely large row count
+                column_sizes: None,
             }),
             statistics: None,
             partition_spec: None,
@@ -1197,6 +1257,7 @@ mod test {
                     field_id_mapping: None,
                     row_groups: None,
                     chunk_size: None,
+                    ignore_corrupt_files: false,
                 },
             ))),
             schema,
@@ -1248,6 +1309,7 @@ mod test {
                     field_id_mapping: None,
                     row_groups: None,
                     chunk_size: None,
+                    ignore_corrupt_files: false,
                 },
             ))),
             schema,
@@ -1292,6 +1354,7 @@ mod test {
                     field_id_mapping: None,
                     row_groups: None,
                     chunk_size: None,
+                    ignore_corrupt_files: false,
                 },
             ))),
             schema,
@@ -1314,7 +1377,10 @@ mod test {
     fn test_schema_row_size_estimation_valid_case() {
         let sources = vec![ScanSource {
             size_bytes: Some(1_000_000),
-            metadata: Some(TableMetadata { length: 10_000 }),
+            metadata: Some(TableMetadata {
+                length: 10_000,
+                column_sizes: None,
+            }),
             statistics: None,
             partition_spec: None,
             kind: ScanSourceKind::File {
@@ -1338,6 +1404,7 @@ mod test {
                     field_id_mapping: None,
                     row_groups: None,
                     chunk_size: None,
+                    ignore_corrupt_files: false,
                 },
             ))),
             schema,
@@ -1354,6 +1421,135 @@ mod test {
         // 10,000 rows * (8 bytes for Int64 + 8 bytes for Float64) = 160,000 bytes
         assert!(estimate_val > 0);
         assert!(estimate_val < 1_000_000_000); // Less than 1GB is reasonable
+    }
+
+    /// Builds a parquet scan task modeled on the customer's tokenized-sequence dataset:
+    /// four `List(Int64)` columns where `position_ids` dominates the on-disk bytes. The
+    /// per-column uncompressed sizes are taken from row group 0 of `rank_0_train.parquet`.
+    fn make_list_column_scan_task(pushdowns: Pushdowns) -> ScanTask {
+        // Uncompressed byte sizes per column, from the customer's parquet metadata.
+        let column_sizes = BTreeMap::from([
+            ("input_ids".to_string(), 10_760_083u64),
+            ("attention_mask".to_string(), 3_339u64),
+            ("labels".to_string(), 10_760_083u64),
+            ("position_ids".to_string(), 122_969_239u64),
+        ]);
+        let num_rows = 200; // row group 0 num_rows
+
+        let sources = vec![ScanSource {
+            size_bytes: Some(32_418_149), // compressed row group 0 bytes
+            metadata: Some(TableMetadata {
+                length: num_rows,
+                column_sizes: Some(column_sizes),
+            }),
+            statistics: None,
+            partition_spec: None,
+            kind: ScanSourceKind::File {
+                path: "rank_0_train.parquet".to_string(),
+                chunk_spec: None,
+                iceberg_delete_files: None,
+                parquet_metadata: None,
+            },
+        }];
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("input_ids", DataType::List(Box::new(DataType::Int64))),
+            Field::new("attention_mask", DataType::List(Box::new(DataType::Int64))),
+            Field::new("labels", DataType::List(Box::new(DataType::Int64))),
+            Field::new("position_ids", DataType::List(Box::new(DataType::Int64))),
+        ]));
+
+        ScanTask::new(
+            sources,
+            Arc::new(SourceConfig::File(FileFormatConfig::Parquet(
+                ParquetSourceConfig {
+                    coerce_int96_timestamp_unit: TimeUnit::Seconds,
+                    field_id_mapping: None,
+                    row_groups: None,
+                    chunk_size: None,
+                    ignore_corrupt_files: false,
+                },
+            ))),
+            schema,
+            Arc::new(StorageConfig::new_internal(false, None)),
+            pushdowns,
+            None,
+        )
+    }
+
+    /// Regression test for OOMs caused by under-estimating `List`-typed columns.
+    ///
+    /// The schema-based fallback assumes a fixed list length (`DEFAULT_LIST_LEN = 4`),
+    /// estimating ~130 bytes/row (~26 KB for 200 rows) when the real uncompressed size
+    /// is ~144 MB. Per-column metadata sizes must be used instead.
+    #[test]
+    fn test_list_column_estimation_uses_metadata_not_schema() {
+        let scan_task = make_list_column_scan_task(Pushdowns::default());
+        let estimate = scan_task.estimate_in_memory_size_bytes(None).unwrap();
+
+        // Expect the sum of all four columns' uncompressed sizes (~144 MB).
+        // (Allow a few bytes of slack for the per-row f64 roundtrip.)
+        let expected: i64 = 10_760_083 + 3_339 + 10_760_083 + 122_969_239;
+        assert!((estimate as i64 - expected).abs() <= 4);
+
+        // Sanity check: this must be vastly larger than the schema-based guess, which is
+        // what caused the OOM. DEFAULT_LIST_LEN=4 yields ~130 bytes/row.
+        let schema_based = 200.0 * scan_task.materialized_schema().estimate_row_size_bytes();
+        assert!(schema_based < 30_000.0);
+        assert!((estimate as f64) > 1000.0 * schema_based);
+    }
+
+    /// The metadata-based estimate must respect column-projection pushdown: selecting only
+    /// the small `attention_mask` column should not estimate the whole (position_ids-heavy)
+    /// row group.
+    #[test]
+    fn test_list_column_estimation_respects_projection() {
+        // Project only the small column.
+        let small_pushdowns = Pushdowns::new(
+            None,
+            None,
+            Some(Arc::new(vec!["attention_mask".to_string()])),
+            None,
+            None,
+            None,
+        );
+        let small = make_list_column_scan_task(small_pushdowns)
+            .estimate_in_memory_size_bytes(None)
+            .unwrap();
+        assert!((small as i64 - 3_339).abs() <= 4);
+
+        // Project only the dominant column.
+        let large_pushdowns = Pushdowns::new(
+            None,
+            None,
+            Some(Arc::new(vec!["position_ids".to_string()])),
+            None,
+            None,
+            None,
+        );
+        let large = make_list_column_scan_task(large_pushdowns)
+            .estimate_in_memory_size_bytes(None)
+            .unwrap();
+        assert!((large as i64 - 122_969_239).abs() <= 4);
+
+        // The projected small column must be orders of magnitude smaller than the full scan.
+        assert!(large > 1000 * small);
+    }
+
+    /// A limit pushdown should scale the metadata-based estimate down proportionally,
+    /// rather than returning the full-file size.
+    #[test]
+    fn test_list_column_estimation_respects_limit() {
+        let limit_pushdowns = Pushdowns::new(None, None, None, Some(50), None, None);
+        let estimate = make_list_column_scan_task(limit_pushdowns)
+            .estimate_in_memory_size_bytes(None)
+            .unwrap();
+
+        // 50 of 200 rows => roughly a quarter of the full ~144 MB.
+        let full = 10_760_083 + 3_339 + 10_760_083 + 122_969_239;
+        let expected = full / 4;
+        // Allow for f64 rounding.
+        assert!((estimate as i64 - expected as i64).abs() <= 4);
     }
 
     #[test]
@@ -1381,6 +1577,7 @@ mod test {
                     field_id_mapping: None,
                     row_groups: None,
                     chunk_size: None,
+                    ignore_corrupt_files: false,
                 },
             ))),
             schema,

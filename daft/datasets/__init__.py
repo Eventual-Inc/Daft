@@ -1,4 +1,5 @@
-from . import lerobot
-from .common_crawl import common_crawl
+from daft.datasets.common_crawl import common_crawl
+from daft.datasets import droid
+from daft.datasets import lerobot
 
-__all__ = ["common_crawl", "lerobot"]
+__all__ = ["common_crawl", "droid", "lerobot"]

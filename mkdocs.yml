@@ -33,7 +33,6 @@ theme:
   - navigation.top   # back-to-top button
   - navigation.instant
   - navigation.indexes
-  - navigation.expand   # expand navigation sections by default
   palette:
   - media: (prefers-color-scheme)
     toggle:

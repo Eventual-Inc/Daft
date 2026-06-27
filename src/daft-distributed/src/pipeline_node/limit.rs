@@ -16,7 +16,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::{DistributedPipelineNode, PipelineNodeImpl, TaskBuilderStream};
 use crate::{
-    pipeline_node::{NodeID, PipelineNodeConfig, PipelineNodeContext},
+    pipeline_node::{ClusteringStrategy, NodeID, PipelineNodeConfig, PipelineNodeContext},
     plan::{PlanConfig, PlanExecutionContext},
     scheduling::task::{SwordfishTaskBuilder, TaskID},
     utils::channel::{Sender, create_channel},
@@ -111,7 +111,7 @@ impl LimitNode {
         let config = PipelineNodeConfig::new(
             schema,
             plan_config.config.clone(),
-            child.config().clustering_spec.clone(),
+            ClusteringStrategy::Passthrough { child: &child },
         );
         Self {
             config,

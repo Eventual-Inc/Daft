@@ -13,7 +13,7 @@ def file(url: Expression, io_config: IOConfig | None = None) -> Expression:
     """Converts a string containing a file reference to a `daft.File` reference.
 
     Args:
-        url (StringExpression): the url of the file
+        url (String Expression): the url of the file
         io_config (IOConfig, default=None): The IO configuration to use.
 
     Returns:
@@ -99,6 +99,18 @@ def file_size(file: Expression) -> Expression:
         Expression (UInt64 Expression): expression containing the file size in bytes
     """
     return file._eval_expressions("file_size")
+
+
+def file_exists(file: Expression) -> Expression:
+    """Returns whether the file exists.
+
+    Args:
+        file (File Expression): expression to evaluate.
+
+    Returns:
+        Expression (Boolean Expression): expression indicating whether the file exists
+    """
+    return file._eval_expressions("file_exists")
 
 
 def guess_mime_type(bytes_expr: Expression) -> Expression:
