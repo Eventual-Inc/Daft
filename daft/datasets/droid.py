@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
@@ -11,7 +12,6 @@ from daft.functions import (
     file_exists,
     format,
     hdf5_file,
-    hdf5_read_many,
     regexp_replace,
     unnest,
     video_file,
@@ -22,6 +22,7 @@ from daft.io import GCSConfig, IOConfig
 
 if TYPE_CHECKING:
     from daft.dataframe import DataFrame
+    from daft.file.hdf5 import Hdf5File
 
 
 _PUBLIC_GCS_BUCKET = "gs://gresearch/robotics/droid_raw"
@@ -74,11 +75,93 @@ _DEFAULT_TRAJECTORY_FIELDS: tuple[str, ...] = (
     "observation/robot_state/cartesian_position",
 )
 
+_FLOAT64_TRAJECTORY_DTYPE = DataType.tensor(DataType.float64())
+_INT64_TRAJECTORY_DTYPE = DataType.tensor(DataType.int64())
+_BOOL_TRAJECTORY_DTYPE = DataType.tensor(DataType.bool())
+
+_FLOAT64_TRAJECTORY_FIELDS: frozenset[str] = frozenset(
+    {
+        "action/cartesian_position",
+        "action/cartesian_velocity",
+        "action/gripper_position",
+        "action/gripper_velocity",
+        "action/joint_position",
+        "action/joint_velocity",
+        "action/target_cartesian_position",
+        "action/target_gripper_position",
+        "action/robot_state/cartesian_position",
+        "action/robot_state/gripper_position",
+        "action/robot_state/joint_positions",
+        "action/robot_state/joint_torques_computed",
+        "action/robot_state/joint_velocities",
+        "action/robot_state/motor_torques_measured",
+        "action/robot_state/prev_controller_latency_ms",
+        "action/robot_state/prev_joint_torques_computed",
+        "action/robot_state/prev_joint_torques_computed_safened",
+        "observation/robot_state/cartesian_position",
+        "observation/robot_state/gripper_position",
+        "observation/robot_state/joint_positions",
+        "observation/robot_state/joint_torques_computed",
+        "observation/robot_state/joint_velocities",
+        "observation/robot_state/motor_torques_measured",
+        "observation/robot_state/prev_controller_latency_ms",
+        "observation/robot_state/prev_joint_torques_computed",
+        "observation/robot_state/prev_joint_torques_computed_safened",
+    }
+)
+
+_INT64_TRAJECTORY_FIELDS: frozenset[str] = frozenset(
+    {
+        "observation/timestamp/control/control_start",
+        "observation/timestamp/control/policy_start",
+        "observation/timestamp/control/sleep_start",
+        "observation/timestamp/control/step_end",
+        "observation/timestamp/control/step_start",
+        "observation/timestamp/robot_state/read_end",
+        "observation/timestamp/robot_state/read_start",
+        "observation/timestamp/robot_state/robot_timestamp_nanos",
+        "observation/timestamp/robot_state/robot_timestamp_seconds",
+    }
+)
+
+_BOOL_TRAJECTORY_FIELDS: frozenset[str] = frozenset(
+    {
+        "action/robot_state/prev_command_successful",
+        "observation/controller_info/controller_on",
+        "observation/controller_info/failure",
+        "observation/controller_info/movement_enabled",
+        "observation/controller_info/success",
+        "observation/robot_state/prev_command_successful",
+        "observation/timestamp/skip_action",
+    }
+)
+
+_CAMERA_EXTRINSICS_PATTERN = re.compile(r"^observation/camera_extrinsics/[^/]+_(?:left|right)(?:_gripper_offset)?$")
+_CAMERA_TYPE_PATTERN = re.compile(r"^observation/camera_type/[^/]+$")
+_CAMERA_TIMESTAMP_PATTERN = re.compile(
+    r"^observation/timestamp/cameras/[^/]+_"
+    r"(?:estimated_capture|frame_received|read_end|read_start)$"
+)
+
 _CAMERA_VIDEO_COLUMNS: dict[str, str] = {
     "wrist": "wrist_cam_video",
     "ext1": "ext1_cam_video",
     "ext2": "ext2_cam_video",
 }
+
+
+def _trajectory_field_dtype(field: str) -> DataType | None:
+    if field in _FLOAT64_TRAJECTORY_FIELDS or _CAMERA_EXTRINSICS_PATTERN.match(field):
+        return _FLOAT64_TRAJECTORY_DTYPE
+    if field in _INT64_TRAJECTORY_FIELDS or _CAMERA_TYPE_PATTERN.match(field) or _CAMERA_TIMESTAMP_PATTERN.match(field):
+        return _INT64_TRAJECTORY_DTYPE
+    if field in _BOOL_TRAJECTORY_FIELDS:
+        return _BOOL_TRAJECTORY_DTYPE
+    return None
+
+
+def _trajectory_return_dtype(fields: Sequence[str]) -> DataType:
+    return DataType.struct({field: _trajectory_field_dtype(field) or DataType.python() for field in fields})
 
 
 def _resolve_cameras(cameras: str | Sequence[str]) -> tuple[str, ...]:
@@ -256,7 +339,7 @@ def trajectory(
         ...     episodes,
         ...     fields=["action/joint_position", "action/gripper_position"],
         ... )
-        >>> traj.select("uuid", "action_joint_position", "action_gripper_position").collect()  # doctest: +SKIP
+        >>> traj.select("uuid", "action/joint_position", "action/gripper_position").collect()  # doctest: +SKIP
     """
     from daft.dependencies import h5py
 
@@ -266,13 +349,19 @@ def trajectory(
             "Please install it with: pip install 'daft[hdf5]'"
         )
 
+    fields = tuple(fields)
     if "trajectory" not in episodes.schema().column_names():
         raise ValueError("Expected an episode DataFrame with a `trajectory` column.")
 
     if len(fields) == 0:
         raise ValueError("fields must contain at least one HDF5 dataset path")
 
-    episodes = episodes.with_column("trajectory", hdf5_read_many(col("trajectory"), fields))
+    @daft.func(return_dtype=_trajectory_return_dtype(fields))
+    def read_droid_trajectory(file: Hdf5File) -> dict[str, object]:
+        with file.to_tempfile() as tmp, h5py.File(tmp.name, "r") as h5:
+            return {field: h5[field][()] for field in fields}
+
+    episodes = episodes.with_column("trajectory", read_droid_trajectory(col("trajectory")))
 
     return episodes.select(
         "uuid",

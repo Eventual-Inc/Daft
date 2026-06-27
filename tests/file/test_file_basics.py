@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import io
 import random
 import struct
@@ -139,6 +140,27 @@ def test_to_tempfile_larger_data(tmp_path: Path):
 
     with file.to_tempfile() as f:
         assert f.read() == data
+
+
+def test_to_tempfile_larger_data_uses_bounded_copy_buffer(tmp_path: Path, monkeypatch):
+    file_module = importlib.import_module("daft.file.file")
+    data = bytes([random.randint(0, 255) for _ in range(2048)])
+    temp_file = tmp_path / "test_file.bin"
+    temp_file.write_bytes(data)
+    copy_lengths: list[int] = []
+    original_copyfileobj = file_module.shutil.copyfileobj
+
+    def track_copyfileobj(fsrc, fdst, length=0):
+        copy_lengths.append(length)
+        return original_copyfileobj(fsrc, fdst, length=length)
+
+    monkeypatch.setattr(file_module.shutil, "copyfileobj", track_copyfileobj)
+
+    file = daft.File(str(temp_file.absolute()))
+    with file.to_tempfile() as f:
+        assert f.read() == data
+
+    assert copy_lengths == [file_module.BUFFER_COPY]
 
 
 def test_to_tempfile_remote():

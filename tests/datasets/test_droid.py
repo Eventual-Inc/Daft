@@ -240,50 +240,58 @@ def sample_episodes_df(tmp_path):
         observation = f.create_group("observation")
         robot_state = observation.create_group("robot_state")
         robot_state.create_dataset("joint_positions", data=robot_joint_positions)
+        timestamp = observation.create_group("timestamp")
+        timestamp.create_dataset("skip_action", data=[False, False, True, False])
+        control = timestamp.create_group("control")
+        control.create_dataset("step_start", data=[10, 20, 30, 40])
 
-    return daft.from_pydict(
-        {
-            "uuid": ["episode-1"],
-            "scene_id": [1],
-            "robot_serial": ["robot-1"],
-            "r2d2_version": ["1.0"],
-            "current_task": ["pick up the object"],
-            "success": [True],
-            "trajectory_length": [4],
-            "path": [str(path)],
-        }
-    ).select(
-        "uuid",
-        "scene_id",
-        "robot_serial",
-        "r2d2_version",
-        "current_task",
-        "success",
-        "trajectory_length",
-        hdf5_file(daft.col("path")).alias("trajectory"),
-    ).with_columns(
-        {
-            "wrist_cam_video": video_file(daft.lit("/tmp/wrist.mp4")),
-            "wrist_cam_extrinsics": daft.lit([0.0, 1.0, 2.0]),
-            "ext1_cam_video": video_file(daft.lit("/tmp/ext1.mp4")),
-            "ext1_cam_extrinsics": daft.lit([3.0, 4.0, 5.0]),
-            "ext2_cam_video": video_file(daft.lit("/tmp/ext2.mp4")),
-            "ext2_cam_extrinsics": daft.lit([6.0, 7.0, 8.0]),
-        }
+    return (
+        daft.from_pydict(
+            {
+                "uuid": ["episode-1"],
+                "scene_id": [1],
+                "robot_serial": ["robot-1"],
+                "r2d2_version": ["1.0"],
+                "current_task": ["pick up the object"],
+                "success": [True],
+                "trajectory_length": [4],
+                "path": [str(path)],
+            }
+        )
+        .select(
+            "uuid",
+            "scene_id",
+            "robot_serial",
+            "r2d2_version",
+            "current_task",
+            "success",
+            "trajectory_length",
+            hdf5_file(daft.col("path")).alias("trajectory"),
+        )
+        .with_columns(
+            {
+                "wrist_cam_video": video_file(daft.lit("/tmp/wrist.mp4")),
+                "wrist_cam_extrinsics": daft.lit([0.0, 1.0, 2.0]),
+                "ext1_cam_video": video_file(daft.lit("/tmp/ext1.mp4")),
+                "ext1_cam_extrinsics": daft.lit([3.0, 4.0, 5.0]),
+                "ext2_cam_video": video_file(daft.lit("/tmp/ext2.mp4")),
+                "ext2_cam_extrinsics": daft.lit([6.0, 7.0, 8.0]),
+            }
+        )
     )
 
 
 def test_trajectory_reads_selected_fields(sample_episodes_df) -> None:
     result = trajectory(sample_episodes_df, fields=_SAMPLE_TRAJECTORY_FIELDS).collect().to_pydict()
 
-    assert _as_list(result["action_joint_position"][0]) == [
+    assert _as_list(result["action/joint_position"][0]) == [
         [0.0, 1.0, 2.0],
         [3.0, 4.0, 5.0],
         [6.0, 7.0, 8.0],
         [9.0, 10.0, 11.0],
     ]
-    assert _as_list(result["action_gripper_position"][0]) == [0.1, 0.2, 0.3, 0.4]
-    assert _as_list(result["observation_robot_state_joint_positions"][0]) == [
+    assert _as_list(result["action/gripper_position"][0]) == [0.1, 0.2, 0.3, 0.4]
+    assert _as_list(result["observation/robot_state/joint_positions"][0]) == [
         [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
         [7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0],
         [14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0],
@@ -302,7 +310,7 @@ def test_trajectory_unnests_hdf5_fields(sample_episodes_df) -> None:
         "current_task",
         "success",
         "trajectory_length",
-        "action_gripper_position",
+        "action/gripper_position",
         "wrist_cam_video",
         "wrist_cam_extrinsics",
         "ext1_cam_video",
@@ -310,6 +318,24 @@ def test_trajectory_unnests_hdf5_fields(sample_episodes_df) -> None:
         "ext2_cam_video",
         "ext2_cam_extrinsics",
     ]
+
+
+def test_trajectory_schema_uses_known_hdf5_dtypes(sample_episodes_df) -> None:
+    result = trajectory(
+        sample_episodes_df,
+        fields=[
+            "action/joint_position",
+            "action/gripper_position",
+            "observation/timestamp/control/step_start",
+            "observation/timestamp/skip_action",
+        ],
+    )
+
+    schema = result.schema()
+    assert schema["action/joint_position"].dtype == DataType.tensor(DataType.float64())
+    assert schema["action/gripper_position"].dtype == DataType.tensor(DataType.float64())
+    assert schema["observation/timestamp/control/step_start"].dtype == DataType.tensor(DataType.int64())
+    assert schema["observation/timestamp/skip_action"].dtype == DataType.tensor(DataType.bool())
 
 
 def test_trajectory_uses_curated_raw_column_order(sample_episodes_df) -> None:
@@ -335,7 +361,7 @@ def test_trajectory_uses_curated_raw_column_order(sample_episodes_df) -> None:
         "current_task",
         "success",
         "trajectory_length",
-        "action_gripper_position",
+        "action/gripper_position",
         "wrist_cam_video",
         "wrist_cam_extrinsics",
         "ext1_cam_video",
@@ -355,7 +381,7 @@ def test_trajectory_reads_full_hdf5_paths(sample_episodes_df) -> None:
         .to_pydict()
     )
 
-    assert _as_list(result["action_joint_position"][0]) == [
+    assert _as_list(result["action/joint_position"][0]) == [
         [0.0, 1.0, 2.0],
         [3.0, 4.0, 5.0],
         [6.0, 7.0, 8.0],
