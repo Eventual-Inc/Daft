@@ -7,9 +7,9 @@ from daft.api_annotations import PublicAPI
 from daft.datatype import DataType
 from daft.expressions import col, lit
 from daft.functions import (
-    file,
     file_exists,
     format,
+    hdf5_file,
     regexp_replace,
     unnest,
     video_file,
@@ -89,7 +89,7 @@ def raw(
 
         - `episode_dir`: path to the episode directory
         - `metadata.*`: metadata fields parsed from the metadata JSON file
-        - `trajectory`: lazy `daft.File` reference to the trajectory HDF5 file
+        - `trajectory`: lazy `daft.Hdf5File` reference to the trajectory HDF5 file
         - `wrist_video`: lazy `daft.VideoFile` reference to the wrist camera MP4 file
         - `ext1_video`: lazy `daft.VideoFile` reference to the external camera 1 MP4 file
             Often the left camera feed.
@@ -121,7 +121,7 @@ def raw(
     # Create a file column for the trajectory HDF5 file
     episodes = episodes.with_column(
         "trajectory",
-        file(format("{}/trajectory.h5", col("episode_dir")), io_config=io_config),
+        hdf5_file(format("{}/trajectory.h5", col("episode_dir")), io_config=io_config),
     ).with_column(
         "trajectory",
         when(file_exists(col("trajectory")), col("trajectory")).otherwise(lit(None)),
