@@ -56,7 +56,6 @@ class Hdf5File(File):
             )
         super().__init__(url, io_config, MediaType.hdf5())
 
-    def __post_init__(self) -> None:
         if not self.is_hdf5():
             raise ValueError(f"File {self} is not an HDF5 file")
 

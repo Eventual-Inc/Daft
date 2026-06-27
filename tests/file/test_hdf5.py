@@ -128,12 +128,12 @@ def test_hdf5_file_dependency_errors(sample_hdf5_path, monkeypatch):
         daft.Hdf5File(sample_hdf5_path)
 
 
-def test_hdf5_file_post_init_validates_mimetype(sample_hdf5_path, monkeypatch):
-    file = daft.Hdf5File(sample_hdf5_path)
-    monkeypatch.setattr(file, "is_hdf5", lambda: False)
+def test_hdf5_file_init_validates_mimetype(tmp_path):
+    path = tmp_path / "not-hdf5.txt"
+    path.write_text("not an hdf5 file")
 
     with pytest.raises(ValueError, match="not an HDF5 file"):
-        file.__post_init__()
+        daft.Hdf5File(str(path))
 
 
 def test_hdf5_file_dtype(sample_hdf5_path):
@@ -263,7 +263,7 @@ def test_hdf5_read_many_normalizes_dataset_inputs(sample_hdf5_path):
     assert result["action_proprio"].shape == (4, 7)
 
 
-def test_hdf5_read_many_rejects_invalid_dataset_inputs():
+def test_hdf5_read_many_rejects_invalid_dataset_inputs(sample_hdf5_path):
     assert _field_name_from_dataset("/") == "dataset"
     assert _normalize_datasets({"values": "values"}) == {"values": "values"}
 
@@ -278,7 +278,7 @@ def test_hdf5_read_many_rejects_invalid_dataset_inputs():
 
     with pytest.raises(ValueError, match="dtypes must match"):
         daft.functions.hdf5_read_many(
-            daft.lit(daft.Hdf5File("s3://bucket/sample.h5")),
+            daft.lit(daft.Hdf5File(sample_hdf5_path)),
             {"values": "values"},
             dtypes={"other": daft.DataType.float64()},
         )
