@@ -77,7 +77,7 @@ def _decode_lerobot_video_timestamp(
         with av_mod.open(f_open) as container:
             stream = container.streams.video[0]
             # Match LeRobot: seek backwards to preceding keyframe, then decode forwards.
-            container.seek(max(0, int(abs_ts * av_mod.time_base)), backward=True) 
+            container.seek(max(0, int(abs_ts * av_mod.time_base)), backward=True)
 
             tail_s = max(0.1, tolerance * 50.0, 1.0 / 24.0)
             for vf in container.decode(stream):
@@ -192,7 +192,7 @@ def read(
         tolerance_s = 1.0 / fps / 2.0  # half a frame period: any closer frame is unambiguously "the" frame
 
         # To increase parallelism, reduce batch size
-        df = df.into_batches(16)  
+        df = df.into_batches(16)
         for k in video_keys:
             df = df.with_column(
                 k,
@@ -206,7 +206,6 @@ def read(
                 ),
             )
             df = df.exclude(f"videos/{k}/video")
-
 
     # Drop the internal per-episode video metadata we kept above (chunk/file index,
     # from/to timestamp). This restores read_episodes' default of hiding these.
