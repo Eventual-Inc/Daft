@@ -415,6 +415,8 @@ const MIME_SNIFF_BYTES: usize = 4 * 1024 + HDF5_MAGIC.len();
 fn guess_mimetype_from_url(url: &str) -> Option<String> {
     let url = Url::parse(url).ok()?;
     let path = url.path();
+    // mime_guess does not map .h5/.hdf5 to the registered HDF5 MIME type, so
+    // handle those extensions before falling back to the library's URL lookup.
     if std::path::Path::new(path)
         .extension()
         .is_some_and(|ext| ext.eq_ignore_ascii_case("h5") || ext.eq_ignore_ascii_case("hdf5"))
