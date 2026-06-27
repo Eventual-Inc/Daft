@@ -2,10 +2,6 @@
 
 <div class="grid cards" markdown>
 
-- [DROID Dataset Notebook](https://github.com/Eventual-Inc/Daft/blob/main/examples/droid.ipynb)
-
-    Explore DROID metadata, HDF5 trajectories, and decoded camera frames with Daft.
-
 - [HDF5 File Usage Notebook](https://github.com/Eventual-Inc/Daft/blob/main/examples/hdf5_file_usage.ipynb)
 
     Inspect HDF5 files, visit dataset hierarchies, and read selected datasets into DataFrames.

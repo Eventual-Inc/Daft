@@ -20,7 +20,7 @@ gsutil -m cp -r gs://gresearch/robotics/droid_raw/<episode_path> /path/to/droid_
 
 See the [official DROID dataset documentation](https://droid-dataset.github.io/droid/the-droid-dataset) for details on the dataset format and downloading the necessary files for your use case.
 
-For an executable walkthrough, see the [DROID helper notebook](https://github.com/Eventual-Inc/Daft/blob/main/examples/droid.ipynb). For lower-level HDF5 file usage patterns, see the [HDF5 file usage notebook](https://github.com/Eventual-Inc/Daft/blob/main/examples/hdf5_file_usage.ipynb).
+For lower-level HDF5 file usage patterns, see the [HDF5 file usage notebook](https://github.com/Eventual-Inc/Daft/blob/main/examples/hdf5_file_usage.ipynb).
 
 ## Quickstart
 
@@ -165,7 +165,6 @@ The raw metadata JSON includes additional path fields such as `hdf5_path`, `wris
 
 ## Next steps
 
-- Run the [DROID helper notebook](https://github.com/Eventual-Inc/Daft/blob/main/examples/droid.ipynb) for an end-to-end example of metadata filtering, trajectory loading, and camera frame decoding.
 - Run the [HDF5 file usage notebook](https://github.com/Eventual-Inc/Daft/blob/main/examples/hdf5_file_usage.ipynb) for lower-level examples of inspecting and reading HDF5 files.
 - See the [Videos modality guide](../modalities/videos.md) for decoding frames with [`video_frames`][daft.functions.video_frames] and working with [`daft.VideoFile`](../api/datatypes/file_types.md).
 - See the [Files modality guide](../modalities/files.md) for reading trajectory HDF5 files with [`daft.File`](../api/datatypes/file_types.md).
