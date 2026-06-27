@@ -144,8 +144,8 @@ video_frames_fn = Func._from_func(
 def video_frames(
     file_expr: Expression,
     *,
-    start_time: float = 0,
-    end_time: float | None = None,
+    start_time: float | Expression = 0,
+    end_time: float | None | Expression = None,
     width: int | None = None,
     height: int | None = None,
     is_key_frame: bool | None = None,
@@ -157,8 +157,10 @@ def video_frames(
 
     Args:
         file_expr (VideoFile Expression): The video file to decode frames from.
-        start_time (float, optional): Start of the time range in seconds. Defaults to 0.
-        end_time (float | None, optional): End of the time range in seconds. Defaults to None (all frames).
+        start_time (float | Expression, optional): Start of the time range in seconds. Defaults to 0.
+            If an expression is provided, the start time will be dynamic per row.
+        end_time (float | None | Expression, optional): End of the time range in seconds. Defaults to None (all frames).
+            If an expression is provided, the end time will be dynamic per row.
         width (int | None, optional): Target width for resizing frames. Must be provided with ``height``.
         height (int | None, optional): Target height for resizing frames. Must be provided with ``width``.
         is_key_frame (bool | None, optional): If True, decode only keyframes. If False,
@@ -190,3 +192,40 @@ def video_frames(
         is_key_frame=is_key_frame,
         sample_interval_seconds=sample_interval_seconds,
     )  # type: ignore
+
+
+def get_frame_by_idx_impl(
+    file: daft.VideoFile,
+    idx: int,
+) -> PIL.Image.Image:
+    return file.get_frame_by_idx(idx)
+
+
+video_get_frame_by_idx_fn = Func._from_func(
+    get_frame_by_idx_impl,
+    return_dtype=daft.DataType.image(),
+    unnest=False,
+    use_process=None,
+    is_batch=False,
+    batch_size=None,
+    max_retries=None,
+    on_error=None,
+    name_override="video_get_frame_by_idx",
+)
+
+
+def get_video_frame_by_idx(
+    file_expr: Expression,
+    idx: int | Expression,
+) -> Expression:
+    """Get a frame from a video file by index.
+
+    Args:
+        file_expr (VideoFile Expression): The video file to get the frame from.
+        idx (int | Integer Expression): The index of the frame to get.
+            If an expression is provided, the index will be dynamic per row.
+
+    Returns:
+        Expression (Image Expression): The frame as an image.
+    """
+    return video_get_frame_by_idx_fn(file_expr, idx)
