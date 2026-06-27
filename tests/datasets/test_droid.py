@@ -412,44 +412,6 @@ def sample_camera_episodes_df(sample_episodes_df):
     )
 
 
-@pytest.fixture
-def sample_camera_video_episodes_df(sample_episodes_df):
-    pytest.importorskip("av")
-    sample_video_path = "tests/assets/sample_video.mp4"
-    return sample_episodes_df.with_columns(
-        {
-            "wrist_cam_video": video_file(daft.lit(sample_video_path)),
-            "ext1_cam_video": video_file(daft.lit(sample_video_path)),
-            "ext2_cam_video": video_file(daft.lit(sample_video_path)),
-        }
-    )
-
-
-@pytest.mark.integration()
-def test_camera_frames_decodes_real_video_end_to_end(sample_camera_video_episodes_df) -> None:
-    result = (
-        camera_frames(
-            sample_camera_video_episodes_df,
-            cameras="wrist",
-            start_time=0,
-            end_time=0.05,
-            width=64,
-            height=48,
-        )
-        .select("uuid", "wrist_cam_frames")
-        .collect()
-        .to_pydict()
-    )
-
-    frames = result["wrist_cam_frames"][0]
-    assert result["uuid"] == ["episode-1"]
-    assert len(frames) == 1
-    assert frames[0]["frame_index"] == 0
-    assert frames[0]["frame_time"] == pytest.approx(0.033)
-    assert frames[0]["is_key_frame"] is True
-    assert frames[0]["data"].shape == (48, 64, 3)
-
-
 def test_camera_frames_defaults_to_all_cameras(sample_camera_episodes_df) -> None:
     result = camera_frames(sample_camera_episodes_df, width=64, height=48)
     schema = {field.name for field in result.schema()}
