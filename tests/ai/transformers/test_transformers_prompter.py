@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import warnings
 from typing import Any
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
@@ -13,6 +13,19 @@ from daft.ai.transformers.protocols.prompter import (
     TransformersPrompter,
     TransformersPrompterDescriptor,
 )
+from daft.file import File
+
+
+def _make_text_file(content: bytes | str, mime_type: str = "text/plain") -> Mock:
+    """Mock a daft.File with a given MIME and content."""
+    file = Mock(spec=File)
+    file.mime_type.return_value = mime_type
+    handle = MagicMock()
+    handle.read.return_value = content
+    cm = MagicMock()
+    cm.__enter__.return_value = handle
+    file.open.return_value = cm
+    return file
 
 
 def _make_pipeline(*, chat_template: str | None = "{{messages}}", output: Any | None = None) -> Mock:
@@ -272,14 +285,68 @@ def test_pipeline_kwargs_not_in_generation_kwargs():
 @pytest.mark.parametrize(
     "bad_input",
     [
-        b"raw bytes",
         12345,
         [1, 2, 3],
     ],
-    ids=["bytes", "int", "list"],
+    ids=["int", "list"],
 )
 def test_prompt_raises_on_unsupported_input_types(bad_input: Any):
     pipe = _make_pipeline(chat_template="...")
     prompter = _make_prompter(pipe)
-    with pytest.raises(NotImplementedError, match=r"only supports str inputs"):
+    with pytest.raises(NotImplementedError, match=r"does not support input of type"):
         asyncio.run(prompter.prompt((bad_input,)))
+
+
+def test_prompt_accepts_text_file_inlined_with_tag():
+    pipe = _make_pipeline(chat_template="...", output=[{"generated_text": [{"role": "assistant", "content": "ok"}]}])
+    prompter = _make_prompter(pipe)
+    text_file = _make_text_file(b"hello from file", mime_type="text/plain")
+
+    asyncio.run(prompter.prompt((text_file, "summarize")))
+
+    chat = pipe.call_args.args[0]
+    user_content = chat[-1]["content"]
+    assert "<file_text_plain>hello from file</file_text_plain>" in user_content
+    assert "summarize" in user_content
+
+
+def test_prompt_accepts_text_bytes_via_mime_sniff():
+    pipe = _make_pipeline(chat_template="...", output=[{"generated_text": [{"role": "assistant", "content": "ok"}]}])
+    prompter = _make_prompter(pipe)
+    payload = b"<html><body>hi</body></html>"  # sniffed as text/html
+
+    asyncio.run(prompter.prompt((payload,)))
+
+    user_content = pipe.call_args.args[0][-1]["content"]
+    assert "<file_text_html>" in user_content
+    assert "hi" in user_content
+
+
+def test_prompt_file_with_image_mime_raises():
+    pipe = _make_pipeline(chat_template="...")
+    prompter = _make_prompter(pipe)
+    image_file = _make_text_file(b"\x89PNG\r\n...", mime_type="image/png")
+
+    with pytest.raises(NotImplementedError, match=r"text/\* File inputs"):
+        asyncio.run(prompter.prompt((image_file,)))
+
+
+def test_prompt_bytes_with_binary_mime_raises():
+    pipe = _make_pipeline(chat_template="...")
+    prompter = _make_prompter(pipe)
+    png_bytes = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32  # sniffed as image/png
+
+    with pytest.raises(NotImplementedError, match=r"text/\* bytes inputs"):
+        asyncio.run(prompter.prompt((png_bytes,)))
+
+
+def test_prompt_file_text_replaces_invalid_utf8():
+    pipe = _make_pipeline(chat_template="...", output=[{"generated_text": [{"role": "assistant", "content": "ok"}]}])
+    prompter = _make_prompter(pipe)
+    file = _make_text_file(b"valid \xff\xfe invalid", mime_type="text/plain")
+
+    asyncio.run(prompter.prompt((file,)))
+
+    user_content = pipe.call_args.args[0][-1]["content"]
+    assert "valid " in user_content
+    assert "invalid" in user_content

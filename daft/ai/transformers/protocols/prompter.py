@@ -12,6 +12,7 @@ from transformers import pipeline
 from daft.ai.protocols import Prompter, PrompterDescriptor
 from daft.ai.typing import Options, PromptOptions, UDFOptions
 from daft.ai.utils import get_gpu_udf_options, get_torch_device
+from daft.file import File
 
 # Global lock to prevent concurrent model loading which can cause meta tensor issues
 _model_loading_lock = threading.Lock()
@@ -110,13 +111,48 @@ class TransformersPrompter(Prompter):
 
     @singledispatchmethod
     def _process_message(self, msg: Any) -> str:
-        raise NotImplementedError(
-            f"The 'transformers' provider currently only supports str inputs, got {type(msg).__name__}."
-        )
+        raise NotImplementedError(f"The 'transformers' provider does not support input of type {type(msg).__name__}.")
 
     @_process_message.register
     def _(self, msg: str) -> str:
         return msg
+
+    @_process_message.register
+    def _(self, msg: File) -> str:
+        mime_type = msg.mime_type()
+        if not self._is_text_mime_type(mime_type):
+            raise NotImplementedError(
+                f"The 'transformers' provider currently only supports text/* File inputs, got '{mime_type}'."
+            )
+        return self._wrap_filetag(mime_type, self._read_text_content(msg))
+
+    @_process_message.register
+    def _(self, msg: bytes) -> str:
+        from daft.daft import guess_mimetype_from_content
+
+        mime_type = guess_mimetype_from_content(msg) or "application/octet-stream"
+        if not self._is_text_mime_type(mime_type):
+            raise NotImplementedError(
+                f"The 'transformers' provider currently only supports text/* bytes inputs, got '{mime_type}'."
+            )
+        return self._wrap_filetag(mime_type, msg.decode("utf-8", errors="replace"))
+
+    @staticmethod
+    def _is_text_mime_type(mime_type: str) -> bool:
+        return mime_type.split(";")[0].strip().lower().startswith("text/")
+
+    @staticmethod
+    def _read_text_content(file_obj: File) -> str:
+        with file_obj.open() as f:
+            data = f.read()
+        if isinstance(data, str):
+            return data
+        return data.decode("utf-8", errors="replace")
+
+    @staticmethod
+    def _wrap_filetag(mime_type: str, text: str) -> str:
+        tag = f"file_{mime_type.split(';')[0].strip().replace('/', '_')}"
+        return f"<{tag}>{text}</{tag}>"
 
     def _build_inputs(self, messages: tuple[Any, ...]) -> list[dict[str, str]] | str:
         user_content = "\n".join(self._process_message(m) for m in messages)

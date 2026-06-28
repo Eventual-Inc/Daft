@@ -165,6 +165,20 @@ df.show()
 
 Generation kwargs (`max_new_tokens`, `temperature`, `top_p`, ...) are forwarded to the pipeline call. Constructor-time options (`dtype`, `device_map`, `trust_remote_code`, `device`, ...) go through `pipeline_kwargs`. The provider auto-selects `cuda` > `mps` > `cpu`.
 
+You can also pass text-file columns (`daft.File` or raw `bytes` with a `text/*` MIME type) directly. The file contents are read and inlined into the prompt wrapped in a `<file_*>...</file_*>` tag derived from the MIME type, so the model can distinguish file content from your instructions:
+
+```python
+df = daft.from_glob_path("s3://my-bucket/docs/*.md")
+df = df.with_column(
+    "summary",
+    prompt(
+        [daft.col("path"), "Summarize this document in 3 bullets."],
+        provider="transformers",
+        model="HuggingFaceTB/SmolLM2-360M-Instruct",
+    ),
+)
+```
+
 ### Building Prompt Templates with the `format` function
 
 In addition to passing plain strings, you can build dynamic prompt templates using Daft's `format` function. This works similarly to Python's `format`, but works with Daft expressions. You can also define prompt templates with user-defined functions. With `@daft.func` you can pass in expressions or plain python strings for more flexible composition.
