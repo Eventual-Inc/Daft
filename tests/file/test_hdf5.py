@@ -85,6 +85,38 @@ def test_hdf5_file_read_single_and_sequence(sample_hdf5_path):
     assert data["action/proprio"].shape == (4, 7)
 
 
+def test_hdf5_file_read_rejects_mapping(sample_hdf5_path):
+    file = daft.Hdf5File(sample_hdf5_path)
+
+    with pytest.raises(TypeError, match="alias mappings"):
+        file.read({"values": "action/proprio"})
+
+
+def test_hdf5_file_read_missing_dataset_errors(sample_hdf5_path):
+    file = daft.Hdf5File(sample_hdf5_path)
+
+    with pytest.raises(KeyError, match="missing"):
+        file.read("missing")
+
+    with pytest.raises(KeyError, match="missing"):
+        file.read(["values", "missing"])
+
+
+def test_hdf5_file_read_empty_file_errors(tmp_path):
+    import h5py
+
+    path = tmp_path / "empty.h5"
+    with h5py.File(path, "w"):
+        pass
+
+    file = daft.Hdf5File(str(path))
+
+    assert file.keys() == []
+    assert file.metadata() == []
+    with pytest.raises(KeyError, match="values"):
+        file.read("values")
+
+
 def test_hdf5_file_read_group_errors(sample_hdf5_path):
     file = daft.Hdf5File(sample_hdf5_path)
 

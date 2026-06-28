@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, overload
 
@@ -197,11 +197,11 @@ class Hdf5File(File):
     def read(self, dataset: str) -> np.ndarray[Any, Any]: ...
 
     @overload
-    def read(self, dataset: list[str]) -> dict[str, np.ndarray[Any, Any]]: ...
+    def read(self, dataset: Sequence[str]) -> dict[str, np.ndarray[Any, Any]]: ...
 
     def read(
         self,
-        dataset: str | list[str],
+        dataset: str | Sequence[str],
     ) -> np.ndarray[Any, Any] | dict[str, np.ndarray[Any, Any]]:
         """Read one or more HDF5 datasets into NumPy arrays.
 
@@ -220,6 +220,9 @@ class Hdf5File(File):
             TypeError: If any requested path resolves to a group instead of a
                 dataset.
         """
+        if isinstance(dataset, Mapping):
+            raise TypeError("Hdf5File.read() does not support alias mappings; pass a dataset path or sequence.")
+
         with self._open_h5py() as h5:
             if isinstance(dataset, str):
                 return self._read_dataset(h5, dataset)
