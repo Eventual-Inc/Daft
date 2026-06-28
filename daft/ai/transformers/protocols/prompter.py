@@ -12,6 +12,7 @@ from transformers import pipeline
 from daft.ai.protocols import Prompter, PrompterDescriptor
 from daft.ai.typing import Options, PromptOptions, UDFOptions
 from daft.ai.utils import get_gpu_udf_options, get_torch_device
+from daft.daft import guess_mimetype_from_content
 from daft.file import File
 
 # Global lock to prevent concurrent model loading which can cause meta tensor issues
@@ -128,9 +129,12 @@ class TransformersPrompter(Prompter):
 
     @_process_message.register
     def _(self, msg: bytes) -> str:
-        from daft.daft import guess_mimetype_from_content
-
-        mime_type = guess_mimetype_from_content(msg) or "application/octet-stream"
+        mime_type = guess_mimetype_from_content(msg)
+        if mime_type is None:
+            try:
+                return self._wrap_filetag("text/plain", msg.decode("utf-8"))
+            except UnicodeDecodeError:
+                raise NotImplementedError("The 'transformers' provider currently only supports text/* bytes inputs.")
         if not self._is_text_mime_type(mime_type):
             raise NotImplementedError(
                 f"The 'transformers' provider currently only supports text/* bytes inputs, got '{mime_type}'."

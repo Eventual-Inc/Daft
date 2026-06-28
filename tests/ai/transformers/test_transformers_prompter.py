@@ -322,6 +322,17 @@ def test_prompt_accepts_text_bytes_via_mime_sniff():
     assert "hi" in user_content
 
 
+def test_prompt_accepts_plain_text_bytes_via_utf8_fallback():
+    """Raw ASCII / Markdown / JSON aren't recognized by the MIME sniffer; UTF-8 decode fallback should accept them."""
+    pipe = _make_pipeline(chat_template="...", output=[{"generated_text": [{"role": "assistant", "content": "ok"}]}])
+    prompter = _make_prompter(pipe)
+
+    asyncio.run(prompter.prompt((b"# Title\n\nhello world",)))
+
+    user_content = pipe.call_args.args[0][-1]["content"]
+    assert "<file_text_plain># Title\n\nhello world</file_text_plain>" in user_content
+
+
 def test_prompt_file_with_image_mime_raises():
     pipe = _make_pipeline(chat_template="...")
     prompter = _make_prompter(pipe)

@@ -168,11 +168,11 @@ Generation kwargs (`max_new_tokens`, `temperature`, `top_p`, ...) are forwarded 
 You can also pass text-file columns (`daft.File` or raw `bytes` with a `text/*` MIME type) directly. The file contents are read and inlined into the prompt wrapped in a `<file_*>...</file_*>` tag derived from the MIME type, so the model can distinguish file content from your instructions:
 
 ```python
-df = daft.from_glob_path("s3://my-bucket/docs/*.md")
+df = daft.from_files("s3://my-bucket/docs/*.md")
 df = df.with_column(
     "summary",
     prompt(
-        [daft.col("path"), "Summarize this document in 3 bullets."],
+        [daft.col("file"), "Summarize this document in 3 bullets."],
         provider="transformers",
         model="HuggingFaceTB/SmolLM2-360M-Instruct",
     ),
