@@ -1,5 +1,9 @@
+mod path;
+mod xet;
+mod error;
+
 use std::{
-    any::Any, collections::HashMap, num::ParseIntError, str::FromStr, string::FromUtf8Error,
+    any::Any, collections::HashMap,
     sync::Arc,
 };
 
@@ -16,66 +20,17 @@ use reqwest_middleware::{
     reqwest::header::{CONTENT_LENGTH, RANGE},
 };
 use serde::{Deserialize, Serialize};
-use snafu::{IntoError, ResultExt, Snafu};
-use uuid::Uuid;
+use snafu::{IntoError, ResultExt};
+
+use xet::{
+    hf_path_parts_from_uri, xet_download_stream_to_bytes_stream, xet_reads_enabled, XetContext,
+};
 
 use super::object_io::{GetResult, ObjectSource};
 use crate::{
-    FileFormat, InvalidRangeRequestSnafu,
-    http::HttpSource,
-    object_io::{FileMetadata, FileType, LSResult},
-    range::GetRange,
-    stats::IOStatsRef,
-    stream_utils::io_stats_on_bytestream,
+    FileFormat, InvalidRangeRequestSnafu, http::HttpSource, huggingface::{error::{Error}, path::{HFPath, HFPathParts}}, object_io::{FileMetadata, FileType, LSResult}, range::GetRange, stats::IOStatsRef, stream_utils::io_stats_on_bytestream,
 };
 
-#[derive(Debug, Snafu)]
-enum Error {
-    #[snafu(display("Unable to connect to {}: {}", path, source))]
-    UnableToConnect {
-        path: String,
-        source: reqwest_middleware::Error,
-    },
-
-    #[snafu(display("Unable to open {}: {}", path, source))]
-    UnableToOpenFile {
-        path: String,
-        source: reqwest_middleware::reqwest::Error,
-    },
-
-    #[snafu(display("Unable to determine size of {}", path))]
-    UnableToDetermineSize { path: String },
-
-    #[snafu(display("Unable to read data from {}: {}", path, source))]
-    UnableToReadBytes {
-        path: String,
-        source: reqwest_middleware::reqwest::Error,
-    },
-
-    #[snafu(display(
-        "Unable to parse data as Utf8 while reading header for file: {path}. {source}"
-    ))]
-    UnableToParseUtf8Header { path: String, source: FromUtf8Error },
-
-    #[snafu(display(
-        "Unable to parse data as Integer while reading header for file: {path}. {source}"
-    ))]
-    UnableToParseInteger { path: String, source: ParseIntError },
-
-    #[snafu(display("Invalid path: {}", path))]
-    InvalidPath { path: String },
-
-    #[snafu(display(r"
-Implicit Parquet conversion not supported for private datasets.
-You can use glob patterns, or request a specific file to access your dataset instead.
-Example:
-    instead of `hf://datasets/username/dataset_name`, use `hf://datasets/username/dataset_name/file_name.parquet`
-    or `hf://datasets/username/dataset_name/*.parquet
-"))]
-    PrivateDataset,
-    #[snafu(display("Unauthorized access to dataset, please check your credentials."))]
-    Unauthorized,
-}
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
@@ -93,172 +48,17 @@ struct Item {
     path: String,
 }
 
-enum HFPath {
-    Http(String),
-    Hf(HFPathParts),
-}
-
-#[derive(Clone, Debug, PartialEq)]
-struct HFPathParts {
-    bucket: String,
-    repository: String,
-    revision: String,
-    path: String,
-}
-
-impl FromStr for HFPath {
-    type Err = Error;
-
-    fn from_str(uri: &str) -> Result<Self, Self::Err> {
-        if uri.starts_with("http://") || uri.starts_with("https://") {
-            Ok(Self::Http(uri.to_string()))
-        } else {
-            uri.parse().map(Self::Hf)
-        }
-    }
-}
-
-impl FromStr for HFPathParts {
-    type Err = Error;
-    /// Extracts path components from a hugging face path:
-    /// `hf:// [datasets | spaces] / {username} / {reponame} @ {revision} / {path from root}`
-    fn from_str(uri: &str) -> Result<Self, Self::Err> {
-        // hf:// [datasets] / {username} / {reponame} @ {revision} / {path from root}
-        //       !>
-        if !uri.starts_with("hf://") {
-            return Err(Error::InvalidPath {
-                path: uri.to_string(),
-            });
-        }
-        (|| {
-            let uri = &uri[5..];
-
-            // [datasets] / {username} / {reponame} @ {revision} / {path from root}
-            // ^--------^   !>
-            let (bucket, uri) = uri.split_once('/')?;
-            // {username} / {reponame} @ {revision} / {path from root}
-            // ^--------^   !>
-            let (username, uri) = uri.split_once('/')?;
-            // {reponame} @ {revision} / {path from root}
-            // ^--------^   !>
-            let (repository, uri) = if let Some((repo, uri)) = uri.split_once('/') {
-                (repo, uri)
-            } else {
-                return Some(Self {
-                    bucket: bucket.to_string(),
-                    repository: format!("{username}/{uri}"),
-                    revision: "main".to_string(),
-                    path: String::new(),
-                });
-            };
-
-            // {revision} / {path from root}
-            // ^--------^   !>
-            let (repository, revision) = if let Some((repo, rev)) = repository.split_once('@') {
-                (repo, rev.to_string())
-            } else {
-                (repository, "main".to_string())
-            };
-
-            // {username}/{reponame}
-            let repository = format!("{username}/{repository}");
-            // {path from root}
-            // ^--------------^
-            let path = uri.to_string().trim_end_matches('/').to_string();
-
-            Some(Self {
-                bucket: bucket.to_string(),
-                repository,
-                revision,
-                path,
-            })
-        })()
-        .ok_or_else(|| Error::InvalidPath {
-            path: uri.to_string(),
-        })
-    }
-}
-
-impl std::fmt::Display for HFPathParts {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "hf://{BUCKET}/{REPOSITORY}/{PATH}",
-            BUCKET = self.bucket,
-            REPOSITORY = self.repository,
-            PATH = self.path
-        )
-    }
-}
-
-impl HFPath {
-    // There is a bug within huggingface apis that is incorrectly caching files
-    // https://github.com/huggingface/datasets/issues/7685
-    //
-    // So to bypass this, we add a unique parameter to the url to prevent CDN caching.
-    fn get_file_uri(&self, cache_bust: bool) -> String {
-        let base = match self {
-            Self::Http(base) => base.clone(),
-            Self::Hf(parts) => {
-                format!(
-                    "https://huggingface.co/{BUCKET}/{REPOSITORY}/resolve/{REVISION}/{PATH}",
-                    BUCKET = parts.bucket,
-                    REPOSITORY = parts.repository,
-                    REVISION = parts.revision,
-                    PATH = parts.path,
-                )
-            }
-        };
-        if cache_bust {
-            let cachebuster = Uuid::new_v4();
-            let cachebuster = cachebuster.to_string();
-            if base.contains('?') {
-                format!("{base}&cachebust={cachebuster}")
-            } else {
-                format!("{base}?cachebust={cachebuster}")
-            }
-        } else {
-            base
-        }
-    }
-
-    fn get_api_uri(&self) -> String {
-        match self {
-            Self::Http(path) => path.clone(),
-            Self::Hf(parts) => {
-                // "https://huggingface.co/api/ [datasets] / {username} / {reponame} / tree / {revision} / {path from root}"
-                format!(
-                    "https://huggingface.co/api/{BUCKET}/{REPOSITORY}/tree/{REVISION}/{PATH}",
-                    BUCKET = parts.bucket,
-                    REPOSITORY = parts.repository,
-                    REVISION = parts.revision,
-                    PATH = parts.path,
-                )
-            }
-        }
-    }
-
-    fn get_parquet_api_uri(&self) -> String {
-        match self {
-            Self::Http(path) => path.clone(),
-            Self::Hf(parts) => format!(
-                "https://huggingface.co/api/{BUCKET}/{REPOSITORY}/parquet",
-                BUCKET = parts.bucket,
-                REPOSITORY = parts.repository,
-            ),
-        }
-    }
-}
-
 pub struct HFSource {
     http_source: HttpSource,
+    hf_config: HuggingFaceConfig,
+    xet: XetContext,
 }
 
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
         use Error::{
             PrivateDataset, UnableToConnect, UnableToDetermineSize, UnableToOpenFile,
-            UnableToReadBytes, Unauthorized,
+            UnableToReadBytes, Unauthorized, XetOperationFailed,
         };
         match error {
             UnableToOpenFile { path, source } => {
@@ -303,6 +103,10 @@ impl From<Error> for super::Error {
                 path: String::new(),
                 source: error.into(),
             },
+            XetOperationFailed { path, message } => Self::Generic {
+                store: super::SourceType::HF,
+                source: format!("Xet error at {path}: {message}").into(),
+            },
             _ => Self::Generic {
                 store: super::SourceType::Http,
                 source: error.into(),
@@ -334,6 +138,8 @@ impl HFSource {
         let client = http_source.client;
         Ok(Self {
             http_source: HttpSource { client },
+            hf_config: hf_config.clone(),
+            xet: XetContext::new(hf_config.clone()),
         }
         .into())
     }
@@ -370,7 +176,7 @@ impl HFSource {
         let response = req
             .send()
             .await
-            .context(UnableToConnectSnafu::<String> { path: uri.clone() })?;
+            .context(error::UnableToConnectSnafu::<String> { path: uri.clone() })?;
 
         match response.error_for_status() {
             Err(e) => {
@@ -381,7 +187,7 @@ impl HFSource {
                     Some(StatusCode::RANGE_NOT_SATISFIABLE) => {
                         self.request(uri, true, range, client).await
                     }
-                    _ => Err(e).context(UnableToOpenFileSnafu::<String> { path: uri.clone() })?,
+                    _ => Err(e).context(error::UnableToOpenFileSnafu::<String> { path: uri.clone() })?,
                 }
             }
             Ok(res) => {
@@ -395,18 +201,8 @@ impl HFSource {
             }
         }
     }
-}
 
-#[async_trait]
-impl ObjectSource for HFSource {
-    async fn supports_range(&self, uri: &str) -> super::Result<bool> {
-        let path = uri.parse::<HFPath>()?;
-        let uri = path.get_file_uri(false);
-
-        self.http_source.supports_range(&uri).await
-    }
-
-    async fn get(
+    async fn get_via_http(
         &self,
         uri: &str,
         range: Option<GetRange>,
@@ -434,7 +230,7 @@ impl ObjectSource for HFSource {
         let stream = response.bytes_stream();
         let owned_string = uri.to_owned();
         let stream = stream.map_err(move |e| {
-            UnableToReadBytesSnafu::<String> {
+            error::UnableToReadBytesSnafu::<String> {
                 path: owned_string.clone(),
             }
             .into_error(e)
@@ -468,16 +264,57 @@ impl ObjectSource for HFSource {
         }
     }
 
-    async fn put(
+    async fn get_via_xet(
         &self,
-        _uri: &str,
-        _data: bytes::Bytes,
-        _io_stats: Option<IOStatsRef>,
-    ) -> super::Result<()> {
-        todo!("PUTs to HTTP URLs are not yet supported! Please file an issue.");
+        uri: &str,
+        range: Option<GetRange>,
+        io_stats: Option<IOStatsRef>,
+    ) -> Result<Option<GetResult>, Error> {
+        let Some(parts) = hf_path_parts_from_uri(uri)? else {
+            return Ok(None);
+        };
+
+        let resolved = match self
+            .xet
+            .resolve_xet_file(&parts, &self.http_source.client)
+            .await?
+        {
+            Some(resolved) => resolved,
+            None => return Ok(None),
+        };
+
+        let size_hint = range.as_ref().map(|r| match r {
+            GetRange::Bounded(b) => Some(b.end - b.start),
+            GetRange::Suffix(n) => Some(*n),
+            GetRange::Offset(offset) => resolved
+                .file_size
+                .checked_sub(*offset as u64)
+                .map(|s| s as usize),
+        }).flatten().or(Some(resolved.file_size as usize));
+
+        let stream = self
+            .xet
+            .download_stream(&parts, &resolved, range)
+            .await?;
+
+        if let Some(is) = io_stats.as_ref() {
+            is.mark_get_requests(1);
+        }
+
+        let byte_stream = xet_download_stream_to_bytes_stream(stream, uri.to_string());
+        Ok(Some(GetResult::Stream(
+            io_stats_on_bytestream(byte_stream, io_stats),
+            size_hint,
+            None,
+            None,
+        )))
     }
 
-    async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize> {
+    async fn get_size_via_http(
+        &self,
+        uri: &str,
+        io_stats: Option<IOStatsRef>,
+    ) -> super::Result<usize> {
         let path = uri.parse::<HFPath>()?;
         let uri = &path.get_file_uri(false);
 
@@ -485,7 +322,7 @@ impl ObjectSource for HFSource {
         let response = request
             .send()
             .await
-            .context(UnableToConnectSnafu::<String> { path: uri.into() })?;
+            .context(error::UnableToConnectSnafu::<String> { path: uri.into() })?;
         let response = response.error_for_status().map_err(|e| {
             if e.status().map(|s| s.as_u16()) == Some(401) {
                 Error::Unauthorized
@@ -505,15 +342,76 @@ impl ObjectSource for HFSource {
         match headers.get(CONTENT_LENGTH) {
             Some(v) => {
                 let size_bytes = String::from_utf8(v.as_bytes().to_vec()).with_context(|_| {
-                    UnableToParseUtf8HeaderSnafu::<String> { path: uri.into() }
+                    error::UnableToParseUtf8HeaderSnafu::<String> { path: uri.into() }
                 })?;
 
                 Ok(size_bytes
                     .parse()
-                    .with_context(|_| UnableToParseIntegerSnafu::<String> { path: uri.into() })?)
+                    .with_context(|_| error::UnableToParseIntegerSnafu::<String> { path: uri.into() })?)
             }
             None => Err(Error::UnableToDetermineSize { path: uri.into() }.into()),
         }
+    }
+}
+
+#[async_trait]
+impl ObjectSource for HFSource {
+    async fn supports_range(&self, uri: &str) -> super::Result<bool> {
+        if xet_reads_enabled(&self.hf_config) && hf_path_parts_from_uri(uri)?.is_some() {
+            return Ok(true);
+        }
+        let path = uri.parse::<HFPath>()?;
+        let uri = path.get_file_uri(false);
+
+        self.http_source.supports_range(&uri).await
+    }
+
+    async fn get(
+        &self,
+        uri: &str,
+        range: Option<GetRange>,
+        io_stats: Option<IOStatsRef>,
+    ) -> super::Result<GetResult> {
+        if xet_reads_enabled(&self.hf_config) {
+            match self.get_via_xet(uri, range.clone(), io_stats.clone()).await {
+                Ok(Some(result)) => return Ok(result),
+                Ok(None) => {}
+                Err(Error::Unauthorized) => return Err(Error::Unauthorized.into()),
+                Err(e) => {
+                    log::debug!("Xet read failed for {uri}, falling back to HTTP: {e}");
+                }
+            }
+        }
+        self.get_via_http(uri, range, io_stats).await
+    }
+
+    async fn put(
+        &self,
+        _uri: &str,
+        _data: bytes::Bytes,
+        _io_stats: Option<IOStatsRef>,
+    ) -> super::Result<()> {
+        todo!("PUTs to HTTP URLs are not yet supported! Please file an issue.");
+    }
+
+    async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize> {
+        if xet_reads_enabled(&self.hf_config) {
+            if let Some(parts) = hf_path_parts_from_uri(uri)? {
+                match self
+                    .xet
+                    .resolve_xet_file(&parts, &self.http_source.client)
+                    .await
+                {
+                    Ok(Some(resolved)) => return Ok(resolved.file_size as usize),
+                    Ok(None) => {}
+                    Err(Error::Unauthorized) => return Err(Error::Unauthorized.into()),
+                    Err(e) => {
+                        log::debug!("Xet size probe failed for {uri}, falling back to HTTP: {e}");
+                    }
+                }
+            }
+        }
+        self.get_size_via_http(uri, io_stats).await
     }
 
     async fn glob(
@@ -593,7 +491,7 @@ impl ObjectSource for HFSource {
         let response = request
             .send()
             .await
-            .context(UnableToConnectSnafu::<String> {
+            .context(error::UnableToConnectSnafu::<String> {
                 path: api_uri.clone(),
             })?;
 
@@ -614,7 +512,7 @@ impl ObjectSource for HFSource {
         let response = response
             .json::<Vec<Item>>()
             .await
-            .context(UnableToReadBytesSnafu {
+            .context(error::UnableToReadBytesSnafu {
                 path: api_uri.clone(),
             })?;
 
@@ -670,7 +568,7 @@ async fn try_parquet_api(
             .get(api_path.clone())
             .send()
             .await
-            .with_context(|_| UnableToConnectSnafu {
+            .with_context(|_| error::UnableToConnectSnafu {
                 path: api_path.clone(),
             })?;
 
@@ -690,7 +588,7 @@ async fn try_parquet_api(
         }
         let response = response
             .error_for_status()
-            .with_context(|_| UnableToOpenFileSnafu {
+            .with_context(|_| error::UnableToOpenFileSnafu {
                 path: api_path.clone(),
             })?;
 
@@ -703,7 +601,7 @@ async fn try_parquet_api(
         let body = response
             .json::<DatasetResponse>()
             .await
-            .context(UnableToReadBytesSnafu {
+            .context(error::UnableToReadBytesSnafu {
                 path: api_path.clone(),
             })?;
 
@@ -729,12 +627,10 @@ async fn try_parquet_api(
 
 #[cfg(test)]
 mod tests {
-    use common_error::DaftResult;
     use common_io_config::{HTTPConfig, HuggingFaceConfig};
 
     use crate::{
-        huggingface::{HFPathParts, HFSource},
-        integrations::test_full_get,
+        huggingface::{HFSource},
         object_io::ObjectSource,
     };
 
@@ -743,77 +639,33 @@ mod tests {
         let test_file_path = "hf://datasets/google/FACTS-grounding-public/README.md";
         let expected_md5 = "46df309e52cf88f458a4e3e2fb692fc1";
 
+        let mut config = HuggingFaceConfig::default();
+        config.use_xet = true;
         let client =
-            HFSource::get_client(&HuggingFaceConfig::default(), &HTTPConfig::default()).await?;
+            HFSource::get_client(&config, &HTTPConfig::default()).await?;
+
         let parquet_file = client.get(test_file_path, None, None).await?;
         let bytes = parquet_file.bytes().await?;
         let all_bytes = bytes.as_ref();
         let checksum = format!("{:x}", md5::compute(all_bytes));
         assert_eq!(checksum, expected_md5);
 
-        test_full_get(client, test_file_path, &bytes).await
-    }
-
-    #[test]
-    fn test_parse_hf_parts() -> DaftResult<()> {
-        let uri = "hf://datasets/wikimedia/wikipedia/20231101.ab/*.parquet";
-        let parts = uri.parse::<HFPathParts>().unwrap();
-        let expected = HFPathParts {
-            bucket: "datasets".to_string(),
-            repository: "wikimedia/wikipedia".to_string(),
-            revision: "main".to_string(),
-            path: "20231101.ab/*.parquet".to_string(),
-        };
-
-        assert_eq!(parts, expected);
-
         Ok(())
     }
 
-    #[test]
-    fn test_parse_hf_parts_with_revision() -> DaftResult<()> {
-        let uri = "hf://datasets/wikimedia/wikipedia@dev/20231101.ab/*.parquet";
-        let parts = uri.parse::<HFPathParts>().unwrap();
-        let expected = HFPathParts {
-            bucket: "datasets".to_string(),
-            repository: "wikimedia/wikipedia".to_string(),
-            revision: "dev".to_string(),
-            path: "20231101.ab/*.parquet".to_string(),
-        };
+    #[tokio::test]
+    async fn test_full_get_from_hf_without_xet() -> crate::Result<()> {
+        let test_file_path = "hf://datasets/google/FACTS-grounding-public/README.md";
+        let expected_md5 = "46df309e52cf88f458a4e3e2fb692fc1";
 
-        assert_eq!(parts, expected);
+        let mut config = HuggingFaceConfig::default();
+        config.use_xet = false;
+        let client = HFSource::get_client(&config, &HTTPConfig::default()).await?;
 
-        Ok(())
-    }
-
-    #[test]
-    fn test_parse_hf_parts_with_exact_path() -> DaftResult<()> {
-        let uri = "hf://datasets/user/repo@dev/config/my_file.parquet";
-        let parts = uri.parse::<HFPathParts>().unwrap();
-        let expected = HFPathParts {
-            bucket: "datasets".to_string(),
-            repository: "user/repo".to_string(),
-            revision: "dev".to_string(),
-            path: "config/my_file.parquet".to_string(),
-        };
-
-        assert_eq!(parts, expected);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_parse_hf_parts_with_wildcard() -> DaftResult<()> {
-        let uri = "hf://datasets/wikimedia/wikipedia/**/*.parquet";
-        let parts = uri.parse::<HFPathParts>().unwrap();
-        let expected = HFPathParts {
-            bucket: "datasets".to_string(),
-            repository: "wikimedia/wikipedia".to_string(),
-            revision: "main".to_string(),
-            path: "**/*.parquet".to_string(),
-        };
-
-        assert_eq!(parts, expected);
+        let parquet_file = client.get(test_file_path, None, None).await?;
+        let bytes = parquet_file.bytes().await?;
+        let checksum = format!("{:x}", md5::compute(bytes.as_ref()));
+        assert_eq!(checksum, expected_md5);
 
         Ok(())
     }
