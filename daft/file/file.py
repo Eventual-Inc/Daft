@@ -85,10 +85,9 @@ class File:
 
         self._inner = PyFileReference._from_tuple((media_type._media_type, url, io_config, position, size))  # type: ignore
 
-        if not self.exists():
-            raise FileNotFoundError(f"File {self.path} does not exist")
-
     def open(self, buffer_size: int | None = None) -> PyDaftFile:
+        if self.position is None and self._inner.size() is None and not self.exists():
+            raise FileNotFoundError(f"File {self.path} does not exist")
         return PyDaftFile._from_file_reference(self._inner, buffer_size=buffer_size)
 
     def __str__(self) -> str:

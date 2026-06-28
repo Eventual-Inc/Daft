@@ -200,6 +200,43 @@ def test_file_exists(tmp_path: Path):
     assert daft.File(str(missing_file.absolute())).exists() is False
 
 
+def test_open_missing_file_raises(tmp_path: Path):
+    missing_file = tmp_path / "missing.bin"
+    file = daft.File(str(missing_file.absolute()))
+
+    with pytest.raises(FileNotFoundError, match="does not exist"):
+        file.open()
+
+
+def test_to_tempfile_missing_file_raises_from_open(tmp_path: Path):
+    missing_file = tmp_path / "missing.bin"
+    file = daft.File(str(missing_file.absolute()))
+
+    with pytest.raises(FileNotFoundError, match="does not exist"):
+        file.to_tempfile()
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_to_tempfile_uses_open_existence_check(tmp_path: Path, monkeypatch):
+    temp_file = tmp_path / "exists.bin"
+    temp_file.write_bytes(b"data")
+    file = daft.File(str(temp_file.absolute()))
+    original_exists = file.exists
+    calls = 0
+
+    def track_exists():
+        nonlocal calls
+        calls += 1
+        return original_exists()
+
+    monkeypatch.setattr(file, "exists", track_exists)
+
+    with file.to_tempfile() as tmp:
+        assert tmp.read() == b"data"
+
+    assert calls == 1
+
+
 def test_file_exists_expr(tmp_path: Path):
     existing_file = tmp_path / "exists.bin"
     existing_file.write_bytes(b"data")
@@ -397,6 +434,24 @@ def test_file_byte_range_read(tmp_path: Path):
 
     f = daft.File(str(temp_file.absolute()), position=4, size=6)
     assert f.size() == 6
+    with f.open() as fh:
+        result = fh.read()
+    assert result == b"456789"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_file_byte_range_open_skips_existence_preflight(tmp_path: Path, monkeypatch):
+    data = b"0123456789abcdef"
+    temp_file = tmp_path / "blob.bin"
+    temp_file.write_bytes(data)
+
+    f = daft.File(str(temp_file.absolute()), position=4, size=6)
+
+    def fail_exists():
+        raise AssertionError("ranged open should not preflight existence")
+
+    monkeypatch.setattr(f, "exists", fail_exists)
+
     with f.open() as fh:
         result = fh.read()
     assert result == b"456789"
