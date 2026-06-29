@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
 # Hdf5File.keys() as a function hdf5_keys()
 
+
 def hdf5_keys_impl(file: Hdf5File, group: str = "/") -> list[str]:
     return file.keys(group)
 
@@ -45,7 +46,7 @@ def hdf5_keys(file_expr: Expression, group: str = "/") -> Expression:
     Returns:
         Expression containing a list of child names under the group.
     """
-    return hdf5_keys_fn(file_expr, group=group)
+    return cast("Expression", hdf5_keys_fn(file_expr, group=group))
 
 
 # Hdf5File.metadata() as a function hdf5_metadata()
