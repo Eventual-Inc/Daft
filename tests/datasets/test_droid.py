@@ -299,6 +299,17 @@ def test_trajectory_reads_selected_fields(sample_episodes_df) -> None:
     ]
 
 
+def test_trajectory_filters_missing_trajectory(sample_episodes_df) -> None:
+    episodes = sample_episodes_df.with_column(
+        "trajectory",
+        daft.lit(None).cast(DataType.file(MediaType.hdf5())),
+    )
+
+    result = trajectory(episodes, fields=["action/gripper_position"]).collect().to_pydict()
+
+    assert result["action/gripper_position"] == []
+
+
 def test_trajectory_unnests_hdf5_fields(sample_episodes_df) -> None:
     result = trajectory(sample_episodes_df, fields=["action/gripper_position"])
 
@@ -419,6 +430,17 @@ def test_camera_frames_defaults_to_all_cameras(sample_camera_episodes_df) -> Non
     assert "wrist_cam_frames" in schema
     assert "ext1_cam_frames" in schema
     assert "ext2_cam_frames" in schema
+
+
+def test_camera_frames_returns_empty_frames_for_missing_camera(sample_camera_episodes_df) -> None:
+    episodes = sample_camera_episodes_df.with_column(
+        "wrist_cam_video",
+        daft.lit(None).cast(DataType.file(MediaType.video())),
+    )
+
+    result = camera_frames(episodes, cameras="wrist").collect().to_pydict()
+
+    assert result["wrist_cam_frames"] == [[]]
 
 
 def test_camera_frames_accepts_single_camera_string(sample_camera_episodes_df) -> None:

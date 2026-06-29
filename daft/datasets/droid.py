@@ -329,7 +329,8 @@ def trajectory(
             Defaults to a curated set of common action and observation fields.
 
     Returns:
-        The input DataFrame with one tensor column per requested field.
+        The input DataFrame with one tensor column per requested field. Rows with
+        a null ``trajectory`` file are skipped before reading.
 
     Examples:
         >>> import daft
@@ -355,6 +356,8 @@ def trajectory(
 
     if len(fields) == 0:
         raise ValueError("fields must contain at least one HDF5 dataset path")
+
+    episodes = episodes.where(col("trajectory").not_null())
 
     @daft.func(return_dtype=_trajectory_return_dtype(fields))
     def read_droid_trajectory(file: Hdf5File) -> dict[str, object]:
