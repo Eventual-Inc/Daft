@@ -13,6 +13,8 @@ if TYPE_CHECKING:
     from daft import Expression
 
 
+# Hdf5File.keys() as a function hdf5_keys()
+
 def hdf5_keys_impl(file: Hdf5File, group: str = "/") -> list[str]:
     return file.keys(group)
 
@@ -43,9 +45,10 @@ def hdf5_keys(file_expr: Expression, group: str = "/") -> Expression:
     Returns:
         Expression containing a list of child names under the group.
     """
-    return cast("Expression", hdf5_keys_fn(file_expr, group=group))
+    return hdf5_keys_fn(file_expr, group=group)
 
 
+# Hdf5File.metadata() as a function hdf5_metadata()
 def hdf5_metadata_impl(file: Hdf5File, group: str = "/") -> list[Hdf5ObjectMetadata]:
     return file.metadata(group)
 
@@ -89,6 +92,7 @@ def hdf5_metadata(file_expr: Expression, group: str = "/") -> Expression:
     return cast("Expression", hdf5_metadata_fn(file_expr, group=group))
 
 
+# Hdf5File.attrs() as a function hdf5_attrs()
 def hdf5_attrs_impl(file: Hdf5File, h5path: str = "/") -> dict[str, Any]:
     return file.attrs(h5path)
 
