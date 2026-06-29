@@ -67,6 +67,18 @@ def test_with_columns_dict_and_kwargs(make_df, valid_data: list[dict[str, float]
     assert "Can not pass in both dict and keyword columns" in str(excinfo.value)
 
 
+def test_with_columns_empty_dict_and_kwargs(make_df, valid_data: list[dict[str, float]]) -> None:
+    df = make_df(valid_data)
+    with pytest.raises(ValueError) as excinfo:
+        _ = df.with_columns(
+            {},
+            foo=df["sepal_width"],
+            bar=df["sepal_width"] + df["petal_length"],
+        )
+
+    assert "Can not pass in both dict and keyword columns" in str(excinfo.value)
+
+
 def test_with_columns_no_args(make_df, valid_data: list[dict[str, float]]) -> None:
     df = make_df(valid_data)
     with pytest.raises(ValueError) as excinfo:

@@ -3397,7 +3397,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 3 of 3 rows)
         """
-        if columns and named_columns:
+        if columns is not None and named_columns:
             raise ValueError("Can not pass in both dict and keyword columns")
 
         new_columns = []
@@ -3478,7 +3478,8 @@ class DataFrame:
         builder = self._builder.with_columns_renamed(cols_map)
         return DataFrame(builder)
 
-    def rename(self, cols_map: dict[str, str] | None = None, /, **rename_kwargs: str) -> "DataFrame":
+    @DataframePublicAPI
+    def rename(self, cols_map: dict[str, str] | None = None, **rename_kwargs: str) -> "DataFrame":
         """Renames columns in the current DataFrame.
 
         If the columns in the DataFrame schema do not exist, this will be a no-op.
@@ -3487,7 +3488,7 @@ class DataFrame:
 
         Args:
             cols_map (Dict[str, str], optional): Dictionary of columns to rename in the format { existing: new }
-            rename_kwargs (str): Dict of column renamings passed in kwarg style (e.g. existing=new)
+            **rename_kwargs (str): Dict of column renamings passed in kwarg style (e.g. existing=new)
 
         Returns:
             DataFrame: DataFrame with the columns renamed.
@@ -3529,7 +3530,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 3 of 3 rows)
         """
-        if cols_map and rename_kwargs:
+        if cols_map is not None and rename_kwargs:
             raise ValueError("Can not pass in columns to rename as both a dict and kwargs")
         elif rename_kwargs:
             cols_map = rename_kwargs
