@@ -3351,6 +3351,10 @@ class DataFrame:
 
         New columns can be passed in dict style or kwarg style. These different styles should not be mixed together.
 
+        Note:
+            If you are adding a column whose name conflicts with this function's parameter names ("columns"), the added columns must be passed in dict style.
+            E.g. `df.with_columns({"columns": expression})`
+
         Args:
             columns (Dict[str, Expression], optional): Dictionary of new columns in the format { name: expression }
             **named_columns (Expression): New columns passed in as keyword arguments (e.g. `my_new_col=col("a") * 2`)
@@ -3485,6 +3489,10 @@ class DataFrame:
         If the columns in the DataFrame schema do not exist, this will be a no-op.
 
         Columns to rename can be passed in dict style or kwarg style. These different styles should not be mixed together.
+
+        Note:
+            If you are renaming an existing column whose name conflicts with this function's parameter names ("cols_map"), the columns to rename must be passed in dict style.
+            E.g. `df.rename({"cols_map": new_name})`
 
         Args:
             cols_map (Dict[str, str], optional): Dictionary of columns to rename in the format { existing: new }
