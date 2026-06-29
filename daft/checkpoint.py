@@ -32,10 +32,26 @@ class CheckpointStore:
         path: URI for the store root (e.g. ``s3://bucket/checkpoints``).
         io_config: Optional IO configuration for the object store backend.
 
-    Example:
+    Examples:
+        Source-side (anti-join on prior keys):
         >>> store = daft.CheckpointStore("s3://bucket/ckpt")
         >>> config = daft.CheckpointConfig(store=store, on="file_id")
-        >>> df = daft.read_parquet("s3://input/", checkpoint=config)
+        >>> df = daft.read_parquet("s3://input/", checkpoint=config)  # doctest: +SKIP
+
+        Sink-side (idempotent commit). Pair the same store into the source and
+        the sink so the pipeline's checkpointed keys are visible at commit time:
+        >>> store = daft.CheckpointStore("s3://bucket/ckpt")
+        >>> df = daft.read_parquet(  # doctest: +SKIP
+        ...     "s3://input/",
+        ...     checkpoint=daft.CheckpointConfig(store=store, on="file_id"),
+        ... )
+        >>> df.write_iceberg(  # doctest: +SKIP
+        ...     table,
+        ...     checkpoint=daft.IdempotentCommit(store=store, idempotence_key="job-2026-05-04"),
+        ... )
+
+    See Also:
+        [Checkpointing guide](../use-case/checkpointing.md) for the conceptual overview.
     """
 
     _path: str
@@ -64,12 +80,45 @@ class CheckpointStore:
         return self._store
 
     def list_checkpoints(self) -> list[Any]:
+        """List every checkpoint entry in the store, in arbitrary order.
+
+        Each entry carries its lifecycle status — ``Staged`` (in-flight,
+        awaiting ``checkpoint(id)``), ``Checkpointed`` (``checkpoint(id)``
+        returned, catalog commit pending), or ``Committed`` (catalog has
+        acknowledged the commit). Useful for diagnostics; sinks consume
+        this list internally during recovery.
+        """
         return self._get_store().list_checkpoints()
 
     def get_checkpointed_files(self) -> list[Any]:
+        """Return file-metadata blobs from ``Checkpointed`` entries not yet ``Committed``.
+
+        Used by sink helpers during recovery: after a crash between pipeline
+        completion and the catalog commit, these are the file references the
+        sink re-commits on rerun. Returns an empty list when every entry is
+        already ``Committed``.
+        """
         return self._get_store().get_checkpointed_files()
 
     def mark_committed(self, checkpoint_ids: list[str]) -> None:
+        """Transition a batch of checkpoint ids to ``Committed`` in the store.
+
+        Called by sinks after the catalog commit lands, to move ``Checkpointed``
+        entries to their terminal state. Idempotent — entries already in
+        ``Committed`` are left unchanged.
+
+        Args:
+            checkpoint_ids: ids to mark committed.
+
+        Raises:
+            Errors if any id is still ``Staged`` (not yet ``checkpoint()``'d)
+            or unknown to the store.
+
+        Note:
+            On error, ids processed before the failing one may already be
+            ``Committed``. Retrying the full batch is safe — the already-
+            committed ids no-op on retry.
+        """
         self._get_store().mark_committed(checkpoint_ids)
 
     def __repr__(self) -> str:
@@ -86,7 +135,7 @@ class CheckpointConfig:
     On re-run, rows whose key already exists in the store are skipped.
 
     Args:
-        store: The :class:`CheckpointStore` holding sealed keys.
+        store: The :class:`CheckpointStore` holding checkpointed keys.
         on: Name of the source column that uniquely identifies inputs (e.g.
             a file hash or document ID). Must exist in the source schema.
         settings: Optional tuning for the key-filtering anti-join. Defaults

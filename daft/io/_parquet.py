@@ -72,6 +72,19 @@ def read_parquet(
         >>> io_config = IOConfig(s3=S3Config(region="us-west-2", anonymous=True))
         >>> df = daft.read_parquet("s3://path/to/files-*.parquet", io_config=io_config)
         >>> df.show()
+
+        Resume across runs with a checkpoint store. Pair the same store on the
+        source and a downstream idempotent sink so prior runs' keys are
+        anti-joined out of the input:
+        >>> store = daft.CheckpointStore("s3://bucket/ckpt")  # doctest: +SKIP
+        >>> df = daft.read_parquet(  # doctest: +SKIP
+        ...     "s3://input/",
+        ...     checkpoint=daft.CheckpointConfig(store=store, on="file_id"),
+        ... )
+
+    See Also:
+        [Checkpointing guide](../use-case/checkpointing.md) for the conceptual
+        overview of the ``checkpoint=`` parameter.
     """
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
