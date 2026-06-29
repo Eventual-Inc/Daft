@@ -122,8 +122,13 @@ impl CountAccum {
     }
 }
 
-macro_rules! define_sum_accum {
-    ($name:ident, $daft_type:ty, $native:ty) => {
+// Unified macro for monoid-style numeric reducers (Sum, Product, Min, Max).
+// Consolidates what were previously three separate macros (`define_sum_accum!`,
+// `define_product_accum!`, `define_minmax_accum!`) — the only per-op difference
+// was the binary reduce expression. Parameterizing on `$reduce` collapses the
+// duplication while staying in the existing macro-per-shape style of the file.
+macro_rules! define_reducer_accum {
+    ($name:ident, $daft_type:ty, $native:ty, $reduce:expr) => {
         struct $name {
             accumulators: Vec<Option<$native>>,
             source: DataArray<$daft_type>,
@@ -144,12 +149,13 @@ macro_rules! define_sum_accum {
             /// Vectorized batch update over pre-computed group_ids.
             fn update_batch(&mut self, group_ids: &[u32]) {
                 let accs = &mut self.accumulators;
+                let reduce: fn($native, $native) -> $native = $reduce;
                 if self.source.null_count() == 0 {
                     // Tight loop: no null checks needed on source values.
                     for (&gid, &val) in group_ids.iter().zip(self.source.values().iter()) {
                         let acc = &mut accs[gid as usize];
                         *acc = Some(match *acc {
-                            Some(a) => a + val,
+                            Some(a) => reduce(a, val),
                             None => val,
                         });
                     }
@@ -159,7 +165,7 @@ macro_rules! define_sum_accum {
                         if let Some(val) = self.source.get(row_idx) {
                             let acc = &mut accs[gid as usize];
                             *acc = Some(match *acc {
-                                Some(a) => a + val,
+                                Some(a) => reduce(a, val),
                                 None => val,
                             });
                         }
@@ -189,180 +195,51 @@ macro_rules! define_sum_accum {
     };
 }
 
-define_sum_accum!(SumAccumI64, Int64Type, i64);
-define_sum_accum!(SumAccumU64, UInt64Type, u64);
-define_sum_accum!(SumAccumF32, Float32Type, f32);
-define_sum_accum!(SumAccumF64, Float64Type, f64);
+// Sum: widens small integers (e.g. Int8 → Int64) so only 4 variants are needed.
+define_reducer_accum!(SumAccumI64, Int64Type, i64, |a, b| a + b);
+define_reducer_accum!(SumAccumU64, UInt64Type, u64, |a, b| a + b);
+define_reducer_accum!(SumAccumF32, Float32Type, f32, |a, b| a + b);
+define_reducer_accum!(SumAccumF64, Float64Type, f64, |a, b| a + b);
 
-macro_rules! define_product_accum {
-    ($name:ident, $daft_type:ty, $native:ty) => {
-        struct $name {
-            accumulators: Vec<Option<$native>>,
-            source: DataArray<$daft_type>,
-        }
+// Product: same widening pattern as Sum.
+define_reducer_accum!(ProductAccumI64, Int64Type, i64, |a, b| a * b);
+define_reducer_accum!(ProductAccumU64, UInt64Type, u64, |a, b| a * b);
+define_reducer_accum!(ProductAccumF32, Float32Type, f32, |a, b| a * b);
+define_reducer_accum!(ProductAccumF64, Float64Type, f64, |a, b| a * b);
 
-        impl $name {
-            fn new(source: DataArray<$daft_type>) -> Self {
-                Self {
-                    accumulators: Vec::new(),
-                    source,
-                }
-            }
-
-            fn init_groups(&mut self, n: usize) {
-                self.accumulators.resize(n, None);
-            }
-
-            /// Vectorized batch update over pre-computed group_ids.
-            fn update_batch(&mut self, group_ids: &[u32]) {
-                let accs = &mut self.accumulators;
-                if self.source.null_count() == 0 {
-                    // Tight loop: no null checks needed on source values.
-                    for (&gid, &val) in group_ids.iter().zip(self.source.values().iter()) {
-                        let acc = &mut accs[gid as usize];
-                        *acc = Some(match *acc {
-                            Some(a) => a * val,
-                            None => val,
-                        });
-                    }
-                } else {
-                    // Source has nulls: check each value.
-                    for (row_idx, &gid) in group_ids.iter().enumerate() {
-                        if let Some(val) = self.source.get(row_idx) {
-                            let acc = &mut accs[gid as usize];
-                            *acc = Some(match *acc {
-                                Some(a) => a * val,
-                                None => val,
-                            });
-                        }
-                    }
-                }
-            }
-
-            fn finalize(self, name: &str) -> DaftResult<Series> {
-                let has_nulls = self.accumulators.iter().any(|a| a.is_none());
-                if has_nulls {
-                    Ok(DataArray::<$daft_type>::from_iter(
-                        self.source.field.clone(),
-                        self.accumulators.into_iter(),
-                    )
-                    .rename(name)
-                    .into_series())
-                } else {
-                    Ok(DataArray::<$daft_type>::from_field_and_values(
-                        self.source.field.clone(),
-                        self.accumulators.into_iter().map(|opt| opt.unwrap()),
-                    )
-                    .rename(name)
-                    .into_series())
-                }
-            }
-        }
-    };
-}
-
-define_product_accum!(ProductAccumI64, Int64Type, i64);
-define_product_accum!(ProductAccumU64, UInt64Type, u64);
-define_product_accum!(ProductAccumF32, Float32Type, f32);
-define_product_accum!(ProductAccumF64, Float64Type, f64);
-
-macro_rules! define_minmax_accum {
-    ($name:ident, $daft_type:ty, $native:ty, $cmp_fn:expr) => {
-        struct $name {
-            accumulators: Vec<Option<$native>>,
-            source: DataArray<$daft_type>,
-        }
-
-        impl $name {
-            fn new(source: DataArray<$daft_type>) -> Self {
-                Self {
-                    accumulators: Vec::new(),
-                    source,
-                }
-            }
-
-            fn init_groups(&mut self, n: usize) {
-                self.accumulators.resize(n, None);
-            }
-
-            fn update_batch(&mut self, group_ids: &[u32]) {
-                let accs = &mut self.accumulators;
-                let cmp_fn: fn($native, $native) -> $native = $cmp_fn;
-                if self.source.null_count() == 0 {
-                    for (&gid, &val) in group_ids.iter().zip(self.source.values().iter()) {
-                        let acc = &mut accs[gid as usize];
-                        *acc = Some(match *acc {
-                            Some(a) => cmp_fn(a, val),
-                            None => val,
-                        });
-                    }
-                } else {
-                    for (row_idx, &gid) in group_ids.iter().enumerate() {
-                        if let Some(val) = self.source.get(row_idx) {
-                            let acc = &mut accs[gid as usize];
-                            *acc = Some(match *acc {
-                                Some(a) => cmp_fn(a, val),
-                                None => val,
-                            });
-                        }
-                    }
-                }
-            }
-
-            fn finalize(self, name: &str) -> DaftResult<Series> {
-                let has_nulls = self.accumulators.iter().any(|a| a.is_none());
-                if has_nulls {
-                    Ok(DataArray::<$daft_type>::from_iter(
-                        self.source.field.clone(),
-                        self.accumulators.into_iter(),
-                    )
-                    .rename(name)
-                    .into_series())
-                } else {
-                    Ok(DataArray::<$daft_type>::from_field_and_values(
-                        self.source.field.clone(),
-                        self.accumulators.into_iter().map(|opt| opt.unwrap()),
-                    )
-                    .rename(name)
-                    .into_series())
-                }
-            }
-        }
-    };
-}
-
-define_minmax_accum!(MinAccumI8, Int8Type, i8, std::cmp::min);
-define_minmax_accum!(MinAccumI16, Int16Type, i16, std::cmp::min);
-define_minmax_accum!(MinAccumI32, Int32Type, i32, std::cmp::min);
-define_minmax_accum!(MinAccumI64, Int64Type, i64, std::cmp::min);
-define_minmax_accum!(MinAccumU8, UInt8Type, u8, std::cmp::min);
-define_minmax_accum!(MinAccumU16, UInt16Type, u16, std::cmp::min);
-define_minmax_accum!(MinAccumU32, UInt32Type, u32, std::cmp::min);
-define_minmax_accum!(MinAccumU64, UInt64Type, u64, std::cmp::min);
-define_minmax_accum!(MinAccumF32, Float32Type, f32, |a, b| if a.lt(&b) {
+// Min/Max preserve the original dtype, so each numeric type gets its own variant.
+define_reducer_accum!(MinAccumI8, Int8Type, i8, std::cmp::min);
+define_reducer_accum!(MinAccumI16, Int16Type, i16, std::cmp::min);
+define_reducer_accum!(MinAccumI32, Int32Type, i32, std::cmp::min);
+define_reducer_accum!(MinAccumI64, Int64Type, i64, std::cmp::min);
+define_reducer_accum!(MinAccumU8, UInt8Type, u8, std::cmp::min);
+define_reducer_accum!(MinAccumU16, UInt16Type, u16, std::cmp::min);
+define_reducer_accum!(MinAccumU32, UInt32Type, u32, std::cmp::min);
+define_reducer_accum!(MinAccumU64, UInt64Type, u64, std::cmp::min);
+define_reducer_accum!(MinAccumF32, Float32Type, f32, |a, b| if a.lt(&b) {
     a
 } else {
     b
 });
-define_minmax_accum!(MinAccumF64, Float64Type, f64, |a, b| if a.lt(&b) {
+define_reducer_accum!(MinAccumF64, Float64Type, f64, |a, b| if a.lt(&b) {
     a
 } else {
     b
 });
-define_minmax_accum!(MaxAccumI8, Int8Type, i8, std::cmp::max);
-define_minmax_accum!(MaxAccumI16, Int16Type, i16, std::cmp::max);
-define_minmax_accum!(MaxAccumI32, Int32Type, i32, std::cmp::max);
-define_minmax_accum!(MaxAccumI64, Int64Type, i64, std::cmp::max);
-define_minmax_accum!(MaxAccumU8, UInt8Type, u8, std::cmp::max);
-define_minmax_accum!(MaxAccumU16, UInt16Type, u16, std::cmp::max);
-define_minmax_accum!(MaxAccumU32, UInt32Type, u32, std::cmp::max);
-define_minmax_accum!(MaxAccumU64, UInt64Type, u64, std::cmp::max);
-define_minmax_accum!(MaxAccumF32, Float32Type, f32, |a, b| if a.gt(&b) {
+define_reducer_accum!(MaxAccumI8, Int8Type, i8, std::cmp::max);
+define_reducer_accum!(MaxAccumI16, Int16Type, i16, std::cmp::max);
+define_reducer_accum!(MaxAccumI32, Int32Type, i32, std::cmp::max);
+define_reducer_accum!(MaxAccumI64, Int64Type, i64, std::cmp::max);
+define_reducer_accum!(MaxAccumU8, UInt8Type, u8, std::cmp::max);
+define_reducer_accum!(MaxAccumU16, UInt16Type, u16, std::cmp::max);
+define_reducer_accum!(MaxAccumU32, UInt32Type, u32, std::cmp::max);
+define_reducer_accum!(MaxAccumU64, UInt64Type, u64, std::cmp::max);
+define_reducer_accum!(MaxAccumF32, Float32Type, f32, |a, b| if a.gt(&b) {
     a
 } else {
     b
 });
-define_minmax_accum!(MaxAccumF64, Float64Type, f64, |a, b| if a.gt(&b) {
+define_reducer_accum!(MaxAccumF64, Float64Type, f64, |a, b| if a.gt(&b) {
     a
 } else {
     b
