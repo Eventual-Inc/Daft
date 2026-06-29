@@ -1839,6 +1839,7 @@ dependencies = [
  "pyo3",
  "regex",
  "serde_json",
+ "snafu",
  "thiserror 2.0.18",
  "tokio",
 ]
