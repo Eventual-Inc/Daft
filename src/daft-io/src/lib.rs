@@ -127,7 +127,7 @@ pub enum Error {
     #[snafu(display("Unable to load credentials for IO backend `{store}`"))]
     UnableToLoadCredentials { store: SourceType, source: DynError },
 
-    #[snafu(display("Failed to load creentials for IO backend `{store}`"))]
+    #[snafu(display("Failed to load credentials for IO backend `{store}`"))]
     UnableToCreateClient { store: SourceType, source: DynError },
 
     #[snafu(display(
