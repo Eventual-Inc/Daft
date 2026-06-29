@@ -1078,6 +1078,7 @@ class StorageConfig:
     io_config: IOConfig
 
     def __init__(self, multithreaded_io: bool, io_config: IOConfig | None): ...
+    def multiline_display(self) -> list[str]: ...
 
 class ScanTask:
     """A batch of scan tasks for reading data from an external source."""
