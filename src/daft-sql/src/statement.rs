@@ -1,8 +1,9 @@
 use daft_catalog::Identifier;
+use daft_core::prelude::Schema;
 use daft_logical_plan::{LogicalPlanBuilder, LogicalPlanRef};
 use sqlparser::ast;
 
-use crate::{SQLPlanner, error::SQLPlannerResult, unsupported_sql_err};
+use crate::{SQLPlanner, error::SQLPlannerResult, schema::sql_dtype_to_dtype, unsupported_sql_err};
 
 /// Top-level planning structure
 #[derive(Clone)]
@@ -16,6 +17,8 @@ pub enum Statement {
     ShowTables(ShowTables),
     /// use a catalog and optional namespace
     Use(Use),
+    /// create table
+    CreateTable(CreateTable),
 }
 
 /// SELECT ...
@@ -43,6 +46,15 @@ pub struct ShowTables {
 pub struct Use {
     pub catalog: String,
     pub namespace: Option<Identifier>,
+}
+
+/// CREATE TABLE [IF NOT EXISTS] <name> (<columns>)
+#[derive(Clone)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct CreateTable {
+    pub name: Identifier,
+    pub schema: Schema,
+    pub if_not_exists: bool,
 }
 
 /// Daft-SQL statement planning.
@@ -87,6 +99,7 @@ impl SQLPlanner<'_> {
                 external: _,
             } => self.plan_show_tables(*extended, *full, show_options),
             ast::Statement::Use(use_) => self.plan_use(use_),
+            ast::Statement::CreateTable(create_table) => self.plan_create_table(create_table),
             other => unsupported_sql_err!("unsupported statement, {}", other),
         }
     }
@@ -292,6 +305,75 @@ impl SQLPlanner<'_> {
         }
     }
 
+    /// CREATE TABLE [IF NOT EXISTS] <name> (<columns>)
+    fn plan_create_table(&self, create_table: &ast::CreateTable) -> SQLPlannerResult<Statement> {
+        // Reject unsupported flags and features.
+        if create_table.or_replace {
+            unsupported_sql_err!("CREATE OR REPLACE TABLE is not supported");
+        }
+        if create_table.temporary {
+            unsupported_sql_err!("CREATE TEMPORARY TABLE is not supported");
+        }
+        if create_table.external {
+            unsupported_sql_err!("CREATE EXTERNAL TABLE is not supported");
+        }
+        if create_table.query.is_some() {
+            unsupported_sql_err!("CREATE TABLE AS SELECT is not supported");
+        }
+        if !create_table.constraints.is_empty() {
+            unsupported_sql_err!("Table constraints are not supported");
+        }
+        if create_table.location.is_some() {
+            unsupported_sql_err!("LOCATION is not supported");
+        }
+        if create_table.like.is_some() {
+            unsupported_sql_err!("LIKE is not supported");
+        }
+        if create_table.clone.is_some() {
+            unsupported_sql_err!("CLONE is not supported");
+        }
+        if create_table.file_format.is_some() {
+            unsupported_sql_err!("File format is not supported");
+        }
+        if !matches!(create_table.table_options, ast::CreateTableOptions::None) {
+            unsupported_sql_err!("Table options are not supported");
+        }
+
+        // Parse the table name into an identifier.
+        let name = self.normalize(&create_table.name)?;
+
+        // Convert column definitions to a Daft schema.
+        let fields = create_table
+            .columns
+            .iter()
+            .map(|col| {
+                let dtype = sql_dtype_to_dtype(&col.data_type)?;
+                Ok(daft_core::prelude::Field::new(
+                    col.name.value.clone(),
+                    dtype,
+                ))
+            })
+            .collect::<SQLPlannerResult<Vec<_>>>()?;
+
+        // Reject duplicate column names per SQL spec.
+        {
+            let mut seen = std::collections::HashSet::new();
+            for field in &fields {
+                if !seen.insert(field.name.as_ref()) {
+                    unsupported_sql_err!("Duplicate column name: {}", field.name);
+                }
+            }
+        }
+
+        let schema = Schema::new(fields);
+
+        Ok(Statement::CreateTable(CreateTable {
+            name,
+            schema,
+            if_not_exists: create_table.if_not_exists,
+        }))
+    }
+
     fn plan_use(&self, use_: &ast::Use) -> SQLPlannerResult<Statement> {
         if let ast::Use::Object(name) = use_ {
             let idents = &name.0;
@@ -450,5 +532,76 @@ mod test {
         } else {
             panic!("Expected ShowTables statement");
         }
+    }
+
+    // ---- CREATE TABLE ----
+
+    #[test]
+    fn test_create_table_with_catalog_qualified_name() {
+        let sql = "CREATE TABLE mycatalog.myschema.mytable (a int, b string)";
+        let statement = parse_sql(sql);
+        let session = Session::default();
+        let mut planner = SQLPlanner::new(&session);
+        let plan = planner.plan_statement(&statement).unwrap();
+
+        if let Statement::CreateTable(ct) = plan {
+            assert_eq!(ct.name.to_string(), "mycatalog.myschema.mytable");
+            assert!(!ct.if_not_exists);
+            assert_eq!(ct.schema.len(), 2);
+            let field_names: Vec<&str> = ct.schema.field_names().collect();
+            assert_eq!(field_names, vec!["a", "b"]);
+        } else {
+            panic!("Expected CreateTable statement");
+        }
+    }
+
+    #[test]
+    fn test_create_table_if_not_exists() {
+        let sql = "CREATE TABLE IF NOT EXISTS tbl (a int)";
+        let statement = parse_sql(sql);
+        let session = Session::default();
+        let mut planner = SQLPlanner::new(&session);
+        let plan = planner.plan_statement(&statement).unwrap();
+
+        if let Statement::CreateTable(ct) = plan {
+            assert!(ct.if_not_exists);
+            assert_eq!(ct.name.to_string(), "tbl");
+            assert_eq!(ct.schema.len(), 1);
+            let field_names: Vec<&str> = ct.schema.field_names().collect();
+            assert_eq!(field_names, vec!["a"]);
+        } else {
+            panic!("Expected CreateTable statement");
+        }
+    }
+
+    #[test]
+    fn test_create_table_empty_columns() {
+        let sql = "CREATE TABLE tbl ()";
+        let statement = parse_sql(sql);
+        let session = Session::default();
+        let mut planner = SQLPlanner::new(&session);
+        let plan = planner.plan_statement(&statement).unwrap();
+
+        if let Statement::CreateTable(ct) = plan {
+            assert_eq!(ct.schema.len(), 0);
+        } else {
+            panic!("Expected CreateTable statement");
+        }
+    }
+
+    #[test]
+    fn test_create_table_duplicate_columns() {
+        let sql = "CREATE TABLE tbl (a int, a string)";
+        let statement = parse_sql(sql);
+        let session = Session::default();
+        let mut planner = SQLPlanner::new(&session);
+        let result = planner.plan_statement(&statement);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Duplicate column name: a")
+        );
     }
 }
