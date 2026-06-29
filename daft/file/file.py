@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import mimetypes
 import shutil
 import tempfile
 import warnings
@@ -177,8 +178,14 @@ class File:
 
         If the MIME type is undetectable, returns 'application/octet-stream'.
         """
-        with self.open(buffer_size=BUFFER_SNIFF) as f:
-            maybe_mime_type = f.guess_mime_type()
+        try:
+            with self.open(buffer_size=BUFFER_SNIFF) as f:
+                maybe_mime_type = f.guess_mime_type()
+                return maybe_mime_type if maybe_mime_type else "application/octet-stream"
+        except FileNotFoundError:
+            if self.path.lower().endswith((".h5", ".hdf5")):
+                return "application/vnd.hdfgroup.hdf5"
+            maybe_mime_type, _ = mimetypes.guess_type(self.path)
             return maybe_mime_type if maybe_mime_type else "application/octet-stream"
 
     def to_tempfile(self, buffer_size: int = BUFFER_COPY) -> _TemporaryFileWrapper[bytes]:

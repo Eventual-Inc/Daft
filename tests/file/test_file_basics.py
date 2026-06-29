@@ -208,6 +208,12 @@ def test_open_missing_file_raises(tmp_path: Path):
         file.open()
 
 
+def test_missing_file_mime_type_falls_back_to_extension(tmp_path: Path):
+    assert daft.File(str(tmp_path / "missing.mp4")).mime_type() == "video/mp4"
+    assert daft.File(str(tmp_path / "missing.hdf5")).mime_type() == "application/vnd.hdfgroup.hdf5"
+    assert daft.VideoFile(str(tmp_path / "missing.mp4")).exists() is False
+
+
 def test_to_tempfile_missing_file_raises_from_open(tmp_path: Path):
     missing_file = tmp_path / "missing.bin"
     file = daft.File(str(missing_file.absolute()))
