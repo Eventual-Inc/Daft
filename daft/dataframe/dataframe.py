@@ -961,7 +961,7 @@ class DataFrame:
             root_dir (str): root file path to write parquet files to. When `single_file=True`, this is the exact file path to write to.
             compression (str, optional): default compression codec applied to every column. Defaults to "snappy". Accepts "snappy", "gzip", "zstd", "lz4", "lz4_raw", "brotli", "uncompressed", or "none" (case-insensitive).
             write_mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace the contents of the root directory with new data. `overwrite-partitions` will replace only the contents in the partitions that are being written to. Defaults to "append".
-            write_success_file (bool, optional): Whether to write a `_SUCCESS` file upon successful completion. Defaults to False.
+            write_success_file (bool, optional): Whether to write a `_SUCCESS` file upon successful completion. When `single_file=True`, writes `_SUCCESS` to the output file's parent directory. Defaults to False.
             partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
             io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
             column_compression (Optional[Dict[str, str]], optional): per-column compression overrides. Keys are dot-separated column paths (e.g. `"user.name"` for a nested struct field); values are codec names accepted by `compression`. Columns not listed fall back to `compression`. Defaults to None.
@@ -987,14 +987,12 @@ class DataFrame:
             raise ValueError(
                 f"Only support `append`, `overwrite`, or `overwrite-partitions` mode. {write_mode} is unsupported"
             )
+        if single_file and write_mode == "overwrite-partitions":
+            raise ValueError("`single_file=True` cannot be combined with `write_mode='overwrite-partitions'`.")
         if write_mode == "overwrite-partitions" and partition_cols is None:
             raise ValueError("Partition columns must be specified to use `overwrite-partitions` mode.")
         if single_file and partition_cols is not None:
             raise ValueError("`single_file=True` cannot be combined with `partition_cols`.")
-        if single_file and write_mode == "overwrite-partitions":
-            raise ValueError("`single_file=True` cannot be combined with `write_mode='overwrite-partitions'`.")
-        if single_file and write_success_file:
-            raise ValueError("`single_file=True` cannot be combined with `write_success_file=True`.")
         if single_file:
             runner_type = get_or_infer_runner_type()
             if runner_type != "native":
