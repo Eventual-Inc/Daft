@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 
 import daft
-from daft import DataType, MediaType
 import daft.datasets.droid as droid_module
+from daft import DataType, MediaType
 from daft.datasets.droid import SCENE_CLASSIFICATIONS, camera_frames, filter_scenes, trajectory
 from daft.expressions import col
 from daft.functions import hdf5_file, video_file
@@ -458,18 +458,20 @@ def test_filter_scenes_filters_multiple_scene_types(local_scene_classifications)
         }
     )
 
-    result = filter_scenes(
-        episodes,
-        ["Industrial office", "Home kitchen"],
-    ).collect().to_pydict()
+    result = (
+        filter_scenes(
+            episodes,
+            ["Industrial office", "Home kitchen"],
+        )
+        .collect()
+        .to_pydict()
+    )
 
     assert result["uuid"] == ["episode-1", "episode-2"]
     assert result["scene_classification"] == ["Industrial office", "Home kitchen"]
 
 
-def test_filter_scenes_excludes_non_matching_scene_labels(
-    sample_episodes_df, local_scene_classifications
-) -> None:
+def test_filter_scenes_excludes_non_matching_scene_labels(sample_episodes_df, local_scene_classifications) -> None:
     result = filter_scenes(sample_episodes_df, "Home kitchen").collect().to_pydict()
 
     assert result["uuid"] == []

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Upload DROID scene classifications to Hugging Face.
+r"""Upload DROID scene classifications to Hugging Face.
 
 Creates a public dataset repo with ``scene_classifications.parquet`` (written by
 Daft) and a dataset card that includes CC-BY 4.0 attribution to the DROID
@@ -30,9 +30,7 @@ import daft
 from daft.datatype import DataType
 from daft.expressions import col
 
-DEFAULT_SOURCE_ZIP_URL = (
-    "https://github.com/droid-dataset/droid/files/15068147/DROID_scene_classification.zip"
-)
+DEFAULT_SOURCE_ZIP_URL = "https://github.com/droid-dataset/droid/files/15068147/DROID_scene_classification.zip"
 DEFAULT_REPO_ID = "Eventual-Inc/droid-scene-classifications"
 DEFAULT_FILENAME = "scene_classifications.parquet"
 

@@ -69,7 +69,6 @@ _TRAJECTORY_DTYPES = {
     "action/joint_velocity": DataType.tensor(DataType.float64()),
     "action/target_cartesian_position": DataType.tensor(DataType.float64()),
     "action/target_gripper_position": DataType.tensor(DataType.float64()),
-    
     # Action (robot state)
     "action/robot_state/cartesian_position": DataType.tensor(DataType.float64()),
     "action/robot_state/gripper_position": DataType.tensor(DataType.float64()),
@@ -81,7 +80,6 @@ _TRAJECTORY_DTYPES = {
     "action/robot_state/prev_joint_torques_computed": DataType.tensor(DataType.float64()),
     "action/robot_state/prev_joint_torques_computed_safened": DataType.tensor(DataType.float64()),
     "action/robot_state/prev_command_successful": DataType.tensor(DataType.bool()),
-    
     # Observation (robot state)
     "observation/robot_state/cartesian_position": DataType.tensor(DataType.float64()),
     "observation/robot_state/gripper_position": DataType.tensor(DataType.float64()),
@@ -93,26 +91,22 @@ _TRAJECTORY_DTYPES = {
     "observation/robot_state/prev_joint_torques_computed": DataType.tensor(DataType.float64()),
     "observation/robot_state/prev_joint_torques_computed_safened": DataType.tensor(DataType.float64()),
     "observation/robot_state/prev_command_successful": DataType.tensor(DataType.bool()),
-    
     # Observation (controller info)
     "observation/controller_info/controller_on": DataType.tensor(DataType.bool()),
     "observation/controller_info/failure": DataType.tensor(DataType.bool()),
     "observation/controller_info/movement_enabled": DataType.tensor(DataType.bool()),
     "observation/controller_info/success": DataType.tensor(DataType.bool()),
-    
     # Observation/timestamp (control)
     "observation/timestamp/control/control_start": DataType.tensor(DataType.int64()),
     "observation/timestamp/control/policy_start": DataType.tensor(DataType.int64()),
     "observation/timestamp/control/sleep_start": DataType.tensor(DataType.int64()),
     "observation/timestamp/control/step_end": DataType.tensor(DataType.int64()),
     "observation/timestamp/control/step_start": DataType.tensor(DataType.int64()),
-    
     # Observation/timestamp (robot state)
     "observation/timestamp/robot_state/read_end": DataType.tensor(DataType.int64()),
     "observation/timestamp/robot_state/read_start": DataType.tensor(DataType.int64()),
     "observation/timestamp/robot_state/robot_timestamp_nanos": DataType.tensor(DataType.int64()),
     "observation/timestamp/robot_state/robot_timestamp_seconds": DataType.tensor(DataType.int64()),
-    
     # Observation/timestamp (skip action)
     "observation/timestamp/skip_action": DataType.tensor(DataType.bool()),
 }
@@ -152,9 +146,7 @@ SCENE_CLASSIFICATIONS: frozenset[str] = frozenset(
     }
 )
 
-_HF_SCENE_CLASSIFICATIONS_PATH = (
-    "hf://datasets/Eventual-Inc/droid-scene-classifications/scene_classifications.parquet"
-)
+_HF_SCENE_CLASSIFICATIONS_PATH = "hf://datasets/Eventual-Inc/droid-scene-classifications/scene_classifications.parquet"
 
 _CAMERAS = ("wrist", "ext1", "ext2")
 
@@ -171,11 +163,11 @@ def raw(
 
     This function discovers episodes by globbing ``metadata_*.json`` files under the
     provided dataset root, reads the episode metadata, and attaches lazy file references
-    to the per-episode trajectory HDF5 file and MP4 camera recordings. 
+    to the per-episode trajectory HDF5 file and MP4 camera recordings.
 
     Note:
         The public dataset is missing camera recordings for some episodes. Those that are missing
-        will be set to `None`. Additionally, to read the test or train split only, specify a more 
+        will be set to `None`. Additionally, to read the test or train split only, specify a more
         restricted glob path such as:
         - ``gs://gresearch/robotics/droid_raw/test/**/metadata_*.json``
         - ``gs://gresearch/robotics/droid_raw/train/**/metadata_*.json``
@@ -269,22 +261,20 @@ def raw(
         "robot_serial",
         "r2d2_version",
         "trajectory",
-
         # Wrist camera columns
         "wrist_cam_serial",
         "wrist_cam_extrinsics",
         "wrist_cam_video",
-
         # Ext1 camera columns
         "ext1_cam_serial",
         "ext1_cam_extrinsics",
         "ext1_cam_video",
-
         # Ext2 camera columns
         "ext2_cam_serial",
         "ext2_cam_extrinsics",
         "ext2_cam_video",
     )
+
 
 @PublicAPI
 def filter_scenes(
@@ -299,10 +289,12 @@ def filter_scenes(
     DROID authors onto ``scene_id`` and keeps rows whose ``scene_classification``
     matches one of the requested labels.
 
-    NOTE: 
-    - this helper uses a copy of the original file hosted on Hugging Face datasets. 
-    - Keeping this classification table in sync is best-effort and may not be up-to-date.
-    - See https://huggingface.co/datasets/Eventual-Inc/droid-scene-classifications for the original source.
+    Note:
+        This helper uses a copy of the original file hosted on Hugging Face
+        datasets. Keeping this classification table in sync is best-effort and
+        may not be up-to-date. See
+        https://huggingface.co/datasets/Eventual-Inc/droid-scene-classifications
+        for the original source.
 
     Args:
         episodes: Episode-level DataFrame from :func:`raw` or :func:`trajectory`.
@@ -324,26 +316,23 @@ def filter_scenes(
     """
     # Validation
     selected = (scene_types,) if isinstance(scene_types, str) else tuple(scene_types)
-    
+
     if len(selected) == 0:
         raise ValueError("scene_types must contain at least one scene classification label")
 
     unknown = [label for label in selected if label not in SCENE_CLASSIFICATIONS]
     if unknown:
         known = ", ".join(sorted(SCENE_CLASSIFICATIONS))
-        raise ValueError(
-            f"Unknown scene classification(s): {unknown}. Expected one or more of: {known}."
-        )    
-        
+        raise ValueError(f"Unknown scene classification(s): {unknown}. Expected one or more of: {known}.")
+
     if "scene_id" not in episodes.schema().column_names():
         raise ValueError("Expected an episode DataFrame with a `scene_id` column.")
 
     # Filter the scene classifications to only include the selected ones
-    classifications = (
-        daft.read_parquet(_HF_SCENE_CLASSIFICATIONS_PATH, io_config=io_config)
-        .where(col("scene_classification").is_in(selected))
+    classifications = daft.read_parquet(_HF_SCENE_CLASSIFICATIONS_PATH, io_config=io_config).where(
+        col("scene_classification").is_in(selected)
     )
-    
+
     # Join the scene classifications to the episodes
     return episodes.join(classifications, on="scene_id", how="inner")
 
@@ -387,7 +376,7 @@ def trajectory(
             "The 'daft[hdf5]' extra is required to read DROID HDF5 trajectory files. "
             "Please install it with: pip install 'daft[hdf5]'"
         )
-    
+
     # Validation checks
     fields = tuple(fields)
     if "trajectory" not in episodes.schema().column_names():
@@ -402,10 +391,7 @@ def trajectory(
 
     # Build the UDF that will read the trajectory data and return a struct of the requested fields
     @daft.func(
-        return_dtype=DataType.struct({
-                field: _TRAJECTORY_DTYPES[field]
-                for field in fields
-        }),
+        return_dtype=DataType.struct({field: _TRAJECTORY_DTYPES[field] for field in fields}),
         use_process=False,
         unnest=True,
     )
@@ -414,25 +400,21 @@ def trajectory(
             return {field: h5[field][()] for field in fields}
 
     # Select the columns we need and apply the UDF to the trajectory column
-    return (
-        episodes
-        .where(col("trajectory").not_null())
-        .select(
-            "uuid",
-            "scene_id",
-            "robot_serial",
-            "r2d2_version",
-            "current_task",
-            "success",
-            "trajectory_length",
-            read_droid_trajectory(col("trajectory")),
-            "wrist_cam_video",
-            "wrist_cam_extrinsics",
-            "ext1_cam_video",
-            "ext1_cam_extrinsics",
-            "ext2_cam_video",
-            "ext2_cam_extrinsics",
-        )
+    return episodes.where(col("trajectory").not_null()).select(
+        "uuid",
+        "scene_id",
+        "robot_serial",
+        "r2d2_version",
+        "current_task",
+        "success",
+        "trajectory_length",
+        read_droid_trajectory(col("trajectory")),
+        "wrist_cam_video",
+        "wrist_cam_extrinsics",
+        "ext1_cam_video",
+        "ext1_cam_extrinsics",
+        "ext2_cam_video",
+        "ext2_cam_extrinsics",
     )
 
 
@@ -493,16 +475,12 @@ def camera_frames(
 
     unknown = [camera for camera in selected_cameras if camera not in _CAMERAS]
     if unknown:
-        raise ValueError(
-            f"Unknown camera(s): {unknown}. Expected one or more of: {', '.join(_CAMERAS)}."
-        )
+        raise ValueError(f"Unknown camera(s): {unknown}. Expected one or more of: {', '.join(_CAMERAS)}.")
     selected_cameras = tuple(dict.fromkeys(selected_cameras))
 
     input_columns = {field.name for field in episodes.schema()}
     missing_columns = [
-        f"{camera}_cam_video"
-        for camera in selected_cameras
-        if f"{camera}_cam_video" not in input_columns
+        f"{camera}_cam_video" for camera in selected_cameras if f"{camera}_cam_video" not in input_columns
     ]
     if missing_columns:
         raise ValueError(
