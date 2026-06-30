@@ -93,6 +93,33 @@ impl ShuffleBackend {
         }
     }
 
+    /// Build a `SwordfishTaskBuilder` from Ray partition refs using `in_memory_scan`,
+    /// regardless of the configured distributed shuffle backend. Use this when the
+    /// refs come from intermediate task execution (e.g. scan tasks), not from a
+    /// flight shuffle write step — in that case they are always `RayPartitionRef`
+    /// and must be read back via `in_memory_scan` + `with_psets`.
+    pub(crate) fn build_in_memory_task_builder<F>(
+        &self,
+        partition_refs: Vec<PartitionRef>,
+        node: &dyn PipelineNodeImpl,
+        wrap_plan: F,
+    ) -> SwordfishTaskBuilder
+    where
+        F: FnOnce(LocalPhysicalPlanRef) -> LocalPhysicalPlanRef,
+    {
+        let node_id = self.node_id;
+        let total_size_bytes = partition_refs.iter().map(|p| p.size_bytes()).sum::<usize>();
+        let in_memory_scan = LocalPhysicalPlan::in_memory_scan(
+            node_id,
+            self.schema.clone(),
+            total_size_bytes,
+            StatsState::NotMaterialized,
+            LocalNodeContext::new(Some(node_id as usize)),
+        );
+        let plan = wrap_plan(in_memory_scan);
+        SwordfishTaskBuilder::new(plan, node, node_id).with_psets(node_id, partition_refs)
+    }
+
     /// Build a `SwordfishTaskBuilder` whose plan reads from already-materialized
     /// partition refs (`in_memory_scan` for Ray, `shuffle_read(Flight)` for Flight)
     /// and then applies `wrap_plan` on top. The partition refs are attached to
