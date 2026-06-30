@@ -1,8 +1,6 @@
-use std::num::ParseIntError;
-use std::string::FromUtf8Error;
+use std::{num::ParseIntError, string::FromUtf8Error};
 
 use snafu::Snafu;
-
 
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub(crate)))]

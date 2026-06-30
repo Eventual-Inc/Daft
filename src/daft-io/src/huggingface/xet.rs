@@ -2,7 +2,7 @@ use std::{collections::HashMap, ops::Range, sync::Arc};
 
 use bytes::Bytes;
 use common_io_config::HuggingFaceConfig;
-use futures::{stream::BoxStream, StreamExt};
+use futures::{StreamExt, stream::BoxStream};
 use reqwest_middleware::ClientWithMiddleware;
 use serde::Deserialize;
 use tokio::sync::Mutex;
@@ -10,9 +10,8 @@ use xet::xet_session::{
     HeaderMap, HeaderValue, XetDownloadStream, XetFileInfo, XetSession, XetSessionBuilder, header,
 };
 
+use super::{error::Error, path::HFPathParts};
 use crate::range::GetRange;
-
-use super::{error::Error, path::{HFPath, HFPathParts}};
 
 const XET_FILEINFO_ACCEPT: &str = "application/vnd.xet-fileinfo+json";
 
@@ -30,68 +29,6 @@ struct XetFileResponse {
 
 pub(super) fn xet_reads_enabled(hf_config: &HuggingFaceConfig) -> bool {
     hf_config.use_xet && std::env::var("HF_HUB_DISABLE_XET").ok().as_deref() != Some("1")
-}
-
-/// Parse `https://huggingface.co/.../resolve/...` URLs into [`HFPathParts`].
-pub(super) fn parse_huggingface_https_url(url: &str) -> Option<HFPathParts> {
-    let parsed = url::Url::parse(url).ok()?;
-    if parsed.host_str()? != "huggingface.co" {
-        return None;
-    }
-    let path = parsed.path().trim_start_matches('/');
-
-    let (bucket, rest) = if let Some(rest) = path.strip_prefix("datasets/") {
-        ("datasets", rest)
-    } else if let Some(rest) = path.strip_prefix("spaces/") {
-        ("spaces", rest)
-    } else if let Some(rest) = path.strip_prefix("models/") {
-        ("models", rest)
-    } else if let Some(rest) = path.strip_prefix("buckets/") {
-        ("buckets", rest)
-    } else {
-        ("models", path)
-    };
-
-    let resolve_marker = "/resolve/";
-    let resolve_idx = rest.find(resolve_marker)?;
-    let repository = rest[..resolve_idx].to_string();
-    let after_resolve = &rest[resolve_idx + resolve_marker.len()..];
-    let (revision, file_path) = after_resolve.split_once('/')?;
-    if file_path.is_empty() {
-        return None;
-    }
-
-    Some(HFPathParts {
-        bucket: bucket.to_string(),
-        repository,
-        revision: revision.to_string(),
-        path: file_path.to_string(),
-    })
-}
-
-pub(super) fn hf_path_parts_from_uri(uri: &str) -> Result<Option<HFPathParts>, Error> {
-    let path = uri.parse::<HFPath>()?;
-    match path {
-        HFPath::Hf(parts) if !parts.path.is_empty() => Ok(Some(parts)),
-        HFPath::Http(url) => Ok(parse_huggingface_https_url(&url)),
-        _ => Ok(None),
-    }
-}
-
-fn repo_url_segment(parts: &HFPathParts) -> String {
-    match parts.bucket.as_str() {
-        "models" | "model" => parts.repository.clone(),
-        _ => format!("{}/{}", parts.bucket, parts.repository),
-    }
-}
-
-fn resolve_url_from_parts(parts: &HFPathParts) -> String {
-    format!(
-        "https://huggingface.co/{}/resolve/{}/{}",
-        repo_url_segment(parts),
-        parts.revision,
-        parts.path,
-    )
 }
 
 fn xet_read_token_url(parts: &HFPathParts) -> String {
@@ -145,7 +82,7 @@ impl XetContext {
         parts: &HFPathParts,
         client: &ClientWithMiddleware,
     ) -> Result<Option<XetResolvedFile>, Error> {
-        let cache_key = resolve_url_from_parts(parts);
+        let cache_key = parts.resolve_url();
         if let Some(cached) = self.resolve_cache.lock().await.get(&cache_key) {
             return Ok(cached.clone());
         }
@@ -163,7 +100,7 @@ impl XetContext {
         parts: &HFPathParts,
         client: &ClientWithMiddleware,
     ) -> Result<Option<XetResolvedFile>, Error> {
-        let url = resolve_url_from_parts(parts);
+        let url = parts.resolve_url();
         let response = client
             .get(&url)
             .header(reqwest::header::ACCEPT, XET_FILEINFO_ACCEPT)
@@ -186,10 +123,14 @@ impl XetContext {
             return Ok(None);
         }
 
-        let info: XetFileResponse = response.json().await.map_err(|source| Error::UnableToReadBytes {
-            path: url.clone(),
-            source,
-        })?;
+        let info: XetFileResponse =
+            response
+                .json()
+                .await
+                .map_err(|source| Error::UnableToReadBytes {
+                    path: url.clone(),
+                    source,
+                })?;
 
         Ok(Some(XetResolvedFile {
             file_info: XetFileInfo::new(info.hash, info.size),
@@ -290,26 +231,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_huggingface_https_resolve_url() {
-        let url = "https://huggingface.co/datasets/google/FACTS-grounding-public/resolve/main/README.md";
-        let parts = parse_huggingface_https_url(url).unwrap();
-        assert_eq!(parts.bucket, "datasets");
-        assert_eq!(parts.repository, "google/FACTS-grounding-public");
-        assert_eq!(parts.revision, "main");
-        assert_eq!(parts.path, "README.md");
-    }
-
-    #[test]
-    fn test_parse_huggingface_https_model_resolve_url() {
-        let url = "https://huggingface.co/Qwen/Qwen2.5-0.5B/resolve/main/config.json";
-        let parts = parse_huggingface_https_url(url).unwrap();
-        assert_eq!(parts.bucket, "models");
-        assert_eq!(parts.repository, "Qwen/Qwen2.5-0.5B");
-        assert_eq!(parts.revision, "main");
-        assert_eq!(parts.path, "config.json");
-    }
-
-    #[test]
     fn test_xet_read_token_url_datasets() {
         let parts = HFPathParts {
             bucket: "datasets".to_string(),
@@ -320,20 +241,6 @@ mod tests {
         assert_eq!(
             xet_read_token_url(&parts),
             "https://huggingface.co/api/datasets/user/repo/xet-read-token/main"
-        );
-    }
-
-    #[test]
-    fn test_resolve_url_models_omits_prefix() {
-        let parts = HFPathParts {
-            bucket: "models".to_string(),
-            repository: "Qwen/Qwen2.5".to_string(),
-            revision: "main".to_string(),
-            path: "config.json".to_string(),
-        };
-        assert_eq!(
-            resolve_url_from_parts(&parts),
-            "https://huggingface.co/Qwen/Qwen2.5/resolve/main/config.json"
         );
     }
 }

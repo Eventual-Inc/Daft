@@ -1485,6 +1485,7 @@ impl HuggingFaceConfig {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (
         token=None,
         anonymous=None,

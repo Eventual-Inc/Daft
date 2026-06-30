@@ -1,11 +1,8 @@
+mod error;
 mod path;
 mod xet;
-mod error;
 
-use std::{
-    any::Any, collections::HashMap,
-    sync::Arc,
-};
+use std::{any::Any, collections::HashMap, sync::Arc};
 
 use async_recursion::async_recursion;
 use async_trait::async_trait;
@@ -21,16 +18,21 @@ use reqwest_middleware::{
 };
 use serde::{Deserialize, Serialize};
 use snafu::{IntoError, ResultExt};
-
-use xet::{
-    hf_path_parts_from_uri, xet_download_stream_to_bytes_stream, xet_reads_enabled, XetContext,
-};
+use xet::{XetContext, xet_download_stream_to_bytes_stream, xet_reads_enabled};
 
 use super::object_io::{GetResult, ObjectSource};
 use crate::{
-    FileFormat, InvalidRangeRequestSnafu, http::HttpSource, huggingface::{error::{Error}, path::{HFPath, HFPathParts}}, object_io::{FileMetadata, FileType, LSResult}, range::GetRange, stats::IOStatsRef, stream_utils::io_stats_on_bytestream,
+    FileFormat, InvalidRangeRequestSnafu,
+    http::HttpSource,
+    huggingface::{
+        error::Error,
+        path::{HFPath, HFPathParts, hf_path_parts_from_uri},
+    },
+    object_io::{FileMetadata, FileType, LSResult},
+    range::GetRange,
+    stats::IOStatsRef,
+    stream_utils::io_stats_on_bytestream,
 };
-
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
@@ -187,7 +189,8 @@ impl HFSource {
                     Some(StatusCode::RANGE_NOT_SATISFIABLE) => {
                         self.request(uri, true, range, client).await
                     }
-                    _ => Err(e).context(error::UnableToOpenFileSnafu::<String> { path: uri.clone() })?,
+                    _ => Err(e)
+                        .context(error::UnableToOpenFileSnafu::<String> { path: uri.clone() })?,
                 }
             }
             Ok(res) => {
@@ -283,19 +286,19 @@ impl HFSource {
             None => return Ok(None),
         };
 
-        let size_hint = range.as_ref().map(|r| match r {
-            GetRange::Bounded(b) => Some(b.end - b.start),
-            GetRange::Suffix(n) => Some(*n),
-            GetRange::Offset(offset) => resolved
-                .file_size
-                .checked_sub(*offset as u64)
-                .map(|s| s as usize),
-        }).flatten().or(Some(resolved.file_size as usize));
+        let size_hint = range
+            .as_ref()
+            .and_then(|r| match r {
+                GetRange::Bounded(b) => Some(b.end - b.start),
+                GetRange::Suffix(n) => Some(*n),
+                GetRange::Offset(offset) => resolved
+                    .file_size
+                    .checked_sub(*offset as u64)
+                    .map(|s| s as usize),
+            })
+            .or(Some(resolved.file_size as usize));
 
-        let stream = self
-            .xet
-            .download_stream(&parts, &resolved, range)
-            .await?;
+        let stream = self.xet.download_stream(&parts, &resolved, range).await?;
 
         if let Some(is) = io_stats.as_ref() {
             is.mark_get_requests(1);
@@ -347,7 +350,9 @@ impl HFSource {
 
                 Ok(size_bytes
                     .parse()
-                    .with_context(|_| error::UnableToParseIntegerSnafu::<String> { path: uri.into() })?)
+                    .with_context(|_| error::UnableToParseIntegerSnafu::<String> {
+                        path: uri.into(),
+                    })?)
             }
             None => Err(Error::UnableToDetermineSize { path: uri.into() }.into()),
         }
@@ -395,22 +400,23 @@ impl ObjectSource for HFSource {
     }
 
     async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize> {
-        if xet_reads_enabled(&self.hf_config) {
-            if let Some(parts) = hf_path_parts_from_uri(uri)? {
-                match self
-                    .xet
-                    .resolve_xet_file(&parts, &self.http_source.client)
-                    .await
-                {
-                    Ok(Some(resolved)) => return Ok(resolved.file_size as usize),
-                    Ok(None) => {}
-                    Err(Error::Unauthorized) => return Err(Error::Unauthorized.into()),
-                    Err(e) => {
-                        log::debug!("Xet size probe failed for {uri}, falling back to HTTP: {e}");
-                    }
+        if xet_reads_enabled(&self.hf_config)
+            && let Some(parts) = hf_path_parts_from_uri(uri)?
+        {
+            match self
+                .xet
+                .resolve_xet_file(&parts, &self.http_source.client)
+                .await
+            {
+                Ok(Some(resolved)) => return Ok(resolved.file_size as usize),
+                Ok(None) => {}
+                Err(Error::Unauthorized) => return Err(Error::Unauthorized.into()),
+                Err(e) => {
+                    log::debug!("Xet size probe failed for {uri}, falling back to HTTP: {e}");
                 }
             }
         }
+
         self.get_size_via_http(uri, io_stats).await
     }
 
@@ -509,12 +515,13 @@ impl ObjectSource for HFSource {
         if let Some(is) = io_stats.as_ref() {
             is.mark_list_requests(1);
         }
-        let response = response
-            .json::<Vec<Item>>()
-            .await
-            .context(error::UnableToReadBytesSnafu {
-                path: api_uri.clone(),
-            })?;
+        let response =
+            response
+                .json::<Vec<Item>>()
+                .await
+                .context(error::UnableToReadBytesSnafu {
+                    path: api_uri.clone(),
+                })?;
 
         let files = response
             .into_iter()
@@ -586,11 +593,12 @@ async fn try_parquet_api(
                 return Err(Error::Unauthorized);
             }
         }
-        let response = response
-            .error_for_status()
-            .with_context(|_| error::UnableToOpenFileSnafu {
-                path: api_path.clone(),
-            })?;
+        let response =
+            response
+                .error_for_status()
+                .with_context(|_| error::UnableToOpenFileSnafu {
+                    path: api_path.clone(),
+                })?;
 
         if let Some(is) = io_stats.as_ref() {
             is.mark_list_requests(1);
@@ -598,12 +606,13 @@ async fn try_parquet_api(
 
         // {<dataset_name>: {<split_name>: [<uri>, ...]}}
         type DatasetResponse = HashMap<String, HashMap<String, Vec<String>>>;
-        let body = response
-            .json::<DatasetResponse>()
-            .await
-            .context(error::UnableToReadBytesSnafu {
-                path: api_path.clone(),
-            })?;
+        let body =
+            response
+                .json::<DatasetResponse>()
+                .await
+                .context(error::UnableToReadBytesSnafu {
+                    path: api_path.clone(),
+                })?;
 
         let files = body
             .into_values()
@@ -629,20 +638,18 @@ async fn try_parquet_api(
 mod tests {
     use common_io_config::{HTTPConfig, HuggingFaceConfig};
 
-    use crate::{
-        huggingface::{HFSource},
-        object_io::ObjectSource,
-    };
+    use crate::{huggingface::HFSource, object_io::ObjectSource};
 
     #[tokio::test]
     async fn test_full_get_from_hf() -> crate::Result<()> {
         let test_file_path = "hf://datasets/google/FACTS-grounding-public/README.md";
         let expected_md5 = "46df309e52cf88f458a4e3e2fb692fc1";
 
-        let mut config = HuggingFaceConfig::default();
-        config.use_xet = true;
-        let client =
-            HFSource::get_client(&config, &HTTPConfig::default()).await?;
+        let config = HuggingFaceConfig {
+            use_xet: true,
+            ..Default::default()
+        };
+        let client = HFSource::get_client(&config, &HTTPConfig::default()).await?;
 
         let parquet_file = client.get(test_file_path, None, None).await?;
         let bytes = parquet_file.bytes().await?;
@@ -658,8 +665,10 @@ mod tests {
         let test_file_path = "hf://datasets/google/FACTS-grounding-public/README.md";
         let expected_md5 = "46df309e52cf88f458a4e3e2fb692fc1";
 
-        let mut config = HuggingFaceConfig::default();
-        config.use_xet = false;
+        let config = HuggingFaceConfig {
+            use_xet: false,
+            ..Default::default()
+        };
         let client = HFSource::get_client(&config, &HTTPConfig::default()).await?;
 
         let parquet_file = client.get(test_file_path, None, None).await?;

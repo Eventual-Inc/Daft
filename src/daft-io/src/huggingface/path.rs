@@ -4,13 +4,77 @@ use uuid::Uuid;
 
 use crate::huggingface::error::Error;
 
-
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct HFPathParts {
     pub bucket: String,
     pub repository: String,
     pub revision: String,
     pub path: String,
+}
+
+impl HFPathParts {
+    fn repo_url_segment(&self) -> String {
+        match self.bucket.as_str() {
+            "models" | "model" => self.repository.clone(),
+            _ => format!("{}/{}", self.bucket, self.repository),
+        }
+    }
+
+    pub(super) fn resolve_url(&self) -> String {
+        format!(
+            "https://huggingface.co/{}/resolve/{}/{}",
+            self.repo_url_segment(),
+            self.revision,
+            self.path,
+        )
+    }
+
+    /// Parse `https://huggingface.co/.../resolve/...` URLs.
+    pub(super) fn from_resolve_url(url: &str) -> Option<Self> {
+        let parsed = url::Url::parse(url).ok()?;
+        if parsed.host_str()? != "huggingface.co" {
+            return None;
+        }
+        let path = parsed.path().trim_start_matches('/');
+
+        let (bucket, rest) = if let Some(rest) = path.strip_prefix("datasets/") {
+            ("datasets", rest)
+        } else if let Some(rest) = path.strip_prefix("spaces/") {
+            ("spaces", rest)
+        } else if let Some(rest) = path.strip_prefix("models/") {
+            ("models", rest)
+        } else if let Some(rest) = path.strip_prefix("buckets/") {
+            ("buckets", rest)
+        } else {
+            ("models", path)
+        };
+
+        let resolve_marker = "/resolve/";
+        let resolve_idx = rest.find(resolve_marker)?;
+        let repository = rest[..resolve_idx].to_string();
+        let after_resolve = &rest[resolve_idx + resolve_marker.len()..];
+        let (revision, file_path) = after_resolve.split_once('/')?;
+        if file_path.is_empty() {
+            return None;
+        }
+
+        Some(Self {
+            bucket: bucket.to_string(),
+            repository,
+            revision: revision.to_string(),
+            path: file_path.to_string(),
+        })
+    }
+}
+
+/// Extract [`HFPathParts`] from an `hf://` or Hugging Face HTTPS resolve URL.
+pub(super) fn hf_path_parts_from_uri(uri: &str) -> Result<Option<HFPathParts>, Error> {
+    let path = uri.parse::<HFPath>()?;
+    match path {
+        HFPath::Hf(parts) if !parts.path.is_empty() => Ok(Some(parts)),
+        HFPath::Http(url) => Ok(HFPathParts::from_resolve_url(&url)),
+        _ => Ok(None),
+    }
 }
 
 impl FromStr for HFPathParts {
@@ -111,15 +175,7 @@ impl HFPath {
     pub(super) fn get_file_uri(&self, cache_bust: bool) -> String {
         let base = match self {
             Self::Http(base) => base.clone(),
-            Self::Hf(parts) => {
-                format!(
-                    "https://huggingface.co/{BUCKET}/{REPOSITORY}/resolve/{REVISION}/{PATH}",
-                    BUCKET = parts.bucket,
-                    REPOSITORY = parts.repository,
-                    REVISION = parts.revision,
-                    PATH = parts.path,
-                )
-            }
+            Self::Hf(parts) => parts.resolve_url(),
         };
         if cache_bust {
             let cachebuster = Uuid::new_v4();
@@ -161,7 +217,6 @@ impl HFPath {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -231,5 +286,40 @@ mod tests {
         assert_eq!(parts, expected);
 
         Ok(())
+    }
+
+    #[test]
+    fn test_from_resolve_url_datasets() {
+        let url =
+            "https://huggingface.co/datasets/google/FACTS-grounding-public/resolve/main/README.md";
+        let parts = HFPathParts::from_resolve_url(url).unwrap();
+        assert_eq!(parts.bucket, "datasets");
+        assert_eq!(parts.repository, "google/FACTS-grounding-public");
+        assert_eq!(parts.revision, "main");
+        assert_eq!(parts.path, "README.md");
+    }
+
+    #[test]
+    fn test_from_resolve_url_models() {
+        let url = "https://huggingface.co/Qwen/Qwen2.5-0.5B/resolve/main/config.json";
+        let parts = HFPathParts::from_resolve_url(url).unwrap();
+        assert_eq!(parts.bucket, "models");
+        assert_eq!(parts.repository, "Qwen/Qwen2.5-0.5B");
+        assert_eq!(parts.revision, "main");
+        assert_eq!(parts.path, "config.json");
+    }
+
+    #[test]
+    fn test_resolve_url_models_omits_prefix() {
+        let parts = HFPathParts {
+            bucket: "models".to_string(),
+            repository: "Qwen/Qwen2.5".to_string(),
+            revision: "main".to_string(),
+            path: "config.json".to_string(),
+        };
+        assert_eq!(
+            parts.resolve_url(),
+            "https://huggingface.co/Qwen/Qwen2.5/resolve/main/config.json"
+        );
     }
 }
