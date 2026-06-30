@@ -241,6 +241,10 @@ impl DaftExecutionConfig {
         if let Some(val) =
             parse_number_from_env(Self::ENV_DAFT_MIN_CPU_PER_TASK, cfg.min_cpu_per_task)
         {
+            eprintln!(
+                "{} is deprecated and has no effect on Flotilla scheduling. It will be removed in the next minor version.",
+                Self::ENV_DAFT_MIN_CPU_PER_TASK
+            );
             cfg.min_cpu_per_task = val;
         }
 
