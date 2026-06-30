@@ -22,15 +22,16 @@ from __future__ import annotations
 import argparse
 import sys
 import tempfile
+import urllib.request
+import zipfile
 from pathlib import Path
 
 import daft
 from daft.datatype import DataType
 from daft.expressions import col
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SOURCE_CSV = (
-    REPO_ROOT / "daft" / "datasets" / "data" / "scene_classifications.csv"
+DEFAULT_SOURCE_ZIP_URL = (
+    "https://github.com/droid-dataset/droid/files/15068147/DROID_scene_classification.zip"
 )
 DEFAULT_REPO_ID = "Eventual-Inc/droid-scene-classifications"
 DEFAULT_FILENAME = "scene_classifications.parquet"
@@ -125,10 +126,32 @@ def _build_readme(repo_id: str, filename: str) -> str:
     return README.format(repo_id=repo_id, filename=filename)
 
 
-def _write_parquet(source_csv: Path, output_path: Path) -> None:
-    if not source_csv.is_file():
-        raise FileNotFoundError(f"Source CSV not found: {source_csv}")
+def _download_source_csv(dest_dir: Path, zip_url: str) -> Path:
+    zip_path = dest_dir / "DROID_scene_classification.zip"
+    print(f"Downloading source archive from {zip_url}")
+    urllib.request.urlretrieve(zip_url, zip_path)
 
+    with zipfile.ZipFile(zip_path) as archive:
+        csv_names = [name for name in archive.namelist() if name.endswith(".csv")]
+        if not csv_names:
+            raise FileNotFoundError(f"No CSV found in archive: {zip_url}")
+
+        csv_name = csv_names[0]
+        extracted = dest_dir / Path(csv_name).name
+        extracted.write_bytes(archive.read(csv_name))
+        return extracted
+
+
+def _resolve_source_csv(source_csv: Path | None, zip_url: str, work_dir: Path) -> Path:
+    if source_csv is not None:
+        if not source_csv.is_file():
+            raise FileNotFoundError(f"Source CSV not found: {source_csv}")
+        return source_csv
+
+    return _download_source_csv(work_dir, zip_url)
+
+
+def _write_parquet(source_csv: Path, output_path: Path) -> None:
     (
         daft.read_csv(str(source_csv))
         .select(
@@ -147,15 +170,19 @@ def _stage_dataset(source_csv: Path, repo_id: str, filename: str, staging_dir: P
 def upload(
     *,
     repo_id: str,
-    source_csv: Path,
+    source_csv: Path | None,
+    zip_url: str,
     filename: str,
     token: str | None,
     private: bool,
     dry_run: bool,
 ) -> None:
     with tempfile.TemporaryDirectory(prefix="droid-scene-classifications-") as tmp:
-        staging_dir = Path(tmp)
-        _stage_dataset(source_csv, repo_id, filename, staging_dir)
+        work_dir = Path(tmp)
+        resolved_csv = _resolve_source_csv(source_csv, zip_url, work_dir)
+        staging_dir = work_dir / "staging"
+        staging_dir.mkdir()
+        _stage_dataset(resolved_csv, repo_id, filename, staging_dir)
 
         print(f"Staged files in {staging_dir}:")
         for path in sorted(staging_dir.rglob("*")):
@@ -207,8 +234,13 @@ def main() -> None:
     parser.add_argument(
         "--source-csv",
         type=Path,
-        default=DEFAULT_SOURCE_CSV,
-        help=f"Local CSV to convert and upload as Parquet (default: {DEFAULT_SOURCE_CSV})",
+        default=None,
+        help="Optional local CSV to convert and upload as Parquet",
+    )
+    parser.add_argument(
+        "--source-zip-url",
+        default=DEFAULT_SOURCE_ZIP_URL,
+        help="Official DROID scene classification zip URL used when --source-csv is omitted",
     )
     parser.add_argument(
         "--filename",
@@ -247,6 +279,7 @@ def main() -> None:
     upload(
         repo_id=args.repo_id,
         source_csv=args.source_csv,
+        zip_url=args.source_zip_url,
         filename=args.filename,
         token=token,
         private=args.private,

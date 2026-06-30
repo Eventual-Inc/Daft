@@ -120,6 +120,8 @@ import daft
 
 The DROID dataset is annotated with scene classifications from GPT-4V. You can filter the data by scene classification using the `filter_scenes` function.
 
+`filter_scenes` joins against a Parquet mirror hosted on Hugging Face at [Eventual-Inc/droid-scene-classifications](https://huggingface.co/datasets/Eventual-Inc/droid-scene-classifications). That table is derived from the DROID authors' [supplemental scene classification release](https://github.com/droid-dataset/droid/issues/6) (CC-BY 4.0). Valid labels are listed in `daft.datasets.droid.SCENE_CLASSIFICATIONS`.
+
 ```python
 import daft
 

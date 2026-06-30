@@ -7,6 +7,7 @@ import pytest
 
 import daft
 from daft import DataType, MediaType
+import daft.datasets.droid as droid_module
 from daft.datasets.droid import SCENE_CLASSIFICATIONS, camera_frames, filter_scenes, trajectory
 from daft.expressions import col
 from daft.functions import hdf5_file, video_file
@@ -411,7 +412,9 @@ def test_trajectory_rejects_empty_fields(sample_episodes_df) -> None:
         trajectory(sample_episodes_df, fields=[])
 
 
-import daft.datasets.droid as droid_module
+def test_trajectory_rejects_unknown_fields(sample_episodes_df) -> None:
+    with pytest.raises(ValueError, match="Unknown trajectory field"):
+        trajectory(sample_episodes_df, fields=["action/not_a_real_field"])
 
 
 @pytest.fixture
@@ -613,6 +616,15 @@ def test_camera_frames_accepts_camera_list(sample_camera_episodes_df) -> None:
     assert "wrist_cam_frames" in schema
     assert "ext1_cam_frames" not in schema
     assert "ext2_cam_frames" in schema
+
+
+def test_camera_frames_deduplicates_cameras(sample_camera_episodes_df) -> None:
+    result = camera_frames(sample_camera_episodes_df, cameras=["wrist", "wrist"], width=64, height=48)
+    schema = [field.name for field in result.schema()]
+
+    assert schema.count("wrist_cam_frames") == 1
+    assert "ext1_cam_frames" not in schema
+    assert "ext2_cam_frames" not in schema
 
 
 def test_camera_frames_rejects_empty_camera_list(sample_camera_episodes_df) -> None:

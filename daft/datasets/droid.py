@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
@@ -134,22 +133,6 @@ _DEFAULT_TRAJECTORY_FIELDS: tuple[str, ...] = (
     "observation/robot_state/cartesian_position",
 )
 
-# Taxonomy labels from the official DROID dataset visualizer
-# (https://droid-dataset.github.io/dataset.html). These type IDs are distinct from
-# the metadata ``scene_id`` column, which identifies a unique robot workspace.
-SCENE_TYPES: dict[int, str] = {
-    1: "Industrial office",
-    2: "Kitchen",
-    3: "Office",
-    4: "Living room",
-    5: "Dining room",
-    6: "Bathroom",
-    7: "Bedroom",
-    8: "Hallway",
-    9: "Laundry room",
-    10: "Other",
-}
-
 # GPT-4V scene labels from the supplemental DROID scene classification release.
 # See https://huggingface.co/datasets/Eventual-Inc/droid-scene-classifications
 SCENE_CLASSIFICATIONS: frozenset[str] = frozenset(
@@ -171,14 +154,6 @@ SCENE_CLASSIFICATIONS: frozenset[str] = frozenset(
 
 _HF_SCENE_CLASSIFICATIONS_PATH = (
     "hf://datasets/Eventual-Inc/droid-scene-classifications/scene_classifications.parquet"
-)
-
-
-_CAMERA_EXTRINSICS_PATTERN = re.compile(r"^observation/camera_extrinsics/[^/]+_(?:left|right)(?:_gripper_offset)?$")
-_CAMERA_TYPE_PATTERN = re.compile(r"^observation/camera_type/[^/]+$")
-_CAMERA_TIMESTAMP_PATTERN = re.compile(
-    r"^observation/timestamp/cameras/[^/]+_"
-    r"(?:estimated_capture|frame_received|read_end|read_start)$"
 )
 
 _CAMERAS = ("wrist", "ext1", "ext2")
@@ -334,11 +309,8 @@ def filter_scenes(
         scene_types: One scene label or sequence of labels to keep. Labels must
             match the values in :data:`SCENE_CLASSIFICATIONS`, such as
             ``"Industrial office"`` or ``"Home kitchen"``.
-        classifications_path: Optional path to scene classifications as Parquet or
-            CSV. Defaults to the Hugging Face mirror at
-            ``hf://datasets/Eventual-Inc/droid-scene-classifications/scene_classifications.parquet``.
-        io_config: IO configuration for reading ``classifications_path`` when it
-            points to remote storage.
+        io_config: IO configuration for reading the Hugging Face classification
+            table when using a private mirror or custom credentials.
 
     Returns:
         The input DataFrame with a ``scene_classification`` column appended when
@@ -524,6 +496,7 @@ def camera_frames(
         raise ValueError(
             f"Unknown camera(s): {unknown}. Expected one or more of: {', '.join(_CAMERAS)}."
         )
+    selected_cameras = tuple(dict.fromkeys(selected_cameras))
 
     input_columns = {field.name for field in episodes.schema()}
     missing_columns = [
@@ -553,6 +526,7 @@ def camera_frames(
 
 
 __all__ = [
+    "SCENE_CLASSIFICATIONS",
     "camera_frames",
     "filter_scenes",
     "raw",
