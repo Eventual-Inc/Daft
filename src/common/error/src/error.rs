@@ -36,7 +36,7 @@ pub enum DaftError {
     PyO3Error(#[from] pyo3::PyErr),
     #[error("DaftError::IoError {0}")]
     IoError(#[from] std::io::Error),
-    #[error("DaftError::FileNotFound {path}: {source}")]
+    #[error("DaftError::FileNotFound {path} not found: {source}")]
     FileNotFound { path: String, source: GenericError },
     #[error("DaftError::InternalError {0}")]
     InternalError(String),
