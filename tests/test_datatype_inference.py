@@ -18,7 +18,7 @@ from daft import DataType as dt
 from daft import Series
 from daft.daft import ImageMode
 from daft.datatype import MediaType, TimeUnit
-from daft.file import File, VideoFile
+from daft.file import File, Hdf5File, VideoFile
 
 try:  # pragma: no cover - optional dependency
     import tensorflow  # type: ignore[import-not-found]
@@ -148,6 +148,7 @@ class PydanticWithNamedTuple(BaseModel):
         pytest.param(Series, dt.list(dt.python()), id="daft_series"),
         pytest.param(File, dt.file(MediaType.unknown()), id="daft_file"),
         pytest.param(VideoFile, dt.file(MediaType.video()), id="daft_video_file"),
+        pytest.param(Hdf5File, dt.file(MediaType.hdf5()), id="daft_hdf5_file"),
         pytest.param(object, dt.python(), id="object_python"),
         # Pydantic models
         pytest.param(
@@ -431,6 +432,16 @@ def test_infer_from_jaxtyping(dtype_class, expected_dtype, shape_spec, expected_
 def test_infer_from_object(user_provided_object, expected_datatype):
     actual = dt.infer_from_object(user_provided_object)
     assert actual == expected_datatype
+
+
+def test_infer_from_hdf5_file_object(tmp_path):
+    h5py = pytest.importorskip("h5py")
+    path = tmp_path / "sample.h5"
+    with h5py.File(path, "w") as file:
+        file.create_dataset("values", data=np.array([1, 2, 3]))
+
+    actual = dt.infer_from_object(Hdf5File(str(path)))
+    assert actual == dt.file(MediaType.hdf5())
 
 
 @pytest.mark.parametrize(

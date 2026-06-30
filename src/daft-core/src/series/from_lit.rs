@@ -8,7 +8,7 @@ use itertools::Itertools;
 use crate::{
     array::ops::image::image_array_from_img_buffers,
     datatypes::FileArray,
-    file::{MediaTypeAudio, MediaTypeImage, MediaTypeUnknown, MediaTypeVideo},
+    file::{MediaTypeAudio, MediaTypeHdf5, MediaTypeImage, MediaTypeUnknown, MediaTypeVideo},
     prelude::*,
 };
 
@@ -331,6 +331,10 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 }
                 daft_schema::media_type::MediaType::Image => {
                     FileArray::<MediaTypeImage>::new_from_file_references("literal", iter)?
+                        .into_series()
+                }
+                daft_schema::media_type::MediaType::Hdf5 => {
+                    FileArray::<MediaTypeHdf5>::new_from_file_references("literal", iter)?
                         .into_series()
                 }
             }
