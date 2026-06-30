@@ -132,10 +132,10 @@ df = daft.datasets.droid.raw().limit(100)
 df = daft.datasets.droid.filter_scenes(df, "Home kitchen")
 
 df.select(
-    "uuid", 
-    "scene_id", 
-    "scene_classification", 
-    "current_task", 
+    "uuid",
+    "scene_id",
+    "scene_classification",
+    "current_task",
     "success",
 ).show(3)
 ```
@@ -168,7 +168,7 @@ import daft
 df = daft.datasets.droid.raw().limit(3)
 
 df = daft.datasets.droid.trajectory(
-    df, 
+    df,
     fields=["action/joint_position", "action/gripper_position"]
 ).show(3)
 ```
@@ -178,7 +178,7 @@ For custom HDF5 layouts, create lazy Hdf5File references with daft.functions.hdf
 ```python
 import h5py
 
-import daft 
+import daft
 from daft import col, DataType, Hdf5File
 
 # Build the UDF that will read the trajectory data and return a struct of the requested fields
@@ -212,7 +212,7 @@ if __name__ == "__main__":
         .with_column("first_ten_steps", )
     )
 
-    df.show(3) 
+    df.show(3)
 ```
 
 For a runnable walkthrough covering standalone Hdf5File usage, MIME detection, hierarchy traversal, DataFrame expressions, and UDF patterns, see the examples in daft-examples repository
@@ -322,4 +322,3 @@ The raw metadata JSON includes additional path fields such as `hdf5_path`, `wris
 - See the [Files modality guide](../modalities/files.md) for reading trajectory HDF5 files with `[daft.File](../api/datatypes/file_types.md)`.
 - Visit the [official DROID project page](https://droid-dataset.github.io/) for hardware setup, policy learning code, and additional dataset formats.
 - See the [DROID Dataset API reference](../api/datasets.md#droid) for complete parameter documentation.
-

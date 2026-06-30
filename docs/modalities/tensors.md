@@ -1,24 +1,24 @@
 ## Tensors
 
-Tensors are a multi-dimensional array of data. 
+Tensors are a multi-dimensional array of data.
 
-Daft natively supports converting tensors to and from Daft's native `daft.DataType.tensor(dtype)` from the following libraries. 
+Daft natively supports converting tensors to and from Daft's native `daft.DataType.tensor(dtype)` from the following libraries.
 - NumPy
 - PyTorch
 
 ## HDF5 Files
 
-[HDF5](https://www.hdfgroup.org/solutions/hdf5/) is a high performance hierarchical file format for storing and organizing large amounts of data. It is widely used in scientific fields including physics, biology, and robotics. 
+[HDF5](https://www.hdfgroup.org/solutions/hdf5/) is a high performance hierarchical file format for storing and organizing large amounts of data. It is widely used in scientific fields including physics, biology, and robotics.
 
-`daft.Hdf5File` mirrors the canonical `[h5py.File](https://docs.h5py.org/en/stable/high/file.html#the-file-object)` interface from the [h5py](https://docs.h5py.org/en/stable/) library. As a subclass of `daft.File`, the `daft.Hdf5File` class is a lazy file reference that can be used in a DataFrame expression/functions including `hdf5_attrs`, `hdf5_keys`, and `hdf5_metadata`. These expressions provide ample metadata for preprocessing and row-filtering. 
+`daft.Hdf5File` mirrors the canonical `[h5py.File](https://docs.h5py.org/en/stable/high/file.html#the-file-object)` interface from the [h5py](https://docs.h5py.org/en/stable/) library. As a subclass of `daft.File`, the `daft.Hdf5File` class is a lazy file reference that can be used in a DataFrame expression/functions including `hdf5_attrs`, `hdf5_keys`, and `hdf5_metadata`. These expressions provide ample metadata for preprocessing and row-filtering.
 
-!!! note 
+!!! note
     The `read` and `visit` methods are not available as DataFrame expressions at this time. They must be called inside of a `daft.cls` or `daft.func` UDF. See the [Example Usage with a UDF](#example-usage-with-a-udf) section for more details.
 
 ## Functions Example Usage
 
 ```python
-import os 
+import os
 
 import daft
 from daft import col
@@ -32,7 +32,7 @@ def create_hdf5_sample_file(path: str):
     with h5py.File(path, "w") as f:
         f.attrs["source"] = "sample_data"
         grp = f.create_group("subgroup")
-        
+
         dist = grp.create_dataset("distance_dataset", data=np.array([1.0, 2.0, 3.0]))
         dist.attrs["unit"] = "meters"
 
@@ -47,7 +47,7 @@ if __name__ == "__main__":
     # Create some sample data
     if not os.path.exists(sample_path):
         create_hdf5_sample_file(sample_path)
-   
+
     # Discover the files
     df = daft.from_files(sample_path)
 
@@ -83,14 +83,14 @@ if __name__ == "__main__":
 
 ## Example Usage with a UDF
 
-While `attrs`, `keys`, and `metadata` functions simplify metadata scans, most workloads will leverage the `Hdf5File.read()` and `Hdf5File.visit()` inside of a `daft.cls` or `daft.func` UDF. 
+While `attrs`, `keys`, and `metadata` functions simplify metadata scans, most workloads will leverage the `Hdf5File.read()` and `Hdf5File.visit()` inside of a `daft.cls` or `daft.func` UDF.
 
 It's generally recommended to leverage `daft.Hdf5File.to_tempfile()` if your data resides on remote object stores. Opening a `h5py.File` object directly incurs many seeks across the network and is not recommended for remote data.
 
 To demonstrate the full materialization of the hdf5 datasets, we'll peak under the hood of the a UDF that powers the [DROID](../../datasets/droid.md) trajectory api.
 
 ```python
-import daft 
+import daft
 from daft import col, DataType, Hdf5File
 import h5py
 
@@ -120,7 +120,7 @@ if __name__ == "__main__":
         .select(col("current_task"), read_droid_trajectory(col("trajectory")))
     )
 
-    df.show(3) 
+    df.show(3)
 
 ```
 
@@ -145,4 +145,3 @@ if __name__ == "__main__":
 - [DROID datasets](../datasets/droid.md)
 - [daft.File](./files.md)
 - [daft.VideoFile](./videos.md)
-

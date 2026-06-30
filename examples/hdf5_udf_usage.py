@@ -1,14 +1,20 @@
-import daft 
-from daft import col, DataType, Hdf5File
+from __future__ import annotations
+
 import h5py
+
+import daft
+from daft import DataType, Hdf5File, col
+
 
 # Build the UDF that will read the trajectory data and return a struct of the requested fields
 @daft.func(
-    return_dtype=DataType.struct({
-        "action/gripper_position": DataType.tensor(DataType.float64()),
-        "action/target_gripper_position": DataType.tensor(DataType.float64()),
-        "observation/robot_state/gripper_position": DataType.tensor(DataType.float64()),
-    }),
+    return_dtype=DataType.struct(
+        {
+            "action/gripper_position": DataType.tensor(DataType.float64()),
+            "action/target_gripper_position": DataType.tensor(DataType.float64()),
+            "observation/robot_state/gripper_position": DataType.tensor(DataType.float64()),
+        }
+    ),
     use_process=False,
     unnest=True,
 )
@@ -20,12 +26,12 @@ def read_droid_trajectory(file: Hdf5File):
             "observation/robot_state/gripper_position": h5["observation/robot_state/gripper_position"][()],
         }
 
-if __name__ == "__main__":
 
+if __name__ == "__main__":
     df = (
         daft.datasets.droid.raw()
-        .where(col("success")) # filter out failed episodes
+        .where(col("success"))  # filter out failed episodes
         .select(col("current_task"), read_droid_trajectory(col("trajectory")))
     )
 
-    df.show(3) 
+    df.show(3)

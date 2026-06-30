@@ -1,18 +1,20 @@
-import os 
+from __future__ import annotations
 
-import daft
-from daft import col
-from daft.functions import hdf5_file, hdf5_attrs, hdf5_keys, hdf5_metadata
+import os
 
 import h5py
 import numpy as np
+
+import daft
+from daft import col
+from daft.functions import hdf5_attrs, hdf5_file, hdf5_keys, hdf5_metadata
 
 
 def create_hdf5_sample_file(path: str):
     with h5py.File(path, "w") as f:
         f.attrs["source"] = "sample_data"
         grp = f.create_group("subgroup")
-        
+
         dist = grp.create_dataset("distance_dataset", data=np.array([1.0, 2.0, 3.0]))
         dist.attrs["unit"] = "meters"
 
@@ -27,7 +29,7 @@ if __name__ == "__main__":
     # Create some sample data
     if not os.path.exists(sample_path):
         create_hdf5_sample_file(sample_path)
-   
+
     # Discover the files
     df = daft.from_files(sample_path)
 
