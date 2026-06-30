@@ -10,7 +10,10 @@ use xet::xet_session::{
     HeaderMap, HeaderValue, XetDownloadStream, XetFileInfo, XetSession, XetSessionBuilder, header,
 };
 
-use super::{error::Error, path::HFPathParts};
+use super::{
+    error::Error,
+    path::{HFPathParts, HFRepoType},
+};
 use crate::range::GetRange;
 
 const XET_FILEINFO_ACCEPT: &str = "application/vnd.xet-fileinfo+json";
@@ -32,13 +35,7 @@ pub(super) fn xet_reads_enabled(hf_config: &HuggingFaceConfig) -> bool {
 }
 
 fn xet_read_token_url(parts: &HFPathParts) -> String {
-    let repo_type = match parts.bucket.as_str() {
-        "model" => "models",
-        "dataset" => "datasets",
-        "space" => "spaces",
-        other => other,
-    };
-    if repo_type == "buckets" || repo_type == "bucket" {
+    if parts.repo_type == HFRepoType::Buckets {
         format!(
             "https://huggingface.co/api/buckets/{}/xet-read-token",
             parts.repository
@@ -46,7 +43,7 @@ fn xet_read_token_url(parts: &HFPathParts) -> String {
     } else {
         format!(
             "https://huggingface.co/api/{}/{}/xet-read-token/{}",
-            repo_type, parts.repository, parts.revision
+            parts.repo_type, parts.repository, parts.revision
         )
     }
 }
@@ -155,6 +152,7 @@ impl XetContext {
         Ok(session)
     }
 
+    #[allow(clippy::large_futures)]
     pub(super) async fn download_stream(
         &self,
         parts: &HFPathParts,
@@ -229,11 +227,12 @@ pub(super) fn xet_download_stream_to_bytes_stream(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::huggingface::path::HFRepoType;
 
     #[test]
     fn test_xet_read_token_url_datasets() {
         let parts = HFPathParts {
-            bucket: "datasets".to_string(),
+            repo_type: HFRepoType::Datasets,
             repository: "user/repo".to_string(),
             revision: "main".to_string(),
             path: "file.parquet".to_string(),

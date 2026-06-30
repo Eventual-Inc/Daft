@@ -267,6 +267,7 @@ impl HFSource {
         }
     }
 
+    #[allow(clippy::large_futures)]
     async fn get_via_xet(
         &self,
         uri: &str,
@@ -371,6 +372,7 @@ impl ObjectSource for HFSource {
         self.http_source.supports_range(&uri).await
     }
 
+    #[allow(clippy::large_futures)]
     async fn get(
         &self,
         uri: &str,
@@ -527,7 +529,7 @@ impl ObjectSource for HFSource {
             .into_iter()
             .map(|item| {
                 let filepath = HFPathParts {
-                    bucket: path_parts.bucket.clone(),
+                    repo_type: path_parts.repo_type.clone(),
                     repository: path_parts.repository.clone(),
                     revision: path_parts.revision.clone(),
                     path: item.path,
