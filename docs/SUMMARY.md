@@ -17,6 +17,7 @@
         * [Documents](modalities/documents.md)
         * [JSON and Nested Data](modalities/json.md)
         * [Files and URLs](modalities/files.md)
+        * [HDF5](modalities/hdf5.md)
         * [Embeddings](modalities/embeddings.md)
         * [Custom Modalities](modalities/custom.md)
     * User Defined Functions
