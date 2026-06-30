@@ -1,11 +1,11 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::HashSet, path::Path, sync::Arc};
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormat, WriteMode};
 use common_metrics::ops::NodeType;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_io::{Error, IOClient, get_io_client, parse_url};
+use daft_io::{Error, IOClient, SourceType, get_io_client, parse_url};
 use daft_logical_plan::OutputFileInfo;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -168,12 +168,11 @@ impl BlockingSink for CommitWriteSink {
 
                     // Create _SUCCESS file if write_success_file is true.
                     if file_info.write_success_file {
-                        let (_, root_uri) = parse_url(&file_info.root_dir)?;
+                        let success_file_path =
+                            success_marker_path(&file_info.root_dir, file_info.single_file)?;
                         let io_client =
                             get_io_client(true, file_info.io_config.clone().unwrap_or_default().into())?;
-                        let source = io_client.get_source(&root_uri).await?;
-                        let success_file_path =
-                            format!("{}/_SUCCESS", root_uri.trim_end_matches('/'));
+                        let source = io_client.get_source(&success_file_path).await?;
 
                         if let Err(e) = source
                             .put(&success_file_path, tokio_util::bytes::Bytes::new(), None)
@@ -228,6 +227,61 @@ impl BlockingSink for CommitWriteSink {
 
     fn max_concurrency(&self) -> usize {
         1
+    }
+}
+
+fn success_marker_path(root_dir: &str, single_file: bool) -> DaftResult<String> {
+    let (source_type, root_uri) = parse_url(root_dir)?;
+    if !single_file {
+        return Ok(append_uri_path_component(root_uri.as_ref(), "_SUCCESS"));
+    }
+
+    match source_type {
+        SourceType::File => local_success_marker_path(root_uri.as_ref()),
+        SourceType::S3 | SourceType::Tos | SourceType::Gravitino | SourceType::OpenDAL { .. } => {
+            object_success_marker_path(root_uri.as_ref())
+        }
+        source_type => Err(DaftError::ValueError(format!(
+            "`write_success_file=True` is not supported for source type `{source_type}` with `single_file=True`."
+        ))),
+    }
+}
+
+fn local_success_marker_path(root_uri: &str) -> DaftResult<String> {
+    let root_path = daft_io::strip_file_uri_to_path(root_uri).unwrap_or(root_uri);
+    let success_dir = Path::new(root_path)
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let success_file_path = success_dir.join("_SUCCESS");
+    Ok(daft_io::local_path_to_file_uri(
+        success_file_path.to_string_lossy().as_ref(),
+    ))
+}
+
+fn object_success_marker_path(root_uri: &str) -> DaftResult<String> {
+    let object_path = daft_io::utils::parse_object_url(root_uri)?;
+    let parent_key = object_path
+        .key
+        .rsplit_once('/')
+        .map(|(parent, _)| parent)
+        .unwrap_or("");
+    let success_dir = if parent_key.is_empty() {
+        format!("{}://{}", object_path.scheme, object_path.bucket)
+    } else {
+        format!(
+            "{}://{}/{}",
+            object_path.scheme, object_path.bucket, parent_key
+        )
+    };
+    Ok(append_uri_path_component(&success_dir, "_SUCCESS"))
+}
+
+fn append_uri_path_component(base: &str, component: &str) -> String {
+    if base.ends_with('/') {
+        format!("{base}{component}")
+    } else {
+        format!("{base}/{component}")
     }
 }
 

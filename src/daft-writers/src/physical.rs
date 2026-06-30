@@ -1,5 +1,5 @@
 use common_error::{DaftError, DaftResult};
-use common_file_formats::FileFormat;
+use common_file_formats::{FileFormat, WriteMode};
 use daft_core::prelude::*;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::{OutputFileInfo, sink_info::FormatSinkOption};
@@ -131,6 +131,7 @@ impl WriterFactory for PhysicalWriterFactory {
                 self.output_file_info.format_option.clone(),
                 self.output_file_info.compression.as_deref(),
                 self.output_file_info.single_file,
+                self.output_file_info.write_mode,
             ),
             WriterType::Pyarrow => create_pyarrow_file_writer(
                 &self.output_file_info.root_dir,
@@ -193,6 +194,7 @@ fn create_native_writer(
     format_option: Option<FormatSinkOption>,
     compression: Option<&str>,
     single_file: bool,
+    write_mode: WriteMode,
 ) -> DaftResult<Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Option<RecordBatch>>>> {
     let (path, io_config) = parse_url_and_config(root_dir, io_config)?;
     let root_dir = path.as_str();
@@ -211,6 +213,7 @@ fn create_native_writer(
                 compression,
                 parquet_option.column_compression.as_deref(),
                 single_file,
+                single_file && matches!(write_mode, WriteMode::Overwrite),
             )
         }
         FileFormat::Json => {
