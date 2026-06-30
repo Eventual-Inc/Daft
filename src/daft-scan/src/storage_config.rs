@@ -96,7 +96,7 @@ impl StorageConfig {
     #[must_use]
     #[pyo3(name = "multiline_display")]
     pub fn py_multiline_display(&self) -> Vec<String> {
-        Self::multiline_display(self)
+        self.multiline_display()
     }
 }
 
