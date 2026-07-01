@@ -421,7 +421,7 @@ def trajectory(
 @PublicAPI
 def camera_frames(
     episodes: DataFrame,
-    cameras: str | Sequence[str] = _CAMERAS,
+    cameras: str | Sequence[str] = ("wrist", "ext1", "ext2"), # _CAMERAS
     *,
     start_time: float = 0,
     end_time: float | None = None,
@@ -432,13 +432,13 @@ def camera_frames(
 ) -> DataFrame:
     r"""Decode DROID camera videos into per-episode frame-list columns.
 
-    This helper takes an episode-level DataFrame from :func:`raw` or :func:`trajectory`
+    This helper takes an episode-level DataFrame from `raw` or `trajectory`
     and appends one frame-list column per requested camera. It keeps one row per
     episode; each frame-list column contains the structs returned by
     :func:`daft.functions.video_frames`, including frame metadata and image data.
 
     Args:
-        episodes: Episode-level DataFrame containing DROID camera ``VideoFile`` columns.
+        episodes: Episode-level DataFrame containing DROID camera `VideoFile` columns.
         cameras: Camera or cameras to decode. May be a single camera string or a
             sequence of camera names. Supported values are ``"wrist"``, ``"ext1"``,
             and ``"ext2"``. Defaults to all three cameras.
