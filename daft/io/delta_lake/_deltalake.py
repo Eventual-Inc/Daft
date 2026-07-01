@@ -1143,6 +1143,24 @@ def _resolve_expr(
     if expr_str.upper() == "NULL":
         return lit(None)
 
+    # Handle arrow_cast('value', 'Timestamp(Microsecond, None)')
+    if expr_str.lower().startswith("arrow_cast("):
+        import re
+
+        match = re.match(
+            r"arrow_cast\(\s*'([^']+)'\s*,\s*'Timestamp\(Microsecond,\s*None\)'\s*\)",
+            expr_str,
+            re.IGNORECASE,
+        )
+        if match:
+            from datetime import datetime as _dt
+            from datetime import timezone as _tz
+
+            ts_str = match.group(1)
+            dt = _dt.strptime(ts_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=_tz.utc)
+            us = int(dt.timestamp() * 1_000_000)
+            return lit(us).cast(DataType.timestamp("us"))
+
     # String literal
     if expr_str.startswith("'") and expr_str.endswith("'"):
         return lit(expr_str[1:-1])
