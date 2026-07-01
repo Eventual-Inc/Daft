@@ -361,6 +361,24 @@ def test_hash_join_inner_spill_enabled_in_memory(how):
     assert got == expected
 
 
+@pytest.mark.timeout(90)
+@pytest.mark.parametrize("how", ["inner", "left", "right", "outer", "semi", "anti"])
+def test_hash_join_probe_side_spills(how):
+    # Grace-join probe spilling: probe rows destined for spilled build partitions are written to disk
+    # and streamed back at finalize (instead of buffered in memory), so the probe side stays
+    # memory-bounded. A 1-byte pool forces both the build and probe sides to spill. Partially
+    # overlapping keys exercise unmatched-row handling on both sides for every join type. Results
+    # must match the pure in-memory baseline.
+    n = 20000
+    left = daft.from_pydict({"k": list(range(n)), "lv": list(range(n))})
+    right = daft.from_pydict({"k": list(range(n // 2, n + n // 2)), "rv": list(range(n))})
+    with daft.context.execution_config_ctx(spill_pool_bytes=1):  # force build + probe spill
+        got = sorted(left.join(right, on="k", how=how).to_pydict()["k"])
+    with daft.context.execution_config_ctx(hash_join_spill_threshold_bytes=0):  # in-memory baseline
+        expected = sorted(left.join(right, on="k", how=how).to_pydict()["k"])
+    assert got == expected
+
+
 def test_dedup_spills_and_matches_in_memory():
     data = {"a": [i % 5000 for i in range(50000)]}
     expected = sorted(set(data["a"]))

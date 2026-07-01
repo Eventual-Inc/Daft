@@ -78,7 +78,12 @@ pub(crate) struct HashJoinProbeState {
     // Spill-path extensions (empty/None when partition_count == 1).
     pub(crate) in_memory_probes: Vec<Option<ProbeState>>,
     pub(crate) in_memory_bitmap_builders: Vec<Option<IndexBitmapBuilder>>,
-    pub(crate) probe_spill_buffers: Vec<Vec<RecordBatch>>,
+    /// Probe rows destined for spilled build partitions are written straight to disk (one bucket per
+    /// partition) instead of buffered in memory, keeping the probe side memory-bounded regardless of
+    /// its size. Created lazily on the first spilled-partition probe row.
+    pub(crate) probe_spill_writer: Option<SpillWriter>,
+    /// Spill directories for `probe_spill_writer` (empty when partition_count == 1).
+    pub(crate) spill_dirs: Vec<String>,
     pub(crate) spill_store: Option<Arc<SpillStore>>,
     pub(crate) partition_count: usize,
 }
@@ -558,7 +563,8 @@ impl JoinOperator for HashJoinOperator {
                 probe_state,
                 in_memory_probes: vec![],
                 in_memory_bitmap_builders: vec![],
-                probe_spill_buffers: vec![],
+                probe_spill_writer: None,
+                spill_dirs: vec![],
                 spill_store: None,
                 partition_count: 1,
             }
@@ -592,12 +598,19 @@ impl JoinOperator for HashJoinOperator {
                 (0..partition_count).map(|_| None).collect()
             };
 
+            let spill_dirs = finalized
+                .params
+                .spill_config
+                .as_ref()
+                .map(|c| c.spill_dirs.clone())
+                .unwrap_or_default();
             HashJoinProbeState {
                 probe_state: representative_probe_state,
                 bitmap_builder: None,
                 in_memory_probes: finalized.in_memory_probes,
                 in_memory_bitmap_builders,
-                probe_spill_buffers: vec![Vec::new(); partition_count],
+                probe_spill_writer: None,
+                spill_dirs,
                 spill_store: finalized.spill_store,
                 partition_count,
             }
@@ -662,7 +675,22 @@ impl JoinOperator for HashJoinOperator {
                                         outputs.push(out);
                                     }
                                 } else {
-                                    state.probe_spill_buffers[p].push(sub_batch);
+                                    // Build partition p is on disk; write the probe rows straight to
+                                    // disk too (streamed back at finalize) instead of buffering them
+                                    // in memory, so the probe side stays memory-bounded.
+                                    if state.probe_spill_writer.is_none() {
+                                        state.probe_spill_writer = Some(SpillWriter::new(
+                                            state.partition_count,
+                                            &sub_batch.schema,
+                                            state.spill_dirs.clone(),
+                                            "daft_join_probe_spill_",
+                                        )?);
+                                    }
+                                    state
+                                        .probe_spill_writer
+                                        .as_mut()
+                                        .expect("just created")
+                                        .write_batch(p, &sub_batch)?;
                                 }
                             }
                         }
@@ -731,7 +759,8 @@ impl JoinOperator for HashJoinOperator {
                                     bitmap_builder: s.in_memory_bitmap_builders[p].take(),
                                     in_memory_probes: vec![],
                                     in_memory_bitmap_builders: vec![],
-                                    probe_spill_buffers: vec![],
+                                    probe_spill_writer: None,
+                                    spill_dirs: vec![],
                                     spill_store: None,
                                     partition_count: 1,
                                 })
@@ -744,7 +773,19 @@ impl JoinOperator for HashJoinOperator {
                         }
                     }
 
-                    // 2. Finalize spilled partitions.
+                    // 2. Finalize spilled partitions. Probe rows for spilled partitions were written
+                    // to disk during the probe phase; close each worker's probe spill writer and
+                    // stream the rows back one batch at a time so the probe side stays bounded.
+                    let probe_stores: Vec<Option<SpillStore>> = {
+                        let mut v = Vec::with_capacity(states.len());
+                        for s in states.iter_mut() {
+                            v.push(match s.probe_spill_writer.take() {
+                                Some(w) => Some(w.finish()?),
+                                None => None,
+                            });
+                        }
+                        v
+                    };
                     let spill_store = states[0].spill_store.clone();
                     if let Some(store) = spill_store {
                         for p in 0..pc {
@@ -755,11 +796,6 @@ impl JoinOperator for HashJoinOperator {
                             if build_batches.is_empty() {
                                 continue;
                             }
-
-                            let probe_batches: Vec<RecordBatch> = states
-                                .iter_mut()
-                                .flat_map(|s| std::mem::take(&mut s.probe_spill_buffers[p]))
-                                .collect();
 
                             let mut builder = make_probeable_builder(
                                 params.key_schema.clone(),
@@ -779,20 +815,28 @@ impl JoinOperator for HashJoinOperator {
                                 None
                             };
 
-                            for probe_batch in &probe_batches {
-                                let mp = MicroPartition::new_loaded(
-                                    probe_batch.schema.clone(),
-                                    Arc::new(vec![probe_batch.clone()]),
-                                    None,
-                                );
-                                if let Some(out) = probe_dispatch(
-                                    &mp,
-                                    &probe_state,
-                                    bitmap_builder.as_mut(),
-                                    &params,
-                                    needs_bitmap,
-                                )? {
-                                    all_outputs.push(out);
+                            // Stream each worker's spilled probe rows for partition p from disk,
+                            // probing one batch at a time (only one probe batch resident).
+                            for probe_store in probe_stores.iter().flatten() {
+                                let Some(reader) = probe_store.open_bucket(p)? else {
+                                    continue;
+                                };
+                                for batch_res in reader {
+                                    let probe_batch = batch_res?;
+                                    let mp = MicroPartition::new_loaded(
+                                        probe_batch.schema.clone(),
+                                        Arc::new(vec![probe_batch]),
+                                        None,
+                                    );
+                                    if let Some(out) = probe_dispatch(
+                                        &mp,
+                                        &probe_state,
+                                        bitmap_builder.as_mut(),
+                                        &params,
+                                        needs_bitmap,
+                                    )? {
+                                        all_outputs.push(out);
+                                    }
                                 }
                             }
 
@@ -802,7 +846,8 @@ impl JoinOperator for HashJoinOperator {
                                     bitmap_builder,
                                     in_memory_probes: vec![],
                                     in_memory_bitmap_builders: vec![],
-                                    probe_spill_buffers: vec![],
+                                    probe_spill_writer: None,
+                                    spill_dirs: vec![],
                                     spill_store: None,
                                     partition_count: 1,
                                 };
@@ -869,7 +914,7 @@ impl JoinOperator for HashJoinOperator {
 
     fn needs_probe_finalization(&self) -> bool {
         // Need finalization if we track bitmaps (left/right/outer/anti/semi), OR if spill is
-        // configured (we must drain probe_spill_buffers against spilled build partitions).
+        // configured (we must drain spilled probe rows against spilled build partitions).
         self.needs_bitmap() || self.params.spill_config.is_some()
     }
 }
