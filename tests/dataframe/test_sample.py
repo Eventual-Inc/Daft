@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import pyarrow as pa
+import pyarrow.parquet as papq
 import pytest
+
+import daft
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2])
@@ -256,8 +260,6 @@ def test_sample_size_equals_total_with_replacement(
 
 def test_sample_size_empty_dataframe_without_replacement() -> None:
     # Create empty dataframe
-    import daft
-
     df = daft.from_pydict({"a": [], "b": []})
 
     # Try to sample from empty dataframe without replacement - should raise ValueError
@@ -268,8 +270,6 @@ def test_sample_size_empty_dataframe_without_replacement() -> None:
 
 def test_sample_size_empty_dataframe_with_replacement() -> None:
     # Create empty dataframe
-    import daft
-
     df = daft.from_pydict({"a": [], "b": []})
 
     # Sample from empty dataframe with replacement - should return empty
@@ -281,8 +281,6 @@ def test_sample_size_empty_dataframe_with_replacement() -> None:
 
 def test_sample_size_empty_dataframe_zero_size() -> None:
     # Create empty dataframe
-    import daft
-
     df = daft.from_pydict({"a": [], "b": []})
 
     # Sample 0 rows from empty dataframe - should return empty
@@ -293,11 +291,6 @@ def test_sample_size_empty_dataframe_zero_size() -> None:
 
 
 def test_sample_size_unequal_partitions(tmp_path) -> None:
-    import pyarrow as pa
-    import pyarrow.parquet as papq
-
-    import daft
-
     partition_sizes = [0, 1, 17, 82]
     start = 0
     for idx, partition_size in enumerate(partition_sizes):
