@@ -211,6 +211,34 @@ pub struct CosConfig {
     pub config: crate::CosConfig,
 }
 
+/// Create configurations to be used when accessing GooseFS (distributed cache file system).
+///
+/// Args:
+///     root (str, optional): Root path of the backend (default "/")
+///     master_addr (str, optional): Master address(es) in `host:port` format. Comma-separated for HA.
+///     block_size (int, optional): Block size in bytes for new files (default 64 MiB)
+///     chunk_size (int, optional): Chunk size in bytes for streaming RPCs (default 1 MiB)
+///     write_type (str, optional): Default write type for new files. One of `must_cache`, `cache_through`, `through`, `async_through`.
+///     auth_type (str, optional): Authentication type. One of `nosasl`, `simple` (default `simple`).
+///     auth_username (str, optional): Authentication username for SIMPLE mode.
+///     auth_password (str, optional): Optional authentication password.
+///     anonymous (bool, optional): Whether to use anonymous access (forces `nosasl`), defaults to False
+///     max_retries (int, optional): Maximum number of retries, defaults to 3
+///     retry_timeout_ms (int, optional): Retry timeout in milliseconds, defaults to 30000
+///     connect_timeout_ms (int, optional): Connection timeout in milliseconds, defaults to 10000
+///     read_timeout_ms (int, optional): Read timeout in milliseconds, defaults to 30000
+///     max_concurrent_requests (int, optional): Maximum concurrent requests, defaults to 50
+///     max_connections (int, optional): Maximum connections per IO thread, defaults to 50
+///
+/// Examples:
+///     >>> io_config = IOConfig(goosefs=GoosefsConfig(master_addr="10.0.0.1:9200"))
+///     >>> daft.read_parquet("goosefs://10.0.0.1:9200/path", io_config=io_config)
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[pyclass(module = "daft.daft", from_py_object)]
+pub struct GoosefsConfig {
+    pub config: crate::GoosefsConfig,
+}
+
 #[pymethods]
 impl IOConfig {
     #[new]
@@ -226,6 +254,7 @@ impl IOConfig {
         tos=None,
         gravitino=None,
         cos=None,
+        goosefs=None,
         opendal_backends=None,
         protocol_aliases=None
     ))]
@@ -241,6 +270,7 @@ impl IOConfig {
         tos: Option<TosConfig>,
         gravitino: Option<GravitinoConfig>,
         cos: Option<CosConfig>,
+        goosefs: Option<GoosefsConfig>,
         opendal_backends: Option<HashMap<String, HashMap<String, String>>>,
         protocol_aliases: Option<HashMap<String, String>>,
     ) -> PyResult<Self> {
@@ -255,6 +285,7 @@ impl IOConfig {
             tos: tos.unwrap_or_default().config,
             gravitino: gravitino.unwrap_or_default().config,
             cos: cos.unwrap_or_default().config,
+            goosefs: goosefs.unwrap_or_default().config,
             opendal_backends: opendal_backends
                 .unwrap_or_default()
                 .into_iter()
@@ -283,6 +314,7 @@ impl IOConfig {
         tos=None,
         gravitino=None,
         cos=None,
+        goosefs=None,
         opendal_backends=None,
         protocol_aliases=None
     ))]
@@ -299,6 +331,7 @@ impl IOConfig {
         tos: Option<TosConfig>,
         gravitino: Option<GravitinoConfig>,
         cos: Option<CosConfig>,
+        goosefs: Option<GoosefsConfig>,
         opendal_backends: Option<HashMap<String, HashMap<String, String>>>,
         protocol_aliases: Option<HashMap<String, String>>,
     ) -> PyResult<Self> {
@@ -331,6 +364,9 @@ impl IOConfig {
             cos: cos
                 .map(|cos| cos.config)
                 .unwrap_or_else(|| self.config.cos.clone()),
+            goosefs: goosefs
+                .map(|goosefs| goosefs.config)
+                .unwrap_or_else(|| self.config.goosefs.clone()),
             opendal_backends: opendal_backends
                 .map(|b| {
                     b.into_iter()
@@ -447,6 +483,14 @@ impl IOConfig {
     pub fn cos(&self) -> PyResult<CosConfig> {
         Ok(CosConfig {
             config: self.config.cos.clone(),
+        })
+    }
+
+    /// Configuration to be used when accessing GooseFS URLs
+    #[getter]
+    pub fn goosefs(&self) -> PyResult<GoosefsConfig> {
+        Ok(GoosefsConfig {
+            config: self.config.goosefs.clone(),
         })
     }
 
@@ -2032,6 +2076,256 @@ impl CosConfig {
     }
 }
 
+#[pymethods]
+impl GoosefsConfig {
+    #[allow(clippy::too_many_arguments)]
+    #[new]
+    #[pyo3(signature = (
+        root=None,
+        master_addr=None,
+        block_size=None,
+        chunk_size=None,
+        write_type=None,
+        auth_type=None,
+        auth_username=None,
+        auth_password=None,
+        anonymous=None,
+        max_retries=None,
+        retry_timeout_ms=None,
+        connect_timeout_ms=None,
+        read_timeout_ms=None,
+        max_concurrent_requests=None,
+        max_connections=None,
+    ))]
+    pub fn new(
+        root: Option<String>,
+        master_addr: Option<String>,
+        block_size: Option<u64>,
+        chunk_size: Option<u64>,
+        write_type: Option<String>,
+        auth_type: Option<String>,
+        auth_username: Option<String>,
+        auth_password: Option<String>,
+        anonymous: Option<bool>,
+        max_retries: Option<u32>,
+        retry_timeout_ms: Option<u64>,
+        connect_timeout_ms: Option<u64>,
+        read_timeout_ms: Option<u64>,
+        max_concurrent_requests: Option<u32>,
+        max_connections: Option<u32>,
+    ) -> PyResult<Self> {
+        let def = crate::GoosefsConfig::default();
+        Ok(Self {
+            config: crate::GoosefsConfig {
+                root: root.or(def.root),
+                master_addr: master_addr.or(def.master_addr),
+                block_size: block_size.or(def.block_size),
+                chunk_size: chunk_size.or(def.chunk_size),
+                write_type: write_type.or(def.write_type),
+                auth_type: auth_type.or(def.auth_type),
+                auth_username: auth_username.or(def.auth_username),
+                auth_password: auth_password
+                    .map(std::convert::Into::into)
+                    .or(def.auth_password),
+                anonymous: anonymous.unwrap_or(def.anonymous),
+                max_retries: max_retries.unwrap_or(def.max_retries),
+                retry_timeout_ms: retry_timeout_ms.unwrap_or(def.retry_timeout_ms),
+                connect_timeout_ms: connect_timeout_ms.unwrap_or(def.connect_timeout_ms),
+                read_timeout_ms: read_timeout_ms.unwrap_or(def.read_timeout_ms),
+                max_concurrent_requests: max_concurrent_requests
+                    .unwrap_or(def.max_concurrent_requests),
+                max_connections_per_io_thread: max_connections
+                    .unwrap_or(def.max_connections_per_io_thread),
+            },
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        root=None,
+        master_addr=None,
+        block_size=None,
+        chunk_size=None,
+        write_type=None,
+        auth_type=None,
+        auth_username=None,
+        auth_password=None,
+        anonymous=None,
+        max_retries=None,
+        retry_timeout_ms=None,
+        connect_timeout_ms=None,
+        read_timeout_ms=None,
+        max_concurrent_requests=None,
+        max_connections=None,
+    ))]
+    pub fn replace(
+        &self,
+        root: Option<String>,
+        master_addr: Option<String>,
+        block_size: Option<u64>,
+        chunk_size: Option<u64>,
+        write_type: Option<String>,
+        auth_type: Option<String>,
+        auth_username: Option<String>,
+        auth_password: Option<String>,
+        anonymous: Option<bool>,
+        max_retries: Option<u32>,
+        retry_timeout_ms: Option<u64>,
+        connect_timeout_ms: Option<u64>,
+        read_timeout_ms: Option<u64>,
+        max_concurrent_requests: Option<u32>,
+        max_connections: Option<u32>,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            config: crate::GoosefsConfig {
+                root: root.or_else(|| self.config.root.clone()),
+                master_addr: master_addr.or_else(|| self.config.master_addr.clone()),
+                block_size: block_size.or(self.config.block_size),
+                chunk_size: chunk_size.or(self.config.chunk_size),
+                write_type: write_type.or_else(|| self.config.write_type.clone()),
+                auth_type: auth_type.or_else(|| self.config.auth_type.clone()),
+                auth_username: auth_username.or_else(|| self.config.auth_username.clone()),
+                auth_password: auth_password
+                    .map(std::convert::Into::into)
+                    .or_else(|| self.config.auth_password.clone()),
+                anonymous: anonymous.unwrap_or(self.config.anonymous),
+                max_retries: max_retries.unwrap_or(self.config.max_retries),
+                retry_timeout_ms: retry_timeout_ms.unwrap_or(self.config.retry_timeout_ms),
+                connect_timeout_ms: connect_timeout_ms.unwrap_or(self.config.connect_timeout_ms),
+                read_timeout_ms: read_timeout_ms.unwrap_or(self.config.read_timeout_ms),
+                max_concurrent_requests: max_concurrent_requests
+                    .unwrap_or(self.config.max_concurrent_requests),
+                max_connections_per_io_thread: max_connections
+                    .unwrap_or(self.config.max_connections_per_io_thread),
+            },
+        })
+    }
+
+    #[staticmethod]
+    pub fn from_env(_py: Python) -> PyResult<Self> {
+        let master_addr = std::env::var("GOOSEFS_MASTER_ADDR").ok();
+        let auth_username = std::env::var("GOOSEFS_AUTH_USERNAME")
+            .or_else(|_| std::env::var("USER"))
+            .or_else(|_| std::env::var("USERNAME"))
+            .ok();
+        let auth_password = std::env::var("GOOSEFS_AUTH_PASSWORD").ok();
+        let auth_type = std::env::var("GOOSEFS_AUTH_TYPE").ok();
+        let write_type = std::env::var("GOOSEFS_WRITE_TYPE").ok();
+        let root = std::env::var("GOOSEFS_ROOT").ok();
+
+        Ok(Self {
+            config: crate::GoosefsConfig {
+                root,
+                master_addr,
+                write_type,
+                auth_type,
+                auth_username,
+                auth_password: auth_password.map(|s| s.into()),
+                ..Default::default()
+            },
+        })
+    }
+
+    pub fn __repr__(&self) -> PyResult<String> {
+        Ok(format!("{}", self.config))
+    }
+
+    /// Root path of the backend
+    #[getter]
+    pub fn root(&self) -> PyResult<Option<String>> {
+        Ok(self.config.root.clone())
+    }
+
+    /// Master address(es)
+    #[getter]
+    pub fn master_addr(&self) -> PyResult<Option<String>> {
+        Ok(self.config.master_addr.clone())
+    }
+
+    /// Block size in bytes
+    #[getter]
+    pub fn block_size(&self) -> PyResult<Option<u64>> {
+        Ok(self.config.block_size)
+    }
+
+    /// Chunk size in bytes
+    #[getter]
+    pub fn chunk_size(&self) -> PyResult<Option<u64>> {
+        Ok(self.config.chunk_size)
+    }
+
+    /// Default write type for new files
+    #[getter]
+    pub fn write_type(&self) -> PyResult<Option<String>> {
+        Ok(self.config.write_type.clone())
+    }
+
+    /// Authentication type
+    #[getter]
+    pub fn auth_type(&self) -> PyResult<Option<String>> {
+        Ok(self.config.auth_type.clone())
+    }
+
+    /// Authentication username
+    #[getter]
+    pub fn auth_username(&self) -> PyResult<Option<String>> {
+        Ok(self.config.auth_username.clone())
+    }
+
+    /// Authentication password (masked)
+    #[getter]
+    pub fn auth_password(&self) -> PyResult<Option<String>> {
+        Ok(self
+            .config
+            .auth_password
+            .as_ref()
+            .map(super::ObfuscatedString::as_string)
+            .cloned())
+    }
+
+    /// Whether to use anonymous access
+    #[getter]
+    pub fn anonymous(&self) -> PyResult<bool> {
+        Ok(self.config.anonymous)
+    }
+
+    /// Maximum number of retries
+    #[getter]
+    pub fn max_retries(&self) -> PyResult<u32> {
+        Ok(self.config.max_retries)
+    }
+
+    /// Retry timeout in milliseconds
+    #[getter]
+    pub fn retry_timeout_ms(&self) -> PyResult<u64> {
+        Ok(self.config.retry_timeout_ms)
+    }
+
+    /// Connection timeout in milliseconds
+    #[getter]
+    pub fn connect_timeout_ms(&self) -> PyResult<u64> {
+        Ok(self.config.connect_timeout_ms)
+    }
+
+    /// Read timeout in milliseconds
+    #[getter]
+    pub fn read_timeout_ms(&self) -> PyResult<u64> {
+        Ok(self.config.read_timeout_ms)
+    }
+
+    /// Maximum concurrent requests
+    #[getter]
+    pub fn max_concurrent_requests(&self) -> PyResult<u32> {
+        Ok(self.config.max_concurrent_requests)
+    }
+
+    /// Maximum connections per IO thread
+    #[getter]
+    pub fn max_connections(&self) -> PyResult<u32> {
+        Ok(self.config.max_connections_per_io_thread)
+    }
+}
+
 impl_bincode_py_state_serialization!(IOConfig);
 impl_bincode_py_state_serialization!(S3Config);
 impl_bincode_py_state_serialization!(S3Credentials);
@@ -2043,6 +2337,7 @@ impl_bincode_py_state_serialization!(HuggingFaceConfig);
 impl_bincode_py_state_serialization!(TosConfig);
 impl_bincode_py_state_serialization!(GravitinoConfig);
 impl_bincode_py_state_serialization!(CosConfig);
+impl_bincode_py_state_serialization!(GoosefsConfig);
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<AzureConfig>()?;
@@ -2055,6 +2350,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<HuggingFaceConfig>()?;
     parent.add_class::<GravitinoConfig>()?;
     parent.add_class::<CosConfig>()?;
+    parent.add_class::<GoosefsConfig>()?;
     parent.add_class::<IOConfig>()?;
     Ok(())
 }
