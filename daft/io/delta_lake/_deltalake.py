@@ -317,14 +317,59 @@ def merge_deltalake(
     if isinstance(source, DataFrame):
         import pyarrow as pa
 
-        arrow_schema = source.schema().to_pyarrow_schema()
-        source_data = pa.RecordBatchReader.from_batches(arrow_schema, source.to_arrow_iter())
+        if streamed_exec:
+            arrow_schema = source.schema().to_pyarrow_schema()
+            # Use a small buffer (2) to avoid accumulating many partitions on the
+            # driver while DataFusion slowly consumes them for the merge join.
+            source_data = pa.RecordBatchReader.from_batches(
+                arrow_schema, source.to_arrow_iter(results_buffer_size=2)
+            )
+        else:
+            source.collect()
+            arrow_schema = source.schema().to_pyarrow_schema()
+            source_data = pa.RecordBatchReader.from_batches(arrow_schema, source.to_arrow_iter())
     else:
         source_data = source
 
     resolved_table, _ = _resolve_deltalake_table_and_storage_options(table, io_config)
     commit_properties = CommitProperties(custom_metadata=custom_metadata)
 
+    # Apply defaults for spill configuration using Daft's execution config.
+    import shutil
+
+    exec_config = context.get_context().daft_execution_config
+    try:
+        shuffle_dirs = exec_config.flight_shuffle_dirs
+    except AttributeError:
+        shuffle_dirs = []
+
+    # Fallback to DAFT_FLIGHT_SHUFFLE_DIR env var if config doesn't have dirs.
+    if not shuffle_dirs:
+        env_dir = os.environ.get("DAFT_FLIGHT_SHUFFLE_DIR")
+        if env_dir:
+            shuffle_dirs = [env_dir]
+
+    # Point DataFusion's temp dir at the flight shuffle directory for spilling.
+    if shuffle_dirs:
+        os.environ.setdefault("TMPDIR", shuffle_dirs[0])
+
+    # Default: 70% of total system memory.
+    try:
+        import resource
+        total_mem = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    except (AttributeError, ValueError):
+        total_mem = 10 * 1024 * 1024 * 1024  # fallback 10 GB
+    max_spill_size = int(total_mem * 0.7)
+
+    # Default: 70% of available disk on the spill directory.
+    spill_path = shuffle_dirs[0] if shuffle_dirs else "/tmp"
+    try:
+        disk_usage = shutil.disk_usage(spill_path)
+        max_temp_directory_size = int(disk_usage.free * 0.7)
+    except OSError:
+        max_temp_directory_size = 100 * 1024 * 1024 * 1024  # fallback 100 GB
+    print(f"Delta Lake merge spill configuration: max_spill_size={max_spill_size}, max_temp_directory_size={max_temp_directory_size}")
+    
     # Create the merge builder
     merger = resolved_table.merge(
         source=source_data,

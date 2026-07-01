@@ -807,20 +807,24 @@ class FlotillaRunner:
         self._active_plan_id: str | None = None
 
         # Clean up shuffle dirs if the driver process is stopped via SIGTERM (e.g. ray job stop).
-        _prev_sigterm = signal.getsignal(signal.SIGTERM)
+        # Only register signal handlers from the main thread (signal module requirement).
+        import threading
 
-        def _sigterm_handler(signum: int, frame: object) -> None:
-            if self._active_plan_id is not None:
-                try:
-                    ray.get(self.runner.cleanup_plan_shuffle.remote(self._active_plan_id), timeout=30)
-                except Exception as e:
-                    logger.warning("Shuffle cleanup on SIGTERM failed: %s", e)
-            if callable(_prev_sigterm):
-                _prev_sigterm(signum, frame)
-            else:
-                sys.exit(0)
+        if threading.current_thread() is threading.main_thread():
+            _prev_sigterm = signal.getsignal(signal.SIGTERM)
 
-        signal.signal(signal.SIGTERM, _sigterm_handler)
+            def _sigterm_handler(signum: int, frame: object) -> None:
+                if self._active_plan_id is not None:
+                    try:
+                        ray.get(self.runner.cleanup_plan_shuffle.remote(self._active_plan_id), timeout=30)
+                    except Exception as e:
+                        logger.warning("Shuffle cleanup on SIGTERM failed: %s", e)
+                if callable(_prev_sigterm):
+                    _prev_sigterm(signum, frame)
+                else:
+                    sys.exit(0)
+
+            signal.signal(signal.SIGTERM, _sigterm_handler)
 
     def stream_plan(
         self,

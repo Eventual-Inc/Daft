@@ -561,6 +561,11 @@ impl PyDaftExecutionConfig {
     fn flight_shuffle_compression(&self) -> PyResult<Option<&str>> {
         Ok(self.config.flight_shuffle_compression.as_deref())
     }
+
+    #[getter]
+    fn flight_shuffle_dirs(&self) -> PyResult<Vec<String>> {
+        Ok(self.config.flight_shuffle_dirs.clone())
+    }
 }
 
 impl_bincode_py_state_serialization!(PyDaftExecutionConfig);
