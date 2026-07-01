@@ -312,18 +312,44 @@ def test_hash_join_spills_by_default():
         assert out["w"] == list(range(20000))
 
 
+@pytest.mark.timeout(60)
 @pytest.mark.parametrize("how", ["inner", "left", "right", "outer", "semi", "anti"])
-def test_hash_join_partial_overlap_default_config(how):
-    # Regression for the partitioned-hash-join deadlock: under the default (spill-enabled) config the
-    # hash join runs in partitioned mode. A probe key that hashes to a partition with NO matching
-    # build rows produced an *empty* in-memory build partition, which made the probe error with
-    # "Need at least 1 Table for GrowableTable"; that error was not propagated, so the query hung
-    # silently. Small, partially-overlapping data keeps the join partitioned without actually
-    # spilling, exercising exactly that empty-build-partition path. (The pre-existing
-    # test_hash_join_spills_by_default uses fully-overlapping keys and never hits it.)
+def test_hash_join_partial_overlap_partitioned(how):
+    # Regression for the partitioned-hash-join empty-build-partition deadlock: a probe key that
+    # hashes to a partition with NO matching build rows produced an *empty* in-memory build
+    # partition, which made the probe error with "Need at least 1 Table for GrowableTable"; that
+    # error was not propagated, so the query hung silently. A 1-byte spill pool forces the adaptive
+    # build to escalate to the partitioned+spill layout even for this tiny input, exercising exactly
+    # that empty-build-partition path. (With a normal pool the build now stays in-memory and never
+    # partitions — that path is covered by test_hash_join_inner_spill_enabled_in_memory.)
     left = daft.from_pydict({"k": [1, 2, 3], "va": ["a", "b", "c"]})
     right = daft.from_pydict({"k": [2, 3, 4], "vb": ["x", "y", "z"]})
-    got = sorted(left.join(right, on="k", how=how).to_pydict()["k"])
+    with daft.context.execution_config_ctx(spill_pool_bytes=1):  # force escalation → partitioned
+        got = sorted(left.join(right, on="k", how=how).to_pydict()["k"])
+    expected = {
+        "inner": [2, 3],
+        "left": [1, 2, 3],
+        "right": [2, 3, 4],
+        "outer": [1, 2, 3, 4],
+        "semi": [2, 3],
+        "anti": [1],
+    }[how]
+    assert got == expected
+
+
+@pytest.mark.timeout(60)
+@pytest.mark.parametrize("how", ["inner", "left", "right", "outer", "semi", "anti"])
+def test_hash_join_inner_spill_enabled_in_memory(how):
+    # Regression: adaptive spill made "spill enabled + partition_count == 1" reachable for the first
+    # time. A small join stays on the lean in-memory path (never escalates) yet spill IS configured,
+    # so needs_probe_finalization() is True and finalize_probe still runs. For a non-bitmap join
+    # (Inner) there is no bitmap and nothing spilled, but finalize_probe_in_memory used to
+    # `unreachable!()` on such types — panicking in a worker thread, which was swallowed, so the
+    # query hung. A large pool keeps the tiny build in-memory (no escalation, no partition_by_hash).
+    left = daft.from_pydict({"k": [1, 2, 3], "va": ["a", "b", "c"]})
+    right = daft.from_pydict({"k": [2, 3, 4], "vb": ["x", "y", "z"]})
+    with daft.context.execution_config_ctx(spill_pool_bytes=1 << 30):  # huge pool → stays in-memory
+        got = sorted(left.join(right, on="k", how=how).to_pydict()["k"])
     expected = {
         "inner": [2, 3],
         "left": [1, 2, 3],
