@@ -132,5 +132,6 @@ def test_read_xet_backed_parquet_file(use_xet):
     test_file_path = "hf://datasets/google-research-datasets/mbpp/full/train-00000-of-00001.parquet"
     io_config = IOConfig(hf=HuggingFaceConfig(use_xet=use_xet))
 
-    with call_with_hf_retry(lambda: daft.read_parquet(test_file_path, io_config=io_config).collect()) as df:
-        assert len(df) > 0
+    df = call_with_hf_retry(lambda path: daft.read_parquet(path, io_config=io_config), test_file_path)
+    assert df.count_rows() > 0
+    assert len(df.limit(10).collect()) == 10

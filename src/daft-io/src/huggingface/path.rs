@@ -84,8 +84,14 @@ impl HFPathParts {
         }
         let path = parsed.path().trim_start_matches('/');
 
-        let (repo_type_str, rest) = path.split_once('/')?;
-        let repo_type = repo_type_str.parse().ok()?;
+        // Model URLs omit the "models" prefix: huggingface.co/{org}/{repo}/resolve/...
+        let (repo_type, rest) = match path.split_once('/') {
+            Some((repo_type_str, rest)) => match repo_type_str.parse::<HFRepoType>() {
+                Ok(repo_type) => (repo_type, rest),
+                Err(_) => (HFRepoType::Models, path),
+            },
+            None => return None,
+        };
 
         let resolve_marker = "/resolve/";
         let resolve_idx = rest.find(resolve_marker)?;
