@@ -72,25 +72,33 @@ The batched decode does one forward pass from the earliest to the latest timesta
 in a batch, so its cost depends on how spread out those timestamps are:
 
 - **Dense consecutive frames (the common case - reading full episodes):** optimal.
-  One open, one pass, no redundant decoding.
+  One open, one pass, no redundant decoding - the charts above.
 - **Sparse timestamps in a batch:** the pass decodes the gaps too (e.g. 5 frames
-  spread across a 20s shard decodes ~600 frames vs ~20 for a per-target seek). Even
-  so, it still wins in the normal remote setup, where one saved download (~1s) is
-  worth more than decoding the extra frames (~1s for a whole shard). It only loses to
-  a per-target seek when there is no network *and* the timestamps are sparse.
-- **Huge shards:** memory is bounded (only the best frame per row is kept, at most one
-  per batch row), so shard length does not blow up memory. Time scales with the decoded
-  span; a batch whose timestamps span more than the 20,000-frame decode budget raises
-  rather than decoding unboundedly. Not reachable with the default 16-consecutive-frame
-  batches, but possible under heavy subsampling.
+  spread across a 20s shard decodes ~600 frames vs ~20 for a per-target seek). It
+  still wins remotely, because one saved download is worth more than the extra
+  decoding. Remote, frames spread across the whole shard (`sparse.py`):
 
-A gap-based clustering pass (decode contiguous runs, re-seek across large gaps, reuse
-the open) would be best-of-both for the sparse case, but it is extra complexity for a
-narrow benefit and is left as a possible follow-up.
+  ![sparse](charts/chart_sparse.png)
+
+  | frames | original | batched |
+  | --- | --- | --- |
+  | 2 | 2.1s | 2.1s |
+  | 8 | 7.7s | 1.7s |
+  | 16 | 15.5s | 1.8s |
+
+  Batched stays flat (one open) while original grows one download per frame. It only
+  loses to a per-target seek when there is no network *and* the timestamps are sparse.
+
+Memory is bounded regardless of shard size (only the best frame per row is kept, at
+most one per batch row). A gap-based clustering pass (decode contiguous runs, re-seek
+across large gaps, reuse the open) would be best-of-both for the local+sparse case,
+but it is extra complexity for a narrow benefit and is left as a possible follow-up.
 
 ## Running
 
 ```bash
 python repro.py --rows 8             # time a decode (add --profile for the breakdown above)
 python sweep.py --label batched      # rows 1..10 sweep + chart
+python worker_scaling.py             # original vs batched by worker count (downloads ~7MB shard)
+python sparse.py                     # sparse-frames worst case, remote
 ```
