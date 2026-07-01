@@ -6,7 +6,7 @@ use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
-use daft_recordbatch::{ProbeState, ProbeableBuilder, RecordBatch, make_probeable_builder};
+use daft_recordbatch::{ProbeState, RecordBatch, make_probeable_builder};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use tracing::{Span, info_span};
@@ -50,8 +50,8 @@ struct SpillState {
 }
 
 pub(crate) struct HashJoinBuildState {
-    // In-memory (single partition) path. `None` once escalated to the partitioned layout.
-    probe_table_builder: Option<Box<dyn ProbeableBuilder>>,
+    // Accumulated build batches (raw). The probe hash table is built once at `finalize` from these,
+    // not incrementally — so escalation to the partitioned layout wastes no probe-table work.
     tables: Vec<RecordBatch>,
     // Spill context: `Some` whenever spill is enabled (whether or not we've escalated yet).
     spill: Option<SpillState>,
@@ -91,46 +91,26 @@ pub(crate) struct HashJoinProbeState {
 // ─── HashJoinBuildState impl ──────────────────────────────────────────────────
 
 impl HashJoinBuildState {
-    fn new_in_memory(
-        key_schema: &SchemaRef,
-        nulls_equal_aware: Option<&Vec<bool>>,
-        track_indices: bool,
-    ) -> DaftResult<Self> {
-        Ok(Self {
-            probe_table_builder: Some(make_probeable_builder(
-                key_schema.clone(),
-                nulls_equal_aware,
-                track_indices,
-            )?),
+    fn new_in_memory() -> Self {
+        Self {
             tables: Vec::new(),
             spill: None,
             partitioned: None,
-        })
+        }
     }
 
     /// Spill-enabled build state. Starts in the lean in-memory layout (no hashing/scattering);
     /// escalates to the partitioned+spill layout only when `add_tables` detects real memory
     /// pressure (the shared spill reservation is denied).
-    fn new_spillable(
-        key_schema: &SchemaRef,
-        nulls_equal_aware: Option<&Vec<bool>>,
-        track_indices: bool,
-        config: SpillConfig,
-        manager: &Arc<MemoryManager>,
-    ) -> DaftResult<Self> {
-        Ok(Self {
-            probe_table_builder: Some(make_probeable_builder(
-                key_schema.clone(),
-                nulls_equal_aware,
-                track_indices,
-            )?),
+    fn new_spillable(config: SpillConfig, manager: &Arc<MemoryManager>) -> Self {
+        Self {
             tables: Vec::new(),
             spill: Some(SpillState {
                 config,
                 reservation: manager.reservation(),
             }),
             partitioned: None,
-        })
+        }
     }
 
     fn add_tables(&mut self, input: &MicroPartition, params: &HashJoinParams) -> DaftResult<()> {
@@ -162,22 +142,10 @@ impl HashJoinBuildState {
             };
             reconcile_reservation(&mut buckets, &mut spill_state.reservation, spill_state.config.cap())?;
         } else {
-            let input_tables = input.record_batches();
-            let builder = self
-                .probe_table_builder
-                .as_mut()
-                .expect("in-memory path must have a probe_table_builder");
-            if input_tables.is_empty() {
-                let empty_table = RecordBatch::empty(Some(input.schema()));
-                let join_keys = empty_table.eval_expression_list(&params.build_on)?;
-                builder.add_table(&join_keys)?;
-                self.tables.push(empty_table);
-            } else {
-                for table in input_tables {
-                    self.tables.push(table.clone());
-                    let join_keys = table.eval_expression_list(&params.build_on)?;
-                    builder.add_table(&join_keys)?;
-                }
+            // Accumulate raw batches only; the probe table is built once at finalize (an empty
+            // build is handled there by seeding a schema-carrying empty batch).
+            for table in input.record_batches() {
+                self.tables.push(table.clone());
             }
 
             let denied = if let Some(spill_state) = &mut self.spill {
@@ -233,8 +201,6 @@ impl HashJoinBuildState {
             }
         }
 
-        self.probe_table_builder = None;
-
         let mut spill_writer = spill_writer;
         {
             let mut buckets = JoinBuildBuckets {
@@ -287,11 +253,7 @@ impl HashJoinBuildState {
                 params: op.params.clone(),
             })
         } else {
-            let pt = self
-                .probe_table_builder
-                .expect("in-memory path must have a probe_table_builder")
-                .build();
-            let probe_state = ProbeState::new(pt, self.tables);
+            let probe_state = build_probe_state_from_batches(&self.tables, op)?;
             Ok(SpillableProbeState {
                 in_memory_probes: vec![Some(probe_state)],
                 spill_store: None,
@@ -505,18 +467,11 @@ impl JoinOperator for HashJoinOperator {
     fn make_build_state(&self) -> DaftResult<Self::BuildState> {
         tracing::debug!("make_build_state: spill_config={:?}", self.params.spill_config);
         match &self.params.spill_config {
-            None => HashJoinBuildState::new_in_memory(
-                &self.params.key_schema,
-                self.params.nulls_equal_aware.as_ref(),
-                self.params.track_indices,
-            ),
-            Some(config) => HashJoinBuildState::new_spillable(
-                &self.params.key_schema,
-                self.params.nulls_equal_aware.as_ref(),
-                self.params.track_indices,
+            None => Ok(HashJoinBuildState::new_in_memory()),
+            Some(config) => Ok(HashJoinBuildState::new_spillable(
                 config.clone(),
                 get_or_init_memory_manager(),
-            ),
+            )),
         }
     }
 
@@ -1027,14 +982,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("create temp dir");
         let config = SpillConfig::new(1 << 40, vec![temp_dir.path().to_string_lossy().into_owned()]);
 
-        let mut state = HashJoinBuildState::new_spillable(
-            &op.params.key_schema,
-            op.params.nulls_equal_aware.as_ref(),
-            op.params.track_indices,
-            config,
-            &manager,
-        )
-        .expect("construct spillable build state");
+        let mut state = HashJoinBuildState::new_spillable(config, &manager);
 
         state.add_tables(&mp, &op.params).expect("add_tables");
 
@@ -1058,14 +1006,7 @@ mod tests {
         let config = SpillConfig::new(1 << 30, vec![temp_dir.path().to_string_lossy().into_owned()]);
         assert_eq!(config.partition_count(), 4);
 
-        let mut state = HashJoinBuildState::new_spillable(
-            &op.params.key_schema,
-            op.params.nulls_equal_aware.as_ref(),
-            op.params.track_indices,
-            config,
-            &manager,
-        )
-        .expect("construct spillable build state");
+        let mut state = HashJoinBuildState::new_spillable(config, &manager);
 
         state.add_tables(&mp, &op.params).expect("add_tables");
 
