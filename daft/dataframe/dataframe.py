@@ -47,7 +47,7 @@ from daft.execution.native_executor import NativeExecutor
 from daft.expressions import Expression, ExpressionsProjection, col, lit
 from daft.logical.builder import LogicalPlanBuilder
 from daft.recordbatch import MicroPartition, RecordBatch
-from daft.runners import get_or_create_runner
+from daft.runners import get_or_create_runner, get_or_infer_runner_type
 from daft.runners.partitioning import (
     LocalPartitionSet,
     MaterializedResult,
@@ -972,19 +972,21 @@ class DataFrame:
         partition_cols: list[ColumnInputType] | None = None,
         io_config: IOConfig | None = None,
         column_compression: dict[str, str] | None = None,
+        single_file: bool = False,
     ) -> "DataFrame":
         """Writes the DataFrame as parquet files, returning a new DataFrame with paths to the files that were written.
 
         Files will be written to `<root_dir>/*` with randomly generated UUIDs as the file names.
 
         Args:
-            root_dir (str): root file path to write parquet files to.
+            root_dir (str): root file path to write parquet files to. When `single_file=True`, this is the exact file path to write to.
             compression (str, optional): default compression codec applied to every column. Defaults to "snappy". Accepts "snappy", "gzip", "zstd", "lz4", "lz4_raw", "brotli", "uncompressed", or "none" (case-insensitive).
             write_mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace the contents of the root directory with new data. `overwrite-partitions` will replace only the contents in the partitions that are being written to. Defaults to "append".
-            write_success_file (bool, optional): Whether to write a `_SUCCESS` file upon successful completion. Defaults to False.
+            write_success_file (bool, optional): Whether to write a `_SUCCESS` file upon successful completion. When `single_file=True`, writes `_SUCCESS` to the output file's parent directory. Defaults to False.
             partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
             io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
             column_compression (Optional[Dict[str, str]], optional): per-column compression overrides. Keys are dot-separated column paths (e.g. `"user.name"` for a nested struct field); values are codec names accepted by `compression`. Columns not listed fall back to `compression`. Defaults to None.
+            single_file (bool, optional): If True, coalesce all data into a single parquet file at `root_dir` (treated as the exact file path). Cannot be combined with `partition_cols` or `overwrite-partitions`. Only supported on the native runner. Defaults to False.
 
         Returns:
             DataFrame: The filenames that were written out as strings.
@@ -996,6 +998,7 @@ class DataFrame:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
             >>> df.write_parquet("output_dir", write_mode="overwrite")  # doctest: +SKIP
+            >>> df.write_parquet("output.parquet", single_file=True)  # doctest: +SKIP
 
         Tip:
             See also [`df.write_csv()`][daft.DataFrame.write_csv] and [`df.write_json()`][daft.DataFrame.write_json]
@@ -1005,8 +1008,16 @@ class DataFrame:
             raise ValueError(
                 f"Only support `append`, `overwrite`, or `overwrite-partitions` mode. {write_mode} is unsupported"
             )
+        if single_file and write_mode == "overwrite-partitions":
+            raise ValueError("`single_file=True` cannot be combined with `write_mode='overwrite-partitions'`.")
         if write_mode == "overwrite-partitions" and partition_cols is None:
             raise ValueError("Partition columns must be specified to use `overwrite-partitions` mode.")
+        if single_file and partition_cols is not None:
+            raise ValueError("`single_file=True` cannot be combined with `partition_cols`.")
+        if single_file:
+            runner_type = get_or_infer_runner_type()
+            if runner_type != "native":
+                raise ValueError(f"`single_file=True` is only supported on the native runner, got '{runner_type}'.")
 
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
@@ -1029,6 +1040,7 @@ class DataFrame:
             file_format_option=file_format_option,
             compression=compression,
             io_config=io_config,
+            single_file=single_file,
         )
         # Block and write, then retrieve data
         write_df = DataFrame(builder)
