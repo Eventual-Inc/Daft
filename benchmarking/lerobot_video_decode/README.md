@@ -50,8 +50,13 @@ requested timestamp. Output is **byte-identical** to the old per-row decode.
 
 Running the decode under `use_process=True` produces byte-identical output, so the
 batched decode survives process serialization. Each worker/process opens the shards
-in its own batches once (file handles are not shared across processes); partition by
-shard to make that one download per shard per worker.
+in its own batches (file handles are not shared across processes); partition by shard
+so each shard is handled by a single worker, rather than re-fetched across several.
+
+That single-worker-per-shard mapping caps parallelism at one worker per file, but in
+practice LeRobot v3 bounds shard size (`video_files_size_in_mb`, e.g. 200MB) so a
+dataset is many files - plenty to spread across workers. It is only a bottleneck if
+that setting is raised to produce a few very large files.
 
 How does the change hold up as the number of workers grows? [`worker_scaling.py`](worker_scaling.py)
 reproduces the original-vs-batched frames sweep at 1/2/4/8 worker processes (8
