@@ -11,7 +11,7 @@ use crate::ObfuscatedString;
 /// This configuration is forwarded to OpenDAL's `services-goosefs` backend.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash, Display)]
 #[display(
-    "GoosefsConfig
+    "GooseFSConfig
     root: {root:?}
     master_addr: {master_addr:?}
     block_size: {block_size:?}
@@ -28,7 +28,7 @@ use crate::ObfuscatedString;
     max_concurrent_requests: {max_concurrent_requests}
     max_connections_per_io_thread: {max_connections_per_io_thread}"
 )]
-pub struct GoosefsConfig {
+pub struct GooseFSConfig {
     /// Root path of the backend. All operations happen under this root.
     /// Defaults to "/" if not set.
     pub root: Option<String>,
@@ -70,7 +70,7 @@ pub struct GoosefsConfig {
     pub max_connections_per_io_thread: u32,
 }
 
-impl Default for GoosefsConfig {
+impl Default for GooseFSConfig {
     fn default() -> Self {
         Self {
             root: None,
@@ -92,7 +92,7 @@ impl Default for GoosefsConfig {
     }
 }
 
-impl GoosefsConfig {
+impl GooseFSConfig {
     #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
         let defaults = Self::default();
@@ -122,7 +122,7 @@ impl GoosefsConfig {
             res.push("Auth password = ***".to_string());
         }
         // Only emit non-default values for numeric/boolean fields so that a
-        // freshly-defaulted GoosefsConfig produces an empty multiline view
+        // freshly-defaulted GooseFSConfig produces an empty multiline view
         // (matching the sparse-display contract used by Option<_> fields and
         // by `auth_username` above).
         if self.anonymous != defaults.anonymous {
@@ -155,7 +155,7 @@ impl GoosefsConfig {
         res
     }
 
-    /// Convert GoosefsConfig into an OpenDAL-compatible configuration map.
+    /// Convert GooseFSConfig into an OpenDAL-compatible configuration map.
     ///
     /// `authority` is the URL host[:port] component (e.g. parsed from
     /// `goosefs://host:port/path`). When provided and non-empty, it is used as
@@ -215,7 +215,7 @@ impl GoosefsConfig {
         // Forward retry / timeout / concurrency knobs to the OpenDAL config map.
         //
         // Older versions of `opendal-service-goosefs` may not yet recognize all
-        // of these keys (the backend's `GoosefsConfig` is `#[non_exhaustive]`
+        // of these keys (the backend's `GooseFSConfig` is `#[non_exhaustive]`
         // and unknown keys are silently ignored by `from_iter`). Inserting
         // them here ensures that user-provided values are *not* silently
         // dropped at the Daft layer — they reach the backend, and any version
@@ -267,7 +267,7 @@ mod tests {
 
     #[test]
     fn test_goosefs_config_default() {
-        let config = GoosefsConfig::default();
+        let config = GooseFSConfig::default();
         assert_eq!(config.root, None);
         assert_eq!(config.master_addr, None);
         assert_eq!(config.block_size, None);
@@ -287,14 +287,14 @@ mod tests {
 
     #[test]
     fn test_to_opendal_config_uses_authority_when_no_master_addr() {
-        let config = GoosefsConfig::default();
+        let config = GooseFSConfig::default();
         let map = config.to_opendal_config("10.0.0.1:9200");
         assert_eq!(map.get("master_addr"), Some(&"10.0.0.1:9200".to_string()));
     }
 
     #[test]
     fn test_to_opendal_config_master_addr_overrides_authority() {
-        let config = GoosefsConfig {
+        let config = GooseFSConfig {
             master_addr: Some("primary:9200,secondary:9200".to_string()),
             ..Default::default()
         };
@@ -307,14 +307,14 @@ mod tests {
 
     #[test]
     fn test_to_opendal_config_no_master_addr_and_no_authority() {
-        let config = GoosefsConfig::default();
+        let config = GooseFSConfig::default();
         let map = config.to_opendal_config("");
         assert!(!map.contains_key("master_addr"));
     }
 
     #[test]
     fn test_to_opendal_config_full_fields() {
-        let config = GoosefsConfig {
+        let config = GooseFSConfig {
             root: Some("/data".to_string()),
             master_addr: Some("m:9200".to_string()),
             block_size: Some(1024),
@@ -338,7 +338,7 @@ mod tests {
 
     #[test]
     fn test_to_opendal_config_anonymous_forces_nosasl() {
-        let config = GoosefsConfig {
+        let config = GooseFSConfig {
             anonymous: true,
             auth_type: Some("simple".to_string()),
             auth_username: Some("alice".to_string()),
@@ -353,14 +353,14 @@ mod tests {
 
     #[test]
     fn test_goosefs_config_display_masks_password() {
-        let config = GoosefsConfig {
+        let config = GooseFSConfig {
             master_addr: Some("m:9200".to_string()),
             auth_username: Some("alice".to_string()),
             auth_password: Some("super-secret".to_string().into()),
             ..Default::default()
         };
         let s = format!("{}", config);
-        assert!(s.contains("GoosefsConfig"));
+        assert!(s.contains("GooseFSConfig"));
         assert!(s.contains("alice"));
         assert!(!s.contains("super-secret"));
         assert!(s.contains("***"));
@@ -368,7 +368,7 @@ mod tests {
 
     #[test]
     fn test_goosefs_config_multiline_display() {
-        let config = GoosefsConfig {
+        let config = GooseFSConfig {
             root: Some("/data".to_string()),
             master_addr: Some("m:9200".to_string()),
             block_size: Some(1024),
@@ -401,7 +401,7 @@ mod tests {
         // `auth_username` are gated. This guards against the regression
         // flagged in the P2 review where every numeric field always
         // appeared even when left at its default.
-        let lines = GoosefsConfig::default().multiline_display();
+        let lines = GooseFSConfig::default().multiline_display();
         assert!(lines.is_empty(), "expected empty, got {lines:?}");
     }
 
@@ -409,7 +409,7 @@ mod tests {
     fn test_goosefs_config_multiline_display_emits_overridden_numerics() {
         // Once the user overrides a numeric field, the corresponding line
         // must reappear. Defaults stay hidden.
-        let config = GoosefsConfig {
+        let config = GooseFSConfig {
             connect_timeout_ms: 5_000, // non-default
             ..Default::default()
         };
@@ -432,7 +432,7 @@ mod tests {
         // For a defaulted config we should not pollute the OpenDAL map
         // with redundant default values; only user-overridden knobs are
         // forwarded.
-        let map = GoosefsConfig::default().to_opendal_config("m:9200");
+        let map = GooseFSConfig::default().to_opendal_config("m:9200");
         assert!(!map.contains_key("max_retries"));
         assert!(!map.contains_key("retry_timeout_ms"));
         assert!(!map.contains_key("connect_timeout_ms"));
@@ -444,10 +444,10 @@ mod tests {
     #[test]
     fn test_to_opendal_config_forwards_retry_timeout_and_concurrency() {
         // Regression test for the P1 review: when the user explicitly sets
-        // timeout / retry / concurrency knobs on `GoosefsConfig`, those
+        // timeout / retry / concurrency knobs on `GooseFSConfig`, those
         // values must be propagated into the OpenDAL config map rather
         // than being silently dropped at the Daft layer.
-        let config = GoosefsConfig {
+        let config = GooseFSConfig {
             max_retries: 7,
             retry_timeout_ms: 12_345,
             connect_timeout_ms: 6_789,
@@ -475,15 +475,15 @@ mod tests {
             hash::{Hash, Hasher},
         };
 
-        let c1 = GoosefsConfig {
+        let c1 = GooseFSConfig {
             master_addr: Some("m:9200".to_string()),
             ..Default::default()
         };
-        let c2 = GoosefsConfig {
+        let c2 = GooseFSConfig {
             master_addr: Some("m:9200".to_string()),
             ..Default::default()
         };
-        let c3 = GoosefsConfig {
+        let c3 = GooseFSConfig {
             master_addr: Some("other:9200".to_string()),
             ..Default::default()
         };
