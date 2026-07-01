@@ -9,18 +9,19 @@ This directory holds the benchmarks that diagnosed it and the fix that makes the
 decode **batched**: rows sharing a shard are grouped so the shard is opened (and
 fetched) once per batch.
 
-## Where the time went (it is not parsing or decoding)
+## Where the time went (it is not decoding)
 
-Raw PyAV on the shard, no Daft (`raw_av.py`):
+`python repro.py --rows 1 --profile` - cProfile self-time (`tottime`) for a single
+frame, which is dominated by opening the shard, not decoding it:
 
-| approach | 8 frames |
+| function | self-time |
 | --- | --- |
-| open once + decode 8 (remote URL) | **0.9s** |
-| open per frame ×8 (remote URL) | **8.1s** |
-| open once + decode 8 (local file) | **0.07s** |
+| `av.container.core.open` (open + fetch shard index) | ~3.3s |
+| decode loop (`_decode_lerobot_video_timestamp`) | ~1.3s |
+| file read (`_from_file_reference`) | ~0.9s |
 
-Opening + parsing + decoding are cheap. The cost is the **per-frame network fetch**
-at `av.open()`. Opening once is ~9× faster remote, ~100× on a local file.
+`av.open()` on the remote shard is the bottleneck, and the per-row UDF paid it for
+every frame.
 
 ## The fix: batched decode
 
@@ -67,8 +68,7 @@ shard to make that one download per shard per worker.
 ## Running
 
 ```bash
-python raw_av.py --remote            # isolate open vs decode cost
-python repro.py --rows 8             # time a decode (optionally --profile)
+python repro.py --rows 8             # time a decode (add --profile for the breakdown above)
 python sweep.py --label batched      # rows 1..10 sweep + chart
 python cases.py                      # batch-size + multi-shard opens (downloads ~7MB shard)
 ```
