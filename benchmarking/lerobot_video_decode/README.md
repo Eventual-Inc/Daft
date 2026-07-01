@@ -53,12 +53,13 @@ batched decode survives process serialization. Each worker/process opens the sha
 in its own batches (file handles are not shared across processes); partition by shard
 so each shard is handled by a single worker, rather than re-fetched across several.
 
-That single-worker-per-shard mapping caps parallelism at one worker per file, but in
-practice LeRobot v3 bounds shard size (`video_files_size_in_mb`) so a dataset is many
-files - plenty to spread across workers. It is only a bottleneck if that setting is
-raised to produce a few very large files, which does not happen in practice: across
-the top 250 LeRobot-tagged datasets on HuggingFace (76 are v3), 70 use the 200MB
-default and the largest observed is 500MB.
+> [!NOTE]
+> That single-worker-per-shard mapping caps parallelism at one worker per file, but in
+> practice LeRobot v3 bounds shard size (`video_files_size_in_mb`) so a dataset is many
+> files - plenty to spread across workers. It is only a bottleneck if that setting is
+> raised to produce a few very large files, which does not happen in practice: across
+> the top 250 LeRobot-tagged datasets on HuggingFace (76 are v3), 70 use the 200MB
+> default and the largest observed is 500MB.
 
 How does the change hold up as the number of workers grows? [`worker_scaling.py`](worker_scaling.py)
 reproduces the original-vs-batched frames sweep at 1/2/4/8 worker processes (8
