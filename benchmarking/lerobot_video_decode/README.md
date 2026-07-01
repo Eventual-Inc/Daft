@@ -45,19 +45,6 @@ requested timestamp. Output is **byte-identical** to the old per-row decode.
 
 8-frame output hashes matched exactly (`sha 80bdb30c…`) between versions.
 
-## Scaling behavior (`cases.py`)
-
-`av.open()` calls counted while running the real batch UDF over local shard copies.
-
-![cases](charts/chart_cases.png)
-
-- **Batch size (1 shard, 32 rows):** opens = `ceil(rows / batch_size)`. `batch=1`
-  degenerates to the old per-frame behavior (32 opens); `batch=32` → 1 open.
-- **Multi-shard (5 shards, 40 rows, batch=16):** opens = distinct shards present in
-  each batch. Interleaved row order → **15 opens**; sorted by shard → **5 opens**,
-  identical output. So partitioning/sorting by shard is the lever that minimizes
-  opens (and, when distributed, downloads-per-worker).
-
 ## Multiprocess
 
 Running the decode under `use_process=True` produces byte-identical output, so the
@@ -70,5 +57,4 @@ shard to make that one download per shard per worker.
 ```bash
 python repro.py --rows 8             # time a decode (add --profile for the breakdown above)
 python sweep.py --label batched      # rows 1..10 sweep + chart
-python cases.py                      # batch-size + multi-shard opens (downloads ~7MB shard)
 ```
