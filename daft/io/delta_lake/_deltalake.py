@@ -1054,16 +1054,27 @@ class DistributedDeltaMergeBuilder:
         # Select merged result
         merged = joined.select(*output_exprs)
 
-        # Filter out deleted rows
+        # Filter out deleted rows using the post-select marker columns
         if self._matched_deletes or self._not_matched_by_source_deletes:
-            # Recompute delete condition on the merged result
-            # For simplicity, add a __delete__ marker column
-            delete_marker_exprs = [col(c) for c in target_columns]
-            delete_marker_exprs.append(col("__matched__"))
-            delete_marker_exprs.append(col("__inserted__"))
-            delete_marker_exprs.append(col("__target_only__"))
-            merged = joined.select(*output_exprs)
-            merged = merged.where(~delete_cond)
+            post_matched = col("__matched__")
+            post_target_only = col("__target_only__")
+
+            post_matched_del = lit(False)
+            for pred_str in self._matched_deletes:
+                if pred_str is not None:
+                    post_matched_del = post_matched_del | _resolve_predicate(pred_str)
+                else:
+                    post_matched_del = post_matched
+
+            post_target_del = lit(False)
+            for pred_str in self._not_matched_by_source_deletes:
+                if pred_str is not None:
+                    post_target_del = post_target_del | _resolve_predicate(pred_str)
+                else:
+                    post_target_del = post_target_only
+
+            post_delete_cond = (post_matched & post_matched_del) | (post_target_only & post_target_del)
+            merged = merged.where(~post_delete_cond)
 
         # Compute metrics before writing
         metrics_df = merged.select(
