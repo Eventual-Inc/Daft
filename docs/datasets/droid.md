@@ -6,24 +6,6 @@
 
 Daft provides a simple way to explore the raw DROID release as a lazy, episode-level DataFrame with metadata, trajectory files as [`daft.Hdf5File`](../modalities/tensors.md#hdf5-files), and camera videos attached as [`daft.VideoFile`](../modalities/videos.md) columns.
 
-## Prerequisites
-
-The raw DROID dataset is hosted on Google Cloud Storage at `gs://gresearch/robotics/droid_raw` (~8.7 TB). By default, [`daft.datasets.droid.raw()`][daft.datasets.droid.raw] reads from this public bucket, so no credentials are required to get started.
-
-If you prefer to work with a local copy, download episodes with [`gsutil`](https://cloud.google.com/storage/docs/gsutil_install) and pass the local path to `raw()`:
-
-```bash
-# Download the full raw dataset (~8.7 TB)
-gsutil -m cp -r gs://gresearch/robotics/droid_raw /path/to/droid_raw
-
-# Or download a smaller subset for development
-gsutil -m cp -r gs://gresearch/robotics/droid_raw/<episode_path> /path/to/droid_raw/
-```
-
-See the [official DROID dataset documentation](https://droid-dataset.github.io/droid/the-droid-dataset) for details on the dataset format and downloading the necessary files for your use case.
-
-For lower-level HDF5 file usage patterns, see the [HDF5 file usage notebook](https://github.com/Eventual-Inc/Daft/blob/main/examples/hdf5_file_usage.ipynb).
-
 ## Quickstart
 
 The simplest way to get started is to load a small sample of data from the public source:
@@ -36,41 +18,100 @@ daft.datasets.droid.raw().show(3)
 ```
 
 ```
-╭───────────────────┬────────┬────────────┬───────────────────┬────────────┬───────────────────┬───────────────────┬─────────┬───────────────────┬────────────┬───────────────────┬───────────────────┬─────────────────┬───────────────────┬───────────────────┬─────────────────┬───────────────────┬───────────────────╮
-│ uuid              ┆ lab    ┆ date       ┆ timestamp         ┆ scene_id   ┆ trajectory_length ┆ current_task      ┆ success ┆ episode_dir       ┆      …     ┆ wrist_cam_extrins ┆ wrist_cam_video   ┆ ext1_cam_serial ┆ ext1_cam_extrinsi ┆ ext1_cam_video    ┆ ext2_cam_serial ┆ ext2_cam_extrinsi ┆ ext2_cam_video    │
-│ ---               ┆ ---    ┆ ---        ┆ ---               ┆ ---        ┆ ---               ┆ ---               ┆ ---     ┆ ---               ┆            ┆ ics               ┆ ---               ┆ ---             ┆ cs                ┆ ---               ┆ ---             ┆ cs                ┆ ---               │
-│ String            ┆ String ┆ Date       ┆ String            ┆ Int64      ┆ Int64             ┆ String            ┆ Bool    ┆ String            ┆ (7 hidden) ┆ ---               ┆ File[Video]       ┆ String          ┆ ---               ┆ File[Video]       ┆ String          ┆ ---               ┆ File[Video]       │
-│                   ┆        ┆            ┆                   ┆            ┆                   ┆                   ┆         ┆                   ┆            ┆ List[Float64]     ┆                   ┆                 ┆ List[Float64]     ┆                   ┆                 ┆ List[Float64]     ┆                   │
-╞═══════════════════╪════════╪════════════╪═══════════════════╪════════════╪═══════════════════╪═══════════════════╪═════════╪═══════════════════╪════════════╪═══════════════════╪═══════════════════╪═════════════════╪═══════════════════╪═══════════════════╪═════════════════╪═══════════════════╪═══════════════════╡
-│ RAD+ac111655+2023 ┆ RAD    ┆ 2023-09-18 ┆ 2023-09-18-17h-13 ┆ 2708809181 ┆ 1224              ┆ Move object to a  ┆ false   ┆ gs://gresearch/ro ┆ …          ┆ [0.39223871928607 ┆ Video(path: gs:// ┆ 32907025        ┆ [0.13894431928565 ┆ Video(path: gs:// ┆ 35215462        ┆ [0.23342853397786 ┆ Video(path: gs:// │
-│ -09-18-17h-1…     ┆        ┆            ┆ m-26s             ┆            ┆                   ┆ new position…     ┆         ┆ botics/droid…     ┆            ┆ 32, -0.16526…     ┆ gresearch/ro…     ┆                 ┆ 992, -0.6498…     ┆ gresearch/ro…     ┆                 ┆ 84, 0.667711…     ┆ gresearch/ro…     │
-├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ RAD+284fa481+2023 ┆ RAD    ┆ 2023-09-01 ┆ 2023-09-01-10h-43 ┆ 4823049285 ┆ 477               ┆ Move object into  ┆ true    ┆ gs://gresearch/ro ┆ …          ┆ [0.27734166208707 ┆ Video(path: gs:// ┆ 32907025        ┆ [0.20448551053113 ┆ Video(path: gs:// ┆ 35215462        ┆ [0.08437021046208 ┆ Video(path: gs:// │
-│ -09-01-10h-4…     ┆        ┆            ┆ m-47s             ┆            ┆                   ┆ or out of co…     ┆         ┆ botics/droid…     ┆            ┆ 91, -0.21031…     ┆ gresearch/ro…     ┆                 ┆ , 0.59519958…     ┆ gresearch/ro…     ┆                 ┆ 47, -0.58301…     ┆ gresearch/ro…     │
-├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ RAD+62828209+2023 ┆ RAD    ┆ 2023-12-20 ┆ 2023-12-20-09h-29 ┆ 4424513213 ┆ 190               ┆ Move object to a  ┆ false   ┆ gs://gresearch/ro ┆ …          ┆ [0.22450600005777 ┆ Null              ┆ 32907025        ┆ [0.13364182762051 ┆ Null              ┆ 35215462        ┆ [0.04858251876058 ┆ Null              │
-│ -12-20-09h-2…     ┆        ┆            ┆ m-47s             ┆            ┆                   ┆ new position…     ┆         ┆ botics/droid…     ┆            ┆ 444, 0.12355…     ┆                   ┆                 ┆ 11, 0.648632…     ┆                   ┆                 ┆ 541, -0.5586…     ┆                   │
-├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ RAD+62828209+2023 ┆ RAD    ┆ 2023-12-20 ┆ 2023-12-20-10h-36 ┆ 8647259418 ┆ 481               ┆ Hang or unhang    ┆ false   ┆ gs://gresearch/ro ┆ …          ┆ [0.35110737285753 ┆ Null              ┆ 32907025        ┆ [0.17394483869227 ┆ Null              ┆ 35215462        ┆ [0.15951830031526 ┆ Null              │
-│ -12-20-10h-3…     ┆        ┆            ┆ m-53s             ┆            ┆                   ┆ object (ex: to…   ┆         ┆ botics/droid…     ┆            ┆ 735, -0.0442…     ┆                   ┆                 ┆ 984, 0.55957…     ┆                   ┆                 ┆ 68, -0.44426…     ┆                   │
-├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ RAD+62828209+2023 ┆ RAD    ┆ 2023-12-20 ┆ 2023-12-20-10h-37 ┆ 8647259418 ┆ 728               ┆ Hang or unhang    ┆ false   ┆ gs://gresearch/ro ┆ …          ┆ [0.24040109080787 ┆ Null              ┆ 32907025        ┆ [0.17394483869227 ┆ Null              ┆ 35215462        ┆ [0.15951830031526 ┆ Null              │
-│ -12-20-10h-3…     ┆        ┆            ┆ m-48s             ┆            ┆                   ┆ object (ex: to…   ┆         ┆ botics/droid…     ┆            ┆ 98, 0.003635…     ┆                   ┆                 ┆ 984, 0.55957…     ┆                   ┆                 ┆ 68, -0.44426…     ┆                   │
-├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ RAD+62828209+2023 ┆ RAD    ┆ 2023-12-20 ┆ 2023-12-20-10h-38 ┆ 8647259418 ┆ 494               ┆ Hang or unhang    ┆ false   ┆ gs://gresearch/ro ┆ …          ┆ [0.32623796813520 ┆ Null              ┆ 32907025        ┆ [0.17394483869227 ┆ Null              ┆ 35215462        ┆ [0.15951830031526 ┆ Null              │
-│ -12-20-10h-3…     ┆        ┆            ┆ m-58s             ┆            ┆                   ┆ object (ex: to…   ┆         ┆ botics/droid…     ┆            ┆ 434, -0.1115…     ┆                   ┆                 ┆ 984, 0.55957…     ┆                   ┆                 ┆ 68, -0.44426…     ┆                   │
-├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ RAD+62828209+2023 ┆ RAD    ┆ 2023-12-20 ┆ 2023-12-20-10h-46 ┆ 8647259418 ┆ 425               ┆ Hang or unhang    ┆ false   ┆ gs://gresearch/ro ┆ …          ┆ [0.22458811705818 ┆ Null              ┆ 32907025        ┆ [0.17394483869227 ┆ Null              ┆ 35215462        ┆ [0.15951830031526 ┆ Null              │
-│ -12-20-10h-4…     ┆        ┆            ┆ m-27s             ┆            ┆                   ┆ object (ex: to…   ┆         ┆ botics/droid…     ┆            ┆ 335, 0.08554…     ┆                   ┆                 ┆ 984, 0.55957…     ┆                   ┆                 ┆ 68, -0.44426…     ┆                   │
-├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ RAD+62828209+2023 ┆ RAD    ┆ 2023-12-20 ┆ 2023-12-20-10h-49 ┆ 8647259418 ┆ 630               ┆ Hang or unhang    ┆ false   ┆ gs://gresearch/ro ┆ …          ┆ [0.39153451598295 ┆ Null              ┆ 32907025        ┆ [0.17394483869227 ┆ Null              ┆ 35215462        ┆ [0.15951830031526 ┆ Null              │
-│ -12-20-10h-4…     ┆        ┆            ┆ m-04s             ┆            ┆                   ┆ object (ex: to…   ┆         ┆ botics/droid…     ┆            ┆ 73, -0.22323…     ┆                   ┆                 ┆ 984, 0.55957…     ┆                   ┆                 ┆ 68, -0.44426…     ┆                   │
-╰───────────────────┴────────┴────────────┴───────────────────┴────────────┴───────────────────┴───────────────────┴─────────┴───────────────────┴────────────┴───────────────────┴───────────────────┴─────────────────┴───────────────────┴───────────────────┴─────────────────┴───────────────────┴───────────────────╯
+╭────────────────────────────────┬──────────┬────────────┬────────────────────────┬────────────┬───────────────────┬────────────────────────────────┬─────────┬────────────────────────────────┬─────────────┬──────────┬─────────────────┬──────────────────────┬──────────────┬────────────────────────────────┬──────────────────┬────────────────────────────────┬────────────────────────────────┬─────────────────┬────────────────────────────────┬────────────────────────────────┬─────────────────┬────────────────────────────────┬────────────────────────────────╮
+│ uuid                           ┆ lab      ┆ date       ┆ timestamp              ┆ scene_id   ┆ trajectory_length ┆ current_task                   ┆ success ┆ episode_dir                    ┆ user        ┆ user_id  ┆ building        ┆ robot_serial         ┆ r2d2_version ┆ trajectory                     ┆ wrist_cam_serial ┆ wrist_cam_extrinsics           ┆ wrist_cam_video                ┆ ext1_cam_serial ┆ ext1_cam_extrinsics            ┆ ext1_cam_video                 ┆ ext2_cam_serial ┆ ext2_cam_extrinsics            ┆ ext2_cam_video                 │
+│ ---                            ┆ ---      ┆ ---        ┆ ---                    ┆ ---        ┆ ---               ┆ ---                            ┆ ---     ┆ ---                            ┆ ---         ┆ ---      ┆ ---             ┆ ---                  ┆ ---          ┆ ---                            ┆ ---              ┆ ---                            ┆ ---                            ┆ ---             ┆ ---                            ┆ ---                            ┆ ---             ┆ ---                            ┆ ---                            │
+│ String                         ┆ String   ┆ Date       ┆ String                 ┆ Int64      ┆ Int64             ┆ String                         ┆ Bool    ┆ String                         ┆ String      ┆ String   ┆ String          ┆ String               ┆ String       ┆ File[Hdf5]                     ┆ String           ┆ List[Float64]                  ┆ File[Video]                    ┆ String          ┆ List[Float64]                  ┆ File[Video]                    ┆ String          ┆ List[Float64]                  ┆ File[Video]                    │
+╞════════════════════════════════╪══════════╪════════════╪════════════════════════╪════════════╪═══════════════════╪════════════════════════════════╪═════════╪════════════════════════════════╪═════════════╪══════════╪═════════════════╪══════════════════════╪══════════════╪════════════════════════════════╪══════════════════╪════════════════════════════════╪════════════════════════════════╪═════════════════╪════════════════════════════════╪════════════════════════════════╪═════════════════╪════════════════════════════════╪════════════════════════════════╡
+│ GuptaLab+553d1bd5+2023-07-09-… ┆ GuptaLab ┆ 2023-07-09 ┆ 2023-07-09-19h-01m-24s ┆ 500180237  ┆ 946               ┆ Do any two tasks consecutivel… ┆ true    ┆ gs://gresearch/robotics/droid… ┆ Mohan Kumar ┆ 553d1bd5 ┆ Smith Hall 121  ┆ panda-295341-1325237 ┆ 1.3          ┆ Hdf5(path: gs://gresearch/rob… ┆ 16291792         ┆ [0.1992642342748634, -0.07232… ┆ Video(path: gs://gresearch/ro… ┆ 22246076        ┆ [-0.17238707747361265, 0.8769… ┆ Video(path: gs://gresearch/ro… ┆ 26638268        ┆ [-0.09266930443312492, -0.672… ┆ Video(path: gs://gresearch/ro… │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ GuptaLab+553d1bd5+2023-07-09-… ┆ GuptaLab ┆ 2023-07-09 ┆ 2023-07-09-18h-59m-44s ┆ 500180237  ┆ 668               ┆ Move object into or out of co… ┆ true    ┆ gs://gresearch/robotics/droid… ┆ Mohan Kumar ┆ 553d1bd5 ┆ Smith Hall 121  ┆ panda-295341-1325237 ┆ 1.3          ┆ Hdf5(path: gs://gresearch/rob… ┆ 16291792         ┆ [0.38476760593776255, -0.0039… ┆ Video(path: gs://gresearch/ro… ┆ 22246076        ┆ [-0.17238707747361265, 0.8769… ┆ Video(path: gs://gresearch/ro… ┆ 26638268        ┆ [-0.09266930443312492, -0.672… ┆ Video(path: gs://gresearch/ro… │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ RAD+284fa481+2023-09-01-10h-4… ┆ RAD      ┆ 2023-09-01 ┆ 2023-09-01-10h-43m-47s ┆ 4823049285 ┆ 477               ┆ Move object into or out of co… ┆ true    ┆ gs://gresearch/robotics/droid… ┆ Jack Rome   ┆ 284fa481 ┆ Bayes - RAD Lab ┆ panda-295341-1325422 ┆ 1.3          ┆ Hdf5(path: gs://gresearch/rob… ┆ 15102076         ┆ [0.2773416620870791, -0.21031… ┆ Video(path: gs://gresearch/ro… ┆ 32907025        ┆ [0.20448551053113, 0.59519958… ┆ Video(path: gs://gresearch/ro… ┆ 35215462        ┆ [0.0843702104620847, -0.58301… ┆ Video(path: gs://gresearch/ro… │
+╰────────────────────────────────┴──────────┴────────────┴────────────────────────┴────────────┴───────────────────┴────────────────────────────────┴─────────┴────────────────────────────────┴─────────────┴──────────┴─────────────────┴──────────────────────┴──────────────┴────────────────────────────────┴──────────────────┴────────────────────────────────┴────────────────────────────────┴─────────────────┴────────────────────────────────┴────────────────────────────────┴─────────────────┴────────────────────────────────┴────────────────────────────────╯
 
-(Showing first 8 rows)
+(Showing first 3 rows)
 ```
 
-Each row corresponds to one DROID episode. Metadata from each episode's JSON file is unnested into top-level columns, and lazy file references are attached for the trajectory HDF5 file and three MP4 camera recordings.
+**Each row corresponds to one DROID episode.** Metadata from each episode's JSON file is unnested into top-level columns, and lazy file references are attached for the trajectory HDF5 file and three MP4 camera recordings.
+
+## Episode layout
+
+Each DROID episode is stored in its own directory:
+
+```
+episode/
+|---- metadata_<episode_id>.json    # Episode metadata (building, task, camera serials, etc.)
+|---- trajectory.h5                 # Low-dimensional action and proprioception trajectories
+|---- recordings/
+          |---- MP4/
+                 |---- <camera_serial>.mp4
+                 |---- <camera_serial>-stereo.mp4  # Optional stereo views
+          |---- SVO/
+                 |---- <camera_serial>.svo         # Raw ZED SVO recordings
+```
+
+[`daft.datasets.droid.raw()`][daft.datasets.droid.raw] currently attaches lazy references to:
+
+- `trajectory`: the episode's `trajectory.h5` file
+- `wrist_cam_video`: wrist camera MP4
+- `ext1_cam_video`: external camera 1 MP4 (often the left view)
+- `ext2_cam_video`: external camera 2 MP4 (often the right view)
+
+Stereo MP4 and raw SVO recordings are not yet exposed as columns.
+
+## Data schema
+
+`raw()` returns one row per episode with metadata fields unnested from each `metadata_*.json` file, plus the following key columns:
+
+| Column                 | Type          | Description                              |
+| ---------------------- | ------------- | ---------------------------------------- |
+| `episode_dir`          | String        | Path to the episode directory            |
+| `uuid`                 | String        | Unique episode identifier                |
+| `lab`                  | String        | Collecting lab                           |
+| `user`                 | String        | Data collector name                      |
+| `user_id`              | String        | Data collector identifier                |
+| `date`                 | Date          | Collection date                          |
+| `timestamp`            | String        | Collection timestamp                     |
+| `building`             | String        | Building or environment name             |
+| `scene_id`             | Int64         | Scene identifier within the building     |
+| `success`              | Boolean       | Whether the demonstration was successful |
+| `current_task`         | String        | Natural language task description        |
+| `trajectory_length`    | Int64         | Number of timesteps in the trajectory    |
+| `robot_serial`         | String        | Robot hardware serial number             |
+| `wrist_cam_serial`     | String        | Wrist camera serial number               |
+| `ext1_cam_serial`      | String        | External camera 1 serial number          |
+| `ext2_cam_serial`      | String        | External camera 2 serial number          |
+| `wrist_cam_extrinsics` | List[Float64] | Wrist camera extrinsics                  |
+| `ext1_cam_extrinsics`  | List[Float64] | External camera 1 extrinsics             |
+| `ext2_cam_extrinsics`  | List[Float64] | External camera 2 extrinsics             |
+| `trajectory`           | File          | Lazy reference to `trajectory.h5`        |
+| `wrist_cam_video`      | VideoFile     | Lazy reference to the wrist camera MP4   |
+| `ext1_cam_video`       | VideoFile     | Lazy reference to external camera 1 MP4  |
+| `ext2_cam_video`       | VideoFile     | Lazy reference to external camera 2 MP4  |
+
+The raw metadata JSON includes additional path fields such as `hdf5_path`, `wrist_mp4_path`, and `ext1_mp4_path`; `raw()` exposes the constructed file columns instead.
+
+
+## Prerequisites
+
+The raw DROID dataset is hosted on Google Cloud Storage at `gs://gresearch/robotics/droid_raw` (~8.7 TB). By default, [`daft.datasets.droid.raw()`](../api/datasets.md#daft.datasets.droid.raw) reads from this public bucket, so no credentials are required to get started.
+
+If you prefer to work with a local copy, download episodes with [`gsutil`](https://cloud.google.com/storage/docs/gsutil_install) and pass the local path to `raw()`:
+
+```bash
+# Download the full raw dataset (~8.7 TB)
+gsutil -m cp -r gs://gresearch/robotics/droid_raw /path/to/droid_raw
+
+# Or download a smaller subset for development
+gsutil -m cp -r gs://gresearch/robotics/droid_raw/<episode_path> /path/to/droid_raw/
+```
+
+!!! note 
+    See the [official DROID dataset documentation](https://droid-dataset.github.io/droid/the-droid-dataset) for details on the dataset format and downloading the necessary files for your use case.
+
+For lower-level HDF5 file usage patterns, see the [HDF5 file usage notebook](https://github.com/Eventual-Inc/Daft/blob/main/examples/hdf5_file_usage.ipynb).
+
 
 ## Basic usage
 
@@ -174,6 +215,22 @@ df = daft.datasets.droid.trajectory(
 df.show(3)
 ```
 
+```
+╭────────────────────────────────┬────────────┬──────────────────────┬──────────────┬────────────────────────────────┬─────────┬───────────────────┬─────────────────────────┬─────────────────────────┬────────────────────────────────┬────────────────────────────────┬────────────────────────────────┬────────────────────────────────┬────────────────────────────────┬────────────────────────────────╮
+│ uuid                           ┆ scene_id   ┆ robot_serial         ┆ r2d2_version ┆ current_task                   ┆ success ┆ trajectory_length ┆ action/joint_position   ┆ action/gripper_position ┆ wrist_cam_video                ┆ wrist_cam_extrinsics           ┆ ext1_cam_video                 ┆ ext1_cam_extrinsics            ┆ ext2_cam_video                 ┆ ext2_cam_extrinsics            │
+│ ---                            ┆ ---        ┆ ---                  ┆ ---          ┆ ---                            ┆ ---     ┆ ---               ┆ ---                     ┆ ---                     ┆ ---                            ┆ ---                            ┆ ---                            ┆ ---                            ┆ ---                            ┆ ---                            │
+│ String                         ┆ Int64      ┆ String               ┆ String       ┆ String                         ┆ Bool    ┆ Int64             ┆ Tensor[Float64]         ┆ Tensor[Float64]         ┆ File[Video]                    ┆ List[Float64]                  ┆ File[Video]                    ┆ List[Float64]                  ┆ File[Video]                    ┆ List[Float64]                  │
+╞════════════════════════════════╪════════════╪══════════════════════╪══════════════╪════════════════════════════════╪═════════╪═══════════════════╪═════════════════════════╪═════════════════════════╪════════════════════════════════╪════════════════════════════════╪════════════════════════════════╪════════════════════════════════╪════════════════════════════════╪════════════════════════════════╡
+│ CLVR+13759f6e+2023-06-09-11h-… ┆ 6667529842 ┆ 295341-1325882       ┆ 1.1          ┆ Move object into or out of co… ┆ false   ┆ 187               ┆ <Tensor shape=(187, 7)> ┆ <Tensor shape=(187)>    ┆ Null                           ┆ [0.2601621034743318, 0.166998… ┆ Null                           ┆ [0.06296538305747777, 0.25683… ┆ Null                           ┆ [0.036736272290592786, -0.424… │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ GuptaLab+553d1bd5+2023-07-09-… ┆ 500180237  ┆ panda-295341-1325237 ┆ 1.3          ┆ Do any two tasks consecutivel… ┆ true    ┆ 946               ┆ <Tensor shape=(946, 7)> ┆ <Tensor shape=(946)>    ┆ Video(path: gs://gresearch/ro… ┆ [0.1992642342748634, -0.07232… ┆ Video(path: gs://gresearch/ro… ┆ [-0.17238707747361265, 0.8769… ┆ Video(path: gs://gresearch/ro… ┆ [-0.09266930443312492, -0.672… │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ IRIS+89b42cd2+2023-12-05-21h-… ┆ 3837471943 ┆ panda-295341-1326372 ┆ 1.3          ┆ Move object into or out of co… ┆ false   ┆ 26                ┆ <Tensor shape=(26, 7)>  ┆ <Tensor shape=(26)>     ┆ Video(path: gs://gresearch/ro… ┆ [0.26443079492475274, 0.09407… ┆ Video(path: gs://gresearch/ro… ┆ [0.2025336528549136, -0.64235… ┆ Video(path: gs://gresearch/ro… ┆ [0.2342123652474526, 0.538119… │
+╰────────────────────────────────┴────────────┴──────────────────────┴──────────────┴────────────────────────────────┴─────────┴───────────────────┴─────────────────────────┴─────────────────────────┴────────────────────────────────┴────────────────────────────────┴────────────────────────────────┴────────────────────────────────┴────────────────────────────────┴────────────────────────────────╯
+
+(Showing first 3 rows)
+```
+
 For custom HDF5 layouts, create lazy `Hdf5File` references with `daft.functions.hdf5_file()` and use a typed UDF for dataset reads. If you need recursive traversal, call `Hdf5File.visit()` inside direct Python code or a UDF so that the cost is explicit.
 
 ```python
@@ -211,11 +268,26 @@ if __name__ == "__main__":
     df.show(3)
 ```
 
-For a runnable walkthrough covering standalone `Hdf5File` usage, MIME detection, hierarchy traversal, DataFrame expressions, and UDF patterns, see the [HDF5 file usage notebook](https://github.com/Eventual-Inc/Daft/blob/main/examples/hdf5_file_usage.ipynb).
+```
+╭────────────────────────────────┬─────────────────────────┬────────────────────────────────┬──────────────────────────────────────────╮
+│ current_task                   ┆ action/gripper_position ┆ action/target_gripper_position ┆ observation/robot_state/gripper_position │
+│ ---                            ┆ ---                     ┆ ---                            ┆ ---                                      │
+│ String                         ┆ Tensor[Float64]         ┆ Tensor[Float64]                ┆ Tensor[Float64]                          │
+╞════════════════════════════════╪═════════════════════════╪════════════════════════════════╪══════════════════════════════════════════╡
+│ Do any two tasks consecutivel… ┆ <Tensor shape=(946)>    ┆ <Tensor shape=(946)>           ┆ <Tensor shape=(946)>                     │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ Move object into or out of co… ┆ <Tensor shape=(668)>    ┆ <Tensor shape=(668)>           ┆ <Tensor shape=(668)>                     │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ Move object into or out of co… ┆ <Tensor shape=(143)>    ┆ <Tensor shape=(143)>           ┆ <Tensor shape=(143)>                     │
+╰────────────────────────────────┴─────────────────────────┴────────────────────────────────┴──────────────────────────────────────────╯
+
+(Showing first 3 rows)
+```
 
 ### Reading trajectories and camera frames
 
-Use `trajectory()` to read selected HDF5 datasets into tensor columns, then use `camera_frames()` to decode MP4 camera frames when you need image data:
+Use `trajectory()` to read selected HDF5 datasets into tensor columns, then use `camera_frames()` to decode MP4 camera frames when you need image data. `camera_frames()` decodes all three cameras by default. Pass a single camera name such as `cameras="wrist"` or a list of camera names to narrow the output. Supported camera names include `"wrist"`, `"ext1"`, and `"ext2"`. 
+
 
 ```python
 import daft
@@ -223,7 +295,7 @@ import daft
 episodes = (
     daft.datasets.droid.raw()
     .where(daft.col("success"))
-    .limit(10)
+    .limit(3)
 )
 
 traj = daft.datasets.droid.trajectory(
@@ -238,66 +310,30 @@ frames = daft.datasets.droid.camera_frames(
     height=224,
     sample_interval_seconds=0.5,
 )
+
+frames.show(3)
 ```
 
-`camera_frames()` decodes all three cameras by default. Pass a single camera name such as `cameras="wrist"` or a list of camera names to narrow the output.
-
-## Episode layout
-
-Each DROID episode is stored in its own directory:
+```
+╭────────────────────────────────┬────────────┬────────────────┬──────────────┬────────────────────────────────┬─────────┬───────────────────┬─────────────────────────┬─────────────────────────┬────────────────────────────────┬────────────────────────────────┬────────────────────────────────┬────────────────────────────────┬────────────────────────────────┬────────────────────────────────┬──────────────────────────────────────────────────────────┬──────────────────────────────────────────────────────────┬─────────────────────────────────────────────────────────╮
+│ uuid                           ┆ scene_id   ┆ robot_serial   ┆ r2d2_version ┆ current_task                   ┆ success ┆ trajectory_length ┆ action/joint_position   ┆ action/gripper_position ┆ wrist_cam_video                ┆ wrist_cam_extrinsics           ┆ ext1_cam_video                 ┆ ext1_cam_extrinsics            ┆ ext2_cam_video                 ┆ ext2_cam_extrinsics            ┆ wrist_cam_frames                                         ┆ ext1_cam_frames                                          ┆ ext2_cam_frames                                         │
+│ ---                            ┆ ---        ┆ ---            ┆ ---          ┆ ---                            ┆ ---     ┆ ---               ┆ ---                     ┆ ---                     ┆ ---                            ┆ ---                            ┆ ---                            ┆ ---                            ┆ ---                            ┆ ---                            ┆ ---                                                      ┆ ---                                                      ┆ ---                                                     │
+│ String                         ┆ Int64      ┆ String         ┆ String       ┆ String                         ┆ Bool    ┆ Int64             ┆ Tensor[Float64]         ┆ Tensor[Float64]         ┆ File[Video]                    ┆ List[Float64]                  ┆ File[Video]                    ┆ List[Float64]                  ┆ File[Video]                    ┆ List[Float64]                  ┆ List[Struct[frame_index: Int64, frame_time: Float64,     ┆ List[Struct[frame_index: Int64, frame_time: Float64,     ┆ List[Struct[frame_index: Int64, frame_time: Float64,    │
+│                                ┆            ┆                ┆              ┆                                ┆         ┆                   ┆                         ┆                         ┆                                ┆                                ┆                                ┆                                ┆                                ┆                                ┆ frame_time_base: String, frame_pts: Int64, frame_dts:    ┆ frame_time_base: String, frame_pts: Int64, frame_dts:    ┆ frame_time_base: String, frame_pts: Int64, frame_dts:   │
+│                                ┆            ┆                ┆              ┆                                ┆         ┆                   ┆                         ┆                         ┆                                ┆                                ┆                                ┆                                ┆                                ┆                                ┆ Int64, frame_duration: Int64, is_key_frame: Bool, data:  ┆ Int64, frame_duration: Int64, is_key_frame: Bool, data:  ┆ Int64, frame_duration: Int64, is_key_frame: Bool, data: │
+│                                ┆            ┆                ┆              ┆                                ┆         ┆                   ┆                         ┆                         ┆                                ┆                                ┆                                ┆                                ┆                                ┆                                ┆ Image[MIXED]]]                                           ┆ Image[MIXED]]]                                           ┆ Image[MIXED]]]                                          │
+╞════════════════════════════════╪════════════╪════════════════╪══════════════╪════════════════════════════════╪═════════╪═══════════════════╪═════════════════════════╪═════════════════════════╪════════════════════════════════╪════════════════════════════════╪════════════════════════════════╪════════════════════════════════╪════════════════════════════════╪════════════════════════════════╪══════════════════════════════════════════════════════════╪══════════════════════════════════════════════════════════╪═════════════════════════════════════════════════════════╡
+│ ILIAD+j807b3f8+2023-04-19-16h… ┆ 1285013161 ┆ 295341-1325494 ┆ 1.1          ┆ Move object into or out of co… ┆ true    ┆ 280               ┆ <Tensor shape=(280, 7)> ┆ <Tensor shape=(280)>    ┆ Video(path: gs://gresearch/ro… ┆ [0.2542811629384306, 0.120089… ┆ Video(path: gs://gresearch/ro… ┆ [0.10180256468176609, 0.46798… ┆ Video(path: gs://gresearch/ro… ┆ [0.2749705852352339, -0.46906… ┆ [{frame_index: 0,                                        ┆ [{frame_index: 0,                                        ┆ [{frame_index: 0,                                       │
+│                                ┆            ┆                ┆              ┆                                ┆         ┆                   ┆                         ┆                         ┆                                ┆                                ┆                                ┆                                ┆                                ┆                                ┆ frame_time:…                                             ┆ frame_time:…                                             ┆ frame_time:…                                            │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ ILIAD+j807b3f8+2023-04-19-16h… ┆ 1285013161 ┆ 295341-1325494 ┆ 1.1          ┆ Move object into or out of co… ┆ true    ┆ 376               ┆ <Tensor shape=(376, 7)> ┆ <Tensor shape=(376)>    ┆ Video(path: gs://gresearch/ro… ┆ [0.359122917548836, -0.180021… ┆ Video(path: gs://gresearch/ro… ┆ [0.10180256468176609, 0.46798… ┆ Video(path: gs://gresearch/ro… ┆ [0.2749705852352339, -0.46906… ┆ [{frame_index: 0,                                        ┆ [{frame_index: 0,                                        ┆ [{frame_index: 0,                                       │
+│                                ┆            ┆                ┆              ┆                                ┆         ┆                   ┆                         ┆                         ┆                                ┆                                ┆                                ┆                                ┆                                ┆                                ┆ frame_time:…                                             ┆ frame_time:…                                             ┆ frame_time:…                                            │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ ILIAD+j807b3f8+2023-04-19-16h… ┆ 1285013161 ┆ 295341-1325494 ┆ 1.1          ┆ Move object into or out of co… ┆ true    ┆ 263               ┆ <Tensor shape=(263, 7)> ┆ <Tensor shape=(263)>    ┆ Video(path: gs://gresearch/ro… ┆ [0.1915279636485076, -0.09894… ┆ Video(path: gs://gresearch/ro… ┆ [0.10180256468176609, 0.46798… ┆ Video(path: gs://gresearch/ro… ┆ [0.2749705852352339, -0.46906… ┆ [{frame_index: 0,                                        ┆ [{frame_index: 0,                                        ┆ [{frame_index: 0,                                       │
+│                                ┆            ┆                ┆              ┆                                ┆         ┆                   ┆                         ┆                         ┆                                ┆                                ┆                                ┆                                ┆                                ┆                                ┆ frame_time:…                                             ┆ frame_time:…                                             ┆ frame_time:…                                            │
+╰────────────────────────────────┴────────────┴────────────────┴──────────────┴────────────────────────────────┴─────────┴───────────────────┴─────────────────────────┴─────────────────────────┴────────────────────────────────┴────────────────────────────────┴────────────────────────────────┴────────────────────────────────┴────────────────────────────────┴────────────────────────────────┴──────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────┴─────────────────────────────────────────────────────────╯
 
 ```
-episode/
-|---- metadata_<episode_id>.json    # Episode metadata (building, task, camera serials, etc.)
-|---- trajectory.h5                 # Low-dimensional action and proprioception trajectories
-|---- recordings/
-          |---- MP4/
-                 |---- <camera_serial>.mp4
-                 |---- <camera_serial>-stereo.mp4  # Optional stereo views
-          |---- SVO/
-                 |---- <camera_serial>.svo         # Raw ZED SVO recordings
-```
-
-[`daft.datasets.droid.raw()`][daft.datasets.droid.raw] currently attaches lazy references to:
-
-- `trajectory`: the episode's `trajectory.h5` file
-- `wrist_cam_video`: wrist camera MP4
-- `ext1_cam_video`: external camera 1 MP4 (often the left view)
-- `ext2_cam_video`: external camera 2 MP4 (often the right view)
-
-Stereo MP4 and raw SVO recordings are not yet exposed as columns.
-
-## Data schema
-
-`raw()` returns one row per episode with metadata fields unnested from each `metadata_*.json` file, plus the following key columns:
-
-| Column                 | Type          | Description                              |
-| ---------------------- | ------------- | ---------------------------------------- |
-| `episode_dir`          | String        | Path to the episode directory            |
-| `uuid`                 | String        | Unique episode identifier                |
-| `lab`                  | String        | Collecting lab                           |
-| `user`                 | String        | Data collector name                      |
-| `user_id`              | String        | Data collector identifier                |
-| `date`                 | Date          | Collection date                          |
-| `timestamp`            | String        | Collection timestamp                     |
-| `building`             | String        | Building or environment name             |
-| `scene_id`             | Int64         | Scene identifier within the building     |
-| `success`              | Boolean       | Whether the demonstration was successful |
-| `current_task`         | String        | Natural language task description        |
-| `trajectory_length`    | Int64         | Number of timesteps in the trajectory    |
-| `robot_serial`         | String        | Robot hardware serial number             |
-| `wrist_cam_serial`     | String        | Wrist camera serial number               |
-| `ext1_cam_serial`      | String        | External camera 1 serial number          |
-| `ext2_cam_serial`      | String        | External camera 2 serial number          |
-| `wrist_cam_extrinsics` | List[Float64] | Wrist camera extrinsics                  |
-| `ext1_cam_extrinsics`  | List[Float64] | External camera 1 extrinsics             |
-| `ext2_cam_extrinsics`  | List[Float64] | External camera 2 extrinsics             |
-| `trajectory`           | File          | Lazy reference to `trajectory.h5`        |
-| `wrist_cam_video`      | VideoFile     | Lazy reference to the wrist camera MP4   |
-| `ext1_cam_video`       | VideoFile     | Lazy reference to external camera 1 MP4  |
-| `ext2_cam_video`       | VideoFile     | Lazy reference to external camera 2 MP4  |
-
-The raw metadata JSON includes additional path fields such as `hdf5_path`, `wrist_mp4_path`, and `ext1_mp4_path`; `raw()` exposes the constructed file columns instead.
 
 ## Next steps
 
