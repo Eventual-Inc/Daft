@@ -52,6 +52,24 @@ batched decode survives process serialization. Each worker/process opens the sha
 in its own batches once (file handles are not shared across processes); partition by
 shard to make that one download per shard per worker.
 
+With multiple shards the decode parallelizes across worker processes
+(`.with_concurrency(N)`) - `worker_scaling.py`, 8 shards, full-span decode:
+
+![workers](charts/chart_workers.png)
+
+| workers | wall | speedup |
+| --- | --- | --- |
+| 1 | 22.9s | 1.0× |
+| 2 | 15.3s | 1.5× |
+| 4 | 11.0s | 2.1× |
+| 8 | 7.6s | 3.0× |
+
+This isolates decode-compute scaling: each row returns a scalar so image
+serialization doesn't dominate, and the shards are local copies (no network). The
+sub-linear scaling is process-spawn overhead plus one-batch-per-shard granularity.
+On a real cluster, parallel network fetch of distinct shards is an additional win
+not captured here.
+
 ## Running
 
 ```bash
