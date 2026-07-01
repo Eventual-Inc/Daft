@@ -7,8 +7,8 @@ re-opened the shard N times, paying that cost each time - so cost scaled ~linear
 at **~3s/frame** (the slope of the sweep below).
 
 This directory holds the benchmarks that diagnosed it and the fix that makes the
-decode **batched**: rows sharing a shard are grouped so the shard is opened (and
-fetched) once per batch.
+decode **batched**: rows sharing a shard within a batch are grouped so each shard is
+opened once per batch, instead of once per frame.
 
 ## Where the time went (it is not decoding)
 
