@@ -99,8 +99,7 @@ in a batch, so its cost depends on how spread out those timestamps are:
   a shard's rows land in the same batch. The reader emits rows sorted by
   `(episode_index, frame_index)`, so they do - opens stay at one per shard as the
   dataset grows ([`ordering.py`](ordering.py)). Shuffled rows scatter a shard across batches and cost
-  more opens, but still stay below the original's one-per-frame. Correctness is
-  order-independent (timestamps are sorted within each batch).
+  more opens, but still stay below the original's one-per-frame.
 
   ![ordering](charts/chart_ordering.png)
 
