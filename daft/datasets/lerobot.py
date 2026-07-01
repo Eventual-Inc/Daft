@@ -118,8 +118,7 @@ def _decode_lerobot_video_timestamp(
     """Decode the frame closest to ``from_timestamp + timestamp`` for each row.
 
     Batched over rows: rows sharing the same shard file are grouped so the shard
-    is opened (and, for remote shards, fetched) exactly once per batch instead of
-    once per frame.
+    is opened exactly once per batch instead of once per frame.
     """
     try:
         import av as av_mod
@@ -239,7 +238,9 @@ def read(
         fps = float(info["fps"])
         tolerance_s = 1.0 / fps / 2.0  # half a frame period: any closer frame is unambiguously "the" frame
 
-        # To increase parallelism, reduce batch size
+        # Batch size trades decode parallelism (smaller batches -> more concurrent
+        # tasks) against shard opens (rows sharing a shard are decoded in one open
+        # per batch, so smaller batches -> more opens of the same shard).
         df = df.into_batches(16)
         for k in video_keys:
             df = df.with_column(
