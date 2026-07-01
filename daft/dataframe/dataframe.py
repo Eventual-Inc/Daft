@@ -3344,17 +3344,26 @@ class DataFrame:
     @DataframePublicAPI
     def with_columns(
         self,
-        columns: dict[str, Expression],
+        columns: dict[str, Expression] | None = None,
+        **named_columns: Expression,
     ) -> "DataFrame":
         """Adds columns to the current DataFrame with Expressions, equivalent to a ``select`` with all current columns and the new ones.
 
+        New columns can be passed in dict style or kwarg style. These different styles should not be mixed together.
+
+        Note:
+            If you are adding a column whose name conflicts with this function's parameter names ("columns"), the added columns must be passed in dict style.
+            E.g. `df.with_columns({"columns": expression})`
+
         Args:
-            columns (Dict[str, Expression]): Dictionary of new columns in the format { name: expression }
+            columns (Dict[str, Expression], optional): Dictionary of new columns in the format { name: expression }
+            **named_columns (Expression): New columns passed in as keyword arguments (e.g. `my_new_col=col("a") * 2`)
 
         Returns:
             DataFrame: DataFrame with new columns.
 
         Examples:
+            Dict style
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
             >>> new_df = df.with_columns({"foo": df["x"] + 1, "bar": df["y"] - df["x"]})
@@ -3372,8 +3381,36 @@ class DataFrame:
             ╰───────┴───────┴───────┴───────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
+
+            Kwarg style
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+            >>> new_df = df.with_columns(foo=df["x"] + 1, bar=df["y"] - df["x"])
+            >>> new_df.show()
+            ╭───────┬───────┬───────┬───────╮
+            │ x     ┆ y     ┆ foo   ┆ bar   │
+            │ ---   ┆ ---   ┆ ---   ┆ ---   │
+            │ Int64 ┆ Int64 ┆ Int64 ┆ Int64 │
+            ╞═══════╪═══════╪═══════╪═══════╡
+            │ 1     ┆ 4     ┆ 2     ┆ 3     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 5     ┆ 3     ┆ 3     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ 6     ┆ 4     ┆ 3     │
+            ╰───────┴───────┴───────┴───────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
         """
-        new_columns = [col.alias(name) for name, col in columns.items()]
+        if columns is not None and named_columns:
+            raise ValueError("Can not pass in both dict and keyword columns")
+
+        new_columns = []
+        if named_columns:
+            new_columns = [col.alias(name) for name, col in named_columns.items()]
+        elif columns is not None:
+            new_columns = [col.alias(name) for name, col in columns.items()]
+        else:
+            raise ValueError("Expected dict or kwargs")
 
         builder = self._builder.with_columns(new_columns)
         return DataFrame(builder)
@@ -3442,6 +3479,72 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 3 of 3 rows)
         """
+        builder = self._builder.with_columns_renamed(cols_map)
+        return DataFrame(builder)
+
+    @DataframePublicAPI
+    def rename(self, cols_map: dict[str, str] | None = None, **rename_kwargs: str) -> "DataFrame":
+        """Renames columns in the current DataFrame.
+
+        If the columns in the DataFrame schema do not exist, this will be a no-op.
+
+        Columns to rename can be passed in dict style or kwarg style. These different styles should not be mixed together.
+
+        Note:
+            If you are renaming an existing column whose name conflicts with this function's parameter names ("cols_map"), the columns to rename must be passed in dict style.
+            E.g. `df.rename({"cols_map": new_name})`
+
+        Args:
+            cols_map (Dict[str, str], optional): Dictionary of columns to rename in the format { existing: new }
+            **rename_kwargs (str): Dict of column renamings passed in kwarg style (e.g. existing=new)
+
+        Returns:
+            DataFrame: DataFrame with the columns renamed.
+
+        Examples:
+            Dict style
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+            >>> df.rename({"x": "foo", "y": "bar"}).show()
+            ╭───────┬───────╮
+            │ foo   ┆ bar   │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ 1     ┆ 4     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 5     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ 6     │
+            ╰───────┴───────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
+            Kwargs style
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+            >>> df.rename(x="foo", y="bar").show()
+            ╭───────┬───────╮
+            │ foo   ┆ bar   │
+            │ ---   ┆ ---   │
+            │ Int64 ┆ Int64 │
+            ╞═══════╪═══════╡
+            │ 1     ┆ 4     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 2     ┆ 5     │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+            │ 3     ┆ 6     │
+            ╰───────┴───────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+        """
+        if cols_map is not None and rename_kwargs:
+            raise ValueError("Can not pass in columns to rename as both a dict and kwargs")
+        elif rename_kwargs:
+            cols_map = rename_kwargs
+        elif cols_map is None:
+            raise ValueError("rename requires at least 1 argument")
+
         builder = self._builder.with_columns_renamed(cols_map)
         return DataFrame(builder)
 
