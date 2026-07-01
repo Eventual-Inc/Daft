@@ -89,12 +89,14 @@ in a batch, so its cost depends on how spread out those timestamps are:
   Batched stays flat (one open) while original grows one download per frame. It only
   loses to a per-target seek when there is no network *and* the timestamps are sparse.
 
-- **Row order:** grouping happens per batch, so the win assumes a shard's rows land in
-  the same batch. The reader emits rows sorted by `(episode_index, frame_index)`, so
-  they do. If rows were shuffled the shard would be reopened in each batch that holds
-  its frames - e.g. 64 rows over 8 shards: 8 opens sorted, 27 shuffled - still well
-  below the original's 64, just short of optimal. Correctness is order-independent
-  (timestamps are sorted within each batch).
+- **Row order (holds as data scales):** grouping happens per batch, so the win assumes
+  a shard's rows land in the same batch. The reader emits rows sorted by
+  `(episode_index, frame_index)`, so they do - opens stay at one per shard as the
+  dataset grows (`ordering.py`). Shuffled rows scatter a shard across batches and cost
+  more opens, but still stay below the original's one-per-frame. Correctness is
+  order-independent (timestamps are sorted within each batch).
+
+  ![ordering](charts/chart_ordering.png)
 
 Memory is bounded regardless of shard size (only the best frame per row is kept, at
 most one per batch row). A gap-based clustering pass (decode contiguous runs, re-seek
@@ -108,4 +110,5 @@ python repro.py --rows 8             # time a decode (add --profile for the brea
 python sweep.py --label batched      # rows 1..10 sweep + chart
 python worker_scaling.py             # original vs batched by worker count (downloads ~7MB shard)
 python sparse.py                     # sparse-frames worst case, remote
+python ordering.py                   # opens vs dataset size: ordered vs shuffled rows
 ```
