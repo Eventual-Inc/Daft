@@ -2,7 +2,7 @@
 
 The `daft.datasets.lerobot` reader decoded video frames with a **per-row** UDF that
 re-opened the MP4 shard for every frame. Because `av.open()` on a remote shard
-re-reads and parses the container index over the network (~1s), decoding N frames
+re-reads and parses the container index over the network, decoding N frames
 re-opened the shard N times, paying that cost each time - so cost scaled ~linearly
 at **~3s/frame** (the slope of the sweep below).
 
