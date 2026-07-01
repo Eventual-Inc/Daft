@@ -3,6 +3,7 @@ mod count_distinct;
 mod first_last_value;
 mod mean;
 mod minmax;
+mod nth_value;
 mod sum;
 
 use common_error::DaftResult;
@@ -11,6 +12,7 @@ use count_distinct::CountDistinctWindowState;
 use daft_core::prelude::*;
 use daft_dsl::{AggExpr, WindowExpr, expr::bound_expr::BoundWindowExpr};
 use first_last_value::{FirstValueWindowState, LastValueWindowState};
+use nth_value::NthValueWindowState;
 use sum::SumWindowState;
 
 use crate::RecordBatch;
@@ -82,6 +84,22 @@ pub fn create_window_agg_state(
             Ok(Some(Box::new(LastValueWindowState::new(
                 source.as_materialized_series(),
                 total_length,
+                *ignore_nulls,
+            ))))
+        }
+        WindowExpr::NthValue(_, n, ignore_nulls) => {
+            let [source] = sources.columns() else {
+                unreachable!("nth_value should only have one input")
+            };
+            if *n < 1 {
+                return Err(common_error::DaftError::ValueError(format!(
+                    "nth_value() requires n >= 1, got {n}"
+                )));
+            }
+            Ok(Some(Box::new(NthValueWindowState::new(
+                source.as_materialized_series(),
+                total_length,
+                *n as usize,
                 *ignore_nulls,
             ))))
         }

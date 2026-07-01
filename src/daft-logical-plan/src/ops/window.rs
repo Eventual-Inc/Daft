@@ -59,22 +59,69 @@ impl Window {
         for func in &window_functions {
             if matches!(
                 func,
-                WindowExpr::FirstValue(_, _) | WindowExpr::LastValue(_, _)
+                WindowExpr::FirstValue(_, _)
+                    | WindowExpr::LastValue(_, _)
+                    | WindowExpr::NthValue(_, _, _)
             ) {
+                let func_label = match func {
+                    WindowExpr::FirstValue(_, _) => "first_value()",
+                    WindowExpr::LastValue(_, _) => "last_value()",
+                    WindowExpr::NthValue(_, _, _) => "nth_value()",
+                    _ => unreachable!(),
+                };
                 if window_spec.partition_by.is_empty() {
                     return Err(common_error::DaftError::ValueError(
-                        "first_value() and last_value() require a partition_by in the window spec — use Window().partition_by(...).order_by(...).rows_between(...)".to_string(),
+                        format!("{func_label} require a partition_by in the window spec — use Window().partition_by(...).order_by(...).rows_between(...)"),
                     ).into());
                 }
                 if window_spec.order_by.is_empty() {
                     return Err(common_error::DaftError::ValueError(
-                        "first_value() and last_value() require an order_by in the window spec — use Window().partition_by(...).order_by(...).rows_between(...)".to_string(),
+                        format!("{func_label} require an order_by in the window spec — use Window().partition_by(...).order_by(...).rows_between(...)"),
                     ).into());
                 }
                 if window_spec.frame.is_none() {
                     return Err(common_error::DaftError::ValueError(
-                        "first_value() and last_value() require a frame (rows_between) in the window spec — use Window().partition_by(...).order_by(...).rows_between(...)".to_string(),
+                        format!("{func_label} require a frame (rows_between) in the window spec — use Window().partition_by(...).order_by(...).rows_between(...)"),
                     ).into());
+                }
+            }
+            if let WindowExpr::NthValue(_, n, _) = func
+                && *n < 1
+            {
+                return Err(common_error::DaftError::ValueError(format!(
+                    "nth_value() requires n >= 1, got {n}"
+                ))
+                .into());
+            }
+            if let WindowExpr::Ntile(n) = func
+                && *n < 1
+            {
+                return Err(common_error::DaftError::ValueError(format!(
+                    "ntile() requires n >= 1, got {n}"
+                ))
+                .into());
+            }
+            if matches!(
+                func,
+                WindowExpr::CumeDist | WindowExpr::PercentRank | WindowExpr::Ntile(_)
+            ) {
+                let func_label = match func {
+                    WindowExpr::CumeDist => "cume_dist()",
+                    WindowExpr::PercentRank => "percent_rank()",
+                    WindowExpr::Ntile(_) => "ntile()",
+                    _ => unreachable!(),
+                };
+                if window_spec.order_by.is_empty() {
+                    return Err(common_error::DaftError::ValueError(format!(
+                        "{func_label} requires an order_by in the window spec",
+                    ))
+                    .into());
+                }
+                if window_spec.frame.is_some() {
+                    return Err(common_error::DaftError::ValueError(format!(
+                        "{func_label} cannot be used with a window frame (rows_between/range_between)",
+                    ))
+                    .into());
                 }
             }
         }
