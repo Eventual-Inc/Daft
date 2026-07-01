@@ -88,6 +88,8 @@ You can use [`df.write_deltalake()`][daft.DataFrame.write_deltalake] to write a 
 
 Daft supports multiple write modes. See the API docs for [`df.write_deltalake()`][daft.DataFrame.write_deltalake] for more details.
 
+When writing Delta Lake tables to S3, Daft relies on the native conditional write support in supported `deltalake` versions. DynamoDB locking is not required by default for AWS S3 writes. To explicitly use a DynamoDB locking provider, pass `dynamo_table_name="..."` to [`df.write_deltalake()`][daft.DataFrame.write_deltalake].
+
 ## Type System
 
 Daft and Delta Lake have compatible type systems. Here are how types are converted across the two systems.

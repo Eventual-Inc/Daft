@@ -130,6 +130,44 @@ def _create_delta_metadata_param(metadata: dict[str, str] | None) -> Any:
     return CommitProperties(custom_metadata=metadata)
 
 
+def _configure_deltalake_storage_options(
+    table_uri: str,
+    storage_options: dict[str, str],
+    dynamo_table_name: str | None,
+    allow_unsafe_rename: bool,
+    deltalake_version: str,
+) -> bool:
+    """Apply Delta Lake commit options that depend on the destination URI."""
+    from packaging.version import parse
+
+    from daft.filesystem import get_protocol_from_path
+
+    changed = False
+
+    def set_storage_option(key: str, value: str) -> None:
+        nonlocal changed
+        if storage_options.get(key) != value:
+            changed = True
+        storage_options[key] = value
+
+    scheme = get_protocol_from_path(table_uri)
+    if scheme == "s3" or scheme == "s3a":
+        if dynamo_table_name is not None:
+            set_storage_option("AWS_S3_LOCKING_PROVIDER", "dynamodb")
+            set_storage_option("DELTA_DYNAMO_TABLE_NAME", dynamo_table_name)
+        elif allow_unsafe_rename:
+            set_storage_option("AWS_S3_ALLOW_UNSAFE_RENAME", "true")
+        elif parse(deltalake_version) < parse("0.23.0"):
+            raise ValueError(
+                "Safe S3 Delta Lake writes without DynamoDB require deltalake>=0.23.0. "
+                "Upgrade deltalake, pass dynamo_table_name, or set allow_unsafe_rename=True."
+            )
+    elif scheme == "file" and allow_unsafe_rename:
+        set_storage_option("MOUNT_ALLOW_UNSAFE_RENAME", "true")
+
+    return changed
+
+
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -1714,8 +1752,11 @@ class DataFrame:
             description (str, optional): User-provided description for this table.
             configuration (Mapping[str, Optional[str]], optional): A map containing configuration options for the metadata action.
             custom_metadata (Dict[str, str], optional): Custom metadata to add to the commit info. Keys with prefix ``daft.idempotence-`` are reserved.
-            dynamo_table_name (str, optional): Name of the DynamoDB table to be used as the locking provider if writing to S3.
-            allow_unsafe_rename (bool, optional): Whether to allow unsafe rename when writing to S3 or local disk. Defaults to False.
+            dynamo_table_name (str, optional): Name of the DynamoDB table to use when explicitly opting into
+                DynamoDB locking for S3 writes. Modern supported ``deltalake`` versions use S3 conditional
+                writes by default.
+            allow_unsafe_rename (bool, optional): Whether to explicitly allow unsafe rename when writing to S3
+                or local disk. Defaults to False.
             io_config (IOConfig, optional): configurations to use when interacting with remote storage.
             checkpoint (IdempotentCommit, optional): Bundled checkpoint store + idempotence key for an idempotent commit. When provided, the Delta commit's ``custom_metadata`` is tagged with ``daft.idempotence-key`` and retries with the same key recognize the prior attempt without producing a duplicate commit. Only ``mode='append'`` is supported. Requires the Ray runner.
 
@@ -1769,7 +1810,6 @@ class DataFrame:
 
         from daft import from_pydict
         from daft.dependencies import unity_catalog
-        from daft.filesystem import get_protocol_from_path
         from daft.io.delta_lake._deltalake import delta_schema_to_pyarrow
         from daft.io.delta_lake.delta_lake_write import (
             AddAction,
@@ -1807,9 +1847,18 @@ class DataFrame:
 
         if isinstance(table, deltalake.DeltaTable):
             table_uri = table.table_uri
-            storage_options = table._storage_options or {}
+            storage_options = dict(table._storage_options or {})
             new_storage_options = io_config_to_storage_options(io_config, table_uri)
             storage_options.update(new_storage_options or {})
+            storage_options_changed = _configure_deltalake_storage_options(
+                table_uri,
+                storage_options,
+                dynamo_table_name,
+                allow_unsafe_rename,
+                deltalake.__version__,
+            )
+            if storage_options_changed:
+                table = deltalake.DeltaTable(table_uri, storage_options=storage_options)
         else:
             if isinstance(table, str):
                 table_uri = os.path.expanduser(table)
@@ -1827,24 +1876,17 @@ class DataFrame:
                 )
 
             storage_options = io_config_to_storage_options(io_config, table_uri) or {}
+            _configure_deltalake_storage_options(
+                table_uri,
+                storage_options,
+                dynamo_table_name,
+                allow_unsafe_rename,
+                deltalake.__version__,
+            )
             try:
                 table = deltalake.DeltaTable(table_uri, storage_options=storage_options)
             except TableNotFoundError:
                 table = None
-
-        # see: https://delta-io.github.io/delta-rs/usage/writing/writing-to-s3-with-locking-provider/
-        scheme = get_protocol_from_path(table_uri)
-        if scheme == "s3" or scheme == "s3a":
-            if dynamo_table_name is not None:
-                storage_options["AWS_S3_LOCKING_PROVIDER"] = "dynamodb"
-                storage_options["DELTA_DYNAMO_TABLE_NAME"] = dynamo_table_name
-            else:
-                storage_options["AWS_S3_ALLOW_UNSAFE_RENAME"] = "true"
-
-                if not allow_unsafe_rename:
-                    warnings.warn("No DynamoDB table specified for Delta Lake locking. Defaulting to unsafe writes.")
-        elif scheme == "file" and allow_unsafe_rename:
-            storage_options["MOUNT_ALLOW_UNSAFE_RENAME"] = "true"
 
         pyarrow_schema = pa.schema((f.name, f.dtype.to_arrow_dtype()) for f in self.schema())
 
