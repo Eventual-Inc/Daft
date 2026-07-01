@@ -707,6 +707,11 @@ class DistributedDeltaMergeBuilder:
     across all workers instead of on a single driver process.
     """
 
+    # Type aliases for predicate/update values: str (parsed) or Expression (native)
+    _Pred = Union[str, "Expression", None]
+    _UpdateVal = Union[str, "Expression"]
+    _UpdateMap = Union[Mapping[str, str], Mapping[str, "Expression"], Mapping[str, Union[str, "Expression"]]]
+
     def __init__(
         self,
         resolved_table: "deltalake.DeltaTable",
@@ -729,26 +734,65 @@ class DistributedDeltaMergeBuilder:
         self._custom_metadata = custom_metadata
         self._residual_predicates = residual_predicates or []
 
-        self._matched_updates: list[tuple[Mapping[str, str] | None, str | None]] = []
-        self._matched_deletes: list[str | None] = []
-        self._not_matched_inserts: list[tuple[Mapping[str, str] | None, str | None]] = []
-        self._not_matched_by_source_updates: list[tuple[Mapping[str, str] | None, str | None]] = []
-        self._not_matched_by_source_deletes: list[str | None] = []
+        self._matched_updates: list[tuple[Mapping[str, Any] | None, Any]] = []
+        self._matched_deletes: list[Any] = []
+        self._not_matched_inserts: list[tuple[Mapping[str, Any] | None, Any]] = []
+        self._not_matched_by_source_updates: list[tuple[Mapping[str, Any] | None, Any]] = []
+        self._not_matched_by_source_deletes: list[Any] = []
         self._insert_all: bool = False
         self._update_all: bool = False
 
+    def source_col(self, name: str) -> "Expression":
+        """Reference a source column in the joined result.
+
+        After the outer join, source columns are suffixed with ``.__src__``
+        (except join keys which are unified). This helper abstracts that away.
+
+        Args:
+            name: Column name in the source DataFrame.
+
+        Returns:
+            Expression referencing the source column.
+
+        Example::
+
+            builder.when_matched_update(
+                predicate=builder.source_col("hash") != builder.target_col("hash"),
+                updates={"value": builder.source_col("value")},
+            )
+        """
+        from daft import col
+
+        if name in self._on:
+            return col(name)
+        return col(f"{name}.__src__")
+
+    def target_col(self, name: str) -> "Expression":
+        """Reference a target column in the joined result.
+
+        Args:
+            name: Column name in the target Delta table.
+
+        Returns:
+            Expression referencing the target column.
+        """
+        from daft import col
+
+        return col(name)
+
     def when_matched_update(
         self,
-        updates: "Mapping[str, str]",
-        predicate: str | None = None,
+        updates: "_UpdateMap",
+        predicate: "_Pred" = None,
     ) -> "DistributedDeltaMergeBuilder":
         """Add a WHEN MATCHED THEN UPDATE clause.
 
         Args:
-            updates: Mapping from column name to SQL-like expression using source/target aliases.
-                     e.g. ``{"value": "source.value", "updated_at": "source.updated_at"}``
-            predicate: Optional additional condition for matched rows.
-                       e.g. ``"source.hash != target.hash"``
+            updates: Mapping from column name to value expression. Values can be
+                     SQL-like strings (``"source.value"``) or native Daft expressions
+                     (``builder.source_col("value")``).
+            predicate: Optional condition for matched rows. Can be a SQL-like string
+                       or a native Daft boolean expression.
 
         Returns:
             Self for method chaining.
@@ -758,7 +802,7 @@ class DistributedDeltaMergeBuilder:
 
     def when_matched_update_all(
         self,
-        predicate: str | None = None,
+        predicate: "_Pred" = None,
     ) -> "DistributedDeltaMergeBuilder":
         """Add a WHEN MATCHED THEN UPDATE ALL clause (update all source columns).
 
@@ -772,15 +816,15 @@ class DistributedDeltaMergeBuilder:
         self._matched_updates.append((None, predicate))
         return self
 
-    def when_matched_delete(self, predicate: str | None = None) -> "DistributedDeltaMergeBuilder":
+    def when_matched_delete(self, predicate: "_Pred" = None) -> "DistributedDeltaMergeBuilder":
         """Add a WHEN MATCHED THEN DELETE clause."""
         self._matched_deletes.append(predicate)
         return self
 
     def when_not_matched_insert(
         self,
-        updates: "Mapping[str, str]",
-        predicate: str | None = None,
+        updates: "_UpdateMap",
+        predicate: "_Pred" = None,
     ) -> "DistributedDeltaMergeBuilder":
         """Add a WHEN NOT MATCHED THEN INSERT clause.
 
@@ -796,7 +840,7 @@ class DistributedDeltaMergeBuilder:
 
     def when_not_matched_insert_all(
         self,
-        predicate: str | None = None,
+        predicate: "_Pred" = None,
     ) -> "DistributedDeltaMergeBuilder":
         """Add a WHEN NOT MATCHED THEN INSERT ALL clause.
 
@@ -812,8 +856,8 @@ class DistributedDeltaMergeBuilder:
 
     def when_not_matched_by_source_update(
         self,
-        updates: "Mapping[str, str]",
-        predicate: str | None = None,
+        updates: "_UpdateMap",
+        predicate: "_Pred" = None,
     ) -> "DistributedDeltaMergeBuilder":
         """Add a WHEN NOT MATCHED BY SOURCE THEN UPDATE clause.
 
@@ -827,7 +871,7 @@ class DistributedDeltaMergeBuilder:
         self._not_matched_by_source_updates.append((dict(updates), predicate))
         return self
 
-    def when_not_matched_by_source_delete(self, predicate: str | None = None) -> "DistributedDeltaMergeBuilder":
+    def when_not_matched_by_source_delete(self, predicate: "_Pred" = None) -> "DistributedDeltaMergeBuilder":
         """Add a WHEN NOT MATCHED BY SOURCE THEN DELETE clause."""
         self._not_matched_by_source_deletes.append(predicate)
         return self
@@ -861,7 +905,22 @@ class DistributedDeltaMergeBuilder:
 
         import daft
         from daft import DataType, col, lit
+        from daft.expressions.expressions import Expression
         from daft.functions import when
+
+        def _resolve_predicate(pred: Any) -> Any:
+            """Resolve a predicate: pass Expression through, parse strings."""
+            if pred is None:
+                return None
+            if isinstance(pred, Expression):
+                return pred
+            return _parse_predicate(pred, self._source_alias, self._target_alias, self._on)
+
+        def _resolve_update_val(val: Any) -> Any:
+            """Resolve an update value: pass Expression through, parse strings."""
+            if isinstance(val, Expression):
+                return val
+            return _resolve_expr(val, self._source_alias, self._target_alias, self._on)
 
         # Read target as a distributed DataFrame
         target = daft.read_deltalake(self._resolved_table.table_uri, io_config=self._io_config)
@@ -898,7 +957,7 @@ class DistributedDeltaMergeBuilder:
         if self._residual_predicates:
             residual_cond = lit(True)
             for rp in self._residual_predicates:
-                residual_cond = residual_cond & _parse_predicate(rp, self._source_alias, self._target_alias)
+                residual_cond = residual_cond & _resolve_predicate(rp)
             # Rows that joined but fail residual → reclassify
             is_matched = is_matched & residual_cond
             # Joined rows that fail residual: treat target side as target-only, source side as source-only
@@ -910,7 +969,7 @@ class DistributedDeltaMergeBuilder:
         matched_delete_cond = lit(False)
         for pred_str in self._matched_deletes:
             if pred_str is not None:
-                matched_delete_cond = matched_delete_cond | _parse_predicate(pred_str, self._source_alias, self._target_alias)
+                matched_delete_cond = matched_delete_cond | _resolve_predicate(pred_str)
             else:
                 matched_delete_cond = is_matched  # delete all matched
 
@@ -918,7 +977,7 @@ class DistributedDeltaMergeBuilder:
         target_only_delete_cond = lit(False)
         for pred_str in self._not_matched_by_source_deletes:
             if pred_str is not None:
-                target_only_delete_cond = target_only_delete_cond | _parse_predicate(pred_str, self._source_alias, self._target_alias)
+                target_only_delete_cond = target_only_delete_cond | _resolve_predicate(pred_str)
             else:
                 target_only_delete_cond = is_target_only  # delete all unmatched
 
@@ -939,23 +998,26 @@ class DistributedDeltaMergeBuilder:
                 if updates is None and self._update_all and has_src_col and col_name not in self._on:
                     # update_all: use source column
                     cond = is_matched
-                    if pred_str:
-                        cond = cond & _parse_predicate(pred_str, self._source_alias, self._target_alias)
+                    if pred_str is not None:
+                        resolved_pred = _resolve_predicate(pred_str)
+                        cond = cond & resolved_pred
                     expr = when(cond, col(src_col)).otherwise(expr)
                 elif updates and col_name in updates:
                     cond = is_matched
-                    if pred_str:
-                        cond = cond & _parse_predicate(pred_str, self._source_alias, self._target_alias)
-                    update_expr = _resolve_expr(updates[col_name], self._source_alias, self._target_alias, self._on)
+                    if pred_str is not None:
+                        resolved_pred = _resolve_predicate(pred_str)
+                        cond = cond & resolved_pred
+                    update_expr = _resolve_update_val(updates[col_name])
                     expr = when(cond, update_expr).otherwise(expr)
 
             # Apply WHEN NOT MATCHED BY SOURCE UPDATE
             for updates, pred_str in self._not_matched_by_source_updates:
                 if updates and col_name in updates:
                     cond = is_target_only
-                    if pred_str:
-                        cond = cond & _parse_predicate(pred_str, self._source_alias, self._target_alias)
-                    update_expr = _resolve_expr(updates[col_name], self._source_alias, self._target_alias, self._on)
+                    if pred_str is not None:
+                        resolved_pred = _resolve_predicate(pred_str)
+                        cond = cond & resolved_pred
+                    update_expr = _resolve_update_val(updates[col_name])
                     expr = when(cond, update_expr).otherwise(expr)
 
             # Apply WHEN NOT MATCHED INSERT (source-only rows)
@@ -963,17 +1025,19 @@ class DistributedDeltaMergeBuilder:
                 if updates is None and self._insert_all and has_src_col:
                     # insert_all: use source column
                     cond = is_source_only
-                    if pred_str:
-                        cond = cond & _parse_predicate(pred_str, self._source_alias, self._target_alias)
+                    if pred_str is not None:
+                        resolved_pred = _resolve_predicate(pred_str)
+                        cond = cond & resolved_pred
                     if col_name in self._on:
                         pass  # join key already unified
                     else:
                         expr = when(cond, col(src_col)).otherwise(expr)
                 elif updates and col_name in updates:
                     cond = is_source_only
-                    if pred_str:
-                        cond = cond & _parse_predicate(pred_str, self._source_alias, self._target_alias)
-                    insert_expr = _resolve_expr(updates[col_name], self._source_alias, self._target_alias, self._on)
+                    if pred_str is not None:
+                        resolved_pred = _resolve_predicate(pred_str)
+                        cond = cond & resolved_pred
+                    insert_expr = _resolve_update_val(updates[col_name])
                     expr = when(cond, insert_expr).otherwise(expr)
                 elif updates is None and self._insert_all and not has_src_col and col_name not in self._on:
                     # Column exists in target but not source — NULL for inserts
@@ -1185,39 +1249,66 @@ def _parse_predicate(
     pred_str: str,
     source_alias: str,
     target_alias: str,
+    on: list[str] | None = None,
 ) -> Any:
     """Parse a simple predicate string into a Daft boolean expression.
 
-    Supports: "source.col != target.col", "source.col IS NOT NULL", etc.
-    For complex predicates, this is a best-effort parser.
+    Supports compound AND predicates, e.g.:
+      "source.col != target.col AND source.id IS NOT NULL"
+    Each clause supports: ``=``, ``!=``, ``IS NULL``, ``IS NOT NULL``.
     """
+    import re
+
     from daft import col, lit
 
+    on = on or []
+    pred_str = pred_str.strip()
+
+    # Split on AND (case-insensitive) and combine with &
+    parts = [p.strip() for p in re.split(r"\s+[Aa][Nn][Dd]\s+", pred_str)]
+    if len(parts) > 1:
+        combined = _parse_single_predicate(parts[0], source_alias, target_alias, on)
+        for part in parts[1:]:
+            combined = combined & _parse_single_predicate(part, source_alias, target_alias, on)
+        return combined
+
+    return _parse_single_predicate(pred_str, source_alias, target_alias, on)
+
+
+def _parse_single_predicate(
+    pred_str: str,
+    source_alias: str,
+    target_alias: str,
+    on: list[str] | None = None,
+) -> Any:
+    """Parse a single predicate clause (no AND) into a Daft boolean expression."""
+    from daft import col, lit
+
+    on = on or []
     pred_str = pred_str.strip()
 
     # Handle "col1 != col2"
     if " != " in pred_str:
         left, right = pred_str.split(" != ", 1)
-        left_expr = _resolve_expr(left.strip(), source_alias, target_alias, [])
-        right_expr = _resolve_expr(right.strip(), source_alias, target_alias, [])
+        left_expr = _resolve_expr(left.strip(), source_alias, target_alias, on)
+        right_expr = _resolve_expr(right.strip(), source_alias, target_alias, on)
         return left_expr != right_expr
 
     # Handle "col1 = col2" (equality)
     if " = " in pred_str and " != " not in pred_str and "IS" not in pred_str.upper():
         left, right = pred_str.split(" = ", 1)
-        left_expr = _resolve_expr(left.strip(), source_alias, target_alias, [])
-        right_expr = _resolve_expr(right.strip(), source_alias, target_alias, [])
+        left_expr = _resolve_expr(left.strip(), source_alias, target_alias, on)
+        right_expr = _resolve_expr(right.strip(), source_alias, target_alias, on)
         return left_expr == right_expr
 
     # Handle "col IS NOT NULL"
     if " IS NOT NULL" in pred_str.upper():
-        col_str = pred_str.upper().replace(" IS NOT NULL", "").strip()
-        col_expr = _resolve_expr(pred_str.split(" IS ")[0].strip(), source_alias, target_alias, [])
+        col_expr = _resolve_expr(pred_str.split(" IS ")[0].strip(), source_alias, target_alias, on)
         return col_expr.not_null()
 
     # Handle "col IS NULL"
     if " IS NULL" in pred_str.upper():
-        col_expr = _resolve_expr(pred_str.split(" IS ")[0].strip(), source_alias, target_alias, [])
+        col_expr = _resolve_expr(pred_str.split(" IS ")[0].strip(), source_alias, target_alias, on)
         return col_expr.is_null()
 
     # Fallback: always true
