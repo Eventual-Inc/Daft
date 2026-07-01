@@ -190,6 +190,16 @@ impl SpillStore {
             .expect("read_bucket called on a non-spilled bucket");
         read_ipc_file(path)
     }
+
+    /// Open a streaming reader over `bucket` that yields one `RecordBatch` at a time (keeping only a
+    /// single batch resident), or `None` if the bucket stayed in memory. Used by the hash join to
+    /// stream spilled probe rows back at finalize without materializing the whole bucket.
+    pub fn open_bucket(&self, bucket: usize) -> DaftResult<Option<SpillRunReader>> {
+        match &self.bucket_paths[bucket] {
+            Some(path) => Ok(Some(SpillRunReader::open(path)?)),
+            None => Ok(None),
+        }
+    }
 }
 
 impl Drop for SpillStore {

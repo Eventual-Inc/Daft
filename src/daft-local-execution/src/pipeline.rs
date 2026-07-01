@@ -449,15 +449,28 @@ pub fn translate_physical_plan_to_pipeline(
     Ok((pipeline_node, input_senders))
 }
 
-/// Build the optional `SpillConfig` for one operator. Applies the global pool size from config to
-/// the shared memory manager, honours the per-operator opt-out (`Some(0)` → disabled) and the
-/// deprecated positive-value cap.
+/// Build the optional `SpillConfig` for one operator. Spill is **disabled by default**: it is
+/// enabled only when the user opts in, either globally via a positive `spill_pool_bytes` (the
+/// preferred switch) or per-operator via a positive threshold (legacy, also acts as a cap). A
+/// per-operator `Some(0)` force-disables that operator even when the pool is set. When enabled, the
+/// pool size comes from `spill_pool_bytes` (or the memory-manager default when only a per-operator
+/// threshold is set).
 fn build_spill_config(
     opt_out: Option<usize>,
     cfg: &DaftExecutionConfig,
 ) -> Option<crate::spill::SpillConfig> {
+    // Per-operator explicit disable always wins.
     if matches!(opt_out, Some(0)) {
-        return None; // operator opted out
+        return None;
+    }
+    let pool_enabled = matches!(cfg.spill_pool_bytes, Some(n) if n > 0);
+    let per_op_cap = match opt_out {
+        Some(n) if n > 0 => Some(n),
+        _ => None,
+    };
+    // Disabled by default: nothing turns spill on unless the user opts in.
+    if !pool_enabled && per_op_cap.is_none() {
+        return None;
     }
     let manager = crate::resource_manager::get_or_init_memory_manager();
     if let Some(n) = cfg.spill_pool_bytes
@@ -467,9 +480,7 @@ fn build_spill_config(
     }
     let pool = manager.spill_pool_bytes() as usize;
     let mut sc = crate::spill::SpillConfig::new(pool, cfg.flight_shuffle_dirs.clone());
-    if let Some(n) = opt_out
-        && n > 0
-    {
+    if let Some(n) = per_op_cap {
         if !DEPRECATION_WARNED.swap(true, Ordering::Relaxed) {
             tracing::warn!(
                 "Per-operator spill threshold ({n} bytes) is deprecated; using shared spill pool with \
@@ -1912,4 +1923,27 @@ fn physical_plan_to_pipeline(
     };
 
     Ok(pipeline_node)
+}
+
+#[cfg(test)]
+mod spill_config_tests {
+    use super::*;
+
+    #[test]
+    fn spill_is_disabled_by_default() {
+        let cfg = DaftExecutionConfig::default();
+        // Off by default: no operator spills unless the user opts in.
+        assert!(build_spill_config(None, &cfg).is_none());
+        // Explicit per-operator disable stays off.
+        assert!(build_spill_config(Some(0), &cfg).is_none());
+        // Opt in via a positive per-operator threshold (legacy path).
+        assert!(build_spill_config(Some(1024), &cfg).is_some());
+
+        // Opt in via the shared-pool master switch.
+        let mut cfg_pool = DaftExecutionConfig::default();
+        cfg_pool.spill_pool_bytes = Some(1 << 20);
+        assert!(build_spill_config(None, &cfg_pool).is_some());
+        // ...but a per-operator opt-out still force-disables that operator.
+        assert!(build_spill_config(Some(0), &cfg_pool).is_none());
+    }
 }

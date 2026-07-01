@@ -6,7 +6,7 @@ use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
-use daft_recordbatch::{ProbeState, ProbeableBuilder, RecordBatch, make_probeable_builder};
+use daft_recordbatch::{ProbeState, RecordBatch, make_probeable_builder};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use tracing::{Span, info_span};
@@ -27,8 +27,8 @@ use crate::{
         outer_join::{finalize_outer, probe_outer},
     },
     pipeline::NodeName,
-    resource_manager::{MemoryReservation, SpillableBuckets, get_or_init_memory_manager,
-        reconcile_reservation},
+    resource_manager::{MemoryManager, MemoryReservation, SpillableBuckets,
+        get_or_init_memory_manager, reconcile_reservation},
     spill::{SpillConfig, SpillStore, SpillWriter},
 };
 
@@ -39,15 +39,23 @@ struct PartitionedBuildData {
     per_partition_tables: Vec<Vec<RecordBatch>>,
     per_partition_size_bytes: Vec<usize>,
     spill_writer: SpillWriter,
+}
+
+/// Spill context: present whenever spill is configured for this operator. Holds the shared
+/// memory reservation used to detect real memory pressure before escalating to the partitioned
+/// build layout.
+struct SpillState {
+    config: SpillConfig,
     reservation: MemoryReservation,
-    cap: Option<u64>,
 }
 
 pub(crate) struct HashJoinBuildState {
-    // In-memory (single partition) path.
-    probe_table_builder: Box<dyn ProbeableBuilder>,
+    // Accumulated build batches (raw). The probe hash table is built once at `finalize` from these,
+    // not incrementally — so escalation to the partitioned layout wastes no probe-table work.
     tables: Vec<RecordBatch>,
-    // Spill path (None = in-memory only).
+    // Spill context: `Some` whenever spill is enabled (whether or not we've escalated yet).
+    spill: Option<SpillState>,
+    // Partitioned+spill layout. `None` until real memory pressure forces escalation.
     partitioned: Option<PartitionedBuildData>,
 }
 
@@ -70,7 +78,12 @@ pub(crate) struct HashJoinProbeState {
     // Spill-path extensions (empty/None when partition_count == 1).
     pub(crate) in_memory_probes: Vec<Option<ProbeState>>,
     pub(crate) in_memory_bitmap_builders: Vec<Option<IndexBitmapBuilder>>,
-    pub(crate) probe_spill_buffers: Vec<Vec<RecordBatch>>,
+    /// Probe rows destined for spilled build partitions are written straight to disk (one bucket per
+    /// partition) instead of buffered in memory, keeping the probe side memory-bounded regardless of
+    /// its size. Created lazily on the first spilled-partition probe row.
+    pub(crate) probe_spill_writer: Option<SpillWriter>,
+    /// Spill directories for `probe_spill_writer` (empty when partition_count == 1).
+    pub(crate) spill_dirs: Vec<String>,
     pub(crate) spill_store: Option<Arc<SpillStore>>,
     pub(crate) partition_count: usize,
 }
@@ -78,52 +91,26 @@ pub(crate) struct HashJoinProbeState {
 // ─── HashJoinBuildState impl ──────────────────────────────────────────────────
 
 impl HashJoinBuildState {
-    fn new_in_memory(
-        key_schema: &SchemaRef,
-        nulls_equal_aware: Option<&Vec<bool>>,
-        track_indices: bool,
-    ) -> DaftResult<Self> {
-        Ok(Self {
-            probe_table_builder: make_probeable_builder(
-                key_schema.clone(),
-                nulls_equal_aware,
-                track_indices,
-            )?,
+    fn new_in_memory() -> Self {
+        Self {
             tables: Vec::new(),
+            spill: None,
             partitioned: None,
-        })
+        }
     }
 
-    fn new_partitioned(
-        key_schema: &SchemaRef,
-        nulls_equal_aware: Option<&Vec<bool>>,
-        track_indices: bool,
-        build_schema: &SchemaRef,
-        config: &SpillConfig,
-    ) -> DaftResult<Self> {
-        let partition_count = config.partition_count();
-        let spill_writer = SpillWriter::new(
-            partition_count,
-            build_schema,
-            config.spill_dirs.clone(),
-            "daft_join_spill_",
-        )?;
-        Ok(Self {
-            probe_table_builder: make_probeable_builder(
-                key_schema.clone(),
-                nulls_equal_aware,
-                track_indices,
-            )?,
+    /// Spill-enabled build state. Starts in the lean in-memory layout (no hashing/scattering);
+    /// escalates to the partitioned+spill layout only when `add_tables` detects real memory
+    /// pressure (the shared spill reservation is denied).
+    fn new_spillable(config: SpillConfig, manager: &Arc<MemoryManager>) -> Self {
+        Self {
             tables: Vec::new(),
-            partitioned: Some(PartitionedBuildData {
-                partition_count,
-                per_partition_tables: vec![Vec::new(); partition_count],
-                per_partition_size_bytes: vec![0; partition_count],
-                spill_writer,
-                reservation: get_or_init_memory_manager().reservation(),
-                cap: config.cap(),
+            spill: Some(SpillState {
+                config,
+                reservation: manager.reservation(),
             }),
-        })
+            partitioned: None,
+        }
     }
 
     fn add_tables(&mut self, input: &MicroPartition, params: &HashJoinParams) -> DaftResult<()> {
@@ -139,12 +126,13 @@ impl HashJoinBuildState {
                     pd.per_partition_tables[p].push(sub_batch);
                 }
             }
-            let cap = pd.cap;
+            let Self { partitioned, spill, .. } = self;
+            let pd = partitioned.as_mut().expect("checked Some above");
+            let spill_state = spill.as_mut().expect("partitioned implies spill enabled");
             let PartitionedBuildData {
                 per_partition_tables,
                 per_partition_size_bytes,
                 spill_writer,
-                reservation,
                 ..
             } = pd;
             let mut buckets = JoinBuildBuckets {
@@ -152,22 +140,87 @@ impl HashJoinBuildState {
                 per_partition_size_bytes,
                 spill_writer,
             };
-            reconcile_reservation(&mut buckets, reservation, cap)?;
+            reconcile_reservation(&mut buckets, &mut spill_state.reservation, spill_state.config.cap())?;
         } else {
-            let input_tables = input.record_batches();
-            if input_tables.is_empty() {
-                let empty_table = RecordBatch::empty(Some(input.schema()));
-                let join_keys = empty_table.eval_expression_list(&params.build_on)?;
-                self.probe_table_builder.add_table(&join_keys)?;
-                self.tables.push(empty_table);
+            // Accumulate raw batches only; the probe table is built once at finalize (an empty
+            // build is handled there by seeding a schema-carrying empty batch).
+            for table in input.record_batches() {
+                self.tables.push(table.clone());
+            }
+
+            let denied = if let Some(spill_state) = &mut self.spill {
+                let added = input.size_bytes() as u64;
+                let over_cap = spill_state
+                    .config
+                    .cap()
+                    .is_some_and(|c| spill_state.reservation.held() + added > c);
+                over_cap || !spill_state.reservation.try_grow(added)
             } else {
-                for table in input_tables {
-                    self.tables.push(table.clone());
-                    let join_keys = table.eval_expression_list(&params.build_on)?;
-                    self.probe_table_builder.add_table(&join_keys)?;
-                }
+                false
+            };
+            if denied {
+                self.escalate(params)?;
             }
         }
+        Ok(())
+    }
+
+    /// Escalate from the in-memory layout to the partitioned+spill layout. Called once, the first
+    /// time the shared spill reservation is denied (real memory pressure).
+    fn escalate(&mut self, params: &HashJoinParams) -> DaftResult<()> {
+        let spill_state = self
+            .spill
+            .as_ref()
+            .expect("escalate only called when spill is enabled");
+        let partition_count = spill_state.config.partition_count();
+        let spill_dirs = spill_state.config.spill_dirs.clone();
+        let cap = spill_state.config.cap();
+
+        let build_schema = if params.build_on_left {
+            &params.left_schema
+        } else {
+            &params.right_schema
+        };
+        let spill_writer = SpillWriter::new(
+            partition_count,
+            build_schema,
+            spill_dirs,
+            "daft_join_spill_",
+        )?;
+
+        let mut per_partition_tables: Vec<Vec<RecordBatch>> = vec![Vec::new(); partition_count];
+        let mut per_partition_size_bytes: Vec<usize> = vec![0; partition_count];
+        for table in std::mem::take(&mut self.tables) {
+            let sub_batches = table.partition_by_hash(&params.build_on, partition_count)?;
+            for (p, sub_batch) in sub_batches.into_iter().enumerate() {
+                if sub_batch.is_empty() {
+                    continue;
+                }
+                per_partition_size_bytes[p] += sub_batch.size_bytes();
+                per_partition_tables[p].push(sub_batch);
+            }
+        }
+
+        let mut spill_writer = spill_writer;
+        {
+            let mut buckets = JoinBuildBuckets {
+                per_partition_tables: &mut per_partition_tables,
+                per_partition_size_bytes: &mut per_partition_size_bytes,
+                spill_writer: &mut spill_writer,
+            };
+            let spill_state = self
+                .spill
+                .as_mut()
+                .expect("escalate only called when spill is enabled");
+            reconcile_reservation(&mut buckets, &mut spill_state.reservation, cap)?;
+        }
+
+        self.partitioned = Some(PartitionedBuildData {
+            partition_count,
+            per_partition_tables,
+            per_partition_size_bytes,
+            spill_writer,
+        });
         Ok(())
     }
 
@@ -200,8 +253,7 @@ impl HashJoinBuildState {
                 params: op.params.clone(),
             })
         } else {
-            let pt = self.probe_table_builder.build();
-            let probe_state = ProbeState::new(pt, self.tables);
+            let probe_state = build_probe_state_from_batches(&self.tables, op)?;
             Ok(SpillableProbeState {
                 in_memory_probes: vec![Some(probe_state)],
                 spill_store: None,
@@ -415,18 +467,11 @@ impl JoinOperator for HashJoinOperator {
     fn make_build_state(&self) -> DaftResult<Self::BuildState> {
         tracing::debug!("make_build_state: spill_config={:?}", self.params.spill_config);
         match &self.params.spill_config {
-            None => HashJoinBuildState::new_in_memory(
-                &self.params.key_schema,
-                self.params.nulls_equal_aware.as_ref(),
-                self.params.track_indices,
-            ),
-            Some(config) => HashJoinBuildState::new_partitioned(
-                &self.params.key_schema,
-                self.params.nulls_equal_aware.as_ref(),
-                self.params.track_indices,
-                self.build_schema(),
-                config,
-            ),
+            None => Ok(HashJoinBuildState::new_in_memory()),
+            Some(config) => Ok(HashJoinBuildState::new_spillable(
+                config.clone(),
+                get_or_init_memory_manager(),
+            )),
         }
     }
 
@@ -473,7 +518,8 @@ impl JoinOperator for HashJoinOperator {
                 probe_state,
                 in_memory_probes: vec![],
                 in_memory_bitmap_builders: vec![],
-                probe_spill_buffers: vec![],
+                probe_spill_writer: None,
+                spill_dirs: vec![],
                 spill_store: None,
                 partition_count: 1,
             }
@@ -507,12 +553,19 @@ impl JoinOperator for HashJoinOperator {
                 (0..partition_count).map(|_| None).collect()
             };
 
+            let spill_dirs = finalized
+                .params
+                .spill_config
+                .as_ref()
+                .map(|c| c.spill_dirs.clone())
+                .unwrap_or_default();
             HashJoinProbeState {
                 probe_state: representative_probe_state,
                 bitmap_builder: None,
                 in_memory_probes: finalized.in_memory_probes,
                 in_memory_bitmap_builders,
-                probe_spill_buffers: vec![Vec::new(); partition_count],
+                probe_spill_writer: None,
+                spill_dirs,
                 spill_store: finalized.spill_store,
                 partition_count,
             }
@@ -577,7 +630,22 @@ impl JoinOperator for HashJoinOperator {
                                         outputs.push(out);
                                     }
                                 } else {
-                                    state.probe_spill_buffers[p].push(sub_batch);
+                                    // Build partition p is on disk; write the probe rows straight to
+                                    // disk too (streamed back at finalize) instead of buffering them
+                                    // in memory, so the probe side stays memory-bounded.
+                                    if state.probe_spill_writer.is_none() {
+                                        state.probe_spill_writer = Some(SpillWriter::new(
+                                            state.partition_count,
+                                            &sub_batch.schema,
+                                            state.spill_dirs.clone(),
+                                            "daft_join_probe_spill_",
+                                        )?);
+                                    }
+                                    state
+                                        .probe_spill_writer
+                                        .as_mut()
+                                        .expect("just created")
+                                        .write_batch(p, &sub_batch)?;
                                 }
                             }
                         }
@@ -607,6 +675,17 @@ impl JoinOperator for HashJoinOperator {
         let partition_count = states.first().map_or(1, |s| s.partition_count);
 
         if partition_count == 1 {
+            if !self.needs_bitmap() {
+                // Spill is configured but this join stayed in the lean in-memory layout
+                // (partition_count == 1, nothing spilled). A non-bitmap join (e.g. Inner) has no
+                // unmatched rows to emit and no spilled partitions to drain, so finalization is a
+                // no-op. This case only became reachable with adaptive spill: previously a
+                // spill-enabled join was always partitioned (partition_count >= 2), so only
+                // bitmap-tracking join types ever reached the in-memory finalize path.
+                return spawner
+                    .spawn(async move { Ok(None::<MicroPartition>) }, Span::current())
+                    .into();
+            }
             return self.finalize_probe_in_memory(states, spawner);
         }
 
@@ -635,7 +714,8 @@ impl JoinOperator for HashJoinOperator {
                                     bitmap_builder: s.in_memory_bitmap_builders[p].take(),
                                     in_memory_probes: vec![],
                                     in_memory_bitmap_builders: vec![],
-                                    probe_spill_buffers: vec![],
+                                    probe_spill_writer: None,
+                                    spill_dirs: vec![],
                                     spill_store: None,
                                     partition_count: 1,
                                 })
@@ -648,7 +728,19 @@ impl JoinOperator for HashJoinOperator {
                         }
                     }
 
-                    // 2. Finalize spilled partitions.
+                    // 2. Finalize spilled partitions. Probe rows for spilled partitions were written
+                    // to disk during the probe phase; close each worker's probe spill writer and
+                    // stream the rows back one batch at a time so the probe side stays bounded.
+                    let probe_stores: Vec<Option<SpillStore>> = {
+                        let mut v = Vec::with_capacity(states.len());
+                        for s in states.iter_mut() {
+                            v.push(match s.probe_spill_writer.take() {
+                                Some(w) => Some(w.finish()?),
+                                None => None,
+                            });
+                        }
+                        v
+                    };
                     let spill_store = states[0].spill_store.clone();
                     if let Some(store) = spill_store {
                         for p in 0..pc {
@@ -659,11 +751,6 @@ impl JoinOperator for HashJoinOperator {
                             if build_batches.is_empty() {
                                 continue;
                             }
-
-                            let probe_batches: Vec<RecordBatch> = states
-                                .iter_mut()
-                                .flat_map(|s| std::mem::take(&mut s.probe_spill_buffers[p]))
-                                .collect();
 
                             let mut builder = make_probeable_builder(
                                 params.key_schema.clone(),
@@ -683,20 +770,28 @@ impl JoinOperator for HashJoinOperator {
                                 None
                             };
 
-                            for probe_batch in &probe_batches {
-                                let mp = MicroPartition::new_loaded(
-                                    probe_batch.schema.clone(),
-                                    Arc::new(vec![probe_batch.clone()]),
-                                    None,
-                                );
-                                if let Some(out) = probe_dispatch(
-                                    &mp,
-                                    &probe_state,
-                                    bitmap_builder.as_mut(),
-                                    &params,
-                                    needs_bitmap,
-                                )? {
-                                    all_outputs.push(out);
+                            // Stream each worker's spilled probe rows for partition p from disk,
+                            // probing one batch at a time (only one probe batch resident).
+                            for probe_store in probe_stores.iter().flatten() {
+                                let Some(reader) = probe_store.open_bucket(p)? else {
+                                    continue;
+                                };
+                                for batch_res in reader {
+                                    let probe_batch = batch_res?;
+                                    let mp = MicroPartition::new_loaded(
+                                        probe_batch.schema.clone(),
+                                        Arc::new(vec![probe_batch]),
+                                        None,
+                                    );
+                                    if let Some(out) = probe_dispatch(
+                                        &mp,
+                                        &probe_state,
+                                        bitmap_builder.as_mut(),
+                                        &params,
+                                        needs_bitmap,
+                                    )? {
+                                        all_outputs.push(out);
+                                    }
                                 }
                             }
 
@@ -706,7 +801,8 @@ impl JoinOperator for HashJoinOperator {
                                     bitmap_builder,
                                     in_memory_probes: vec![],
                                     in_memory_bitmap_builders: vec![],
-                                    probe_spill_buffers: vec![],
+                                    probe_spill_writer: None,
+                                    spill_dirs: vec![],
                                     spill_store: None,
                                     partition_count: 1,
                                 };
@@ -773,7 +869,7 @@ impl JoinOperator for HashJoinOperator {
 
     fn needs_probe_finalization(&self) -> bool {
         // Need finalization if we track bitmaps (left/right/outer/anti/semi), OR if spill is
-        // configured (we must drain probe_spill_buffers against spilled build partitions).
+        // configured (we must drain spilled probe rows against spilled build partitions).
         self.needs_bitmap() || self.params.spill_config.is_some()
     }
 }
@@ -819,5 +915,104 @@ async fn finalize_one_bitmap_partition(
         JoinType::Anti => finalize_anti_semi(states, false).await,
         JoinType::Semi => finalize_anti_semi(states, true).await,
         _ => Ok(None),
+    }
+}
+
+// ─── Tests ────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use daft_core::{
+        prelude::{DataType, Field, Int64Array, Schema},
+        series::IntoSeries,
+    };
+    use daft_dsl::{expr::bound_expr::BoundExpr, resolved_col};
+    use daft_micropartition::MicroPartition;
+    use daft_recordbatch::RecordBatch;
+    use indexmap::IndexSet;
+
+    use super::*;
+    use crate::{resource_manager::MemoryManager, spill::SpillConfig};
+
+    /// Build a tiny single-column `k: Int64` HashJoinOperator + a small MicroPartition of build
+    /// rows, sharing the schema/expr plumbing needed by both regression tests below.
+    fn small_join_fixture() -> (HashJoinOperator, MicroPartition) {
+        let schema: SchemaRef = Arc::new(Schema::new(vec![Field::new("k", DataType::Int64)]));
+
+        let build_on_expr = vec![
+            BoundExpr::try_new(resolved_col("k"), &schema).expect("bind build_on"),
+        ];
+        let probe_on_expr = vec![
+            BoundExpr::try_new(resolved_col("k"), &schema).expect("bind probe_on"),
+        ];
+
+        let op = HashJoinOperator::new(
+            schema.clone(),
+            build_on_expr,
+            probe_on_expr,
+            None,
+            false,
+            JoinType::Inner,
+            true,
+            schema.clone(),
+            schema.clone(),
+            IndexSet::new(),
+            schema.clone(),
+            None, // spill_config set per-test via direct HashJoinBuildState construction
+        )
+        .expect("construct HashJoinOperator");
+
+        let series = Int64Array::from_vec("k", vec![1, 2, 3]).into_series();
+        let batch = RecordBatch::from_nonempty_columns(vec![series]).expect("build record batch");
+        let mp = MicroPartition::new_loaded(schema, Arc::new(vec![batch]), None);
+
+        (op, mp)
+    }
+
+    #[test]
+    fn spill_enabled_small_build_stays_in_memory() {
+        let (op, mp) = small_join_fixture();
+
+        let manager = Arc::new(MemoryManager::new());
+        // Huge pool: the reservation should never be denied for this tiny build.
+        manager.set_spill_pool_bytes(1 << 40);
+
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let config = SpillConfig::new(1 << 40, vec![temp_dir.path().to_string_lossy().into_owned()]);
+
+        let mut state = HashJoinBuildState::new_spillable(config, &manager);
+
+        state.add_tables(&mp, &op.params).expect("add_tables");
+
+        let finalized = state.finalize(&op).expect("finalize");
+
+        // Regression: with spill enabled but no real memory pressure, the build must stay on the
+        // lean in-memory (single-partition) path, not eagerly hash-partition every batch.
+        assert_eq!(finalized.partition_count, 1);
+    }
+
+    #[test]
+    fn spill_enabled_escalates_under_pressure() {
+        let (op, mp) = small_join_fixture();
+
+        let manager = Arc::new(MemoryManager::new());
+        // Tiny pool: the very first reservation grow attempt must be denied, forcing escalation.
+        manager.set_spill_pool_bytes(1);
+
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        // pool_bytes = 1<<30 => partition_count() == 4 (see SpillConfig::partition_count).
+        let config = SpillConfig::new(1 << 30, vec![temp_dir.path().to_string_lossy().into_owned()]);
+        assert_eq!(config.partition_count(), 4);
+
+        let mut state = HashJoinBuildState::new_spillable(config, &manager);
+
+        state.add_tables(&mp, &op.params).expect("add_tables");
+
+        let finalized = state.finalize(&op).expect("finalize");
+
+        // Under real memory pressure, the build must escalate to the partitioned+spill layout.
+        assert!(finalized.partition_count > 1);
     }
 }

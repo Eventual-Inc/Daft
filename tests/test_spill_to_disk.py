@@ -312,18 +312,20 @@ def test_hash_join_spills_by_default():
         assert out["w"] == list(range(20000))
 
 
+@pytest.mark.timeout(60)
 @pytest.mark.parametrize("how", ["inner", "left", "right", "outer", "semi", "anti"])
-def test_hash_join_partial_overlap_default_config(how):
-    # Regression for the partitioned-hash-join deadlock: under the default (spill-enabled) config the
-    # hash join runs in partitioned mode. A probe key that hashes to a partition with NO matching
-    # build rows produced an *empty* in-memory build partition, which made the probe error with
-    # "Need at least 1 Table for GrowableTable"; that error was not propagated, so the query hung
-    # silently. Small, partially-overlapping data keeps the join partitioned without actually
-    # spilling, exercising exactly that empty-build-partition path. (The pre-existing
-    # test_hash_join_spills_by_default uses fully-overlapping keys and never hits it.)
+def test_hash_join_partial_overlap_partitioned(how):
+    # Regression for the partitioned-hash-join empty-build-partition deadlock: a probe key that
+    # hashes to a partition with NO matching build rows produced an *empty* in-memory build
+    # partition, which made the probe error with "Need at least 1 Table for GrowableTable"; that
+    # error was not propagated, so the query hung silently. A 1-byte spill pool forces the adaptive
+    # build to escalate to the partitioned+spill layout even for this tiny input, exercising exactly
+    # that empty-build-partition path. (With a normal pool the build now stays in-memory and never
+    # partitions — that path is covered by test_hash_join_inner_spill_enabled_in_memory.)
     left = daft.from_pydict({"k": [1, 2, 3], "va": ["a", "b", "c"]})
     right = daft.from_pydict({"k": [2, 3, 4], "vb": ["x", "y", "z"]})
-    got = sorted(left.join(right, on="k", how=how).to_pydict()["k"])
+    with daft.context.execution_config_ctx(spill_pool_bytes=1):  # force escalation → partitioned
+        got = sorted(left.join(right, on="k", how=how).to_pydict()["k"])
     expected = {
         "inner": [2, 3],
         "left": [1, 2, 3],
@@ -332,6 +334,48 @@ def test_hash_join_partial_overlap_default_config(how):
         "semi": [2, 3],
         "anti": [1],
     }[how]
+    assert got == expected
+
+
+@pytest.mark.timeout(60)
+@pytest.mark.parametrize("how", ["inner", "left", "right", "outer", "semi", "anti"])
+def test_hash_join_inner_spill_enabled_in_memory(how):
+    # Regression: adaptive spill made "spill enabled + partition_count == 1" reachable for the first
+    # time. A small join stays on the lean in-memory path (never escalates) yet spill IS configured,
+    # so needs_probe_finalization() is True and finalize_probe still runs. For a non-bitmap join
+    # (Inner) there is no bitmap and nothing spilled, but finalize_probe_in_memory used to
+    # `unreachable!()` on such types — panicking in a worker thread, which was swallowed, so the
+    # query hung. A large pool keeps the tiny build in-memory (no escalation, no partition_by_hash).
+    left = daft.from_pydict({"k": [1, 2, 3], "va": ["a", "b", "c"]})
+    right = daft.from_pydict({"k": [2, 3, 4], "vb": ["x", "y", "z"]})
+    with daft.context.execution_config_ctx(spill_pool_bytes=1 << 30):  # huge pool → stays in-memory
+        got = sorted(left.join(right, on="k", how=how).to_pydict()["k"])
+    expected = {
+        "inner": [2, 3],
+        "left": [1, 2, 3],
+        "right": [2, 3, 4],
+        "outer": [1, 2, 3, 4],
+        "semi": [2, 3],
+        "anti": [1],
+    }[how]
+    assert got == expected
+
+
+@pytest.mark.timeout(90)
+@pytest.mark.parametrize("how", ["inner", "left", "right", "outer", "semi", "anti"])
+def test_hash_join_probe_side_spills(how):
+    # Grace-join probe spilling: probe rows destined for spilled build partitions are written to disk
+    # and streamed back at finalize (instead of buffered in memory), so the probe side stays
+    # memory-bounded. A 1-byte pool forces both the build and probe sides to spill. Partially
+    # overlapping keys exercise unmatched-row handling on both sides for every join type. Results
+    # must match the pure in-memory baseline.
+    n = 20000
+    left = daft.from_pydict({"k": list(range(n)), "lv": list(range(n))})
+    right = daft.from_pydict({"k": list(range(n // 2, n + n // 2)), "rv": list(range(n))})
+    with daft.context.execution_config_ctx(spill_pool_bytes=1):  # force build + probe spill
+        got = sorted(left.join(right, on="k", how=how).to_pydict()["k"])
+    with daft.context.execution_config_ctx(hash_join_spill_threshold_bytes=0):  # in-memory baseline
+        expected = sorted(left.join(right, on="k", how=how).to_pydict()["k"])
     assert got == expected
 
 
