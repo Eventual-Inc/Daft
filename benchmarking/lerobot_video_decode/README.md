@@ -66,6 +66,28 @@ removing it. At 240 frames, batched on one worker (2.2s) is still faster than th
 original on eight (6.0s). Local copies, so this is decode-compute; parallel network
 fetch of distinct shards is an extra real-cluster win not shown here.
 
+## Tradeoffs
+
+The batched decode does one forward pass from the earliest to the latest timestamp
+in a batch, so its cost depends on how spread out those timestamps are:
+
+- **Dense consecutive frames (the common case - reading full episodes):** optimal.
+  One open, one pass, no redundant decoding.
+- **Sparse timestamps in a batch:** the pass decodes the gaps too (e.g. 5 frames
+  spread across a 20s shard decodes ~600 frames vs ~20 for a per-target seek). Even
+  so, it still wins in the normal remote setup, where one saved download (~1s) is
+  worth more than decoding the extra frames (~1s for a whole shard). It only loses to
+  a per-target seek when there is no network *and* the timestamps are sparse.
+- **Huge shards:** memory is bounded (only the best frame per row is kept, at most one
+  per batch row), so shard length does not blow up memory. Time scales with the decoded
+  span; a batch whose timestamps span more than the 20,000-frame decode budget raises
+  rather than decoding unboundedly. Not reachable with the default 16-consecutive-frame
+  batches, but possible under heavy subsampling.
+
+A gap-based clustering pass (decode contiguous runs, re-seek across large gaps, reuse
+the open) would be best-of-both for the sparse case, but it is extra complexity for a
+narrow benefit and is left as a possible follow-up.
+
 ## Running
 
 ```bash
