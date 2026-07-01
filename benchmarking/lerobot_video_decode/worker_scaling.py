@@ -1,10 +1,10 @@
-"""Original vs batched decode across worker counts.
+"""Original vs batched decode, wall-vs-frames, one panel per worker count.
 
-Answers: can more workers let the per-frame version catch up? No - the original
-re-opens and re-decodes from the keyframe for every frame, and parallelism only
-spreads that redundant work. Uses dense consecutive frames (the real LeRobot case)
-over local shard copies, and returns a scalar per row so decode compute (not image
-serialization) is what is measured. Downloads a ~7MB shard on first run.
+Reproduces the original-vs-batched frames sweep at 1/2/4/8 worker processes to show
+that more workers do not let the per-frame version catch up: at every worker count
+the original grows steeply with frame count (it re-opens and re-decodes from the
+keyframe per frame) while batched stays low. Dense consecutive frames over local
+shard copies, scalar return to isolate decode compute. Downloads a ~7MB shard first.
 
     python worker_scaling.py
 """
@@ -34,17 +34,17 @@ SHARD_URL = (
 )
 SHARDS = 8
 FPS = 30
-NFRAMES = 30  # dense consecutive frames per shard
-TOL = 1.0 / FPS / 2.0
+FRAMES_PER_SHARD = [5, 10, 20, 30]  # x-axis: total frames = SHARDS * this
 WORKERS = [1, 2, 4, 8]
+TOL = 1.0 / FPS / 2.0
 
 
 @func(return_dtype=DataType.float64(), use_process=True)
-def orig_mean(file, from_ts, frame_ts, tol):
+def orig_mean(file, frame_ts, tol):
     """Original per-row behavior: reopen + seek-to-keyframe + decode forward, per frame."""
     import av
 
-    abs_ts = float(from_ts) + float(frame_ts)
+    abs_ts = float(frame_ts)
     tail = max(0.1, float(tol) * 50.0, 1.0 / 24.0)
     best = (1e9, 0.0)
     with file.open() as f_open, av.open(f_open) as c:
@@ -63,17 +63,16 @@ def orig_mean(file, from_ts, frame_ts, tol):
 
 
 @func.batch(return_dtype=DataType.float64(), use_process=True)
-def batched_mean(files, from_col, frame_col, tol):
+def batched_mean(files, frame_col, tol):
     """Batched: group rows by shard, decode the span once."""
     import av
 
     fl = files.to_pylist()
-    fr = from_col.to_pylist()
     fm = frame_col.to_pylist()
     by = {}
     sf = {}
     for i, f in enumerate(fl):
-        by.setdefault(f.path, []).append((i, float(fr[i]) + float(fm[i])))
+        by.setdefault(f.path, []).append((i, float(fm[i])))
         sf[f.path] = f
     res = [0.0] * len(fl)
     for path, targets in by.items():
@@ -112,21 +111,20 @@ def ensure_shards():
     return out
 
 
-def build_df(shards):
-    urls, from_vals, frame_vals = [], [], []
+def build_df(shards, frames_per_shard):
+    urls, frame_vals = [], []
     for s in shards:
-        for i in range(NFRAMES):
+        for i in range(frames_per_shard):
             urls.append(s)
-            from_vals.append(0.0)
             frame_vals.append(i / FPS)
-    df = daft.from_pydict({"url": urls, "from": from_vals, "frame": frame_vals})
-    return df.with_column("v", video_file(df["url"])).into_batches(NFRAMES)
+    df = daft.from_pydict({"url": urls, "frame": frame_vals})
+    return df.with_column("v", video_file(df["url"])).into_batches(frames_per_shard)
 
 
-def run(kind, workers, shards):
-    df = build_df(shards)
+def run(kind, workers, shards, frames_per_shard):
+    df = build_df(shards, frames_per_shard)
     fn = (orig_mean if kind == "orig" else batched_mean).with_concurrency(workers)
-    df = df.with_column("m", fn(df["v"], df["from"], df["frame"], TOL))
+    df = df.with_column("m", fn(df["v"], df["frame"], TOL))
     start = time.perf_counter()
     df.select("m").collect()
     return time.perf_counter() - start
@@ -134,37 +132,39 @@ def run(kind, workers, shards):
 
 def main():
     shards = ensure_shards()
-    print(f"{SHARDS} shards x {NFRAMES} consecutive frames = {SHARDS * NFRAMES} rows\n")
-    print(f"{'workers':>7}  {'original':>9}  {'batched':>9}  {'ratio':>6}")
-    orig, batched = [], []
+    data = {}
     for w in WORKERS:
-        o = run("orig", w, shards)
-        b = run("batched", w, shards)
-        orig.append(o)
-        batched.append(b)
-        print(f"{w:>7}  {o:>8.2f}s  {b:>8.2f}s  {o / b:>5.1f}x", flush=True)
+        orig, batched = [], []
+        for fpp in FRAMES_PER_SHARD:
+            orig.append(run("orig", w, shards, fpp))
+            batched.append(run("batched", w, shards, fpp))
+        data[w] = {"orig": orig, "batched": batched}
+        print(f"workers={w}: orig={[round(x, 1) for x in orig]} batched={[round(x, 1) for x in batched]}", flush=True)
 
-    (HERE / "worker_scaling.json").write_text(json.dumps({"workers": WORKERS, "orig": orig, "batched": batched}))
+    (HERE / "worker_scaling.json").write_text(json.dumps({"fpp": FRAMES_PER_SHARD, "shards": SHARDS, "data": data}))
 
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    fig, ax = plt.subplots(figsize=(7, 4.5))
-    ax.plot(WORKERS, orig, "o-", color="#d62728", label="original (open+decode per frame)")
-    ax.plot(WORKERS, batched, "s-", color="#2ca02c", label="batched (per shard)")
-    ax.set_title(f"Original vs batched across worker processes\n({SHARDS} shards x {NFRAMES} consecutive frames)")
-    ax.set_xlabel("worker processes")
-    ax.set_ylabel("wall time (s)")
-    ax.set_xticks(WORKERS)
-    ax.set_ylim(bottom=0)
-    ax.legend()
-    ax.grid(True, alpha=0.3)
+    x = [f * SHARDS for f in FRAMES_PER_SHARD]
+    ymax = max(max(v["orig"]) for v in data.values()) * 1.1
+    fig, axes = plt.subplots(2, 2, figsize=(11, 8), sharex=True)
+    for ax, w in zip(axes.flat, WORKERS):
+        ax.plot(x, data[w]["orig"], "o-", color="#d62728", label="original")
+        ax.plot(x, data[w]["batched"], "s-", color="#2ca02c", label="batched")
+        ax.set_title(f"{w} worker" + ("s" if w > 1 else ""))
+        ax.set_ylim(0, ymax)
+        ax.grid(True, alpha=0.3)
+        ax.legend()
+        ax.set_xlabel("total frames")
+        ax.set_ylabel("wall time (s)")
+    fig.suptitle(f"Original vs batched decode, by worker count ({SHARDS} shards)", fontsize=13)
     fig.tight_layout()
     CHARTS.mkdir(exist_ok=True)
     fig.savefig(CHARTS / "chart_workers.png", dpi=130)
-    print("\nwrote charts/chart_workers.png")
+    print("wrote charts/chart_workers.png")
 
 
 if __name__ == "__main__":
