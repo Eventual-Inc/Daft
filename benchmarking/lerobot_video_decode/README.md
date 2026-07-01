@@ -26,14 +26,14 @@ every frame.
 
 ## The fix: batched decode
 
-`_decode_lerobot_video_timestamp` in `daft/datasets/lerobot.py` is now a
+`_decode_lerobot_video_timestamp` in [`daft/datasets/lerobot.py`](../../daft/datasets/lerobot.py) is now a
 `@daft.func.batch` UDF. Within each batch it groups rows by shard path, opens each
 shard once, and does a single forward decode assigning the closest frame to every
 requested timestamp. Output is **byte-identical** to the old per-row decode.
 
 ### Original vs batched (rows 1→10)
 
-`sweep.py` - the original grows linearly to ~34s; the batched version stays flat at
+[`sweep.py`](sweep.py) - the original grows linearly to ~34s; the batched version stays flat at
 ~4s (all 10 frames share one shard → one open).
 
 ![original vs batched](charts/chart_old_vs_new.png)
@@ -53,7 +53,7 @@ batched decode survives process serialization. Each worker/process opens the sha
 in its own batches once (file handles are not shared across processes); partition by
 shard to make that one download per shard per worker.
 
-How does the change hold up as the number of workers grows? `worker_scaling.py`
+How does the change hold up as the number of workers grows? [`worker_scaling.py`](worker_scaling.py)
 reproduces the original-vs-batched frames sweep at 1/2/4/8 worker processes (8
 shards, dense consecutive frames, scalar return to isolate decode compute):
 
@@ -77,7 +77,7 @@ in a batch, so its cost depends on how spread out those timestamps are:
 - **Sparse timestamps in a batch:** the pass decodes the gaps too (e.g. 5 frames
   spread across a 20s shard decodes ~600 frames vs ~20 for a per-target seek). It
   still wins remotely, because one saved download is worth more than the extra
-  decoding. Remote, frames spread across the whole shard (`sparse.py`):
+  decoding. Remote, frames spread across the whole shard ([`sparse.py`](sparse.py)):
 
   ![sparse](charts/chart_sparse.png)
 
@@ -93,7 +93,7 @@ in a batch, so its cost depends on how spread out those timestamps are:
 - **Row order (holds as data scales):** grouping happens per batch, so the win assumes
   a shard's rows land in the same batch. The reader emits rows sorted by
   `(episode_index, frame_index)`, so they do - opens stay at one per shard as the
-  dataset grows (`ordering.py`). Shuffled rows scatter a shard across batches and cost
+  dataset grows ([`ordering.py`](ordering.py)). Shuffled rows scatter a shard across batches and cost
   more opens, but still stay below the original's one-per-frame. Correctness is
   order-independent (timestamps are sorted within each batch).
 
