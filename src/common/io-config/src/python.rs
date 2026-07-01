@@ -1,6 +1,7 @@
 use std::{
     any::Any,
     collections::HashMap,
+    ffi::CString,
     hash::{Hash, Hasher},
     sync::Arc,
 };
@@ -10,7 +11,7 @@ use common_error::DaftResult;
 use common_py_serde::{
     deserialize_py_object, impl_bincode_py_state_serialization, serialize_py_object,
 };
-use pyo3::prelude::*;
+use pyo3::{exceptions::PyDeprecationWarning, prelude::*};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -1596,23 +1597,30 @@ impl TosConfig {
     const MULTIPART_SETTING_IGNORED_MSG: &str = "TosConfig multipart settings are no longer used; TOS I/O is now handled by OpenDAL, which manages multipart uploads internally.";
 
     fn warn_multipart_settings(
+        py: Python<'_>,
         multipart_size: Option<u64>,
         multipart_max_concurrency: Option<u32>,
-    ) {
+    ) -> PyResult<()> {
+        let category = py.get_type::<PyDeprecationWarning>();
+
         if let Some(multipart_size) = multipart_size {
-            log::warn!(
+            let message = CString::new(format!(
                 "{} Ignoring multipart_size={}.",
                 Self::MULTIPART_SETTING_IGNORED_MSG,
                 multipart_size
-            );
+            ))?;
+            PyErr::warn(py, &category, message.as_c_str(), 1)?;
         }
         if let Some(multipart_max_concurrency) = multipart_max_concurrency {
-            log::warn!(
+            let message = CString::new(format!(
                 "{} Ignoring multipart_max_concurrency={}.",
                 Self::MULTIPART_SETTING_IGNORED_MSG,
                 multipart_max_concurrency
-            );
+            ))?;
+            PyErr::warn(py, &category, message.as_c_str(), 1)?;
         }
+
+        Ok(())
     }
 }
 
@@ -1637,6 +1645,7 @@ impl TosConfig {
         multipart_max_concurrency=None,
     ))]
     pub fn new(
+        py: Python<'_>,
         region: Option<String>,
         endpoint: Option<String>,
         access_key: Option<String>,
@@ -1652,7 +1661,7 @@ impl TosConfig {
         multipart_size: Option<u64>,
         multipart_max_concurrency: Option<u32>,
     ) -> PyResult<Self> {
-        Self::warn_multipart_settings(multipart_size, multipart_max_concurrency);
+        Self::warn_multipart_settings(py, multipart_size, multipart_max_concurrency)?;
 
         let def = crate::TosConfig::default();
         Ok(Self {
@@ -1699,6 +1708,7 @@ impl TosConfig {
     ))]
     pub fn replace(
         &self,
+        py: Python<'_>,
         region: Option<String>,
         endpoint: Option<String>,
         access_key: Option<String>,
@@ -1714,7 +1724,7 @@ impl TosConfig {
         multipart_size: Option<u64>,
         multipart_max_concurrency: Option<u32>,
     ) -> PyResult<Self> {
-        Self::warn_multipart_settings(multipart_size, multipart_max_concurrency);
+        Self::warn_multipart_settings(py, multipart_size, multipart_max_concurrency)?;
 
         Ok(Self {
             config: crate::TosConfig {
@@ -1815,12 +1825,10 @@ impl TosConfig {
     }
 
     #[setter]
-    pub fn set_multipart_size(&mut self, multipart_size: u64) {
-        log::warn!(
-            "{} Ignoring multipart_size={multipart_size}.",
-            Self::MULTIPART_SETTING_IGNORED_MSG
-        );
+    pub fn set_multipart_size(&mut self, py: Python<'_>, multipart_size: u64) -> PyResult<()> {
+        Self::warn_multipart_settings(py, Some(multipart_size), None)?;
         self.config.multipart_size = multipart_size;
+        Ok(())
     }
 
     #[getter]
@@ -1829,12 +1837,14 @@ impl TosConfig {
     }
 
     #[setter]
-    pub fn set_multipart_max_concurrency(&mut self, multipart_max_concurrency: u32) {
-        log::warn!(
-            "{} Ignoring multipart_max_concurrency={multipart_max_concurrency}.",
-            Self::MULTIPART_SETTING_IGNORED_MSG
-        );
+    pub fn set_multipart_max_concurrency(
+        &mut self,
+        py: Python<'_>,
+        multipart_max_concurrency: u32,
+    ) -> PyResult<()> {
+        Self::warn_multipart_settings(py, None, Some(multipart_max_concurrency))?;
         self.config.multipart_max_concurrency = multipart_max_concurrency;
+        Ok(())
     }
 }
 
