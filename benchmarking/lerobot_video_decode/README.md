@@ -2,8 +2,9 @@
 
 The `daft.datasets.lerobot` reader decoded video frames with a **per-row** UDF that
 re-opened the MP4 shard for every frame. Because `av.open()` on a remote shard
-fetches the container index over the network, decoding N frames re-fetched the
-shard N times - cost scaled ~linearly at **~3s/frame**.
+re-reads and parses the container index over the network (~1s), decoding N frames
+re-opened the shard N times, paying that cost each time - so cost scaled ~linearly
+at **~3s/frame** (the slope of the sweep below).
 
 This directory holds the benchmarks that diagnosed it and the fix that makes the
 decode **batched**: rows sharing a shard are grouped so the shard is opened (and
