@@ -1,0 +1,4 @@
+# local shard copies downloaded by cases.py
+*.mp4
+# per-run sweep outputs (the committed charts capture the results)
+sweep_current.json

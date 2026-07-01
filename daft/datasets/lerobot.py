@@ -38,75 +38,123 @@ def _normalize_dataset_root(uri: str) -> str:
     return u.rstrip("/")
 
 
-@func(return_dtype=DataType.image())
-def _decode_lerobot_video_timestamp(
+def _decode_one_shard(
     file: VideoFile,
-    episode_from_timestamp_s: float,
-    frame_timestamp_s: float,
-    tolerance_s: float,
-    image_width_i: int,
-    image_height_i: int,
-) -> Any:  # returns a PIL.Image; PIL is an optional dependency imported lazily below
-    """Pick the decoded frame closest in time to ``episode_from_timestamp_s + frame_timestamp_s``."""
-    try:
-        import av as av_mod
-    except ImportError as err:
-        raise ImportError("Decoding LeRobot MP4 shards requires PyAV. Install with `pip install av`.") from err
-    try:
-        from PIL import Image as PILImage
-    except ImportError as err:
-        raise ImportError(
-            "Decoding LeRobot MP4 shards requires Pillow. Install with `pip install daft[video]` or `pip install pillow`."
-        ) from err
-    abs_ts = float(episode_from_timestamp_s) + float(frame_timestamp_s)
-    tolerance = float(tolerance_s)
-    width_i = int(image_width_i)
-    height_i = int(image_height_i)
-    width: int | None
-    height: int | None
-    if width_i > 0 and height_i > 0:
-        width, height = width_i, height_i
-    else:
-        width, height = None, None
+    abs_timestamps: list[tuple[int, float]],
+    tolerance: float,
+    width: int | None,
+    height: int | None,
+    av_mod: Any,
+    pil_image: Any,
+) -> list[tuple[int, Any]]:
+    """Open a single shard once and return ``(row_index, PIL.Image)`` for every requested timestamp.
 
-    loaded: list[tuple[float, Any]] = []
+    All ``abs_timestamps`` refer to the same shard ``file``. We seek once to the
+    keyframe preceding the earliest target, then decode forward a single time,
+    keeping the closest decoded frame to each target. This is the batched
+    equivalent of the old per-row decode: one open + one forward pass per shard
+    instead of per frame.
+    """
+    targets = sorted(abs_timestamps, key=lambda t: t[1])  # ascending by timestamp
+    earliest = targets[0][1]
+    latest = targets[-1][1]
+    tail_s = max(0.1, tolerance * 50.0, 1.0 / 24.0)
     decode_cap = 20_000
+
+    # Best (distance, ndarray) seen so far for each target row; at most one frame
+    # is retained per target, so memory stays bounded regardless of the span.
+    best_dist = {row: float("inf") for row, _ in targets}
+    best_arr: dict[int, Any] = {}
     decoded = 0
 
     with file.open() as f_open:
         with av_mod.open(f_open) as container:
             stream = container.streams.video[0]
             # Match LeRobot: seek backwards to preceding keyframe, then decode forwards.
-            container.seek(max(0, int(abs_ts * av_mod.time_base)), backward=True)
-
-            tail_s = max(0.1, tolerance * 50.0, 1.0 / 24.0)
+            container.seek(max(0, int(earliest * av_mod.time_base)), backward=True)
             for vf in container.decode(stream):
                 if vf.pts is None:
                     continue
                 current_ts = float(vf.pts * stream.time_base)
-                pil_img = PILImage.fromarray(vf.to_ndarray(format="rgb24"), mode="RGB")
-                if width is not None and height is not None:
-                    pil_img = pil_img.resize((width, height), PILImage.Resampling.NEAREST)
+                arr = vf.to_ndarray(format="rgb24")
+                for row, target in targets:
+                    dist = abs(current_ts - target)
+                    if dist < best_dist[row]:
+                        best_dist[row] = dist
+                        best_arr[row] = arr
 
-                loaded.append((current_ts, pil_img))
                 decoded += 1
-
                 if decoded >= decode_cap:
                     raise ValueError("Exceeded decode frame budget while aligning to parquet timestamps.")
-                if current_ts >= abs_ts + tail_s:
+                if current_ts >= latest + tail_s:
                     break
 
-    if not loaded:
-        raise ValueError(f"No frames decoded from shard while seeking timestamp {abs_ts:.6f}s.")
+    if decoded == 0:
+        raise ValueError(f"No frames decoded from shard while seeking timestamp {earliest:.6f}s.")
 
-    closest_ts, closest_img = min(loaded, key=lambda item: abs(item[0] - abs_ts))
-    closest_dist = abs(closest_ts - abs_ts)
-    if closest_dist > tolerance:
-        raise ValueError(
-            f"No frame matched timestamp {abs_ts:.6f}s within tolerance {tolerance} "
-            f"(closest distance observed: {closest_dist})."
-        )
-    return closest_img
+    out: list[tuple[int, Any]] = []
+    for row, target in targets:
+        if best_dist[row] > tolerance:
+            raise ValueError(
+                f"No frame matched timestamp {target:.6f}s within tolerance {tolerance} "
+                f"(closest distance observed: {best_dist[row]})."
+            )
+        img = pil_image.fromarray(best_arr[row], mode="RGB")
+        if width is not None and height is not None:
+            img = img.resize((width, height), pil_image.Resampling.NEAREST)
+        out.append((row, img))
+    return out
+
+
+@func.batch(return_dtype=DataType.image())
+def _decode_lerobot_video_timestamp(
+    files: Any,  # daft.Series of VideoFile
+    episode_from_timestamps_s: Any,  # daft.Series of float
+    frame_timestamps_s: Any,  # daft.Series of float
+    tolerance_s: float,
+    image_width_i: int,
+    image_height_i: int,
+) -> Any:  # a daft.Series-compatible list of PIL.Image, one per row
+    """Decode the frame closest to ``from_timestamp + timestamp`` for each row.
+
+    Batched over rows: rows sharing the same shard file are grouped so the shard
+    is opened (and, for remote shards, fetched) exactly once per batch instead of
+    once per frame.
+    """
+    try:
+        import av as av_mod
+    except ImportError as err:
+        raise ImportError("Decoding LeRobot MP4 shards requires PyAV. Install with `pip install av`.") from err
+    try:
+        from PIL import Image as pil_image
+    except ImportError as err:
+        raise ImportError(
+            "Decoding LeRobot MP4 shards requires Pillow. Install with `pip install daft[video]` or `pip install pillow`."
+        ) from err
+
+    file_list = files.to_pylist()
+    from_list = episode_from_timestamps_s.to_pylist()
+    frame_list = frame_timestamps_s.to_pylist()
+
+    tolerance = float(tolerance_s)
+    width_i = int(image_width_i)
+    height_i = int(image_height_i)
+    width = width_i if width_i > 0 and height_i > 0 else None
+    height = height_i if width_i > 0 and height_i > 0 else None
+
+    # Group row indices by shard path so each shard is opened once.
+    by_shard: dict[str, list[tuple[int, float]]] = {}
+    shard_file: dict[str, VideoFile] = {}
+    for i, file in enumerate(file_list):
+        abs_ts = float(from_list[i]) + float(frame_list[i])
+        by_shard.setdefault(file.path, []).append((i, abs_ts))
+        shard_file[file.path] = file
+
+    results: list[Any] = [None] * len(file_list)
+    for path, targets in by_shard.items():
+        for row, img in _decode_one_shard(shard_file[path], targets, tolerance, width, height, av_mod, pil_image):
+            results[row] = img
+    return results
 
 
 class Feature(TypedDict):
@@ -200,9 +248,9 @@ def read(
                     col(f"videos/{k}/video"),
                     col(f"videos/{k}/from_timestamp"),
                     col("timestamp"),
-                    lit(tolerance_s),
-                    lit(0),  # image_width: 0 disables resize (decode at native resolution)
-                    lit(0),  # image_height: 0 disables resize
+                    tolerance_s,
+                    0,  # image_width: 0 disables resize (decode at native resolution)
+                    0,  # image_height: 0 disables resize
                 ),
             )
             df = df.exclude(f"videos/{k}/video")
