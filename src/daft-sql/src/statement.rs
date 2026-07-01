@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use daft_catalog::Identifier;
 use daft_core::prelude::Schema;
 use daft_logical_plan::{LogicalPlanBuilder, LogicalPlanRef};
@@ -347,6 +349,10 @@ impl SQLPlanner<'_> {
             .columns
             .iter()
             .map(|col| {
+                // Reject column-level constraints (NOT NULL, DEFAULT, UNIQUE, etc.).
+                if !col.options.is_empty() {
+                    unsupported_sql_err!("Column constraints on '{}' are not supported", col.name);
+                }
                 let dtype = sql_dtype_to_dtype(&col.data_type)?;
                 Ok(daft_core::prelude::Field::new(
                     col.name.value.clone(),
@@ -357,7 +363,7 @@ impl SQLPlanner<'_> {
 
         // Reject duplicate column names per SQL spec.
         {
-            let mut seen = std::collections::HashSet::new();
+            let mut seen = HashSet::new();
             for field in &fields {
                 if !seen.insert(field.name.as_ref()) {
                     unsupported_sql_err!("Duplicate column name: {}", field.name);

@@ -63,7 +63,7 @@ def test_create_table_no_catalog_errors():
     """CREATE TABLE without a catalog-qualified name and no current catalog should error."""
     sess = Session()
     with pytest.raises(Exception, match="without a current catalog|catalog"):
-        sess.sql("CREATE TABLE tbl (a int)").collect()
+        sess.sql("CREATE TABLE tbl (a int)")
 
 
 def test_create_table_show_tables(sess: Session):
