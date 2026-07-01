@@ -10,7 +10,7 @@ This directory holds the benchmarks that diagnosed it and the fix that makes the
 decode **batched**: rows sharing a shard within a batch are grouped so each shard is
 opened once per batch, instead of once per frame.
 
-## Where the time went (it is not decoding)
+## Where the time went
 
 `python repro.py --rows 1 --profile` - cProfile self-time (`tottime`) for a single
 frame, which is dominated by opening the shard, not decoding it:
