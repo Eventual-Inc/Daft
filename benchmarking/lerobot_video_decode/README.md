@@ -103,11 +103,6 @@ in a batch, so its cost depends on how spread out those timestamps are:
 
   ![ordering](charts/chart_ordering.png)
 
-Memory is bounded regardless of shard size (only the best frame per row is kept, at
-most one per batch row). A gap-based clustering pass (decode contiguous runs, re-seek
-across large gaps, reuse the open) would be best-of-both for the local+sparse case,
-but it is extra complexity for a narrow benefit and is left as a possible follow-up.
-
 ## Running
 
 ```bash
