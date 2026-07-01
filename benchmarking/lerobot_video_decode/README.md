@@ -81,7 +81,7 @@ in a batch, so its cost depends on how spread out those timestamps are:
   One open, one pass, no redundant decoding - the charts above.
 - **Sparse timestamps in a batch:** the pass decodes the gaps too (e.g. 5 frames
   spread across a 20s shard decodes ~600 frames vs ~20 for a per-target seek). It
-  still wins remotely, because one saved download is worth more than the extra
+  still wins remotely, because one fewer remote open is worth more than the extra
   decoding. Remote, frames spread across the whole shard ([`sparse.py`](sparse.py)):
 
   ![sparse](charts/chart_sparse.png)
@@ -92,7 +92,7 @@ in a batch, so its cost depends on how spread out those timestamps are:
   | 8 | 7.7s | 1.7s |
   | 16 | 15.5s | 1.8s |
 
-  Batched stays flat (one open) while original grows one download per frame. It only
+  Batched stays flat (one open) while original grows one open per frame. It only
   loses to a per-target seek when there is no network *and* the timestamps are sparse.
 
 - **Row order (holds as data scales):** grouping happens per batch, so the win assumes
