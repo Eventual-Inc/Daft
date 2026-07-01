@@ -93,8 +93,7 @@ in a batch, so its cost depends on how spread out those timestamps are:
   | 8 | 7.7s | 1.7s |
   | 16 | 15.5s | 1.8s |
 
-  Batched stays flat (one open) while original grows one open per frame. It only
-  loses to a per-target seek when there is no network *and* the timestamps are sparse.
+  Batched stays flat (one open) while original grows one open per frame.
 
 - **Row order (holds as data scales):** grouping happens per batch, so the win assumes
   a shard's rows land in the same batch. The reader emits rows sorted by
