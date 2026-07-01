@@ -41,7 +41,7 @@ requested timestamp. Output is **byte-identical** to the old per-row decode.
 | rows | original | batched |
 | --- | --- | --- |
 | 1 | 4.2s | 4.4s |
-| 8 | **25.0s** | **3.9s** (~6.5×) |
+| 8 | **25.0s** | **3.9s** |
 | 10 | 34.4s | 3.9s |
 
 8-frame output hashes matched exactly (`sha 80bdb30c…`) between versions.
