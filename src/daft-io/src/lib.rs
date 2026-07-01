@@ -74,10 +74,10 @@ pub enum Error {
     #[snafu(display("Unable to expand home dir"))]
     HomeDirError { path: String },
 
-    #[snafu(display("Unable to open file {}: {:?}", path, source))]
+    #[snafu(display("Unable to open file `{}`", path))]
     UnableToOpenFile { path: String, source: DynError },
 
-    #[snafu(display("Unable to create directory {}: {:?}", path, source))]
+    #[snafu(display("Unable to create directory `{}`", path))]
     UnableToCreateDir {
         path: String,
         source: std::io::Error,
@@ -95,27 +95,19 @@ pub enum Error {
         source: std::io::Error,
     },
 
-    #[snafu(display(
-        "Connection timed out when trying to connect to {}\nDetails:\n{:?}",
-        path,
-        source
-    ))]
+    #[snafu(display("Connection timed out when trying to connect to path `{}`", path))]
     ConnectTimeout { path: String, source: DynError },
 
-    #[snafu(display("Read timed out when trying to read {}\nDetails:\n{:?}", path, source))]
+    #[snafu(display("Read timed out when trying to read path `{}`", path))]
     ReadTimeout { path: String, source: DynError },
 
-    #[snafu(display(
-        "Socket error occurred when trying to read {}\nDetails:\n{:?}",
-        path,
-        source
-    ))]
+    #[snafu(display("Socket error occurred when trying to read path `{}`", path))]
     SocketError { path: String, source: DynError },
 
-    #[snafu(display("Throttled when trying to read {}\nDetails:\n{:?}", path, source))]
+    #[snafu(display("Throttled when trying to read path `{}`", path))]
     Throttled { path: String, source: DynError },
 
-    #[snafu(display("Misc Transient error trying to read {}\nDetails:\n{:?}", path, source))]
+    #[snafu(display("Misc Transient error trying to read path `{}`", path))]
     MiscTransient { path: String, source: DynError },
 
     #[snafu(display("Unable to convert URL \"{}\" to path", path))]
@@ -133,10 +125,10 @@ pub enum Error {
     #[snafu(display("Invalid range request: {}", source))]
     InvalidRangeRequest { source: range::InvalidGetRange },
 
-    #[snafu(display("Unable to load Credentials for store: {store}\nDetails:\n{source:?}"))]
+    #[snafu(display("Unable to load credentials for IO backend `{store}`"))]
     UnableToLoadCredentials { store: SourceType, source: DynError },
 
-    #[snafu(display("Failed to load Credentials for store: {store}\nDetails:\n{source:?}"))]
+    #[snafu(display("Failed to load credentials for IO backend `{store}`"))]
     UnableToCreateClient { store: SourceType, source: DynError },
 
     #[snafu(display(
