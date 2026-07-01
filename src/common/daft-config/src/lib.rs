@@ -153,35 +153,38 @@ pub struct DaftExecutionConfig {
     pub flight_shuffle_dirs: Vec<String>,
     pub flight_shuffle_compression: Option<String>,
     pub enable_multi_glob_path_tasks: bool,
-    /// Spill threshold (bytes) for the hash join build side's grace-hash-join spill-to-disk,
-    /// spilled to `flight_shuffle_dirs`. `None` auto-derives from the engine memory budget
-    /// (spilling is on by default). `Some(0)` disables spilling (pure in-memory build).
+    // NOTE: Spill is DISABLED by default. It is enabled by setting a positive `spill_pool_bytes`
+    // (preferred, enables all operators) or a positive per-operator threshold below (legacy, also a
+    // cap). A per-operator `Some(0)` force-disables that operator even when the pool is set.
+    /// Hash join build-side grace-hash-join spill, spilled to `flight_shuffle_dirs`. Off by default;
+    /// a positive value enables spilling for this operator and caps its resident build at that many
+    /// bytes. `Some(0)` force-disables.
     pub hash_join_spill_threshold_bytes: Option<usize>,
-    /// Spill threshold (bytes) for the Sort blocking sink's external merge sort, spilled to
-    /// `flight_shuffle_dirs`. `None` auto-derives a threshold from the engine memory budget
-    /// (spilling is on by default). `Some(0)` disables spilling (pure in-memory sort).
+    /// Sort external-merge-sort spill, spilled to `flight_shuffle_dirs`. Off by default; a positive
+    /// value enables + caps. `Some(0)` force-disables.
     pub sort_spill_threshold_bytes: Option<usize>,
-    /// Spill threshold (bytes) for the Grouped Aggregation blocking sink's grace aggregation,
-    /// spilled to `flight_shuffle_dirs`. Interpreted as the total budget across all hash buckets.
-    /// `None` auto-derives from the engine memory budget (on by default). `Some(0)` disables.
+    /// Grouped Aggregation grace-aggregation spill (total budget across all hash buckets), spilled
+    /// to `flight_shuffle_dirs`. Off by default; a positive value enables + caps. `Some(0)`
+    /// force-disables.
     pub agg_spill_threshold_bytes: Option<usize>,
-    /// Spill threshold (bytes) for the Dedup/Distinct blocking sink's grace dedup,
-    /// spilled to `flight_shuffle_dirs`. Interpreted as the total budget across all hash buckets.
-    /// `None` auto-derives from the engine memory budget (on by default). `Some(0)` disables.
+    /// Dedup/Distinct grace-dedup spill (total budget across all hash buckets), spilled to
+    /// `flight_shuffle_dirs`. Off by default; a positive value enables + caps. `Some(0)`
+    /// force-disables.
     pub dedup_spill_threshold_bytes: Option<usize>,
-    /// Spill threshold (bytes) for partitioned Window operators, spilled to `flight_shuffle_dirs`.
-    /// Interpreted as the total budget across all hash buckets. `None` auto-derives from the engine
-    /// memory budget (on by default). `Some(0)` disables.
+    /// Partitioned Window spill (total budget across all hash buckets), spilled to
+    /// `flight_shuffle_dirs`. Off by default; a positive value enables + caps. `Some(0)`
+    /// force-disables.
     pub window_spill_threshold_bytes: Option<usize>,
-    /// Spill threshold (bytes) for the `RepartitionSink` (Flight backend) `post_repartitioned`
-    /// buffer, spilled to `flight_shuffle_dirs`. The buffer accumulates all hash-partitioned
-    /// batches in memory until finalize; without spilling this grows to the full task dataset size
-    /// and causes OOM for large inputs. `None` auto-derives ~30 % of the engine memory budget
-    /// (spilling on by default). `Some(0)` disables spilling (legacy, pure in-memory behaviour).
+    /// `RepartitionSink` (Flight backend) `post_repartitioned` buffer spill, spilled to
+    /// `flight_shuffle_dirs`. Without spilling this buffer grows to the full task dataset size and
+    /// can OOM for large inputs. Off by default; a positive value enables + caps. `Some(0)`
+    /// force-disables.
     pub repartition_spill_threshold_bytes: Option<usize>,
-    /// Total size (bytes) of the shared spill pool that all spill-capable operators draw from.
-    /// `None` derives `max(64 MiB, 0.3 × (DAFT_MEMORY_LIMIT or system RAM))`. Env override:
-    /// `DAFT_SPILL_POOL_BYTES`.
+    /// Total size (bytes) of the shared spill pool that all spill-capable operators draw from, and
+    /// the master switch for spill: **spill is disabled unless this is set to a positive value**
+    /// (or a per-operator threshold above is positive). When set, sizes the pool; otherwise the
+    /// per-operator-enabled path uses `max(64 MiB, 0.3 × (DAFT_MEMORY_LIMIT or system RAM))`. Env
+    /// override: `DAFT_SPILL_POOL_BYTES`.
     pub spill_pool_bytes: Option<usize>,
 }
 
