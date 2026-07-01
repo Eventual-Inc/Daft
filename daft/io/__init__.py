@@ -20,6 +20,7 @@ from daft.io._csv import read_csv
 from daft.io._text import read_text
 from daft.io.delta_lake._deltalake import (
     delete_deltalake,
+    distributed_merge_deltalake,
     history_deltalake,
     merge_deltalake,
     read_deltalake,
@@ -74,6 +75,7 @@ __all__ = [
     "from_files",
     "from_glob_path",
     "delete_deltalake",
+    "distributed_merge_deltalake",
     "read_csv",
     "read_deltalake",
     "history_deltalake",
