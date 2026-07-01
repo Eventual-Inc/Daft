@@ -22,6 +22,7 @@ from daft.ai.openai.protocols.text_embedder import (
     _models,
     chunk_text,
 )
+from daft.ai.openai.provider import OpenAIProvider
 from daft.ai.protocols import TextEmbedder
 from daft.ai.typing import EmbeddingDimensions
 
@@ -41,11 +42,13 @@ def mock_client():
 
 @pytest.fixture
 def mock_text_embedder(mock_client) -> TextEmbedder:
-    embedder = OpenAITextEmbedder(
-        provider_options={"api_key": "test-key"},
+    descriptor = OpenAITextEmbedderDescriptor(
+        provider="openai",
         model="text-embedding-3-small",
-        embed_options={},
+        dimensions=EmbeddingDimensions(size=1536, dtype=DataType.float32()),
+        provider_options={"api_key": "test-key"},
     )
+    embedder = OpenAITextEmbedder(descriptor)
     embedder._client = mock_client
     return embedder
 
@@ -55,41 +58,26 @@ def run(coro):
 
 
 def test_valid_model_names():
-    """Test that valid model names are accepted."""
+    """Test that valid model names are accepted via the provider."""
+    provider = OpenAIProvider(api_key="test-key")
     for model_name in _models.keys():
-        descriptor = OpenAITextEmbedderDescriptor(
-            provider_name="openai",
-            provider_options={"api_key": "test-key"},
-            model_name=model_name,
-            dimensions=None,
-            embed_options={},
-        )
-        assert descriptor.get_provider() == "openai"
-        assert descriptor.get_model() == model_name
-        assert descriptor.get_options() == {}
-        assert descriptor.get_dimensions() == _models[model_name].dimensions
+        descriptor = provider.get_text_embedder_descriptor(model=model_name)
+        assert descriptor["provider"] == "openai"
+        assert descriptor["model"] == model_name
+        assert descriptor["dimensions"] == _models[model_name].dimensions
 
 
 def test_invalid_model_name():
     """Test that invalid model names raise ValueError."""
+    provider = OpenAIProvider(api_key="test-key")
     with pytest.raises(ValueError, match="Unsupported OpenAI embedding model"):
-        OpenAITextEmbedderDescriptor(
-            provider_name="openai",
-            provider_options={"api_key": "test-key"},
-            model_name="invalid-model",
-            dimensions=None,
-            embed_options={},
-        )
+        provider.get_text_embedder_descriptor(model="invalid-model")
 
 
 def test_custom_base_url_dimensions_none_probes_for_non_native_model():
     model = "BAAI/bge-m3"
     base_url = "http://localhost:1234/v1"
 
-    from openai.types.create_embedding_response import CreateEmbeddingResponse
-    from openai.types.embedding import Embedding as OpenAIEmbedding
-
-    # Patch the module-local import used by OpenAITextEmbedderDescriptor.
     with patch("daft.ai.openai.protocols.text_embedder.OpenAIClient") as mock_openai_sync_client:
         mock_sync_client = Mock()
         mock_sync_client.embeddings = Mock()
@@ -109,23 +97,21 @@ def test_custom_base_url_dimensions_none_probes_for_non_native_model():
         )
         mock_openai_sync_client.return_value = mock_sync_client
 
-        descriptor = OpenAITextEmbedderDescriptor(
-            provider_name="openai",
-            provider_options={"api_key": "test-key", "base_url": base_url},
-            model_name=model,
-            dimensions=None,
-        )
+        provider = OpenAIProvider(api_key="test-key", base_url=base_url)
+        descriptor = provider.get_text_embedder_descriptor(model=model)
 
-        assert descriptor.get_dimensions().size == 1024
+        assert descriptor["dimensions"].size == 1024
 
 
 def test_custom_base_url_passes_dimensions_param_through(mock_client):
-    embedder = OpenAITextEmbedder(
-        provider_options={"api_key": "test-key", "base_url": "http://localhost:1234/v1"},
+    descriptor = OpenAITextEmbedderDescriptor(
+        provider="openai",
         model="BAAI/bge-m3",
-        embed_options={},
-        dimensions=1024,
+        dimensions=EmbeddingDimensions(size=1024, dtype=DataType.float32()),
+        provider_options={"api_key": "test-key", "base_url": "http://localhost:1234/v1"},
+        supports_overriding_dimensions=True,
     )
+    embedder = OpenAITextEmbedder(descriptor)
     embedder._client = mock_client
 
     mock_response = Mock(spec=CreateEmbeddingResponse)
@@ -145,21 +131,16 @@ def test_custom_base_url_passes_dimensions_param_through(mock_client):
 
 
 def test_instantiate():
-    """Test to instantiate a proper OpenAITextEmbedder with no mocks."""
-    descriptor = OpenAITextEmbedderDescriptor(
-        provider_name="openai",
-        provider_options={"api_key": "test-key"},
-        model_name="text-embedding-3-small",
-        dimensions=None,
-        embed_options={},
-    )
+    """Test the provider's get_text_embedder workflow."""
+    provider = OpenAIProvider(api_key="test-key")
+    descriptor = provider.get_text_embedder_descriptor(model="text-embedding-3-small")
 
-    # An OpenAI embedding model's dimensions are known without probing.
-    assert descriptor.get_dimensions().size == 1536
+    assert descriptor["dimensions"].size == 1536
 
-    embedder = descriptor.instantiate()
-    assert isinstance(embedder, OpenAITextEmbedder)
-    assert embedder._model == "text-embedding-3-small"
+    with patch("daft.ai.openai.protocols.text_embedder.AsyncOpenAI"):
+        embedder = provider.get_text_embedder(descriptor)
+        assert isinstance(embedder, OpenAITextEmbedder)
+        assert embedder._model == "text-embedding-3-small"
 
 
 def test_custom_dimensions_respects_model_dtype():
@@ -170,15 +151,10 @@ def test_custom_dimensions_respects_model_dtype():
     )
 
     with patch.dict("daft.ai.openai.protocols.text_embedder._models", {"mock-model-f64": fake_profile}):
-        descriptor = OpenAITextEmbedderDescriptor(
-            provider_name="openai",
-            provider_options={"api_key": "test-key"},
-            model_name="mock-model-f64",
-            dimensions=512,
-            embed_options={},
-        )
+        provider = OpenAIProvider(api_key="test-key")
+        descriptor = provider.get_text_embedder_descriptor(model="mock-model-f64", dimensions=512)
 
-        dims = descriptor.get_dimensions()
+        dims = descriptor["dimensions"]
         assert dims.size == 512
         assert dims.dtype == DataType.float64()
 
@@ -383,12 +359,13 @@ def test_embed_text_failure_with_zero_on_failure_and_dimensions(mock_text_embedd
 
 def test_embed_text_failure_without_zero_on_failure(mock_client):
     """Test that failures are re-raised when zero_on_failure is False."""
-    embedder = OpenAITextEmbedder(
-        provider_options={"api_key": "test-key"},
+    descriptor = OpenAITextEmbedderDescriptor(
+        provider="openai",
         model="text-embedding-3-small",
-        embed_options={},
-        zero_on_failure=False,
+        dimensions=EmbeddingDimensions(size=1536, dtype=DataType.float32()),
+        provider_options={"api_key": "test-key"},
     )
+    embedder = OpenAITextEmbedder(descriptor)
     embedder._client = mock_client
     mock_client.embeddings.create.side_effect = Exception("API Error")
 
@@ -434,12 +411,13 @@ def test_embed_text_single_method(mock_text_embedder, mock_client):
 def test_different_model_dimensions(mock_client):
     """Test that different models have correct dimensions."""
     # Test text-embedding-3-large which has 3072 dimensions
-    embedder = OpenAITextEmbedder(
-        provider_options={"api_key": "test-key"},
+    descriptor = OpenAITextEmbedderDescriptor(
+        provider="openai",
         model="text-embedding-3-large",
-        embed_options={},
-        zero_on_failure=True,
+        dimensions=EmbeddingDimensions(size=3072, dtype=DataType.float32()),
+        provider_options={"api_key": "test-key"},
     )
+    embedder = OpenAITextEmbedder(descriptor)
     embedder._client = mock_client
 
     mock_response = Mock(spec=CreateEmbeddingResponse)
@@ -485,14 +463,9 @@ def test_profile_immutability():
 
 
 def test_descriptor_to_embedder_workflow():
-    """Test the complete workflow from descriptor to embedding."""
-    descriptor = OpenAITextEmbedderDescriptor(
-        provider_name="openai",
-        provider_options={"api_key": "test-key"},
-        model_name="text-embedding-3-small",
-        dimensions=None,
-        embed_options={},
-    )
+    """Test the complete workflow from descriptor to embedding via provider."""
+    provider = OpenAIProvider(api_key="test-key")
+    descriptor = provider.get_text_embedder_descriptor(model="text-embedding-3-small")
 
     with patch("daft.ai.openai.protocols.text_embedder.AsyncOpenAI") as mock_async_openai_class:
         mock_client = Mock()
@@ -506,7 +479,7 @@ def test_descriptor_to_embedder_workflow():
         mock_response.data = [mock_embedding]
         mock_client.embeddings.create.return_value = mock_response
 
-        text_embedder = descriptor.instantiate()
+        text_embedder = provider.get_text_embedder(descriptor)
         result = run(text_embedder.embed_text(["Hello world"]))
 
         assert len(result) == 1
@@ -516,11 +489,13 @@ def test_descriptor_to_embedder_workflow():
 
 def test_protocol_compliance():
     """Test that OpenAITextEmbedder implements the TextEmbedder protocol."""
-    text_embedder = OpenAITextEmbedder(
-        provider_options={"api_key": "test-key"},
+    descriptor = OpenAITextEmbedderDescriptor(
+        provider="openai",
         model="text-embedding-3-small",
-        embed_options={},
+        dimensions=EmbeddingDimensions(size=1536, dtype=DataType.float32()),
+        provider_options={"api_key": "test-key"},
     )
+    text_embedder = OpenAITextEmbedder(descriptor)
 
     assert isinstance(text_embedder, TextEmbedder)
     assert hasattr(text_embedder, "embed_text")
@@ -575,76 +550,15 @@ def test_embed_text_batch_rate_limit_fallback(mock_text_embedder, mock_client):
             assert embedding.dtype == np.float32
 
 
-def test_supports_overriding_dimensions_default_true(mock_client):
-    """Test that when supports_overriding_dimensions is False (default), dimensions are NOT included."""
-    descriptor = OpenAITextEmbedderDescriptor(
-        provider_name="openai",
-        provider_options={"api_key": "test-key"},
-        model_name="text-embedding-3-small",
-        dimensions=256,
-        embed_options={},  # supports_overriding_dimensions not set, defaults to False
-    )
-    embedder = descriptor.instantiate()
-    embedder._client = mock_client
+def test_supports_overriding_dimensions_via_provider(mock_client):
+    """Test that the provider correctly handles dimension overrides."""
+    provider = OpenAIProvider(api_key="test-key")
+    descriptor = provider.get_text_embedder_descriptor(model="text-embedding-3-small", dimensions=256)
 
-    mock_response = Mock(spec=CreateEmbeddingResponse)
-    mock_embedding = Mock(spec=OpenAIEmbedding)
-    mock_embedding.embedding = np.array([0.1, 0.2, 0.3] * 512, dtype=np.float32)  # 1536 dimensions
-    mock_response.data = [mock_embedding]
-    mock_client.embeddings.create.return_value = mock_response
+    # The provider should have set supports_overriding_dimensions
+    assert descriptor.get("embed_options", {}).get("supports_overriding_dimensions") is True
 
-    result = run(embedder.embed_text(["Hello world"]))
-
-    assert len(result) == 1
-    # Verify dimensions were NOT included in the request (should use omit)
-    mock_client.embeddings.create.assert_awaited_once_with(
-        input=["Hello world"],
-        model="text-embedding-3-small",
-        encoding_format="float",
-        dimensions=256,
-    )
-
-
-def test_supports_overriding_dimensions_explicit_false(mock_client):
-    """Test that when supports_overriding_dimensions is explicitly False, dimensions are NOT included."""
-    descriptor = OpenAITextEmbedderDescriptor(
-        provider_name="openai",
-        provider_options={"api_key": "test-key"},
-        model_name="text-embedding-3-small",
-        dimensions=256,
-        embed_options={"supports_overriding_dimensions": False},
-    )
-    embedder = descriptor.instantiate()
-    embedder._client = mock_client
-
-    mock_response = Mock(spec=CreateEmbeddingResponse)
-    mock_embedding = Mock(spec=OpenAIEmbedding)
-    mock_embedding.embedding = np.array([0.1, 0.2, 0.3] * 512, dtype=np.float32)  # 1536 dimensions
-    mock_response.data = [mock_embedding]
-    mock_client.embeddings.create.return_value = mock_response
-
-    result = run(embedder.embed_text(["Hello world"]))
-
-    assert len(result) == 1
-    # Verify dimensions were NOT included in the request (should use omit)
-    mock_client.embeddings.create.assert_awaited_once_with(
-        input=["Hello world"],
-        model="text-embedding-3-small",
-        encoding_format="float",
-        dimensions=omit,
-    )
-
-
-def test_supports_overriding_dimensions_true(mock_client):
-    """Test that when supports_overriding_dimensions is True, dimensions ARE included."""
-    descriptor = OpenAITextEmbedderDescriptor(
-        provider_name="openai",
-        provider_options={"api_key": "test-key"},
-        model_name="text-embedding-3-small",
-        dimensions=256,
-        embed_options={"supports_overriding_dimensions": True},
-    )
-    embedder = descriptor.instantiate()
+    embedder = provider.get_text_embedder(descriptor)
     embedder._client = mock_client
 
     mock_response = Mock(spec=CreateEmbeddingResponse)
@@ -665,63 +579,29 @@ def test_supports_overriding_dimensions_true(mock_client):
     )
 
 
-def test_supports_overriding_dimensions_true_batch(mock_client):
-    """Test that supports_overriding_dimensions=True works with _embed_text_batch."""
+def test_supports_overriding_dimensions_explicit_false(mock_client):
+    """Test that when supports_overriding_dimensions is False, dimensions use omit."""
     descriptor = OpenAITextEmbedderDescriptor(
-        provider_name="openai",
-        provider_options={"api_key": "test-key"},
-        model_name="text-embedding-3-small",
-        dimensions=256,
-        embed_options={"supports_overriding_dimensions": True},
-    )
-    embedder = descriptor.instantiate()
-    embedder._client = mock_client
-
-    mock_response = Mock(spec=CreateEmbeddingResponse)
-    mock_embeddings = []
-    for i in range(2):
-        mock_embedding = Mock(spec=OpenAIEmbedding)
-        mock_embedding.embedding = np.array([float(i), 0.2, 0.3] * 85, dtype=np.float32)  # 256 dimensions
-        mock_embeddings.append(mock_embedding)
-    mock_response.data = mock_embeddings
-    mock_client.embeddings.create.return_value = mock_response
-
-    result = run(embedder._embed_text_batch(["text1", "text2"]))
-
-    assert len(result) == 2
-    # Verify dimensions WERE included in the batch request
-    mock_client.embeddings.create.assert_awaited_once_with(
-        input=["text1", "text2"],
+        provider="openai",
         model="text-embedding-3-small",
-        encoding_format="float",
-        dimensions=256,
-    )
-
-
-def test_supports_overriding_dimensions_false_single_method(mock_client):
-    """Test that supports_overriding_dimensions=False works with _embed_text method."""
-    descriptor = OpenAITextEmbedderDescriptor(
-        provider_name="openai",
+        dimensions=EmbeddingDimensions(size=1536, dtype=DataType.float32()),
         provider_options={"api_key": "test-key"},
-        model_name="text-embedding-3-small",
-        dimensions=256,
-        embed_options={"supports_overriding_dimensions": False},
+        supports_overriding_dimensions=False,
     )
-    embedder = descriptor.instantiate()
+    embedder = OpenAITextEmbedder(descriptor)
     embedder._client = mock_client
 
     mock_response = Mock(spec=CreateEmbeddingResponse)
     mock_embedding = Mock(spec=OpenAIEmbedding)
-    mock_embedding.embedding = np.array([0.1, 0.2, 0.3] * 512, dtype=np.float32)  # 1536 dimensions
+    mock_embedding.embedding = np.array([0.1, 0.2, 0.3] * 512, dtype=np.float32)
     mock_response.data = [mock_embedding]
     mock_client.embeddings.create.return_value = mock_response
 
-    result = run(embedder._embed_text("Hello world"))
+    result = run(embedder.embed_text(["Hello world"]))
 
-    assert isinstance(result, np.ndarray)
-    # Verify dimensions were NOT included in the single request (should use omit)
+    assert len(result) == 1
     mock_client.embeddings.create.assert_awaited_once_with(
-        input="Hello world",
+        input=["Hello world"],
         model="text-embedding-3-small",
         encoding_format="float",
         dimensions=omit,

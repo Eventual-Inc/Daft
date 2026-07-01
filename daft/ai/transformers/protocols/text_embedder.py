@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if sys.version_info < (3, 11):
@@ -14,55 +13,29 @@ from sentence_transformers import SentenceTransformer
 from transformers import AutoConfig
 
 from daft import DataType
-from daft.ai.protocols import TextEmbedder, TextEmbedderDescriptor
-from daft.ai.typing import EmbeddingDimensions, EmbedTextOptions, Options, UDFOptions
-from daft.ai.utils import get_gpu_udf_options
+from daft.ai.protocols import TextEmbedder
+from daft.ai.typing import EmbeddingDimensions, EmbedTextOptions
 
 if TYPE_CHECKING:
     from daft.ai.typing import Embedding
 
 
-@dataclass
-class TransformersTextEmbedderDescriptor(TextEmbedderDescriptor):
-    model: str
-    dimensions: int | None = None
-    embed_options: EmbedTextOptions = field(default_factory=lambda: EmbedTextOptions(batch_size=64))
+def resolve_dimensions(model_name: str, dimensions_override: int | None) -> EmbeddingDimensions:
+    """Resolves embedding dimensions for a transformers model.
 
-    def __post_init__(self) -> None:
-        if self.dimensions is None:
-            return
-        if self.dimensions <= 0:
-            raise ValueError("Embedding dimensions must be a positive integer.")
-        dimensions = AutoConfig.from_pretrained(self.model, trust_remote_code=True).hidden_size
-        if self.dimensions > dimensions:
+    Uses AutoConfig to determine the model's hidden size, validates the override
+    if provided, and returns the resolved EmbeddingDimensions.
+    """
+    hidden_size = AutoConfig.from_pretrained(model_name, trust_remote_code=True).hidden_size
+
+    if dimensions_override is not None:
+        if dimensions_override > hidden_size:
             raise ValueError(
-                f"Requested dimensions ({self.dimensions}) exceeds model output size ({dimensions}) for '{self.model}'."
+                f"Requested dimensions ({dimensions_override}) exceeds model output size ({hidden_size}) for '{model_name}'."
             )
+        return EmbeddingDimensions(size=dimensions_override, dtype=DataType.float32())
 
-    def get_provider(self) -> str:
-        return "transformers"
-
-    def get_model(self) -> str:
-        return self.model
-
-    def get_options(self) -> Options:
-        return dict(self.embed_options)
-
-    def get_dimensions(self) -> EmbeddingDimensions:
-        if self.dimensions is not None:
-            return EmbeddingDimensions(size=self.dimensions, dtype=DataType.float32())
-        dimensions = AutoConfig.from_pretrained(self.model, trust_remote_code=True).hidden_size
-        return EmbeddingDimensions(size=dimensions, dtype=DataType.float32())
-
-    def get_udf_options(self) -> UDFOptions:
-        udf_options = get_gpu_udf_options()
-        for key, value in self.embed_options.items():
-            if key in udf_options.__annotations__.keys():
-                setattr(udf_options, key, value)
-        return udf_options
-
-    def instantiate(self) -> TextEmbedder:
-        return TransformersTextEmbedder(self.model, dimensions=self.dimensions, **self.embed_options)
+    return EmbeddingDimensions(size=hidden_size, dtype=DataType.float32())
 
 
 class TransformersTextEmbedder(TextEmbedder):
