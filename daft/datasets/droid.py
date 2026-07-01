@@ -395,7 +395,7 @@ def trajectory(
 @PublicAPI
 def camera_frames(
     episodes: DataFrame,
-    cameras: str | Sequence[str] = ("wrist", "ext1", "ext2"), # _CAMERAS
+    cameras: str | Sequence[str] = ("wrist", "ext1", "ext2"),  # _CAMERAS
     *,
     start_time: float = 0,
     end_time: float | None = None,

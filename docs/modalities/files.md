@@ -70,9 +70,9 @@ This works well for URLs which are HTTP paths to non-HTML files (e.g. jpeg), loc
 
 ## The [`daft.File`](../api/datatypes/file_types.md) Datatype
 
-[`daft.File`](../api/datatypes/file_types.md) is particularly useful for working with large files that don't fit in memory or when you only need to access specific portions of a file. This is a common use case when working with audio, video, or image data where loading the entire object is prohibitive. 
+[`daft.File`](../api/datatypes/file_types.md) is particularly useful for working with large files that don't fit in memory or when you only need to access specific portions of a file. This is a common use case when working with audio, video, or image data where loading the entire object is prohibitive.
 
-The `daft.File` type is subclassed by 
+The `daft.File` type is subclassed by
 - [`daft.AudioFile`](../api/datatypes/file_types.md)
 - [`daft.ImageFile`](../api/datatypes/file_types.md)
 - [`daft.VideoFile`](../api/datatypes/file_types.md)

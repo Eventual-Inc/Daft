@@ -107,7 +107,7 @@ gsutil -m cp -r gs://gresearch/robotics/droid_raw /path/to/droid_raw
 gsutil -m cp -r gs://gresearch/robotics/droid_raw/<episode_path> /path/to/droid_raw/
 ```
 
-!!! note 
+!!! note
     See the [official DROID dataset documentation](https://droid-dataset.github.io/droid/the-droid-dataset) for details on the dataset format and downloading the necessary files for your use case.
 
 For lower-level HDF5 file usage patterns, see the [HDF5 file usage notebook](https://github.com/Eventual-Inc/Daft/blob/main/examples/hdf5_file_usage.ipynb).
@@ -286,7 +286,7 @@ if __name__ == "__main__":
 
 ### Reading trajectories and camera frames
 
-Use `trajectory()` to read selected HDF5 datasets into tensor columns, then use `camera_frames()` to decode MP4 camera frames when you need image data. `camera_frames()` decodes all three cameras by default. Pass a single camera name such as `cameras="wrist"` or a list of camera names to narrow the output. Supported camera names include `"wrist"`, `"ext1"`, and `"ext2"`. 
+Use `trajectory()` to read selected HDF5 datasets into tensor columns, then use `camera_frames()` to decode MP4 camera frames when you need image data. `camera_frames()` decodes all three cameras by default. Pass a single camera name such as `cameras="wrist"` or a list of camera names to narrow the output. Supported camera names include `"wrist"`, `"ext1"`, and `"ext2"`.
 
 
 ```python
