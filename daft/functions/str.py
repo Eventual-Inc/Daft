@@ -606,20 +606,20 @@ def overlay(
         >>> from daft.functions import overlay
         >>> df = daft.from_pydict({"src": ["AAAAAAAAAA", "hello world"]})
         >>> df.with_column("out", overlay(df["src"], "BBB", 3)).collect()
-        ╭──────────────┬──────────────╮
-        │ src          ┆ out          │
-        │ ---          ┆ ---          │
-        │ String       ┆ String       │
-        ╞══════════════╪══════════════╡
-        │ AAAAAAAAAA   ┆ AABBBAAAAA   │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ hello world  ┆ heBBB world  │
-        ╰──────────────┴──────────────╯
+        ╭─────────────┬─────────────╮
+        │ src         ┆ out         │
+        │ ---         ┆ ---         │
+        │ String      ┆ String      │
+        ╞═════════════╪═════════════╡
+        │ AAAAAAAAAA  ┆ AABBBAAAAA  │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ hello world ┆ heBBB world │
+        ╰─────────────┴─────────────╯
         <BLANKLINE>
         (Showing first 2 of 2 rows)
 
     """
-    return Expression._call_builtin_scalar_fn("overlay", expr, replace, pos, len)
+    return Expression._call_builtin_scalar_fn("overlay", expr, replace, pos, len=len)
 
 
 def reverse(expr: Expression) -> Expression:

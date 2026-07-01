@@ -4,6 +4,7 @@ import pytest
 
 import daft
 from daft import col
+from daft.exceptions import DaftCoreException
 from daft.functions import overlay
 
 
@@ -85,7 +86,25 @@ def test_overlay_null_pos_propagates_null():
     assert result["src"] == [None, None]
 
 
+def test_overlay_null_src_propagates_null():
+    df = daft.from_pydict({"src": ["hello", None]})
+    result = df.select(overlay(col("src"), "X", 2)).to_pydict()
+    assert result["src"] == ["hXllo", None]
+
+
+def test_overlay_null_replace_propagates_null():
+    df = daft.from_pydict({"src": ["hello", "world"], "replace": ["X", None]})
+    result = df.select(overlay(col("src"), col("replace"), 2)).to_pydict()
+    assert result["src"] == ["hXllo", None]
+
+
+def test_overlay_unicode():
+    df = daft.from_pydict({"src": ["こんにちは"]})
+    result = df.select(overlay(col("src"), "X", 2)).to_pydict()
+    assert result["src"] == ["こXにちは"]
+
+
 def test_overlay_non_string_raises():
     df = daft.from_pydict({"src": [1, 2, 3]})
-    with pytest.raises(Exception):
+    with pytest.raises(DaftCoreException, match="src must be a string"):
         df.select(overlay(col("src"), "X", 1)).collect()
