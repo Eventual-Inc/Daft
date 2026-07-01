@@ -82,6 +82,7 @@ from daft.convert import (
     from_pydict,
     from_pylist,
     from_ray_dataset,
+    concat,
 )
 from daft.daft import ImageFormat, ImageMode, UnionMode, ImageProperty, ResourceRequest
 from daft.dataframe import DataFrame
@@ -160,7 +161,7 @@ from daft.runners import get_or_create_runner, get_or_infer_runner_type, set_run
 from daft.sql import sql, sql_expr
 from daft.viz import register_viz_hook
 from daft.window import Window
-from daft.file import File, VideoFile, AudioFile, ImageFile, open_file
+from daft.file import File, VideoFile, AudioFile, ImageFile, Hdf5File, open_file
 
 range = _range  # type: ignore[no-redef,unused-ignore]
 
@@ -191,6 +192,7 @@ __all__ = [
     "DataType",
     "Expression",
     "File",
+    "Hdf5File",
     "IOConfig",
     "IdempotentCommit",
     "Identifier",
@@ -218,6 +220,7 @@ __all__ = [
     "attach_view",
     "cls",
     "col",
+    "concat",
     "context",
     "create_namespace",
     "create_namespace_if_not_exists",

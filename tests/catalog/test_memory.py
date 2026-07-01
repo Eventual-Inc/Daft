@@ -167,6 +167,19 @@ def test_namespace_operations():
     assert catalog.list_tables() == []
 
 
+def test_list_namespaces_with_pattern():
+    catalog = Catalog.from_pydict(
+        {"sandbox.t1": {"x": [1]}, "scratch.t2": {"x": [2]}, "analytics.t3": {"x": [3]}},
+        name="cat",
+    )
+
+    assert sorted(str(ns) for ns in catalog.list_namespaces("%")) == ["analytics", "sandbox", "scratch"]
+    assert sorted(str(ns) for ns in catalog.list_namespaces("s%")) == ["sandbox", "scratch"]
+    assert catalog.list_namespaces("sandbox") == [Identifier("sandbox")]
+    assert catalog.list_namespaces("nonexistent") == []
+    assert catalog.list_namespaces("nope%") == []
+
+
 def test_namespace_errors():
     catalog = Catalog.from_pydict({}, "cat")
 

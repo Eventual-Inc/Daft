@@ -3026,6 +3026,16 @@ class Expression:
 
         return file_size(self)
 
+    def file_exists(self) -> Expression:
+        """Checks whether a file exists.
+
+        Tip: See Also
+            [`daft.functions.file_exists`](https://docs.daft.ai/en/stable/api/functions/file_exists/)
+        """
+        from daft.functions import file_exists
+
+        return file_exists(self)
+
     def video_metadata(self) -> Expression:
         """Gets metadata for a video file.
 
