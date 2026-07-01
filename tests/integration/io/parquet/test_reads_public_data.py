@@ -406,7 +406,7 @@ def test_read_file_level_timeout():
         )
     )
 
-    with pytest.raises((ReadTimeoutError), match=f"Parquet reader timed out while trying to read path `{url}`"):
+    with pytest.raises((ReadTimeoutError), match=f"Parquet reader timed out while trying to read: {url}"):
         daft.recordbatch.read_parquet_into_pyarrow(url, io_config=read_timeout_config, file_timeout_ms=2)
 
 
