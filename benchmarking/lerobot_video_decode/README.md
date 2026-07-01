@@ -52,23 +52,25 @@ batched decode survives process serialization. Each worker/process opens the sha
 in its own batches once (file handles are not shared across processes); partition by
 shard to make that one download per shard per worker.
 
-With multiple shards the decode parallelizes across worker processes
-(`.with_concurrency(N)`) - `worker_scaling.py`, 8 shards, full-span decode:
+Can more workers let the original catch up? No - `worker_scaling.py` runs both
+versions across worker counts (8 shards, dense consecutive frames, scalar return
+to isolate decode compute):
 
 ![workers](charts/chart_workers.png)
 
-| workers | wall | speedup |
-| --- | --- | --- |
-| 1 | 22.9s | 1.0× |
-| 2 | 15.3s | 1.5× |
-| 4 | 11.0s | 2.1× |
-| 8 | 7.6s | 3.0× |
+| workers | original | batched | ratio |
+| --- | --- | --- | --- |
+| 1 | 9.9s | 2.2s | 4.4× |
+| 2 | 6.6s | 1.5s | 4.4× |
+| 4 | 6.0s | 1.1s | 5.5× |
+| 8 | 6.0s | 0.9s | 7.0× |
 
-This isolates decode-compute scaling: each row returns a scalar so image
-serialization doesn't dominate, and the shards are local copies (no network). The
-sub-linear scaling is process-spawn overhead plus one-batch-per-shard granularity.
-On a real cluster, parallel network fetch of distinct shards is an additional win
-not captured here.
+The original **plateaus** (4→8 workers: no improvement) because it re-opens and
+re-decodes from the keyframe for every frame - parallelism only spreads that
+redundant work. Batched wins 4-7× at every worker count, and batched on **one**
+worker (2.2s) already beats the original on **eight** (6.0s). Local copies, so this
+is decode-compute; parallel network fetch of distinct shards is an extra real-cluster
+win not shown here.
 
 ## Running
 
