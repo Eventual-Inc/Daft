@@ -315,7 +315,10 @@ def merge_deltalake(
     from deltalake import CommitProperties
 
     if isinstance(source, DataFrame):
-        source_data = source.to_arrow()
+        import pyarrow as pa
+
+        arrow_schema = source.schema().to_pyarrow_schema()
+        source_data = pa.RecordBatchReader.from_batches(arrow_schema, source.to_arrow_iter())
     else:
         source_data = source
 
