@@ -72,9 +72,6 @@ low. More workers shift the original down but with diminishing returns (~6s at 2
 frames from 4 workers on). Batched on one worker (2.2s) still beats the original on
 eight (6.0s).
 
-Local copies here, so this measures decode compute; parallel network fetch of distinct
-shards is an extra real-cluster win not shown.
-
 ## Tradeoffs
 
 The batched decode does one forward pass from the earliest to the latest timestamp
