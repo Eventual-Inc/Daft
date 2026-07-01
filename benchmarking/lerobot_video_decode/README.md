@@ -68,12 +68,13 @@ shards, dense consecutive frames, scalar return to isolate decode compute):
 ![workers](charts/chart_workers.png)
 
 At each worker count the original grows steeply with frame count while batched stays
-low. Adding workers shifts the original down but with diminishing returns (it settles
-around 6s at 240 frames from 4 workers on), because it re-opens and re-decodes from
-the keyframe for every frame - parallelism spreads that redundant work rather than
-removing it. At 240 frames, batched on one worker (2.2s) is still faster than the
-original on eight (6.0s). Local copies, so this is decode-compute; parallel network
-fetch of distinct shards is an extra real-cluster win not shown here.
+low. More workers shift the original down but with diminishing returns (~6s at 240
+frames from 4 workers on): it re-decodes from the keyframe per frame, so parallelism
+spreads that redundant work rather than removing it. Batched on one worker (2.2s)
+still beats the original on eight (6.0s).
+
+Local copies here, so this measures decode compute; parallel network fetch of distinct
+shards is an extra real-cluster win not shown.
 
 ## Tradeoffs
 
