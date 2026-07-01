@@ -365,7 +365,9 @@ def test_connect_timeout_s3(multithreaded_io):
         )
     )
 
-    with pytest.raises((ReadTimeoutError, ConnectTimeoutError), match=f"timed out when trying to connect to {url}"):
+    with pytest.raises(
+        (ReadTimeoutError, ConnectTimeoutError), match=f"timed out when trying to connect to path `{url}`"
+    ):
         MicroPartition.read_parquet(url, io_config=connect_timeout_config, multithreaded_io=multithreaded_io).to_arrow()
 
 
@@ -386,7 +388,9 @@ def test_read_timeout_s3(multithreaded_io):
         )
     )
 
-    with pytest.raises((ReadTimeoutError, ConnectTimeoutError), match=f"timed out when trying to connect to {url}"):
+    with pytest.raises(
+        (ReadTimeoutError, ConnectTimeoutError), match=f"timed out when trying to connect to path `{url}`"
+    ):
         MicroPartition.read_parquet(url, io_config=read_timeout_config, multithreaded_io=multithreaded_io).to_arrow()
 
 
@@ -402,7 +406,7 @@ def test_read_file_level_timeout():
         )
     )
 
-    with pytest.raises((ReadTimeoutError), match=f"Parquet reader timed out while trying to read: {url}"):
+    with pytest.raises((ReadTimeoutError), match=f"Parquet reader timed out while trying to read path `{url}`"):
         daft.recordbatch.read_parquet_into_pyarrow(url, io_config=read_timeout_config, file_timeout_ms=2)
 
 
@@ -422,7 +426,9 @@ def test_connect_timeout_gcs(multithreaded_io):
         )
     )
 
-    with pytest.raises((ReadTimeoutError, ConnectTimeoutError), match=f"timed out when trying to connect to {url}"):
+    with pytest.raises(
+        (ReadTimeoutError, ConnectTimeoutError), match=f"timed out when trying to connect to path `{url}`"
+    ):
         MicroPartition.read_parquet(url, io_config=connect_timeout_config, multithreaded_io=multithreaded_io).to_arrow()
 
 
