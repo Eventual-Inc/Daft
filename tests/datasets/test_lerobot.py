@@ -248,7 +248,8 @@ def _write_color_shard(path, colors, fps=30):
     with av.open(str(path), "w") as container:
         try:
             stream = container.add_stream("libx264", rate=fps)
-        except av.FFmpegError:
+        except (av.FFmpegError, ValueError):
+            # av raises UnknownCodecError (a ValueError subclass) on builds without libx264.
             stream = container.add_stream("mpeg4", rate=fps)
         stream.width = stream.height = 64
         stream.pix_fmt = "yuv420p"
@@ -313,3 +314,70 @@ def test_batched_decode_interleaved_shards(tmp_path):
         assert abs(r - want_r) < 20, f"row (shard={s}, frame={f}): red {r:.0f} != {want_r}"
         assert abs(g - want_g) < 20, f"row (shard={s}, frame={f}): green {g:.0f} != {want_g}"
         assert abs(b - want_b) < 20, f"row (shard={s}, frame={f}): blue {b:.0f} != {want_b}"
+
+
+def test_batched_decode_seeks_over_large_gaps(tmp_path, monkeypatch):
+    """Same-shard targets far apart in one batch must be seeked over, not decoded through.
+
+    Regression test for the decode-frame-budget failure: with a small budget and
+    two targets separated by a gap much larger than ``_RESEEK_GAP_S``, decoding
+    straight through the gap would exhaust the budget; clustered seeks stay small.
+    """
+    pytest.importorskip("av")
+    np = pytest.importorskip("numpy")
+    pytest.importorskip("PIL")
+
+    import daft.datasets.lerobot as lerobot_mod
+    from daft.datasets.lerobot import _decode_lerobot_video_timestamp
+    from daft.functions.file_ import video_file
+
+    fps = 30
+    n_frames = 900  # 30s of video; the two targets are ~29s apart
+    colors = [(200, 0, 0)] * (n_frames // 2) + [(0, 0, 200)] * (n_frames - n_frames // 2)
+    shard = tmp_path / "long.mp4"
+    _write_color_shard(shard, colors, fps=fps)
+
+    # Far smaller than the ~880-frame gap: decoding through would trip it.
+    monkeypatch.setattr(lerobot_mod, "_DECODE_FRAME_BUDGET", 300)
+
+    targets = [5, 890]  # early red frame, late blue frame
+    df = daft.from_pydict(
+        {
+            "path": [str(shard)] * len(targets),
+            "from_ts": [0.0] * len(targets),
+            "ts": [f / fps for f in targets],
+        }
+    )
+    df = df.with_column("video", video_file(daft.col("path"), verify=False))
+    df = df.with_column(
+        "img",
+        _decode_lerobot_video_timestamp(daft.col("video"), daft.col("from_ts"), daft.col("ts"), 1.0 / fps / 2.0, 0, 0),
+    )
+    decoded = df.select("img").to_pydict()["img"]
+
+    first = np.asarray(decoded[0])[..., :3].reshape(-1, 3).mean(axis=0)
+    second = np.asarray(decoded[1])[..., :3].reshape(-1, 3).mean(axis=0)
+    assert first[0] > 150 and first[2] < 50, f"early target should be red, got mean {first}"
+    assert second[0] < 50 and second[2] > 150, f"late target should be blue, got mean {second}"
+
+
+def test_batched_decode_tolerance_violation_raises(tmp_path):
+    """A timestamp with no frame within tolerance fails loudly, not silently."""
+    pytest.importorskip("av")
+    pytest.importorskip("PIL")
+
+    from daft.datasets.lerobot import _decode_lerobot_video_timestamp
+    from daft.functions.file_ import video_file
+
+    fps = 30
+    shard = tmp_path / "short.mp4"
+    _write_color_shard(shard, [(200, 0, 0)] * 6, fps=fps)  # 0.2s of video
+
+    df = daft.from_pydict({"path": [str(shard)], "from_ts": [0.0], "ts": [5.0]})  # far past the end
+    df = df.with_column("video", video_file(daft.col("path"), verify=False))
+    df = df.with_column(
+        "img",
+        _decode_lerobot_video_timestamp(daft.col("video"), daft.col("from_ts"), daft.col("ts"), 1.0 / fps / 2.0, 0, 0),
+    )
+    with pytest.raises(Exception, match="No frame matched timestamp"):
+        df.select("img").collect()

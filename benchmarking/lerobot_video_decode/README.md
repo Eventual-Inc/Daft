@@ -79,11 +79,12 @@ in a batch, so its cost depends on how spread out those timestamps are:
 
 - **Dense consecutive frames (the common case - reading full episodes):** optimal.
   One open, one pass, no redundant decoding - the charts above.
-- **Sparse timestamps in a batch:** the pass decodes the gaps too (e.g. 5 frames
-  spread across a 20s shard decodes ~600 frames vs ~20 for a per-target seek). It
-  still wins when the shard is remote (read over the network), because one fewer
-  remote open is worth more than the extra decoding. Remote, frames spread across the
-  whole shard ([`sparse.py`](sparse.py)):
+- **Sparse timestamps in a batch:** the pass decodes small gaps too (e.g. 5 frames
+  spread across a 20s shard decodes ~600 frames vs ~20 for a per-target seek), while
+  gaps over ~10s are seeked over rather than decoded through. It still wins when the
+  shard is remote (read over the network), because one fewer remote open is worth
+  more than the extra decoding. Remote, frames spread across the whole shard
+  ([`sparse.py`](sparse.py)):
 
   ![sparse](charts/chart_sparse.png)
 

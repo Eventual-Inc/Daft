@@ -15,11 +15,13 @@ from typing import TYPE_CHECKING, Any, TypedDict, cast
 import daft
 from daft.api_annotations import PublicAPI
 from daft.datatype import DataType
+from daft.dependencies import av, pil_image
 from daft.exceptions import DaftCoreException
 from daft.expressions import col, lit
 from daft.file import VideoFile
 from daft.functions import lpad
 from daft.functions.file_ import video_file
+from daft.series import Series
 from daft.udf import func
 
 if TYPE_CHECKING:
@@ -38,28 +40,41 @@ def _normalize_dataset_root(uri: str) -> str:
     return u.rstrip("/")
 
 
+# Safety backstop on frames decoded per shard per batch; clustered seeks stay far below it.
+_DECODE_FRAME_BUDGET = 20_000
+
+# Decode straight through target gaps up to this long; seek over anything longer.
+# Small gaps are cheaper to decode through than to re-seek (a seek restarts from the
+# preceding keyframe). But a shard packs many episodes back to back, so two targets
+# in one batch can be minutes apart - decoding through such a gap would waste work
+# and could exhaust the frame budget, so we seek instead.
+_RESEEK_GAP_S = 10.0
+
+
 def _decode_one_shard(
     file: VideoFile,
     abs_timestamps: list[tuple[int, float]],
     tolerance: float,
     width: int | None,
     height: int | None,
-    av_mod: Any,
-    pil_image: Any,
 ) -> list[tuple[int, Any]]:
     """Open a single shard once and return ``(row_index, PIL.Image)`` for every requested timestamp.
 
-    All ``abs_timestamps`` refer to the same shard ``file``. We seek once to the
-    keyframe preceding the earliest target, then decode forward a single time,
-    keeping the closest decoded frame to each target. This is the batched
-    equivalent of the old per-row decode: one open + one forward pass per shard
-    instead of per frame.
+    All ``abs_timestamps`` refer to the same shard ``file``. The shard is opened
+    once; targets are grouped into clusters of nearby timestamps, and each cluster
+    is one seek to the preceding keyframe plus one forward decode, keeping the
+    closest decoded frame to each target. This is the batched equivalent of the
+    old per-row decode: one open + one seek per cluster instead of per frame.
     """
     targets = sorted(abs_timestamps, key=lambda t: t[1])  # ascending by timestamp
-    earliest = targets[0][1]
-    latest = targets[-1][1]
+    clusters: list[list[tuple[int, float]]] = [[targets[0]]]
+    for t in targets[1:]:
+        if t[1] - clusters[-1][-1][1] > _RESEEK_GAP_S:
+            clusters.append([t])
+        else:
+            clusters[-1].append(t)
+
     tail_s = max(0.1, tolerance * 50.0, 1.0 / 24.0)
-    decode_cap = 20_000
 
     # Best (distance, ndarray) seen so far for each target row; at most one frame
     # is retained per target, so memory stays bounded regardless of the span.
@@ -68,29 +83,34 @@ def _decode_one_shard(
     decoded = 0
 
     with file.open() as f_open:
-        with av_mod.open(f_open) as container:
+        with av.open(f_open) as container:
             stream = container.streams.video[0]
-            # Match LeRobot: seek backwards to preceding keyframe, then decode forwards.
-            container.seek(max(0, int(earliest * av_mod.time_base)), backward=True)
-            for vf in container.decode(stream):
-                if vf.pts is None:
-                    continue
-                current_ts = float(vf.pts * stream.time_base)
-                arr = vf.to_ndarray(format="rgb24")
-                for row, target in targets:
-                    dist = abs(current_ts - target)
-                    if dist < best_dist[row]:
-                        best_dist[row] = dist
-                        best_arr[row] = arr
+            for cluster in clusters:
+                earliest = cluster[0][1]
+                latest = cluster[-1][1]
+                # Match LeRobot: seek backwards to preceding keyframe, then decode forwards.
+                container.seek(max(0, int(earliest * av.time_base)), backward=True)
+                for vf in container.decode(stream):
+                    if vf.pts is None:
+                        continue
+                    current_ts = float(vf.pts * stream.time_base)
+                    arr = None  # convert lazily: most frames improve no target
+                    for row, target in cluster:
+                        dist = abs(current_ts - target)
+                        if dist < best_dist[row]:
+                            if arr is None:
+                                arr = vf.to_ndarray(format="rgb24")
+                            best_dist[row] = dist
+                            best_arr[row] = arr
 
-                decoded += 1
-                if decoded >= decode_cap:
-                    raise ValueError("Exceeded decode frame budget while aligning to parquet timestamps.")
-                if current_ts >= latest + tail_s:
-                    break
+                    decoded += 1
+                    if decoded >= _DECODE_FRAME_BUDGET:
+                        raise ValueError("Exceeded decode frame budget while aligning to parquet timestamps.")
+                    if current_ts >= latest + tail_s:
+                        break
 
     if decoded == 0:
-        raise ValueError(f"No frames decoded from shard while seeking timestamp {earliest:.6f}s.")
+        raise ValueError(f"No frames decoded from shard while seeking timestamp {targets[0][1]:.6f}s.")
 
     out: list[tuple[int, Any]] = []
     for row, target in targets:
@@ -108,28 +128,24 @@ def _decode_one_shard(
 
 @func.batch(return_dtype=DataType.image())
 def _decode_lerobot_video_timestamp(
-    files: Any,  # daft.Series of VideoFile
-    episode_from_timestamps_s: Any,  # daft.Series of float
-    frame_timestamps_s: Any,  # daft.Series of float
+    files: Series,  # VideoFile per row
+    episode_from_timestamps_s: Series,  # float per row
+    frame_timestamps_s: Series,  # float per row
     tolerance_s: float,
     image_width_i: int,
     image_height_i: int,
-) -> Any:  # a daft.Series-compatible list of PIL.Image, one per row
+) -> Any:  # a list with one PIL.Image per row
     """Decode the frame closest to ``from_timestamp + timestamp`` for each row.
 
     Batched over rows: rows sharing the same shard file are grouped so the shard
     is opened exactly once per batch instead of once per frame.
     """
-    try:
-        import av as av_mod
-    except ImportError as err:
-        raise ImportError("Decoding LeRobot MP4 shards requires PyAV. Install with `pip install av`.") from err
-    try:
-        from PIL import Image as pil_image
-    except ImportError as err:
+    if not av.module_available():
+        raise ImportError("Decoding LeRobot MP4 shards requires PyAV. Install with `pip install av`.")
+    if not pil_image.module_available():
         raise ImportError(
             "Decoding LeRobot MP4 shards requires Pillow. Install with `pip install daft[video]` or `pip install pillow`."
-        ) from err
+        )
 
     file_list = files.to_pylist()
     from_list = episode_from_timestamps_s.to_pylist()
@@ -141,7 +157,10 @@ def _decode_lerobot_video_timestamp(
     width = width_i if width_i > 0 and height_i > 0 else None
     height = height_i if width_i > 0 and height_i > 0 else None
 
-    # Group row indices by shard path so each shard is opened once.
+    # Group row indices by shard path so each shard is opened once. This assumes
+    # files with the same path are interchangeable - true for the plain-URL
+    # VideoFiles that read() constructs, but not for byte-range slices or files
+    # with differing io_configs, which would need the full file identity as key.
     by_shard: dict[str, list[tuple[int, float]]] = {}
     shard_file: dict[str, VideoFile] = {}
     for i, file in enumerate(file_list):
@@ -151,7 +170,7 @@ def _decode_lerobot_video_timestamp(
 
     results: list[Any] = [None] * len(file_list)
     for path, targets in by_shard.items():
-        for row, img in _decode_one_shard(shard_file[path], targets, tolerance, width, height, av_mod, pil_image):
+        for row, img in _decode_one_shard(shard_file[path], targets, tolerance, width, height):
             results[row] = img
     return results
 
