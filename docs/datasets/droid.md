@@ -1,14 +1,16 @@
 # How to use DROID with Daft
 
-[DROID](https://droid-dataset.github.io/) (Distributed Robot Interaction Dataset) is one of the most popular large-scale, in-the-wild robot manipulation dataset with 76,000 demonstration trajectories and 350 hours of interaction data. It was collected across 564 scenes and 86 tasks using the Franka Panda robot platform, and includes synchronized RGB camera streams, camera calibration, and natural language task descriptions.
+<img src="https://droid-dataset.github.io/droid/assets/index/droid_teaser.jpg" alt="Droid Dataset Image" style="max-width: 100%; height: auto;" />
 
-Daft provides a simple way to explore the raw DROID release as a lazy, episode-level DataFrame with metadata, trajectory files as [`daft.Hdf5File`](../modalities/hdf5.md), and camera videos attached as `[daft.VideoFile](../modalities/videos.md)` columns.
+[DROID](https://droid-dataset.github.io/) (Distributed Robot Interaction Dataset) is one of the most popular large-scale, in-the-wild robot manipulation datasets, with 76,000 demonstration trajectories and 350 hours of interaction data. It was collected across 564 scenes and 86 tasks using the Franka Panda robot platform, and includes synchronized RGB camera streams, camera calibration, and natural language task descriptions.
+
+Daft provides a simple way to explore the raw DROID release as a lazy, episode-level DataFrame with metadata, trajectory files as [`daft.Hdf5File`](../modalities/tensors.md#hdf5-files), and camera videos attached as [`daft.VideoFile`](../modalities/videos.md) columns.
 
 ## Prerequisites
 
 The raw DROID dataset is hosted on Google Cloud Storage at `gs://gresearch/robotics/droid_raw` (~8.7 TB). By default, [`daft.datasets.droid.raw()`][daft.datasets.droid.raw] reads from this public bucket, so no credentials are required to get started.
 
-If you prefer to work with a local copy, download episodes with `[gsutil](https://cloud.google.com/storage/docs/gsutil_install)` and pass the local path to `raw()`:
+If you prefer to work with a local copy, download episodes with [`gsutil`](https://cloud.google.com/storage/docs/gsutil_install) and pass the local path to `raw()`:
 
 ```bash
 # Download the full raw dataset (~8.7 TB)
@@ -68,13 +70,9 @@ daft.datasets.droid.raw().show(3)
 (Showing first 8 rows)
 ```
 
-
-
 Each row corresponds to one DROID episode. Metadata from each episode's JSON file is unnested into top-level columns, and lazy file references are attached for the trajectory HDF5 file and three MP4 camera recordings.
 
 ## Basic usage
-
-
 
 ### Loading from the public GCS bucket
 
@@ -85,8 +83,6 @@ import daft
 
 df = daft.datasets.droid.raw()
 ```
-
-
 
 ### Loading from a local or custom path
 
@@ -116,11 +112,11 @@ import daft
 )
 ```
 
-### Filtering by scene classification
+### Scene classification table
 
-The DROID dataset is annotated with scene classifications from GPT-4V. You can filter the data by scene classification using the `filter_scenes` function.
+The DROID dataset is annotated with scene classifications from GPT-4V. You can read those classifications with the `scenes` function, then filter or join the table however you need.
 
-`filter_scenes` joins against a Parquet mirror hosted on Hugging Face at [Eventual-Inc/droid-scene-classifications](https://huggingface.co/datasets/Eventual-Inc/droid-scene-classifications). That table is derived from the DROID authors' [supplemental scene classification release](https://github.com/droid-dataset/droid/issues/6) (CC-BY 4.0). Valid labels are listed in `daft.datasets.droid.SCENE_CLASSIFICATIONS`.
+`scenes` reads a Parquet mirror hosted on Hugging Face at [Eventual-Inc/droid-scene-classifications](https://huggingface.co/datasets/Eventual-Inc/droid-scene-classifications). That table is derived from the DROID authors' [supplemental scene classification release](https://github.com/droid-dataset/droid/issues/6) (CC-BY 4.0). Valid labels are listed in `daft.datasets.droid.SCENE_CLASSIFICATIONS`.
 
 ```python
 import daft
@@ -128,8 +124,13 @@ import daft
 # Load a sample of the raw DROID data
 df = daft.datasets.droid.raw().limit(100)
 
-# Filter the data to only include scenes of type "Home kitchen"
-df = daft.datasets.droid.filter_scenes(df, "Home kitchen")
+# Read and filter the scene classification table
+scene_classifications = daft.datasets.droid.scenes().where(
+    daft.col("scene_classification") == "Home kitchen"
+)
+
+# Join scene labels onto the episode data
+df = df.join(scene_classifications, on="scene_id", how="inner")
 
 df.select(
     "uuid",
@@ -156,7 +157,6 @@ df.select(
 (Showing first 3 rows)
 ```
 
-
 ### Load trajectory data lazily with `daft.Hdf5File` built into `daft.datasets.droid.trajectory()`
 
 The DROID dataset helper follows this pattern: it discovers episode files lazily, then reads selected known trajectory datasets into typed tensor columns.
@@ -169,11 +169,12 @@ df = daft.datasets.droid.raw().limit(3)
 
 df = daft.datasets.droid.trajectory(
     df,
-    fields=["action/joint_position", "action/gripper_position"]
-).show(3)
+    fields=["action/joint_position", "action/gripper_position"],
+)
+df.show(3)
 ```
 
-For custom HDF5 layouts, create lazy Hdf5File references with daft.functions.hdf5_file and use a typed UDF for dataset reads. If you need recursive traversal, call Hdf5File.visit() inside direct Python code or a UDF so that the cost is explicit.
+For custom HDF5 layouts, create lazy `Hdf5File` references with `daft.functions.hdf5_file()` and use a typed UDF for dataset reads. If you need recursive traversal, call `Hdf5File.visit()` inside direct Python code or a UDF so that the cost is explicit.
 
 ```python
 import h5py
@@ -199,31 +200,18 @@ def read_droid_trajectory(file: Hdf5File):
             "observation/robot_state/gripper_position": h5["observation/robot_state/gripper_position"][()],
         }
 
-def just_the_first_ten_data_points(f: Hdf5File) -> np.ndarray:
-
-    f.visit()
-
 if __name__ == "__main__":
-
     df = (
         daft.datasets.droid.raw()
-        .where(col("success")) # filter out failed episodes
+        .where(col("success"))
+        .where(col("trajectory").not_null())
         .select(col("current_task"), read_droid_trajectory(col("trajectory")))
-        .with_column("first_ten_steps", )
     )
 
     df.show(3)
 ```
 
-For a runnable walkthrough covering standalone Hdf5File usage, MIME detection, hierarchy traversal, DataFrame expressions, and UDF patterns, see the examples in daft-examples repository
-
-While the Python classes provide the interface, the actual implementation lives in Rust-based PyDaftFile, which maintains optimized backends for different storage types:
-
-Local filesystem access
-
-Remote object stores with buffered reading
-
-This architecture allows us to implement storage-specific optimizations (like network buffering for S3 or HTTP) while presenting a consistent interface.
+For a runnable walkthrough covering standalone `Hdf5File` usage, MIME detection, hierarchy traversal, DataFrame expressions, and UDF patterns, see the [HDF5 file usage notebook](https://github.com/Eventual-Inc/Daft/blob/main/examples/hdf5_file_usage.ipynb).
 
 ### Reading trajectories and camera frames
 
@@ -240,7 +228,7 @@ episodes = (
 
 traj = daft.datasets.droid.trajectory(
     episodes,
-    fields=["joint_position", "gripper_position"],
+    fields=["action/joint_position", "action/gripper_position"],
 )
 
 frames = daft.datasets.droid.camera_frames(
@@ -283,7 +271,6 @@ Stereo MP4 and raw SVO recordings are not yet exposed as columns.
 
 `raw()` returns one row per episode with metadata fields unnested from each `metadata_*.json` file, plus the following key columns:
 
-
 | Column                 | Type          | Description                              |
 | ---------------------- | ------------- | ---------------------------------------- |
 | `episode_dir`          | String        | Path to the episode directory            |
@@ -310,15 +297,12 @@ Stereo MP4 and raw SVO recordings are not yet exposed as columns.
 | `ext1_cam_video`       | VideoFile     | Lazy reference to external camera 1 MP4  |
 | `ext2_cam_video`       | VideoFile     | Lazy reference to external camera 2 MP4  |
 
-
 The raw metadata JSON includes additional path fields such as `hdf5_path`, `wrist_mp4_path`, and `ext1_mp4_path`; `raw()` exposes the constructed file columns instead.
-
-
 
 ## Next steps
 
 - Run the [HDF5 file usage notebook](https://github.com/Eventual-Inc/Daft/blob/main/examples/hdf5_file_usage.ipynb) for lower-level examples of inspecting and reading HDF5 files.
-- See the [Videos modality guide](../modalities/videos.md) for decoding frames with [`video_frames`][daft.functions.video_frames] and working with `[daft.VideoFile](../api/datatypes/file_types.md)`.
-- See the [Files modality guide](../modalities/files.md) for reading trajectory HDF5 files with `[daft.File](../api/datatypes/file_types.md)`.
+- See the [Videos modality guide](../modalities/videos.md) for decoding frames with [`video_frames`][daft.functions.video_frames] and working with [`daft.VideoFile`](../api/datatypes/file_types.md).
+- See the [Files modality guide](../modalities/files.md) for reading trajectory HDF5 files with [`daft.File`](../api/datatypes/file_types.md).
 - Visit the [official DROID project page](https://droid-dataset.github.io/) for hardware setup, policy learning code, and additional dataset formats.
 - See the [DROID Dataset API reference](../api/datasets.md#droid) for complete parameter documentation.

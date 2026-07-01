@@ -8,7 +8,7 @@ import pytest
 import daft
 import daft.datasets.droid as droid_module
 from daft import DataType, MediaType
-from daft.datasets.droid import SCENE_CLASSIFICATIONS, camera_frames, filter_scenes, trajectory
+from daft.datasets.droid import SCENE_CLASSIFICATIONS, camera_frames, scenes, trajectory
 from daft.expressions import col
 from daft.functions import hdf5_file, video_file
 
@@ -442,67 +442,25 @@ def local_scene_classifications(monkeypatch, sample_scene_classifications_parque
     )
 
 
-def test_filter_scenes_joins_and_filters(sample_episodes_df, local_scene_classifications) -> None:
-    result = filter_scenes(sample_episodes_df, "Industrial office").collect().to_pydict()
+def test_scenes_reads_classification_table(local_scene_classifications) -> None:
+    result = scenes().collect().to_pydict()
+
+    assert result["scene_id"] == [1, 2, 3]
+    assert result["scene_classification"] == ["Industrial office", "Home kitchen", "Bedroom"]
+
+
+def test_scenes_can_be_filtered_and_joined_by_user(sample_episodes_df, local_scene_classifications) -> None:
+    classifications = scenes().where(col("scene_classification") == "Industrial office")
+    result = sample_episodes_df.join(classifications, on="scene_id", how="inner").collect().to_pydict()
 
     assert result["uuid"] == ["episode-1"]
     assert result["scene_id"] == [1]
     assert result["scene_classification"] == ["Industrial office"]
+    assert "trajectory" in result
+    assert "robot_serial" in result
 
 
-def test_filter_scenes_filters_multiple_scene_types(local_scene_classifications) -> None:
-    episodes = daft.from_pydict(
-        {
-            "uuid": ["episode-1", "episode-2", "episode-3"],
-            "scene_id": [1, 2, 3],
-        }
-    )
-
-    result = (
-        filter_scenes(
-            episodes,
-            ["Industrial office", "Home kitchen"],
-        )
-        .collect()
-        .to_pydict()
-    )
-
-    assert result["uuid"] == ["episode-1", "episode-2"]
-    assert result["scene_classification"] == ["Industrial office", "Home kitchen"]
-
-
-def test_filter_scenes_excludes_non_matching_scene_labels(sample_episodes_df, local_scene_classifications) -> None:
-    result = filter_scenes(sample_episodes_df, "Home kitchen").collect().to_pydict()
-
-    assert result["uuid"] == []
-
-
-def test_filter_scenes_excludes_unclassified_scene_ids(local_scene_classifications) -> None:
-    episodes = daft.from_pydict(
-        {
-            "uuid": ["episode-1", "episode-2"],
-            "scene_id": [1, 999],
-        }
-    )
-
-    result = filter_scenes(episodes, "Industrial office").collect().to_pydict()
-
-    assert result["uuid"] == ["episode-1"]
-    assert result["scene_id"] == [1]
-
-
-def test_filter_scenes_preserves_episode_columns(sample_episodes_df, local_scene_classifications) -> None:
-    result = filter_scenes(sample_episodes_df, "Industrial office")
-    schema = {field.name for field in result.schema()}
-
-    assert "uuid" in schema
-    assert "scene_id" in schema
-    assert "scene_classification" in schema
-    assert "trajectory" in schema
-    assert "robot_serial" in schema
-
-
-def test_filter_scenes_reads_hf_parquet_path(monkeypatch) -> None:
+def test_scenes_reads_hf_parquet_path(monkeypatch) -> None:
     captured: dict[str, object] = {}
 
     def fake_read_parquet(path: str, io_config=None):
@@ -517,16 +475,15 @@ def test_filter_scenes_reads_hf_parquet_path(monkeypatch) -> None:
 
     monkeypatch.setattr(daft, "read_parquet", fake_read_parquet)
 
-    episodes = daft.from_pydict({"uuid": ["episode-1"], "scene_id": [1]})
-    result = filter_scenes(episodes, "Industrial office").collect().to_pydict()
+    result = scenes().collect().to_pydict()
 
     assert captured["path"] == droid_module._HF_SCENE_CLASSIFICATIONS_PATH
     assert str(captured["path"]).startswith("hf://datasets/Eventual-Inc/droid-scene-classifications/")
-    assert result["uuid"] == ["episode-1"]
+    assert result["scene_id"] == [1]
     assert result["scene_classification"] == ["Industrial office"]
 
 
-def test_filter_scenes_passes_io_config(monkeypatch) -> None:
+def test_scenes_passes_io_config(monkeypatch) -> None:
     captured: dict[str, object] = {}
     io_config = daft.io.IOConfig()
 
@@ -541,26 +498,9 @@ def test_filter_scenes_passes_io_config(monkeypatch) -> None:
 
     monkeypatch.setattr(daft, "read_parquet", fake_read_parquet)
 
-    episodes = daft.from_pydict({"uuid": ["episode-1"], "scene_id": [1]})
-    filter_scenes(episodes, "Bedroom", io_config=io_config).collect()
+    scenes(io_config=io_config).collect()
 
     assert captured["io_config"] is io_config
-
-
-def test_filter_scenes_requires_scene_id_column() -> None:
-    episodes = daft.from_pydict({"uuid": ["episode-1"]})
-    with pytest.raises(ValueError, match="scene_id"):
-        filter_scenes(episodes, "Industrial office")
-
-
-def test_filter_scenes_rejects_unknown_scene_type(sample_episodes_df, local_scene_classifications) -> None:
-    with pytest.raises(ValueError, match="Unknown scene classification"):
-        filter_scenes(sample_episodes_df, "Kitchen")
-
-
-def test_filter_scenes_rejects_empty_scene_types(sample_episodes_df, local_scene_classifications) -> None:
-    with pytest.raises(ValueError, match="at least one"):
-        filter_scenes(sample_episodes_df, [])
 
 
 def test_scene_classifications_matches_official_labels() -> None:

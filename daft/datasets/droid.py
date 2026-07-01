@@ -277,64 +277,38 @@ def raw(
 
 
 @PublicAPI
-def filter_scenes(
-    episodes: DataFrame,
-    scene_types: str | Sequence[str],
+def scenes(
     *,
     io_config: IOConfig | None = None,
 ) -> DataFrame:
-    r"""Filter DROID episodes by GPT-4V scene classification labels.
+    r"""Load the DROID scene classification table as a lazy DataFrame.
 
-    This helper joins the supplemental scene classification table released by the
-    DROID authors onto ``scene_id`` and keeps rows whose ``scene_classification``
-    matches one of the requested labels.
+    The table maps DROID ``scene_id`` values to GPT-4V
+    ``scene_classification`` labels. Join it onto episode-level DataFrames from
+    :func:`raw` or :func:`trajectory` when you need scene labels.
 
     Note:
         This helper uses a copy of the original file hosted on Hugging Face
         datasets. Keeping this classification table in sync is best-effort and
         may not be up-to-date. See
         https://huggingface.co/datasets/Eventual-Inc/droid-scene-classifications
-        for the original source.
+        for mirror details and original source attribution.
 
     Args:
-        episodes: Episode-level DataFrame from :func:`raw` or :func:`trajectory`.
-        scene_types: One scene label or sequence of labels to keep. Labels must
-            match the values in :data:`SCENE_CLASSIFICATIONS`, such as
-            ``"Industrial office"`` or ``"Home kitchen"``.
         io_config: IO configuration for reading the Hugging Face classification
-            table when using a private mirror or custom credentials.
+            table.
 
     Returns:
-        The input DataFrame with a ``scene_classification`` column appended when
-        needed, filtered to the requested scene types.
+        A DataFrame with ``scene_id`` and ``scene_classification`` columns.
 
     Examples:
         >>> import daft
-        >>> from daft.datasets.droid import filter_scenes, raw
-        >>> kitchen = filter_scenes(raw(), "Home kitchen").limit(5)  # doctest: +SKIP
+        >>> from daft.datasets.droid import raw, scenes
+        >>> kitchen_scenes = scenes().where(daft.col("scene_classification") == "Home kitchen")  # doctest: +SKIP
+        >>> kitchen = raw().join(kitchen_scenes, on="scene_id", how="inner").limit(5)  # doctest: +SKIP
         >>> kitchen.select("uuid", "scene_id", "scene_classification").show()  # doctest: +SKIP
     """
-    # Validation
-    selected = (scene_types,) if isinstance(scene_types, str) else tuple(scene_types)
-
-    if len(selected) == 0:
-        raise ValueError("scene_types must contain at least one scene classification label")
-
-    unknown = [label for label in selected if label not in SCENE_CLASSIFICATIONS]
-    if unknown:
-        known = ", ".join(sorted(SCENE_CLASSIFICATIONS))
-        raise ValueError(f"Unknown scene classification(s): {unknown}. Expected one or more of: {known}.")
-
-    if "scene_id" not in episodes.schema().column_names():
-        raise ValueError("Expected an episode DataFrame with a `scene_id` column.")
-
-    # Filter the scene classifications to only include the selected ones
-    classifications = daft.read_parquet(_HF_SCENE_CLASSIFICATIONS_PATH, io_config=io_config).where(
-        col("scene_classification").is_in(selected)
-    )
-
-    # Join the scene classifications to the episodes
-    return episodes.join(classifications, on="scene_id", how="inner")
+    return daft.read_parquet(_HF_SCENE_CLASSIFICATIONS_PATH, io_config=io_config)
 
 
 @PublicAPI
@@ -506,7 +480,7 @@ def camera_frames(
 __all__ = [
     "SCENE_CLASSIFICATIONS",
     "camera_frames",
-    "filter_scenes",
     "raw",
+    "scenes",
     "trajectory",
 ]

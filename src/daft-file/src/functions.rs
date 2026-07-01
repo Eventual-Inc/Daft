@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     file::{BUFFER_SIZE_SNIFF, DaftFile, HDF5_MIME},
-    meta::file_exists_blocking,
+    meta::file_exists,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -547,19 +547,14 @@ impl AsyncScalarUDF for FileExists {
 
         with_match_file_types!(input.data_type(), |$P| {
             let s = input.file::<$P>()?;
-            let io_runtime = common_runtime::get_io_runtime(true);
 
             let out = futures::future::try_join_all(s.into_iter().map(|f| async {
                 if let Some(f) = f {
-                    io_runtime
-                        .spawn_blocking(move || file_exists_blocking(f))
-                        .await?
-                        .map(Some)
+                    file_exists(f).await.map(Some)
                 } else {
                     Ok(None)
                 }
-            }))
-            .await?;
+            })).await?;
 
             Ok(daft_core::prelude::BooleanArray::from_iter(s.name(), out.into_iter()).into_series())
         })

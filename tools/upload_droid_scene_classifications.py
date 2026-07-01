@@ -68,9 +68,10 @@ This is a mirror of the supplemental classification table released by the DROID 
 
 ```python
 import daft
-from daft.datasets.droid import filter_scenes, raw
+from daft.datasets.droid import raw, scenes
 
-kitchen = filter_scenes(raw(), "Home kitchen").limit(5)
+scene_classifications = scenes().where(daft.col("scene_classification") == "Home kitchen")
+kitchen = raw().join(scene_classifications, on="scene_id", how="inner").limit(5)
 kitchen.select("uuid", "scene_id", "scene_classification").show()
 ```
 

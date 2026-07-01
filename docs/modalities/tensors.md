@@ -10,7 +10,7 @@ Daft natively supports converting tensors to and from Daft's native `daft.DataTy
 
 [HDF5](https://www.hdfgroup.org/solutions/hdf5/) is a high performance hierarchical file format for storing and organizing large amounts of data. It is widely used in scientific fields including physics, biology, and robotics.
 
-`daft.Hdf5File` mirrors the canonical `[h5py.File](https://docs.h5py.org/en/stable/high/file.html#the-file-object)` interface from the [h5py](https://docs.h5py.org/en/stable/) library. As a subclass of `daft.File`, the `daft.Hdf5File` class is a lazy file reference that can be used in a DataFrame expression/functions including `hdf5_attrs`, `hdf5_keys`, and `hdf5_metadata`. These expressions provide ample metadata for preprocessing and row-filtering.
+`daft.Hdf5File` mirrors the canonical [`h5py.File`](https://docs.h5py.org/en/stable/high/file.html#the-file-object) interface from the [h5py](https://docs.h5py.org/en/stable/) library. As a subclass of `daft.File`, the `daft.Hdf5File` class is a lazy file reference that can be used in a DataFrame expression/functions including `hdf5_attrs`, `hdf5_keys`, and `hdf5_metadata`. These expressions provide ample metadata for preprocessing and row-filtering.
 
 !!! note
     The `read` and `visit` methods are not available as DataFrame expressions at this time. They must be called inside of a `daft.cls` or `daft.func` UDF. See the [Example Usage with a UDF](#example-usage-with-a-udf) section for more details.

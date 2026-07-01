@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 import daft
@@ -11,11 +13,13 @@ from daft.functions import video_file
 def test_droid_camera_frames_decodes_real_video_end_to_end() -> None:
     pytest.importorskip("av")
 
-    sample_video_path = "tests/assets/sample_video.mp4"
+    sample_video_path = Path(__file__).parents[2] / "assets" / "sample_video.mp4"
+    assert sample_video_path.is_file()
+
     episodes = daft.from_pydict(
         {
             "uuid": ["episode-1"],
-            "wrist_cam_video": [sample_video_path],
+            "wrist_cam_video": [str(sample_video_path)],
         }
     ).with_column("wrist_cam_video", video_file(daft.col("wrist_cam_video")))
 

@@ -12,17 +12,48 @@ Whether you're loading data from local files, cloud storage, or the web, Daft's 
 - **Hugging Face datasets**: `hf://dataset/name`
 - **Unity Catalog volumes**: `vol+dbfs:/Volumes/unity/path`
 
-
-
 ## Using file discovery with optimized distributed reads
 
-`[daft.from_glob_path](../api/io.md#daft.from_glob_path)` helps discover and size files, accepting wildcards and lists of paths. When paired with `[daft.functions.download](../api/functions/download.md)`, the two functions enable optimized distributed reads of binary data from storage. This is ideal when your data will fit into memory or when you need the entire file content at once.
+[`daft.from_glob_path`](../api/io.md#daft.from_glob_path) helps discover and size files, accepting wildcards and lists of paths. When paired with [`Expr.download`](../api/functions/download.md), the two functions enable optimized distributed reads of binary data from storage. This is ideal when your data will fit into memory or when you need the entire file content at once.
 
 === "🐍 Python"
-    `python     df = daft.from_pydict({         "urls": [             "https://www.google.com",             "s3://daft-oss-public-data/open-images/validation-images/0001eeaf4aed83f9.jpg",         ],     })     df = df.with_column("data", df["urls"].download())     df.collect()`
+
+    ```python
+    import daft
+
+    df = daft.from_pydict(
+        {
+            "urls": [
+                "https://www.google.com",
+                "s3://daft-oss-public-data/open-images/validation-images/0001eeaf4aed83f9.jpg",
+            ],
+        }
+    )
+    df = df.with_column("data", df["urls"].download())
+    df.collect()
+    ```
 
 === "⚙️ SQL"
-    `python     df = daft.from_pydict({         "urls": [             "https://www.google.com",             "s3://daft-oss-public-data/open-images/validation-images/0001eeaf4aed83f9.jpg",         ],     })     df = daft.sql("""         SELECT             urls,             url_download(urls) AS data         FROM df     """)     df.collect()`
+
+    ```python
+    import daft
+
+    df = daft.from_pydict(
+        {
+            "urls": [
+                "https://www.google.com",
+                "s3://daft-oss-public-data/open-images/validation-images/0001eeaf4aed83f9.jpg",
+            ],
+        }
+    )
+    df = daft.sql("""
+        SELECT
+            urls,
+            url_download(urls) AS data
+        FROM df
+    """)
+    df.collect()
+    ```
 
 ```{title="Output"}
 
@@ -41,57 +72,55 @@ Whether you're loading data from local files, cloud storage, or the web, Daft's 
 
 This works well for URLs which are HTTP paths to non-HTML files (e.g. jpeg), local filepaths or even paths to a file in an object store such as AWS S3 as well!
 
-## The `[daft.File](../api/datatypes/file_types.md)` Datatype
+## The [`daft.File`](../api/datatypes/file_types.md) Datatype
 
-`[daft.File](../api/datatypes/file_types.md)` is particularly useful for working with large files that don't fit in memory or when you only need to access specific portions of a file. This is a common use case when working with audio, video, or image data where loading the entire object is prohibitive. The `daft.File` Type is subclassed by the `[daft.AudioFile](../api/datatypes/file_types.md)`, `[daft.ImageFile](../api/datatypes/file_types.md)`, `[daft.VideoFile](../api/datatypes/file_types.md)` , and `[daft.Hdf5File](../api/datatypes/file_types.md)` types which streamline common operations. It provides a [pythonic file-like interface](https://docs.python.org/3/library/functions.html#open) with random access capabilities. You can also pass in a custom buffer size to the `open` method to control the amount of data read into memory at once:
+[`daft.File`](../api/datatypes/file_types.md) is particularly useful for working with large files that don't fit in memory or when you only need to access specific portions of a file. This is a common use case when working with audio, video, or image data where loading the entire object is prohibitive. The `daft.File` type is subclassed by [`daft.AudioFile`](../api/datatypes/file_types.md), [`daft.ImageFile`](../api/datatypes/file_types.md), [`daft.VideoFile`](../api/datatypes/file_types.md), and [`daft.Hdf5File`](../api/datatypes/file_types.md), which streamline common operations. It provides a [pythonic file-like interface](https://docs.python.org/3/library/functions.html#open) with random access capabilities. You can also pass in a custom buffer size to the `open` method to control the amount of data read into memory at once:
 
 === "🐍 Python"
+
     ```python
     import daft
     from daft.functions import file
     from daft.io import IOConfig, S3Config
 
-```
-io_config = IOConfig(s3=S3Config(anonymous=True))
+    io_config = IOConfig(s3=S3Config(anonymous=True))
 
-df = daft.from_pydict(
-    {
-        "urls": [
-            "https://www.google.com",
-            "s3://daft-oss-public-data/open-images/validation-images/0001eeaf4aed83f9.jpg",
-        ],
-    }
-)
+    df = daft.from_pydict(
+        {
+            "urls": [
+                "https://www.google.com",
+                "s3://daft-oss-public-data/open-images/validation-images/0001eeaf4aed83f9.jpg",
+            ],
+        }
+    )
 
-@daft.func
-def detect_file_type(file: daft.File) -> str:
-    # Read just the first 12 bytes to identify file type
-    with file.open() as f:
-        header = f.read(12)
+    @daft.func
+    def detect_file_type(file: daft.File) -> str:
+        # Read just the first 12 bytes to identify file type.
+        with file.open() as f:
+            header = f.read(12)
 
-    # Common file signatures (magic numbers)
-    if header.startswith(b"\xff\xd8\xff"):
-        return "JPEG"
-    elif header.startswith(b"\x89PNG\r\n\x1a\n"):
-        return "PNG"
-    elif header.startswith(b"GIF87a") or header.startswith(b"GIF89a"):
-        return "GIF"
-    elif header.startswith(b"<!") or header.startswith(b"<html"):
-        return "HTML"
-    elif header.startswith(b"HTTP/"):
-        return "HTTP"
-    else:
-        return None
+        # Common file signatures (magic numbers).
+        if header.startswith(b"\xff\xd8\xff"):
+            return "JPEG"
+        elif header.startswith(b"\x89PNG\r\n\x1a\n"):
+            return "PNG"
+        elif header.startswith(b"GIF87a") or header.startswith(b"GIF89a"):
+            return "GIF"
+        elif header.startswith(b"<!") or header.startswith(b"<html"):
+            return "HTML"
+        elif header.startswith(b"HTTP/"):
+            return "HTTP"
+        else:
+            return None
 
-df = df.with_column(
-    "file_type",
-    detect_file_type(file(df["urls"], io_config=io_config))
-)
+    df = df.with_column(
+        "file_type",
+        detect_file_type(file(df["urls"], io_config=io_config))
+    )
 
-df.collect()
-```
-
-```
+    df.collect()
+    ```
 
 ```{title="Output"}
 ╭────────────────────────────────┬───────────╮
@@ -107,7 +136,7 @@ df.collect()
 (Showing first 2 of 2 rows)
 ```
 
-The `[daft.File](../api/datatypes/file_types.md)` datatype provides first-class support for handling file data across local and remote storage, enabling seamless file operations in distributed environments.
+The [`daft.File`](../api/datatypes/file_types.md) datatype provides first-class support for handling file data across local and remote storage, enabling seamless file operations in distributed environments.
 
 ## Core Design Principles
 
@@ -115,7 +144,7 @@ The `[daft.File](../api/datatypes/file_types.md)` datatype provides first-class 
 2. Optimized backend readers for different sources (buffered network access, etc.)
 3. Consistent API regardless of storage location
 
-`daft.File` mirrors the [file interface in Python](https://docs.python.org/3/library/functions.html#open), but is optimized for distributed computing. Due to its lazy nature, `daft.File` does not read the file into memory until it is needed. To enforce this pattern, `daft.File` must be used inside a context manager like `with file.open() as f:` This works within a `[daft.func](../custom-code/func.md)` or `[daft.cls](../custom-code/cls.md)` user-defined functions or in native Python code.
+`daft.File` mirrors the [file interface in Python](https://docs.python.org/3/library/functions.html#open), but is optimized for distributed computing. Due to its lazy nature, `daft.File` does not read the file into memory until it is needed. To enforce this pattern, `daft.File` must be used inside a context manager like `with file.open() as f:` This works within [`daft.func`](../custom-code/func.md) or [`daft.cls`](../custom-code/cls.md) user-defined functions or in native Python code.
 
 ## Basic Usage
 
@@ -163,40 +192,41 @@ When working with files that pack multiple records into a single blob (e.g. Paim
 
 ```python
 import daft
-```
-
-
 
 # Read bytes 1024–2047 from a large blob file
-
 f = daft.File("s3://bucket/data.blob", offset=1024, length=1024)
 with f.open() as fh:
     data = fh.read()  # returns exactly 1024 bytes
-
 ```
 
 This also works inside UDFs:
 
 ```python
+import daft
+
 @daft.func
-def read_record(file: daft.File) -> bytes:
-    with file.open() as f:
+def read_record(url: str, offset: int, length: int) -> bytes:
+    with daft.File(url, offset=offset, length=length).open() as f:
         return f.read()
-```
-
-
 
 # Construct File references with per-row offsets
+df = daft.from_pydict(
+    {
+        "url": ["s3://bucket/blob"] * 3,
+        "offset": [0, 100, 200],
+        "length": [100, 100, 50],
+    }
+)
 
-df = daft.from_pydict({
-    "url": ["s3://bucket/blob"] * 3,
-    "offset": [0, 100, 200],
-    "length": [100, 100, 50],
-})
-
+df = df.with_column(
+    "record",
+    read_record(
+        daft.col("url"),
+        daft.col("offset"),
+        daft.col("length"),
+    ),
+)
 ```
-
-
 
 ## Using daft.File to read code and walk the AST
 

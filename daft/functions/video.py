@@ -94,7 +94,7 @@ def video_keyframes(
 
 
 def frames_impl(
-    file: daft.VideoFile | None,
+    file: daft.VideoFile,
     *,
     start_time: float = 0,
     end_time: float | None = None,
