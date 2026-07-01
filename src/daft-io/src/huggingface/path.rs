@@ -53,13 +53,6 @@ pub(crate) struct HFPathParts {
 }
 
 impl HFPathParts {
-    fn repo_url_segment(&self) -> String {
-        match self.repo_type {
-            HFRepoType::Models => self.repository.clone(),
-            _ => format!("{}/{}", self.repo_type, self.repository),
-        }
-    }
-
     pub(super) fn resolve_url(&self) -> String {
         match self.repo_type {
             HFRepoType::Buckets => format!(
@@ -78,9 +71,7 @@ impl HFPathParts {
             }
             HFRepoType::Datasets => format!(
                 "https://huggingface.co/datasets/{}/resolve/{}/{}",
-                self.repo_url_segment(),
-                self.revision,
-                self.path,
+                self.repository, self.revision, self.path,
             ),
         }
     }
@@ -411,6 +402,20 @@ mod tests {
         assert_eq!(parts.repo_type, HFRepoType::Buckets);
         assert_eq!(parts.repository, "commoncrawl/commoncrawl");
         assert_eq!(parts.path, "crawl-data/CC-MAIN-2026-17/file.warc.gz");
+    }
+
+    #[test]
+    fn test_resolve_url_datasets_omits_duplicate_prefix() {
+        let parts = HFPathParts {
+            repo_type: HFRepoType::Datasets,
+            repository: "open-world-agents/D2E-480p".to_string(),
+            revision: "main".to_string(),
+            path: "PEAK/recording.mcap".to_string(),
+        };
+        assert_eq!(
+            parts.resolve_url(),
+            "https://huggingface.co/datasets/open-world-agents/D2E-480p/resolve/main/PEAK/recording.mcap"
+        );
     }
 
     #[test]

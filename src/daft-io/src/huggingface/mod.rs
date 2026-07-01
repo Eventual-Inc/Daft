@@ -267,7 +267,6 @@ impl HFSource {
         }
     }
 
-    #[allow(clippy::large_futures)]
     async fn get_via_xet(
         &self,
         uri: &str,
@@ -372,7 +371,6 @@ impl ObjectSource for HFSource {
         self.http_source.supports_range(&uri).await
     }
 
-    #[allow(clippy::large_futures)]
     async fn get(
         &self,
         uri: &str,

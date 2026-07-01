@@ -2,7 +2,7 @@ use std::{collections::HashMap, ops::Range, sync::Arc};
 
 use bytes::Bytes;
 use common_io_config::HuggingFaceConfig;
-use futures::{StreamExt, stream::BoxStream};
+use futures::{FutureExt, StreamExt, stream::BoxStream};
 use reqwest_middleware::ClientWithMiddleware;
 use serde::Deserialize;
 use tokio::sync::Mutex;
@@ -152,7 +152,6 @@ impl XetContext {
         Ok(session)
     }
 
-    #[allow(clippy::large_futures)]
     pub(super) async fn download_stream(
         &self,
         parts: &HFPathParts,
@@ -172,6 +171,7 @@ impl XetContext {
             })?
             .with_token_refresh_url(refresh_url, refresh_headers)
             .build()
+            .boxed()
             .await
             .map_err(|source| Error::XetOperationFailed {
                 path: parts.path.clone(),
