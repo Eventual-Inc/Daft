@@ -174,7 +174,7 @@ def test_batch_size_from_udf_propagated_through_ops_to_scan():
 |       read_timeout_ms: 30000
 |       max_concurrent_requests: 50
 |       max_connections_per_io_thread: 50
-|   GoosefsConfig
+|   GooseFSConfig
 |       root: None
 |       master_addr: None
 |       block_size: None
@@ -208,6 +208,7 @@ def test_batch_size_from_udf_propagated_through_ops_to_scan():
 |       token: None
 |   HuggingFaceConfig
 |   Anonymous = false
+|   Use Xet = true
 |   ))) as {id_placeholder}, col(0: data)
 |   Stats = {{ Approx num rows = 5, Approx size bytes = 156 B, Accumulated selectivity = 1.00 }}
 |   Batch Size = Range(0, 10]

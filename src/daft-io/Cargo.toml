@@ -20,10 +20,11 @@ futures = {workspace = true}
 globset = "0.4"
 google-cloud-storage = {version = "0.24.0", default-features = false, features = ["rustls-tls", "auth"]}
 google-cloud-token = {version = "0.1.2"}
+hf-xet = "1.5"
 home = "0.5.12"
 itertools = {workspace = true}
 log = {workspace = true}
-opendal = {workspace = true, features = [
+opendal = {version = "0.57", default-features = false, features = [
   "executors-tokio",  # Use tokio for async execution
   "services-oss",  # Alibaba Cloud Object Storage Service
   "services-cos",  # Tencent Cloud Object Storage
@@ -36,7 +37,7 @@ opendal = {workspace = true, features = [
 ]}
 pyo3 = {workspace = true, optional = true}
 rand = {workspace = true}
-regex = {version = "1.12.2"}
+regex = "1.12.2"
 reqwest-middleware = "0.4.2"
 reqwest-retry = "0.7.0"
 serde = {workspace = true}
