@@ -13,15 +13,14 @@ if TYPE_CHECKING:
     from daft.io import IOConfig
 
 
-def _get_common_crawl_paths(
+def _get_mainfest_path(
     crawl: str,
-    segment: str | None,
     file_type: Literal["warc", "wet", "wat"],
-    num_files: int | None,
-    io_config: IOConfig | None,
     source: Literal["s3", "hf", "http"] | None,
-) -> list[str]:
-    """Get the paths to the Common Crawl files for a given crawl, segment, file type. Limited by `num_files`."""
+) -> tuple[str, str]:
+    """Get the paths to the Common Crawl manifest file for a given crawl, file type, and source."""
+    # Note, this is mocked in tests/datasets/test_common_crawl_mocked.py
+
     if source == "s3":
         paths_url = f"s3://commoncrawl/crawl-data/{crawl}/{file_type}.paths.gz"
         prefix = "s3://commoncrawl/"
@@ -31,6 +30,20 @@ def _get_common_crawl_paths(
     else:
         paths_url = f"https://data.commoncrawl.org/crawl-data/{crawl}/{file_type}.paths.gz"
         prefix = "https://data.commoncrawl.org/"
+
+    return paths_url, prefix
+
+
+def _get_common_crawl_paths(
+    crawl: str,
+    segment: str | None,
+    file_type: Literal["warc", "wet", "wat"],
+    num_files: int | None,
+    io_config: IOConfig | None,
+    source: Literal["s3", "hf", "http"] | None,
+) -> list[str]:
+    """Get the paths to the Common Crawl files for a given crawl, segment, file type. Limited by `num_files`."""
+    paths_url, prefix = _get_mainfest_path(crawl, file_type, source)
 
     try:
         paths = daft.read_text(paths_url, io_config=io_config).select(format(f"{prefix}{{}}", col("text")).alias("url"))
