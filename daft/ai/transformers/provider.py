@@ -157,7 +157,11 @@ class TransformersProvider(Provider):
 
     @staticmethod
     def _is_vision_model(model_name: str) -> bool:
-        """Warn and return False on any lookup failure so the caller falls back to text."""
+        """Warn and return False on any lookup failure so the caller falls back to text.
+
+        Tries the local HF cache first so repeat / offline calls avoid a Hub round-trip;
+        only reaches out to the Hub when the config has never been downloaded.
+        """
         try:
             from transformers import AutoConfig
 
@@ -166,7 +170,10 @@ class TransformersProvider(Provider):
                 MODEL_FOR_IMAGE_TEXT_TO_TEXT_MAPPING_NAMES,
             )
 
-            config = AutoConfig.from_pretrained(model_name)
+            try:
+                config = AutoConfig.from_pretrained(model_name, local_files_only=True)
+            except OSError:
+                config = AutoConfig.from_pretrained(model_name)
             return config.model_type in MODEL_FOR_IMAGE_TEXT_TO_TEXT_MAPPING_NAMES
         except Exception as e:
             warnings.warn(

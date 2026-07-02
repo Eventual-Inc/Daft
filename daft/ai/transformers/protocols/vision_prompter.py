@@ -118,7 +118,7 @@ class TransformersVisionPrompter(Prompter):
         return {"type": "text", "text": msg}
 
     @_process_message.register
-    def _(self, msg: np.ndarray) -> dict[str, Any]:
+    def _(self, msg: np.ndarray) -> dict[str, Any]:  # type: ignore[type-arg,unused-ignore]
         return {"type": "image", "image": pil_image.fromarray(msg)}
 
     @_process_message.register
