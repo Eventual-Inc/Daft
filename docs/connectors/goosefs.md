@@ -17,24 +17,40 @@ goosefs://{MASTER_HOST}:{MASTER_PORT}/{PATH}
 
 !!! note "High Availability (HA) masters"
 
-    For a GooseFS deployment with multiple masters, encode all masters as a comma-separated list in the [`GooseFSConfig`](#configuration-options) `master_addr` field, e.g. `"10.0.0.1:9200,10.0.0.2:9200,10.0.0.3:9200"`. When `master_addr` is set, the URL authority is ignored — you can then use a symbolic host in the URL, for example `goosefs://ha/path/to/data`.
+    For a GooseFS deployment with multiple masters, encode all masters as a comma-separated list in the [`GooseFSConfig`][daft.io.GooseFSConfig] `master_addr` field, e.g. `"10.0.0.1:9200,10.0.0.2:9200,10.0.0.3:9200"`. When `master_addr` is set, the URL authority is ignored — you can then use a symbolic host in the URL, for example `goosefs://ha/path/to/data`.
 
 ## Authorization/Authentication
 
 GooseFS supports two authentication modes: `simple` (username-based, the default) and `nosasl` (no authentication). Anonymous access forces `nosasl`.
 
+### Rely on Environment
+
+You can configure Daft to automatically discover GooseFS settings from environment variables. Daft supports the following variables when [`GooseFSConfig.from_env()`][daft.io.GooseFSConfig] is used:
+
+| Environment Variable | Description |
+|---|---|
+| `GOOSEFS_MASTER_ADDR` | Master address(es) for the GooseFS cluster (single `host:port`, or comma-separated list for HA) |
+| `GOOSEFS_AUTH_USERNAME` | Authentication username (falls back to `USER` / `USERNAME` when unset) |
+| `GOOSEFS_AUTH_PASSWORD` | Authentication password |
+| `GOOSEFS_AUTH_TYPE` | Authentication type — `"simple"` or `"nosasl"` |
+| `GOOSEFS_WRITE_TYPE` | Default write type for new files (`"must_cache"`, `"cache_through"`, `"through"`, `"async_through"`) |
+| `GOOSEFS_ROOT` | Root path of the backend |
+
+Please be aware that when doing so in a distributed environment such as Ray, Daft will pick these values up from worker machines and thus each worker machine needs to be appropriately provisioned.
+
+If instead you wish to have Daft use configuration from the "driver", you may wish to manually specify your credentials.
+
 ### Manually specify credentials
 
-You can pass a [`GooseFSConfig`](#configuration-options) into your Daft I/O function calls using a `daft.io.IOConfig` config object.
+You can pass a [`GooseFSConfig`][daft.io.GooseFSConfig] into your Daft I/O function calls using a [`daft.io.IOConfig`][daft.io.IOConfig] config object.
 
-`daft.set_planning_config` is a convenient way to set your `daft.io.IOConfig` as the default config to use on any subsequent Daft method calls.
+[`daft.set_planning_config`][daft.context.set_planning_config] is a convenient way to set your [`daft.io.IOConfig`][daft.io.IOConfig] as the default config to use on any subsequent Daft method calls.
 
 === "Using Simple Authentication"
 
     ```python
     import daft
-    from daft.io import IOConfig
-    from daft.daft import GooseFSConfig
+    from daft.io import IOConfig, GooseFSConfig
 
     io_config = IOConfig(
         goosefs=GooseFSConfig(
@@ -55,8 +71,7 @@ You can pass a [`GooseFSConfig`](#configuration-options) into your Daft I/O func
 
     ```python
     import daft
-    from daft.io import IOConfig
-    from daft.daft import GooseFSConfig
+    from daft.io import IOConfig, GooseFSConfig
 
     io_config = IOConfig(
         goosefs=GooseFSConfig(
@@ -74,8 +89,7 @@ You can pass a [`GooseFSConfig`](#configuration-options) into your Daft I/O func
 
     ```python
     import daft
-    from daft.io import IOConfig
-    from daft.daft import GooseFSConfig
+    from daft.io import IOConfig, GooseFSConfig
 
     # Anonymous mode forces `nosasl` and skips credential forwarding.
     io_config = IOConfig(goosefs=GooseFSConfig(anonymous=True))
@@ -90,8 +104,7 @@ You can pass a [`GooseFSConfig`](#configuration-options) into your Daft I/O func
 
     ```python
     import daft
-    from daft.io import IOConfig
-    from daft.daft import GooseFSConfig
+    from daft.io import IOConfig, GooseFSConfig
 
     io_config = IOConfig(
         goosefs=GooseFSConfig(
@@ -105,14 +118,13 @@ You can pass a [`GooseFSConfig`](#configuration-options) into your Daft I/O func
     df = daft.read_parquet("goosefs://10.0.0.1:9200/table/**/*", io_config=io_config)
     ```
 
-Alternatively, Daft supports overriding the default `IOConfig` per-operation by passing it into the `io_config=` keyword argument. This is extremely flexible as you can pass a different `GooseFSConfig` per function call if you wish!
+Alternatively, Daft supports overriding the default `IOConfig` per-operation by passing it into the `io_config=` keyword argument. This is extremely flexible as you can pass a different [`GooseFSConfig`][daft.io.GooseFSConfig] per function call if you wish!
 
 === "Per-Operation Config"
 
     ```python
     import daft
-    from daft.io import IOConfig
-    from daft.daft import GooseFSConfig
+    from daft.io import IOConfig, GooseFSConfig
 
     io_config = IOConfig(
         goosefs=GooseFSConfig(
@@ -134,8 +146,7 @@ Daft supports writing data to GooseFS using the same `GooseFSConfig`:
 
 ```python
 import daft
-from daft.io import IOConfig
-from daft.daft import GooseFSConfig
+from daft.io import IOConfig, GooseFSConfig
 
 io_config = IOConfig(
     goosefs=GooseFSConfig(
@@ -154,7 +165,7 @@ df.write_parquet("goosefs://10.0.0.1:9200/output/", io_config=io_config)
 
 ## Configuration Options
 
-The `GooseFSConfig` object supports the following options:
+The [`GooseFSConfig`][daft.io.GooseFSConfig] object supports the following options:
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
