@@ -18,6 +18,8 @@ pub mod round;
 pub mod sign;
 pub mod sqrt;
 pub mod trigonometry;
+pub mod bround;
+pub mod rint;
 
 use abs::Abs;
 use bin::Bin;
@@ -44,6 +46,8 @@ use power::Power;
 use round::Round;
 use sign::{Negate, Sign};
 use sqrt::Sqrt;
+use bround::Bround;
+use rint::Rint;
 
 fn to_field_numeric(f: &dyn ScalarUDF, input: &Expr, schema: &Schema) -> DaftResult<Field> {
     let field = input.to_field(schema)?;
@@ -88,6 +92,8 @@ impl FunctionModule for NumericFunctions {
         parent.add_fn(Power);
         parent.add_fn(Floor);
         parent.add_fn(Round);
+        parent.add_fn(Bround);
+        parent.add_fn(Rint);
         parent.add_fn(Sign);
         parent.add_fn(Negate);
         parent.add_fn(Sqrt);
