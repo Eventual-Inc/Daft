@@ -32,7 +32,24 @@ def _get_common_crawl_paths(
         paths_url = f"https://data.commoncrawl.org/crawl-data/{crawl}/{file_type}.paths.gz"
         prefix = "https://data.commoncrawl.org/"
 
-    paths = daft.read_text(paths_url, io_config=io_config).select(format(f"{prefix}{{}}", col("url")).alias("url"))
+    try:
+        paths = daft.read_text(paths_url, io_config=io_config).select(format(f"{prefix}{{}}", col("text")).alias("url"))
+    except FileNotFoundError:
+        if source is None:
+            return _get_common_crawl_paths(
+                crawl=crawl,
+                segment=segment,
+                file_type=file_type,
+                num_files=num_files,
+                io_config=io_config,
+                source="http",
+            )
+        elif source == "hf":
+            raise FileNotFoundError(
+                f"Could not find the crawl `{crawl}` from the HuggingFace source `hf://buckets/commoncrawl/commoncrawl/`"
+            )
+        else:
+            raise
 
     if segment is not None:
         paths = paths.where(contains(col("url"), segment))
