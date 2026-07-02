@@ -245,8 +245,7 @@ class DeltaLakeScanOperator(ScanOperator):
             self.display_name(),
             f"Schema = {self._schema}",
             f"Partitioning keys = {self.partitioning_keys()}",
-            # TODO(Clark): Improve repr of storage config here.
-            f"Storage config = {self._storage_config}",
+            *self._storage_config.multiline_display(),
         ]
 
     def to_scan_tasks(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
