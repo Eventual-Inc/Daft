@@ -1498,6 +1498,7 @@ impl HuggingFaceConfig {
     #[pyo3(signature = (
         token=None,
         anonymous=None,
+        use_xet=None,
         use_content_defined_chunking=None,
         row_group_size=None,
         target_filesize=None,
@@ -1506,6 +1507,7 @@ impl HuggingFaceConfig {
     pub fn new(
         token: Option<String>,
         anonymous: Option<bool>,
+        use_xet: Option<bool>,
         use_content_defined_chunking: Option<bool>,
         row_group_size: Option<usize>,
         target_filesize: Option<usize>,
@@ -1516,6 +1518,7 @@ impl HuggingFaceConfig {
             config: crate::HuggingFaceConfig {
                 token: token.map(Into::into).or(default.token),
                 anonymous: anonymous.unwrap_or(default.anonymous),
+                use_xet: use_xet.unwrap_or(default.use_xet),
                 use_content_defined_chunking: use_content_defined_chunking
                     .or(default.use_content_defined_chunking),
                 row_group_size: row_group_size.or(default.row_group_size),
@@ -1526,9 +1529,11 @@ impl HuggingFaceConfig {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (
         token=None,
         anonymous=None,
+        use_xet=None,
         use_content_defined_chunking=None,
         row_group_size=None,
         target_filesize=None,
@@ -1538,6 +1543,7 @@ impl HuggingFaceConfig {
         &self,
         token: Option<String>,
         anonymous: Option<bool>,
+        use_xet: Option<bool>,
         use_content_defined_chunking: Option<bool>,
         row_group_size: Option<usize>,
         target_filesize: Option<usize>,
@@ -1547,6 +1553,7 @@ impl HuggingFaceConfig {
             config: crate::HuggingFaceConfig {
                 token: token.map(Into::into).or_else(|| self.config.token.clone()),
                 anonymous: anonymous.unwrap_or(self.config.anonymous),
+                use_xet: use_xet.unwrap_or(self.config.use_xet),
                 use_content_defined_chunking: use_content_defined_chunking
                     .or(self.config.use_content_defined_chunking),
                 row_group_size: row_group_size.or(self.config.row_group_size),
@@ -1569,6 +1576,11 @@ impl HuggingFaceConfig {
     #[getter]
     pub fn anonymous(&self) -> bool {
         self.config.anonymous
+    }
+
+    #[getter]
+    pub fn use_xet(&self) -> bool {
+        self.config.use_xet
     }
 
     #[getter]
