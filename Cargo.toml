@@ -156,6 +156,11 @@ inherits = "release"
 lto = 'thin'
 strip = "none"  # dont strip
 
+[profile.release]
+# Strip symbol tables from the shipped extension module (~4MB off the wheel download,
+# ~16MB uncompressed). No DWARF is emitted in release, so this only drops symbols.
+strip = "symbols"
+
 # LLVM's SLP vectorizer takes 75+ min on this crate at opt-level=3.
 # opt-level=2 disables it, bringing compile time down to ~15s.
 [profile.release.package.daft-parquet]
