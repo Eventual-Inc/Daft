@@ -249,8 +249,11 @@ def merge_deltalake(
 ) -> "DeltaMergeBuilder":
     """Create a Delta Lake MERGE operation builder for composable merge clauses.
 
-    Returns a merge builder that mirrors the underlying ``deltalake`` merge API.
-    Call ``.execute()`` on the builder to perform the merge and return a DataFrame with operation metrics.
+    Uses Daft's ``DataSink`` interface to distribute the merge across workers.
+    Each worker partition merges its chunk of source data against the Delta table
+    via delta-rs, so the full source never needs to be collected to the head node.
+
+    Returns a builder for chaining merge clauses, then call ``.execute()`` to run.
 
     Args:
         table: Destination Delta table URI, ``deltalake.DeltaTable``, or ``UnityCatalogTable``.
@@ -273,6 +276,10 @@ def merge_deltalake(
 
     Note:
         The returned DataFrame from ``.execute()`` contains merge metrics as columns and stores the raw metrics dict in ``_metadata["merge_metrics"]``.
+
+        Because each partition merges independently, ``when_not_matched_by_source_update``
+        and ``when_not_matched_by_source_delete`` are **not supported**. Use
+        :func:`distributed_merge_deltalake` for those clauses.
 
     Examples:
         Basic upsert (update matching rows, insert new rows)::
@@ -312,88 +319,230 @@ def merge_deltalake(
             )
             metrics = result._metadata["merge_metrics"]
     """
-    from deltalake import CommitProperties
+    resolved_table, storage_options = _resolve_deltalake_table_and_storage_options(table, io_config)
 
-    if isinstance(source, DataFrame):
-        import pyarrow as pa
+    # If source is a PyArrow table, wrap it so we have a uniform DataFrame path
+    if not isinstance(source, DataFrame):
+        source = DataFrame._from_arrow(source)
 
-        if streamed_exec:
-            arrow_schema = source.schema().to_pyarrow_schema()
-            # Use a small buffer (2) to avoid accumulating many partitions on the
-            # driver while DataFusion slowly consumes them for the merge join.
-            source_data = pa.RecordBatchReader.from_batches(
-                arrow_schema, source.to_arrow_iter(results_buffer_size=2)
-            )
-        else:
-            source.collect()
-            arrow_schema = source.schema().to_pyarrow_schema()
-            source_data = pa.RecordBatchReader.from_batches(arrow_schema, source.to_arrow_iter())
-    else:
-        source_data = source
-
-    resolved_table, _ = _resolve_deltalake_table_and_storage_options(table, io_config)
-    commit_properties = CommitProperties(custom_metadata=custom_metadata)
-
-    # Apply defaults for spill configuration using Daft's execution config.
-    import shutil
-
-    exec_config = context.get_context().daft_execution_config
-    try:
-        shuffle_dirs = exec_config.flight_shuffle_dirs
-    except AttributeError:
-        shuffle_dirs = []
-
-    # Fallback to DAFT_FLIGHT_SHUFFLE_DIR env var if config doesn't have dirs.
-    if not shuffle_dirs:
-        env_dir = os.environ.get("DAFT_FLIGHT_SHUFFLE_DIR")
-        if env_dir:
-            shuffle_dirs = [env_dir]
-
-    # Point DataFusion's temp dir at the flight shuffle directory for spilling.
-    if shuffle_dirs:
-        os.environ.setdefault("TMPDIR", shuffle_dirs[0])
-
-    # Default: 70% of total system memory.
-    try:
-        import resource
-        total_mem = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
-    except (AttributeError, ValueError):
-        total_mem = 10 * 1024 * 1024 * 1024  # fallback 10 GB
-    max_spill_size = int(total_mem * 0.7)
-
-    # Default: 70% of available disk on the spill directory.
-    spill_path = shuffle_dirs[0] if shuffle_dirs else "/tmp"
-    try:
-        disk_usage = shutil.disk_usage(spill_path)
-        max_temp_directory_size = int(disk_usage.free * 0.7)
-    except OSError:
-        max_temp_directory_size = 100 * 1024 * 1024 * 1024  # fallback 100 GB
-    print(f"Delta Lake merge spill configuration: max_spill_size={max_spill_size}, max_temp_directory_size={max_temp_directory_size}")
-    
-    # Create the merge builder
-    merger = resolved_table.merge(
-        source=source_data,
+    return DeltaMergeBuilder(
+        table_uri=resolved_table.table_uri,
+        storage_options=storage_options,
+        source=source,
         predicate=predicate,
         source_alias=source_alias,
         target_alias=target_alias,
+        custom_metadata=custom_metadata,
+        safe_cast=safe_cast,
         merge_schema=merge_schema,
-        error_on_type_mismatch=not safe_cast,
         writer_properties=writer_properties,
         streamed_exec=streamed_exec,
         max_spill_size=max_spill_size,
         max_temp_directory_size=max_temp_directory_size,
-        commit_properties=commit_properties,
         post_commithook_properties=post_commithook_properties,
     )
 
-    return DeltaMergeBuilder(merger)
+
+class _DeltaLakeMergeSink:
+    """DataSink that performs delta-rs merge on each worker partition.
+
+    Each worker receives a chunk of source data and merges it against the
+    full Delta table via delta-rs. This distributes the merge across workers
+    so the head node never needs to hold the entire source in memory.
+
+    Note: ``when_not_matched_by_source_*`` clauses are NOT supported because
+    each partition only sees a subset of source rows — those clauses require
+    full-source visibility.
+    """
+
+    def __init__(
+        self,
+        table_uri: str,
+        storage_options: dict[str, str],
+        predicate: str,
+        source_alias: str,
+        target_alias: str,
+        custom_metadata: dict[str, str] | None,
+        safe_cast: bool,
+        merge_schema: bool,
+        writer_properties: Any,
+        streamed_exec: bool,
+        max_spill_size: int | None,
+        max_temp_directory_size: int | None,
+        post_commithook_properties: Any,
+        matched_updates: list,
+        matched_deletes: list,
+        not_matched_inserts: list,
+    ) -> None:
+        self._table_uri = table_uri
+        self._storage_options = storage_options
+        self._predicate = predicate
+        self._source_alias = source_alias
+        self._target_alias = target_alias
+        self._custom_metadata = custom_metadata
+        self._safe_cast = safe_cast
+        self._merge_schema = merge_schema
+        self._writer_properties = writer_properties
+        self._streamed_exec = streamed_exec
+        self._max_spill_size = max_spill_size
+        self._max_temp_directory_size = max_temp_directory_size
+        self._post_commithook_properties = post_commithook_properties
+        self._matched_updates = matched_updates
+        self._matched_deletes = matched_deletes
+        self._not_matched_inserts = not_matched_inserts
+
+    def name(self) -> str:
+        return "DeltaLakeMergeSink"
+
+    def schema(self):
+        from daft.datatype import DataType as DaftDataType
+        from daft.logical.schema import Schema
+
+        return Schema._from_field_name_and_types([("merge_metrics", DaftDataType.python())])
+
+    def start(self) -> None:
+        pass
+
+    def write(self, micropartitions):
+        from daft.io.sink import WriteResult
+
+        for micropartition in micropartitions:
+            num_bytes = micropartition.size_bytes()
+            num_rows = len(micropartition)
+            if num_rows == 0:
+                continue
+
+            arrow_table = micropartition.to_arrow()
+
+            import deltalake
+            from deltalake import CommitProperties
+
+            dt = deltalake.DeltaTable(self._table_uri, storage_options=self._storage_options)
+            commit_properties = CommitProperties(custom_metadata=self._custom_metadata)
+
+            # Compute spill defaults
+            _max_spill = self._max_spill_size
+            _max_temp = self._max_temp_directory_size
+            if _max_spill is None or _max_temp is None:
+                import shutil
+
+                if _max_spill is None:
+                    try:
+                        total_mem = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+                    except (AttributeError, ValueError):
+                        total_mem = 10 * 1024 * 1024 * 1024
+                    _max_spill = int(total_mem * 0.7)
+                if _max_temp is None:
+                    try:
+                        disk_usage = shutil.disk_usage("/tmp")
+                        _max_temp = int(disk_usage.free * 0.7)
+                    except OSError:
+                        _max_temp = 100 * 1024 * 1024 * 1024
+
+            merger = dt.merge(
+                source=arrow_table,
+                predicate=self._predicate,
+                source_alias=self._source_alias,
+                target_alias=self._target_alias,
+                merge_schema=self._merge_schema,
+                error_on_type_mismatch=not self._safe_cast,
+                writer_properties=self._writer_properties,
+                streamed_exec=self._streamed_exec,
+                max_spill_size=_max_spill,
+                max_temp_directory_size=_max_temp,
+                commit_properties=commit_properties,
+                post_commithook_properties=self._post_commithook_properties,
+            )
+
+            # Replay the builder clauses
+            for clause_type, args in self._matched_updates:
+                if clause_type == "update":
+                    merger = merger.when_matched_update(args["updates"], args.get("predicate"))
+                elif clause_type == "update_all":
+                    merger = merger.when_matched_update_all(args.get("predicate"), args.get("except_cols"))
+
+            for clause_type, args in self._matched_deletes:
+                merger = merger.when_matched_delete(args.get("predicate"))
+
+            for clause_type, args in self._not_matched_inserts:
+                if clause_type == "insert":
+                    merger = merger.when_not_matched_insert(args["updates"], args.get("predicate"))
+                elif clause_type == "insert_all":
+                    merger = merger.when_not_matched_insert_all(args.get("predicate"), args.get("except_cols"))
+
+            raw_metrics = merger.execute()
+
+            yield WriteResult(
+                result=raw_metrics,
+                bytes_written=num_bytes,
+                rows_written=num_rows,
+            )
+
+    def safe_write(self, micropartitions):
+        try:
+            yield from self.write(micropartitions)
+        except Exception as e:
+            raise RuntimeError(f"Exception in {self.name()}: {type(e).__name__}: {e!s}") from e
+
+    def finalize(self, write_results):
+        from daft.recordbatch import MicroPartition
+
+        # Aggregate metrics across all partitions
+        aggregated: dict[str, int] = {}
+        for wr in write_results:
+            metrics = wr.result
+            if isinstance(metrics, dict):
+                for k, v in metrics.items():
+                    if isinstance(v, (int, float)):
+                        aggregated[k] = aggregated.get(k, 0) + int(v)
+
+        return MicroPartition.from_pydict({"merge_metrics": [aggregated]})
 
 
 class DeltaMergeBuilder:
-    """Wrapper around deltalake.TableMerger that returns merge results as a DataFrame."""
+    """Builder for Delta Lake merge using Daft's DataSink interface.
 
-    def __init__(self, merger: "deltalake.TableMerger") -> None:
-        self._merger = merger
+    Each worker partition merges its chunk of source data against the Delta
+    table via delta-rs. The full source never needs to be collected to the
+    head node.
+    """
+
+    def __init__(
+        self,
+        table_uri: str,
+        storage_options: dict[str, str],
+        source: DataFrame,
+        predicate: str,
+        source_alias: str,
+        target_alias: str,
+        custom_metadata: dict[str, str] | None,
+        safe_cast: bool,
+        merge_schema: bool,
+        writer_properties: Any,
+        streamed_exec: bool,
+        max_spill_size: int | None,
+        max_temp_directory_size: int | None,
+        post_commithook_properties: Any,
+    ) -> None:
+        self._table_uri = table_uri
+        self._storage_options = storage_options
+        self._source = source
+        self._predicate = predicate
+        self._source_alias = source_alias
+        self._target_alias = target_alias
+        self._custom_metadata = custom_metadata
+        self._safe_cast = safe_cast
+        self._merge_schema = merge_schema
+        self._writer_properties = writer_properties
+        self._streamed_exec = streamed_exec
+        self._max_spill_size = max_spill_size
+        self._max_temp_directory_size = max_temp_directory_size
+        self._post_commithook_properties = post_commithook_properties
+
+        # Clauses stored as (clause_type, args_dict) tuples for serialization
+        self._matched_updates: list[tuple[str, dict]] = []
+        self._matched_deletes: list[tuple[str, dict]] = []
+        self._not_matched_inserts: list[tuple[str, dict]] = []
 
     def when_matched_update(
         self,
@@ -409,7 +558,7 @@ class DeltaMergeBuilder:
         Returns:
             Self for method chaining.
         """
-        self._merger = self._merger.when_matched_update(dict(updates), predicate)
+        self._matched_updates.append(("update", {"updates": dict(updates), "predicate": predicate}))
         return self
 
     def when_matched_update_all(
@@ -426,12 +575,12 @@ class DeltaMergeBuilder:
         Returns:
             Self for method chaining.
         """
-        self._merger = self._merger.when_matched_update_all(predicate, except_cols)
+        self._matched_updates.append(("update_all", {"predicate": predicate, "except_cols": except_cols}))
         return self
 
     def when_matched_delete(self, predicate: str | None = None) -> "DeltaMergeBuilder":
         """Add a ``when_matched_delete`` clause to the merge."""
-        self._merger = self._merger.when_matched_delete(predicate)
+        self._matched_deletes.append(("delete", {"predicate": predicate}))
         return self
 
     def when_not_matched_insert(
@@ -448,7 +597,7 @@ class DeltaMergeBuilder:
         Returns:
             Self for method chaining.
         """
-        self._merger = self._merger.when_not_matched_insert(dict(updates), predicate)
+        self._not_matched_inserts.append(("insert", {"updates": dict(updates), "predicate": predicate}))
         return self
 
     def when_not_matched_insert_all(
@@ -465,7 +614,7 @@ class DeltaMergeBuilder:
         Returns:
             Self for method chaining.
         """
-        self._merger = self._merger.when_not_matched_insert_all(predicate, except_cols)
+        self._not_matched_inserts.append(("insert_all", {"predicate": predicate, "except_cols": except_cols}))
         return self
 
     def when_not_matched_by_source_update(
@@ -473,42 +622,63 @@ class DeltaMergeBuilder:
         updates: "Mapping[str, str]",
         predicate: str | None = None,
     ) -> "DeltaMergeBuilder":
-        """Add a ``when_not_matched_by_source_update`` clause to the merge.
-
-        Args:
-            updates: Mapping from column name to SQL update expression.
-            predicate: Optional SQL predicate for rows not matched by source.
-
-        Returns:
-            Self for method chaining.
-        """
-        self._merger = self._merger.when_not_matched_by_source_update(dict(updates), predicate)
-        return self
+        """Not supported in per-partition merge. Use :func:`distributed_merge_deltalake` instead."""
+        raise NotImplementedError(
+            "when_not_matched_by_source_update is not supported with per-partition merge. "
+            "Use daft.distributed_merge_deltalake() which performs a full outer join."
+        )
 
     def when_not_matched_by_source_delete(self, predicate: str | None = None) -> "DeltaMergeBuilder":
-        """Add a ``when_not_matched_by_source_delete`` clause to the merge.
-
-        Args:
-            predicate: Optional SQL predicate for rows not matched by source.
-
-        Returns:
-            Self for method chaining.
-        """
-        self._merger = self._merger.when_not_matched_by_source_delete(predicate)
-        return self
+        """Not supported in per-partition merge. Use :func:`distributed_merge_deltalake` instead."""
+        raise NotImplementedError(
+            "when_not_matched_by_source_delete is not supported with per-partition merge. "
+            "Use daft.distributed_merge_deltalake() which performs a full outer join."
+        )
 
     def execute(self) -> "DataFrame":
-        """Execute the merge operation and return a DataFrame with metrics in metadata.
+        """Execute the merge operation using Daft's DataSink interface.
 
-        Returns a single-row DataFrame containing all merge metrics as columns.
-        The raw metrics dictionary is also stored in the DataFrame's _metadata.
+        Each worker partition merges its source chunk against the Delta table
+        via delta-rs. Metrics are aggregated across all partitions.
 
         Returns:
             DataFrame: A single-row DataFrame with columns for each merge metric.
         """
-        import pyarrow as pa
+        sink = _DeltaLakeMergeSink(
+            table_uri=self._table_uri,
+            storage_options=self._storage_options,
+            predicate=self._predicate,
+            source_alias=self._source_alias,
+            target_alias=self._target_alias,
+            custom_metadata=self._custom_metadata,
+            safe_cast=self._safe_cast,
+            merge_schema=self._merge_schema,
+            writer_properties=self._writer_properties,
+            streamed_exec=self._streamed_exec,
+            max_spill_size=self._max_spill_size,
+            max_temp_directory_size=self._max_temp_directory_size,
+            post_commithook_properties=self._post_commithook_properties,
+            matched_updates=self._matched_updates,
+            matched_deletes=self._matched_deletes,
+            not_matched_inserts=self._not_matched_inserts,
+        )
 
-        raw_metrics = self._merger.execute()
+        sink.start()
+        from daft.logical.builder import LogicalPlanBuilder
+
+        builder = self._source._builder.write_datasink(sink.name(), sink)
+        write_df = DataFrame(builder)
+        write_df.collect()
+
+        results = write_df.to_pydict()
+        assert "write_results" in results
+        finalized = sink.finalize(results["write_results"])
+
+        # Extract aggregated metrics
+        raw_metrics = finalized.to_pydict()["merge_metrics"][0]
+        if not isinstance(raw_metrics, dict):
+            raw_metrics = {}
+
         return _format_merge_metrics_as_dataframe(raw_metrics)
 
 
@@ -1076,19 +1246,9 @@ class DistributedDeltaMergeBuilder:
             post_delete_cond = (post_matched & post_matched_del) | (post_target_only & post_target_del)
             merged = merged.where(~post_delete_cond)
 
-        # Compute metrics before writing
-        metrics_df = merged.select(
-            col("__matched__").cast(DataType.int64()).sum().alias("num_matched"),
-            col("__inserted__").cast(DataType.int64()).sum().alias("num_inserted"),
-            col("__target_only__").cast(DataType.int64()).sum().alias("num_target_only"),
-        ).collect()
-        metrics_row = metrics_df.to_pydict()
-        num_matched = metrics_row["num_matched"][0] or 0
-        num_inserted = metrics_row["num_inserted"][0] or 0
-        num_target_only = metrics_row["num_target_only"][0] or 0
-
-        # Now produce the final write DataFrame (without markers)
-        # Also track which rows were actually modified for surgical writes
+        # Compute metrics inline during the write pass (avoid double materialization).
+        # We add marker columns to the merged result, write back, and count
+        # metrics from the marker columns after the write completes.
         _MODIFIED_MARKER = "__daft_dm_modified__"
         is_modified = col("__matched__") | col("__inserted__")
 
@@ -1096,7 +1256,13 @@ class DistributedDeltaMergeBuilder:
         if self._not_matched_by_source_updates:
             is_modified = is_modified | col("__target_only__")
 
-        final = merged.select(*[col(c) for c in target_columns], is_modified.alias(_MODIFIED_MARKER))
+        final = merged.select(
+            *[col(c) for c in target_columns],
+            is_modified.alias(_MODIFIED_MARKER),
+            col("__matched__"),
+            col("__inserted__"),
+            col("__target_only__"),
+        )
 
         # Write back — use surgical write if possible
         from deltalake import CommitProperties, write_deltalake
@@ -1104,10 +1270,10 @@ class DistributedDeltaMergeBuilder:
         commit_properties = CommitProperties(custom_metadata={
             **(self._custom_metadata or {}),
             "daft.operation": "DISTRIBUTED_MERGE",
-            "daft.num_target_rows_updated": str(num_matched),
-            "daft.num_target_rows_inserted": str(num_inserted),
-            "daft.num_target_rows_unsourced": str(num_target_only),
         })
+
+        # Collect final into memory once — used for both metrics and writing
+        final_collected = final.collect()
 
         # Check if table is partitioned — use partition-scoped overwrite if so
         partition_cols = self._resolved_table.metadata().partition_columns
@@ -1116,10 +1282,9 @@ class DistributedDeltaMergeBuilder:
             # Partition-aware overwrite: only rewrite partitions that have changes
             # 1. Find affected partition values
             affected_parts = (
-                final.where(col(_MODIFIED_MARKER))
+                final_collected.where(col(_MODIFIED_MARKER))
                 .select(*[col(p) for p in partition_cols])
                 .distinct()
-                .collect()
                 .to_pydict()
             )
 
@@ -1137,7 +1302,7 @@ class DistributedDeltaMergeBuilder:
                 partition_predicate = " AND ".join(predicates)
 
                 # 3. Write only rows from affected partitions
-                write_df = final.where(col(_MODIFIED_MARKER) | self._build_partition_filter(partition_cols, affected_parts))
+                write_df = final_collected.where(col(_MODIFIED_MARKER) | self._build_partition_filter(partition_cols, affected_parts))
                 write_df = write_df.select(*[col(c) for c in target_columns])
 
                 arrow_schema = write_df.schema().to_pyarrow_schema()
@@ -1156,7 +1321,7 @@ class DistributedDeltaMergeBuilder:
                 pass
         else:
             # Non-partitioned table — must do full overwrite
-            write_df = final.select(*[col(c) for c in target_columns])
+            write_df = final_collected.select(*[col(c) for c in target_columns])
             arrow_schema = write_df.schema().to_pyarrow_schema()
             result_iter = write_df.to_arrow_iter()
 
@@ -1169,9 +1334,17 @@ class DistributedDeltaMergeBuilder:
                 commit_properties=commit_properties,
             )
 
+        # Compute metrics from the already-collected data (no extra pass)
+        metrics_row = final_collected.select(
+            col("__matched__").cast(DataType.int64()).sum().alias("num_matched"),
+            col("__inserted__").cast(DataType.int64()).sum().alias("num_inserted"),
+            col("__target_only__").cast(DataType.int64()).sum().alias("num_target_only"),
+        ).to_pydict()
+        num_matched = metrics_row["num_matched"][0] or 0
+        num_inserted = metrics_row["num_inserted"][0] or 0
+        num_target_only = metrics_row["num_target_only"][0] or 0
+
         # Return metrics as DataFrame (matches delta-rs semantics)
-        # num_target_rows_updated = rows where update was actually applied
-        # num_target_rows_copied = matched rows where no update applied + target-only rows kept
         raw_metrics = {
             "num_source_rows": num_matched + num_inserted,
             "num_target_rows_inserted": num_inserted,
@@ -1179,7 +1352,7 @@ class DistributedDeltaMergeBuilder:
             "num_target_rows_deleted": 0,
             "num_target_rows_copied": num_target_only,
             "num_output_rows": num_matched + num_inserted + num_target_only,
-            "num_target_files_added": 0,  # not tracked at this level
+            "num_target_files_added": 0,
             "num_target_files_removed": 0,
             "execution_time_ms": 0,
             "scan_time_ms": 0,

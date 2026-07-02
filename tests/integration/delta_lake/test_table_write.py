@@ -652,7 +652,7 @@ def test_merge_deltalake_scenario_2_deleted_entity_with_antijoin(tmp_path):
     })
     
     result = (
-        daft.merge_deltalake(
+        daft.distributed_merge_deltalake(
             str(path),
             source=source,
             predicate="target.entity_id = source.entity_id"
@@ -680,13 +680,15 @@ def test_merge_deltalake_delete_apis(tmp_path):
     daft.from_pydict({"id": [1, 2, 3], "value": ["a", "b", "c"]}).write_deltalake(str(path))
 
     source = daft.from_pydict({"id": [1, 3], "value": ["a", "c"]})
+    builder = daft.distributed_merge_deltalake(
+        str(path),
+        source=source,
+        predicate="target.id = source.id"
+    )
+    s = builder.source_col
     result = (
-        daft.merge_deltalake(
-            str(path),
-            source=source,
-            predicate="target.id = source.id"
-        )
-        .when_matched_delete(predicate="source.id = 1")
+        builder
+        .when_matched_delete(predicate=(s("id") == daft.lit(1)))
         .when_not_matched_by_source_delete()
         .execute()
     )
