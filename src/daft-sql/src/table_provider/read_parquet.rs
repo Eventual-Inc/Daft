@@ -42,6 +42,7 @@ impl TryFrom<SQLFunctionArguments> for ParquetScanBuilder {
         let file_path_column = args.try_get_named("file_path_column")?;
         let multithreaded = args.try_get_named("multithreaded")?.unwrap_or(true);
         let hive_partitioning = args.try_get_named("hive_partitioning")?.unwrap_or(false);
+        let ignore_corrupt_files = args.try_get_named("ignore_corrupt_files")?.unwrap_or(false);
 
         let field_id_mapping = None; // TODO
         let row_groups = None; // TODO
@@ -64,6 +65,7 @@ impl TryFrom<SQLFunctionArguments> for ParquetScanBuilder {
             schema,
             file_path_column,
             hive_partitioning,
+            ignore_corrupt_files,
         })
     }
 }
@@ -88,6 +90,7 @@ impl SQLTableFunction for ReadParquetFunction {
                 "io_config",
                 "file_path_column",
                 "hive_partitioning",
+                "ignore_corrupt_files",
             ],
             1, // 1 positional argument (path)
         )?;
