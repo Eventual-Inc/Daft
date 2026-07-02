@@ -130,12 +130,44 @@ class TransformersProvider(Provider):
         system_message: str | None = None,
         **options: Unpack[TransformersPromptOptions],
     ) -> PrompterDescriptor:
+        model_name = model or self.DEFAULT_PROMPTER
+        if self._is_vision_model(model_name):
+            from daft.ai.transformers.protocols.vision_prompter import (
+                TransformersVisionPrompterDescriptor,
+            )
+
+            return TransformersVisionPrompterDescriptor(
+                provider_name=self._name,
+                model_name=model_name,
+                prompt_options=options,
+                system_message=system_message,
+                return_format=return_format,
+            )
+
         from daft.ai.transformers.protocols.prompter import TransformersPrompterDescriptor
 
         return TransformersPrompterDescriptor(
             provider_name=self._name,
-            model_name=(model or self.DEFAULT_PROMPTER),
+            model_name=model_name,
             prompt_options=options,
             system_message=system_message,
             return_format=return_format,
         )
+
+    @staticmethod
+    def _is_vision_model(model_name: str) -> bool:
+        """Returns True if the given HF model is an image-text-to-text (vision-language) model.
+
+        Falls back to False on any config lookup failure (offline, invalid model name, etc.),
+        which routes the request to the text-only prompter.
+        """
+        try:
+            from transformers import AutoConfig
+            from transformers.models.auto.modeling_auto import (
+                MODEL_FOR_IMAGE_TEXT_TO_TEXT_MAPPING_NAMES,
+            )
+
+            config = AutoConfig.from_pretrained(model_name)
+            return config.model_type in MODEL_FOR_IMAGE_TEXT_TO_TEXT_MAPPING_NAMES
+        except Exception:
+            return False
