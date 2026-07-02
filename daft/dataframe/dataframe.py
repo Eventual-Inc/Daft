@@ -2211,6 +2211,7 @@ class DataFrame:
         schema: Union[Schema, "pyarrow.Schema"] | None = None,
         left_on: str | None = None,
         right_on: str | None = None,
+        checkpoint: "IdempotentCommit | None" = None,
         **kwargs: Any,
     ) -> "DataFrame":
         """Writes the DataFrame to a Lance table.
@@ -2235,6 +2236,8 @@ class DataFrame:
               - If omitted, defaults to ``"_rowaddr"``.
               - If ``right_on`` is omitted, it defaults to the value of ``left_on``.
               - The DataFrame passed to ``write_lance(mode="merge")`` must contain ``fragment_id`` and the join key column specified by ``right_on`` (or ``_rowaddr`` by default).
+          checkpoint (IdempotentCommit, optional): Bundled checkpoint store + idempotence key for an idempotent append commit.
+              Only ``mode="append"`` is supported. The source must use a ``CheckpointConfig`` backed by the same store.
           **kwargs: Additional keyword arguments to pass to the Lance writer.
 
         Returns:
@@ -2301,10 +2304,31 @@ class DataFrame:
                 "lance-namespace API and has been removed."
             )
 
+        if checkpoint is not None and mode != "append":
+            raise NotImplementedError(
+                "write_lance with checkpoint=... currently supports mode='append' only; "
+                "create, overwrite, and merge checkpoint support are tracked separately."
+            )
+
         # Non-merge modes do not support schema evolution or custom join keys
         if mode != "merge":
             sanitized_kwargs = {k: v for k, v in kwargs.items() if k not in ("left_on", "right_on")}
-            sink = LanceDataSink(uri, schema, mode, io_config, **sanitized_kwargs)
+            sink_kwargs = dict(sanitized_kwargs)
+            # Keep regular write_lance() compatible with daft_lance versions
+            # that do not accept a checkpoint argument. Passing checkpoint=None
+            # would be captured in **kwargs and forwarded to Lance's
+            # write_fragments(), which does not accept it.
+            if checkpoint is not None:
+                sink_kwargs["checkpoint"] = checkpoint
+            sink = LanceDataSink(uri, schema, mode, io_config, **sink_kwargs)
+            # This is a driver-side retry fast path. If Lance already has a
+            # transaction tagged with this idempotence key, the previous attempt
+            # already committed the logical append. We should not run the source
+            # scan or worker writes again. finalize([]) then does only the
+            # mark_committed() work for any sealed checkpoint ids from the
+            # previous attempt.
+            if checkpoint is not None and sink.checkpoint_commit_exists():
+                return DataFrame._from_micropartitions(sink.finalize([]))
             return self.write_sink(sink)
 
         # Merge mode semantics
