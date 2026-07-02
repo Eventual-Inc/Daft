@@ -46,6 +46,11 @@ requested timestamp. Output is **byte-identical** to the old per-row decode.
 
 8-frame output hashes matched exactly (`sha 80bdb30c…`) between versions.
 
+Beyond this test dataset, the fix was validated on six public LeRobot v3 datasets
+spanning av1/h264/mp4v, 5-30 fps, 128x128-1280x720, and 1-3 cameras - pixel-identical
+output everywhere, 4-13x faster - plus a full-dataset decode and a 100-frame
+comparison. See [real_datasets.md](real_datasets.md).
+
 ## Multiprocess
 
 Running the decode under `use_process=True` produces byte-identical output, so the
