@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from functools import partial, reduce
 from typing import TYPE_CHECKING, Any, Concatenate, Literal, ParamSpec, TypeVar, Union, overload
 
+from packaging.version import parse
+
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
@@ -45,6 +47,7 @@ from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.execution.native_executor import NativeExecutor
 from daft.expressions import Expression, ExpressionsProjection, col, lit
+from daft.filesystem import get_protocol_from_path
 from daft.logical.builder import LogicalPlanBuilder
 from daft.recordbatch import MicroPartition, RecordBatch
 from daft.runners import get_or_create_runner
@@ -138,10 +141,6 @@ def _configure_deltalake_storage_options(
     deltalake_version: str,
 ) -> bool:
     """Apply Delta Lake commit options that depend on the destination URI."""
-    from packaging.version import parse
-
-    from daft.filesystem import get_protocol_from_path
-
     changed = False
 
     def set_storage_option(key: str, value: str) -> None:
