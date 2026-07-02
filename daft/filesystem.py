@@ -280,7 +280,7 @@ def _build_filesystem(
         if io_config is not None and io_config.hf is not None:
             hf_config = io_config.hf
             if hf_config.token is not None:
-                hf_kwargs["token"] = hf_config.token.value
+                hf_kwargs["token"] = hf_config.token
             if hf_config.anonymous:
                 hf_kwargs["token"] = None
         fsspec_fs = fsspec_fs_cls(**hf_kwargs)
