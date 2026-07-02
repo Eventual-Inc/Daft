@@ -231,12 +231,12 @@ pub struct CosConfig {
 ///     max_connections (int, optional): Maximum connections per IO thread, defaults to 50
 ///
 /// Examples:
-///     >>> io_config = IOConfig(goosefs=GoosefsConfig(master_addr="10.0.0.1:9200"))
+///     >>> io_config = IOConfig(goosefs=GooseFSConfig(master_addr="10.0.0.1:9200"))
 ///     >>> daft.read_parquet("goosefs://10.0.0.1:9200/path", io_config=io_config)
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[pyclass(module = "daft.daft", from_py_object)]
-pub struct GoosefsConfig {
-    pub config: crate::GoosefsConfig,
+pub struct GooseFSConfig {
+    pub config: crate::GooseFSConfig,
 }
 
 #[pymethods]
@@ -270,7 +270,7 @@ impl IOConfig {
         tos: Option<TosConfig>,
         gravitino: Option<GravitinoConfig>,
         cos: Option<CosConfig>,
-        goosefs: Option<GoosefsConfig>,
+        goosefs: Option<GooseFSConfig>,
         opendal_backends: Option<HashMap<String, HashMap<String, String>>>,
         protocol_aliases: Option<HashMap<String, String>>,
     ) -> PyResult<Self> {
@@ -331,7 +331,7 @@ impl IOConfig {
         tos: Option<TosConfig>,
         gravitino: Option<GravitinoConfig>,
         cos: Option<CosConfig>,
-        goosefs: Option<GoosefsConfig>,
+        goosefs: Option<GooseFSConfig>,
         opendal_backends: Option<HashMap<String, HashMap<String, String>>>,
         protocol_aliases: Option<HashMap<String, String>>,
     ) -> PyResult<Self> {
@@ -488,8 +488,8 @@ impl IOConfig {
 
     /// Configuration to be used when accessing GooseFS URLs
     #[getter]
-    pub fn goosefs(&self) -> PyResult<GoosefsConfig> {
-        Ok(GoosefsConfig {
+    pub fn goosefs(&self) -> PyResult<GooseFSConfig> {
+        Ok(GooseFSConfig {
             config: self.config.goosefs.clone(),
         })
     }
@@ -2065,7 +2065,7 @@ impl CosConfig {
 }
 
 #[pymethods]
-impl GoosefsConfig {
+impl GooseFSConfig {
     #[allow(clippy::too_many_arguments)]
     #[new]
     #[pyo3(signature = (
@@ -2102,9 +2102,9 @@ impl GoosefsConfig {
         max_concurrent_requests: Option<u32>,
         max_connections: Option<u32>,
     ) -> PyResult<Self> {
-        let def = crate::GoosefsConfig::default();
+        let def = crate::GooseFSConfig::default();
         Ok(Self {
-            config: crate::GoosefsConfig {
+            config: crate::GooseFSConfig {
                 root: root.or(def.root),
                 master_addr: master_addr.or(def.master_addr),
                 block_size: block_size.or(def.block_size),
@@ -2165,7 +2165,7 @@ impl GoosefsConfig {
         max_connections: Option<u32>,
     ) -> PyResult<Self> {
         Ok(Self {
-            config: crate::GoosefsConfig {
+            config: crate::GooseFSConfig {
                 root: root.or_else(|| self.config.root.clone()),
                 master_addr: master_addr.or_else(|| self.config.master_addr.clone()),
                 block_size: block_size.or(self.config.block_size),
@@ -2202,7 +2202,7 @@ impl GoosefsConfig {
         let root = std::env::var("GOOSEFS_ROOT").ok();
 
         Ok(Self {
-            config: crate::GoosefsConfig {
+            config: crate::GooseFSConfig {
                 root,
                 master_addr,
                 write_type,
@@ -2325,7 +2325,7 @@ impl_bincode_py_state_serialization!(HuggingFaceConfig);
 impl_bincode_py_state_serialization!(TosConfig);
 impl_bincode_py_state_serialization!(GravitinoConfig);
 impl_bincode_py_state_serialization!(CosConfig);
-impl_bincode_py_state_serialization!(GoosefsConfig);
+impl_bincode_py_state_serialization!(GooseFSConfig);
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<AzureConfig>()?;
@@ -2338,7 +2338,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<HuggingFaceConfig>()?;
     parent.add_class::<GravitinoConfig>()?;
     parent.add_class::<CosConfig>()?;
-    parent.add_class::<GoosefsConfig>()?;
+    parent.add_class::<GooseFSConfig>()?;
     parent.add_class::<IOConfig>()?;
     Ok(())
 }
