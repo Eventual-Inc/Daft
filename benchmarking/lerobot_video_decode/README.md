@@ -51,6 +51,8 @@ spanning av1/h264/mp4v, 5-30 fps, 128x128-1280x720, and 1-3 cameras - pixel-iden
 output everywhere, 4-13x faster - plus a full-dataset decode and a 100-frame
 comparison. See [real_datasets.md](real_datasets.md).
 
+![original vs batched on public datasets](charts/chart_real_datasets.png)
+
 ## Multiprocess
 
 Running the decode under `use_process=True` produces byte-identical output, so the
