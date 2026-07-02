@@ -15,6 +15,8 @@ time covers the full `lerobot.read(..., load_video_frames=True)` pipeline.
 
 ## Results: 16 frames, all cameras
 
+![original vs batched on public datasets](charts/chart_real_datasets.png)
+
 | dataset | codec | resolution | fps | cams | original | batched | output |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | AlexFeng1/fa_putPlace_35 | av1 | 640x480 | 30 | 3 | 330s | 25.5s | identical |
