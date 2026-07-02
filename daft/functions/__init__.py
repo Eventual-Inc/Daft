@@ -67,6 +67,9 @@ from .datetime import (
     to_date,
     to_datetime,
     convert_time_zone,
+    convert_timezone,
+    from_utc_timestamp,
+    to_utc_timestamp,
     replace_time_zone,
     date_trunc,
     trunc,
@@ -102,7 +105,17 @@ from .similarity import (
 )
 
 from .image_file_ import image_file_metadata, decode_image_file
-from .file_ import file, file_path, file_size, video_file, audio_file, image_file, guess_mime_type
+from .file_ import (
+    file,
+    file_path,
+    file_size,
+    file_exists,
+    video_file,
+    audio_file,
+    image_file,
+    hdf5_file,
+    guess_mime_type,
+)
 
 from .image import (
     resize,
@@ -281,11 +294,18 @@ from .str import (
     jaro_similarity,
     jaro_winkler_similarity,
     damerau_levenshtein_distance,
+    translate,
+    substring_index,
+    soundex,
+    ascii_func,
+    chr_func,
+    space,
 )
 from .struct import unnest, to_struct
 from .url import download, upload, parse_url
 from .audio import audio_metadata, resample
 from .video import video_metadata, video_keyframes, video_frames
+from .hdf5 import hdf5_keys, hdf5_read, hdf5_read_many
 from .window import (
     row_number,
     rank,
@@ -310,6 +330,7 @@ __all__ = [
     "arctan",
     "arctan2",
     "arctanh",
+    "ascii_func",
     "audio_file",
     "audio_metadata",
     "avg",
@@ -324,6 +345,7 @@ __all__ = [
     "cast",
     "cbrt",
     "ceil",
+    "chr_func",
     "chunk",
     "classify_image",
     "classify_text",
@@ -341,6 +363,7 @@ __all__ = [
     "conv",
     "convert_image",
     "convert_time_zone",
+    "convert_timezone",
     "cos",
     "cosh",
     "cosine_distance",
@@ -397,6 +420,7 @@ __all__ = [
     "extract_month_uuid7",
     "factorial",
     "file",
+    "file_exists",
     "file_path",
     "file_size",
     "fill_nan",
@@ -406,12 +430,17 @@ __all__ = [
     "floor",
     "format",
     "from_unixtime",
+    "from_utc_timestamp",
     "get",
     "great_circle_distance",
     "guess_mime_type",
     "hamming_distance",
     "hamming_distance_str",
     "hash",
+    "hdf5_file",
+    "hdf5_keys",
+    "hdf5_read",
+    "hdf5_read_many",
     "hour",
     "hypot",
     "ilike",
@@ -542,6 +571,8 @@ __all__ = [
     "sinh",
     "skew",
     "slice",
+    "soundex",
+    "space",
     "split",
     "sqrt",
     "startswith",
@@ -550,6 +581,7 @@ __all__ = [
     "string_agg",
     "strip",
     "substr",
+    "substring_index",
     "sum",
     "tan",
     "tanh",
@@ -569,6 +601,7 @@ __all__ = [
     "to_upper_camel_case",
     "to_upper_kebab_case",
     "to_upper_snake_case",
+    "to_utc_timestamp",
     "tokenize_decode",
     "tokenize_encode",
     "total_days",
@@ -578,6 +611,7 @@ __all__ = [
     "total_minutes",
     "total_nanoseconds",
     "total_seconds",
+    "translate",
     "trunc",
     "try_cast",
     "try_compress",

@@ -174,6 +174,22 @@ def test_batch_size_from_udf_propagated_through_ops_to_scan():
 |       read_timeout_ms: 30000
 |       max_concurrent_requests: 50
 |       max_connections_per_io_thread: 50
+|   GooseFSConfig
+|       root: None
+|       master_addr: None
+|       block_size: None
+|       chunk_size: None
+|       write_type: None
+|       auth_type: None
+|       auth_username: None
+|       auth_password: ***
+|       anonymous: false
+|       max_retries: 3
+|       retry_timeout_ms: 30000
+|       connect_timeout_ms: 10000
+|       read_timeout_ms: 30000
+|       max_concurrent_requests: 50
+|       max_connections_per_io_thread: 50
 |   HTTPConfig
 |   User agent = daft/0.0.1
 |   Retry initial backoff ms = 1000
@@ -192,6 +208,7 @@ def test_batch_size_from_udf_propagated_through_ops_to_scan():
 |       token: None
 |   HuggingFaceConfig
 |   Anonymous = false
+|   Use Xet = true
 |   ))) as {id_placeholder}, col(0: data)
 |   Stats = {{ Approx num rows = 5, Approx size bytes = 156 B, Accumulated selectivity = 1.00 }}
 |   Batch Size = Range(0, 10]

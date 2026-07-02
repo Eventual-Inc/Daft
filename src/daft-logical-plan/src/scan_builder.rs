@@ -401,7 +401,10 @@ pub fn delta_scan<T: IntoGlobPath>(
 pub fn iceberg_scan<T: AsRef<str>>(
     metadata_location: T,
     snapshot_id: Option<usize>,
+    branch: Option<String>,
+    tag: Option<String>,
     io_config: Option<IOConfig>,
+    ignore_corrupt_files: bool,
 ) -> DaftResult<LogicalPlanBuilder> {
     use pyo3::IntoPyObjectExt;
     let storage_config: StorageConfig = io_config.unwrap_or_default().into();
@@ -410,10 +413,19 @@ pub fn iceberg_scan<T: AsRef<str>>(
         let iceberg_static_table = iceberg_table_module.getattr("StaticTable")?;
         let iceberg_table =
             iceberg_static_table.call_method1("from_metadata", (metadata_location.as_ref(),))?;
+        let iceberg_helper_module = PyModule::import(py, "daft.io.iceberg._iceberg")?;
+        let snapshot_id = iceberg_helper_module
+            .getattr("resolve_snapshot_id")?
+            .call1((&iceberg_table, snapshot_id, branch, tag))?;
         let iceberg_scan_module = PyModule::import(py, "daft.io.iceberg.iceberg_scan")?;
         let iceberg_scan_class = iceberg_scan_module.getattr("IcebergScanOperator")?;
         let iceberg_scan = iceberg_scan_class
-            .call1((iceberg_table, snapshot_id, storage_config))?
+            .call1((
+                iceberg_table,
+                snapshot_id,
+                storage_config,
+                ignore_corrupt_files,
+            ))?
             .into_py_any(py)?;
         Ok(ScanOperatorHandle::from_python_scan_operator(
             iceberg_scan,
@@ -425,9 +437,12 @@ pub fn iceberg_scan<T: AsRef<str>>(
 
 #[cfg(not(feature = "python"))]
 pub fn iceberg_scan<T: AsRef<str>>(
-    uri: T,
-    snapshot_id: Option<usize>,
-    io_config: Option<IOConfig>,
+    _uri: T,
+    _snapshot_id: Option<usize>,
+    _branch: Option<String>,
+    _tag: Option<String>,
+    _io_config: Option<IOConfig>,
+    _ignore_corrupt_files: bool,
 ) -> DaftResult<LogicalPlanBuilder> {
     panic!("Iceberg scan requires the 'python' feature to be enabled.")
 }

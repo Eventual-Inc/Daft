@@ -316,12 +316,26 @@ class Session:
 
     def create_namespace(self, identifier: Identifier | str) -> None:
         """Creates a namespace in the current catalog."""
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+
+        if resolved := self._resolve_catalog(identifier):
+            cat, identifier = resolved
+            return cat.create_namespace(identifier)
+
         if not (catalog := self.current_catalog()):
             raise ValueError("Cannot create a namespace without a current catalog")
         return catalog.create_namespace(identifier)
 
     def create_namespace_if_not_exists(self, identifier: Identifier | str) -> None:
         """Creates a namespace in the current catalog if it does not already exist."""
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+
+        if resolved := self._resolve_catalog(identifier):
+            cat, identifier = resolved
+            return cat.create_namespace_if_not_exists(identifier)
+
         if not (catalog := self.current_catalog()):
             raise ValueError("Cannot create a namespace without a current catalog")
         return catalog.create_namespace_if_not_exists(identifier)
@@ -439,8 +453,15 @@ class Session:
         """Drop the given namespace in the current catalog.
 
         Args:
-            identifier (Identifier|str): table identifier
+            identifier (Identifier|str): namespace identifier
         """
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+
+        if resolved := self._resolve_catalog(identifier):
+            cat, identifier = resolved
+            return cat.drop_namespace(identifier)
+
         if not (catalog := self.current_catalog()):
             raise ValueError("Cannot drop a namespace without a current catalog")
         return catalog.drop_namespace(identifier)
@@ -460,7 +481,11 @@ class Session:
 
         if not (catalog := self.current_catalog()):
             raise ValueError("Cannot drop a table without a current catalog")
-        # TODO join the identifier with the current namespace
+
+        if len(identifier) == 1:
+            if ns := self.current_namespace():
+                identifier = ns + identifier
+
         return catalog.drop_table(identifier)
 
     ###
@@ -596,6 +621,13 @@ class Session:
 
     def has_namespace(self, identifier: Identifier | str) -> bool:
         """Returns true if a namespace with the given identifier exists."""
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+
+        if resolved := self._resolve_catalog(identifier):
+            cat, identifier = resolved
+            return cat.has_namespace(identifier)
+
         if not (catalog := self.current_catalog()):
             raise ValueError("Cannot call has_namespace without a current catalog")
         return catalog.has_namespace(identifier)
@@ -629,10 +661,22 @@ class Session:
         return self._session.list_catalogs(pattern)
 
     def list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
-        """Returns a list of matching namespaces in the current catalog."""
-        if not (catalog := self.current_catalog()):
-            raise ValueError("Cannot list namespaces without a current catalog")
-        return catalog.list_namespaces(pattern)
+        r"""Returns a list of available namespaces.
+
+        Args:
+            - pattern (str, optional): Pattern to match namespace names. Pattern syntax is catalog-dependent:
+                - Native/Memory and Postgres catalogs: Use SQL LIKE syntax (`%`, `_`, `\`). Supports qualified patterns like `"cat1.%"` to dispatch to attached catalog `cat1`.
+                - Other catalogs: Pattern behavior varies (e.g., prefix matching for Iceberg/S3 Tables, AWS Glue expressions for Glue).
+
+        Returns:
+            list[Identifier]: list of available namespaces
+
+        Examples:
+            >>> sess.list_namespaces()  # List all namespaces in current catalog
+            >>> sess.list_namespaces("ns%")  # Namespaces starting with "ns" (native catalog)
+            >>> sess.list_namespaces("cat1.%")  # All namespaces in attached catalog "cat1"
+        """
+        return [Identifier._from_pyidentifier(i) for i in self._session.list_namespaces(pattern)]
 
     def list_tables(self, pattern: str | None = None) -> list[Identifier]:
         r"""Returns a list of available tables.

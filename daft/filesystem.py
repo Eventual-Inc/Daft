@@ -249,7 +249,7 @@ def _build_filesystem(
     if protocol == "http":
         # "https" canonicalizes to "http"; fsspec's HTTPFileSystem handles both schemes.
         fsspec_fs = fsspec.get_filesystem_class("http")()
-        return pafs.PyFileSystem(fsspec_fs), None
+        return pafs.PyFileSystem(pafs.FSSpecHandler(fsspec_fs)), None
 
     ###
     # Azure: Use FSSpec as a fallback
@@ -304,8 +304,8 @@ def _resolve_path(path: str, fs: pafs.FileSystem) -> str:
     # Strip trailing slashes so downstream "{dir}/{file}" joins don't double them.
     path = path.rstrip("/") or path
     protocol = get_protocol_from_path(path)
-    # Gravitino keeps the full gvfs:// URI — its Rust-backed handler expects it.
-    if protocol == "gvfs":
+    # These filesystems expect the full URI, including the scheme.
+    if protocol in {"gvfs", "http", "https"}:
         return path
     if protocol == "file":
         path = os.path.expanduser(path)

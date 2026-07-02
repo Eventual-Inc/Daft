@@ -484,8 +484,9 @@ class TestGravitinoTable:
         assert gravitino_table.name == "test_table"
 
     def test_read_options_attribute(self):
-        """Test _read_options on the Iceberg subclass includes snapshot_id."""
+        """Test _read_options on the Iceberg subclass includes read options."""
         assert "snapshot_id" in GravitinoIcebergTable._read_options
+        assert "ignore_corrupt_files" in GravitinoIcebergTable._read_options
 
     def test_write_options_attribute(self):
         """Test _write_options on the Iceberg subclass is a set."""
@@ -506,6 +507,7 @@ class TestGravitinoTable:
             branch=None,
             tag=None,
             io_config=gravitino_table._inner.io_config,
+            ignore_corrupt_files=False,
         )
 
     @patch("daft.catalog.__gravitino._catalog.read_iceberg")
@@ -523,6 +525,7 @@ class TestGravitinoTable:
             branch=None,
             tag=None,
             io_config=gravitino_table._inner.io_config,
+            ignore_corrupt_files=False,
         )
 
     def test_read_iceberg_table_pyiceberg_not_installed(self, mock_inner_table):

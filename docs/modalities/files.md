@@ -127,6 +127,30 @@ This works well for URLs which are HTTP paths to non-HTML files (e.g. jpeg), loc
 
 The [`daft.File`](../api/datatypes/file_types.md) datatype provides first-class support for handling file data across local and remote storage, enabling seamless file operations in distributed environments.
 
+## HDF5 Files
+
+Daft also provides `daft.Hdf5File` and HDF5 expression helpers for hierarchical files such as robot trajectory datasets. Use `daft.functions.hdf5_file` to create lazy HDF5 file references in a DataFrame, then use `hdf5_keys`, `hdf5_visit`, `hdf5_read`, or `hdf5_read_many` to inspect and read selected datasets.
+
+```python
+import daft
+from daft.functions import hdf5_file, hdf5_read_many, unnest
+
+df = daft.from_pydict({"path": ["/data/episode/trajectory.h5"]})
+df = df.select(
+    unnest(
+        hdf5_read_many(
+            hdf5_file(daft.col("path")),
+            {
+                "joint_position": "action/joint_position",
+                "gripper_position": "action/gripper_position",
+            },
+        )
+    )
+)
+```
+
+For a runnable walkthrough covering standalone `Hdf5File` usage, MIME detection, hierarchy traversal, DataFrame expressions, and UDF patterns, see the [HDF5 file usage notebook](https://github.com/Eventual-Inc/Daft/blob/main/examples/hdf5_file_usage.ipynb).
+
 While the Python classes provide the interface, the actual implementation lives in Rust-based `PyDaftFile`, which maintains optimized backends for different storage types:
 
 - Local filesystem access

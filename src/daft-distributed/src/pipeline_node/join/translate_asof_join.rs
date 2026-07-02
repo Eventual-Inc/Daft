@@ -20,6 +20,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         left_on: BoundExpr,
         right_on: BoundExpr,
         strategy: AsofJoinStrategy,
+        assume_aligned: bool,
         output_schema: SchemaRef,
     ) -> DaftResult<DistributedPipelineNode> {
         let num_left_partitions = left.config().clustering_spec.num_partitions();
@@ -38,6 +39,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                 right_on,
                 strategy,
                 num_partitions,
+                assume_aligned,
                 left,
                 right,
                 output_schema,
@@ -76,22 +78,25 @@ impl LogicalPlanToPipelineNodeTranslator {
             &right_node.config().schema,
         )?;
 
-        if asof_join.assume_sorted_and_aligned {
-            Err(common_error::DaftError::NotImplemented(
-                "_assume_sorted_and_aligned=True: AsofJoinAlignedNode is not yet implemented"
+        if asof_join.assume_sorted_and_aligned
+            && self.plan_config.config.enable_scan_task_split_and_merge
+        {
+            return Err(common_error::DaftError::ValueError(
+                "_assume_sorted_and_aligned=True is incompatible with enable_scan_task_split_and_merge=True: \
+                 scan task splitting may change partition counts and break alignment."
                     .to_string(),
-            ))
-        } else {
-            self.gen_asof_join_nodes(
-                left_node,
-                right_node,
-                left_by,
-                right_by,
-                left_on,
-                right_on,
-                asof_join.strategy,
-                asof_join.output_schema.clone(),
-            )
+            ));
         }
+        self.gen_asof_join_nodes(
+            left_node,
+            right_node,
+            left_by,
+            right_by,
+            left_on,
+            right_on,
+            asof_join.strategy,
+            asof_join.assume_sorted_and_aligned,
+            asof_join.output_schema.clone(),
+        )
     }
 }

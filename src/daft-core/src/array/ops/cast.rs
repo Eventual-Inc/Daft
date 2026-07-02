@@ -32,7 +32,10 @@ use crate::{
             SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
     },
-    file::{DaftMediaType, MediaTypeAudio, MediaTypeImage, MediaTypeUnknown, MediaTypeVideo},
+    file::{
+        DaftMediaType, MediaTypeAudio, MediaTypeHdf5, MediaTypeImage, MediaTypeUnknown,
+        MediaTypeVideo,
+    },
     prelude::ExtensionArray,
     series::{IntoSeries, Series},
     utils::display::display_time64,
@@ -644,15 +647,18 @@ where
         use daft_schema::media_type::MediaType::*;
         match dtype {
             DataType::File(media_type) => match (media_type, T::get_type()) {
-                (Unknown, Unknown) | (Video, Video) | (Audio, Audio) | (Image, Image) => {
-                    Ok(self.clone().into_series())
-                }
-                (Unknown, Video) | (Unknown, Audio) | (Unknown, Image) => {
+                (Unknown, Unknown)
+                | (Video, Video)
+                | (Audio, Audio)
+                | (Image, Image)
+                | (Hdf5, Hdf5) => Ok(self.clone().into_series()),
+                (Unknown, Video) | (Unknown, Audio) | (Unknown, Image) | (Unknown, Hdf5) => {
                     Ok(self.clone().change_type::<MediaTypeUnknown>().into_series())
                 }
                 (Video, Unknown) => Ok(self.clone().change_type::<MediaTypeVideo>().into_series()),
                 (Audio, Unknown) => Ok(self.clone().change_type::<MediaTypeAudio>().into_series()),
                 (Image, Unknown) => Ok(self.clone().change_type::<MediaTypeImage>().into_series()),
+                (Hdf5, Unknown) => Ok(self.clone().change_type::<MediaTypeHdf5>().into_series()),
                 _ => Err(DaftError::TypeError("invalid cast".to_string())),
             },
             DataType::Null => {
@@ -1658,11 +1664,18 @@ impl ListArray {
                     }
                 }
             }
-            DataType::Map { .. } => Ok(MapArray::new(
-                Field::new(self.name(), dtype.clone()),
-                self.clone(),
-            )
-            .into_series()),
+            DataType::Map { key, value } => {
+                let physical_dtype = DataType::List(Box::new(DataType::Struct(vec![
+                    Field::new("key", *key.clone()),
+                    Field::new("value", *value.clone()),
+                ])));
+                let result = self.cast(&physical_dtype)?;
+                let map_array = MapArray::new(
+                    Field::new(self.name(), dtype.clone()),
+                    result.list()?.clone(),
+                );
+                Ok(map_array.into_series())
+            }
             DataType::Embedding(..) => {
                 let result = self.cast(&dtype.to_physical())?;
                 let embedding_array = EmbeddingArray::new(
@@ -1804,6 +1817,11 @@ impl StructArray {
                     )
                     .into_series()),
                     MediaType::Audio => Ok(FileArray::<MediaTypeAudio>::new(
+                        Field::new(self.name(), dtype.clone()),
+                        casted_struct_array,
+                    )
+                    .into_series()),
+                    MediaType::Hdf5 => Ok(FileArray::<MediaTypeHdf5>::new(
                         Field::new(self.name(), dtype.clone()),
                         casted_struct_array,
                     )

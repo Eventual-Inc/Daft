@@ -16,7 +16,6 @@ mod retry;
 pub mod s3_like;
 mod stats;
 mod stream_utils;
-mod tos;
 #[cfg(feature = "python")]
 mod unity;
 
@@ -30,7 +29,6 @@ use google_cloud::GCSSource;
 pub use gravitino::GravitinoSource;
 use huggingface::HFSource;
 use opendal_source::OpenDALSource;
-use tos::TosSource;
 #[cfg(feature = "python")]
 use unity::UnitySource;
 #[cfg(test)]
@@ -46,7 +44,8 @@ use std::{borrow::Cow, collections::HashMap, hash::Hash, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 pub use common_io_config::{
-    AzureConfig, CosConfig, GCSConfig, GravitinoConfig, HTTPConfig, IOConfig, S3Config, TosConfig,
+    AzureConfig, CosConfig, GCSConfig, GooseFSConfig, GravitinoConfig, HTTPConfig, IOConfig,
+    S3Config, TosConfig,
 };
 use futures::{FutureExt, stream::BoxStream};
 use object_io::StreamingRetryParams;
@@ -75,10 +74,10 @@ pub enum Error {
     #[snafu(display("Unable to expand home dir"))]
     HomeDirError { path: String },
 
-    #[snafu(display("Unable to open file {}: {:?}", path, source))]
+    #[snafu(display("Unable to open file `{}`", path))]
     UnableToOpenFile { path: String, source: DynError },
 
-    #[snafu(display("Unable to create directory {}: {:?}", path, source))]
+    #[snafu(display("Unable to create directory `{}`", path))]
     UnableToCreateDir {
         path: String,
         source: std::io::Error,
@@ -96,27 +95,19 @@ pub enum Error {
         source: std::io::Error,
     },
 
-    #[snafu(display(
-        "Connection timed out when trying to connect to {}\nDetails:\n{:?}",
-        path,
-        source
-    ))]
+    #[snafu(display("Connection timed out when trying to connect to path `{}`", path))]
     ConnectTimeout { path: String, source: DynError },
 
-    #[snafu(display("Read timed out when trying to read {}\nDetails:\n{:?}", path, source))]
+    #[snafu(display("Read timed out when trying to read path `{}`", path))]
     ReadTimeout { path: String, source: DynError },
 
-    #[snafu(display(
-        "Socket error occurred when trying to read {}\nDetails:\n{:?}",
-        path,
-        source
-    ))]
+    #[snafu(display("Socket error occurred when trying to read path `{}`", path))]
     SocketError { path: String, source: DynError },
 
-    #[snafu(display("Throttled when trying to read {}\nDetails:\n{:?}", path, source))]
+    #[snafu(display("Throttled when trying to read path `{}`", path))]
     Throttled { path: String, source: DynError },
 
-    #[snafu(display("Misc Transient error trying to read {}\nDetails:\n{:?}", path, source))]
+    #[snafu(display("Misc Transient error trying to read path `{}`", path))]
     MiscTransient { path: String, source: DynError },
 
     #[snafu(display("Unable to convert URL \"{}\" to path", path))]
@@ -134,10 +125,10 @@ pub enum Error {
     #[snafu(display("Invalid range request: {}", source))]
     InvalidRangeRequest { source: range::InvalidGetRange },
 
-    #[snafu(display("Unable to load Credentials for store: {store}\nDetails:\n{source:?}"))]
+    #[snafu(display("Unable to load credentials for IO backend `{store}`"))]
     UnableToLoadCredentials { store: SourceType, source: DynError },
 
-    #[snafu(display("Failed to load Credentials for store: {store}\nDetails:\n{source:?}"))]
+    #[snafu(display("Failed to load credentials for IO backend `{store}`"))]
     UnableToCreateClient { store: SourceType, source: DynError },
 
     #[snafu(display(
@@ -230,6 +221,7 @@ impl IOClient {
         !self.config.disable_suffix_range
     }
 
+    /// Gets the source (a ObjectSource client object) and a normalized path for the source.
     pub async fn get_source_and_path(
         &self,
         input: &str,
@@ -287,9 +279,6 @@ impl IOClient {
                     unimplemented!("Unity Catalog source currently requires Python");
                 }
             }
-            SourceType::Tos => {
-                TosSource::get_client(&self.config.tos).await? as Arc<dyn ObjectSource>
-            }
             SourceType::Gravitino => {
                 #[cfg(feature = "python")]
                 {
@@ -303,27 +292,40 @@ impl IOClient {
             }
             SourceType::OpenDAL { scheme } => {
                 let empty_config = std::collections::BTreeMap::new();
-                let backend_config = if scheme == "cos" {
-                    // Extract bucket from the URL for COS config
-                    let parsed_url =
-                        url::Url::parse(&path).context(InvalidUrlSnafu { path: input })?;
-                    let bucket = parsed_url.host_str().unwrap_or_default();
-                    let cos_config = self.config.cos.to_opendal_config(bucket);
-                    // Merge user-provided opendal_backends on top (if any)
-                    let mut merged = cos_config;
-                    if let Some(extra) = self.config.opendal_backends.get(scheme) {
-                        for (k, v) in extra {
-                            merged.insert(k.clone(), v.clone());
+                let mut backend_config = match scheme.as_str() {
+                    "cos" | "tos" => {
+                        let parsed_url =
+                            url::Url::parse(&path).context(InvalidUrlSnafu { path: input })?;
+                        let bucket = parsed_url.host_str().unwrap_or_default();
+                        match scheme.as_str() {
+                            "cos" => self.config.cos.to_opendal_config(bucket),
+                            _ => self.config.tos.to_opendal_config(bucket),
                         }
                     }
-                    merged
-                } else {
-                    self.config
+                    "goosefs" => {
+                        // Extract authority (host:port) from URL as default master_addr.
+                        let parsed_url =
+                            url::Url::parse(&path).context(InvalidUrlSnafu { path: input })?;
+                        let authority = match parsed_url.port() {
+                            Some(port) => {
+                                format!("{}:{}", parsed_url.host_str().unwrap_or(""), port)
+                            }
+                            None => parsed_url.host_str().unwrap_or("").to_string(),
+                        };
+                        self.config.goosefs.to_opendal_config(&authority)
+                    }
+                    _ => self
+                        .config
                         .opendal_backends
                         .get(scheme)
                         .unwrap_or(&empty_config)
-                        .clone()
+                        .clone(),
                 };
+                if let Some(extra) = self.config.opendal_backends.get(scheme) {
+                    for (k, v) in extra {
+                        backend_config.insert(k.clone(), v.clone());
+                    }
+                }
                 OpenDALSource::get_client(scheme, &backend_config).await? as Arc<dyn ObjectSource>
             }
         };
@@ -497,7 +499,6 @@ pub enum SourceType {
     GCS,
     HF,
     Unity,
-    Tos,
     Gravitino,
     OpenDAL { scheme: String },
 }
@@ -512,7 +513,6 @@ impl std::fmt::Display for SourceType {
             Self::GCS => write!(f, "gcs"),
             Self::HF => write!(f, "hf"),
             Self::Unity => write!(f, "UnityCatalog"),
-            Self::Tos => write!(f, "tos"),
             Self::Gravitino => write!(f, "Gravitino"),
             Self::OpenDAL { scheme } => write!(f, "opendal({})", scheme),
         }
@@ -525,7 +525,7 @@ impl SourceType {
     pub fn supports_native_writer(&self) -> bool {
         matches!(
             self,
-            Self::File | Self::S3 | Self::Tos | Self::Gravitino | Self::OpenDAL { .. }
+            Self::File | Self::S3 | Self::Gravitino | Self::OpenDAL { .. }
         )
     }
 }
@@ -624,10 +624,21 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
         "az" | "abfs" | "abfss" => Ok((SourceType::AzureBlob, fixed_input)),
         "gcs" | "gs" => Ok((SourceType::GCS, fixed_input)),
         "hf" => Ok((SourceType::HF, fixed_input)),
-        "tos" => Ok((SourceType::Tos, fixed_input)),
+        "tos" => Ok((
+            SourceType::OpenDAL {
+                scheme: "tos".to_string(),
+            },
+            fixed_input,
+        )),
         "cos" | "cosn" => Ok((
             SourceType::OpenDAL {
                 scheme: "cos".to_string(),
+            },
+            fixed_input,
+        )),
+        "goosefs" => Ok((
+            SourceType::OpenDAL {
+                scheme: "goosefs".to_string(),
             },
             fixed_input,
         )),
