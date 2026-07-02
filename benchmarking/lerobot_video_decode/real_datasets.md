@@ -34,15 +34,18 @@ the per-frame opens.
 
 ## Results: scaling up (pepijn223/egodex-test, av1 1920x1080 @30)
 
+![original vs batched at scale](charts/chart_scaling.png)
+
 | run | frames | wall | per frame |
 | --- | --- | --- | --- |
 | original | 100 | 311.8s | 3.12s |
 | batched | 100 | 25.6s | 0.26s |
+| original | 632 (full dataset) | 1750.7s | 2.77s |
 | batched | 632 (full dataset) | 115.8s | 0.18s |
 
-- The 100-frame outputs are hash-identical between readers.
-- The full-dataset batched run was spot-checked by re-decoding 10 rows spread
-  across the range with the original reader: 0 hash mismatches.
+- Outputs are hash-identical between readers at both scales - including every
+  single frame of the full 632-frame dataset.
 - At scale the batched cost grows with the number of batches rather than
   frames (each 16-row batch opens its shard once), so it is linear with a much
-  smaller slope - ~0.2s/frame here vs ~3.1s/frame for the original.
+  smaller slope - ~0.2s/frame here vs ~3s/frame for the original. Reading the
+  full dataset drops from 29 minutes to under 2.
