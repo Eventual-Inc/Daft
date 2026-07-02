@@ -187,7 +187,10 @@ def test_distributed_merge_e2e(tmp_path):
     assert rows["active"] == [True, True, True, False]  # id=4 marked inactive
 
     metrics3 = result3._metadata["merge_metrics"]
-    assert metrics3["num_target_rows_copied"] == 1  # id=4 (target-only, updated)
+    # ids 1,2,3 are matched with no update clause → copied; id=4 is a target-only
+    # row updated by when_not_matched_by_source_update → counted as updated.
+    assert metrics3["num_target_rows_copied"] == 3  # id=1, id=2, id=3
+    assert metrics3["num_target_rows_updated"] == 1  # id=4 (target-only, updated)
 
     # Step 5: Verify full history
     history = _history(path)
