@@ -272,6 +272,21 @@ def _build_filesystem(
         return pafs.PyFileSystem(pafs.FSSpecHandler(fsspec_fs)), None
 
     ###
+    # HF (Hugging Face): Use FSSpec as a fallback
+    ###
+    if protocol == "hf":
+        fsspec_fs_cls = fsspec.get_filesystem_class("hf")
+        hf_kwargs: dict[str, Any] = {}
+        if io_config is not None and io_config.hf is not None:
+            hf_config = io_config.hf
+            if hf_config.token is not None:
+                hf_kwargs["token"] = hf_config.token.value
+            if hf_config.anonymous:
+                hf_kwargs["token"] = None
+        fsspec_fs = fsspec_fs_cls(**hf_kwargs)
+        return pafs.PyFileSystem(pafs.FSSpecHandler(fsspec_fs)), None
+
+    ###
     # Gravitino GVFS: Use custom filesystem for write operations
     ###
     if protocol == "gvfs":
