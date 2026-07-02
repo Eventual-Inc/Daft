@@ -78,16 +78,19 @@ def test_descriptor_instantiate_rejects_return_format():
         d.instantiate()
 
 
+_FAKE_MAPPING_PATH = "transformers.models.auto.modeling_auto.MODEL_FOR_IMAGE_TEXT_TO_TEXT_MAPPING_NAMES"
+
+
 def test_provider_auto_detects_vlm_returns_vision_descriptor():
     from daft.ai.transformers.provider import TransformersProvider
 
     fake_config = Mock()
-    fake_config.model_type = "smolvlm"
-    with patch(
-        "transformers.AutoConfig.from_pretrained",
-        return_value=fake_config,
+    fake_config.model_type = "fakevlm"
+    with (
+        patch("transformers.AutoConfig.from_pretrained", return_value=fake_config),
+        patch(_FAKE_MAPPING_PATH, new={"fakevlm": "FakeVLMForConditionalGeneration"}),
     ):
-        descriptor = TransformersProvider().get_prompter(model="HuggingFaceTB/SmolVLM-256M-Instruct")
+        descriptor = TransformersProvider().get_prompter(model="any/vlm-name")
 
     assert isinstance(descriptor, TransformersVisionPrompterDescriptor)
 
@@ -97,25 +100,23 @@ def test_provider_non_vlm_returns_text_descriptor():
     from daft.ai.transformers.provider import TransformersProvider
 
     fake_config = Mock()
-    fake_config.model_type = "llama"
-    with patch(
-        "transformers.AutoConfig.from_pretrained",
-        return_value=fake_config,
+    fake_config.model_type = "faketext"
+    with (
+        patch("transformers.AutoConfig.from_pretrained", return_value=fake_config),
+        patch(_FAKE_MAPPING_PATH, new={"fakevlm": "FakeVLMForConditionalGeneration"}),
     ):
-        descriptor = TransformersProvider().get_prompter(model="meta-llama/Llama-3-8B-Instruct")
+        descriptor = TransformersProvider().get_prompter(model="any/text-name")
 
     assert isinstance(descriptor, TransformersPrompterDescriptor)
 
 
-def test_provider_autoconfig_failure_falls_back_to_text():
+def test_provider_autoconfig_failure_warns_and_falls_back_to_text():
     from daft.ai.transformers.protocols.prompter import TransformersPrompterDescriptor
     from daft.ai.transformers.provider import TransformersProvider
 
-    with patch(
-        "transformers.AutoConfig.from_pretrained",
-        side_effect=OSError("offline"),
-    ):
-        descriptor = TransformersProvider().get_prompter(model="some/unknown-model")
+    with patch("transformers.AutoConfig.from_pretrained", side_effect=OSError("offline")):
+        with pytest.warns(UserWarning, match="vision capability"):
+            descriptor = TransformersProvider().get_prompter(model="some/unknown-model")
 
     assert isinstance(descriptor, TransformersPrompterDescriptor)
 

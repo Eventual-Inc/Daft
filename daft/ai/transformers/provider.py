@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import warnings
 from typing import TYPE_CHECKING, Any
 
 if sys.version_info < (3, 11):
@@ -156,18 +157,22 @@ class TransformersProvider(Provider):
 
     @staticmethod
     def _is_vision_model(model_name: str) -> bool:
-        """Returns True if the given HF model is an image-text-to-text (vision-language) model.
-
-        Falls back to False on any config lookup failure (offline, invalid model name, etc.),
-        which routes the request to the text-only prompter.
-        """
+        """Warn and return False on any lookup failure so the caller falls back to text."""
         try:
             from transformers import AutoConfig
+
+            # The names mapping is not publicly re-exported; use the same internal path as HF's AutoModel dispatch.
             from transformers.models.auto.modeling_auto import (
                 MODEL_FOR_IMAGE_TEXT_TO_TEXT_MAPPING_NAMES,
             )
 
             config = AutoConfig.from_pretrained(model_name)
             return config.model_type in MODEL_FOR_IMAGE_TEXT_TO_TEXT_MAPPING_NAMES
-        except Exception:
+        except Exception as e:
+            warnings.warn(
+                f"Could not determine vision capability for model '{model_name}' ({e!r}); "
+                "falling back to the text-only prompter. Pass an instruction-tuned VLM name "
+                "if you need image support.",
+                stacklevel=3,
+            )
             return False
