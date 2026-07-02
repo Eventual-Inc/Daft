@@ -226,6 +226,7 @@ from .numeric import (
     is_inf,
     not_nan,
     fill_nan,
+    width_bucket,
 )
 from .partition import (
     partition_days,
@@ -633,5 +634,6 @@ __all__ = [
     "week_of_year",
     "weekofyear",
     "when",
+    "width_bucket",
     "year",
 ]
