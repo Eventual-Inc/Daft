@@ -721,6 +721,37 @@ def distributed_merge_deltalake(
     )
 
 
+def _repartition_for_write(
+    write_df: DataFrame,
+    num_partitions: int,
+    partition_by: "list[str]",
+    runner_name: str,
+) -> DataFrame:
+    """Collapse the join's shuffle fan-out before the write pass.
+
+    Without this, the write inherits the merge join's partitioning — one
+    write task per shuffle partition (= max of the join sides, often
+    thousands) — producing thousands of small files and slow per-task S3
+    uploads. Hash-partitioning by the table's partition columns (or a
+    size-derived count for unpartitioned tables) costs one extra shuffle
+    and bounds the writer fan-out.
+
+    Repartition is a no-op on the native runner (single writer per
+    partition value already), so skip it there to avoid the warning.
+    """
+    if runner_name != "ray" or num_partitions < 1:
+        return write_df
+    if partition_by:
+        return write_df.repartition(num_partitions, *partition_by)
+    import warnings
+
+    with warnings.catch_warnings():
+        # The random-shuffle warning is intentional here: coalescing to a
+        # size-derived partition count requires a rebalance, not into_partitions.
+        warnings.simplefilter("ignore")
+        return write_df.repartition(num_partitions)
+
+
 def _suffixed_ref(name: str, on: "list[str]", collision_names: "set[str] | list[str]") -> Any:
     """Reference a source column in the joined frame.
 
@@ -1568,6 +1599,11 @@ class DistributedDeltaMergeBuilder:
                         tup_match = tup_match & (col(pc) == lit(v))
                     part_filter = part_filter | tup_match
                 write_df = annotated.where(col(_EMIT) & part_filter).select(*[col(c) for c in target_columns])
+                # One writer per rewritten partition tuple instead of one per
+                # join shuffle partition.
+                write_df = _repartition_for_write(
+                    write_df, len(affected), partition_cols, runners.get_or_create_runner().name
+                )
                 self._check_no_concurrent_commit(pinned_version)
                 files_added, files_removed = self._write_partition_scoped(
                     write_df, partition_cols, affected, pinned_version, merge_metadata
@@ -1576,6 +1612,20 @@ class DistributedDeltaMergeBuilder:
                 # Unpartitioned (or unfilterable partition values): streaming
                 # full overwrite via the native distributed writer.
                 write_df = annotated.where(col(_EMIT)).select(*[col(c) for c in target_columns])
+                # Size the writer fan-out from the pinned snapshot's bytes
+                # (the overwrite rewrites the whole table) and the configured
+                # target file size, instead of inheriting the join fan-out.
+                try:
+                    snapshot_bytes = sum(
+                        self._resolved_table.get_add_actions().column("size_bytes").to_pylist()
+                    )
+                    target_filesize = context.get_context().daft_execution_config.parquet_target_filesize
+                    n_write = max(1, -(-snapshot_bytes // target_filesize))
+                    write_df = _repartition_for_write(
+                        write_df, n_write, [], runners.get_or_create_runner().name
+                    )
+                except Exception:
+                    pass  # size estimation is best-effort; fall back to plan partitioning
                 self._check_no_concurrent_commit(pinned_version)
                 files_removed = len(self._resolved_table.file_uris())
                 write_df.write_deltalake(

@@ -380,6 +380,84 @@ class TestMetrics:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Write-side repartition: the write must not inherit the join's shuffle
+# fan-out (one write task per shuffle partition -> many small S3 files).
+# Ray-only: repartition is a no-op on the native runner.
+# ---------------------------------------------------------------------------
+
+
+class TestWriteRepartitionHelper:
+    def test_inserts_hash_repartition_on_ray(self):
+        from daft.io.delta_lake._deltalake import _repartition_for_write
+
+        df = daft.from_pydict({"p": ["a"], "id": [1]})
+        out = _repartition_for_write(df, 3, ["p"], "ray")
+        plan = repr(out._builder)
+        assert "Repartition" in plan and "Hash" in plan
+
+    def test_inserts_random_repartition_when_unpartitioned(self):
+        from daft.io.delta_lake._deltalake import _repartition_for_write
+
+        df = daft.from_pydict({"id": [1]})
+        out = _repartition_for_write(df, 2, [], "ray")
+        assert "Repartition" in repr(out._builder)
+
+    def test_noop_on_native(self):
+        from daft.io.delta_lake._deltalake import _repartition_for_write
+
+        df = daft.from_pydict({"p": ["a"], "id": [1]})
+        assert _repartition_for_write(df, 3, ["p"], "native") is df
+
+
+@pytest.mark.skipif(
+    os.environ.get("DAFT_RUNNER") != "ray", reason="repartition is a no-op on the native runner"
+)
+class TestWriteFanout:
+    def test_unpartitioned_write_coalesced(self, tmp_path):
+        import deltalake as dl
+
+        path = _write_base(tmp_path, {"id": list(range(1000)), "v": ["x"] * 1000})
+        source = daft.from_pydict(
+            {"id": list(range(1000)), "v": [f"y{i}" for i in range(1000)]}
+        ).into_partitions(8)
+        (
+            daft.distributed_merge_deltalake(
+                table=path, source=source, predicate="target.id = source.id"
+            )
+            .when_matched_update_all()
+            .execute()
+        )
+        live = dl.DeltaTable(path).file_uris()
+        # A small table must not be scattered across the join's shuffle
+        # partitions: ~512MB target file size -> exactly 1 file here.
+        assert len(live) == 1, f"expected 1 coalesced file, got {len(live)}"
+        rows = _read_sorted(path)
+        assert rows["v"][0] == "y0" and len(rows["id"]) == 1000
+
+    def test_partitioned_write_one_file_per_partition(self, tmp_path):
+        import deltalake as dl
+
+        path = str(tmp_path / "table")
+        n = 900
+        daft.from_pydict(
+            {"p": ["abc"[i % 3] for i in range(n)], "id": list(range(n)), "v": ["x"] * n}
+        ).write_deltalake(path, partition_cols=["p"])
+        source = daft.from_pydict(
+            {"id": list(range(n)), "v": [f"y{i}" for i in range(n)],
+             "p": ["abc"[i % 3] for i in range(n)]}
+        ).into_partitions(8)
+        (
+            daft.distributed_merge_deltalake(
+                table=path, source=source, predicate="target.id = source.id"
+            )
+            .when_matched_update_all()
+            .execute()
+        )
+        live = dl.DeltaTable(path).file_uris()
+        assert len(live) == 3, f"expected 1 file per touched partition, got {len(live)}"
+
+
 class TestExceptCols:
     def test_update_all_except_cols(self, tmp_path):
         path = _write_base(tmp_path, {"id": [1], "v": ["old"], "audit": ["keep"]})
