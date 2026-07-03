@@ -520,6 +520,7 @@ impl From<Literal> for Series {
 
 #[cfg(test)]
 mod test {
+    use common_error::{DaftError, DaftResult};
     use common_image::Image;
     use image::{GrayImage, RgbaImage};
     use indexmap::indexmap;
@@ -655,8 +656,6 @@ mod test {
 
     #[test]
     fn test_list_literals_iter_surfaces_row_error() {
-        use common_error::{DaftError, DaftResult};
-
         // A raising list-return UDF makes every row an `Err`; building the list series must surface
         // the recorded row error, not a cryptic "Need at least 1 series to perform concat". (#7196)
         let values: Vec<DaftResult<Literal>> =
@@ -684,8 +683,6 @@ mod test {
     #[case::tensor(DataType::Tensor(Box::new(DataType::Int64)))]
     #[case::sparse_tensor(DataType::SparseTensor(Box::new(DataType::Int64), false))]
     fn test_all_null_list_like_builds_null_column(#[case] dtype: DataType) {
-        use common_error::DaftResult;
-
         // Every row null (e.g. an all-error list-like-return UDF under `on_error="ignore"`) must build
         // an all-null column, not fail with "Need at least 1 series to perform concat". (#7196)
         let values: Vec<DaftResult<Literal>> = vec![Ok(Literal::Null), Ok(Literal::Null)];
