@@ -61,8 +61,13 @@ def _track_on_scarf(
     if build_type == "dev" or opted_out():
         return None, result_container
 
-    # Build/reuse the shared SSLContext on the calling (main) thread.
-    ssl_context = _get_ssl_context()
+    # Build/reuse the shared SSLContext on the calling (main) thread. Telemetry is
+    # best-effort, so if SSL setup fails here we skip this event rather than let the
+    # error propagate into the user's import or query execution.
+    try:
+        ssl_context = _get_ssl_context()
+    except Exception:
+        return None, result_container
 
     def send_request(result_container: dict[str, str | None]) -> None:
         response_status = None

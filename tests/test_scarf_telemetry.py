@@ -307,3 +307,41 @@ def test_scarf_telemetry_requests_use_timeout(
     assert mock_urlopen.call_args_list, "expected telemetry requests to be issued"
     for call in mock_urlopen.call_args_list:
         assert call.kwargs.get("timeout") is not None, "telemetry request missing timeout"
+
+
+@pytest.mark.parametrize(
+    "telemetry_fn,extra_params",
+    [
+        (track_runner_on_scarf, {"runner": "ray"}),
+        (track_import_on_scarf, None),
+    ],
+)
+@patch("daft.get_build_type")
+@patch("daft.get_version")
+@patch("daft.scarf_telemetry._get_ssl_context")
+def test_scarf_telemetry_ssl_setup_failure_is_best_effort(
+    mock_get_ssl_context: MagicMock,
+    mock_version: MagicMock,
+    mock_build_type: MagicMock,
+    telemetry_fn,
+    extra_params,
+    ensure_analytics_enabled,
+):
+    # Telemetry must stay best-effort: if building the SSLContext on the main
+    # thread fails, the event is skipped instead of propagating into the caller's
+    # import (track_import_on_scarf) or query execution (track_runner_on_scarf).
+    os.environ.pop("SCARF_NO_ANALYTICS", None)
+    os.environ.pop("DO_NOT_TRACK", None)
+
+    mock_version.return_value = "0.0.0"
+    mock_build_type.return_value = "release"
+    mock_get_ssl_context.side_effect = OSError("cannot load CA certificates")
+
+    if extra_params:
+        request_thread, result_container = telemetry_fn(**extra_params)
+    else:
+        request_thread, result_container = telemetry_fn()
+
+    assert request_thread is None
+    assert result_container["response_status"] is None
+    assert result_container["extra_value"] is None
