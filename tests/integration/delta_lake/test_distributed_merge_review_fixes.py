@@ -268,3 +268,27 @@ class TestPartitionScoping:
         # no crash, no duplicate rows, update applied
         assert rows["id"] == [1, 2]
         assert rows["v"] == ["a", "B"]
+
+
+# ---------------------------------------------------------------------------
+# Task 5 — concurrent commits must fail the merge, not be silently discarded
+# ---------------------------------------------------------------------------
+
+
+class TestConcurrency:
+    def test_external_commit_between_pin_and_write_raises(self, tmp_path):
+        import deltalake as dl
+        import pyarrow as pa
+
+        path = _write_base(tmp_path, {"id": [1], "v": ["a"]})
+        source = daft.from_pydict({"id": [1], "v": ["A"]})
+        builder = daft.distributed_merge_deltalake(
+            table=path, source=source, predicate="target.id = source.id"
+        ).when_matched_update_all()
+        # A concurrent writer lands a commit the builder's pinned snapshot
+        # cannot see.
+        dl.write_deltalake(path, pa.table({"id": [99], "v": ["zz"]}), mode="append")
+        with pytest.raises(RuntimeError, match="[Cc]oncurrent"):
+            builder.execute()
+        # Nothing lost: the concurrent row is still there.
+        assert 99 in daft.read_deltalake(path).to_pydict()["id"]

@@ -1064,6 +1064,26 @@ class DistributedDeltaMergeBuilder:
                 aligned.append(lit(None).cast(f.dtype).alias(name))
         return left.concat(source_only.select(*aligned))
 
+    def _check_no_concurrent_commit(self, pinned_version: int) -> None:
+        """Fail fast if the table advanced past the pinned snapshot.
+
+        The merge output was computed from ``pinned_version``; committing it
+        over a newer version would silently discard the concurrent commit's
+        rows. A small TOCTOU window remains between this check and the commit
+        (delta-rs's own delete/delete conflict detection still applies on the
+        partition-scoped path).
+        """
+        import deltalake
+
+        current = deltalake.DeltaTable(
+            self._resolved_table.table_uri, storage_options=self._storage_options or None
+        ).version()
+        if current != pinned_version:
+            raise RuntimeError(
+                f"Concurrent modification detected: table advanced from version "
+                f"{pinned_version} to {current} during the merge. Re-run the merge."
+            )
+
     def _write_partition_scoped(
         self,
         write_df: DataFrame,
@@ -1447,6 +1467,7 @@ class DistributedDeltaMergeBuilder:
                         tup_match = tup_match & (col(pc) == lit(v))
                     part_filter = part_filter | tup_match
                 write_df = annotated.where(col(_EMIT) & part_filter).select(*[col(c) for c in target_columns])
+                self._check_no_concurrent_commit(pinned_version)
                 self._write_partition_scoped(
                     write_df, partition_cols, affected, pinned_version, merge_metadata
                 )
@@ -1454,6 +1475,7 @@ class DistributedDeltaMergeBuilder:
                 # Unpartitioned (or unfilterable partition values): streaming
                 # full overwrite via the native distributed writer.
                 write_df = annotated.where(col(_EMIT)).select(*[col(c) for c in target_columns])
+                self._check_no_concurrent_commit(pinned_version)
                 write_df.write_deltalake(
                     self._resolved_table.table_uri,
                     mode="overwrite",
