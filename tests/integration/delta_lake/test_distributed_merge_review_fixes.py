@@ -373,3 +373,39 @@ class TestMetrics:
             .execute()
         ).to_pydict()
         assert result["num_source_rows"][0] == 1  # was 2 (join-row count)
+
+
+# ---------------------------------------------------------------------------
+# Task 8 — except_cols parity with DeltaMergeBuilder
+# ---------------------------------------------------------------------------
+
+
+class TestExceptCols:
+    def test_update_all_except_cols(self, tmp_path):
+        path = _write_base(tmp_path, {"id": [1], "v": ["old"], "audit": ["keep"]})
+        source = daft.from_pydict({"id": [1], "v": ["new"], "audit": ["clobber"]})
+        (
+            daft.distributed_merge_deltalake(
+                table=path, source=source, predicate="target.id = source.id"
+            )
+            .when_matched_update_all(except_cols=["audit"])
+            .execute()
+        )
+        rows = daft.read_deltalake(path).to_pydict()
+        assert rows["v"] == ["new"]
+        assert rows["audit"] == ["keep"]
+
+    def test_insert_all_except_cols(self, tmp_path):
+        path = _write_base(tmp_path, {"id": [1], "v": ["a"], "audit": ["x"]})
+        source = daft.from_pydict({"id": [2], "v": ["b"], "audit": ["y"]})
+        (
+            daft.distributed_merge_deltalake(
+                table=path, source=source, predicate="target.id = source.id"
+            )
+            .when_not_matched_insert_all(except_cols=["audit"])
+            .when_matched_update_all()
+            .execute()
+        )
+        rows = _read_sorted(path)
+        assert rows["id"] == [1, 2]
+        assert rows["audit"] == ["x", None]

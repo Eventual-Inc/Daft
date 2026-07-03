@@ -881,10 +881,11 @@ class DistributedDeltaMergeBuilder:
         # schema — no data scan.
         self._target_columns = list(delta_schema_to_pyarrow(resolved_table.schema()).names)
 
-        # Globally-ordered WHEN clauses: (kind, updates-or-None, predicate).
-        # SQL MERGE fires the FIRST matching clause per row category, so the
-        # declaration order across kinds (update vs delete) must be preserved.
-        self._clauses: list[tuple[str, Mapping[str, Any] | None, Any]] = []
+        # Globally-ordered WHEN clauses: (kind, updates-or-None, predicate,
+        # except_cols). SQL MERGE fires the FIRST matching clause per row
+        # category, so the declaration order across kinds (update vs delete)
+        # must be preserved. except_cols only applies to *_all clauses.
+        self._clauses: list[tuple[str, Mapping[str, Any] | None, Any, "set[str] | None"]] = []
 
     def source_col(self, name: str) -> "Expression":
         """Reference a source column in the joined result.
@@ -945,27 +946,29 @@ class DistributedDeltaMergeBuilder:
         Returns:
             Self for method chaining.
         """
-        self._clauses.append(("matched_update", dict(updates), predicate))
+        self._clauses.append(("matched_update", dict(updates), predicate, None))
         return self
 
     def when_matched_update_all(
         self,
         predicate: "_Pred" = None,
+        except_cols: list[str] | None = None,
     ) -> "DistributedDeltaMergeBuilder":
         """Add a WHEN MATCHED THEN UPDATE ALL clause (update all source columns).
 
         Args:
             predicate: Optional condition for matched rows.
+            except_cols: List of columns to exclude from update.
 
         Returns:
             Self for method chaining.
         """
-        self._clauses.append(("matched_update", None, predicate))
+        self._clauses.append(("matched_update", None, predicate, set(except_cols) if except_cols else None))
         return self
 
     def when_matched_delete(self, predicate: "_Pred" = None) -> "DistributedDeltaMergeBuilder":
         """Add a WHEN MATCHED THEN DELETE clause."""
-        self._clauses.append(("matched_delete", None, predicate))
+        self._clauses.append(("matched_delete", None, predicate, None))
         return self
 
     def when_not_matched_insert(
@@ -982,22 +985,24 @@ class DistributedDeltaMergeBuilder:
         Returns:
             Self for method chaining.
         """
-        self._clauses.append(("insert", dict(updates), predicate))
+        self._clauses.append(("insert", dict(updates), predicate, None))
         return self
 
     def when_not_matched_insert_all(
         self,
         predicate: "_Pred" = None,
+        except_cols: list[str] | None = None,
     ) -> "DistributedDeltaMergeBuilder":
         """Add a WHEN NOT MATCHED THEN INSERT ALL clause.
 
         Args:
             predicate: Optional condition for unmatched source rows.
+            except_cols: List of columns to exclude from insert (inserted as NULL).
 
         Returns:
             Self for method chaining.
         """
-        self._clauses.append(("insert", None, predicate))
+        self._clauses.append(("insert", None, predicate, set(except_cols) if except_cols else None))
         return self
 
     def when_not_matched_by_source_update(
@@ -1014,12 +1019,12 @@ class DistributedDeltaMergeBuilder:
         Returns:
             Self for method chaining.
         """
-        self._clauses.append(("by_source_update", dict(updates), predicate))
+        self._clauses.append(("by_source_update", dict(updates), predicate, None))
         return self
 
     def when_not_matched_by_source_delete(self, predicate: "_Pred" = None) -> "DistributedDeltaMergeBuilder":
         """Add a WHEN NOT MATCHED BY SOURCE THEN DELETE clause."""
-        self._clauses.append(("by_source_delete", None, predicate))
+        self._clauses.append(("by_source_delete", None, predicate, None))
         return self
 
     def _decomposed_outer_join(
@@ -1307,25 +1312,25 @@ class DistributedDeltaMergeBuilder:
         # predicate holds, per row — across kinds, so an UPDATE declared before
         # a DELETE shields matching rows from the delete.
         matched_clauses = [
-            (i, kind, updates, pred)
-            for i, (kind, updates, pred) in enumerate(self._clauses)
+            (i, kind, updates, pred, exc)
+            for i, (kind, updates, pred, exc) in enumerate(self._clauses)
             if kind in ("matched_update", "matched_delete")
         ]
         by_source_clauses = [
-            (i, kind, updates, pred)
-            for i, (kind, updates, pred) in enumerate(self._clauses)
+            (i, kind, updates, pred, exc)
+            for i, (kind, updates, pred, exc) in enumerate(self._clauses)
             if kind in ("by_source_update", "by_source_delete")
         ]
         insert_clauses = [
-            (i, kind, updates, pred)
-            for i, (kind, updates, pred) in enumerate(self._clauses)
+            (i, kind, updates, pred, exc)
+            for i, (kind, updates, pred, exc) in enumerate(self._clauses)
             if kind == "insert"
         ]
 
         def _first_match_idx(clauses: list, base_cond: Any) -> Any:
             """Global index of the first clause whose predicate holds, else -1."""
             expr = lit(-1)
-            for i, _kind, _updates, pred in reversed(clauses):
+            for i, _kind, _updates, pred, _exc in reversed(clauses):
                 cond = base_cond if pred is None else (base_cond & _resolve_predicate(pred))
                 expr = when(cond, lit(i)).otherwise(expr)
             return expr
@@ -1336,7 +1341,7 @@ class DistributedDeltaMergeBuilder:
 
         def _kind_fires(idx_expr: Any, clauses: list, kinds: "tuple[str, ...]") -> Any:
             fired = lit(False)
-            for i, kind, _updates, _pred in clauses:
+            for i, kind, _updates, _pred, _exc in clauses:
                 if kind in kinds:
                     fired = fired | (idx_expr == lit(i))
             return fired
@@ -1355,9 +1360,18 @@ class DistributedDeltaMergeBuilder:
         copied = emitted & ~inserted & ~updated
 
         # --- Output value per target column (first-match-wins per row) ---------
-        def _clause_value(updates: "Mapping[str, Any] | None", col_name: str) -> Any:
-            """Value a clause assigns to col_name, or None if it leaves it alone."""
+        def _clause_value(
+            updates: "Mapping[str, Any] | None", col_name: str, except_cols: "set[str] | None"
+        ) -> Any:
+            """Value a clause assigns to col_name, or None if it leaves it alone.
+
+            For update_all an excluded column keeps the target value; for
+            insert_all the target side is NULL on source-only rows, so falling
+            back to the default covers both.
+            """
             if updates is None:  # update_all / insert_all
+                if except_cols and col_name in except_cols:
+                    return None
                 return _src_ref(col_name) if col_name in suffixed else None
             if col_name in updates:
                 return _resolve_update_val(updates[col_name])
@@ -1369,16 +1383,16 @@ class DistributedDeltaMergeBuilder:
             default = col(col_name)  # target value (NULL on the source-only side)
             cases: list = []
 
-            for i, kind, updates, _pred in matched_clauses + by_source_clauses:
+            for i, kind, updates, _pred, exc in matched_clauses + by_source_clauses:
                 if kind not in ("matched_update", "by_source_update"):
                     continue
                 idx_expr = matched_idx if kind == "matched_update" else by_source_idx
-                val = _clause_value(updates, col_name)
+                val = _clause_value(updates, col_name, exc)
                 if val is not None:
                     cases.append((idx_expr == lit(i), val))
 
-            for i, _kind, updates, _pred in insert_clauses:
-                val = _clause_value(updates, col_name)
+            for i, _kind, updates, _pred, exc in insert_clauses:
+                val = _clause_value(updates, col_name, exc)
                 if val is not None:
                     cases.append((insert_idx == lit(i), val))
 
