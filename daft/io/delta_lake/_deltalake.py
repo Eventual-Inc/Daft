@@ -1,7 +1,7 @@
 # ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
-import os
 import json
+import os
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Union
 
@@ -564,7 +564,7 @@ def distributed_merge_deltalake(
     table: Union[str, "UnityCatalogTable", "deltalake.DeltaTable"],
     source: DataFrame,
     predicate: str,
-    on: Union[str, list[str], None] = None,
+    on: str | list[str] | None = None,
     io_config: IOConfig | None = None,
     source_alias: str = "source",
     target_alias: str = "target",
@@ -626,8 +626,24 @@ def distributed_merge_deltalake(
         Writes are **incremental on partitioned tables**: only partitions
         containing an insert, update, or delete are rewritten (including the
         pre-image partition when an update moves a row across partitions), and
-        a merge that modifies nothing skips the commit entirely. Unpartitioned
-        tables are rewritten in full.
+        a merge that modifies nothing skips the commit entirely. With multiple
+        partition columns the rewrite covers the per-column cartesian closure
+        of the touched partitions (delta-rs's commit filter is
+        conjunction-only). Unpartitioned tables are rewritten in full.
+
+        Clause predicates and update expressions given as strings are parsed
+        with Daft SQL (full expression grammar); unparseable input raises
+        ``ValueError``. A clause predicate that evaluates to NULL is treated
+        as not-satisfied, per SQL semantics. Clauses follow SQL MERGE
+        **first-match-wins** ordering: per row, the first clause (in
+        declaration order) whose predicate holds is the only one applied.
+
+        A commit by a concurrent writer between the start of the merge and
+        its commit is detected and raises ``RuntimeError`` (re-run the
+        merge). Tables with CHECK constraints, Change Data Feed, or generated
+        columns are rejected with ``ValueError`` — this write path bypasses
+        delta-rs's write-time enforcement; use :func:`merge_deltalake` for
+        those tables.
 
         The source must have **unique join keys** (multiple source rows matching
         one target row is rejected with a ``ValueError`` unless
@@ -900,7 +916,7 @@ class DistributedDeltaMergeBuilder:
         # except_cols). SQL MERGE fires the FIRST matching clause per row
         # category, so the declaration order across kinds (update vs delete)
         # must be preserved. except_cols only applies to *_all clauses.
-        self._clauses: list[tuple[str, Mapping[str, Any] | None, Any, "set[str] | None"]] = []
+        self._clauses: list[tuple[str, Mapping[str, Any] | None, Any, set[str] | None]] = []
 
     def source_col(self, name: str) -> "Expression":
         """Reference a source column in the joined result.
@@ -1225,12 +1241,12 @@ class DistributedDeltaMergeBuilder:
             DataFrame: A single-row DataFrame with merge metrics columns.
                        Raw metrics dict also stored in ``._metadata["merge_metrics"]``.
         """
+        import time
+
         import daft
         from daft import DataType, col, lit
         from daft.expressions.expressions import Expression
         from daft.functions import when
-
-        import time
 
         t_start = time.monotonic()
 
@@ -1463,7 +1479,7 @@ class DistributedDeltaMergeBuilder:
             col(_EMIT).cast(_i64).sum().alias("emitted"),
         ]
 
-        affected: "set[tuple] | None" = None
+        affected: set[tuple] | None = None
         if partition_cols:
             stats = (
                 annotated.with_column("__tp__", ~col("__so__"))
