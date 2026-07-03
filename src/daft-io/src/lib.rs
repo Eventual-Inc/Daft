@@ -43,6 +43,8 @@ pub mod utils;
 use std::{borrow::Cow, collections::HashMap, hash::Hash, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
+#[cfg(feature = "hdfs")]
+pub use common_io_config::HdfsConfig;
 pub use common_io_config::{
     AzureConfig, CosConfig, GCSConfig, GoosefsConfig, GravitinoConfig, HTTPConfig, IOConfig,
     S3Config, TosConfig,
@@ -321,6 +323,28 @@ impl IOClient {
                             None => parsed_url.host_str().unwrap_or("").to_string(),
                         };
                         self.config.goosefs.to_opendal_config(&authority)
+                    }
+                    #[cfg(feature = "hdfs")]
+                    "hdfs" => {
+                        // Extract name_node (scheme + authority) from URL,
+                        // e.g. "hdfs://namenode:9000" from "hdfs://namenode:9000/path".
+                        let parsed_url =
+                            url::Url::parse(&path).context(InvalidUrlSnafu { path: input })?;
+                        let name_node =
+                            format!("{}://{}", parsed_url.scheme(), parsed_url.authority());
+                        self.config.hdfs.to_opendal_config(&name_node)
+                    }
+                    #[cfg(not(feature = "hdfs"))]
+                    "hdfs" => {
+                        log::warn!(
+                            "HDFS support is not compiled in. \
+                             Rebuild with `--features hdfs` to enable it."
+                        );
+                        self.config
+                            .opendal_backends
+                            .get("hdfs")
+                            .unwrap_or(&empty_config)
+                            .clone()
                     }
                     _ => self
                         .config
@@ -647,6 +671,12 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
         "goosefs" => Ok((
             SourceType::OpenDAL {
                 scheme: "goosefs".to_string(),
+            },
+            fixed_input,
+        )),
+        "hdfs" => Ok((
+            SourceType::OpenDAL {
+                scheme: "hdfs".to_string(),
             },
             fixed_input,
         )),

@@ -4437,6 +4437,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 
 [[package]]
+name = "hdfs-sys"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "33e2d5cefba2d51a26b44d2a493f963a32725a0f6593c91be4a610ad449c49cb"
+dependencies = [
+ "cc",
+ "java-locator",
+]
+
+[[package]]
+name = "hdrs"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f7c42a693bfe5dc8fcad1f24044c5ec355c5f157b8ce63c7d62f51cecbc7878d"
+dependencies = [
+ "blocking",
+ "errno",
+ "futures",
+ "hdfs-sys",
+ "libc",
+ "log",
+]
+
+[[package]]
 name = "heck"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5013,6 +5037,15 @@ dependencies = [
  "log",
  "regex-lite",
  "urlencoding",
+]
+
+[[package]]
+name = "java-locator"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09c46c1fe465c59b1474e665e85e1256c3893dd00927b8d55f63b09044c1e64f"
+dependencies = [
+ "glob",
 ]
 
 [[package]]
@@ -5638,6 +5671,7 @@ dependencies = [
  "opendal-service-fs",
  "opendal-service-github",
  "opendal-service-goosefs",
+ "opendal-service-hdfs",
  "opendal-service-obs",
  "opendal-service-oss",
  "opendal-service-tos",
@@ -5725,6 +5759,21 @@ checksum = "69e43048bde419947ba826fbdc2f134d6c03f44ebf48bd33a03b72f9fc45fcb4"
 dependencies = [
  "bytes",
  "goosefs-sdk",
+ "log",
+ "opendal-core",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "opendal-service-hdfs"
+version = "0.57.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fb51ce674ce98b8b7d9ac7d2dfc9d7fc8f1bbd1da1a5fb928ecc5f13ba7dc88a"
+dependencies = [
+ "bytes",
+ "futures",
+ "hdrs",
  "log",
  "opendal-core",
  "serde",

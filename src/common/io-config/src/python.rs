@@ -211,6 +211,25 @@ pub struct CosConfig {
     pub config: crate::CosConfig,
 }
 
+/// Create configurations to be used when accessing HDFS (Hadoop Distributed File System).
+///
+/// Args:
+///     name_node (str, optional): HDFS name node address (e.g. "hdfs://namenode:9000").
+///         When omitted, the name node is extracted from the URL authority
+///         (e.g. "hdfs://host:port/path").
+///     root (str, optional): Root path inside HDFS (defaults to "/").
+///
+/// Examples:
+///     >>> io_config = IOConfig(hdfs=HdfsConfig(name_node="hdfs://namenode:9000"))
+///     >>> daft.read_parquet("hdfs://namenode:9000/path", io_config=io_config)
+///     >>> # Or rely on URL authority extraction:
+///     >>> daft.read_parquet("hdfs://namenode:9000/path")
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[pyclass(module = "daft.daft", from_py_object)]
+pub struct HdfsConfig {
+    pub config: crate::HdfsConfig,
+}
+
 /// Create configurations to be used when accessing GooseFS (distributed cache file system).
 ///
 /// Args:
@@ -255,6 +274,7 @@ impl IOConfig {
         gravitino=None,
         cos=None,
         goosefs=None,
+        hdfs=None,
         opendal_backends=None,
         protocol_aliases=None
     ))]
@@ -271,6 +291,7 @@ impl IOConfig {
         gravitino: Option<GravitinoConfig>,
         cos: Option<CosConfig>,
         goosefs: Option<GoosefsConfig>,
+        hdfs: Option<HdfsConfig>,
         opendal_backends: Option<HashMap<String, HashMap<String, String>>>,
         protocol_aliases: Option<HashMap<String, String>>,
     ) -> PyResult<Self> {
@@ -286,6 +307,7 @@ impl IOConfig {
             gravitino: gravitino.unwrap_or_default().config,
             cos: cos.unwrap_or_default().config,
             goosefs: goosefs.unwrap_or_default().config,
+            hdfs: hdfs.unwrap_or_default().config,
             opendal_backends: opendal_backends
                 .unwrap_or_default()
                 .into_iter()
@@ -315,6 +337,7 @@ impl IOConfig {
         gravitino=None,
         cos=None,
         goosefs=None,
+        hdfs=None,
         opendal_backends=None,
         protocol_aliases=None
     ))]
@@ -332,6 +355,7 @@ impl IOConfig {
         gravitino: Option<GravitinoConfig>,
         cos: Option<CosConfig>,
         goosefs: Option<GoosefsConfig>,
+        hdfs: Option<HdfsConfig>,
         opendal_backends: Option<HashMap<String, HashMap<String, String>>>,
         protocol_aliases: Option<HashMap<String, String>>,
     ) -> PyResult<Self> {
@@ -367,6 +391,9 @@ impl IOConfig {
             goosefs: goosefs
                 .map(|goosefs| goosefs.config)
                 .unwrap_or_else(|| self.config.goosefs.clone()),
+            hdfs: hdfs
+                .map(|hdfs| hdfs.config)
+                .unwrap_or_else(|| self.config.hdfs.clone()),
             opendal_backends: opendal_backends
                 .map(|b| {
                     b.into_iter()
@@ -491,6 +518,14 @@ impl IOConfig {
     pub fn goosefs(&self) -> PyResult<GoosefsConfig> {
         Ok(GoosefsConfig {
             config: self.config.goosefs.clone(),
+        })
+    }
+
+    /// Configuration to be used when accessing HDFS URLs
+    #[getter]
+    pub fn hdfs(&self) -> PyResult<HdfsConfig> {
+        Ok(HdfsConfig {
+            config: self.config.hdfs.clone(),
         })
     }
 
@@ -2065,6 +2100,49 @@ impl CosConfig {
 }
 
 #[pymethods]
+impl HdfsConfig {
+    #[new]
+    #[pyo3(signature = (
+        name_node=None,
+        root=None,
+    ))]
+    pub fn new(name_node: Option<String>, root: Option<String>) -> PyResult<Self> {
+        Ok(Self {
+            config: crate::HdfsConfig { name_node, root },
+        })
+    }
+
+    #[pyo3(signature = (
+        name_node=None,
+        root=None,
+    ))]
+    pub fn replace(&self, name_node: Option<String>, root: Option<String>) -> PyResult<Self> {
+        Ok(Self {
+            config: crate::HdfsConfig {
+                name_node: name_node.or_else(|| self.config.name_node.clone()),
+                root: root.or_else(|| self.config.root.clone()),
+            },
+        })
+    }
+
+    pub fn __repr__(&self) -> PyResult<String> {
+        Ok(format!("{}", self.config))
+    }
+
+    /// HDFS name node address
+    #[getter]
+    pub fn name_node(&self) -> PyResult<Option<String>> {
+        Ok(self.config.name_node.clone())
+    }
+
+    /// Root path inside HDFS
+    #[getter]
+    pub fn root(&self) -> PyResult<Option<String>> {
+        Ok(self.config.root.clone())
+    }
+}
+
+#[pymethods]
 impl GoosefsConfig {
     #[allow(clippy::too_many_arguments)]
     #[new]
@@ -2326,6 +2404,7 @@ impl_bincode_py_state_serialization!(TosConfig);
 impl_bincode_py_state_serialization!(GravitinoConfig);
 impl_bincode_py_state_serialization!(CosConfig);
 impl_bincode_py_state_serialization!(GoosefsConfig);
+impl_bincode_py_state_serialization!(HdfsConfig);
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<AzureConfig>()?;
@@ -2339,6 +2418,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<GravitinoConfig>()?;
     parent.add_class::<CosConfig>()?;
     parent.add_class::<GoosefsConfig>()?;
+    parent.add_class::<HdfsConfig>()?;
     parent.add_class::<IOConfig>()?;
     Ok(())
 }
