@@ -224,3 +224,86 @@ def test_scarf_telemetry_error_handling(
     request_thread.join()
 
     assert result_container["response_status"].startswith("Analytics error:")
+
+
+@pytest.mark.parametrize(
+    "telemetry_fn,extra_params",
+    [
+        (track_runner_on_scarf, {"runner": "ray"}),
+        (track_import_on_scarf, None),
+    ],
+)
+@patch("daft.get_build_type")
+@patch("daft.get_version")
+@patch("urllib.request.urlopen")
+def test_scarf_telemetry_reuses_shared_ssl_context(
+    mock_urlopen: MagicMock,
+    mock_version: MagicMock,
+    mock_build_type: MagicMock,
+    telemetry_fn,
+    extra_params,
+    ensure_analytics_enabled,
+):
+    # Every request must reuse the shared SSLContext built on the main thread, so
+    # the daemon worker never initializes OpenSSL global state itself and thus
+    # cannot race the interpreter's OpenSSL teardown at shutdown (which can
+    # SIGSEGV after all user work has completed).
+    os.environ.pop("SCARF_NO_ANALYTICS", None)
+    os.environ.pop("DO_NOT_TRACK", None)
+
+    mock_version.return_value = "0.0.0"
+    mock_build_type.return_value = "release"
+    mock_response = MagicMock()
+    mock_response.status = 200
+    mock_urlopen.return_value.__enter__.return_value = mock_response
+
+    if extra_params:
+        request_thread, _ = telemetry_fn(**extra_params)
+    else:
+        request_thread, _ = telemetry_fn()
+    request_thread.join()
+
+    contexts = [call.kwargs.get("context") for call in mock_urlopen.call_args_list]
+    assert contexts, "expected telemetry requests to be issued"
+    assert all(ctx is not None for ctx in contexts), "telemetry request missing shared SSLContext"
+    assert len(set(id(ctx) for ctx in contexts)) == 1, "telemetry requests should reuse one SSLContext"
+
+
+@pytest.mark.parametrize(
+    "telemetry_fn,extra_params",
+    [
+        (track_runner_on_scarf, {"runner": "ray"}),
+        (track_import_on_scarf, None),
+    ],
+)
+@patch("daft.get_build_type")
+@patch("daft.get_version")
+@patch("urllib.request.urlopen")
+def test_scarf_telemetry_requests_use_timeout(
+    mock_urlopen: MagicMock,
+    mock_version: MagicMock,
+    mock_build_type: MagicMock,
+    telemetry_fn,
+    extra_params,
+    ensure_analytics_enabled,
+):
+    # Every request must pass a timeout so a slow/unreachable endpoint cannot keep
+    # the worker thread alive inside the SSL stack indefinitely.
+    os.environ.pop("SCARF_NO_ANALYTICS", None)
+    os.environ.pop("DO_NOT_TRACK", None)
+
+    mock_version.return_value = "0.0.0"
+    mock_build_type.return_value = "release"
+    mock_response = MagicMock()
+    mock_response.status = 200
+    mock_urlopen.return_value.__enter__.return_value = mock_response
+
+    if extra_params:
+        request_thread, _ = telemetry_fn(**extra_params)
+    else:
+        request_thread, _ = telemetry_fn()
+    request_thread.join()
+
+    assert mock_urlopen.call_args_list, "expected telemetry requests to be issued"
+    for call in mock_urlopen.call_args_list:
+        assert call.kwargs.get("timeout") is not None, "telemetry request missing timeout"
