@@ -1064,6 +1064,36 @@ class DistributedDeltaMergeBuilder:
                 aligned.append(lit(None).cast(f.dtype).alias(name))
         return left.concat(source_only.select(*aligned))
 
+    def _check_unsupported_table_features(self) -> None:
+        """Reject tables relying on write-time enforcement.
+
+        Distributed merge writes raw files plus a manual commit, bypassing
+        delta-rs's write validation — CHECK constraints would not be enforced,
+        Change Data Feed files would not be written, and generated columns
+        would not be recomputed. Silently corrupting such tables is worse
+        than refusing to merge them.
+        """
+        config = dict(self._resolved_table.metadata().configuration or {})
+        constraint_keys = [k for k in config if k.lower().startswith("delta.constraints.")]
+        if constraint_keys:
+            raise ValueError(
+                "distributed_merge_deltalake does not support tables with CHECK "
+                f"constraints ({constraint_keys}); use merge_deltalake instead."
+            )
+        if config.get("delta.enableChangeDataFeed", "").lower() == "true":
+            raise ValueError(
+                "distributed_merge_deltalake does not support tables with Change Data "
+                "Feed enabled (no CDC files would be written); use merge_deltalake instead."
+            )
+        protocol = self._resolved_table.protocol()
+        writer_features = set(getattr(protocol, "writer_features", None) or [])
+        unsupported = writer_features & {"checkConstraints", "changeDataFeed", "generatedColumns"}
+        if unsupported:
+            raise ValueError(
+                f"distributed_merge_deltalake does not support tables with writer "
+                f"feature(s) {sorted(unsupported)}; use merge_deltalake instead."
+            )
+
     def _check_no_concurrent_commit(self, pinned_version: int) -> None:
         """Fail fast if the table advanced past the pinned snapshot.
 
@@ -1161,6 +1191,8 @@ class DistributedDeltaMergeBuilder:
         from daft import DataType, col, lit
         from daft.expressions.expressions import Expression
         from daft.functions import when
+
+        self._check_unsupported_table_features()
 
         on = self._on
 

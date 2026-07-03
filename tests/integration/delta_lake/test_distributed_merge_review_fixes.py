@@ -292,3 +292,50 @@ class TestConcurrency:
             builder.execute()
         # Nothing lost: the concurrent row is still there.
         assert 99 in daft.read_deltalake(path).to_pydict()["id"]
+
+
+# ---------------------------------------------------------------------------
+# Task 6 — tables relying on write-time enforcement must be rejected loudly
+# ---------------------------------------------------------------------------
+
+
+class TestFeatureGating:
+    def test_check_constraint_table_rejected(self, tmp_path):
+        import deltalake as dl
+        import pyarrow as pa
+
+        path = str(tmp_path / "table")
+        dl.write_deltalake(path, pa.table({"id": [1], "v": [5]}))
+        dt = dl.DeltaTable(path)
+        dt.alter.add_constraint({"v_positive": "v > 0"})
+        source = daft.from_pydict({"id": [1], "v": [-100]})
+        with pytest.raises(ValueError, match="constraint"):
+            (
+                daft.distributed_merge_deltalake(
+                    table=path, source=source, predicate="target.id = source.id"
+                )
+                .when_matched_update_all()
+                .execute()
+            )
+        # The violating row was never committed.
+        assert daft.read_deltalake(path).to_pydict()["v"] == [5]
+
+    def test_cdf_table_rejected(self, tmp_path):
+        import deltalake as dl
+        import pyarrow as pa
+
+        path = str(tmp_path / "table")
+        dl.write_deltalake(
+            path,
+            pa.table({"id": [1], "v": [5]}),
+            configuration={"delta.enableChangeDataFeed": "true"},
+        )
+        source = daft.from_pydict({"id": [1], "v": [6]})
+        with pytest.raises(ValueError, match="[Cc]hange [Dd]ata [Ff]eed"):
+            (
+                daft.distributed_merge_deltalake(
+                    table=path, source=source, predicate="target.id = source.id"
+                )
+                .when_matched_update_all()
+                .execute()
+            )
