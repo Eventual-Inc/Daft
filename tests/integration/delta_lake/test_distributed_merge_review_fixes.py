@@ -339,3 +339,37 @@ class TestFeatureGating:
                 .when_matched_update_all()
                 .execute()
             )
+
+
+# ---------------------------------------------------------------------------
+# Task 7 — metrics must reflect reality
+# ---------------------------------------------------------------------------
+
+
+class TestMetrics:
+    def test_file_and_timing_metrics_populated(self, tmp_path):
+        path = _write_base(tmp_path, {"id": [1, 2], "v": ["a", "b"]})
+        source = daft.from_pydict({"id": [2, 3], "v": ["B", "c"]})
+        result = (
+            daft.distributed_merge_deltalake(
+                table=path, source=source, predicate="target.id = source.id"
+            )
+            .when_matched_update_all()
+            .when_not_matched_insert_all()
+            .execute()
+        ).to_pydict()
+        assert result["num_target_files_added"][0] >= 1
+        assert result["num_target_files_removed"][0] >= 1
+        assert result["execution_time_ms"][0] > 0
+
+    def test_num_source_rows_exact_with_duplicate_target_keys(self, tmp_path):
+        path = _write_base(tmp_path, {"id": [1, 1], "v": ["a", "b"]})  # dup target keys
+        source = daft.from_pydict({"id": [1], "v": ["X"]})
+        result = (
+            daft.distributed_merge_deltalake(
+                table=path, source=source, predicate="target.id = source.id"
+            )
+            .when_matched_update_all()
+            .execute()
+        ).to_pydict()
+        assert result["num_source_rows"][0] == 1  # was 2 (join-row count)

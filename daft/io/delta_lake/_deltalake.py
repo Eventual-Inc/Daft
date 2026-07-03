@@ -1121,12 +1121,15 @@ class DistributedDeltaMergeBuilder:
         affected: "set[tuple]",
         pinned_version: int,
         merge_metadata: dict[str, str],
-    ) -> None:
+    ) -> "tuple[int, int]":
         """Distributed copy-on-write commit scoped to the affected partitions.
 
         Data files are written by workers via Daft's native Delta writer; the
         single atomic commit removes only files in the affected partitions
         (``partitions_filters``), leaving all other partitions untouched.
+
+        Returns:
+            (files_added, files_removed) counts for merge metrics.
         """
         from deltalake import CommitProperties
 
@@ -1155,6 +1158,7 @@ class DistributedDeltaMergeBuilder:
         for i, pc in enumerate(partition_cols):
             values = sorted({_delta_partition_value_str(tup[i]) for tup in affected})
             filters.append((pc, "=", values[0]) if len(values) == 1 else (pc, "in", values))
+        files_removed = len(self._resolved_table.file_uris(partition_filters=filters))
         self._resolved_table._table.create_write_transaction(
             add_actions,
             "overwrite",
@@ -1164,6 +1168,7 @@ class DistributedDeltaMergeBuilder:
             CommitProperties(custom_metadata=merge_metadata),
         )
         self._resolved_table.update_incremental()
+        return len(add_actions), files_removed
 
     def execute(self) -> DataFrame:
         """Execute the distributed merge and return a DataFrame with metrics.
@@ -1191,6 +1196,10 @@ class DistributedDeltaMergeBuilder:
         from daft import DataType, col, lit
         from daft.expressions.expressions import Expression
         from daft.functions import when
+
+        import time
+
+        t_start = time.monotonic()
 
         self._check_unsupported_table_features()
 
@@ -1404,6 +1413,7 @@ class DistributedDeltaMergeBuilder:
         )
 
         # --- Pass 1: narrow stats (metrics + affected partitions) ---------------
+        t_stats = time.monotonic()
         _i64 = DataType.int64()
         agg_exprs = [
             col("__ins__").cast(_i64).sum().alias("inserted"),
@@ -1480,7 +1490,12 @@ class DistributedDeltaMergeBuilder:
             num_copied = stats["copied"][0] or 0
             num_output = stats["emitted"][0] or 0
 
+        scan_time_ms = int((time.monotonic() - t_stats) * 1000)
+
         # --- Pass 2: write ------------------------------------------------------
+        t_write = time.monotonic()
+        files_added = 0
+        files_removed = 0
         num_modified = num_inserted + num_updated + num_deleted
         if num_modified == 0:
             # Nothing changed — skip the write and the commit entirely.
@@ -1500,7 +1515,7 @@ class DistributedDeltaMergeBuilder:
                     part_filter = part_filter | tup_match
                 write_df = annotated.where(col(_EMIT) & part_filter).select(*[col(c) for c in target_columns])
                 self._check_no_concurrent_commit(pinned_version)
-                self._write_partition_scoped(
+                files_added, files_removed = self._write_partition_scoped(
                     write_df, partition_cols, affected, pinned_version, merge_metadata
                 )
             else:
@@ -1508,6 +1523,7 @@ class DistributedDeltaMergeBuilder:
                 # full overwrite via the native distributed writer.
                 write_df = annotated.where(col(_EMIT)).select(*[col(c) for c in target_columns])
                 self._check_no_concurrent_commit(pinned_version)
+                files_removed = len(self._resolved_table.file_uris())
                 write_df.write_deltalake(
                     self._resolved_table.table_uri,
                     mode="overwrite",
@@ -1516,19 +1532,37 @@ class DistributedDeltaMergeBuilder:
                     custom_metadata=merge_metadata,
                     io_config=self._io_config,
                 )
+                # The overwrite replaced every file, so the new snapshot's
+                # files are exactly the ones this merge added.
+                import deltalake
+
+                files_added = len(
+                    deltalake.DeltaTable(
+                        self._resolved_table.table_uri,
+                        storage_options=self._storage_options or None,
+                    ).file_uris()
+                )
+        rewrite_time_ms = int((time.monotonic() - t_write) * 1000)
+
+        # Join-row counts overcount num_source_rows when the target has
+        # duplicate join keys; the materialized source gives the exact count.
+        if self._materialize_source:
+            num_source_rows = source.count_rows()
+        else:
+            num_source_rows = num_matched + num_source_only
 
         raw_metrics = {
-            "num_source_rows": num_matched + num_source_only,
+            "num_source_rows": num_source_rows,
             "num_target_rows_inserted": num_inserted,
             "num_target_rows_updated": num_updated,
             "num_target_rows_deleted": num_deleted,
             "num_target_rows_copied": num_copied,
             "num_output_rows": num_output,
-            "num_target_files_added": 0,
-            "num_target_files_removed": 0,
-            "execution_time_ms": 0,
-            "scan_time_ms": 0,
-            "rewrite_time_ms": 0,
+            "num_target_files_added": files_added,
+            "num_target_files_removed": files_removed,
+            "execution_time_ms": int((time.monotonic() - t_start) * 1000) or 1,
+            "scan_time_ms": scan_time_ms,
+            "rewrite_time_ms": rewrite_time_ms,
         }
         return _format_merge_metrics_as_dataframe(raw_metrics)
 
