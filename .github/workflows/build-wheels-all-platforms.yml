@@ -1,0 +1,69 @@
+name: Build Wheels Artifacts (Linux and macOS)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.14"
+
+jobs:
+  build:
+    name: Build wheel (${{ matrix.platform.name }})
+    runs-on: ${{ matrix.platform.runner }}
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - name: linux
+            runner: ubuntu-latest
+            command: make build-whl-cross BUILD_WHL_TARGET=aarch64-unknown-linux-gnu BUILD_WHL_COMPATIBILITY=manylinux_2_28
+          - name: macos
+            runner: macos-latest
+            command: make build-whl
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install uv, rust, and python
+        uses: ./.github/actions/install
+        with:
+          python_version: ${{ env.PYTHON_VERSION }}
+
+      - name: Set up Zig (Linux cross-wheel build prerequisite)
+        if: matrix.platform.name == 'linux'
+        uses: mlugg/setup-zig@v2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: src/daft-dashboard/frontend/package-lock.json
+
+      - name: Build dashboard assets
+        working-directory: src/daft-dashboard/frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build wheel using local make command
+        run: ${{ matrix.platform.command }}
+        env:
+          GITHUB_ACTIONS: "true"
+
+      - name: Upload per-platform wheels
+        uses: actions/upload-artifact@v7
+        with:
+          name: wheels-${{ matrix.platform.name }}
+          path: target/wheels/*.whl
+          if-no-files-found: error
