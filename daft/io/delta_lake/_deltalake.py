@@ -1068,7 +1068,7 @@ class DistributedDeltaMergeBuilder:
         self,
         write_df: DataFrame,
         partition_cols: list[str],
-        affected: dict[str, set],
+        affected: "set[tuple]",
         pinned_version: int,
         merge_metadata: dict[str, str],
     ) -> None:
@@ -1097,9 +1097,14 @@ class DistributedDeltaMergeBuilder:
         wdf.collect()  # workers write data files; only add-action metadata is collected
         add_actions = wdf.to_pydict().get("add_action", [])
 
-        filters = [
-            (pc, "in", [_delta_partition_value_str(v) for v in affected[pc]]) for pc in partition_cols
-        ]
+        # delta-rs accepts only a single conjunction filter; the caller has
+        # already expanded `affected` to its per-column cartesian closure, so
+        # per-column filters cover exactly the same partitions the write pass
+        # rewrote ("=" for a single value keeps the filter minimal).
+        filters = []
+        for i, pc in enumerate(partition_cols):
+            values = sorted({_delta_partition_value_str(tup[i]) for tup in affected})
+            filters.append((pc, "=", values[0]) if len(values) == 1 else (pc, "in", values))
         self._resolved_table._table.create_write_transaction(
             add_actions,
             "overwrite",
@@ -1358,7 +1363,7 @@ class DistributedDeltaMergeBuilder:
             col(_EMIT).cast(_i64).sum().alias("emitted"),
         ]
 
-        affected: dict[str, set] | None = None
+        affected: "set[tuple] | None" = None
         if partition_cols:
             stats = (
                 annotated.with_column("__tp__", ~col("__so__"))
@@ -1373,19 +1378,33 @@ class DistributedDeltaMergeBuilder:
             num_matched = sum(stats["matched"])
             num_source_only = sum(stats["source_only"])
 
-            # Affected partitions: post-image of every modified row, plus the
-            # pre-image when the row existed in the target.
-            affected = {pc: set() for pc in partition_cols}
+            # Affected partition TUPLES: post-image of every modified row, plus
+            # the pre-image when the row existed in the target. Tracking whole
+            # tuples (not per-column value sets) scopes the rewrite to exactly
+            # the touched partitions instead of their cartesian product.
+            affected = set()
             for g in groups:
                 if stats["inserted"][g] + stats["updated"][g] + stats["deleted"][g] > 0:
-                    for pc in partition_cols:
-                        affected[pc].add(stats[pc][g])
-                        if stats["__tp__"][g]:
-                            affected[pc].add(stats[pre_alias[pc]][g])
+                    affected.add(tuple(stats[pc][g] for pc in partition_cols))
+                    if stats["__tp__"][g]:
+                        affected.add(tuple(stats[pre_alias[pc]][g] for pc in partition_cols))
 
             if not _partition_values_filterable(affected):
                 # NULL or exotic partition values — fall back to full overwrite.
                 affected = None
+
+            if affected is not None:
+                # delta-rs's commit API accepts only a single conjunction
+                # filter, so a non-product tuple set must be expanded to its
+                # per-column cartesian closure. Write filter, removal filter,
+                # and copied metrics all use the same closure — exact for
+                # single-column and product-shaped sets.
+                import itertools
+
+                col_values = [
+                    sorted({tup[i] for tup in affected}, key=repr) for i in range(len(partition_cols))
+                ]
+                affected = set(itertools.product(*col_values))
 
             if affected is not None:
                 # Copied/output metrics follow delta-rs semantics: they count
@@ -1393,7 +1412,7 @@ class DistributedDeltaMergeBuilder:
                 num_copied = 0
                 num_output = 0
                 for g in groups:
-                    if all(stats[pc][g] in affected[pc] for pc in partition_cols):
+                    if tuple(stats[pc][g] for pc in partition_cols) in affected:
                         num_copied += stats["copied"][g]
                         num_output += stats["emitted"][g]
             else:
@@ -1419,9 +1438,14 @@ class DistributedDeltaMergeBuilder:
             merge_metadata = {**(self._custom_metadata or {}), "daft.operation": "DISTRIBUTED_MERGE"}
             if partition_cols and affected is not None:
                 # Partition-scoped copy-on-write: rewrite only affected partitions.
-                part_filter = lit(True)
-                for pc in partition_cols:
-                    part_filter = part_filter & col(pc).is_in(list(affected[pc]))
+                # OR-of-AND equality per tuple (not per-column is_in) so exactly
+                # the touched partitions are rewritten.
+                part_filter = lit(False)
+                for tup in affected:
+                    tup_match = lit(True)
+                    for pc, v in zip(partition_cols, tup):
+                        tup_match = tup_match & (col(pc) == lit(v))
+                    part_filter = part_filter | tup_match
                 write_df = annotated.where(col(_EMIT) & part_filter).select(*[col(c) for c in target_columns])
                 self._write_partition_scoped(
                     write_df, partition_cols, affected, pinned_version, merge_metadata
@@ -1485,18 +1509,22 @@ def _delta_partition_value_str(value: Any) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, _dt.datetime):  # before date: datetime is a date subclass
+        # The delta log stores sub-second precision when present
+        # ('2024-01-01 12:00:00.123456') and whole seconds otherwise.
+        if value.microsecond:
+            return value.strftime("%Y-%m-%d %H:%M:%S.%f")
         return value.strftime("%Y-%m-%d %H:%M:%S")
     if isinstance(value, _dt.date):
         return value.isoformat()
     return str(value)
 
 
-def _partition_values_filterable(affected: "dict[str, set]") -> bool:
+def _partition_values_filterable(affected: "set[tuple]") -> bool:
     """Whether every affected partition value can be expressed as a DNF filter."""
     import datetime as _dt
 
-    for values in affected.values():
-        for v in values:
+    for tup in affected:
+        for v in tup:
             if v is None:
                 return False
             if not isinstance(v, (str, int, bool, _dt.date)):

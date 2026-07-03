@@ -182,3 +182,89 @@ class TestClauseOrdering:
         rows = daft.read_deltalake(path).to_pydict()
         assert rows["a"] == ["a1"]
         assert rows["b"] == ["b0"]  # second clause must NOT also fire
+
+
+# ---------------------------------------------------------------------------
+# Task 4 — partition scoping: exact tuples, temporal partition values
+# ---------------------------------------------------------------------------
+
+
+def _log_actions(path):
+    """All actions from every JSON commit in the table's _delta_log."""
+    logdir = os.path.join(path, "_delta_log")
+    actions = []
+    for f in sorted(os.listdir(logdir)):
+        if f.endswith(".json"):
+            with open(os.path.join(logdir, f)) as fh:
+                actions += [json.loads(line) for line in fh if line.strip()]
+    return actions
+
+
+class TestPartitionScoping:
+    def test_untouched_partition_not_rewritten(self, tmp_path):
+        path = str(tmp_path / "table")
+        daft.from_pydict(
+            {"p": ["a", "b", "c"], "id": [1, 2, 3], "v": ["x", "y", "z"]}
+        ).write_deltalake(path, partition_cols=["p"])
+        source = daft.from_pydict({"id": [1, 2], "v": ["X", "Y"], "p": ["a", "b"]})
+        result = (
+            daft.distributed_merge_deltalake(
+                table=path, source=source, predicate="target.id = source.id"
+            )
+            .when_matched_update_all()
+            .execute()
+        ).to_pydict()
+        merge_removes = [a["remove"]["path"] for a in _log_actions(path) if "remove" in a]
+        assert not any("p=c" in p for p in merge_removes)
+        assert result["num_target_rows_copied"][0] == 0
+        rows = _read_sorted(path)
+        assert rows["v"] == ["X", "Y", "z"]
+
+    def test_multicolumn_partition_consistency(self, tmp_path):
+        # delta-rs's commit API only accepts a single conjunction filter, so a
+        # non-product tuple set is expanded to its per-column closure — the
+        # write filter and removal filter must cover the SAME set (no data
+        # loss), and copied rows are counted accordingly.
+        path = str(tmp_path / "table")
+        daft.from_pydict(
+            {
+                "y": [2023, 2023, 2024, 2024],
+                "m": ["jan", "jun", "jan", "jun"],
+                "id": [1, 2, 3, 4],
+                "v": ["a", "b", "c", "d"],
+            }
+        ).write_deltalake(path, partition_cols=["y", "m"])
+        source = daft.from_pydict(
+            {"id": [1, 4], "v": ["A", "D"], "y": [2023, 2024], "m": ["jan", "jun"]}
+        )
+        result = (
+            daft.distributed_merge_deltalake(
+                table=path, source=source, predicate="target.id = source.id"
+            )
+            .when_matched_update_all()
+            .execute()
+        ).to_pydict()
+        rows = _read_sorted(path)
+        assert rows["id"] == [1, 2, 3, 4]  # closure rows preserved, not lost
+        assert rows["v"] == ["A", "b", "c", "D"]
+        assert result["num_target_rows_copied"][0] == 2  # closure copies counted
+
+    def test_timestamp_partitioned_merge(self, tmp_path):
+        path = str(tmp_path / "table")
+        ts1 = datetime.datetime(2024, 1, 1, 12, 0, 0)
+        ts2 = datetime.datetime(2024, 6, 1, 0, 0, 0, 123456)  # microseconds!
+        daft.from_pydict({"ts": [ts1, ts2], "id": [1, 2], "v": ["a", "b"]}).write_deltalake(
+            path, partition_cols=["ts"]
+        )
+        source = daft.from_pydict({"id": [2], "v": ["B"], "ts": [ts2]})
+        (
+            daft.distributed_merge_deltalake(
+                table=path, source=source, predicate="target.id = source.id"
+            )
+            .when_matched_update_all()
+            .execute()
+        )
+        rows = _read_sorted(path)
+        # no crash, no duplicate rows, update applied
+        assert rows["id"] == [1, 2]
+        assert rows["v"] == ["a", "B"]
