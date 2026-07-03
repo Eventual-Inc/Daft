@@ -131,3 +131,54 @@ class TestNullPredicates:
         # NULL != 'x' is NULL -> clause does NOT fire -> row 1 kept
         assert rows["id"] == [1, 2]
         assert result["num_target_rows_deleted"][0] == 1
+
+
+# ---------------------------------------------------------------------------
+# Task 3 — first-match-wins clause ordering (per ROW, across clause kinds)
+# ---------------------------------------------------------------------------
+
+
+class TestClauseOrdering:
+    def test_update_before_delete_wins(self, tmp_path):
+        path = _write_base(tmp_path, {"id": [1], "v": ["old"]})
+        source = daft.from_pydict({"id": [1], "v": ["new"]})
+        (
+            daft.distributed_merge_deltalake(
+                table=path, source=source, predicate="target.id = source.id"
+            )
+            .when_matched_update(updates={"v": "source.v"})
+            .when_matched_delete()
+            .execute()
+        )
+        rows = daft.read_deltalake(path).to_pydict()
+        assert rows["id"] == [1] and rows["v"] == ["new"]  # updated, NOT deleted
+
+    def test_delete_before_update_wins(self, tmp_path):
+        path = _write_base(tmp_path, {"id": [1], "v": ["old"]})
+        source = daft.from_pydict({"id": [1], "v": ["new"]})
+        (
+            daft.distributed_merge_deltalake(
+                table=path, source=source, predicate="target.id = source.id"
+            )
+            .when_matched_delete()
+            .when_matched_update(updates={"v": "source.v"})
+            .execute()
+        )
+        assert daft.read_deltalake(path).count_rows() == 0
+
+    def test_only_first_matching_update_clause_applies(self, tmp_path):
+        path = _write_base(
+            tmp_path, {"id": [1], "a": ["a0"], "b": ["b0"], "x": [1], "y": [2]}
+        )
+        source = daft.from_pydict({"id": [1], "a": ["a1"], "b": ["b1"], "x": [1], "y": [2]})
+        (
+            daft.distributed_merge_deltalake(
+                table=path, source=source, predicate="target.id = source.id"
+            )
+            .when_matched_update(updates={"a": "source.a"}, predicate="source.x = 1")
+            .when_matched_update(updates={"b": "source.b"}, predicate="source.y = 2")
+            .execute()
+        )
+        rows = daft.read_deltalake(path).to_pydict()
+        assert rows["a"] == ["a1"]
+        assert rows["b"] == ["b0"]  # second clause must NOT also fire
