@@ -107,3 +107,27 @@ class TestParser:
         )
         assert keys == ["id"]
         assert residual == ["target.tag = 'a AND b'"]
+
+
+# ---------------------------------------------------------------------------
+# Task 2 — NULL clause predicates must be treated as not-satisfied
+# ---------------------------------------------------------------------------
+
+
+class TestNullPredicates:
+    def test_null_delete_predicate_keeps_row(self, tmp_path):
+        # Row 3 legitimately fires the delete so the write pass actually runs
+        # (a no-op merge skips the commit and would mask the bug).
+        path = _write_base(tmp_path, {"id": [1, 2, 3], "flag": ["x", "same", "y"]})
+        source = daft.from_pydict({"id": [1, 2, 3], "flag": [None, "same", "DIFFERENT"]})
+        result = (
+            daft.distributed_merge_deltalake(
+                table=path, source=source, predicate="target.id = source.id"
+            )
+            .when_matched_delete(predicate="source.flag != target.flag")
+            .execute()
+        ).to_pydict()
+        rows = _read_sorted(path)
+        # NULL != 'x' is NULL -> clause does NOT fire -> row 1 kept
+        assert rows["id"] == [1, 2]
+        assert result["num_target_rows_deleted"][0] == 1

@@ -1194,11 +1194,17 @@ class DistributedDeltaMergeBuilder:
         suffixed = (set(target_columns) & set(source_columns)) - set(on)
 
         def _resolve_predicate(pred: Any) -> Any:
+            # SQL WHEN-clause semantics: a predicate evaluating to NULL is
+            # not-satisfied. Without fill_null, Kleene NULL would propagate
+            # through deleted/emitted and the write-pass filter would drop
+            # rows whose delete condition was merely unknown.
             if pred is None:
                 return None
             if isinstance(pred, Expression):
-                return pred
-            return _parse_predicate(pred, self._source_alias, self._target_alias, on, suffixed)
+                return pred.fill_null(lit(False))
+            return _parse_predicate(pred, self._source_alias, self._target_alias, on, suffixed).fill_null(
+                lit(False)
+            )
 
         def _resolve_update_val(val: Any) -> Any:
             if isinstance(val, Expression):
