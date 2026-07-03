@@ -1,7 +1,7 @@
 # ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
-import os
 import json
+import os
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Union
 
@@ -564,7 +564,7 @@ def distributed_merge_deltalake(
     table: Union[str, "UnityCatalogTable", "deltalake.DeltaTable"],
     source: DataFrame,
     predicate: str,
-    on: Union[str, list[str], None] = None,
+    on: str | list[str] | None = None,
     io_config: IOConfig | None = None,
     source_alias: str = "source",
     target_alias: str = "target",
@@ -626,8 +626,24 @@ def distributed_merge_deltalake(
         Writes are **incremental on partitioned tables**: only partitions
         containing an insert, update, or delete are rewritten (including the
         pre-image partition when an update moves a row across partitions), and
-        a merge that modifies nothing skips the commit entirely. Unpartitioned
-        tables are rewritten in full.
+        a merge that modifies nothing skips the commit entirely. With multiple
+        partition columns the rewrite covers the per-column cartesian closure
+        of the touched partitions (delta-rs's commit filter is
+        conjunction-only). Unpartitioned tables are rewritten in full.
+
+        Clause predicates and update expressions given as strings are parsed
+        with Daft SQL (full expression grammar); unparseable input raises
+        ``ValueError``. A clause predicate that evaluates to NULL is treated
+        as not-satisfied, per SQL semantics. Clauses follow SQL MERGE
+        **first-match-wins** ordering: per row, the first clause (in
+        declaration order) whose predicate holds is the only one applied.
+
+        A commit by a concurrent writer between the start of the merge and
+        its commit is detected and raises ``RuntimeError`` (re-run the
+        merge). Tables with CHECK constraints, Change Data Feed, or generated
+        columns are rejected with ``ValueError`` — this write path bypasses
+        delta-rs's write-time enforcement; use :func:`merge_deltalake` for
+        those tables.
 
         The source must have **unique join keys** (multiple source rows matching
         one target row is rejected with a ``ValueError`` unless
@@ -705,6 +721,127 @@ def distributed_merge_deltalake(
     )
 
 
+def _repartition_for_write(
+    write_df: DataFrame,
+    num_partitions: int,
+    partition_by: "list[str]",
+    runner_name: str,
+) -> DataFrame:
+    """Collapse the join's shuffle fan-out before the write pass.
+
+    Without this, the write inherits the merge join's partitioning — one
+    write task per shuffle partition (= max of the join sides, often
+    thousands) — producing thousands of small files and slow per-task S3
+    uploads. Hash-partitioning by the table's partition columns (or a
+    size-derived count for unpartitioned tables) costs one extra shuffle
+    and bounds the writer fan-out.
+
+    Repartition is a no-op on the native runner (single writer per
+    partition value already), so skip it there to avoid the warning.
+    """
+    if runner_name != "ray" or num_partitions < 1:
+        return write_df
+    if partition_by:
+        return write_df.repartition(num_partitions, *partition_by)
+    import warnings
+
+    with warnings.catch_warnings():
+        # The random-shuffle warning is intentional here: coalescing to a
+        # size-derived partition count requires a rebalance, not into_partitions.
+        warnings.simplefilter("ignore")
+        return write_df.repartition(num_partitions)
+
+
+def _suffixed_ref(name: str, on: "list[str]", collision_names: "set[str] | list[str]") -> Any:
+    """Reference a source column in the joined frame.
+
+    Join keys are coalesced to their bare name; names colliding with a target
+    column carry the ".__src__" join suffix; source-only columns stay bare.
+    """
+    from daft import col
+
+    if name in on:
+        return col(name)
+    if name in collision_names:
+        return col(f"{name}.__src__")
+    return col(name)
+
+
+def _split_sql_quotes(sql: str) -> "list[tuple[str, bool]]":
+    """Split sql into (segment, is_quoted_literal) pieces, quote-aware."""
+    parts: list[tuple[str, bool]] = []
+    buf: list[str] = []
+    in_quote = False
+    for ch in sql:
+        if ch == "'":
+            if in_quote:
+                buf.append(ch)
+                parts.append(("".join(buf), True))
+                buf = []
+                in_quote = False
+                continue
+            if buf:
+                parts.append(("".join(buf), False))
+            buf = [ch]
+            in_quote = True
+            continue
+        buf.append(ch)
+    if buf:
+        parts.append(("".join(buf), in_quote))
+    return parts
+
+
+def _translate_arrow_cast(sql: str) -> str:
+    """Rewrite DataFusion-style arrow_cast('v', 'Timestamp(...)') to SQL CAST."""
+    import re
+
+    return re.sub(
+        r"arrow_cast\(\s*('[^']*')\s*,\s*'Timestamp\([^)]*\)'\s*\)",
+        r"CAST(\1 AS TIMESTAMP)",
+        sql,
+        flags=re.IGNORECASE,
+    )
+
+
+def _rewrite_merge_sql(
+    sql: str,
+    source_alias: str,
+    target_alias: str,
+    on: "list[str]",
+    suffixed_cols: "set[str] | None",
+) -> str:
+    """Rewrite alias-qualified refs to the joined frame's actual column names.
+
+    ``source.x`` -> ``"x.__src__"`` when x collides with a target column,
+    else ``"x"``; ``target.x`` -> ``"x"``. Quoted string literals are left
+    untouched; alias matching is case-insensitive (SQL identifier rules).
+    """
+    import re
+
+    # NOTE: Daft's SQL parser resolves an unquoted dotted name (``x.__src__``)
+    # as a single flat column name, while double-quoted identifiers keep the
+    # quotes as part of the name — so bare names are emitted here.
+    def _src_name(name: str) -> str:
+        if name in on:
+            return name
+        if suffixed_cols is None or name in suffixed_cols:
+            return f"{name}.__src__"
+        return name
+
+    src_pat = re.compile(rf"\b{re.escape(source_alias)}\.(\w+)", re.IGNORECASE)
+    tgt_pat = re.compile(rf"\b{re.escape(target_alias)}\.(\w+)", re.IGNORECASE)
+
+    out = []
+    for segment, quoted in _split_sql_quotes(sql):
+        if quoted:
+            out.append(segment)
+            continue
+        segment = src_pat.sub(lambda m: _src_name(m.group(1)), segment)
+        segment = tgt_pat.sub(lambda m: m.group(1), segment)
+        out.append(segment)
+    return "".join(out)
+
+
 def _parse_merge_predicate(
     predicate: str,
     source_alias: str,
@@ -712,49 +849,53 @@ def _parse_merge_predicate(
 ) -> tuple[list[str], list[str]]:
     """Parse a merge predicate into join keys and residual conditions.
 
-    Extracts equi-join keys from "target.col = source.col" patterns.
+    Extracts equi-join keys from "target.col = source.col" patterns
+    (alias matching is case-insensitive, splitting is quote-aware).
     Returns remaining conditions as residual predicates.
 
     Returns:
         (join_keys, residual_predicates): list of column names for join,
         and list of unparsed predicate fragments.
     """
+    import re
+
     join_keys: list[str] = []
     residual_predicates: list[str] = []
 
-    # Split on AND (case-insensitive)
-    import re
-    original_parts = [p.strip() for p in re.split(r"\s+[Aa][Nn][Dd]\s+", predicate)]
+    # Replace quoted literals with placeholders so AND-splitting is quote-safe.
+    literals: list[str] = []
+    masked_parts: list[str] = []
+    for seg, quoted in _split_sql_quotes(predicate):
+        if quoted:
+            masked_parts.append(f"\x00{len(literals)}\x00")
+            literals.append(seg)
+        else:
+            masked_parts.append(seg)
+    masked = "".join(masked_parts)
 
-    for part in original_parts:
+    def _unmask(s: str) -> str:
+        for i, lit_str in enumerate(literals):
+            s = s.replace(f"\x00{i}\x00", lit_str)
+        return s
+
+    eq_re = re.compile(
+        rf"^\s*(?:(?P<t1>{re.escape(target_alias)})|(?P<s1>{re.escape(source_alias)}))\.(?P<c1>\w+)\s*=\s*"
+        rf"(?:(?P<t2>{re.escape(target_alias)})|(?P<s2>{re.escape(source_alias)}))\.(?P<c2>\w+)\s*$",
+        re.IGNORECASE,
+    )
+
+    for part in re.split(r"\s+[Aa][Nn][Dd]\s+", masked):
         part = part.strip()
         if not part:
             continue
-
-        # Try to match "target.col = source.col" or "source.col = target.col"
-        if " = " in part and " != " not in part and " IS " not in part.upper():
-            left, right = part.split(" = ", 1)
-            left = left.strip()
-            right = right.strip()
-
-            # target.X = source.X
-            if left.startswith(f"{target_alias}.") and right.startswith(f"{source_alias}."):
-                target_col = left[len(target_alias) + 1:]
-                source_col = right[len(source_alias) + 1:]
-                if target_col == source_col:
-                    join_keys.append(target_col)
-                    continue
-
-            # source.X = target.X
-            if left.startswith(f"{source_alias}.") and right.startswith(f"{target_alias}."):
-                source_col = left[len(source_alias) + 1:]
-                target_col = right[len(target_alias) + 1:]
-                if target_col == source_col:
-                    join_keys.append(target_col)
-                    continue
-
-        # Not a simple equi-join key — keep as residual
-        residual_predicates.append(part)
+        m = eq_re.match(part)
+        if m and m.group("c1") == m.group("c2"):
+            one_target = bool(m.group("t1")) != bool(m.group("t2"))
+            one_source = bool(m.group("s1")) != bool(m.group("s2"))
+            if one_target and one_source:
+                join_keys.append(m.group("c1"))
+                continue
+        residual_predicates.append(_unmask(part))
 
     return join_keys, residual_predicates
 
@@ -802,13 +943,11 @@ class DistributedDeltaMergeBuilder:
         # schema — no data scan.
         self._target_columns = list(delta_schema_to_pyarrow(resolved_table.schema()).names)
 
-        self._matched_updates: list[tuple[Mapping[str, Any] | None, Any]] = []
-        self._matched_deletes: list[Any] = []
-        self._not_matched_inserts: list[tuple[Mapping[str, Any] | None, Any]] = []
-        self._not_matched_by_source_updates: list[tuple[Mapping[str, Any] | None, Any]] = []
-        self._not_matched_by_source_deletes: list[Any] = []
-        self._insert_all: bool = False
-        self._update_all: bool = False
+        # Globally-ordered WHEN clauses: (kind, updates-or-None, predicate,
+        # except_cols). SQL MERGE fires the FIRST matching clause per row
+        # category, so the declaration order across kinds (update vs delete)
+        # must be preserved. except_cols only applies to *_all clauses.
+        self._clauses: list[tuple[str, Mapping[str, Any] | None, Any, set[str] | None]] = []
 
     def source_col(self, name: str) -> "Expression":
         """Reference a source column in the joined result.
@@ -830,14 +969,7 @@ class DistributedDeltaMergeBuilder:
                 updates={"value": builder.source_col("value")},
             )
         """
-        from daft import col
-
-        if name in self._on:
-            return col(name)
-        # Suffixed only when the name also exists on the target side (collision).
-        if name in self._target_columns:
-            return col(f"{name}.__src__")
-        return col(name)
+        return _suffixed_ref(name, self._on, self._target_columns)
 
     def target_col(self, name: str) -> "Expression":
         """Reference a target column in the joined result.
@@ -869,28 +1001,29 @@ class DistributedDeltaMergeBuilder:
         Returns:
             Self for method chaining.
         """
-        self._matched_updates.append((dict(updates), predicate))
+        self._clauses.append(("matched_update", dict(updates), predicate, None))
         return self
 
     def when_matched_update_all(
         self,
         predicate: "_Pred" = None,
+        except_cols: list[str] | None = None,
     ) -> "DistributedDeltaMergeBuilder":
         """Add a WHEN MATCHED THEN UPDATE ALL clause (update all source columns).
 
         Args:
             predicate: Optional condition for matched rows.
+            except_cols: List of columns to exclude from update.
 
         Returns:
             Self for method chaining.
         """
-        self._update_all = True
-        self._matched_updates.append((None, predicate))
+        self._clauses.append(("matched_update", None, predicate, set(except_cols) if except_cols else None))
         return self
 
     def when_matched_delete(self, predicate: "_Pred" = None) -> "DistributedDeltaMergeBuilder":
         """Add a WHEN MATCHED THEN DELETE clause."""
-        self._matched_deletes.append(predicate)
+        self._clauses.append(("matched_delete", None, predicate, None))
         return self
 
     def when_not_matched_insert(
@@ -907,23 +1040,24 @@ class DistributedDeltaMergeBuilder:
         Returns:
             Self for method chaining.
         """
-        self._not_matched_inserts.append((dict(updates), predicate))
+        self._clauses.append(("insert", dict(updates), predicate, None))
         return self
 
     def when_not_matched_insert_all(
         self,
         predicate: "_Pred" = None,
+        except_cols: list[str] | None = None,
     ) -> "DistributedDeltaMergeBuilder":
         """Add a WHEN NOT MATCHED THEN INSERT ALL clause.
 
         Args:
             predicate: Optional condition for unmatched source rows.
+            except_cols: List of columns to exclude from insert (inserted as NULL).
 
         Returns:
             Self for method chaining.
         """
-        self._insert_all = True
-        self._not_matched_inserts.append((None, predicate))
+        self._clauses.append(("insert", None, predicate, set(except_cols) if except_cols else None))
         return self
 
     def when_not_matched_by_source_update(
@@ -940,12 +1074,12 @@ class DistributedDeltaMergeBuilder:
         Returns:
             Self for method chaining.
         """
-        self._not_matched_by_source_updates.append((dict(updates), predicate))
+        self._clauses.append(("by_source_update", dict(updates), predicate, None))
         return self
 
     def when_not_matched_by_source_delete(self, predicate: "_Pred" = None) -> "DistributedDeltaMergeBuilder":
         """Add a WHEN NOT MATCHED BY SOURCE THEN DELETE clause."""
-        self._not_matched_by_source_deletes.append(predicate)
+        self._clauses.append(("by_source_delete", None, predicate, None))
         return self
 
     def _decomposed_outer_join(
@@ -990,19 +1124,72 @@ class DistributedDeltaMergeBuilder:
                 aligned.append(lit(None).cast(f.dtype).alias(name))
         return left.concat(source_only.select(*aligned))
 
+    def _check_unsupported_table_features(self) -> None:
+        """Reject tables relying on write-time enforcement.
+
+        Distributed merge writes raw files plus a manual commit, bypassing
+        delta-rs's write validation — CHECK constraints would not be enforced,
+        Change Data Feed files would not be written, and generated columns
+        would not be recomputed. Silently corrupting such tables is worse
+        than refusing to merge them.
+        """
+        config = dict(self._resolved_table.metadata().configuration or {})
+        constraint_keys = [k for k in config if k.lower().startswith("delta.constraints.")]
+        if constraint_keys:
+            raise ValueError(
+                "distributed_merge_deltalake does not support tables with CHECK "
+                f"constraints ({constraint_keys}); use merge_deltalake instead."
+            )
+        if config.get("delta.enableChangeDataFeed", "").lower() == "true":
+            raise ValueError(
+                "distributed_merge_deltalake does not support tables with Change Data "
+                "Feed enabled (no CDC files would be written); use merge_deltalake instead."
+            )
+        protocol = self._resolved_table.protocol()
+        writer_features = set(getattr(protocol, "writer_features", None) or [])
+        unsupported = writer_features & {"checkConstraints", "changeDataFeed", "generatedColumns"}
+        if unsupported:
+            raise ValueError(
+                f"distributed_merge_deltalake does not support tables with writer "
+                f"feature(s) {sorted(unsupported)}; use merge_deltalake instead."
+            )
+
+    def _check_no_concurrent_commit(self, pinned_version: int) -> None:
+        """Fail fast if the table advanced past the pinned snapshot.
+
+        The merge output was computed from ``pinned_version``; committing it
+        over a newer version would silently discard the concurrent commit's
+        rows. A small TOCTOU window remains between this check and the commit
+        (delta-rs's own delete/delete conflict detection still applies on the
+        partition-scoped path).
+        """
+        import deltalake
+
+        current = deltalake.DeltaTable(
+            self._resolved_table.table_uri, storage_options=self._storage_options or None
+        ).version()
+        if current != pinned_version:
+            raise RuntimeError(
+                f"Concurrent modification detected: table advanced from version "
+                f"{pinned_version} to {current} during the merge. Re-run the merge."
+            )
+
     def _write_partition_scoped(
         self,
         write_df: DataFrame,
         partition_cols: list[str],
-        affected: dict[str, set],
+        affected: "set[tuple]",
         pinned_version: int,
         merge_metadata: dict[str, str],
-    ) -> None:
+    ) -> "tuple[int, int]":
         """Distributed copy-on-write commit scoped to the affected partitions.
 
         Data files are written by workers via Daft's native Delta writer; the
         single atomic commit removes only files in the affected partitions
         (``partitions_filters``), leaving all other partitions untouched.
+
+        Returns:
+            (files_added, files_removed) counts for merge metrics.
         """
         from deltalake import CommitProperties
 
@@ -1023,18 +1210,45 @@ class DistributedDeltaMergeBuilder:
         wdf.collect()  # workers write data files; only add-action metadata is collected
         add_actions = wdf.to_pydict().get("add_action", [])
 
-        filters = [
-            (pc, "in", [_delta_partition_value_str(v) for v in affected[pc]]) for pc in partition_cols
-        ]
+        # delta-rs accepts only a single conjunction filter; the caller has
+        # already expanded `affected` to its per-column cartesian closure, so
+        # per-column filters cover exactly the same partitions the write pass
+        # rewrote ("=" for a single value keeps the filter minimal).
+        filters = []
+        for i, pc in enumerate(partition_cols):
+            values = sorted({_delta_partition_value_str(tup[i]) for tup in affected})
+            filters.append((pc, "=", values[0]) if len(values) == 1 else (pc, "in", values))
+        files_removed = len(self._resolved_table.file_uris(partition_filters=filters))
+
+        # Record operationMetrics like every other Daft delta commit (see
+        # dataframe.py:_merge_delta_custom_metadata).
+        merge_metadata = {
+            **merge_metadata,
+            "operationMetrics": json.dumps(
+                {"num_added_files": len(add_actions), "num_removed_files": files_removed}
+            ),
+        }
+
+        # deltalake<1.0.0's transaction API expects a pyarrow schema (mirrors
+        # the version branch in DataFrame.write_deltalake).
+        import deltalake
+        from packaging.version import parse
+
+        if parse(deltalake.__version__) < parse("1.0.0"):
+            txn_schema: Any = delta_schema_to_pyarrow(self._resolved_table.schema())
+        else:
+            txn_schema = self._resolved_table.schema()
+
         self._resolved_table._table.create_write_transaction(
             add_actions,
             "overwrite",
             list(partition_cols),
-            self._resolved_table.schema(),
+            txn_schema,
             filters,
             CommitProperties(custom_metadata=merge_metadata),
         )
         self._resolved_table.update_incremental()
+        return len(add_actions), files_removed
 
     def execute(self) -> DataFrame:
         """Execute the distributed merge and return a DataFrame with metrics.
@@ -1058,10 +1272,16 @@ class DistributedDeltaMergeBuilder:
             DataFrame: A single-row DataFrame with merge metrics columns.
                        Raw metrics dict also stored in ``._metadata["merge_metrics"]``.
         """
+        import time
+
         import daft
         from daft import DataType, col, lit
         from daft.expressions.expressions import Expression
         from daft.functions import when
+
+        t_start = time.monotonic()
+
+        self._check_unsupported_table_features()
 
         on = self._on
 
@@ -1115,11 +1335,17 @@ class DistributedDeltaMergeBuilder:
         suffixed = (set(target_columns) & set(source_columns)) - set(on)
 
         def _resolve_predicate(pred: Any) -> Any:
+            # SQL WHEN-clause semantics: a predicate evaluating to NULL is
+            # not-satisfied. Without fill_null, Kleene NULL would propagate
+            # through deleted/emitted and the write-pass filter would drop
+            # rows whose delete condition was merely unknown.
             if pred is None:
                 return None
             if isinstance(pred, Expression):
-                return pred
-            return _parse_predicate(pred, self._source_alias, self._target_alias, on, suffixed)
+                return pred.fill_null(lit(False))
+            return _parse_predicate(pred, self._source_alias, self._target_alias, on, suffixed).fill_null(
+                lit(False)
+            )
 
         def _resolve_update_val(val: Any) -> Any:
             if isinstance(val, Expression):
@@ -1127,11 +1353,7 @@ class DistributedDeltaMergeBuilder:
             return _resolve_expr(val, self._source_alias, self._target_alias, on, suffixed)
 
         def _src_ref(name: str) -> Any:
-            if name in on:
-                return col(name)
-            if name in suffixed:
-                return col(f"{name}.__src__")
-            return col(name)
+            return _suffixed_ref(name, on, suffixed)
 
         # --- Distributed FULL OUTER JOIN ---------------------------------------
         _SRC_MARKER = "__daft_dm_src__"
@@ -1156,39 +1378,71 @@ class DistributedDeltaMergeBuilder:
         is_source_only = col(_TGT_MARKER).is_null() & col(_SRC_MARKER).not_null()
         is_target_only = col(_TGT_MARKER).not_null() & col(_SRC_MARKER).is_null()
 
-        # --- Per-category "fires" conditions (union of clause predicates) ------
-        def _clause_fires(clause_preds: list, base_cond: Any) -> Any:
+        # --- First-match-wins clause index per row category ---------------------
+        # SQL MERGE fires the FIRST clause (in declaration order) whose
+        # predicate holds, per row — across kinds, so an UPDATE declared before
+        # a DELETE shields matching rows from the delete.
+        matched_clauses = [
+            (i, kind, updates, pred, exc)
+            for i, (kind, updates, pred, exc) in enumerate(self._clauses)
+            if kind in ("matched_update", "matched_delete")
+        ]
+        by_source_clauses = [
+            (i, kind, updates, pred, exc)
+            for i, (kind, updates, pred, exc) in enumerate(self._clauses)
+            if kind in ("by_source_update", "by_source_delete")
+        ]
+        insert_clauses = [
+            (i, kind, updates, pred, exc)
+            for i, (kind, updates, pred, exc) in enumerate(self._clauses)
+            if kind == "insert"
+        ]
+
+        def _first_match_idx(clauses: list, base_cond: Any) -> Any:
+            """Global index of the first clause whose predicate holds, else -1."""
+            expr = lit(-1)
+            for i, _kind, _updates, pred, _exc in reversed(clauses):
+                cond = base_cond if pred is None else (base_cond & _resolve_predicate(pred))
+                expr = when(cond, lit(i)).otherwise(expr)
+            return expr
+
+        matched_idx = _first_match_idx(matched_clauses, is_matched)
+        by_source_idx = _first_match_idx(by_source_clauses, is_target_only)
+        insert_idx = _first_match_idx(insert_clauses, is_source_only)
+
+        def _kind_fires(idx_expr: Any, clauses: list, kinds: "tuple[str, ...]") -> Any:
             fired = lit(False)
-            for pred in clause_preds:
-                fired = fired | (lit(True) if pred is None else _resolve_predicate(pred))
-            return base_cond & fired
+            for i, kind, _updates, _pred, _exc in clauses:
+                if kind in kinds:
+                    fired = fired | (idx_expr == lit(i))
+            return fired
 
-        matched_update_fires = _clause_fires([p for _u, p in self._matched_updates], is_matched)
-        by_source_update_fires = _clause_fires([p for _u, p in self._not_matched_by_source_updates], is_target_only)
-        insert_fires = _clause_fires([p for _u, p in self._not_matched_inserts], is_source_only)
-        matched_delete_fires = _clause_fires(self._matched_deletes, is_matched)
-        by_source_delete_fires = _clause_fires(self._not_matched_by_source_deletes, is_target_only)
-
-        deleted = matched_delete_fires | by_source_delete_fires
-        inserted = insert_fires & ~deleted
-        updated = (matched_update_fires | by_source_update_fires) & ~deleted
+        deleted = _kind_fires(matched_idx, matched_clauses, ("matched_delete",)) | _kind_fires(
+            by_source_idx, by_source_clauses, ("by_source_delete",)
+        )
+        updated = _kind_fires(matched_idx, matched_clauses, ("matched_update",)) | _kind_fires(
+            by_source_idx, by_source_clauses, ("by_source_update",)
+        )
+        inserted = insert_idx != lit(-1)
         # Source-only rows that no insert clause emits are dropped, not written
         # back as all-NULL rows (#4).
-        dropped_source = is_source_only & ~insert_fires
+        dropped_source = is_source_only & (insert_idx == lit(-1))
         emitted = ~deleted & ~dropped_source
         copied = emitted & ~inserted & ~updated
 
-        # --- Output value per target column (first-match-wins, #8) -------------
-        def _matched_update_value(updates: Any, col_name: str) -> Any:
-            if updates is None:  # update_all
-                return _src_ref(col_name) if col_name in suffixed else None
-            if col_name in updates:
-                return _resolve_update_val(updates[col_name])
-            return None
+        # --- Output value per target column (first-match-wins per row) ---------
+        def _clause_value(
+            updates: "Mapping[str, Any] | None", col_name: str, except_cols: "set[str] | None"
+        ) -> Any:
+            """Value a clause assigns to col_name, or None if it leaves it alone.
 
-        def _insert_value(updates: Any, col_name: str) -> Any:
-            if updates is None:  # insert_all
-                # key uses the unified default; target-only columns default to NULL
+            For update_all an excluded column keeps the target value; for
+            insert_all the target side is NULL on source-only rows, so falling
+            back to the default covers both.
+            """
+            if updates is None:  # update_all / insert_all
+                if except_cols and col_name in except_cols:
+                    return None
                 return _src_ref(col_name) if col_name in suffixed else None
             if col_name in updates:
                 return _resolve_update_val(updates[col_name])
@@ -1200,25 +1454,18 @@ class DistributedDeltaMergeBuilder:
             default = col(col_name)  # target value (NULL on the source-only side)
             cases: list = []
 
-            for updates, pred in self._matched_updates:
-                val = _matched_update_value(updates, col_name)
-                if val is None:
+            for i, kind, updates, _pred, exc in matched_clauses + by_source_clauses:
+                if kind not in ("matched_update", "by_source_update"):
                     continue
-                cond = is_matched if pred is None else (is_matched & _resolve_predicate(pred))
-                cases.append((cond, val))
+                idx_expr = matched_idx if kind == "matched_update" else by_source_idx
+                val = _clause_value(updates, col_name, exc)
+                if val is not None:
+                    cases.append((idx_expr == lit(i), val))
 
-            for updates, pred in self._not_matched_by_source_updates:
-                if updates and col_name in updates:
-                    val = _resolve_update_val(updates[col_name])
-                    cond = is_target_only if pred is None else (is_target_only & _resolve_predicate(pred))
-                    cases.append((cond, val))
-
-            for updates, pred in self._not_matched_inserts:
-                val = _insert_value(updates, col_name)
-                if val is None:
-                    continue
-                cond = is_source_only if pred is None else (is_source_only & _resolve_predicate(pred))
-                cases.append((cond, val))
+            for i, _kind, updates, _pred, exc in insert_clauses:
+                val = _clause_value(updates, col_name, exc)
+                if val is not None:
+                    cases.append((insert_idx == lit(i), val))
 
             if cases:
                 branch = when(cases[0][0], cases[0][1])
@@ -1251,6 +1498,7 @@ class DistributedDeltaMergeBuilder:
         )
 
         # --- Pass 1: narrow stats (metrics + affected partitions) ---------------
+        t_stats = time.monotonic()
         _i64 = DataType.int64()
         agg_exprs = [
             col("__ins__").cast(_i64).sum().alias("inserted"),
@@ -1262,7 +1510,7 @@ class DistributedDeltaMergeBuilder:
             col(_EMIT).cast(_i64).sum().alias("emitted"),
         ]
 
-        affected: dict[str, set] | None = None
+        affected: set[tuple] | None = None
         if partition_cols:
             stats = (
                 annotated.with_column("__tp__", ~col("__so__"))
@@ -1277,19 +1525,33 @@ class DistributedDeltaMergeBuilder:
             num_matched = sum(stats["matched"])
             num_source_only = sum(stats["source_only"])
 
-            # Affected partitions: post-image of every modified row, plus the
-            # pre-image when the row existed in the target.
-            affected = {pc: set() for pc in partition_cols}
+            # Affected partition TUPLES: post-image of every modified row, plus
+            # the pre-image when the row existed in the target. Tracking whole
+            # tuples (not per-column value sets) scopes the rewrite to exactly
+            # the touched partitions instead of their cartesian product.
+            affected = set()
             for g in groups:
                 if stats["inserted"][g] + stats["updated"][g] + stats["deleted"][g] > 0:
-                    for pc in partition_cols:
-                        affected[pc].add(stats[pc][g])
-                        if stats["__tp__"][g]:
-                            affected[pc].add(stats[pre_alias[pc]][g])
+                    affected.add(tuple(stats[pc][g] for pc in partition_cols))
+                    if stats["__tp__"][g]:
+                        affected.add(tuple(stats[pre_alias[pc]][g] for pc in partition_cols))
 
             if not _partition_values_filterable(affected):
                 # NULL or exotic partition values — fall back to full overwrite.
                 affected = None
+
+            if affected is not None:
+                # delta-rs's commit API accepts only a single conjunction
+                # filter, so a non-product tuple set must be expanded to its
+                # per-column cartesian closure. Write filter, removal filter,
+                # and copied metrics all use the same closure — exact for
+                # single-column and product-shaped sets.
+                import itertools
+
+                col_values = [
+                    sorted({tup[i] for tup in affected}, key=repr) for i in range(len(partition_cols))
+                ]
+                affected = set(itertools.product(*col_values))
 
             if affected is not None:
                 # Copied/output metrics follow delta-rs semantics: they count
@@ -1297,7 +1559,7 @@ class DistributedDeltaMergeBuilder:
                 num_copied = 0
                 num_output = 0
                 for g in groups:
-                    if all(stats[pc][g] in affected[pc] for pc in partition_cols):
+                    if tuple(stats[pc][g] for pc in partition_cols) in affected:
                         num_copied += stats["copied"][g]
                         num_output += stats["emitted"][g]
             else:
@@ -1313,7 +1575,12 @@ class DistributedDeltaMergeBuilder:
             num_copied = stats["copied"][0] or 0
             num_output = stats["emitted"][0] or 0
 
+        scan_time_ms = int((time.monotonic() - t_stats) * 1000)
+
         # --- Pass 2: write ------------------------------------------------------
+        t_write = time.monotonic()
+        files_added = 0
+        files_removed = 0
         num_modified = num_inserted + num_updated + num_deleted
         if num_modified == 0:
             # Nothing changed — skip the write and the commit entirely.
@@ -1323,17 +1590,44 @@ class DistributedDeltaMergeBuilder:
             merge_metadata = {**(self._custom_metadata or {}), "daft.operation": "DISTRIBUTED_MERGE"}
             if partition_cols and affected is not None:
                 # Partition-scoped copy-on-write: rewrite only affected partitions.
-                part_filter = lit(True)
-                for pc in partition_cols:
-                    part_filter = part_filter & col(pc).is_in(list(affected[pc]))
+                # OR-of-AND equality per tuple (not per-column is_in) so exactly
+                # the touched partitions are rewritten.
+                part_filter = lit(False)
+                for tup in affected:
+                    tup_match = lit(True)
+                    for pc, v in zip(partition_cols, tup):
+                        tup_match = tup_match & (col(pc) == lit(v))
+                    part_filter = part_filter | tup_match
                 write_df = annotated.where(col(_EMIT) & part_filter).select(*[col(c) for c in target_columns])
-                self._write_partition_scoped(
+                # One writer per rewritten partition tuple instead of one per
+                # join shuffle partition.
+                write_df = _repartition_for_write(
+                    write_df, len(affected), partition_cols, runners.get_or_create_runner().name
+                )
+                self._check_no_concurrent_commit(pinned_version)
+                files_added, files_removed = self._write_partition_scoped(
                     write_df, partition_cols, affected, pinned_version, merge_metadata
                 )
             else:
                 # Unpartitioned (or unfilterable partition values): streaming
                 # full overwrite via the native distributed writer.
                 write_df = annotated.where(col(_EMIT)).select(*[col(c) for c in target_columns])
+                # Size the writer fan-out from the pinned snapshot's bytes
+                # (the overwrite rewrites the whole table) and the configured
+                # target file size, instead of inheriting the join fan-out.
+                try:
+                    snapshot_bytes = sum(
+                        self._resolved_table.get_add_actions().column("size_bytes").to_pylist()
+                    )
+                    target_filesize = context.get_context().daft_execution_config.parquet_target_filesize
+                    n_write = max(1, -(-snapshot_bytes // target_filesize))
+                    write_df = _repartition_for_write(
+                        write_df, n_write, [], runners.get_or_create_runner().name
+                    )
+                except Exception:
+                    pass  # size estimation is best-effort; fall back to plan partitioning
+                self._check_no_concurrent_commit(pinned_version)
+                files_removed = len(self._resolved_table.file_uris())
                 write_df.write_deltalake(
                     self._resolved_table.table_uri,
                     mode="overwrite",
@@ -1342,19 +1636,37 @@ class DistributedDeltaMergeBuilder:
                     custom_metadata=merge_metadata,
                     io_config=self._io_config,
                 )
+                # The overwrite replaced every file, so the new snapshot's
+                # files are exactly the ones this merge added.
+                import deltalake
+
+                files_added = len(
+                    deltalake.DeltaTable(
+                        self._resolved_table.table_uri,
+                        storage_options=self._storage_options or None,
+                    ).file_uris()
+                )
+        rewrite_time_ms = int((time.monotonic() - t_write) * 1000)
+
+        # Join-row counts overcount num_source_rows when the target has
+        # duplicate join keys; the materialized source gives the exact count.
+        if self._materialize_source:
+            num_source_rows = source.count_rows()
+        else:
+            num_source_rows = num_matched + num_source_only
 
         raw_metrics = {
-            "num_source_rows": num_matched + num_source_only,
+            "num_source_rows": num_source_rows,
             "num_target_rows_inserted": num_inserted,
             "num_target_rows_updated": num_updated,
             "num_target_rows_deleted": num_deleted,
             "num_target_rows_copied": num_copied,
             "num_output_rows": num_output,
-            "num_target_files_added": 0,
-            "num_target_files_removed": 0,
-            "execution_time_ms": 0,
-            "scan_time_ms": 0,
-            "rewrite_time_ms": 0,
+            "num_target_files_added": files_added,
+            "num_target_files_removed": files_removed,
+            "execution_time_ms": int((time.monotonic() - t_start) * 1000) or 1,
+            "scan_time_ms": scan_time_ms,
+            "rewrite_time_ms": rewrite_time_ms,
         }
         return _format_merge_metrics_as_dataframe(raw_metrics)
 
@@ -1389,18 +1701,22 @@ def _delta_partition_value_str(value: Any) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, _dt.datetime):  # before date: datetime is a date subclass
+        # The delta log stores sub-second precision when present
+        # ('2024-01-01 12:00:00.123456') and whole seconds otherwise.
+        if value.microsecond:
+            return value.strftime("%Y-%m-%d %H:%M:%S.%f")
         return value.strftime("%Y-%m-%d %H:%M:%S")
     if isinstance(value, _dt.date):
         return value.isoformat()
     return str(value)
 
 
-def _partition_values_filterable(affected: "dict[str, set]") -> bool:
+def _partition_values_filterable(affected: "set[tuple]") -> bool:
     """Whether every affected partition value can be expressed as a DNF filter."""
     import datetime as _dt
 
-    for values in affected.values():
-        for v in values:
+    for tup in affected:
+        for v in tup:
             if v is None:
                 return False
             if not isinstance(v, (str, int, bool, _dt.date)):
@@ -1415,74 +1731,35 @@ def _resolve_expr(
     on: list[str],
     suffixed_cols: "set[str] | None" = None,
 ) -> Any:
-    """Resolve a simple SQL-like expression string to a Daft expression.
+    """Resolve a SQL expression string to a Daft expression via ``daft.sql_expr``.
 
-    Supports:
-      - "source.col_name" → col("col_name.__src__") for colliding columns,
-        col("col_name") for join keys and source-only columns
-      - "target.col_name" → col("col_name")
-      - "'literal'" → lit("literal")
-      - "true" / "false" → lit(True) / lit(False)
-      - "NULL" → lit(None)
-      - "arrow_cast(...)" → passthrough as lit (for timestamp literals)
+    Alias-qualified references (``source.x`` / ``target.x``) are first rewritten
+    to the joined frame's actual column names (see :func:`_rewrite_merge_sql`),
+    then the whole string is parsed by Daft's native SQL parser, so the full
+    SQL expression grammar is supported (comparisons, arithmetic, CASE, IN,
+    LIKE, IS [NOT] NULL, ...). DataFusion-style ``arrow_cast('v', 'Timestamp(...)')``
+    literals are translated to ``CAST('v' AS TIMESTAMP)``.
+
+    Raises:
+        ValueError: if the expression cannot be parsed. Unparseable input must
+            fail loudly — guessing (e.g. treating it as a string literal or an
+            always-true predicate) silently corrupts merge results.
 
     Args:
         suffixed_cols: Source column names that received the ".__src__" join
             suffix (i.e. names that collide with a target column). Names absent
             from this set keep their bare name.
     """
-    from daft import DataType, col, lit
+    from daft.sql import sql_expr
 
-    expr_str = expr_str.strip()
-
-    # Boolean literals
-    if expr_str.lower() == "true":
-        return lit(True)
-    if expr_str.lower() == "false":
-        return lit(False)
-
-    # NULL
-    if expr_str.upper() == "NULL":
-        return lit(None)
-
-    # Handle arrow_cast('value', 'Timestamp(Microsecond, None)')
-    if expr_str.lower().startswith("arrow_cast("):
-        import re
-
-        match = re.match(
-            r"arrow_cast\(\s*'([^']+)'\s*,\s*'Timestamp\(Microsecond,\s*None\)'\s*\)",
-            expr_str,
-            re.IGNORECASE,
-        )
-        if match:
-            from datetime import datetime as _dt
-            from datetime import timezone as _tz
-
-            ts_str = match.group(1)
-            dt = _dt.strptime(ts_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=_tz.utc)
-            us = int(dt.timestamp() * 1_000_000)
-            return lit(us).cast(DataType.timestamp("us"))
-
-    # String literal
-    if expr_str.startswith("'") and expr_str.endswith("'"):
-        return lit(expr_str[1:-1])
-
-    # Source column reference
-    if expr_str.startswith(f"{source_alias}."):
-        col_name = expr_str[len(source_alias) + 1:]
-        if col_name in on:
-            return col(col_name)
-        if suffixed_cols is None or col_name in suffixed_cols:
-            return col(f"{col_name}.__src__")
-        return col(col_name)
-
-    # Target column reference
-    if expr_str.startswith(f"{target_alias}."):
-        col_name = expr_str[len(target_alias) + 1:]
-        return col(col_name)
-
-    # Fallback: treat as literal string
-    return lit(expr_str)
+    sql = _translate_arrow_cast(expr_str.strip())
+    sql = _rewrite_merge_sql(sql, source_alias, target_alias, on, suffixed_cols)
+    try:
+        return sql_expr(sql)
+    except Exception as e:
+        raise ValueError(
+            f"Could not parse merge expression {expr_str!r} (rewritten: {sql!r}): {e}"
+        ) from e
 
 
 def _parse_predicate(
@@ -1492,69 +1769,12 @@ def _parse_predicate(
     on: list[str] | None = None,
     suffixed_cols: "set[str] | None" = None,
 ) -> Any:
-    """Parse a simple predicate string into a Daft boolean expression.
+    """Parse a predicate string into a Daft boolean expression via ``daft.sql_expr``.
 
-    Supports compound AND predicates, e.g.:
-      "source.col != target.col AND source.id IS NOT NULL"
-    Each clause supports: ``=``, ``!=``, ``IS NULL``, ``IS NOT NULL``.
+    Supports the full SQL boolean grammar (AND/OR, comparisons, IS [NOT] NULL,
+    IN, LIKE, parentheses, ...). Raises ValueError on unparseable input.
     """
-    import re
-
-    from daft import col, lit
-
-    on = on or []
-    pred_str = pred_str.strip()
-
-    # Split on AND (case-insensitive) and combine with &
-    parts = [p.strip() for p in re.split(r"\s+[Aa][Nn][Dd]\s+", pred_str)]
-    if len(parts) > 1:
-        combined = _parse_single_predicate(parts[0], source_alias, target_alias, on, suffixed_cols)
-        for part in parts[1:]:
-            combined = combined & _parse_single_predicate(part, source_alias, target_alias, on, suffixed_cols)
-        return combined
-
-    return _parse_single_predicate(pred_str, source_alias, target_alias, on, suffixed_cols)
-
-
-def _parse_single_predicate(
-    pred_str: str,
-    source_alias: str,
-    target_alias: str,
-    on: list[str] | None = None,
-    suffixed_cols: "set[str] | None" = None,
-) -> Any:
-    """Parse a single predicate clause (no AND) into a Daft boolean expression."""
-    from daft import col, lit
-
-    on = on or []
-    pred_str = pred_str.strip()
-
-    # Handle "col1 != col2"
-    if " != " in pred_str:
-        left, right = pred_str.split(" != ", 1)
-        left_expr = _resolve_expr(left.strip(), source_alias, target_alias, on, suffixed_cols)
-        right_expr = _resolve_expr(right.strip(), source_alias, target_alias, on, suffixed_cols)
-        return left_expr != right_expr
-
-    # Handle "col1 = col2" (equality)
-    if " = " in pred_str and " != " not in pred_str and "IS" not in pred_str.upper():
-        left, right = pred_str.split(" = ", 1)
-        left_expr = _resolve_expr(left.strip(), source_alias, target_alias, on, suffixed_cols)
-        right_expr = _resolve_expr(right.strip(), source_alias, target_alias, on, suffixed_cols)
-        return left_expr == right_expr
-
-    # Handle "col IS NOT NULL"
-    if " IS NOT NULL" in pred_str.upper():
-        col_expr = _resolve_expr(pred_str.split(" IS ")[0].strip(), source_alias, target_alias, on, suffixed_cols)
-        return col_expr.not_null()
-
-    # Handle "col IS NULL"
-    if " IS NULL" in pred_str.upper():
-        col_expr = _resolve_expr(pred_str.split(" IS ")[0].strip(), source_alias, target_alias, on, suffixed_cols)
-        return col_expr.is_null()
-
-    # Fallback: always true
-    return lit(True)
+    return _resolve_expr(pred_str, source_alias, target_alias, on or [], suffixed_cols)
 
 
 def delta_schema_to_pyarrow(schema: "deltalake.Schema") -> "pa.Schema":
