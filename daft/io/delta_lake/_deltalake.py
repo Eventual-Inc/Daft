@@ -705,6 +705,81 @@ def distributed_merge_deltalake(
     )
 
 
+def _split_sql_quotes(sql: str) -> "list[tuple[str, bool]]":
+    """Split sql into (segment, is_quoted_literal) pieces, quote-aware."""
+    parts: list[tuple[str, bool]] = []
+    buf: list[str] = []
+    in_quote = False
+    for ch in sql:
+        if ch == "'":
+            if in_quote:
+                buf.append(ch)
+                parts.append(("".join(buf), True))
+                buf = []
+                in_quote = False
+                continue
+            if buf:
+                parts.append(("".join(buf), False))
+            buf = [ch]
+            in_quote = True
+            continue
+        buf.append(ch)
+    if buf:
+        parts.append(("".join(buf), in_quote))
+    return parts
+
+
+def _translate_arrow_cast(sql: str) -> str:
+    """Rewrite DataFusion-style arrow_cast('v', 'Timestamp(...)') to SQL CAST."""
+    import re
+
+    return re.sub(
+        r"arrow_cast\(\s*('[^']*')\s*,\s*'Timestamp\([^)]*\)'\s*\)",
+        r"CAST(\1 AS TIMESTAMP)",
+        sql,
+        flags=re.IGNORECASE,
+    )
+
+
+def _rewrite_merge_sql(
+    sql: str,
+    source_alias: str,
+    target_alias: str,
+    on: "list[str]",
+    suffixed_cols: "set[str] | None",
+) -> str:
+    """Rewrite alias-qualified refs to the joined frame's actual column names.
+
+    ``source.x`` -> ``"x.__src__"`` when x collides with a target column,
+    else ``"x"``; ``target.x`` -> ``"x"``. Quoted string literals are left
+    untouched; alias matching is case-insensitive (SQL identifier rules).
+    """
+    import re
+
+    # NOTE: Daft's SQL parser resolves an unquoted dotted name (``x.__src__``)
+    # as a single flat column name, while double-quoted identifiers keep the
+    # quotes as part of the name — so bare names are emitted here.
+    def _src_name(name: str) -> str:
+        if name in on:
+            return name
+        if suffixed_cols is None or name in suffixed_cols:
+            return f"{name}.__src__"
+        return name
+
+    src_pat = re.compile(rf"\b{re.escape(source_alias)}\.(\w+)", re.IGNORECASE)
+    tgt_pat = re.compile(rf"\b{re.escape(target_alias)}\.(\w+)", re.IGNORECASE)
+
+    out = []
+    for segment, quoted in _split_sql_quotes(sql):
+        if quoted:
+            out.append(segment)
+            continue
+        segment = src_pat.sub(lambda m: _src_name(m.group(1)), segment)
+        segment = tgt_pat.sub(lambda m: m.group(1), segment)
+        out.append(segment)
+    return "".join(out)
+
+
 def _parse_merge_predicate(
     predicate: str,
     source_alias: str,
@@ -712,49 +787,53 @@ def _parse_merge_predicate(
 ) -> tuple[list[str], list[str]]:
     """Parse a merge predicate into join keys and residual conditions.
 
-    Extracts equi-join keys from "target.col = source.col" patterns.
+    Extracts equi-join keys from "target.col = source.col" patterns
+    (alias matching is case-insensitive, splitting is quote-aware).
     Returns remaining conditions as residual predicates.
 
     Returns:
         (join_keys, residual_predicates): list of column names for join,
         and list of unparsed predicate fragments.
     """
+    import re
+
     join_keys: list[str] = []
     residual_predicates: list[str] = []
 
-    # Split on AND (case-insensitive)
-    import re
-    original_parts = [p.strip() for p in re.split(r"\s+[Aa][Nn][Dd]\s+", predicate)]
+    # Replace quoted literals with placeholders so AND-splitting is quote-safe.
+    literals: list[str] = []
+    masked_parts: list[str] = []
+    for seg, quoted in _split_sql_quotes(predicate):
+        if quoted:
+            masked_parts.append(f"\x00{len(literals)}\x00")
+            literals.append(seg)
+        else:
+            masked_parts.append(seg)
+    masked = "".join(masked_parts)
 
-    for part in original_parts:
+    def _unmask(s: str) -> str:
+        for i, lit_str in enumerate(literals):
+            s = s.replace(f"\x00{i}\x00", lit_str)
+        return s
+
+    eq_re = re.compile(
+        rf"^\s*(?:(?P<t1>{re.escape(target_alias)})|(?P<s1>{re.escape(source_alias)}))\.(?P<c1>\w+)\s*=\s*"
+        rf"(?:(?P<t2>{re.escape(target_alias)})|(?P<s2>{re.escape(source_alias)}))\.(?P<c2>\w+)\s*$",
+        re.IGNORECASE,
+    )
+
+    for part in re.split(r"\s+[Aa][Nn][Dd]\s+", masked):
         part = part.strip()
         if not part:
             continue
-
-        # Try to match "target.col = source.col" or "source.col = target.col"
-        if " = " in part and " != " not in part and " IS " not in part.upper():
-            left, right = part.split(" = ", 1)
-            left = left.strip()
-            right = right.strip()
-
-            # target.X = source.X
-            if left.startswith(f"{target_alias}.") and right.startswith(f"{source_alias}."):
-                target_col = left[len(target_alias) + 1:]
-                source_col = right[len(source_alias) + 1:]
-                if target_col == source_col:
-                    join_keys.append(target_col)
-                    continue
-
-            # source.X = target.X
-            if left.startswith(f"{source_alias}.") and right.startswith(f"{target_alias}."):
-                source_col = left[len(source_alias) + 1:]
-                target_col = right[len(target_alias) + 1:]
-                if target_col == source_col:
-                    join_keys.append(target_col)
-                    continue
-
-        # Not a simple equi-join key — keep as residual
-        residual_predicates.append(part)
+        m = eq_re.match(part)
+        if m and m.group("c1") == m.group("c2"):
+            one_target = bool(m.group("t1")) != bool(m.group("t2"))
+            one_source = bool(m.group("s1")) != bool(m.group("s2"))
+            if one_target and one_source:
+                join_keys.append(m.group("c1"))
+                continue
+        residual_predicates.append(_unmask(part))
 
     return join_keys, residual_predicates
 
@@ -1415,74 +1494,35 @@ def _resolve_expr(
     on: list[str],
     suffixed_cols: "set[str] | None" = None,
 ) -> Any:
-    """Resolve a simple SQL-like expression string to a Daft expression.
+    """Resolve a SQL expression string to a Daft expression via ``daft.sql_expr``.
 
-    Supports:
-      - "source.col_name" → col("col_name.__src__") for colliding columns,
-        col("col_name") for join keys and source-only columns
-      - "target.col_name" → col("col_name")
-      - "'literal'" → lit("literal")
-      - "true" / "false" → lit(True) / lit(False)
-      - "NULL" → lit(None)
-      - "arrow_cast(...)" → passthrough as lit (for timestamp literals)
+    Alias-qualified references (``source.x`` / ``target.x``) are first rewritten
+    to the joined frame's actual column names (see :func:`_rewrite_merge_sql`),
+    then the whole string is parsed by Daft's native SQL parser, so the full
+    SQL expression grammar is supported (comparisons, arithmetic, CASE, IN,
+    LIKE, IS [NOT] NULL, ...). DataFusion-style ``arrow_cast('v', 'Timestamp(...)')``
+    literals are translated to ``CAST('v' AS TIMESTAMP)``.
+
+    Raises:
+        ValueError: if the expression cannot be parsed. Unparseable input must
+            fail loudly — guessing (e.g. treating it as a string literal or an
+            always-true predicate) silently corrupts merge results.
 
     Args:
         suffixed_cols: Source column names that received the ".__src__" join
             suffix (i.e. names that collide with a target column). Names absent
             from this set keep their bare name.
     """
-    from daft import DataType, col, lit
+    from daft.sql import sql_expr
 
-    expr_str = expr_str.strip()
-
-    # Boolean literals
-    if expr_str.lower() == "true":
-        return lit(True)
-    if expr_str.lower() == "false":
-        return lit(False)
-
-    # NULL
-    if expr_str.upper() == "NULL":
-        return lit(None)
-
-    # Handle arrow_cast('value', 'Timestamp(Microsecond, None)')
-    if expr_str.lower().startswith("arrow_cast("):
-        import re
-
-        match = re.match(
-            r"arrow_cast\(\s*'([^']+)'\s*,\s*'Timestamp\(Microsecond,\s*None\)'\s*\)",
-            expr_str,
-            re.IGNORECASE,
-        )
-        if match:
-            from datetime import datetime as _dt
-            from datetime import timezone as _tz
-
-            ts_str = match.group(1)
-            dt = _dt.strptime(ts_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=_tz.utc)
-            us = int(dt.timestamp() * 1_000_000)
-            return lit(us).cast(DataType.timestamp("us"))
-
-    # String literal
-    if expr_str.startswith("'") and expr_str.endswith("'"):
-        return lit(expr_str[1:-1])
-
-    # Source column reference
-    if expr_str.startswith(f"{source_alias}."):
-        col_name = expr_str[len(source_alias) + 1:]
-        if col_name in on:
-            return col(col_name)
-        if suffixed_cols is None or col_name in suffixed_cols:
-            return col(f"{col_name}.__src__")
-        return col(col_name)
-
-    # Target column reference
-    if expr_str.startswith(f"{target_alias}."):
-        col_name = expr_str[len(target_alias) + 1:]
-        return col(col_name)
-
-    # Fallback: treat as literal string
-    return lit(expr_str)
+    sql = _translate_arrow_cast(expr_str.strip())
+    sql = _rewrite_merge_sql(sql, source_alias, target_alias, on, suffixed_cols)
+    try:
+        return sql_expr(sql)
+    except Exception as e:
+        raise ValueError(
+            f"Could not parse merge expression {expr_str!r} (rewritten: {sql!r}): {e}"
+        ) from e
 
 
 def _parse_predicate(
@@ -1492,69 +1532,12 @@ def _parse_predicate(
     on: list[str] | None = None,
     suffixed_cols: "set[str] | None" = None,
 ) -> Any:
-    """Parse a simple predicate string into a Daft boolean expression.
+    """Parse a predicate string into a Daft boolean expression via ``daft.sql_expr``.
 
-    Supports compound AND predicates, e.g.:
-      "source.col != target.col AND source.id IS NOT NULL"
-    Each clause supports: ``=``, ``!=``, ``IS NULL``, ``IS NOT NULL``.
+    Supports the full SQL boolean grammar (AND/OR, comparisons, IS [NOT] NULL,
+    IN, LIKE, parentheses, ...). Raises ValueError on unparseable input.
     """
-    import re
-
-    from daft import col, lit
-
-    on = on or []
-    pred_str = pred_str.strip()
-
-    # Split on AND (case-insensitive) and combine with &
-    parts = [p.strip() for p in re.split(r"\s+[Aa][Nn][Dd]\s+", pred_str)]
-    if len(parts) > 1:
-        combined = _parse_single_predicate(parts[0], source_alias, target_alias, on, suffixed_cols)
-        for part in parts[1:]:
-            combined = combined & _parse_single_predicate(part, source_alias, target_alias, on, suffixed_cols)
-        return combined
-
-    return _parse_single_predicate(pred_str, source_alias, target_alias, on, suffixed_cols)
-
-
-def _parse_single_predicate(
-    pred_str: str,
-    source_alias: str,
-    target_alias: str,
-    on: list[str] | None = None,
-    suffixed_cols: "set[str] | None" = None,
-) -> Any:
-    """Parse a single predicate clause (no AND) into a Daft boolean expression."""
-    from daft import col, lit
-
-    on = on or []
-    pred_str = pred_str.strip()
-
-    # Handle "col1 != col2"
-    if " != " in pred_str:
-        left, right = pred_str.split(" != ", 1)
-        left_expr = _resolve_expr(left.strip(), source_alias, target_alias, on, suffixed_cols)
-        right_expr = _resolve_expr(right.strip(), source_alias, target_alias, on, suffixed_cols)
-        return left_expr != right_expr
-
-    # Handle "col1 = col2" (equality)
-    if " = " in pred_str and " != " not in pred_str and "IS" not in pred_str.upper():
-        left, right = pred_str.split(" = ", 1)
-        left_expr = _resolve_expr(left.strip(), source_alias, target_alias, on, suffixed_cols)
-        right_expr = _resolve_expr(right.strip(), source_alias, target_alias, on, suffixed_cols)
-        return left_expr == right_expr
-
-    # Handle "col IS NOT NULL"
-    if " IS NOT NULL" in pred_str.upper():
-        col_expr = _resolve_expr(pred_str.split(" IS ")[0].strip(), source_alias, target_alias, on, suffixed_cols)
-        return col_expr.not_null()
-
-    # Handle "col IS NULL"
-    if " IS NULL" in pred_str.upper():
-        col_expr = _resolve_expr(pred_str.split(" IS ")[0].strip(), source_alias, target_alias, on, suffixed_cols)
-        return col_expr.is_null()
-
-    # Fallback: always true
-    return lit(True)
+    return _resolve_expr(pred_str, source_alias, target_alias, on or [], suffixed_cols)
 
 
 def delta_schema_to_pyarrow(schema: "deltalake.Schema") -> "pa.Schema":
