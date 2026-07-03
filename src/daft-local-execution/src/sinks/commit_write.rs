@@ -238,9 +238,7 @@ fn success_marker_path(root_dir: &str, single_file: bool) -> DaftResult<String> 
 
     match source_type {
         SourceType::File => local_success_marker_path(root_uri.as_ref()),
-        SourceType::S3 | SourceType::Tos | SourceType::Gravitino | SourceType::OpenDAL { .. } => {
-            object_success_marker_path(root_uri.as_ref())
-        }
+        source if source.supports_native_writer() => object_success_marker_path(root_uri.as_ref()),
         source_type => Err(DaftError::ValueError(format!(
             "`write_success_file=True` is not supported for source type `{source_type}` with `single_file=True`."
         ))),
