@@ -705,6 +705,21 @@ def distributed_merge_deltalake(
     )
 
 
+def _suffixed_ref(name: str, on: "list[str]", collision_names: "set[str] | list[str]") -> Any:
+    """Reference a source column in the joined frame.
+
+    Join keys are coalesced to their bare name; names colliding with a target
+    column carry the ".__src__" join suffix; source-only columns stay bare.
+    """
+    from daft import col
+
+    if name in on:
+        return col(name)
+    if name in collision_names:
+        return col(f"{name}.__src__")
+    return col(name)
+
+
 def _split_sql_quotes(sql: str) -> "list[tuple[str, bool]]":
     """Split sql into (segment, is_quoted_literal) pieces, quote-aware."""
     parts: list[tuple[str, bool]] = []
@@ -907,14 +922,7 @@ class DistributedDeltaMergeBuilder:
                 updates={"value": builder.source_col("value")},
             )
         """
-        from daft import col
-
-        if name in self._on:
-            return col(name)
-        # Suffixed only when the name also exists on the target side (collision).
-        if name in self._target_columns:
-            return col(f"{name}.__src__")
-        return col(name)
+        return _suffixed_ref(name, self._on, self._target_columns)
 
     def target_col(self, name: str) -> "Expression":
         """Reference a target column in the joined result.
@@ -1164,11 +1172,31 @@ class DistributedDeltaMergeBuilder:
             values = sorted({_delta_partition_value_str(tup[i]) for tup in affected})
             filters.append((pc, "=", values[0]) if len(values) == 1 else (pc, "in", values))
         files_removed = len(self._resolved_table.file_uris(partition_filters=filters))
+
+        # Record operationMetrics like every other Daft delta commit (see
+        # dataframe.py:_merge_delta_custom_metadata).
+        merge_metadata = {
+            **merge_metadata,
+            "operationMetrics": json.dumps(
+                {"num_added_files": len(add_actions), "num_removed_files": files_removed}
+            ),
+        }
+
+        # deltalake<1.0.0's transaction API expects a pyarrow schema (mirrors
+        # the version branch in DataFrame.write_deltalake).
+        import deltalake
+        from packaging.version import parse
+
+        if parse(deltalake.__version__) < parse("1.0.0"):
+            txn_schema: Any = delta_schema_to_pyarrow(self._resolved_table.schema())
+        else:
+            txn_schema = self._resolved_table.schema()
+
         self._resolved_table._table.create_write_transaction(
             add_actions,
             "overwrite",
             list(partition_cols),
-            self._resolved_table.schema(),
+            txn_schema,
             filters,
             CommitProperties(custom_metadata=merge_metadata),
         )
@@ -1278,11 +1306,7 @@ class DistributedDeltaMergeBuilder:
             return _resolve_expr(val, self._source_alias, self._target_alias, on, suffixed)
 
         def _src_ref(name: str) -> Any:
-            if name in on:
-                return col(name)
-            if name in suffixed:
-                return col(f"{name}.__src__")
-            return col(name)
+            return _suffixed_ref(name, on, suffixed)
 
         # --- Distributed FULL OUTER JOIN ---------------------------------------
         _SRC_MARKER = "__daft_dm_src__"
