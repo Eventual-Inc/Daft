@@ -271,6 +271,43 @@ def test_async_rowwise_on_err_ignore():
     assert actual == expected
 
 
+def test_rowwise_list_return_udf_surfaces_error():
+    # Regression test for #7196: a raising UDF with a `list[...]` return dtype used to surface a
+    # cryptic "Need at least 1 series to perform concat" instead of the underlying error, unlike
+    # scalar-return UDFs which propagate it correctly.
+    @daft.func(return_dtype=DataType.int64())
+    def scalar_raise(x) -> int:
+        raise ValueError("boom-marker")
+
+    @daft.func(return_dtype=DataType.list(DataType.int64()))
+    def list_raise(x) -> list[int]:
+        raise ValueError("boom-marker")
+
+    df = daft.from_pydict({"value": [1]})
+
+    # Control: the scalar-return UDF already propagated the original error.
+    with pytest.raises(Exception, match="boom-marker"):
+        df.select(scalar_raise(col("value"))).to_pydict()
+
+    # The list-return UDF must now propagate the same error, not the cryptic concat error.
+    with pytest.raises(Exception, match="boom-marker") as exc_info:
+        df.select(list_raise(col("value"))).to_pydict()
+    assert "at least 1 series" not in str(exc_info.value)
+
+
+def test_rowwise_list_return_udf_all_null_on_error_ignore():
+    # Regression test for #7196: with on_error="ignore", a list-return UDF that raises on every row
+    # must yield an all-null column, not a cryptic "Need at least 1 series to perform concat".
+    @daft.func(return_dtype=DataType.list(DataType.int64()), on_error="ignore")
+    def list_raise(x) -> list[int]:
+        raise ValueError("boom")
+
+    df = daft.from_pydict({"x": [1, 2]})
+
+    actual = df.select(list_raise(col("x"))).to_pydict()
+    assert actual == {"x": [None, None]}
+
+
 def test_rowwise_retry():
     class RetryState:
         def __init__(self):

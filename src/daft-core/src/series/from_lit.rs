@@ -262,7 +262,17 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                         .transpose()
                 })
                 .collect::<DaftResult<Vec<_>>>()?;
-            ListArray::from_series("literal", data)?.into_series()
+            // When every element is null, `ListArray::from_series` has no child series to concat and
+            // fails with a cryptic "Need at least 1 series to perform concat". This happens when all
+            // rows of a list-return UDF produced null: either they errored under `on_error="raise"`
+            // (whose real error is still reported by the `errs` check at the end of this function) or
+            // under `on_error="ignore"`/`"log"` (which should yield an all-null column, not an error).
+            // Build the all-null list directly in that case. See issue #7196.
+            if data.iter().all(Option::is_none) {
+                Series::full_null("literal", &downcasted, len)
+            } else {
+                ListArray::from_series("literal", data)?.into_series()
+            }
         }
         DataType::Struct(ref fields) => {
             let values = values.collect::<Vec<_>>();
@@ -335,14 +345,20 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 })
                 .collect::<(Vec<_>, Vec<_>)>();
 
-            let data_array = ListArray::from_series("data", data)?.into_series();
-            let shape_array = ListArray::from_vec("shape", shapes).into_series();
+            // See the `DataType::List` arm: when every row is null there is no child series to
+            // concat, so build the all-null column directly. See issue #7196.
+            if data.iter().all(Option::is_none) {
+                Series::full_null("literal", &downcasted, len)
+            } else {
+                let data_array = ListArray::from_series("data", data)?.into_series();
+                let shape_array = ListArray::from_vec("shape", shapes).into_series();
 
-            let nulls = data_array.nulls().cloned();
-            let physical =
-                StructArray::new(field.to_physical(), vec![data_array, shape_array], nulls);
+                let nulls = data_array.nulls().cloned();
+                let physical =
+                    StructArray::new(field.to_physical(), vec![data_array, shape_array], nulls);
 
-            TensorArray::new(field, physical).into_series()
+                TensorArray::new(field, physical).into_series()
+            }
         }
         DataType::SparseTensor(..) => {
             let (values, indices, shapes) = values
@@ -355,18 +371,24 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 })
                 .collect::<(Vec<_>, Vec<_>, Vec<_>)>();
 
-            let values_array = ListArray::from_series("values", values)?.into_series();
-            let indices_array = ListArray::from_series("indices", indices)?.into_series();
-            let shape_array = ListArray::from_vec("shape", shapes).into_series();
+            // See the `DataType::List` arm: when every row is null there is no child series to
+            // concat, so build the all-null column directly. See issue #7196.
+            if values.iter().all(Option::is_none) {
+                Series::full_null("literal", &downcasted, len)
+            } else {
+                let values_array = ListArray::from_series("values", values)?.into_series();
+                let indices_array = ListArray::from_series("indices", indices)?.into_series();
+                let shape_array = ListArray::from_vec("shape", shapes).into_series();
 
-            let nulls = values_array.nulls().cloned();
-            let physical = StructArray::new(
-                field.to_physical(),
-                vec![values_array, indices_array, shape_array],
-                nulls,
-            );
+                let nulls = values_array.nulls().cloned();
+                let physical = StructArray::new(
+                    field.to_physical(),
+                    vec![values_array, indices_array, shape_array],
+                    nulls,
+                );
 
-            SparseTensorArray::new(field, physical).into_series()
+                SparseTensorArray::new(field, physical).into_series()
+            }
         }
         DataType::Embedding(ref inner_dtype, ref size) => {
             let (nulls, data): (Vec<_>, Vec<_>) = values
@@ -412,9 +434,14 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 })
                 .collect::<DaftResult<Vec<_>>>()?;
 
-            let physical = ListArray::from_series("literal", data)?;
-
-            MapArray::new(field, physical).into_series()
+            // See the `DataType::List` arm: when every row is null there is no child series to
+            // concat, so build the all-null column directly. See issue #7196.
+            if data.iter().all(Option::is_none) {
+                Series::full_null("literal", &downcasted, len)
+            } else {
+                let physical = ListArray::from_series("literal", data)?;
+                MapArray::new(field, physical).into_series()
+            }
         }
         DataType::Image(image_mode) => {
             let data =
@@ -624,5 +651,49 @@ mod test {
         let values = vec![Literal::UInt64(1), Literal::Utf8("test".to_string())];
         let actual = Series::from_literals(values);
         assert!(actual.is_err());
+    }
+
+    #[test]
+    fn test_list_literals_iter_surfaces_row_error() {
+        use common_error::{DaftError, DaftResult};
+
+        // A raising list-return UDF makes every row an `Err`; building the list series must surface
+        // the recorded row error, not a cryptic "Need at least 1 series to perform concat". (#7196)
+        let values: Vec<DaftResult<Literal>> =
+            vec![Err(DaftError::ComputeError("boom".to_string()))];
+        let err = super::series_from_literals_iter(
+            values.into_iter(),
+            Some(DataType::List(Box::new(DataType::Int64))),
+        )
+        .expect_err("expected the row error to be surfaced");
+
+        let msg = err.to_string();
+        assert!(
+            msg.contains("boom"),
+            "should surface the original row error, got: {msg}"
+        );
+        assert!(
+            !msg.contains("at least 1 series"),
+            "should not leak the cryptic concat error, got: {msg}"
+        );
+    }
+
+    #[rstest]
+    #[case::list(DataType::List(Box::new(DataType::Int64)))]
+    #[case::map(DataType::Map { key: Box::new(DataType::Utf8), value: Box::new(DataType::Int64) })]
+    #[case::tensor(DataType::Tensor(Box::new(DataType::Int64)))]
+    #[case::sparse_tensor(DataType::SparseTensor(Box::new(DataType::Int64), false))]
+    fn test_all_null_list_like_builds_null_column(#[case] dtype: DataType) {
+        use common_error::DaftResult;
+
+        // Every row null (e.g. an all-error list-like-return UDF under `on_error="ignore"`) must build
+        // an all-null column, not fail with "Need at least 1 series to perform concat". (#7196)
+        let values: Vec<DaftResult<Literal>> = vec![Ok(Literal::Null), Ok(Literal::Null)];
+        let series = super::series_from_literals_iter(values.into_iter(), Some(dtype))
+            .expect("all-null list-like column should build successfully");
+
+        assert_eq!(series.len(), 2);
+        let actual = series.to_literals().collect::<Vec<_>>();
+        assert_eq!(actual, vec![Literal::Null, Literal::Null]);
     }
 }
