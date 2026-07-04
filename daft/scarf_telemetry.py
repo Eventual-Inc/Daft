@@ -3,11 +3,10 @@ from __future__ import annotations
 import os
 import platform
 import threading
-import urllib.parse
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    import ssl
+    from ssl import SSLContext
 
 _ANALYTICS_REQUEST_TIMEOUT_SECONDS = 2.0
 
@@ -19,7 +18,7 @@ _ssl_context = None
 _ssl_context_lock = threading.Lock()
 
 
-def _get_ssl_context() -> ssl.SSLContext:
+def _get_ssl_context() -> SSLContext:
     import ssl
 
     global _ssl_context
@@ -74,6 +73,7 @@ def _track_on_scarf(
         return None, result_container
 
     def send_request(result_container: dict[str, str | None]) -> None:
+        import urllib.parse
         import urllib.request
 
         response_status = None
