@@ -10,8 +10,9 @@ use std::{
 use common_error::DaftError;
 use daft_core::file::FileReference;
 use pyo3::{
-    exceptions::{PyIOError, PyRuntimeError, PyValueError},
+    exceptions::{PyIOError, PyRuntimeError, PyTypeError, PyValueError},
     prelude::*,
+    types::PyString,
 };
 
 use crate::file::{DaftFile, FileCursor};
@@ -109,6 +110,7 @@ impl PyFileReference {
 struct PyDaftFile {
     inner: DaftFile,
     inside_context: AtomicBool,
+    text_mode: bool,
 }
 
 impl From<DaftFile> for PyDaftFile {
@@ -116,6 +118,7 @@ impl From<DaftFile> for PyDaftFile {
         Self {
             inner,
             inside_context: AtomicBool::new(false),
+            text_mode: false,
         }
     }
 }
@@ -141,6 +144,14 @@ impl PyDaftFile {
             "File not opened inside a context manager. use `with file.open() as f:`",
         ))
     }
+
+    fn close_impl(&mut self, py: Python<'_>, commit: bool) -> PyResult<()> {
+        self.inner.cursor = None;
+        self.inner.position = 0;
+        let inner = &mut self.inner;
+        py.detach(move || inner.close_writer(commit))?;
+        Ok(())
+    }
 }
 
 #[pymethods]
@@ -151,9 +162,83 @@ impl PyDaftFile {
         Ok(DaftFile::load_blocking(f.inner.as_ref().clone(), false, buffer_size)?.into())
     }
 
+    #[staticmethod]
+    #[pyo3(signature=(f, text=false))]
+    fn _create_writer(py: Python<'_>, f: PyFileReference, text: bool) -> PyResult<Self> {
+        let file_ref = f.inner.as_ref().clone();
+        let file = py.detach(move || DaftFile::create_writer_blocking(file_ref))?;
+        let mut file: Self = file.into();
+        file.text_mode = text;
+        Ok(file)
+    }
+
+    fn write(&mut self, py: Python<'_>, data: Bound<'_, PyAny>) -> PyResult<usize> {
+        self.check_context()?;
+        if self.inner.writer.is_none() {
+            return Err(PyIOError::new_err("File not open for writing"));
+        }
+        let type_name = data
+            .get_type()
+            .name()
+            .map(|n| n.to_string())
+            .unwrap_or_else(|_| "unknown".to_string());
+        let (bytes, written) = if self.text_mode {
+            let s = data.cast::<PyString>().map_err(|_| {
+                PyTypeError::new_err(format!("write() argument must be str, not {type_name}"))
+            })?;
+            let s = s.to_str()?;
+            // Text-mode write returns the number of characters written, like CPython.
+            (s.as_bytes().to_vec(), s.chars().count())
+        } else {
+            if data.is_instance_of::<PyString>() {
+                return Err(PyTypeError::new_err(
+                    "a bytes-like object is required, not 'str'",
+                ));
+            }
+            let bytes: Vec<u8> = data.extract().map_err(|_| {
+                PyTypeError::new_err(format!(
+                    "a bytes-like object is required, not '{type_name}'"
+                ))
+            })?;
+            let written = bytes.len();
+            (bytes, written)
+        };
+        let inner = &mut self.inner;
+        py.detach(move || inner.write(&bytes))?;
+        Ok(written)
+    }
+
+    /// Flushing is a no-op: partial multipart parts cannot be uploaded early, so data is
+    /// only committed to storage when the file is closed.
+    fn flush(&self) -> PyResult<()> {
+        if self.inner.cursor.is_none() && self.inner.writer.is_none() {
+            return Err(PyValueError::new_err("I/O operation on closed file"));
+        }
+        Ok(())
+    }
+
+    fn readable(&self) -> bool {
+        self.inner.cursor.is_some()
+    }
+
+    fn writable(&self) -> bool {
+        self.inner.writer.is_some()
+    }
+
+    fn seekable(&self) -> bool {
+        self.inner.cursor.is_some()
+    }
+
+    fn isatty(&self) -> bool {
+        false
+    }
+
     #[pyo3(signature=(size=-1))]
     fn read(&mut self, size: isize) -> PyResult<Vec<u8>> {
         self.check_context()?;
+        if self.inner.writer.is_some() {
+            return Err(PyIOError::new_err("File not open for reading"));
+        }
         let cursor = self
             .inner
             .cursor
@@ -192,6 +277,9 @@ impl PyDaftFile {
     #[pyo3(signature=(offset, whence=Some(0)))]
     fn seek(&mut self, offset: i64, whence: Option<usize>) -> PyResult<u64> {
         self.check_context()?;
+        if self.inner.writer.is_some() {
+            return Err(PyIOError::new_err("Cannot seek a file opened for writing"));
+        }
         let whence = match whence.unwrap_or(0) {
             0 => {
                 if offset < 0 {
@@ -219,17 +307,15 @@ impl PyDaftFile {
 
     // Return current position
     fn tell(&self) -> PyResult<u64> {
-        if self.cursor.is_none() {
+        if self.cursor.is_none() && self.writer.is_none() {
             return Ok(0);
         }
         Ok(self.position as u64)
     }
 
-    // Close the file
-    fn close(&mut self) -> PyResult<()> {
-        self.cursor = None;
-        self.position = 0;
-        Ok(())
+    // Close the file. For files open for writing, this commits buffered data to storage.
+    fn close(&mut self, py: Python<'_>) -> PyResult<()> {
+        self.close_impl(py, true)
     }
 
     // Context manager support
@@ -240,12 +326,15 @@ impl PyDaftFile {
 
     fn __exit__(
         &mut self,
-        _exc_type: Option<Py<PyAny>>,
+        py: Python<'_>,
+        exc_type: Option<Py<PyAny>>,
         _exc_value: Option<Py<PyAny>>,
         _traceback: Option<Py<PyAny>>,
     ) -> PyResult<()> {
         self.inside_context.store(false, Ordering::SeqCst);
-        self.close()
+        // If the `with` block raised, abandon any pending write instead of committing
+        // partial data.
+        self.close_impl(py, exc_type.is_none())
     }
 
     // String representation
@@ -254,7 +343,7 @@ impl PyDaftFile {
     }
 
     fn closed(&self) -> PyResult<bool> {
-        Ok(self.cursor.is_none())
+        Ok(self.cursor.is_none() && self.writer.is_none())
     }
 
     fn _supports_range_requests(&mut self) -> PyResult<bool> {

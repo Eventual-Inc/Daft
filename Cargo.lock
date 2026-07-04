@@ -2744,6 +2744,7 @@ name = "daft-file"
 version = "0.3.0-dev0"
 dependencies = [
  "async-trait",
+ "bytes",
  "common-error",
  "common-runtime",
  "daft-core",
@@ -2754,6 +2755,7 @@ dependencies = [
  "mime_guess",
  "pyo3",
  "serde",
+ "tokio",
  "typetag",
  "url",
 ]

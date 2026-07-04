@@ -28,8 +28,8 @@ class File:
     with Python's file protocol.
 
     The File object can be used with most Python libraries that accept file-like objects,
-    and implements the standard read/seek/tell interface. Files are read-only in the
-    current implementation.
+    and implements the standard read/seek/tell interface. Files can also be opened for
+    writing with `open(mode="wb")` or `open(mode="w")`.
 
     Examples:
         >>> import daft
@@ -83,8 +83,30 @@ class File:
 
         self._inner = PyFileReference._from_tuple((media_type._media_type, url, io_config, position, size))  # type: ignore
 
-    def open(self, buffer_size: int | None = None) -> PyDaftFile:
-        return PyDaftFile._from_file_reference(self._inner, buffer_size=buffer_size)
+    def open(self, mode: str = "rb", buffer_size: int | None = None) -> PyDaftFile:
+        """Open the file for reading or writing.
+
+        Args:
+            mode (str): Mode to open the file in. Supported modes:
+
+                - "r" / "rb": binary read (default).
+                - "wb": binary write; `write()` accepts bytes-like objects.
+                - "w" / "wt": text write; `write()` accepts str, encoded as UTF-8.
+            buffer_size (int | None): Read buffer size in bytes. Only valid for read modes.
+
+        Writes are buffered and only committed to storage when the file is closed. On
+        sources that support multipart uploads (e.g. S3), buffered parts are streamed
+        as they fill up; the object still only becomes visible on close. If the `with`
+        block exits with an exception, nothing is committed and the destination is
+        left untouched.
+        """
+        if mode in ("r", "rb"):
+            return PyDaftFile._from_file_reference(self._inner, buffer_size=buffer_size)
+        if mode in ("w", "wt", "wb"):
+            if buffer_size is not None:
+                raise ValueError("buffer_size is only supported for read modes")
+            return PyDaftFile._create_writer(self._inner, text=mode != "wb")
+        raise ValueError(f"Unsupported mode: {mode}. Supported modes are 'r', 'rb', 'w', 'wt', and 'wb'")
 
     def __str__(self) -> str:
         return self._inner.__str__()
@@ -93,7 +115,7 @@ class File:
         return True
 
     def writable(self) -> bool:
-        return False
+        return True
 
     def seekable(self) -> bool:
         return True

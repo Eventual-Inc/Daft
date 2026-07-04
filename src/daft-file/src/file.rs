@@ -1,10 +1,15 @@
 use std::{
     io,
     io::{BufReader, Cursor, Read, Seek, SeekFrom},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
+use bytes::Bytes;
 use common_error::{DaftError, DaftResult};
+use common_runtime::RuntimeTask;
 use daft_core::file::FileReference;
 use daft_io::{GetRange, IOConfig, IOStatsRef, ObjectSource};
 use daft_schema::media_type::MediaType;
@@ -14,6 +19,7 @@ pub struct DaftFile {
     pub media_type: MediaType,
     pub(crate) cursor: Option<FileCursor>,
     pub(crate) position: usize,
+    pub(crate) writer: Option<FileWriter>,
 }
 // TODO(universalmind303): convert all the Read and Seek impls to AsyncRead and AsyncSeek.
 // The python wrapper should handle blocking, but the core implementation should be fully async.
@@ -84,6 +90,7 @@ impl DaftFile {
                 media_type,
                 cursor: Some(FileCursor::ObjectReader(buffered_reader)),
                 position: 0,
+                writer: None,
             })
         }
     }
@@ -112,6 +119,193 @@ impl DaftFile {
             media_type,
             cursor: Some(FileCursor::Memory(Cursor::new(bytes))),
             position: 0,
+            writer: None,
+        }
+    }
+
+    /// Open a file for writing.
+    ///
+    /// If the source supports multipart uploads, part-sized chunks are streamed to the
+    /// destination as they accumulate; otherwise all bytes are buffered in memory and
+    /// uploaded with a single put. In both cases nothing is visible at the destination
+    /// until the writer is closed with `close_writer(true)`.
+    pub async fn create_writer(file_ref: FileReference) -> DaftResult<Self> {
+        if file_ref.position.is_some() || file_ref.size.is_some() {
+            return Err(DaftError::ValueError(
+                "Files with a byte-range (position/size) cannot be opened for writing".to_string(),
+            ));
+        }
+        let media_type = file_ref.media_type;
+        let io_client = daft_io::get_io_client(true, file_ref.io_config.unwrap_or_default())?;
+        let (source, path) = io_client
+            .get_source_and_path(&file_ref.url)
+            .await
+            .map_err(DaftError::from)?;
+
+        let writer = match source
+            .clone()
+            .create_multipart_writer(&path)
+            .await
+            .map_err(DaftError::from)?
+        {
+            Some(mut multipart_writer) => {
+                let part_size = multipart_writer.part_size();
+                assert!(part_size > 0, "Object multipart part size must be non-zero");
+                let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+                let commit = Arc::new(AtomicBool::new(false));
+                let should_commit = commit.clone();
+                // Only complete (commit) the upload if the writer was closed cleanly.
+                let upload_task = common_runtime::get_io_runtime(true).spawn(async move {
+                    while let Some(part) = rx.recv().await {
+                        multipart_writer.put_part(part).await?;
+                    }
+                    if should_commit.load(Ordering::SeqCst) {
+                        multipart_writer.complete().await?;
+                    }
+                    Ok(())
+                });
+                FileWriter::Multipart {
+                    part_buffer: Vec::new(),
+                    part_size,
+                    tx: Some(tx),
+                    commit,
+                    upload_task: Some(upload_task),
+                }
+            }
+            None => FileWriter::Buffered {
+                source,
+                uri: path,
+                buffer: Vec::new(),
+            },
+        };
+
+        Ok(Self {
+            media_type,
+            cursor: None,
+            position: 0,
+            writer: Some(writer),
+        })
+    }
+
+    /// Like `create_writer`, but blocks the current thread.
+    pub fn create_writer_blocking(file_ref: FileReference) -> DaftResult<Self> {
+        let rt = common_runtime::get_io_runtime(true);
+        rt.block_within_async_context(Self::create_writer(file_ref))
+            .flatten()
+    }
+
+    pub fn write(&mut self, data: &[u8]) -> DaftResult<usize> {
+        let writer = self
+            .writer
+            .as_mut()
+            .ok_or_else(|| DaftError::IoError(io::Error::other("File not open for writing")))?;
+        let mut upload_died = false;
+        match writer {
+            FileWriter::Multipart {
+                part_buffer,
+                part_size,
+                tx,
+                ..
+            } => {
+                part_buffer.extend_from_slice(data);
+                while part_buffer.len() >= *part_size {
+                    let rest = part_buffer.split_off(*part_size);
+                    let part = Bytes::from(std::mem::replace(part_buffer, rest));
+                    let sender = tx.clone().ok_or_else(|| {
+                        DaftError::IoError(io::Error::other("File not open for writing"))
+                    })?;
+                    let rt = common_runtime::get_io_runtime(true);
+                    let sent = rt
+                        .block_within_async_context(async move { sender.send(part).await })?;
+                    if sent.is_err() {
+                        upload_died = true;
+                        break;
+                    }
+                }
+            }
+            FileWriter::Buffered { buffer, .. } => {
+                buffer.extend_from_slice(data);
+            }
+        }
+        if upload_died {
+            // The upload task died (e.g. a part upload failed). Tear down the writer and
+            // surface the task's root-cause error instead of a generic channel error.
+            let upload_task = match self.writer.take() {
+                Some(FileWriter::Multipart { upload_task, .. }) => upload_task,
+                _ => None,
+            };
+            if let Some(task) = upload_task {
+                await_upload_task(task)?;
+            }
+            return Err(DaftError::InternalError(
+                "Multipart upload task terminated unexpectedly".to_string(),
+            ));
+        }
+        self.position += data.len();
+        Ok(data.len())
+    }
+
+    /// Close the writer. If `commit` is true, buffered data is uploaded and the object
+    /// becomes visible at the destination; otherwise the write is abandoned and the
+    /// destination is left untouched. No-op if the file is not open for writing.
+    pub fn close_writer(&mut self, commit: bool) -> DaftResult<()> {
+        let Some(writer) = self.writer.take() else {
+            return Ok(());
+        };
+        self.position = 0;
+        match writer {
+            FileWriter::Multipart {
+                part_buffer,
+                commit: commit_flag,
+                tx,
+                upload_task,
+                ..
+            } => {
+                commit_flag.store(commit, Ordering::SeqCst);
+                let mut send_result = Ok(());
+                if commit
+                    && !part_buffer.is_empty()
+                    && let Some(sender) = tx.clone()
+                {
+                    // Send any remaining buffered bytes as the final part.
+                    let part = Bytes::from(part_buffer);
+                    let rt = common_runtime::get_io_runtime(true);
+                    send_result = rt
+                        .block_within_async_context(async move { sender.send(part).await })?
+                        .map_err(|_| {
+                            DaftError::InternalError(
+                                "Multipart upload task terminated unexpectedly".to_string(),
+                            )
+                        });
+                }
+                // Dropping the sender closes the channel, letting the upload task finish.
+                drop(tx);
+                let task_result = upload_task.map(await_upload_task).unwrap_or(Ok(()));
+                if commit {
+                    // Prefer the upload task's error: a failed send usually means the
+                    // task already died with the root-cause error.
+                    task_result?;
+                    send_result?;
+                }
+                Ok(())
+            }
+            FileWriter::Buffered {
+                source,
+                uri,
+                buffer,
+            } => {
+                if commit {
+                    let rt = common_runtime::get_io_runtime(true);
+                    rt.block_within_async_context(async move {
+                        source
+                            .put(&uri, Bytes::from(buffer), None)
+                            .await
+                            .map_err(DaftError::from)
+                    })
+                    .flatten()?;
+                }
+                Ok(())
+            }
         }
     }
 
@@ -326,6 +520,35 @@ impl Seek for ObjectSourceReader {
 
         Ok(self.position as u64)
     }
+}
+
+/// Awaits the background multipart upload task, surfacing any upload error.
+fn await_upload_task(task: RuntimeTask<DaftResult<()>>) -> DaftResult<()> {
+    common_runtime::get_io_runtime(true)
+        .block_within_async_context(task)
+        .flatten()
+        .flatten()
+}
+
+pub(crate) enum FileWriter {
+    /// Streams part-sized chunks to the destination as they accumulate. The upload task
+    /// drains parts in the background and only completes the multipart upload when the
+    /// commit flag is set (i.e. the writer was closed cleanly). All sends go through
+    /// `block_within_async_context` since writes may be issued from executor threads.
+    Multipart {
+        part_buffer: Vec<u8>,
+        part_size: usize,
+        tx: Option<tokio::sync::mpsc::Sender<Bytes>>,
+        commit: Arc<AtomicBool>,
+        upload_task: Option<RuntimeTask<DaftResult<()>>>,
+    },
+    /// Buffers all bytes in memory and uploads them with a single put on close, for
+    /// sources without multipart upload support (e.g. local files).
+    Buffered {
+        source: Arc<dyn ObjectSource>,
+        uri: String,
+        buffer: Vec<u8>,
+    },
 }
 
 pub(crate) enum FileCursor {
