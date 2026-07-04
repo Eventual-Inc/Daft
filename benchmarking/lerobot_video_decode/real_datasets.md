@@ -4,14 +4,18 @@ The batched decode was validated against the original per-row decode on public
 LeRobot v3 datasets from Hugging Face, chosen from a survey of LeRobot-tagged
 datasets to cover the codec, fps, resolution, and camera-count diversity found
 in the wild. Measured 2026-07-01, remote reads over `hf://`, single machine.
+Re-measured 2026-07-03 on the PR's final revision: pixel-identical again on all
+six datasets, comparable timings (original-side wall times vary with network).
 
 ## Method
 
-For each dataset, decode the first 16 frames of episode 0 (every camera column)
-twice - once with the original per-row reader and once with the batched reader -
-in fresh processes. Every decoded frame is hashed (SHA-256 of the raw RGB
-pixels) and the two runs are compared hash-for-hash on identical rows. Wall
-time covers the full `lerobot.read(..., load_video_frames=True)` pipeline.
+[`real_datasets.py`](real_datasets.py) decodes the first 16 frames of episode 0
+(every camera column) with whichever reader is installed, in a fresh process,
+and writes per-frame SHA-256 hashes (raw RGB pixels) plus wall time for the
+full `lerobot.read(..., load_video_frames=True)` pipeline. It is run once per
+reader revision - `daft/datasets/lerobot.py` at the PR's merge-base ("original")
+vs this branch ("batched"); the fix is Python-only, so the underlying build is
+identical - and the two outputs are compared hash-for-hash with `--compare`.
 
 ## Results: 16 frames, all cameras
 

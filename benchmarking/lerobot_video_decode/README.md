@@ -33,8 +33,9 @@ requested timestamp. Output is **byte-identical** to the old per-row decode.
 
 ### Original vs batched (rows 1→10)
 
-[`sweep.py`](sweep.py) - the original grows linearly to ~34s; the batched version stays flat at
-~4s (all 10 frames share one shard → one open).
+[`sweep.py`](sweep.py), run once per reader revision (merge-base vs this branch) - the
+original grows linearly to ~34s; the batched version stays flat at ~4s (all 10 frames
+share one shard → one open).
 
 ![original vs batched](charts/chart_old_vs_new.png)
 
@@ -70,7 +71,8 @@ so each shard is handled by a single worker, rather than re-fetched across sever
 
 How does the change hold up as the number of workers grows? [`worker_scaling.py`](worker_scaling.py)
 reproduces the original-vs-batched frames sweep at 1/2/4/8 worker processes (8
-shards, dense consecutive frames, scalar return to isolate decode compute):
+shards, dense consecutive frames, scalar return to isolate decode compute; the two
+strategies as standalone UDFs, not the shipped reader):
 
 ![workers](charts/chart_workers.png)
 
@@ -91,7 +93,7 @@ in a batch, so its cost depends on how spread out those timestamps are:
   gaps over ~10s are seeked over rather than decoded through. It still wins when the
   shard is remote (read over the network), because one fewer remote open is worth
   more than the extra decoding. Remote, frames spread across the whole shard
-  ([`sparse.py`](sparse.py)):
+  ([`sparse.py`](sparse.py) - raw PyAV, the two strategies in isolation):
 
   ![sparse](charts/chart_sparse.png)
 
