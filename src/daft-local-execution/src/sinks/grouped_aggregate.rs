@@ -55,7 +55,7 @@ impl AggStrategy {
             Self::PartitionThenAgg(threshold) => {
                 Self::execute_partition_then_agg(inner_states, input, params, *threshold).await
             }
-            Self::PartitionOnly => Self::execute_partition_only(inner_states, input, params),
+            Self::PartitionOnly => Self::execute_partition_only(inner_states, input, params).await,
         }
     }
 
@@ -204,18 +204,61 @@ impl AggStrategy {
         Ok(())
     }
 
-    fn execute_partition_only(
+    async fn execute_partition_only(
         inner_states: &mut [Option<SinglePartitionAggregateState>],
         input: MicroPartition,
         params: &GroupedAggregateParams,
     ) -> DaftResult<()> {
-        let partitioned =
-            input.partition_by_hash(params.group_by.as_slice(), inner_states.len())?;
-        for (p, state) in partitioned.into_iter().zip(inner_states.iter_mut()) {
-            let state = state.get_or_insert_default();
-            state.unaggregated_size += p.len();
-            state.unaggregated.push(p);
+        let num_slots = inner_states.len();
+
+        // Small inputs: the existing single-threaded path. Shard overhead would
+        // dominate the K-way fan-out otherwise.
+        if input.len() < SHARD_THRESHOLD {
+            let partitioned = input.partition_by_hash(params.group_by.as_slice(), num_slots)?;
+            for (p, state) in partitioned.into_iter().zip(inner_states.iter_mut()) {
+                let state = state.get_or_insert_default();
+                state.unaggregated_size += p.len();
+                state.unaggregated.push(p);
+            }
+            return Ok(());
         }
+
+        // Large inputs: row-range slice into K shards, run `partition_by_hash`
+        // per shard concurrently, then append each shard's slot-i output to
+        // slot i of inner_states. No flush logic to coordinate (PartitionOnly
+        // defers all aggregation to finalize()), so the merge is just a sequential
+        // append over (K * num_slots) MicroPartitions.
+        let total_rows = input.len();
+        let shard_size = total_rows.div_ceil(NUM_SHARDS_PER_MORSEL);
+        let mut tasks = tokio::task::JoinSet::new();
+        for shard_idx in 0..NUM_SHARDS_PER_MORSEL {
+            let start = shard_idx * shard_size;
+            if start >= total_rows {
+                break;
+            }
+            let end = (start + shard_size).min(total_rows);
+            let shard = input.slice(start, end)?;
+            let group_by = params.group_by.clone();
+            tasks.spawn(
+                async move { shard.partition_by_hash(&group_by, num_slots) }
+                    .instrument(Span::current()),
+            );
+        }
+
+        let shard_results: Vec<Vec<MicroPartition>> = tasks
+            .join_all()
+            .await
+            .into_iter()
+            .collect::<DaftResult<Vec<_>>>()?;
+
+        for shard_partitioned in shard_results {
+            for (p, state) in shard_partitioned.into_iter().zip(inner_states.iter_mut()) {
+                let state = state.get_or_insert_default();
+                state.unaggregated_size += p.len();
+                state.unaggregated.push(p);
+            }
+        }
+
         Ok(())
     }
 }
