@@ -16,6 +16,8 @@ full `lerobot.read(..., load_video_frames=True)` pipeline. It is run once per
 reader revision - `daft/datasets/lerobot.py` at the PR's merge-base ("original")
 vs this branch ("batched"); the fix is Python-only, so the underlying build is
 identical - and the two outputs are compared hash-for-hash with `--compare`.
+[`run_real_datasets.sh`](run_real_datasets.sh) drives the whole A/B: it swaps
+the reader file between revisions, runs both, and compares.
 
 ## Results: 16 frames, all cameras
 
