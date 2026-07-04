@@ -15,7 +15,6 @@ from tests.io._s3_helpers import S3_BUCKET, delta_storage_options, s3_io_config,
 pytestmark = [
     pytest.mark.skipif(os.environ.get("DAFT_RUNNER") != "ray", reason="S3 Delta end-to-end tests require Ray runner"),
     pytest.mark.skipif(not S3_BUCKET, reason="requires CHECKPOINTING_TEST_BUCKET-backed real S3 test bucket"),
-    pytest.mark.integration,
 ]
 
 
@@ -24,6 +23,7 @@ def _read_delta_table_rows(table_uri: str) -> pa.Table:
     return table.to_pyarrow_table()
 
 
+@pytest.mark.integration()
 def test_deltalake_s3_concurrent_appends_without_dynamodb():
     table_uri = s3_uri("delta", "concurrent-conditional-put")
     io_config = s3_io_config()
@@ -57,6 +57,7 @@ def test_deltalake_s3_concurrent_appends_without_dynamodb():
     assert rows.sort_by([("writer_id", "ascending")]) == expected
 
 
+@pytest.mark.integration()
 def test_deltalake_s3_write_with_explicit_unsafe_rename():
     table_uri = s3_uri("delta", "unsafe-rename")
     io_config = s3_io_config()
