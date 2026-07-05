@@ -847,6 +847,26 @@ class Expression:
 
         return degrees(self)
 
+    def to_radians(self) -> Expression:
+        """The elementwise radians of a numeric expression.
+
+        Tip: See Also
+            [`daft.functions.to_radians`](https://docs.daft.ai/en/stable/api/functions/to_radians/)
+        """
+        from daft.functions import to_radians
+
+        return to_radians(self)
+
+    def to_degrees(self) -> Expression:
+        """The elementwise degrees of a numeric expression.
+
+        Tip: See Also
+            [`daft.functions.to_degrees`](https://docs.daft.ai/en/stable/api/functions/to_degrees/)
+        """
+        from daft.functions import to_degrees
+
+        return to_degrees(self)
+
     def log2(self) -> Expression:
         """The elementwise log base 2 of a numeric expression.
 

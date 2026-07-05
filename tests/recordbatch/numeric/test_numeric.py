@@ -251,6 +251,20 @@ def test_table_numeric_trigonometry(fun: str, is_arc: bool, is_co: bool) -> None
     )
 
 
+def test_table_numeric_to_degrees_to_radians_aliases() -> None:
+    # to_degrees / to_radians are PySpark-parity aliases for degrees / radians,
+    # so they must produce identical results to the functions they alias.
+    table = MicroPartition.from_pydict({"a": [0.0, math.pi, math.pi / 2, math.nan]})
+
+    def same(alias_expr, canonical_expr) -> bool:
+        got = table.eval_expression_list([alias_expr]).get_column_by_name("a").to_pylist()
+        want = table.eval_expression_list([canonical_expr]).get_column_by_name("a").to_pylist()
+        return all(x == pytest.approx(y) or (math.isnan(x) and math.isnan(y)) for x, y in zip(got, want))
+
+    assert same(col("a").to_degrees(), col("a").degrees())
+    assert same(col("a").to_radians(), col("a").radians())
+
+
 def test_table_numeric_tanh() -> None:
     table = MicroPartition.from_pydict({"a": [0.0, math.pi, math.pi / 2, math.nan]})
     s = table.to_pandas()["a"]

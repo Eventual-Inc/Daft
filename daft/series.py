@@ -436,6 +436,14 @@ class Series:
         """The elementwise degrees of a numeric series."""
         return self._eval_expressions("degrees")
 
+    def to_radians(self) -> Series:
+        """The elementwise radians of a numeric series."""
+        return self._eval_expressions("radians")
+
+    def to_degrees(self) -> Series:
+        """The elementwise degrees of a numeric series."""
+        return self._eval_expressions("degrees")
+
     def log2(self) -> Series:
         """The elementwise log2 of a numeric series."""
         return self._eval_expressions("log2")

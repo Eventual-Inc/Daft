@@ -168,6 +168,16 @@ def degrees(expr: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("degrees", expr)
 
 
+def to_radians(expr: Expression) -> Expression:
+    """The elementwise radians of a numeric expression. Alias for [`radians`][daft.functions.radians]."""
+    return radians(expr)
+
+
+def to_degrees(expr: Expression) -> Expression:
+    """The elementwise degrees of a numeric expression. Alias for [`degrees`][daft.functions.degrees]."""
+    return degrees(expr)
+
+
 def log2(expr: Expression) -> Expression:
     """The elementwise log base 2 of a numeric expression."""
     return Expression._call_builtin_scalar_fn("log2", expr)
