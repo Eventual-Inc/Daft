@@ -220,3 +220,44 @@ class VideoFile(File):
                     )
 
                     frame_index += 1
+
+    def get_frame_by_idx(self, idx: int) -> PIL.Image.Image:
+        if not pil_image.module_available():
+            raise ImportError(
+                "The 'pillow' module is required for frame decoding. Install it with `pip install daft[video]`."
+            )
+        if idx < 0:
+            raise IndexError(f"Frame index {idx} is out of range")
+
+        with self.open() as f:
+            with av.open(f) as container:
+                video = next(
+                    (stream for stream in container.streams if stream.type == "video"),
+                    None,
+                )
+                if video is None:
+                    raise ValueError("No video stream found")
+
+                time_base = float(video.time_base) if video.time_base else None
+                fps = float(video.average_rate) if video.average_rate else None
+                if fps is None and video.guessed_rate:
+                    fps = float(video.guessed_rate)
+                start_pts = video.start_time or 0
+
+                # Seek to the nearest preceding keyframe at or before the target frame.
+                if idx > 0 and time_base is not None and fps is not None:
+                    target_time = idx / fps
+                    seek_timestamp = int(target_time / time_base)
+                    container.seek(seek_timestamp, stream=video, backward=True)
+
+                for frame_idx, frame in enumerate(container.decode(video)):
+                    current_frame_index = frame_idx
+                    if frame.pts is not None and time_base is not None and fps is not None:
+                        current_frame_index = int(round((frame.pts - start_pts) * time_base * fps))
+
+                    if current_frame_index == idx:
+                        return frame.to_image()
+                    if current_frame_index > idx:
+                        break
+
+                raise IndexError(f"Frame index {idx} is out of range")

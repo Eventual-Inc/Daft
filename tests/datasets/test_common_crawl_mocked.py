@@ -7,7 +7,6 @@ from unittest.mock import Mock, patch
 import pytest
 
 import daft
-from daft.datasets.common_crawl import _get_http_manifest_path, _get_s3_manifest_path
 
 WARC_PATHS = [
     "crawl-data/CC-MAIN-2025-33/segments/1234567890.1/warc/CC-MAIN-20250801120000-20250801150000-00001.warc.gz",
@@ -49,15 +48,27 @@ def fake_manifest_files(tmp_path):
             f.write("\n".join(paths))
         manifest_files[file_type] = manifest_path
 
-    return manifest_files
+    return tmp_path, manifest_files
 
 
 @pytest.fixture
 def mock_manifest_path(fake_manifest_files) -> str:
     """Helper fixture to mock the manifest path function."""
 
-    def _mock_manifest_path(crawl, file_type) -> str:
-        return f"file://{fake_manifest_files[file_type]}"
+    def _mock_manifest_path(crawl, file_type, source):
+        _, manifest_files = fake_manifest_files
+        manifest_path = f"file://{manifest_files[file_type]}"
+
+        if source == "s3":
+            return manifest_path, "s3://commoncrawl/"
+        elif source == "http":
+            return manifest_path, "https://data.commoncrawl.org/"
+        else:
+            # source is None or "hf" - return a non-existent HF path to trigger HTTP fallback.
+            return (
+                f"hf://buckets/commoncrawl/commoncrawl/crawl-data/{crawl}/{file_type}.paths.gz",
+                "hf://buckets/commoncrawl/commoncrawl/",
+            )
 
     return _mock_manifest_path
 
@@ -67,8 +78,7 @@ def mock_manifest_path(fake_manifest_files) -> str:
 def test_basic(mock_read_warc, mock_manifest_path, in_aws):
     mock_read_warc.return_value = Mock()
 
-    manifest_func = "_get_s3_manifest_path" if in_aws else "_get_http_manifest_path"
-    with patch.object(sys.modules["daft.datasets.common_crawl"], manifest_func) as mock_get_manifest_path:
+    with patch.object(sys.modules["daft.datasets.common_crawl"], "_get_mainfest_path") as mock_get_manifest_path:
         mock_get_manifest_path.side_effect = mock_manifest_path
 
         daft.datasets.common_crawl("CC-MAIN-2025-33", in_aws=in_aws)
@@ -95,17 +105,16 @@ def test_different_content_types(mock_read_warc, mock_manifest_path, in_aws):
         ("wat", "wat"),
     ]
 
-    manifest_func = "_get_s3_manifest_path" if in_aws else "_get_http_manifest_path"
-
     for content, expected_file_type in test_cases:
         mock_read_warc.return_value = Mock()
 
-        with patch.object(sys.modules["daft.datasets.common_crawl"], manifest_func) as mock_get_manifest_path:
+        with patch.object(sys.modules["daft.datasets.common_crawl"], "_get_mainfest_path") as mock_get_manifest_path:
             mock_get_manifest_path.side_effect = mock_manifest_path
 
             daft.datasets.common_crawl("CC-MAIN-2025-33", content=content, in_aws=in_aws)
 
-            mock_get_manifest_path.assert_called_with("CC-MAIN-2025-33", expected_file_type)
+            expected_source = "s3" if in_aws else "http"
+            mock_get_manifest_path.assert_called_with("CC-MAIN-2025-33", expected_file_type, expected_source)
 
         args = mock_read_warc.call_args[0][0]
 
@@ -124,8 +133,7 @@ def test_segment_filtering_works(mock_read_warc, mock_manifest_path, in_aws):
     """Test that segment filtering actually works with real data processing."""
     mock_read_warc.return_value = Mock()
 
-    manifest_func = "_get_s3_manifest_path" if in_aws else "_get_http_manifest_path"
-    with patch.object(sys.modules["daft.datasets.common_crawl"], manifest_func) as mock_get_manifest_path:
+    with patch.object(sys.modules["daft.datasets.common_crawl"], "_get_mainfest_path") as mock_get_manifest_path:
         mock_get_manifest_path.side_effect = mock_manifest_path
 
         # Test with a segment that exists in our fixture data.
@@ -149,8 +157,7 @@ def test_num_files_limit_works(mock_read_warc, mock_manifest_path, in_aws):
     """Test that num_files limit actually works with real data processing."""
     mock_read_warc.return_value = Mock()
 
-    manifest_func = "_get_s3_manifest_path" if in_aws else "_get_http_manifest_path"
-    with patch.object(sys.modules["daft.datasets.common_crawl"], manifest_func) as mock_get_manifest_path:
+    with patch.object(sys.modules["daft.datasets.common_crawl"], "_get_mainfest_path") as mock_get_manifest_path:
         mock_get_manifest_path.side_effect = mock_manifest_path
 
         # Test limiting to 2 files.
@@ -169,8 +176,7 @@ def test_segment_and_num_files_combined(mock_read_warc, mock_manifest_path, in_a
     """Test that segment filtering and num_files limit work together."""
     mock_read_warc.return_value = Mock()
 
-    manifest_func = "_get_s3_manifest_path" if in_aws else "_get_http_manifest_path"
-    with patch.object(sys.modules["daft.datasets.common_crawl"], manifest_func) as mock_get_manifest_path:
+    with patch.object(sys.modules["daft.datasets.common_crawl"], "_get_mainfest_path") as mock_get_manifest_path:
         mock_get_manifest_path.side_effect = mock_manifest_path
 
         # Test with segment filter and file limit.
@@ -212,21 +218,10 @@ def test_io_config_passed_through(mock_read_warc, mock_manifest_path, in_aws):
 
     mock_io_config = daft.IOConfig()
 
-    manifest_func = "_get_s3_manifest_path" if in_aws else "_get_http_manifest_path"
-    with patch.object(sys.modules["daft.datasets.common_crawl"], manifest_func) as mock_get_manifest_path:
+    with patch.object(sys.modules["daft.datasets.common_crawl"], "_get_mainfest_path") as mock_get_manifest_path:
         mock_get_manifest_path.side_effect = mock_manifest_path
 
         daft.datasets.common_crawl("CC-MAIN-2025-33", io_config=mock_io_config, in_aws=in_aws)
 
     mock_read_warc.assert_called_once()
     assert mock_read_warc.call_args[1]["io_config"] == mock_io_config
-
-
-def test_get_http_manifest_path():
-    url = _get_http_manifest_path("CC-MAIN-2025-33", "warc")
-    assert url == "https://data.commoncrawl.org/crawl-data/CC-MAIN-2025-33/warc.paths.gz"
-
-
-def test_get_s3_manifest_path():
-    url = _get_s3_manifest_path("CC-MAIN-2025-33", "warc")
-    assert url == "s3://commoncrawl/crawl-data/CC-MAIN-2025-33/warc.paths.gz"
