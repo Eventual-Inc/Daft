@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::{AggExpr, Expr};
 use daft_io::{GetRange, IOStatsRef};
@@ -104,7 +104,7 @@ async fn read_parquet(
     chunk_size: usize,
     skipped_corrupt_files: SkippedCorruptFilesCollector,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
-    let source = scan_task.sources.first().unwrap();
+    let source = first_scan_source(scan_task)?;
 
     if let Some(aggregation) = &scan_task.pushdowns.aggregation
         && let Expr::Agg(AggExpr::Count(_, _)) = aggregation.as_ref()
@@ -132,10 +132,7 @@ async fn read_parquet(
         field_id_mapping: cfg.field_id_mapping.clone(),
         delete_rows: delete_map.as_ref().and_then(|m| m.get(url).cloned()),
         batch_size: cfg.chunk_size.or(Some(chunk_size)),
-        metadata: scan_task
-            .sources
-            .first()
-            .and_then(|s| s.get_parquet_metadata().cloned()),
+        metadata: source.get_parquet_metadata().cloned(),
         ignore_corrupt_files: cfg.ignore_corrupt_files,
         skipped_corrupt_files: skipped_corrupt_files.clone(),
         ..Default::default()
@@ -229,7 +226,7 @@ async fn read_json(
     io_stats: IOStatsRef,
     chunk_size: usize,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
-    let source = scan_task.sources.first().unwrap();
+    let source = first_scan_source(scan_task)?;
     let schema_of_file = scan_task.schema.clone();
     let convert_options = JsonConvertOptions::new_internal(
         scan_task.pushdowns.limit,
@@ -258,6 +255,13 @@ async fn read_json(
         range,
     )
     .await
+}
+
+fn first_scan_source(scan_task: &ScanTask) -> DaftResult<&daft_scan::ScanSource> {
+    scan_task
+        .sources
+        .first()
+        .ok_or_else(|| DaftError::ValueError("ScanTask has no sources".to_string()))
 }
 
 async fn read_warc(
@@ -345,4 +349,79 @@ async fn read_python_function(
     let iter = daft_micropartition::python::read_pyfunc_into_table_iter(scan_task.clone())?;
     let stream = futures::stream::iter(iter.map(|r| r.map_err(|e| e.into())));
     Ok(Box::pin(stream))
+}
+
+#[cfg(test)]
+mod tests {
+    use daft_core::prelude::Schema;
+    use daft_scan::storage_config::StorageConfig;
+
+    use super::*;
+
+    fn empty_scan_task(source_config: SourceConfig) -> Arc<ScanTask> {
+        Arc::new(ScanTask {
+            sources: vec![],
+            schema: Arc::new(Schema::empty()),
+            source_config: Arc::new(source_config),
+            storage_config: Arc::new(StorageConfig::default()),
+            pushdowns: daft_scan::Pushdowns::default(),
+            size_bytes_on_disk: None,
+            metadata: None,
+            statistics: None,
+            generated_fields: None,
+        })
+    }
+
+    fn assert_empty_sources_error(err: DaftError) {
+        assert!(
+            matches!(err, DaftError::ValueError(message) if message == "ScanTask has no sources")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_read_parquet_returns_value_error_for_empty_sources() {
+        let cfg = ParquetSourceConfig::default();
+        let scan_task = empty_scan_task(SourceConfig::File(FileFormatConfig::Parquet(cfg.clone())));
+
+        let result = read_parquet(
+            &scan_task,
+            &cfg,
+            "file:///tmp/missing.parquet",
+            None,
+            Arc::new(daft_io::IOClient::default()),
+            daft_io::IOStatsContext::new("test_read_parquet_empty_sources"),
+            None,
+            false,
+            1024,
+            None,
+        )
+        .await;
+
+        match result {
+            Ok(_) => panic!("expected empty sources to return a ValueError"),
+            Err(err) => assert_empty_sources_error(err),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_read_json_returns_value_error_for_empty_sources() {
+        let cfg = JsonSourceConfig::default();
+        let scan_task = empty_scan_task(SourceConfig::File(FileFormatConfig::Json(cfg.clone())));
+
+        let result = read_json(
+            &scan_task,
+            &cfg,
+            "file:///tmp/missing.json",
+            None,
+            Arc::new(daft_io::IOClient::default()),
+            daft_io::IOStatsContext::new("test_read_json_empty_sources"),
+            1024,
+        )
+        .await;
+
+        match result {
+            Ok(_) => panic!("expected empty sources to return a ValueError"),
+            Err(err) => assert_empty_sources_error(err),
+        }
+    }
 }
