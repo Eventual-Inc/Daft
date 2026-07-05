@@ -256,11 +256,18 @@ def test_table_numeric_to_degrees_to_radians_aliases() -> None:
     # so they must produce identical results to the functions they alias.
     table = MicroPartition.from_pydict({"a": [0.0, math.pi, math.pi / 2, math.nan]})
 
+
     def same(alias_expr, canonical_expr) -> bool:
         got = table.eval_expression_list([alias_expr]).get_column_by_name("a").to_pylist()
-        want = table.eval_expression_list([canonical_expr]).get_column_by_name("a").to_pylist()
-        return all(x == pytest.approx(y) or (math.isnan(x) and math.isnan(y)) for x, y in zip(got, want))
+        want = (
+            table.eval_expression_list([canonical_expr]).get_column_by_name("a").to_pylist()
+        )
 
+        assert len(got) == len(want), f"length mismatch: {len(got)} != {len(want)}"
+        return all(
+            x == pytest.approx(y) or (math.isnan(x) and math.isnan(y))
+            for x, y in zip(got, want)
+        )
     assert same(col("a").to_degrees(), col("a").degrees())
     assert same(col("a").to_radians(), col("a").radians())
 
