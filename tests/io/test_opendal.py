@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv as csv_mod
+import pickle
 from pathlib import Path
 
 import pyarrow as pa
@@ -116,8 +117,6 @@ def test_hdfs_ioconfig_replace():
 
 def test_hdfs_ioconfig_pickle():
     """Test IOConfig with HdfsConfig survives pickle roundtrip."""
-    import pickle
-
     cfg = IOConfig(hdfs=HdfsConfig(name_node="hdfs://nn:9000", root="/tmp"))
     restored = pickle.loads(pickle.dumps(cfg))
     assert restored.hdfs.name_node == "hdfs://nn:9000"
@@ -143,8 +142,6 @@ def test_hdfs_url_parsing():
 
 def test_opendal_ioconfig_roundtrip():
     """Test that IOConfig with opendal_backends survives serialization roundtrip."""
-    import pickle
-
     config = IOConfig(
         opendal_backends={
             "oss": {"bucket": "my-bucket", "access_key_id": "test"},
