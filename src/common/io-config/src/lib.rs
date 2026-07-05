@@ -27,7 +27,7 @@ pub use crate::{
     config::IOConfig,
     cos::CosConfig,
     gcs::GCSConfig,
-    goosefs::GoosefsConfig,
+    goosefs::GooseFSConfig,
     gravitino::GravitinoConfig,
     hdfs::HdfsConfig,
     http::HTTPConfig,
