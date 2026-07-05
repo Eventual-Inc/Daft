@@ -15,7 +15,6 @@ env:
   DAFT_ANALYTICS_ENABLED: "0"
   RUST_BACKTRACE: 1
   DAFT_PROGRESS_BAR: 0
-  HF_HUB_DISABLE_XET: "1"
 
 # Cancel in-progress CI runs for outdated PR pushes to save resources.
 # For pull requests, use the PR number to group runs.
@@ -30,7 +29,7 @@ jobs:
     outputs:
       skip: ${{ steps.filter.outputs.skip }}
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
 
     - name: Detect non-trivial changes
       id: filter
@@ -121,7 +120,7 @@ jobs:
         sudo rm -rf /opt/hostedtoolcache/Ruby || true
         sudo rm -rf /opt/hostedtoolcache/node || true
 
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
       with:
         fetch-depth: 0
     - uses: moonrepo/setup-rust@v1
@@ -334,7 +333,7 @@ jobs:
       matrix:
         python-version: ["3.10"]
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
       with:
         submodules: true
         fetch-depth: 0
@@ -396,7 +395,7 @@ jobs:
     env:
       package-name: daft
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
       with:
         submodules: true
         fetch-depth: 0
@@ -427,7 +426,7 @@ jobs:
           uv sync --no-install-project --all-extras --all-groups
           uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
           rm -rf daft
-    - uses: actions/cache@v5
+    - uses: actions/cache@v6
       env:
         cache-name: cache-tpch-data
       with:
@@ -502,7 +501,7 @@ jobs:
         sudo rm -rf /opt/hostedtoolcache/go || true
         sudo rm -rf /opt/hostedtoolcache/Ruby || true
         sudo rm -rf /opt/hostedtoolcache/node || true
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
       with:
         submodules: true
         fetch-depth: 0
@@ -538,7 +537,7 @@ jobs:
         mkdir -p /tmp/daft-integration-testing/nginx
         chmod +rw /tmp/daft-integration-testing/nginx
     - name: Spin up IO services
-      uses: isbang/compose-action@v2.6.0
+      uses: isbang/compose-action@v3.0.0
       with:
         compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
         down-flags: --volumes
@@ -612,7 +611,7 @@ jobs:
   #       sudo rm -rf /opt/hostedtoolcache/go || true
   #       sudo rm -rf /opt/hostedtoolcache/Ruby || true
   #       sudo rm -rf /opt/hostedtoolcache/node || true
-  #   - uses: actions/checkout@v6
+  #   - uses: actions/checkout@v7
   #     with:
   #       submodules: true
   #       fetch-depth: 0
@@ -662,7 +661,7 @@ jobs:
   #       # workload_identity_provider: ${{ secrets.ACTIONS_GCP_WORKLOAD_IDENTITY_PROVIDER }}
   #       # service_account: ${{ secrets.ACTIONS_GCP_SERVICE_ACCOUNT }}
   #   - name: Spin up IO services
-  #     uses: isbang/compose-action@v2.6.0
+  #     uses: isbang/compose-action@v3.0.0
   #     with:
   #       compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
   #       down-flags: --volumes
@@ -723,7 +722,7 @@ jobs:
         sudo rm -rf /opt/hostedtoolcache/go || true
         sudo rm -rf /opt/hostedtoolcache/Ruby || true
         sudo rm -rf /opt/hostedtoolcache/node || true
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
       with:
         submodules: true
         fetch-depth: 0
@@ -822,7 +821,7 @@ jobs:
         sudo rm -rf /opt/hostedtoolcache/go || true
         sudo rm -rf /opt/hostedtoolcache/Ruby || true
         sudo rm -rf /opt/hostedtoolcache/node || true
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
       with:
         submodules: true
         fetch-depth: 0
@@ -835,7 +834,7 @@ jobs:
     # "etc/data/managed/unity/default/volumes/txt_files". The server is
     # run via the prebuilt Docker image below, so we no longer need the
     # source for sbt, just for the seed data files Daft reads from disk.
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
       with:
         repository: unitycatalog/unitycatalog
         ref: 20dd3820be332ac04deec4e063099fb863eb3392
@@ -1091,7 +1090,7 @@ jobs:
         sudo rm -rf /opt/hostedtoolcache/go || true
         sudo rm -rf /opt/hostedtoolcache/Ruby || true
         sudo rm -rf /opt/hostedtoolcache/node || true
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
       with:
         submodules: true
         fetch-depth: 0
@@ -1167,7 +1166,7 @@ jobs:
   #       python-version: ['3.10']
   #       daft-runner: [ray, native]
   #   steps:
-  #   - uses: actions/checkout@v6
+  #   - uses: actions/checkout@v7
   #     with:
   #       submodules: true
   #       fetch-depth: 0
@@ -1236,7 +1235,7 @@ jobs:
     env:
       package-name: daft
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
       with:
         submodules: true
         fetch-depth: 0
@@ -1332,7 +1331,7 @@ jobs:
       package-name: daft
       RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
       with:
         fetch-depth: 0
     - uses: moonrepo/setup-rust@v1
@@ -1369,7 +1368,7 @@ jobs:
         maturin develop --uv --profile dev-bench
       env:
         DAFT_DASHBOARD_SKIP_BUILD: true
-    - uses: actions/cache@v5
+    - uses: actions/cache@v6
       env:
         cache-name: cache-tpch-data
       with:
@@ -1420,7 +1419,7 @@ jobs:
         - os: Windows
           on-main: false
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
       with:
         fetch-depth: 0
     - uses: moonrepo/setup-rust@v1
@@ -1501,7 +1500,7 @@ jobs:
   check-unused-cargo-deps:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -1519,14 +1518,14 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
       with:
         fetch-depth: 0
     - name: Compare Cargo.lock to base (external crates budget)
       env:
         BASE_SHA: ${{ github.event.pull_request.base.sha }}
       run: |
-        set -euo pipefail
+        set -exuo pipefail
         git show "${BASE_SHA}:Cargo.lock" > /tmp/base-Cargo.lock
         python3 .github/ci-scripts/rust_lockfile_diff.py \
           --base ${BASE_SHA} \
@@ -1536,7 +1535,8 @@ jobs:
           --max-new 25 \
           --markdown-summary | tee rust_dep_report.md >> "$GITHUB_STEP_SUMMARY"
     - name: Post sticky PR comment
-      if: github.event.pull_request.head.repo.full_name == github.repository
+      # Even if last step fails, post the comment
+      if: (failure() || success()) && github.event.pull_request.head.repo.full_name == github.repository
       uses: marocchino/sticky-pull-request-comment@v3
       with:
         header: rust-dependency-budget
@@ -1565,7 +1565,7 @@ jobs:
         sudo rm -rf /opt/hostedtoolcache/go || true
         sudo rm -rf /opt/hostedtoolcache/Ruby || true
         sudo rm -rf /opt/hostedtoolcache/node || true
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
       with:
         fetch-depth: 0
     - uses: moonrepo/setup-rust@v1
@@ -1610,7 +1610,7 @@ jobs:
     - unit-test
     - rust-tests-platform
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - uses: actions/download-artifact@v8
       with:
         pattern: coverage-reports*
@@ -1618,7 +1618,7 @@ jobs:
         path: ./report-output
     - name: Upload coverage reports to Codecov with GitHub Action
       if: ${{ env.CODECOV_TOKEN }}
-      uses: codecov/codecov-action@v6
+      uses: codecov/codecov-action@v7
       with:
         directory: ./report-output
       env:
@@ -1661,7 +1661,7 @@ jobs:
         - os: Windows
           on-main: false
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
       with:
         fetch-depth: 0
     - uses: moonrepo/setup-rust@v1
@@ -1761,7 +1761,7 @@ jobs:
     env:
       python-version: "3.10"
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
       with:
         fetch-depth: 0
     - name: Setup Python and uv
@@ -1785,7 +1785,7 @@ jobs:
         save-if: ${{ github.ref == 'refs/heads/main' }}
     - uses: ./.github/actions/restore-mtime
 
-    - uses: actions/cache@v5
+    - uses: actions/cache@v6
       id: pre-commit-cache
       with:
         path: ~/.cache/pre-commit/

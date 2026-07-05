@@ -6,8 +6,8 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AzureConfig, CosConfig, GCSConfig, HTTPConfig, S3Config, gravitino::GravitinoConfig,
-    huggingface::HuggingFaceConfig, tos::TosConfig, unity::UnityConfig,
+    AzureConfig, CosConfig, GCSConfig, GooseFSConfig, HTTPConfig, S3Config,
+    gravitino::GravitinoConfig, huggingface::HuggingFaceConfig, tos::TosConfig, unity::UnityConfig,
 };
 #[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct IOConfig {
@@ -22,6 +22,7 @@ pub struct IOConfig {
     pub disable_suffix_range: bool,
     pub tos: TosConfig,
     pub cos: CosConfig,
+    pub goosefs: GooseFSConfig,
     /// Additional backends configured via OpenDAL.
     /// Keys are scheme names (e.g. "oss", "cos"), values are key-value config maps.
     pub opendal_backends: BTreeMap<String, BTreeMap<String, String>>,
@@ -74,6 +75,17 @@ impl IOConfig {
             "COS config = {{ {} }}",
             self.cos.multiline_display().join(", ")
         ));
+        // Only show the GooseFS config line when at least one field has a
+        // non-default value, mirroring how `auth_username` and friends are
+        // gated inside `GooseFSConfig::multiline_display`. This keeps the
+        // top-level IOConfig dump clean for users who never configure GooseFS.
+        let goosefs_lines = self.goosefs.multiline_display();
+        if !goosefs_lines.is_empty() {
+            res.push(format!(
+                "GooseFS config = {{ {} }}",
+                goosefs_lines.join(", ")
+            ));
+        }
         if !self.opendal_backends.is_empty() {
             res.push(format!("OpenDAL backends = {:?}", self.opendal_backends));
         }
@@ -87,7 +99,7 @@ impl IOConfig {
     pub fn validate_protocol_aliases(&self) -> std::result::Result<(), String> {
         const BUILTIN_SCHEMES: &[&str] = &[
             "file", "http", "https", "s3", "s3a", "s3n", "az", "abfs", "abfss", "gcs", "gs", "hf",
-            "tos", "cos", "cosn", "vol+dbfs", "dbfs", "gvfs",
+            "tos", "cos", "cosn", "goosefs", "vol+dbfs", "dbfs", "gvfs",
         ];
         for key in self.protocol_aliases.keys() {
             if BUILTIN_SCHEMES.contains(&key.as_str()) {
@@ -114,12 +126,14 @@ impl Display for IOConfig {
 {}
 {}
 {}
+{}
 {}",
             self.s3,
             self.azure,
             self.gcs,
             self.tos,
             self.cos,
+            self.goosefs,
             self.http,
             self.unity,
             self.gravitino,
