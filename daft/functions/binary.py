@@ -8,7 +8,11 @@ from daft import DataType
 from daft.expressions import Expression
 
 if TYPE_CHECKING:
+    from typing import Literal
+
     from daft.expressions.expressions import COMPRESSION_CODEC, ENCODING_CHARSET
+
+    TO_BINARY_FORMAT = Literal["hex", "utf-8", "utf8", "base64"]
 
 
 def encode(expr: Expression, charset: ENCODING_CHARSET) -> Expression:
@@ -87,6 +91,49 @@ def try_decode(bytes: Expression, charset: ENCODING_CHARSET) -> Expression:
     # TODO: Replace with a try_cast to string if the charset is "utf-8" or "utf8"
     # We currently don't have a try_cast
     return Expression._call_builtin_scalar_fn("try_decode", bytes, codec=charset)
+
+
+def try_to_binary(expr: Expression, format: TO_BINARY_FORMAT = "hex") -> Expression:
+    """Convert string values to binary using the specified format, producing null for invalid inputs.
+
+    Args:
+        expr (String Expression): The expression to convert.
+        format (str): The conversion format (hex, utf-8, base64). Defaults to "hex".
+
+    Returns:
+        Expression (Binary Expression): A binary expression, with null for values that could not be converted.
+
+    Note:
+        This follows the semantics of Spark's `try_to_binary`:
+
+        - "hex": parses each value as a hexadecimal string.
+        - "utf-8" or "utf8": returns the value's raw UTF-8 bytes; never fails for string input.
+        - "base64": parses each value as standard base64.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import try_to_binary
+        >>> df = daft.from_pydict({"text": ["616263", "zz"]})
+        >>> df.select(try_to_binary(df["text"], "hex")).show()
+        ╭────────╮
+        │ text   │
+        │ ---    │
+        │ Binary │
+        ╞════════╡
+        │ b"abc" │
+        ├╌╌╌╌╌╌╌╌┤
+        │ None   │
+        ╰────────╯
+        <BLANKLINE>
+        (Showing first 2 of 2 rows)
+    """
+    fmt = format.lower()
+    if fmt in ("utf-8", "utf8"):
+        return Expression._call_builtin_scalar_fn("try_encode", expr, codec="utf-8")
+    elif fmt in ("hex", "base64"):
+        return Expression._call_builtin_scalar_fn("try_decode", expr.cast(DataType.binary()), codec=fmt)
+    else:
+        raise ValueError(f"Unsupported try_to_binary format: {format!r}; expected 'hex', 'utf-8', 'utf8', or 'base64'")
 
 
 def compress(expr: Expression, codec: COMPRESSION_CODEC) -> Expression:
