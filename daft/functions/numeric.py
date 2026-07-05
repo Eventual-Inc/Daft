@@ -178,7 +178,7 @@ def log10(expr: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("log10", expr)
 
 
-def log(expr: Expression, base: int | float = math.e) -> Expression:
+def log(expr: Expression, base: float = math.e) -> Expression:
     """The elementwise log with given base, of a numeric expression.
 
     Args:
@@ -243,7 +243,7 @@ def expm1(expr: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("expm1", expr)
 
 
-def between(expr: Expression, lower: Expression | int | float, upper: Expression | int | float) -> Expression:
+def between(expr: Expression, lower: Expression | float, upper: Expression | float) -> Expression:
     """Checks if values in the Expression are between lower and upper, inclusive.
 
     Args:
@@ -304,6 +304,25 @@ def conv(expr: Expression, from_base: int, to_base: int) -> Expression:
     magnitude exceeds 2^63.
     """
     return Expression._call_builtin_scalar_fn("conv", expr, from_base, to_base)
+
+
+def hex(expr: Expression) -> Expression:
+    """Returns the uppercase hexadecimal string representation of an integer, string, or binary value.
+
+    Integers are promoted to 64-bit before conversion; negatives use 64-bit
+    two's complement (``hex(-1)`` returns 16 Fs). Strings and binary values
+    are converted byte by byte (``hex("abc") == "616263"``).
+    """
+    return Expression._call_builtin_scalar_fn("hex", expr)
+
+
+def unhex(expr: Expression) -> Expression:
+    r"""Converts a hexadecimal string to binary.
+
+    Odd-length inputs are padded with a leading zero (``unhex("F")`` returns
+    ``b"\x0f"``). Returns NULL for inputs containing non-hexadecimal characters.
+    """
+    return Expression._call_builtin_scalar_fn("unhex", expr)
 
 
 def is_nan(expr: Expression) -> Expression:

@@ -1062,6 +1062,121 @@ def test_conv_bad_dtype() -> None:
         table.eval_expression_list([conv(col("a"), 10, 16)])
 
 
+def test_hex_int() -> None:
+    from daft.functions import hex
+
+    table = MicroPartition.from_pydict({"a": [0, 1, 10, 255, 1024, None]})
+    result = table.eval_expression_list([hex(col("a")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == ["0", "1", "A", "FF", "400", None]
+
+
+def test_hex_negative_int() -> None:
+    from daft.functions import hex
+
+    table = MicroPartition.from_pydict({"a": pa.array([-1, -2, -(2**63)], type=pa.int64())})
+    result = table.eval_expression_list([hex(col("a")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == ["F" * 16, "F" * 15 + "E", "8" + "0" * 15]
+
+
+def test_hex_signed_small_width() -> None:
+    from daft.functions import hex
+
+    table = MicroPartition.from_pydict({"a": pa.array([-1, -128], type=pa.int8())})
+    result = table.eval_expression_list([hex(col("a")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == ["F" * 16, "F" * 14 + "80"]
+
+
+def test_hex_uint64_max() -> None:
+    from daft.functions import hex
+
+    table = MicroPartition.from_pydict({"a": pa.array([0, 2**63, 2**64 - 1], type=pa.uint64())})
+    result = table.eval_expression_list([hex(col("a")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == ["0", "8" + "0" * 15, "F" * 16]
+
+
+def test_hex_string() -> None:
+    from daft.functions import hex
+
+    table = MicroPartition.from_pydict({"a": ["abc", "Spark SQL", "", None]})
+    result = table.eval_expression_list([hex(col("a")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == ["616263", "537061726B2053514C", "", None]
+
+
+def test_hex_binary() -> None:
+    from daft.functions import hex
+
+    table = MicroPartition.from_pydict({"a": pa.array([b"\x00\xff", b"abc", b"", None], type=pa.binary())})
+    result = table.eval_expression_list([hex(col("a")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == ["00FF", "616263", "", None]
+
+
+def test_hex_bad_dtype() -> None:
+    from daft.functions import hex
+
+    table = MicroPartition.from_pydict({"a": [1.0, 2.5]})
+    with pytest.raises(ValueError, match="Expected input to hex to be integer, string, or binary"):
+        table.eval_expression_list([hex(col("a"))])
+
+
+def test_unhex() -> None:
+    from daft.functions import unhex
+
+    table = MicroPartition.from_pydict({"a": ["616263", "00FF", "", None]})
+    result = table.eval_expression_list([unhex(col("a")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == [b"abc", b"\x00\xff", b"", None]
+
+
+def test_unhex_case_insensitive() -> None:
+    from daft.functions import unhex
+
+    table = MicroPartition.from_pydict({"a": ["00ff", "00FF", "00fF"]})
+    result = table.eval_expression_list([unhex(col("a")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == [b"\x00\xff"] * 3
+
+
+def test_unhex_odd_length() -> None:
+    from daft.functions import unhex
+
+    table = MicroPartition.from_pydict({"a": ["F", "123"]})
+    result = table.eval_expression_list([unhex(col("a")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == [b"\x0f", b"\x01\x23"]
+
+
+def test_unhex_invalid_chars() -> None:
+    from daft.functions import unhex
+
+    table = MicroPartition.from_pydict({"a": ["zz", "6z", "0x61", " 61"]})
+    result = table.eval_expression_list([unhex(col("a")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == [None, None, None, None]
+
+
+def test_unhex_bad_dtype() -> None:
+    from daft.functions import unhex
+
+    table = MicroPartition.from_pydict({"a": [1, 2]})
+    with pytest.raises(ValueError, match="Expected input to unhex to be string"):
+        table.eval_expression_list([unhex(col("a"))])
+
+
+def test_hex_unhex_roundtrip() -> None:
+    from daft.functions import hex, unhex
+
+    table = MicroPartition.from_pydict({"a": pa.array([b"\x00\x01\xfe\xff", b"daft", b""], type=pa.binary())})
+    result = table.eval_expression_list([unhex(hex(col("a"))).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == [b"\x00\x01\xfe\xff", b"daft", b""]
+
+
 def test_hypot() -> None:
     from daft.functions import hypot
 
