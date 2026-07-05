@@ -4638,6 +4638,8 @@ dependencies = [
  "libc",
  "log",
 ]
+
+[[package]]
 name = "heapify"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

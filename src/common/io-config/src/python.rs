@@ -290,7 +290,7 @@ impl IOConfig {
         tos: Option<TosConfig>,
         gravitino: Option<GravitinoConfig>,
         cos: Option<CosConfig>,
-        goosefs: Option<GoosefsConfig>,
+        goosefs: Option<GooseFSConfig>,
         hdfs: Option<HdfsConfig>,
         opendal_backends: Option<HashMap<String, HashMap<String, String>>>,
         protocol_aliases: Option<HashMap<String, String>>,
@@ -354,7 +354,7 @@ impl IOConfig {
         tos: Option<TosConfig>,
         gravitino: Option<GravitinoConfig>,
         cos: Option<CosConfig>,
-        goosefs: Option<GoosefsConfig>,
+        goosefs: Option<GooseFSConfig>,
         hdfs: Option<HdfsConfig>,
         opendal_backends: Option<HashMap<String, HashMap<String, String>>>,
         protocol_aliases: Option<HashMap<String, String>>,
@@ -2155,7 +2155,7 @@ impl HdfsConfig {
 }
 
 #[pymethods]
-impl GoosefsConfig {
+impl GooseFSConfig {
     #[allow(clippy::too_many_arguments)]
     #[new]
     #[pyo3(signature = (
@@ -2415,7 +2415,7 @@ impl_bincode_py_state_serialization!(HuggingFaceConfig);
 impl_bincode_py_state_serialization!(TosConfig);
 impl_bincode_py_state_serialization!(GravitinoConfig);
 impl_bincode_py_state_serialization!(CosConfig);
-impl_bincode_py_state_serialization!(GoosefsConfig);
+impl_bincode_py_state_serialization!(GooseFSConfig);
 impl_bincode_py_state_serialization!(HdfsConfig);
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
@@ -2429,7 +2429,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<HuggingFaceConfig>()?;
     parent.add_class::<GravitinoConfig>()?;
     parent.add_class::<CosConfig>()?;
-    parent.add_class::<GoosefsConfig>()?;
+    parent.add_class::<GooseFSConfig>()?;
     parent.add_class::<HdfsConfig>()?;
     parent.add_class::<IOConfig>()?;
     Ok(())

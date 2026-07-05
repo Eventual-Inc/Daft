@@ -6,7 +6,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AzureConfig, CosConfig, GCSConfig, GoosefsConfig, HTTPConfig, HdfsConfig, S3Config,
+    AzureConfig, CosConfig, GCSConfig, GooseFSConfig, HTTPConfig, HdfsConfig, S3Config,
     gravitino::GravitinoConfig, huggingface::HuggingFaceConfig, tos::TosConfig, unity::UnityConfig,
 };
 #[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -22,7 +22,7 @@ pub struct IOConfig {
     pub disable_suffix_range: bool,
     pub tos: TosConfig,
     pub cos: CosConfig,
-    pub goosefs: GoosefsConfig,
+    pub goosefs: GooseFSConfig,
     pub hdfs: HdfsConfig,
     /// Additional backends configured via OpenDAL.
     /// Keys are scheme names (e.g. "oss", "cos"), values are key-value config maps.
