@@ -43,11 +43,9 @@ pub mod utils;
 use std::{borrow::Cow, collections::HashMap, hash::Hash, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
-#[cfg(feature = "hdfs")]
-pub use common_io_config::HdfsConfig;
 pub use common_io_config::{
-    AzureConfig, CosConfig, GCSConfig, GooseFSConfig, GravitinoConfig, HTTPConfig, IOConfig,
-    S3Config, TosConfig,
+    AzureConfig, CosConfig, GCSConfig, GooseFSConfig, GravitinoConfig, HTTPConfig, HdfsConfig,
+    IOConfig, S3Config, TosConfig,
 };
 use futures::{FutureExt, stream::BoxStream};
 use object_io::StreamingRetryParams;
