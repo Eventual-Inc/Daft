@@ -2,9 +2,7 @@
 
 A small real-workload demo of the batched decode: find the brightest frame of
 one episode's camera. Every frame of the episode is decoded, reduced to a
-mean-luminance float by a second batch UDF, and the max is picked. Frames are
-discarded right after they are measured, so memory stays flat no matter how
-many are decoded.
+mean-luminance float by a second batch UDF, and the max is picked.
 
 ## Run
 
