@@ -14,10 +14,11 @@ on:
       - main
 
 permissions:
-  contents: write
+  contents: read
 
 env:
-  PYTHON_VERSION: "python3.11"
+  PYTHON_VERSION: "3.11"
+  NODE_VERSION: "22"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -25,7 +26,6 @@ concurrency:
 
 jobs:
   build:
-    if: ${{ github.repository_owner == 'anshulgoel27' }}
     name: Build wheel (${{ matrix.platform.name }})
     runs-on: ${{ matrix.platform.runner }}
     defaults:
@@ -37,19 +37,40 @@ jobs:
         platform:
           - name: linux
             runner: ubuntu-latest
+            maturin_args: --target aarch64-unknown-linux-gnu --compatibility manylinux_2_28 --zig
           - name: macos
-            runner: macos-latest
+            runner: macos-15
+            maturin_args: ""
 
     steps:
       - name: Checkout repository
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          git init .
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
-          git checkout --detach FETCH_HEAD
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: src/daft-dashboard/frontend/package-lock.json
+
+      - name: Cache Cargo registry and build artifacts
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-${{ matrix.platform.name }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.platform.name }}-cargo-
 
       - name: Bootstrap build toolchain (fast path)
         run: |
@@ -67,22 +88,13 @@ jobs:
             echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           fi
 
-      - name: Ensure Node.js is available
+      - name: Verify toolchain versions
         run: |
-          if command -v node > /dev/null 2>&1; then
-            node --version
-            npm --version
-          else
-            export NVM_DIR="$HOME/.nvm"
-            curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
-            # shellcheck disable=SC1090
-            source "$NVM_DIR/nvm.sh"
-            nvm install 22
-            nvm use 22
-            echo "$NVM_DIR/versions/node/$(nvm version 22)/bin" >> "$GITHUB_PATH"
-            node --version
-            npm --version
-          fi
+          set -euo pipefail
+          python --version
+          node --version
+          npm --version
+          rustup --version
 
       - name: Build dashboard assets
         working-directory: src/daft-dashboard/frontend
@@ -90,56 +102,55 @@ jobs:
           npm ci --no-audit --no-fund
           npm run build
 
+      - name: Install Zig for Linux cross-build
+        if: matrix.platform.name == 'linux'
+        run: |
+          set -euo pipefail
+          ZIG_VERSION="0.13.0"
+          ZIG_DIR="$HOME/.local/zig-${ZIG_VERSION}"
+          mkdir -p "$HOME/.local"
+          curl --retry 5 --retry-delay 2 --retry-connrefused -fsSL \
+            "https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz" \
+            -o /tmp/zig.tar.xz
+          tar -xJf /tmp/zig.tar.xz -C "$HOME/.local"
+          mv "$HOME/.local/zig-linux-x86_64-${ZIG_VERSION}" "$ZIG_DIR"
+          echo "$ZIG_DIR" >> "$GITHUB_PATH"
+          "$ZIG_DIR/zig" version
+
+      - name: Install Rust target for Linux cross-build
+        if: matrix.platform.name == 'linux'
+        run: |
+          set -euo pipefail
+          rustup target add aarch64-unknown-linux-gnu
+          rustup target list --installed | grep -E '^aarch64-unknown-linux-gnu$'
+
       - name: Build wheel (single command)
         # Keep this path simple and deterministic to reduce CI overhead and debugging complexity.
         run: |
           set -euo pipefail
-          PY_BIN="$(command -v python3 || command -v python)"
+          PY_BIN="$(command -v python)"
           "$PY_BIN" --version
-          uvx --from maturin==1.13.3 maturin build --release --out dist -i "$PY_BIN"
+          uvx --from maturin==1.13.3 maturin build --release --out dist -i "$PY_BIN" ${{ matrix.platform.maturin_args }}
         env:
           GITHUB_ACTIONS: "true"
 
-      - name: Upload wheels as draft release assets
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Verify wheel outputs
         run: |
           set -euo pipefail
-
-          RUN_TAG="wheel-build-${GITHUB_RUN_ID}"
-          API="${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/releases"
-
-          release_json=$(curl -sS -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" "${API}/tags/${RUN_TAG}" || true)
-          release_id=$(echo "$release_json" | python -c 'import json,sys; d=json.load(sys.stdin); print(d.get("id") or "")')
-
-          if [[ -z "$release_id" ]]; then
-            payload="{\"tag_name\":\"${RUN_TAG}\",\"name\":\"Wheel build ${GITHUB_RUN_ID}\",\"draft\":true,\"prerelease\":true}"
-            release_json=$(curl -sS -X POST -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" "${API}" -d "$payload")
-            release_id=$(echo "$release_json" | python -c 'import json,sys; d=json.load(sys.stdin); print(d.get("id") or "")')
-          fi
-
-          if [[ -z "$release_id" ]]; then
-            release_json=$(curl -sS -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" "${API}/tags/${RUN_TAG}")
-          fi
-
-          upload_url=$(echo "$release_json" | python -c 'import json,sys; d=json.load(sys.stdin); print(d.get("upload_url", "").split("{")[0])')
-          html_url=$(echo "$release_json" | python -c 'import json,sys; d=json.load(sys.stdin); print(d.get("html_url", ""))')
-
-          found=0
-          for wheel in dist/*.whl; do
-            [[ -f "$wheel" ]] || continue
-            found=1
-            name=$(basename "$wheel")
-            curl -sS -X POST \
-              -H "Authorization: Bearer ${GH_TOKEN}" \
-              -H "Content-Type: application/octet-stream" \
-              --data-binary @"$wheel" \
-              "${upload_url}?name=${name}" > /dev/null
-          done
-
-          if [[ "$found" -eq 0 ]]; then
+          shopt -s nullglob
+          wheels=(dist/*.whl)
+          if [[ ${#wheels[@]} -eq 0 ]]; then
             echo "No wheel files found in dist" >&2
             exit 1
           fi
 
-          echo "Wheels uploaded to: ${html_url}"
+          ls -lh dist/*.whl
+          shasum -a 256 dist/*.whl
+
+      - name: Upload wheels as pipeline artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: wheels-${{ matrix.platform.name }}-${{ github.run_id }}
+          path: dist/*.whl
+          if-no-files-found: error
+          retention-days: 14
