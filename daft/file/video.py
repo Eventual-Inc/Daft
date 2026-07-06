@@ -29,6 +29,10 @@ class VideoFile(File):
     def __init__(self, url: str, io_config: IOConfig | None = None) -> None:
         if not av.module_available():
             raise ImportError("The 'av' module is required to create video files.")
+        if not pil_image.module_available():
+            raise ImportError(
+                "The 'pillow' module is required to create video files. Install it with `pip install daft[video]`."
+            )
         super().__init__(url, io_config, MediaType.video())
 
         if not self.is_video():
