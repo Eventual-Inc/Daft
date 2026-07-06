@@ -1,23 +1,20 @@
 # Validation on public datasets
 
-The batched decode was validated against the original per-row decode on public
-LeRobot v3 datasets from Hugging Face, chosen from a survey of LeRobot-tagged
-datasets to cover the codec, fps, resolution, and camera-count diversity found
-in the wild. Measured 2026-07-01, remote reads over `hf://`, single machine.
-Re-measured 2026-07-03 on the PR's final revision: pixel-identical again on all
-six datasets, comparable timings (original-side wall times vary with network).
+The batched decode was validated against the original per-row decode on six
+public LeRobot v3 datasets from Hugging Face, chosen to cover the codec, fps,
+resolution, and camera-count diversity found in the wild. Remote reads over
+`hf://`, single machine; measured 2026-07-01 and re-checked on the PR's final
+revision.
 
 ## Method
 
 [`real_datasets.py`](real_datasets.py) decodes the first 16 frames of episode 0
-(every camera column) with whichever reader is installed, in a fresh process,
-and writes per-frame SHA-256 hashes (raw RGB pixels) plus wall time for the
-full `lerobot.read(..., load_video_frames=True)` pipeline. It is run once per
-reader revision - `daft/datasets/lerobot.py` at the PR's merge-base ("original")
-vs this branch ("batched"); the fix is Python-only, so the underlying build is
-identical - and the two outputs are compared hash-for-hash with `--compare`.
-[`run_real_datasets.sh`](run_real_datasets.sh) drives the whole A/B: it swaps
-the reader file between revisions, runs both, and compares.
+(every camera column) in a fresh process, writing per-frame SHA-256 hashes (raw
+RGB pixels) plus wall time for the full `lerobot.read(..., load_video_frames=True)`
+pipeline. [`run_real_datasets.sh`](run_real_datasets.sh) runs it once per reader
+revision - `daft/datasets/lerobot.py` at the PR's merge-base vs this branch, on
+the same build since the fix is Python-only - and compares the two outputs
+hash-for-hash.
 
 ## Results: 16 frames, all cameras
 
@@ -32,11 +29,7 @@ the reader file between revisions, runs both, and compares.
 | Jackie1/bridge_data_v2_convert | av1 | 256x256 | 5 | 1 | 132s | 33.5s | identical |
 | DAVIAN-Robotics/robocasa-MG_3000 | av1 | 128x128 | 20 | 3 | 366s | 35.9s | identical |
 
-Every frame pixel-identical across all six datasets; 4-13x faster. The 5 fps
-dataset exercises the tolerance logic at its loosest (tolerance is half a frame
-period, so 0.1s there vs 0.017s at 30 fps). Multi-camera datasets hit the
-per-frame cost hardest with the original reader, since every camera multiplies
-the per-frame opens.
+Every frame pixel-identical across all six datasets; 4-13x faster.
 
 ## Results: scaling up (pepijn223/egodex-test, av1 1920x1080 @30)
 
@@ -49,9 +42,7 @@ the per-frame opens.
 | original | 632 (full dataset) | 1750.7s | 2.77s |
 | batched | 632 (full dataset) | 115.8s | 0.18s |
 
-- Outputs are hash-identical between readers at both scales - including every
-  single frame of the full 632-frame dataset.
-- At scale the batched cost grows with the number of batches rather than
-  frames (each 16-row batch opens its shard once), so it is linear with a much
-  smaller slope - ~0.2s/frame here vs ~3s/frame for the original. Reading the
-  full dataset drops from 29 minutes to under 2.
+Hash-identical between readers at both scales, including every frame of the
+full 632-frame dataset. Batched cost grows with batches rather than frames
+(each 16-row batch opens its shard once) - ~0.2s/frame vs ~3s/frame - so the
+full dataset drops from 29 minutes to under 2.
