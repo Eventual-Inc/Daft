@@ -29,8 +29,7 @@ all three runs found the same brightest frame (`frame_index=74`, t=2.467s,
 mean brightness 124.54).
 
 The original-reader run used the merge-base `daft/datasets/lerobot.py` swapped
-into a copy of the package on `PYTHONPATH` (the fix is Python-only), same
-machine, runs not concurrent.
+into a copy of the package on `PYTHONPATH`, same machine, runs not concurrent.
 
 ## Distributed runner observations (local ray, 14-core M-series, 36 GB)
 
