@@ -74,15 +74,12 @@ fn hex_impl(s: Series) -> DaftResult<Series> {
         }
         DataType::Utf8 => {
             let arr = s.utf8()?;
-            Utf8Array::from_iter(
-                arr.name(),
-                arr.iter().map(|v| v.map(|s| bytes_to_hex(s.as_bytes()))),
-            )
+            Utf8Array::from_iter(arr.name(), arr.iter().map(|v| v.map(hex::encode_upper)))
         }
         DataType::Binary | DataType::FixedSizeBinary(_) => {
             let casted = s.cast(&DataType::Binary)?;
             let arr = casted.binary()?;
-            Utf8Array::from_iter(arr.name(), arr.iter().map(|v| v.map(bytes_to_hex)))
+            Utf8Array::from_iter(arr.name(), arr.iter().map(|v| v.map(hex::encode_upper)))
         }
         dt => {
             return Err(DaftError::TypeError(format!(
@@ -92,15 +89,6 @@ fn hex_impl(s: Series) -> DaftResult<Series> {
         }
     };
     Ok(result.into_series())
-}
-
-fn bytes_to_hex(bytes: &[u8]) -> String {
-    use std::fmt::Write;
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for b in bytes {
-        write!(out, "{:02X}", b).unwrap();
-    }
-    out
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]

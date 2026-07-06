@@ -2880,6 +2880,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-hash",
+ "hex",
  "num-traits",
  "pyo3",
  "rand 0.9.2",
