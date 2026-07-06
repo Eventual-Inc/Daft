@@ -8,12 +8,12 @@ resolution, and camera-count diversity found in the wild. Remote reads over
 ## Method
 
 [`real_datasets.py`](real_datasets.py) decodes the first 16 frames of episode 0
-(every camera column) in a fresh process, writing per-frame SHA-256 hashes (raw
-RGB pixels) plus wall time for the full `lerobot.read(..., load_video_frames=True)`
-pipeline. [`run_real_datasets.sh`](run_real_datasets.sh) runs it once per reader
-revision - `daft/datasets/lerobot.py` at the PR's merge-base vs this branch, on
-the same build since the fix is Python-only - and compares the two outputs
-hash-for-hash.
+(every camera column) in a fresh process, timing the full
+`lerobot.read(..., load_video_frames=True)` pipeline.
+[`run_real_datasets.sh`](run_real_datasets.sh) runs it once per reader revision -
+`daft/datasets/lerobot.py` at the PR's merge-base vs this branch, on the same
+build since the fix is Python-only - and checks that the decoded frames are
+identical between the two.
 
 ## Results: 16 frames, all cameras
 
@@ -41,7 +41,7 @@ Every frame pixel-identical across all six datasets; 4-13x faster.
 | original | 632 (full dataset) | 1750.7s | 2.77s |
 | batched | 632 (full dataset) | 115.8s | 0.18s |
 
-Hash-identical between readers at both scales, including every frame of the
+Outputs identical between readers at both scales, including every frame of the
 full 632-frame dataset. Batched cost grows with batches rather than frames
 (each 16-row batch opens its shard once) - ~0.2s/frame vs ~3s/frame - so the
 full dataset drops from 29 minutes to under 2.
