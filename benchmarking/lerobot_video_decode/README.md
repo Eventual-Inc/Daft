@@ -42,39 +42,8 @@ comparison. See [real_datasets.md](real_datasets.md).
 
 ![original vs batched on public datasets](charts/chart_real_datasets.png)
 
-## Tradeoffs
-
-The batched decode does one forward pass from the earliest to the latest timestamp
-in a batch, so its cost depends on how spread out those timestamps are:
-
-- **Dense consecutive frames (the common case - reading full episodes):** optimal.
-  One open, one pass, no redundant decoding - the charts above.
-- **Sparse timestamps in a batch:** the pass decodes through small gaps too (gaps
-  over ~10s are seeked over instead), but on a remote shard one fewer open is worth
-  more than the extra decoding ([`sparse.py`](sparse.py), frames spread across the
-  whole shard):
-
-  ![sparse](charts/chart_sparse.png)
-
-  | frames | original | batched |
-  | --- | --- | --- |
-  | 2 | 2.1s | 2.1s |
-  | 8 | 7.7s | 1.7s |
-  | 16 | 15.5s | 1.8s |
-
-  Batched stays flat (one open) while original grows one open per frame.
-
-- **Row order:** the win assumes a shard's rows land in the same batch. The reader
-  emits rows sorted by `(episode_index, frame_index)`, so they do - opens stay at one
-  per shard as the dataset grows ([`ordering.py`](ordering.py)). Shuffled rows cost
-  more opens, but still stay below the original's one-per-frame.
-
-  ![ordering](charts/chart_ordering.png)
-
 ## Running
 
 ```bash
 python sweep.py --label batched      # rows 1..10 sweep + chart
-python sparse.py                     # sparse-frames worst case, remote
-python ordering.py                   # opens vs dataset size: ordered vs shuffled rows
 ```
