@@ -24,10 +24,23 @@ def test_try_to_binary_utf8():
     assert result["v"] == [b"abc", b"", "café 🔥".encode(), None]
 
 
-@pytest.mark.parametrize("fmt", ["utf-8", "utf8", "UTF-8", "UTF8", "HEX", "Base64"])
-def test_try_to_binary_format_case_insensitive(fmt):
+@pytest.mark.parametrize(
+    "fmt, expected",
+    [
+        ("utf-8", [b"61", b"aGk=", b"hi"]),
+        ("utf8", [b"61", b"aGk=", b"hi"]),
+        ("UTF-8", [b"61", b"aGk=", b"hi"]),
+        ("UTF8", [b"61", b"aGk=", b"hi"]),
+        ("hex", [b"a", None, None]),
+        ("HEX", [b"a", None, None]),
+        ("base64", [None, b"hi", None]),
+        ("Base64", [None, b"hi", None]),
+    ],
+)
+def test_try_to_binary_format_case_insensitive(fmt, expected):
     df = daft.from_pydict({"v": ["61", "aGk=", "hi"]})
-    df.select(try_to_binary(df["v"], fmt)).to_pydict()
+    result = df.select(try_to_binary(df["v"], fmt)).to_pydict()
+    assert result["v"] == expected
 
 
 def test_try_to_binary_base64():
