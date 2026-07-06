@@ -11,9 +11,8 @@ resolution, and camera-count diversity found in the wild. Remote reads over
 (every camera column) in a fresh process, timing the full
 `lerobot.read(..., load_video_frames=True)` pipeline.
 [`run_real_datasets.sh`](run_real_datasets.sh) runs it once per reader revision -
-`daft/datasets/lerobot.py` at the PR's merge-base vs this branch, on the same
-build since the fix is Python-only - and checks that the decoded frames are
-identical between the two.
+`daft/datasets/lerobot.py` at the PR's merge-base vs this branch - and checks
+that the decoded frames are identical between the two.
 
 ## Results: 16 frames, all cameras
 
