@@ -5,6 +5,7 @@ mod azure;
 mod config;
 mod cos;
 mod gcs;
+mod goosefs;
 mod gravitino;
 mod http;
 mod huggingface;
@@ -25,6 +26,7 @@ pub use crate::{
     config::IOConfig,
     cos::CosConfig,
     gcs::GCSConfig,
+    goosefs::GooseFSConfig,
     gravitino::GravitinoConfig,
     http::HTTPConfig,
     huggingface::HuggingFaceConfig,

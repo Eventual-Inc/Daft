@@ -66,6 +66,8 @@ dev = [
   "ipdb==0.13.13",
   "maturin==1.13.3",
   "pre-commit==4.6.0",
+  "ruff==0.15.14",
+  "mypy==2.1.0",
   "docker==7.1.0",
   # Pinned aiohttp due to Ray connection issue in aiohttp==3.12.6
   "aiohttp==3.13.5",
@@ -177,12 +179,6 @@ docs = [
   "griffe==2.0.2",
   "mkdocs-literate-nav==0.6.3",
   "Jinja2==3.1.6"
-]
-lint = [
-  "ruff==0.15.14",
-  "black==26.5.1",
-  "isort==8.0.1",
-  "mypy==2.1.0"
 ]
 
 [tool]
