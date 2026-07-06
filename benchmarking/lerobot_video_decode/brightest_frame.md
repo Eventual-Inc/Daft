@@ -58,11 +58,6 @@ roughly 64 x ~80 MB = ~5 GB over baseline. Untested beyond a single machine:
 multi-node object store behavior, and workloads that materialize the decoded
 frames instead of reducing them.
 
-| run (batched reader, ray runner) | frames | wall | per frame |
-| --- | --- | --- | --- |
-| 1 episode, remote hf:// | 102 | 71.3s | 0.70s |
-| 10 episodes, local mirror | 1001 | 12.1s | 0.012s |
-
 ## Hugging Face throttling (found while running the above)
 
 Reading shards directly from `hf://` at benchmark rates trips HF rate limits:
