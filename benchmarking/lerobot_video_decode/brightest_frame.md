@@ -14,7 +14,7 @@ python brightest_frame.py [dataset] [episode] [camera]
 
 Dataset: 23,743 episodes / 40.8M frames, 3 AV1 cameras (av1, yuv420p,
 keyframe interval 2). Episode 2534 is ~100 frames (dataset median is 1,140).
-Remote reads over `hf://`, single machine, native runner; measured 2026-07-06.
+Remote reads over `hf://`, single machine, native runner.
 
 ![brightest frame: old vs new vs ray](charts/chart_brightest_frame.png)
 
