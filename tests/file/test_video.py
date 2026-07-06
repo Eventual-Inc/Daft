@@ -6,6 +6,7 @@ pytest.importorskip("av")
 
 import daft
 from daft import dependencies
+from daft.file.file import BUFFER_METADATA
 from daft.schema import Field
 
 
@@ -62,6 +63,23 @@ def test_get_metadata(sample_video_path):
     }
 
     assert df.to_pydict() == expected
+
+
+def test_video_metadata_uses_configured_buffer(sample_video_path, monkeypatch):
+    file = daft.VideoFile(sample_video_path)
+    original_open = file.open
+    seen_buffer_sizes: list[int | None] = []
+
+    def track_open(buffer_size=None):
+        seen_buffer_sizes.append(buffer_size)
+        return original_open(buffer_size=buffer_size)
+
+    monkeypatch.setattr(file, "open", track_open)
+
+    assert file.metadata()["width"] == 192
+    assert file.metadata(buffer_size=None)["width"] == 192
+
+    assert seen_buffer_sizes == [BUFFER_METADATA, None]
 
 
 def test_keyframes(sample_video_path):

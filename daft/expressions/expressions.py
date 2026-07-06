@@ -3096,6 +3096,36 @@ class Expression:
 
         return decode_image_file(self)
 
+    def hdf5_keys(self, group: str = "/") -> Expression:
+        """List member names directly under an HDF5 group.
+
+        Tip: See Also
+            [`daft.functions.hdf5_keys`](https://docs.daft.ai/en/stable/api/functions/hdf5_keys/)
+        """
+        from daft.functions import hdf5_keys
+
+        return hdf5_keys(self, group=group)
+
+    def hdf5_metadata(self, group: str = "/") -> Expression:
+        """Collect metadata for groups and datasets under an HDF5 group.
+
+        Tip: See Also
+            [`daft.functions.hdf5_metadata`](https://docs.daft.ai/en/stable/api/functions/hdf5_metadata/)
+        """
+        from daft.functions import hdf5_metadata
+
+        return hdf5_metadata(self, group=group)
+
+    def hdf5_attrs(self, h5path: str = "/") -> Expression:
+        """Read HDF5 attributes for a group or dataset.
+
+        Tip: See Also
+            [`daft.functions.hdf5_attrs`](https://docs.daft.ai/en/stable/api/functions/hdf5_attrs/)
+        """
+        from daft.functions import hdf5_attrs
+
+        return hdf5_attrs(self, h5path=h5path)
+
 
 class WhenExpr(Expression):
     """Helper class for building a SQL-style CASE WHEN expression.
