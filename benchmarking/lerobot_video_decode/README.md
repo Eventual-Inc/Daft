@@ -44,30 +44,19 @@ comparison. See [real_datasets.md](real_datasets.md).
 
 ## Multiprocess
 
-Running the decode under `use_process=True` produces byte-identical output, so the
-batched decode survives process serialization. Each worker/process opens the shards
-in its own batches (file handles are not shared across processes); partition by shard
-so each shard is handled by a single worker, rather than re-fetched across several.
+Running the decode under `use_process=True` produces byte-identical output. File
+handles are not shared across processes, so partition by shard - each shard is then
+opened by one worker instead of re-fetched by several. That caps parallelism at one
+worker per file, which is fine in practice: LeRobot v3 bounds shard size
+(`video_files_size_in_mb`, 200MB default), so a dataset is many files.
 
-> [!NOTE]
-> That single-worker-per-shard mapping caps parallelism at one worker per file, but in
-> practice LeRobot v3 bounds shard size (`video_files_size_in_mb`) so a dataset is many
-> files - plenty to spread across workers. It is only a bottleneck if that setting is
-> raised to produce a few very large files, which does not happen in practice: across
-> the top 250 LeRobot-tagged datasets on HuggingFace (76 are v3), 70 use the 200MB
-> default and the largest observed is 500MB.
-
-How does the change hold up as the number of workers grows? [`worker_scaling.py`](worker_scaling.py)
-reproduces the original-vs-batched frames sweep at 1/2/4/8 worker processes (8
-shards, dense consecutive frames, scalar return to isolate decode compute; the two
-strategies as standalone UDFs, not the shipped reader):
+[`worker_scaling.py`](worker_scaling.py) repeats the frames sweep at 1/2/4/8 worker
+processes (8 shards, dense consecutive frames, the two strategies as standalone UDFs):
 
 ![workers](charts/chart_workers.png)
 
-At each worker count the original grows steeply with frame count while batched stays
-low. More workers shift the original down but with diminishing returns (~6s at 240
-frames from 4 workers on). Batched on one worker (2.2s) still beats the original on
-eight (6.0s).
+More workers shift the original down with diminishing returns; batched on one worker
+(2.2s) still beats the original on eight (6.0s).
 
 ## Tradeoffs
 
@@ -76,12 +65,10 @@ in a batch, so its cost depends on how spread out those timestamps are:
 
 - **Dense consecutive frames (the common case - reading full episodes):** optimal.
   One open, one pass, no redundant decoding - the charts above.
-- **Sparse timestamps in a batch:** the pass decodes small gaps too (e.g. 5 frames
-  spread across a 20s shard decodes ~600 frames vs ~20 for a per-target seek), while
-  gaps over ~10s are seeked over rather than decoded through. It still wins when the
-  shard is remote (read over the network), because one fewer remote open is worth
-  more than the extra decoding. Remote, frames spread across the whole shard
-  ([`sparse.py`](sparse.py) - raw PyAV, the two strategies in isolation):
+- **Sparse timestamps in a batch:** the pass decodes through small gaps too (gaps
+  over ~10s are seeked over instead), but on a remote shard one fewer open is worth
+  more than the extra decoding ([`sparse.py`](sparse.py), frames spread across the
+  whole shard):
 
   ![sparse](charts/chart_sparse.png)
 
@@ -93,10 +80,9 @@ in a batch, so its cost depends on how spread out those timestamps are:
 
   Batched stays flat (one open) while original grows one open per frame.
 
-- **Row order (holds as data scales):** grouping happens per batch, so the win assumes
-  a shard's rows land in the same batch. The reader emits rows sorted by
-  `(episode_index, frame_index)`, so they do - opens stay at one per shard as the
-  dataset grows ([`ordering.py`](ordering.py)). Shuffled rows scatter a shard across batches and cost
+- **Row order:** the win assumes a shard's rows land in the same batch. The reader
+  emits rows sorted by `(episode_index, frame_index)`, so they do - opens stay at one
+  per shard as the dataset grows ([`ordering.py`](ordering.py)). Shuffled rows cost
   more opens, but still stay below the original's one-per-frame.
 
   ![ordering](charts/chart_ordering.png)
