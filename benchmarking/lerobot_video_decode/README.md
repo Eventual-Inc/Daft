@@ -19,9 +19,11 @@ requested timestamp. Output is **byte-identical** to the old per-row decode.
 
 ### Original vs batched (rows 1→10)
 
-[`sweep.py`](sweep.py), run once per reader revision (merge-base vs this branch) - the
-original grows linearly to ~34s; the batched version stays flat at ~4s (all 10 frames
-share one shard → one open).
+[`sweep.py`](sweep.py) times an end-to-end `lerobot.read(...).limit(n).collect()` with
+frame decoding for n = 1..10 rows of a remote test dataset (`pepijn223/egodex-test`),
+run once per reader revision (merge-base vs this branch) - the original grows linearly
+to ~34s; the batched version stays flat at ~4s (all 10 frames share one shard → one
+open).
 
 ![original vs batched](charts/chart_old_vs_new.png)
 
