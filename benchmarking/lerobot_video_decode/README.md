@@ -102,7 +102,6 @@ in a batch, so its cost depends on how spread out those timestamps are:
 ## Running
 
 ```bash
-python repro.py --rows 8             # time a decode (add --profile for a cProfile breakdown)
 python sweep.py --label batched      # rows 1..10 sweep + chart
 python worker_scaling.py             # original vs batched by worker count (downloads ~7MB shard)
 python sparse.py                     # sparse-frames worst case, remote
