@@ -36,24 +36,24 @@ pub enum DaftError {
     PyO3Error(#[from] pyo3::PyErr),
     #[error("DaftError::IoError {0}")]
     IoError(#[from] std::io::Error),
-    #[error("DaftError::FileNotFound {path}: {source}")]
+    #[error("DaftError::FileNotFound {path} not found: {source}")]
     FileNotFound { path: String, source: GenericError },
     #[error("DaftError::InternalError {0}")]
     InternalError(String),
     #[error("ConnectTimeout {0}")]
-    ConnectTimeout(GenericError),
+    ConnectTimeout(#[source] GenericError),
     #[error("ReadTimeout {0}")]
-    ReadTimeout(GenericError),
+    ReadTimeout(#[source] GenericError),
     #[error("ByteStreamError {0}")]
-    ByteStreamError(GenericError),
+    ByteStreamError(#[source] GenericError),
     #[error("SocketError {0}")]
-    SocketError(GenericError),
+    SocketError(#[source] GenericError),
     #[error("ThrottledIo {0}")]
-    ThrottledIo(GenericError),
+    ThrottledIo(#[source] GenericError),
     #[error("MiscTransient {0}")]
-    MiscTransient(GenericError),
+    MiscTransient(#[source] GenericError),
     #[error("DaftError::External {0}")]
-    External(GenericError),
+    External(#[source] GenericError),
     #[error("DaftError::SerdeJsonError {0}")]
     SerdeJsonError(#[from] serde_json::Error),
     #[error("DaftError::FmtError {0}")]
