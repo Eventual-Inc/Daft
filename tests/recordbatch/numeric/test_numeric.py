@@ -679,7 +679,7 @@ def test_table_pow_bad_input() -> None:
     with pytest.raises(ValueError, match="Expected input to compute pow to be numeric, got String"):
         table.eval_expression_list([col("a").pow(0.1)])
 
-    with pytest.raises(ValueError, match='DaftError::ValueError Expected floating point number, received: "c"'):
+    with pytest.raises(ValueError, match='Expected floating point number, received: "c"'):
         table2.eval_expression_list([col("a").pow("c")])
 
 
@@ -708,7 +708,7 @@ def test_table_power_bad_input() -> None:
     with pytest.raises(ValueError, match="Expected input to compute power to be numeric, got String"):
         table.eval_expression_list([col("a").power(0.1)])
 
-    with pytest.raises(ValueError, match='DaftError::ValueError Expected floating point number, received: "c"'):
+    with pytest.raises(ValueError, match='Expected floating point number, received: "c"'):
         table2.eval_expression_list([col("a").power("c")])
 
 
