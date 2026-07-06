@@ -10,20 +10,6 @@ This directory holds the benchmarks that diagnosed it and the fix that makes the
 decode **batched**: rows sharing a shard within a batch are grouped so each shard is
 opened once per batch, instead of once per frame.
 
-## Where the time went
-
-`python repro.py --rows 1 --profile` - cProfile self-time (`tottime`) for a single
-frame, which is dominated by opening the shard, not decoding it:
-
-| function | self-time |
-| --- | --- |
-| `av.container.core.open` (open + fetch shard index) | ~3.3s |
-| decode loop (`_decode_lerobot_video_timestamp`) | ~1.3s |
-| file read (`_from_file_reference`) | ~0.9s |
-
-`av.open()` on the remote shard is the bottleneck, and the per-row UDF paid it for
-every frame.
-
 ## The fix: batched decode
 
 `_decode_lerobot_video_timestamp` in [`daft/datasets/lerobot.py`](../../daft/datasets/lerobot.py) is now a
@@ -116,7 +102,7 @@ in a batch, so its cost depends on how spread out those timestamps are:
 ## Running
 
 ```bash
-python repro.py --rows 8             # time a decode (add --profile for the breakdown above)
+python repro.py --rows 8             # time a decode (add --profile for a cProfile breakdown)
 python sweep.py --label batched      # rows 1..10 sweep + chart
 python worker_scaling.py             # original vs batched by worker count (downloads ~7MB shard)
 python sparse.py                     # sparse-frames worst case, remote
