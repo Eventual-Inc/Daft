@@ -2,12 +2,9 @@
 
 A small real-workload demo of the batched decode: find the brightest frame of
 one episode's camera. Every frame of the episode is decoded, reduced to a
-mean-luminance float by a second batch UDF, and the max is picked. The decode
-and brightness UDFs run back to back in the same streaming pipeline, so each
-in-flight task holds at most one 16-frame batch of decoded images, which is
-reduced to floats and dropped in-pipeline. Decoded images never enter the
-task output, the ray object store, or the collected result, so peak image
-memory is one batch per concurrent task regardless of total frames decoded.
+mean-luminance float by a second batch UDF, and the max is picked. Decoded
+frames live only for their 16-row batch, so peak image memory is one batch
+per concurrent task regardless of total frames decoded.
 
 ## Run
 
