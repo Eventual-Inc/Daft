@@ -8,7 +8,8 @@ import numpy as np
 import pyarrow as pa
 import pytest
 
-from daft import col, lit
+from daft import DataType, col, lit
+from daft.functions import try_divide
 from daft.recordbatch import MicroPartition
 from tests.recordbatch import daft_numeric_types
 
@@ -1063,8 +1064,6 @@ def test_conv_bad_dtype() -> None:
 
 
 def test_try_divide_int() -> None:
-    from daft.functions import try_divide
-
     table = MicroPartition.from_pydict({"a": [1, 6, None, 8], "b": [0, 3, 2, None]})
     result = table.eval_expression_list([try_divide(col("a"), col("b")).alias("result")])
     values = result.get_column_by_name("result").to_pylist()
@@ -1072,17 +1071,12 @@ def test_try_divide_int() -> None:
 
 
 def test_try_divide_output_dtype() -> None:
-    from daft import DataType
-    from daft.functions import try_divide
-
     table = MicroPartition.from_pydict({"a": [6], "b": [3]})
     result = table.eval_expression_list([try_divide(col("a"), col("b")).alias("result")])
     assert result.get_column_by_name("result").datatype() == DataType.float64()
 
 
 def test_try_divide_float() -> None:
-    from daft.functions import try_divide
-
     table = MicroPartition.from_pydict({"a": [1.0, -1.0, 0.0, 6.0], "b": [0.0, 0.0, -0.0, 3.0]})
     result = table.eval_expression_list([try_divide(col("a"), col("b")).alias("result")])
     values = result.get_column_by_name("result").to_pylist()
@@ -1090,8 +1084,6 @@ def test_try_divide_float() -> None:
 
 
 def test_try_divide_unsigned() -> None:
-    from daft.functions import try_divide
-
     table = MicroPartition.from_pydict({"a": pa.array([6, 1], type=pa.uint8()), "b": pa.array([3, 0], type=pa.uint8())})
     result = table.eval_expression_list([try_divide(col("a"), col("b")).alias("result")])
     values = result.get_column_by_name("result").to_pylist()
@@ -1099,8 +1091,6 @@ def test_try_divide_unsigned() -> None:
 
 
 def test_try_divide_broadcast_zero_divisor() -> None:
-    from daft.functions import try_divide
-
     table = MicroPartition.from_pydict({"a": [1, 2, 3]})
     result = table.eval_expression_list([try_divide(col("a"), lit(0)).alias("result")])
     values = result.get_column_by_name("result").to_pylist()
@@ -1108,8 +1098,6 @@ def test_try_divide_broadcast_zero_divisor() -> None:
 
 
 def test_try_divide_broadcast_dividend() -> None:
-    from daft.functions import try_divide
-
     table = MicroPartition.from_pydict({"b": [2, 0, 4]})
     result = table.eval_expression_list([try_divide(lit(8), col("b")).alias("result")])
     values = result.get_column_by_name("result").to_pylist()
@@ -1117,8 +1105,6 @@ def test_try_divide_broadcast_dividend() -> None:
 
 
 def test_try_divide_bad_dtype() -> None:
-    from daft.functions import try_divide
-
     table = MicroPartition.from_pydict({"a": ["1", "2"], "b": [1, 2]})
     with pytest.raises(ValueError, match="Expected inputs to try_divide to be numeric"):
         table.eval_expression_list([try_divide(col("a"), col("b"))])
