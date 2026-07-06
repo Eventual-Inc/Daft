@@ -9,6 +9,7 @@ real workload where frames are consumed (not collected) at full resolution.
 
 from __future__ import annotations
 
+import os
 import sys
 import time
 
@@ -36,12 +37,21 @@ def mean_brightness(images: Series) -> list[dict]:
 
 def main() -> int:
     dataset = sys.argv[1] if len(sys.argv) > 1 else "BitRobot/HIW-500-LeRobot"
-    episode = int(sys.argv[2]) if len(sys.argv) > 2 else 2534
+    episodes = [int(e) for e in (sys.argv[2] if len(sys.argv) > 2 else "2534").split(",")]
     camera = sys.argv[3] if len(sys.argv) > 3 else "observation.images.head"
 
+    # Anonymous HF requests get throttled (429) once ~10 shards are read
+    # concurrently; a free read token raises the limit substantially.
+    token = os.environ.get("HF_TOKEN")
+    if not token:
+        token_path = os.path.expanduser("~/.cache/huggingface/token")
+        if os.path.exists(token_path):
+            token = open(token_path).read().strip()
+    io_config = daft.io.IOConfig(hf=daft.io.HuggingFaceConfig(token=token)) if token else None
+
     t0 = time.perf_counter()
-    df = lerobot.read(dataset, load_video_frames=[camera])
-    df = df.where(daft.col("episode_index") == episode)
+    df = lerobot.read(dataset, load_video_frames=[camera], io_config=io_config)
+    df = df.where(daft.col("episode_index").is_in(episodes))
     df = df.select(
         "episode_index",
         "frame_index",
@@ -52,13 +62,16 @@ def main() -> int:
     wall = time.perf_counter() - t0
 
     n = len(result["frame_index"])
-    best = max(range(n), key=lambda i: result["brightness"][i])
     batch_lens = result["batch_len"]
-    print(f"decoded {n} frames of episode {episode} ({camera}) in {wall:.1f}s ({wall / n:.2f}s/frame)")
-    print(
-        f"brightest: frame_index={result['frame_index'][best]} "
-        f"t={result['timestamp'][best]:.3f}s brightness={result['brightness'][best]:.2f}"
-    )
+    print(f"decoded {n} frames of {len(episodes)} episode(s) ({camera}) in {wall:.1f}s ({wall / n:.2f}s/frame)")
+    for ep in episodes:
+        rows = [i for i in range(n) if result["episode_index"][i] == ep]
+        best = max(rows, key=lambda i: result["brightness"][i])
+        print(
+            f"episode {ep}: brightest frame_index={result['frame_index'][best]} "
+            f"t={result['timestamp'][best]:.3f}s brightness={result['brightness'][best]:.2f} "
+            f"({len(rows)} frames)"
+        )
     print(f"udf batch sizes: min={min(batch_lens)} max={max(batch_lens)} (n_batches~{n / (sum(batch_lens) / n):.0f})")
     return 0
 
