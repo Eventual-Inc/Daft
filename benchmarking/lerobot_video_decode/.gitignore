@@ -1,8 +1,0 @@
-# local shard copies downloaded by cases.py
-*.mp4
-# per-run sweep outputs (the committed charts capture the results)
-sweep_current.json
-worker_scaling.json
-sparse.json
-ordering.json
-ab_*.json
