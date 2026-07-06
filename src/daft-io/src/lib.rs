@@ -44,7 +44,7 @@ use std::{borrow::Cow, collections::HashMap, hash::Hash, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 pub use common_io_config::{
-    AzureConfig, CosConfig, GCSConfig, GoosefsConfig, GravitinoConfig, HTTPConfig, IOConfig,
+    AzureConfig, CosConfig, GCSConfig, GooseFSConfig, GravitinoConfig, HTTPConfig, IOConfig,
     S3Config, TosConfig,
 };
 use futures::{FutureExt, stream::BoxStream};

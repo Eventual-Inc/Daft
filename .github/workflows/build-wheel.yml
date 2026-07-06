@@ -42,7 +42,7 @@ jobs:
     runs-on: ${{ inputs.os == 'ubuntu' && 'blacksmith-16vcpu-ubuntu-2204' || format('{0}-latest', inputs.os) }}
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
       with:
         fetch-depth: 0
 
@@ -162,7 +162,7 @@ jobs:
     env:
       package-name: daft
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - name: Download built wheels
       uses: actions/download-artifact@v8
       with:

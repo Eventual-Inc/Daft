@@ -40,3 +40,18 @@ Check out our [DROID dataset guide](../datasets/droid.md) for more examples!
     options:
         filters: ["!^_"]
         heading_level: 3
+
+::: daft.datasets.droid.scenes
+    options:
+        filters: ["!^_"]
+        heading_level: 3
+
+::: daft.datasets.droid.trajectory
+    options:
+        filters: ["!^_"]
+        heading_level: 3
+
+::: daft.datasets.droid.camera_frames
+    options:
+        filters: ["!^_"]
+        heading_level: 3
