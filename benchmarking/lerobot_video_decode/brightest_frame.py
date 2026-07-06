@@ -17,11 +17,21 @@ from daft import DataType, Series
 from daft.datasets import lerobot
 
 
-@daft.func.batch(return_dtype=DataType.float64())
-def mean_brightness(images: Series) -> list[float]:
+@daft.func.batch(
+    return_dtype=DataType.struct({"brightness": DataType.float64(), "batch_len": DataType.int64()}),
+    unnest=True,
+)
+def mean_brightness(images: Series) -> list[dict]:
+    """Mean luminance per frame, plus the size of the batch each row arrived in.
+
+    ``batch_len`` probes the batch sizes the UDF actually receives (the decode
+    UDF consumes the same morsel stream), so runs double as evidence that
+    ``into_batches(16)`` bounds batches on the runner used.
+    """
     import numpy as np
 
-    return [float(np.asarray(img).mean()) for img in images.to_pylist()]
+    n = len(images)
+    return [{"brightness": float(np.asarray(img).mean()), "batch_len": n} for img in images.to_pylist()]
 
 
 def main() -> int:
@@ -36,18 +46,20 @@ def main() -> int:
         "episode_index",
         "frame_index",
         "timestamp",
-        mean_brightness(daft.col(camera)).alias("brightness"),
+        mean_brightness(daft.col(camera)),  # unnests to brightness + batch_len
     )
     result = df.collect().to_pydict()
     wall = time.perf_counter() - t0
 
     n = len(result["frame_index"])
     best = max(range(n), key=lambda i: result["brightness"][i])
+    batch_lens = result["batch_len"]
     print(f"decoded {n} frames of episode {episode} ({camera}) in {wall:.1f}s ({wall / n:.2f}s/frame)")
     print(
         f"brightest: frame_index={result['frame_index'][best]} "
         f"t={result['timestamp'][best]:.3f}s brightness={result['brightness'][best]:.2f}"
     )
+    print(f"udf batch sizes: min={min(batch_lens)} max={max(batch_lens)} (n_batches~{n / (sum(batch_lens) / n):.0f})")
     return 0
 
 
