@@ -42,22 +42,6 @@ comparison. See [real_datasets.md](real_datasets.md).
 
 ![original vs batched on public datasets](charts/chart_real_datasets.png)
 
-## Multiprocess
-
-Running the decode under `use_process=True` produces byte-identical output. File
-handles are not shared across processes, so partition by shard - each shard is then
-opened by one worker instead of re-fetched by several. That caps parallelism at one
-worker per file, which is fine in practice: LeRobot v3 bounds shard size
-(`video_files_size_in_mb`, 200MB default), so a dataset is many files.
-
-[`worker_scaling.py`](worker_scaling.py) repeats the frames sweep at 1/2/4/8 worker
-processes (8 shards, dense consecutive frames, the two strategies as standalone UDFs):
-
-![workers](charts/chart_workers.png)
-
-More workers shift the original down with diminishing returns; batched on one worker
-(2.2s) still beats the original on eight (6.0s).
-
 ## Tradeoffs
 
 The batched decode does one forward pass from the earliest to the latest timestamp
@@ -91,7 +75,6 @@ in a batch, so its cost depends on how spread out those timestamps are:
 
 ```bash
 python sweep.py --label batched      # rows 1..10 sweep + chart
-python worker_scaling.py             # original vs batched by worker count (downloads ~7MB shard)
 python sparse.py                     # sparse-frames worst case, remote
 python ordering.py                   # opens vs dataset size: ordered vs shuffled rows
 ```
