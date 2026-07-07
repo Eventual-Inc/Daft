@@ -95,9 +95,11 @@ class File:
                 - "w" / "wt": text write; `write()` accepts str, encoded as UTF-8.
             buffer_size (int | None): Read buffer size in bytes. Only valid for read modes.
 
-        Writes are buffered in memory and only committed to storage with a single
-        upload when the file is closed. If the `with` block exits with an exception,
-        nothing is committed and the destination is left untouched.
+        Writes are buffered and only committed to storage when the file is closed. On
+        sources that support multipart uploads (e.g. S3), buffered parts are streamed
+        as they fill up; the object still only becomes visible on close. If the `with`
+        block exits with an exception, nothing is committed, the destination is left
+        untouched, and any streamed parts are aborted.
         """
         if mode in ("r", "rb"):
             return PyDaftFile._from_file_reference(self._inner, buffer_size=buffer_size)

@@ -23,6 +23,7 @@ use aws_sdk_s3::{
     },
     error::ProvideErrorMetadata,
     operation::{
+        abort_multipart_upload::AbortMultipartUploadError,
         complete_multipart_upload::CompleteMultipartUploadError,
         create_multipart_upload::CreateMultipartUploadError,
         put_object::PutObjectError,
@@ -131,6 +132,17 @@ enum Error {
         bucket: String,
         key: String,
         source: SdkError<CompleteMultipartUploadError, Response>,
+    },
+    #[snafu(display(
+        "Unable to abort multipart upload to {}/{}: {}",
+        bucket,
+        key,
+        s3::error::DisplayErrorContext(source)
+    ))]
+    UnableToAbortMultipartUpload {
+        bucket: String,
+        key: String,
+        source: SdkError<AbortMultipartUploadError, Response>,
     },
     #[snafu(display(
         "Unable to delete {}: {}",
@@ -1293,6 +1305,37 @@ impl S3LikeSource {
 
         Ok(output)
     }
+
+    /// Abort an in-progress multipart upload, discarding any parts uploaded so far.
+    pub async fn abort_multipart_upload(
+        &self,
+        bucket: &str,
+        key: &str,
+        upload_id: &str,
+        region: &Region,
+    ) -> super::Result<()> {
+        let _permit = self
+            .connection_pool_sema
+            .clone()
+            .acquire_owned()
+            .await
+            .context(UnableToGrabSemaphoreSnafu)?;
+
+        let client = self.get_s3_client(region).await?;
+
+        client
+            .abort_multipart_upload()
+            .bucket(bucket)
+            .key(key)
+            .upload_id(upload_id)
+            .send()
+            .await
+            .context(UnableToAbortMultipartUploadSnafu { bucket, key })?;
+
+        log::debug!("S3 abort multipart upload completed. upload_id: {upload_id}");
+
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -1708,6 +1751,17 @@ impl MultipartWriter for S3MultipartWriter {
 
     async fn complete(&mut self) -> super::Result<()> {
         self.shutdown().await
+    }
+
+    async fn abort(&mut self) -> super::Result<()> {
+        // Cancel any in-flight part uploads, then discard the parts already uploaded so
+        // the store does not keep billing for the incomplete upload.
+        self.in_progress_uploads.shutdown().await;
+        self.s3_client
+            .abort_multipart_upload(&self.bucket, &self.key, &self.upload_id, &self.region)
+            .await?;
+        log::debug!("S3 multipart upload aborted: {}", self.uri);
+        Ok(())
     }
 }
 

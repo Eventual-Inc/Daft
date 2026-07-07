@@ -1,6 +1,7 @@
 [dependencies]
 async-trait = {workspace = true}
 bytes = {workspace = true}
+log = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
@@ -12,6 +13,7 @@ pyo3 = {workspace = true, optional = true}
 common-runtime.workspace = true
 serde.workspace = true
 typetag.workspace = true
+tokio.workspace = true
 url.workspace = true
 
 [features]

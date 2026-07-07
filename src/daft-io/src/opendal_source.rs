@@ -107,6 +107,18 @@ impl MultipartWriter for OpenDALMultipartWriter {
                 source: e.into(),
             })
     }
+
+    async fn abort(&mut self) -> super::Result<()> {
+        self.writer
+            .abort()
+            .await
+            .map_err(|e| super::Error::Generic {
+                store: super::SourceType::OpenDAL {
+                    scheme: self.scheme.clone(),
+                },
+                source: e.into(),
+            })
+    }
 }
 
 fn opendal_err_to_daft_err(e: opendal::Error, uri: &str, scheme: &str) -> super::Error {
