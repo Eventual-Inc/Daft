@@ -84,10 +84,9 @@ def test_path_file_write_context_exception_does_not_commit(tmp_path: Path):
     temp_file.write_text("original")
     f = daft.File(str(temp_file.absolute()))
 
-    with pytest.raises(RuntimeError, match="boom"):
-        with f.open("w") as writer:
-            writer.write("partial")
-            raise RuntimeError("boom")
+    with pytest.raises(RuntimeError, match="boom"), f.open("w") as writer:
+        writer.write("partial")
+        raise RuntimeError("boom")
 
     assert temp_file.read_text() == "original"
 
@@ -104,13 +103,11 @@ def test_path_file_write_mode_validations(tmp_path: Path):
     with pytest.raises(ValueError, match="buffer_size"):
         f.open("wb", buffer_size=1024)
 
-    with f.open("wb") as writer:
-        with pytest.raises(TypeError, match="bytes-like"):
-            writer.write("text")
+    with f.open("wb") as writer, pytest.raises(TypeError, match="bytes-like"):
+        writer.write("text")
 
-    with f.open("w") as writer:
-        with pytest.raises(TypeError, match="must be str"):
-            writer.write(b"bytes")
+    with f.open("w") as writer, pytest.raises(TypeError, match="must be str"):
+        writer.write(b"bytes")
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
@@ -134,9 +131,8 @@ def test_path_file_read_handle_is_not_writable(tmp_path: Path):
     temp_file.write_text("hello")
     f = daft.File(str(temp_file.absolute()))
 
-    with f.open() as reader:
-        with pytest.raises(OSError, match="not open for writing"):
-            reader.write(b"abc")
+    with f.open() as reader, pytest.raises(OSError, match="not open for writing"):
+        reader.write(b"abc")
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
@@ -145,6 +141,7 @@ def test_byte_range_file_cannot_be_opened_for_writing(tmp_path: Path):
     temp_file.write_text("hello world")
     f = daft.File(str(temp_file.absolute()), position=0, size=5)
 
+    assert not f.writable()
     with pytest.raises(Exception, match="cannot be opened for writing"):
         f.open("wb")
 
@@ -352,26 +349,32 @@ def test_file_exists_expr(tmp_path: Path):
         ("png", lambda: b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01", "image/png"),
         (
             "gif",
-            lambda: b"GIF89a\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff\xff\xff\xff\x2c\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02\x44\x01\x00\x3b",
+            lambda: (
+                b"GIF89a\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff\xff\xff\xff\x2c\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02\x44\x01\x00\x3b"
+            ),
             "image/gif",
         ),
         ("pdf", lambda: b"%PDF-1.7\n1 0 obj\n<<>>\nendobj\n", "application/pdf"),
         ("mp3", lambda: b"ID3\x03\x00\x00\x00\x00\x00\x00" + b"\xff\xfb\x90\x44" + b"\x00" * 32, "audio/mpeg"),
         (
             "wav",
-            lambda: b"RIFF"
-            + struct.pack("<I", 36)
-            + b"WAVE"
-            + b"fmt "
-            + struct.pack("<I", 16)
-            + struct.pack("<HHIIHH", 1, 1, 8000, 8000, 1, 8)
-            + b"data"
-            + struct.pack("<I", 0),
+            lambda: (
+                b"RIFF"
+                + struct.pack("<I", 36)
+                + b"WAVE"
+                + b"fmt "
+                + struct.pack("<I", 16)
+                + struct.pack("<HHIIHH", 1, 1, 8000, 8000, 1, 8)
+                + b"data"
+                + struct.pack("<I", 0)
+            ),
             "audio/wav",
         ),
         (
             "ogg",
-            lambda: b"OggS\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00",
+            lambda: (
+                b"OggS\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00"
+            ),
             "audio/ogg",
         ),
         (
@@ -381,7 +384,9 @@ def test_file_exists_expr(tmp_path: Path):
         ),
         (
             "zip",
-            lambda: b"PK\x03\x04\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+            lambda: (
+                b"PK\x03\x04\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+            ),
             "application/zip",
         ),
         ("html", lambda: b"<!DOCTYPE html><html><head></head><body></body></html>", "text/html"),
@@ -551,14 +556,12 @@ def test_file_partial_range_raises(tmp_path: Path):
     path = str(temp_file.absolute())
 
     f_position_only = daft.File(path, position=10)
-    with pytest.raises(Exception):
-        with f_position_only.open() as fh:
-            fh.read()
+    with pytest.raises(Exception), f_position_only.open() as fh:
+        fh.read()
 
     f_size_only = daft.File(path, size=10)
-    with pytest.raises(Exception):
-        with f_size_only.open() as fh:
-            fh.read()
+    with pytest.raises(Exception), f_size_only.open() as fh:
+        fh.read()
 
 
 # ── buffer_size tests ──

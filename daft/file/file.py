@@ -84,7 +84,7 @@ class File:
 
         self._inner = PyFileReference._from_tuple((media_type._media_type, url, io_config, position, size))  # type: ignore
 
-    def open(self, mode: str = "rb", buffer_size: int | None = None) -> PyDaftFile:
+    def open(self, mode: str = "rb", *, buffer_size: int | None = None) -> PyDaftFile:
         """Open the file for reading or writing.
 
         Args:
@@ -95,11 +95,9 @@ class File:
                 - "w" / "wt": text write; `write()` accepts str, encoded as UTF-8.
             buffer_size (int | None): Read buffer size in bytes. Only valid for read modes.
 
-        Writes are buffered and only committed to storage when the file is closed. On
-        sources that support multipart uploads (e.g. S3), buffered parts are streamed
-        as they fill up; the object still only becomes visible on close. If the `with`
-        block exits with an exception, nothing is committed and the destination is
-        left untouched.
+        Writes are buffered in memory and only committed to storage with a single
+        upload when the file is closed. If the `with` block exits with an exception,
+        nothing is committed and the destination is left untouched.
         """
         if mode in ("r", "rb"):
             return PyDaftFile._from_file_reference(self._inner, buffer_size=buffer_size)
@@ -116,7 +114,8 @@ class File:
         return True
 
     def writable(self) -> bool:
-        return True
+        # Byte-range files refuse write modes in open(), so mirror that here.
+        return self._inner.position() is None and self._inner.size() is None
 
     def seekable(self) -> bool:
         return True

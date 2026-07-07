@@ -11,7 +11,6 @@ mime_guess = "2.0.5"
 pyo3 = {workspace = true, optional = true}
 common-runtime.workspace = true
 serde.workspace = true
-tokio.workspace = true
 typetag.workspace = true
 url.workspace = true
 

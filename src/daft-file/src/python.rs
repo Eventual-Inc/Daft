@@ -208,8 +208,8 @@ impl PyDaftFile {
         Ok(written)
     }
 
-    /// Flushing is a no-op: partial multipart parts cannot be uploaded early, so data is
-    /// only committed to storage when the file is closed.
+    /// Flushing is a no-op: writes are buffered in memory and only committed to storage
+    /// when the file is closed.
     fn flush(&self) -> PyResult<()> {
         if self.inner.cursor.is_none() && self.inner.writer.is_none() {
             return Err(PyValueError::new_err("I/O operation on closed file"));
