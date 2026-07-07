@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 from daft.daft import PyDaftFile, PyFileReference
 from daft.datatype import MediaType
-from daft.dependencies import av, pil_image, sf
+from daft.dependencies import av, h5py, pil_image, sf
 
 BUFFER_SNIFF: int = 4096
 BUFFER_METADATA: int = 65536
@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from tempfile import _TemporaryFileWrapper
 
     from daft.file.audio import AudioFile
+    from daft.file.hdf5 import Hdf5File
     from daft.file.image import ImageFile
     from daft.file.video import VideoFile
     from daft.io import IOConfig
@@ -245,6 +246,10 @@ class File:
             return True
         return False
 
+    def is_hdf5(self) -> bool:
+        mimetype = self.mime_type()
+        return mimetype == "application/vnd.hdfgroup.hdf5"
+
     def as_video(self) -> VideoFile:
         """Convert to VideoFile if this file contains video data."""
         if not av.module_available():
@@ -293,6 +298,22 @@ class File:
             raise ValueError(f"File {self} is not an image file")
 
         cls = ImageFile.__new__(ImageFile)
+        cls._inner = self._inner
+
+        return cls
+
+    def as_hdf5(self) -> Hdf5File:
+        """Convert to Hdf5File if this file contains HDF5 data."""
+        if not h5py.module_available():  # ty:ignore[unresolved-attribute]
+            raise ImportError(
+                "The 'h5py' module is required to convert files to HDF5. Please install it with: pip install 'h5py'"
+            )
+        from daft.file.hdf5 import Hdf5File
+
+        if not self.is_hdf5():
+            raise ValueError(f"File {self} is not an HDF5 file")
+
+        cls = Hdf5File.__new__(Hdf5File)
         cls._inner = self._inner
 
         return cls

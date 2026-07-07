@@ -29,6 +29,8 @@ from daft.functions import guess_mime_type
         (b"\xff\xfb\x90\x44" + b"\x00" * 12, "audio/mpeg"),
         # OGG
         (b"OggS\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00", "audio/ogg"),
+        # HDF5, per the registered application/vnd.hdfgroup.hdf5 signature.
+        (b"\x89HDF\r\n\x1a\n" + b"\x00" * 8, "application/vnd.hdfgroup.hdf5"),
         # HTML with DOCTYPE
         (b"<!DOCTYPE html><html><head></head>", "text/html"),
         # HTML lowercase
@@ -86,6 +88,14 @@ def test_guess_mime_type_mpeg():
     df = daft.from_pydict({"data": [mpeg_data]})
     result = df.select(guess_mime_type(df["data"])).collect()
     assert result.to_pydict()["data"] == ["video/mpeg"]
+
+
+def test_guess_mime_type_hdf5_user_block():
+    """Test HDF5 detection with the signature at a user-block offset."""
+    hdf5_data = b"\x00" * 512 + b"\x89HDF\r\n\x1a\n"
+    df = daft.from_pydict({"data": [hdf5_data]})
+    result = df.select(guess_mime_type(df["data"])).collect()
+    assert result.to_pydict()["data"] == ["application/vnd.hdfgroup.hdf5"]
 
 
 def test_guess_mime_type_null():

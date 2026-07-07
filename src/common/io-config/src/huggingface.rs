@@ -8,6 +8,9 @@ use crate::ObfuscatedString;
 pub struct HuggingFaceConfig {
     pub token: Option<ObfuscatedString>,
     pub anonymous: bool,
+    /// When true, attempt to read Xet-backed files via the Xet protocol before
+    /// falling back to the standard HTTP resolve path.
+    pub use_xet: bool,
     pub use_content_defined_chunking: Option<bool>,
     pub row_group_size: Option<usize>,
     pub target_filesize: usize,
@@ -19,6 +22,7 @@ impl Default for HuggingFaceConfig {
         Self {
             token: None,
             anonymous: false,
+            use_xet: true,
             use_content_defined_chunking: None,
             row_group_size: None,
             target_filesize: 512 * 1024 * 1024, // 512MB
@@ -34,6 +38,7 @@ impl HuggingFaceConfig {
             res.push(format!("Token = {token}"));
         }
         res.push(format!("Anonymous = {}", self.anonymous));
+        res.push(format!("Use Xet = {}", self.use_xet));
         res
     }
 }

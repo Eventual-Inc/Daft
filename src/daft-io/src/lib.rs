@@ -44,7 +44,8 @@ use std::{borrow::Cow, collections::HashMap, hash::Hash, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 pub use common_io_config::{
-    AzureConfig, CosConfig, GCSConfig, GravitinoConfig, HTTPConfig, IOConfig, S3Config, TosConfig,
+    AzureConfig, CosConfig, GCSConfig, GooseFSConfig, GravitinoConfig, HTTPConfig, IOConfig,
+    S3Config, TosConfig,
 };
 use futures::{FutureExt, stream::BoxStream};
 use object_io::StreamingRetryParams;
@@ -73,10 +74,10 @@ pub enum Error {
     #[snafu(display("Unable to expand home dir"))]
     HomeDirError { path: String },
 
-    #[snafu(display("Unable to open file {}: {:?}", path, source))]
+    #[snafu(display("Unable to open file `{}`", path))]
     UnableToOpenFile { path: String, source: DynError },
 
-    #[snafu(display("Unable to create directory {}: {:?}", path, source))]
+    #[snafu(display("Unable to create directory `{}`", path))]
     UnableToCreateDir {
         path: String,
         source: std::io::Error,
@@ -94,27 +95,19 @@ pub enum Error {
         source: std::io::Error,
     },
 
-    #[snafu(display(
-        "Connection timed out when trying to connect to {}\nDetails:\n{:?}",
-        path,
-        source
-    ))]
+    #[snafu(display("Connection timed out when trying to connect to path `{}`", path))]
     ConnectTimeout { path: String, source: DynError },
 
-    #[snafu(display("Read timed out when trying to read {}\nDetails:\n{:?}", path, source))]
+    #[snafu(display("Read timed out when trying to read path `{}`", path))]
     ReadTimeout { path: String, source: DynError },
 
-    #[snafu(display(
-        "Socket error occurred when trying to read {}\nDetails:\n{:?}",
-        path,
-        source
-    ))]
+    #[snafu(display("Socket error occurred when trying to read path `{}`", path))]
     SocketError { path: String, source: DynError },
 
-    #[snafu(display("Throttled when trying to read {}\nDetails:\n{:?}", path, source))]
+    #[snafu(display("Throttled when trying to read path `{}`", path))]
     Throttled { path: String, source: DynError },
 
-    #[snafu(display("Misc Transient error trying to read {}\nDetails:\n{:?}", path, source))]
+    #[snafu(display("Misc Transient error trying to read path `{}`", path))]
     MiscTransient { path: String, source: DynError },
 
     #[snafu(display("Unable to convert URL \"{}\" to path", path))]
@@ -132,10 +125,10 @@ pub enum Error {
     #[snafu(display("Invalid range request: {}", source))]
     InvalidRangeRequest { source: range::InvalidGetRange },
 
-    #[snafu(display("Unable to load Credentials for store: {store}\nDetails:\n{source:?}"))]
+    #[snafu(display("Unable to load credentials for IO backend `{store}`"))]
     UnableToLoadCredentials { store: SourceType, source: DynError },
 
-    #[snafu(display("Failed to load Credentials for store: {store}\nDetails:\n{source:?}"))]
+    #[snafu(display("Failed to load credentials for IO backend `{store}`"))]
     UnableToCreateClient { store: SourceType, source: DynError },
 
     #[snafu(display(
@@ -308,6 +301,18 @@ impl IOClient {
                             "cos" => self.config.cos.to_opendal_config(bucket),
                             _ => self.config.tos.to_opendal_config(bucket),
                         }
+                    }
+                    "goosefs" => {
+                        // Extract authority (host:port) from URL as default master_addr.
+                        let parsed_url =
+                            url::Url::parse(&path).context(InvalidUrlSnafu { path: input })?;
+                        let authority = match parsed_url.port() {
+                            Some(port) => {
+                                format!("{}:{}", parsed_url.host_str().unwrap_or(""), port)
+                            }
+                            None => parsed_url.host_str().unwrap_or("").to_string(),
+                        };
+                        self.config.goosefs.to_opendal_config(&authority)
                     }
                     _ => self
                         .config
@@ -628,6 +633,12 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
         "cos" | "cosn" => Ok((
             SourceType::OpenDAL {
                 scheme: "cos".to_string(),
+            },
+            fixed_input,
+        )),
+        "goosefs" => Ok((
+            SourceType::OpenDAL {
+                scheme: "goosefs".to_string(),
             },
             fixed_input,
         )),

@@ -385,6 +385,7 @@ mod tests {
     #[case(DataType::File(MediaType::Unknown))]
     #[case(DataType::File(MediaType::Audio))]
     #[case(DataType::File(MediaType::Image))]
+    #[case(DataType::File(MediaType::Hdf5))]
     #[case(DataType::List(Box::new(DataType::Image(Some(ImageMode::RGBA16)))))]
     #[case(DataType::List(Box::new(DataType::Embedding(Box::new(DataType::Float64), 128))))]
     #[case(DataType::List(Box::new(DataType::Tensor(Box::new(DataType::Int32)))))]
