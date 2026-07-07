@@ -393,11 +393,15 @@ def _io_config_from_storage_location(storage_location: str, properties: dict[str
 
     if scheme == "s3" or scheme == "s3a":
         # Extract S3 credentials from properties if available
-        access_key = properties.get("s3-access-key-id")
-        secret_key = properties.get("s3-secret-access-key")
-        endpoint_url = properties.get("s3-endpoint")
-        session_token = properties.get("s3-session-token")
-        region_name = properties.get("s3-region")
+        # Gravitino uses different key formats:
+        # - Fileset Catalog: hyphen format (s3-access-key-id, s3-secret-access-key)
+        # - Iceberg Catalog: dot format (s3.access-key-id, s3.secret-access-key)
+        # Check both formats for compatibility
+        access_key = properties.get("s3-access-key-id") or properties.get("s3.access-key-id")
+        secret_key = properties.get("s3-secret-access-key") or properties.get("s3.secret-access-key")
+        endpoint_url = properties.get("s3-endpoint") or properties.get("s3.endpoint")
+        session_token = properties.get("s3-session-token") or properties.get("s3.session-token")
+        region_name = properties.get("s3-region") or properties.get("s3.region")
 
         # Try to extract region from endpoint URL if not explicitly provided
         if not region_name and endpoint_url:

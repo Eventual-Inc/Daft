@@ -137,8 +137,13 @@ class GravitinoCatalog(Catalog):
         try:
             self._inner.load_table(str(ident))
             return True
-        except Exception:
-            return False
+        except Exception as e:
+            # GravitinoClient.load_table wraps 404 in a generic Exception with "not found" message,
+            # so we match on the exact type (not subclasses) and the message content.
+            # TODO: Have load_table raise a typed TableNotFoundError for cleaner matching.
+            if type(e) is Exception and "not found" in str(e).lower():
+                return False
+            raise
 
 
 class GravitinoTableTypeError(TypeError):
