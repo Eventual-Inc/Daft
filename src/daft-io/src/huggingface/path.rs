@@ -148,6 +148,7 @@ impl FromStr for HFPathParts {
             // [datasets] / {username} / {reponame} @ {revision} / {path from root}
             // ^--------^   !>
             let (repo_type_str, uri) = uri.split_once('/')?;
+            let repo_type = repo_type_str.parse().ok()?;
             // {username} / {reponame} @ {revision} / {path from root}
             // ^--------^   !>
             let (username, uri) = uri.split_once('/')?;
@@ -157,7 +158,7 @@ impl FromStr for HFPathParts {
                 (repo, uri)
             } else {
                 return Some(Self {
-                    repo_type: repo_type_str.parse().ok()?,
+                    repo_type,
                     repository: format!("{username}/{uri}"),
                     revision: "main".to_string(),
                     path: String::new(),
@@ -176,10 +177,16 @@ impl FromStr for HFPathParts {
             let repository = format!("{username}/{repository}");
             // {path from root}
             // ^--------------^
-            let path = uri.to_string().trim_end_matches('/').to_string();
+            let mut path = uri.to_string().trim_end_matches('/').to_string();
+            if repo_type == HFRepoType::Buckets {
+                path = path
+                    .strip_prefix("tree/")
+                    .unwrap_or(path.as_str())
+                    .to_string();
+            }
 
             Some(Self {
-                repo_type: repo_type_str.parse().ok()?,
+                repo_type,
                 repository,
                 revision,
                 path,
@@ -383,6 +390,26 @@ mod tests {
         };
 
         assert_eq!(parts, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_hf_parts_bucket_from_tree_url() -> DaftResult<()> {
+        let uri = "hf://buckets/the-hf-stack/zenml-experiments/tree/trackio/data/train-00000-of-00001.parquet";
+        let parts = uri.parse::<HFPathParts>().unwrap();
+        let expected = HFPathParts {
+            repo_type: HFRepoType::Buckets,
+            repository: "the-hf-stack/zenml-experiments".to_string(),
+            revision: "main".to_string(),
+            path: "trackio/data/train-00000-of-00001.parquet".to_string(),
+        };
+
+        assert_eq!(parts, expected);
+        assert_eq!(
+            parts.resolve_url(),
+            "https://huggingface.co/buckets/the-hf-stack/zenml-experiments/resolve/trackio/data/train-00000-of-00001.parquet"
+        );
 
         Ok(())
     }

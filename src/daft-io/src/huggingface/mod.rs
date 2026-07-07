@@ -26,7 +26,7 @@ use crate::{
     http::HttpSource,
     huggingface::{
         error::Error,
-        path::{HFPath, HFPathParts, hf_path_parts_from_uri},
+        path::{HFPath, HFPathParts, HFRepoType, hf_path_parts_from_uri},
     },
     object_io::{FileMetadata, FileType, LSResult},
     range::GetRange,
@@ -432,6 +432,10 @@ impl ObjectSource for HFSource {
         use crate::object_store_glob::glob;
 
         let path = glob_path.parse::<HFPath>()?;
+        let glob_path = match &path {
+            HFPath::Hf(parts) if parts.repo_type == HFRepoType::Buckets => parts.to_string(),
+            _ => glob_path.to_string(),
+        };
 
         // Ensure fanout_limit is None because HTTP ObjectSource does not support prefix listing
         let fanout_limit = None;
@@ -439,7 +443,7 @@ impl ObjectSource for HFSource {
 
         match path {
             HFPath::Http(_) => {
-                glob(self, glob_path, fanout_limit, page_size, limit, io_stats).await
+                glob(self, &glob_path, fanout_limit, page_size, limit, io_stats).await
             }
             HFPath::Hf(parts) => {
                 // Huggingface has a special API for parquet files
@@ -465,7 +469,7 @@ impl ObjectSource for HFSource {
                     }
                 }
 
-                glob(self, glob_path, fanout_limit, page_size, limit, io_stats).await
+                glob(self, &glob_path, fanout_limit, page_size, limit, io_stats).await
             }
         }
     }
