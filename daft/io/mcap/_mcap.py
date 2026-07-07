@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import daft
 from daft.api_annotations import PublicAPI
 from daft.daft import io_glob
-from daft.dependencies import pafs
+from daft.dependencies import mcap as _mcap_mod, pafs
 from daft.filesystem import _resolve_paths_and_filesystem, get_protocol_from_path
 from daft.io.source import DataSource, DataSourceTask
 from daft.logical.schema import Schema
@@ -144,6 +144,11 @@ class MCAPSource(DataSource):
         io_config: IOConfig | None = None,
         topic_start_time_resolver: TopicStartTimeResolver | None = None,
     ):
+        if not _mcap_mod.module_available():
+            raise ImportError(
+                "The 'daft[mcap]' extra is required to read MCAP files. "
+                "Please install it with: pip install 'daft[mcap]'"
+            )
         self._start_time = start_time
         self._end_time = end_time
         self._topics = topics
@@ -251,9 +256,7 @@ class MCAPSourceTask(DataSourceTask):
         return self._schema
 
     async def read(self) -> AsyncIterator[RecordBatch]:
-        import importlib
-
-        make_reader = importlib.import_module("mcap.reader").make_reader
+        make_reader = _mcap_mod.reader.make_reader
 
         with daft.open_file(self._file_path, "rb", io_config=self._io_config) as f:
             reader = make_reader(f, decoder_factories=[])
