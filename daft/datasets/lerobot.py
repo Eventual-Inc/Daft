@@ -43,10 +43,7 @@ def _normalize_dataset_root(uri: str) -> str:
 # Safety backstop on frames decoded per shard per batch; clustered seeks stay far below it.
 _DECODE_FRAME_BUDGET = 20_000
 
-# Rows per decode batch. Trades decode parallelism (smaller batches -> more
-# concurrent tasks) against shard opens (rows sharing a shard are decoded in one
-# open per batch, so smaller batches -> more opens of the same shard). Also set
-# on the UDF itself so batches stay bounded even if upstream batching changes.
+# Rows per decode batch.
 _DECODE_BATCH_SIZE = 16
 
 # Decode straight through target gaps up to this long; seek over anything longer.
