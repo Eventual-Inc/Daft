@@ -5,12 +5,10 @@ from typing import TYPE_CHECKING
 from daft.datatype import MediaType
 from daft.dependencies import pil_image
 from daft.file import File
-from daft.file.file import BUFFER_METADATA
+from daft.file.file import BUFFER_COPY, BUFFER_METADATA
 from daft.file.typing import ImageMetadata
 
 if TYPE_CHECKING:
-    import PIL
-
     from daft.daft import PyFileReference
     from daft.io import IOConfig
 
@@ -25,6 +23,8 @@ class ImageFile(File):
         return instance
 
     def __init__(self, url: str, io_config: IOConfig | None = None) -> None:
+        from daft.dependencies import pil_image
+
         if not pil_image.module_available():
             raise ImportError(
                 "The 'pillow' module is required to create image files. "
@@ -32,7 +32,6 @@ class ImageFile(File):
             )
         super().__init__(url, io_config, MediaType.image())
 
-    def __post_init__(self) -> None:
         if not self.is_image():
             raise ValueError(f"File {self} is not an image file")
 
@@ -54,16 +53,17 @@ class ImageFile(File):
                 mode=img.mode,
             )
 
-    def decode(self, mode: str | None = None) -> PIL.Image.Image:
+    def decode(self, mode: str | None = None, buffer_size: int | None = BUFFER_COPY) -> pil_image.Image:
         """Decode the image file into a PIL Image.
 
         Args:
             mode: Optional image mode to convert to (e.g. "RGB", "RGBA", "L").
+            buffer_size: Read buffer size for full image decode. Defaults to 1 MiB.
 
         Returns:
             PIL.Image.Image: The decoded image.
         """
-        with self.open() as f:
+        with self.open(buffer_size=buffer_size) as f:
             img = pil_image.open(f)
             img.load()
             if mode is not None and img.mode != mode:

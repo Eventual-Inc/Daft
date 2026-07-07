@@ -6,6 +6,7 @@ pytest.importorskip("av")
 
 import daft
 from daft import dependencies
+from daft.file.file import BUFFER_METADATA
 from daft.schema import Field
 
 
@@ -62,6 +63,23 @@ def test_get_metadata(sample_video_path):
     }
 
     assert df.to_pydict() == expected
+
+
+def test_video_metadata_uses_configured_buffer(sample_video_path, monkeypatch):
+    file = daft.VideoFile(sample_video_path)
+    original_open = file.open
+    seen_buffer_sizes: list[int | None] = []
+
+    def track_open(buffer_size=None):
+        seen_buffer_sizes.append(buffer_size)
+        return original_open(buffer_size=buffer_size)
+
+    monkeypatch.setattr(file, "open", track_open)
+
+    assert file.metadata()["width"] == 192
+    assert file.metadata(buffer_size=None)["width"] == 192
+
+    assert seen_buffer_sizes == [BUFFER_METADATA, None]
 
 
 def test_keyframes(sample_video_path):
@@ -130,11 +148,17 @@ def test_video_keyframes_start_time_beyond_duration_returns_empty(sample_video_p
     assert frames == []
 
 
-def test_keyframes_raises_informative_error_when_pillow_missing(sample_video_path, monkeypatch):
-    """Regression test for issue #6064: ensure informative error when pillow is missing."""
+def test_videofile_init_without_pillow(monkeypatch):
     monkeypatch.setattr(dependencies.pil_image, "module_available", lambda: False)
 
+    with pytest.raises(ImportError, match="pillow.*required.*pip install daft\\[video\\]"):
+        daft.VideoFile("dummy.mp4")
+
+
+def test_keyframes_raises_informative_error_when_pillow_missing(sample_video_path, monkeypatch):
+    """Regression test for issue #6064: ensure informative error when pillow is missing."""
     file = daft.VideoFile(sample_video_path)
+    monkeypatch.setattr(dependencies.pil_image, "module_available", lambda: False)
 
     with pytest.raises(ImportError, match="pillow.*required.*pip install daft\\[video\\]"):
         list(file.keyframes())
@@ -280,9 +304,8 @@ def test_video_frames_expression_with_resize(sample_video_path):
 
 
 def test_frames_raises_informative_error_when_pillow_missing(sample_video_path, monkeypatch):
-    monkeypatch.setattr(dependencies.pil_image, "module_available", lambda: False)
-
     file = daft.VideoFile(sample_video_path)
+    monkeypatch.setattr(dependencies.pil_image, "module_available", lambda: False)
 
     with pytest.raises(ImportError, match="pillow.*required.*pip install daft\\[video\\]"):
         list(file.frames())
