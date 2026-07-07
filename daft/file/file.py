@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import mimetypes
 import shutil
 import tempfile
 import warnings
@@ -9,8 +10,9 @@ from daft.daft import PyDaftFile, PyFileReference
 from daft.datatype import MediaType
 from daft.dependencies import av, h5py, pil_image, sf
 
-BUFFER_SNIFF: int = 4096
-BUFFER_METADATA: int = 65536
+BUFFER_SNIFF: int = 4 * 1024  # 4KB
+BUFFER_METADATA: int = 64 * 1024  # 64KB
+BUFFER_COPY: int = 1024 * 1024  # 1MB
 
 if TYPE_CHECKING:
     from tempfile import _TemporaryFileWrapper
@@ -100,6 +102,8 @@ class File:
         nothing is committed and the destination is left untouched.
         """
         if mode in ("r", "rb"):
+            if self.position is None and self._inner.size() is None and not self.exists():
+                raise FileNotFoundError(f"File {self.path} does not exist")
             return PyDaftFile._from_file_reference(self._inner, buffer_size=buffer_size)
         if mode in ("w", "wt", "wb"):
             if buffer_size is not None:
@@ -195,11 +199,17 @@ class File:
 
         If the MIME type is undetectable, returns 'application/octet-stream'.
         """
-        with self.open(buffer_size=BUFFER_SNIFF) as f:
-            maybe_mime_type = f.guess_mime_type()
+        try:
+            with self.open(buffer_size=BUFFER_SNIFF) as f:
+                maybe_mime_type = f.guess_mime_type()
+                return maybe_mime_type if maybe_mime_type else "application/octet-stream"
+        except FileNotFoundError:
+            if self.path.lower().endswith((".h5", ".hdf5")):
+                return "application/vnd.hdfgroup.hdf5"
+            maybe_mime_type, _ = mimetypes.guess_type(self.path)
             return maybe_mime_type if maybe_mime_type else "application/octet-stream"
 
-    def to_tempfile(self) -> _TemporaryFileWrapper[bytes]:
+    def to_tempfile(self, buffer_size: int = BUFFER_COPY) -> _TemporaryFileWrapper[bytes]:
         """Create a temporary file with the contents of this file.
 
         Returns:
@@ -220,7 +230,7 @@ class File:
             if not f._supports_range_requests() or size < 1024:
                 temp_file.write(f.read())
             else:
-                shutil.copyfileobj(f, temp_file, length=size)
+                shutil.copyfileobj(f, temp_file, length=buffer_size)  # Default buffer size is 1MB
             # close it as `to_tempfile` is a consuming method
             f.close()
             temp_file.seek(0)

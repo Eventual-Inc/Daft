@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
-from collections.abc import Mapping as MappingABC
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, overload
 
@@ -11,12 +10,13 @@ from daft.file.file import File
 from daft.file.typing import Hdf5ObjectMetadata
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping, Sequence
+    from collections.abc import Callable
 
     from daft.daft import PyDaftFile, PyFileReference
     from daft.io import IOConfig
 
 _HDF5_EXTENSIONS = (".h5", ".hdf5")
+HDF5_SCAN_BUFFER_SIZE = 1024
 HDF5_DEFAULT_BUFFER_SIZE = 64 * 1024
 
 
@@ -74,7 +74,7 @@ class Hdf5File(File):
         """Collect object metadata below an HDF5 group.
 
         This is a Daft convenience around the same recursive traversal used by
-        h5py ``Group.visititems``. It visits groups and datasets under
+        ``h5py.File.visititems()``. It visits groups and datasets under
         ``group`` and returns DataFrame-friendly dictionaries with stable keys.
 
         Args:
@@ -87,7 +87,7 @@ class Hdf5File(File):
         Raises:
             TypeError: If ``group`` resolves to a dataset instead of a group.
         """
-        with self._open_h5py() as h5:
+        with self._open_h5py(HDF5_SCAN_BUFFER_SIZE) as h5:
             node = h5[group]
             if not hasattr(node, "visititems"):
                 raise TypeError(f"{group} is not an HDF5 group")
@@ -134,7 +134,7 @@ class Hdf5File(File):
         Returns:
             Names of child groups and datasets directly under ``group``.
         """
-        with self._open_h5py() as h5:
+        with self._open_h5py(HDF5_SCAN_BUFFER_SIZE) as h5:
             node = h5[group]
             return list(node.keys())
 
@@ -151,7 +151,7 @@ class Hdf5File(File):
             A dictionary of attribute names to values. Values follow h5py's
             normal conversion rules, such as NumPy scalars or arrays.
         """
-        with self._open_h5py() as h5:
+        with self._open_h5py(HDF5_SCAN_BUFFER_SIZE) as h5:
             return dict(h5[h5path].attrs)
 
     @overload
@@ -181,7 +181,7 @@ class Hdf5File(File):
             visitor completed without one. If ``func`` is omitted, returns
             ``list[str]``.
         """
-        with self._open_h5py() as h5:
+        with self._open_h5py(HDF5_SCAN_BUFFER_SIZE) as h5:
             node = h5[group]
             if func is None:
                 names: list[str] = []
@@ -200,36 +200,33 @@ class Hdf5File(File):
     def read(self, dataset: str) -> np.ndarray[Any, Any]: ...
 
     @overload
-    def read(self, dataset: list[str]) -> dict[str, np.ndarray[Any, Any]]: ...
-
-    @overload
-    def read(self, dataset: Mapping[str, str]) -> dict[str, np.ndarray[Any, Any]]: ...
+    def read(self, dataset: list[str] | tuple[str, ...]) -> dict[str, np.ndarray[Any, Any]]: ...
 
     def read(
         self,
-        dataset: str | Sequence[str] | Mapping[str, str],
+        dataset: str | Sequence[str],
     ) -> np.ndarray[Any, Any] | dict[str, np.ndarray[Any, Any]]:
         """Read one or more HDF5 datasets into NumPy arrays.
 
         For a single dataset path, this is equivalent to opening the file with
-        h5py and evaluating ``h5[dataset][()]``. Passing a sequence or mapping
-        reads multiple datasets with one file open.
+        h5py and evaluating ``h5[dataset][()]``. Passing a sequence reads
+        multiple datasets with one file open.
 
         Args:
-            dataset: A dataset path, a sequence of dataset paths, or a mapping
-                of output names to dataset paths.
+            dataset: A dataset path or sequence of dataset paths.
 
         Returns:
             A NumPy array for one dataset. For multiple datasets, a dictionary
-            keyed by either the provided mapping aliases or the dataset paths.
+            keyed by dataset path.
 
         Raises:
             TypeError: If any requested path resolves to a group instead of a
                 dataset.
         """
+        if isinstance(dataset, Mapping):
+            raise TypeError("Hdf5File.read() does not support alias mappings; pass a dataset path or sequence.")
+
         with self._open_h5py() as h5:
             if isinstance(dataset, str):
                 return self._read_dataset(h5, dataset)
-            if isinstance(dataset, MappingABC):
-                return {str(name): self._read_dataset(h5, str(h5path)) for name, h5path in dataset.items()}
             return {h5path: self._read_dataset(h5, h5path) for h5path in dataset}
