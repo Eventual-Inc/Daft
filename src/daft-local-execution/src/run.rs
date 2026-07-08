@@ -39,7 +39,7 @@ use {
     daft_micropartition::python::PyMicroPartition,
     daft_partition_refs::PyFlightPartitionRef,
     pyo3::{
-        Bound, IntoPyObject, PyAny, PyRef, PyResult, Python, pyclass, pymethods, sync::MutexExt,
+        Bound, IntoPyObject, Py, PyAny, PyRef, PyResult, Python, pyclass, pymethods, sync::MutexExt,
     },
 };
 
@@ -238,6 +238,46 @@ impl PyNativeExecutor {
         let executor = self.executor.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let result = enqueue_future.await?;
+            Ok(PyResultReceiver {
+                result: Arc::new(tokio::sync::Mutex::new(Some(result))),
+                fingerprint,
+                input_id,
+                executor,
+            })
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (local_physical_plan, daft_ctx, input_id, inputs, context=None, maintain_order=true))]
+    pub fn run_sync(
+        &self,
+        py: Python<'_>,
+        local_physical_plan: &daft_local_plan::PyLocalPhysicalPlan,
+        daft_ctx: &PyDaftContext,
+        input_id: InputId,
+        inputs: HashMap<SourceId, Input>,
+        context: Option<HashMap<String, String>>,
+        maintain_order: bool,
+    ) -> PyResult<PyResultReceiver> {
+        let daft_ctx: &DaftContext = daft_ctx.into();
+        let plan = local_physical_plan.plan.clone();
+        let exec_cfg = daft_ctx.execution_config();
+        let subscribers = daft_ctx.subscribers();
+        let (fingerprint, enqueue_future) = {
+            self.executor.lock_py_attached(py).unwrap().run(
+                &plan,
+                exec_cfg,
+                subscribers,
+                context,
+                inputs,
+                input_id,
+                maintain_order,
+            )?
+        };
+
+        let executor = self.executor.clone();
+        py.detach(move || {
+            let result = get_global_runtime().block_on(enqueue_future)?;
             Ok(PyResultReceiver {
                 result: Arc::new(tokio::sync::Mutex::new(Some(result))),
                 fingerprint,
@@ -685,6 +725,10 @@ impl ExecutionEngineResult {
         self.receiver.recv().await
     }
 
+    fn next_blocking(&mut self) -> Option<ExecutionEngineResultItem> {
+        self.receiver.blocking_recv()
+    }
+
     /// Consume all pipeline output for this input_id until EOF, returning any
     /// emitted `MicroPartition`s. `FlightPartitionRef` items are skipped (they
     /// are only relevant when shuffles are enabled). Intended for tests that
@@ -749,6 +793,35 @@ impl PyResultReceiver {
         })
     }
 
+    fn next_sync(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        let result = self.result.clone();
+        py.detach(move || {
+            let mut result = result.blocking_lock();
+            let part = result
+                .as_mut()
+                .expect("PyResultReceiver.next_sync() should not be called after try_finish().")
+                .next_blocking();
+            drop(result);
+            Python::attach(|py| {
+                Ok(match part {
+                    None => py.None(),
+                    Some(ExecutionEngineResultItem::Partition(partition)) => {
+                        PyMicroPartition::from(partition)
+                            .into_pyobject(py)?
+                            .unbind()
+                            .into_any()
+                    }
+                    Some(ExecutionEngineResultItem::FlightPartitionRef(partition_ref)) => {
+                        PyFlightPartitionRef::from(partition_ref)
+                            .into_pyobject(py)?
+                            .unbind()
+                            .into_any()
+                    }
+                })
+            })
+        })
+    }
+
     fn try_finish<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let result = self.result.clone();
         let executor = self.executor.clone();
@@ -766,6 +839,40 @@ impl PyResultReceiver {
             let finish_future = executor.lock().unwrap().try_finish(fingerprint, input_id)?;
             let stats = finish_future.await?;
             Ok(PyExecutionStats::from(stats))
+        })
+    }
+
+    fn try_finish_sync(&self, py: Python<'_>) -> PyResult<PyExecutionStats> {
+        let result = self.result.clone();
+        let executor = self.executor.clone();
+        let fingerprint = self.fingerprint;
+        let input_id = self.input_id;
+        py.detach(move || {
+            let mut result = result.blocking_lock();
+            let _ = result
+                .take()
+                .expect("PyResultReceiver.try_finish_sync() should not be called more than once.");
+            drop(result);
+
+            get_global_runtime().block_on(async move {
+                let finish_future = executor.lock().unwrap().try_finish(fingerprint, input_id)?;
+                let stats = finish_future.await?;
+                Ok(PyExecutionStats::from(stats))
+            })
+        })
+    }
+
+    fn cancel_sync(&self, py: Python<'_>) -> PyResult<()> {
+        let result = self.result.clone();
+        let executor = self.executor.clone();
+        let fingerprint = self.fingerprint;
+        py.detach(move || {
+            let mut result = result.blocking_lock();
+            let _ = result.take();
+            drop(result);
+
+            executor.lock().unwrap().cancel_plan(fingerprint);
+            Ok(())
         })
     }
 }

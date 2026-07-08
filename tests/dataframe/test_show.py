@@ -4,7 +4,10 @@
 from __future__ import annotations
 
 import gc
+import os
 import re
+
+import pytest
 
 import daft
 from daft.dataframe import DataFrame
@@ -339,6 +342,18 @@ def test_native_runner_close_does_not_log_missing_event_loop(capsys):
     captured = capsys.readouterr()
     assert "RuntimeError: no running event loop" not in captured.err
     assert "Exception ignored in: <async_generator object NativeExecutor.run.<locals>.stream_results" not in captured.err
+
+
+@pytest.mark.skipif(os.getenv("DAFT_RUNNER") != "native", reason="only exercises the native executor")
+@pytest.mark.timeout(10)
+def test_native_executor_result_iteration_completes(tmp_path):
+    result = daft.from_pydict({"a": [1, 2]}).with_column("b", daft.col("a") + 1).collect()
+    assert result.to_pydict() == {"a": [1, 2], "b": [2, 3]}
+
+    output_dir = tmp_path / "parquet-out"
+    written = daft.from_pydict({"a": [1, 2]}).write_parquet(str(output_dir))
+    assert len(written.to_pydict()["path"]) == 1
+    assert daft.read_parquet(str(output_dir)).collect().to_pydict() == {"a": [1, 2]}
 
 
 def test_collect_emits_query_id(monkeypatch, capsys):

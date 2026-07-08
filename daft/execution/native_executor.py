@@ -14,12 +14,11 @@ from daft.daft import (
     NativeExecutor as _NativeExecutor,
 )
 from daft.dataframe.display import MermaidOptions
-from daft.event_loop import get_or_init_event_loop
 from daft.recordbatch import MicroPartition
 from daft.runners.partitioning import LocalMaterializedResult
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator, Generator, Mapping
+    from collections.abc import Generator, Mapping
 
     from daft.context import DaftContext
     from daft.logical.builder import LogicalPlanBuilder
@@ -38,30 +37,22 @@ class NativeExecutor:
     ) -> Generator[LocalMaterializedResult, None, tuple[str, PyExecutionStats]]:
         stats: PyExecutionStats | None = None
 
-        async def stream_results() -> AsyncGenerator[PyMicroPartition | FlightPartitions | None, None]:
-            result_handle = await self._executor.run(
-                local_physical_plan,
-                ctx._ctx,
-                0,
-                dict(inputs),
-                context,
-                ctx.daft_execution_config.maintain_order,
-            )
-            nonlocal stats
-            try:
-                async for batch in result_handle:
-                    yield batch
-            finally:
-                stats = await result_handle.try_finish()
-
-        event_loop = get_or_init_event_loop()
-        async_exec = stream_results()
+        result_handle = self._executor.run_sync(
+            local_physical_plan,
+            ctx._ctx,
+            0,
+            dict(inputs),
+            context,
+            ctx.daft_execution_config.maintain_order,
+        )
         should_raise_errors_from_close = True
         try:
             while True:
-                part = event_loop.run(async_exec.__anext__())
+                part = result_handle.next_sync()
                 if part is None:
                     break
+                if isinstance(part, FlightPartitions):
+                    raise RuntimeError("NativeExecutor received FlightPartitions in local execution")
                 yield LocalMaterializedResult(MicroPartition._from_pymicropartition(part))
         except BaseException:
             # Preserve the original exception/GeneratorExit by not masking it with errors from async_exec.aclose().
@@ -69,7 +60,10 @@ class NativeExecutor:
             raise
         finally:
             try:
-                event_loop.run(async_exec.aclose())
+                if should_raise_errors_from_close:
+                    stats = result_handle.try_finish_sync()
+                else:
+                    result_handle.cancel_sync()
             except Exception:
                 if should_raise_errors_from_close:
                     raise

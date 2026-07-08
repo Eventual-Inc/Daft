@@ -49,6 +49,10 @@ impl<T> UnboundedReceiver<T> {
     pub(crate) async fn recv(&mut self) -> Option<T> {
         self.0.recv().await
     }
+
+    pub(crate) fn blocking_recv(&mut self) -> Option<T> {
+        self.0.blocking_recv()
+    }
 }
 
 pub(crate) fn create_unbounded_channel<T>() -> (UnboundedSender<T>, UnboundedReceiver<T>) {
