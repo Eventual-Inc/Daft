@@ -59,8 +59,10 @@ fn rint_impl(s: &Series) -> DaftResult<Series> {
         | DataType::UInt32
         | DataType::UInt64 => s.clone().cast(&s.to_floating_data_type()?),
         DataType::Float16 => {
-            let s = s.cast(&DataType::Float32)?;
-            rint_impl(&s)
+            let s32 = s.cast(&DataType::Float32)?;
+            let ca = s32.f32().unwrap();
+            let result = ca.apply(|v| v.round_ties_even())?;
+            result.into_series().cast(&DataType::Float16)
         }
         DataType::Float32 => {
             let ca = s.f32().unwrap();
