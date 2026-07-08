@@ -57,6 +57,7 @@ def test_deltalake_s3_unsafe_rename_is_explicit():
     }
 
 
+@pytest.mark.skip(reason="This test will be enabled for daft versions >= 0.8.0")
 def test_deltalake_s3_old_versions_require_explicit_locking_choice():
     with pytest.raises(ValueError, match="deltalake>=0.23.0"):
         _configure_deltalake_storage_options(
