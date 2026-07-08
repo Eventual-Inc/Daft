@@ -186,6 +186,57 @@ def test_row_wise_async_udf():
     assert sorted(async_df.to_pydict()["x"]) == ["5", "7", "9"]
 
 
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="requires Native Runner to be in use")
+@pytest.mark.timeout(5)
+def test_row_wise_async_udf_with_limit_completes_native_runner():
+    @daft.func
+    async def add_one(x: int) -> int:
+        await asyncio.sleep(0.01)
+        return x + 1
+
+    result = daft.range(10, partitions=2).with_column("id", add_one(col("id"))).limit(3).to_pydict()
+
+    assert result == {"id": [1, 2, 3]}
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="requires Native Runner to be in use")
+@pytest.mark.timeout(5)
+def test_row_wise_async_udf_awaitable_uses_current_loop_native_runner():
+    @daft.func
+    async def add_one(x: int) -> int:
+        await asyncio.sleep(0.01)
+        return x + 1
+
+    # Initialize the shared Rust task locals on Daft's background loop first.
+    assert daft.range(2, partitions=1).with_column("id", add_one(col("id"))).limit(1).to_pydict() == {"id": [1]}
+
+    async def run_native_executor_on_current_loop() -> None:
+        from daft.context import get_context
+        from daft.daft import LocalPhysicalPlan
+        from daft.daft import NativeExecutor as _NativeExecutor
+
+        ctx = get_context()
+        builder = (
+            daft.range(2, partitions=1)
+            .with_column("id", add_one(col("id")))
+            .limit(1)
+            ._builder.optimize(ctx.daft_execution_config)
+        )
+        plan, inputs = LocalPhysicalPlan.from_logical_plan_builder(builder._builder, {})
+        result_future = _NativeExecutor(False, "").run(
+            plan,
+            ctx._ctx,
+            0,
+            dict(inputs),
+            None,
+            ctx.daft_execution_config.maintain_order,
+        )
+        assert result_future.get_loop() is asyncio.get_running_loop()
+        result_future.cancel()
+
+    asyncio.run(run_native_executor_on_current_loop())
+
+
 @pytest.mark.parametrize("max_concurrency", [1, 2])
 def test_row_wise_async_udf_max_concurrency(max_concurrency):
     @daft.func(max_concurrency=max_concurrency)

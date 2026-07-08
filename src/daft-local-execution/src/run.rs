@@ -232,7 +232,8 @@ impl PyNativeExecutor {
         };
 
         let executor = self.executor.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let task_locals = pyo3_async_runtimes::tokio::get_current_locals(py)?;
+        pyo3_async_runtimes::tokio::future_into_py_with_locals(py, task_locals, async move {
             let result = enqueue_future.await?;
             Ok(PyResultReceiver {
                 result: Arc::new(tokio::sync::Mutex::new(Some(result))),
@@ -694,7 +695,8 @@ impl PyResultReceiver {
 
     fn __anext__<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, pyo3::PyAny>> {
         let result = self.result.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let task_locals = pyo3_async_runtimes::tokio::get_current_locals(py)?;
+        pyo3_async_runtimes::tokio::future_into_py_with_locals(py, task_locals, async move {
             let mut result = result.lock().await;
             let part = result
                 .as_mut()
@@ -726,7 +728,8 @@ impl PyResultReceiver {
         let executor = self.executor.clone();
         let fingerprint = self.fingerprint;
         let input_id = self.input_id;
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let task_locals = pyo3_async_runtimes::tokio::get_current_locals(py)?;
+        pyo3_async_runtimes::tokio::future_into_py_with_locals(py, task_locals, async move {
             // Take the result to drop the receiver
             let mut result = result.lock().await;
             let _ = result
