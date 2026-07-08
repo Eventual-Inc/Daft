@@ -157,10 +157,17 @@ def _configure_deltalake_storage_options(
         elif allow_unsafe_rename:
             set_storage_option("AWS_S3_ALLOW_UNSAFE_RENAME", "true")
         elif parse(deltalake_version) < parse("0.23.0"):
-            raise ValueError(
-                "Safe S3 Delta Lake writes without DynamoDB require deltalake>=0.23.0. "
-                "Upgrade deltalake, pass dynamo_table_name, or set allow_unsafe_rename=True."
+            import warnings
+
+            warnings.warn(
+                "Writing to S3 without DynamoDB or explicit unsafe rename on deltalake<0.23.0 "
+                "defaults to AWS_S3_ALLOW_UNSAFE_RENAME=true. This fallback will be removed in "
+                "Daft v0.8.0. Upgrade deltalake>=0.23.0, pass dynamo_table_name, or set "
+                "allow_unsafe_rename=True explicitly.",
+                DeprecationWarning,
+                stacklevel=2,
             )
+            set_storage_option("AWS_S3_ALLOW_UNSAFE_RENAME", "true")
     elif scheme == "file" and allow_unsafe_rename:
         set_storage_option("MOUNT_ALLOW_UNSAFE_RENAME", "true")
 
