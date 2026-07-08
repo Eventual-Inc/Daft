@@ -370,6 +370,44 @@ class DataFrame:
             )
         return None
 
+    @DataframePublicAPI
+    def lineage(self) -> dict[str, Any]:
+        """Returns OpenLineage lineage information from this DataFrame.
+
+        Parses the logical plan to extract structured lineage information including
+        input datasets (sources), output datasets (sinks), and their schemas.
+
+        When ``openlineage-python`` is installed, the returned objects are native
+        OpenLineage ``Dataset``, ``Run``, and ``Job`` instances that can be used
+        directly with the OL SDK for event emission. Otherwise, plain dicts with
+        the same field structure are returned as a fallback.
+
+        Returns:
+            dict: Lineage information with the following keys:
+
+            - ``inputs``: Input datasets (OL ``Dataset`` or dict).
+            - ``outputs``: Output datasets (OL ``Dataset`` or dict).
+            - ``run``: Run identifier (OL ``Run`` or str).
+            - ``job``: Job info (OL ``Job`` or dict).
+
+        Examples:
+            >>> import daft
+            >>>
+            >>> df = daft.read_parquet("/path/to/data/*.parquet")  # doctest: +SKIP
+            >>> df = df.select(df["col_a"], df["col_b"])  # doctest: +SKIP
+            >>> lineage_info = df.lineage()  # doctest: +SKIP
+            >>> len(lineage_info["inputs"])  # doctest: +SKIP
+            1
+
+        Note:
+            ``openlineage-python`` is an optional dependency. Install it via
+            ``pip install daft[openlineage]`` (or ``pip install openlineage-python``)
+            for native OL object support.
+        """
+        from daft.lineage import build_lineage
+
+        return build_lineage(self)
+
     def num_partitions(self) -> int | None:
         """Returns the number of partitions that will be used to execute this DataFrame.
 

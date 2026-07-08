@@ -30,7 +30,7 @@ homepage = "https://www.daft.ai"
 repository = "https://github.com/Eventual-Inc/Daft"
 
 [project.optional-dependencies]
-all = ["daft[aws, azure, clickhouse, deltalake, gcp, google, gravitino, hdf5, hudi, huggingface, iceberg, lance, numpy, openai, pandas, postgres, ray, sentence-transformers, sql, transformers, turbopuffer, unity, video]"]
+all = ["daft[aws, azure, clickhouse, deltalake, gcp, google, gravitino, hdf5, hudi, huggingface, iceberg, lance, numpy, openai, openlineage, pandas, postgres, ray, sentence-transformers, sql, transformers, turbopuffer, unity, video]"]
 aws = ["boto3<1.44.0", "mypy-boto3-glue"]
 azure = []
 clickhouse = ["clickhouse_connect<1.1.0"]
@@ -45,6 +45,7 @@ iceberg = ["pyiceberg >= 0.7.0, != 0.9.1, != 0.10.0, <= 0.11.1"]
 lance = ["daft-lance"]
 numpy = ["numpy<2.4.0"]
 openai = ["openai<2.39.0", "numpy<2.4.0", "pillow==12.2.0"]
+openlineage = ["openlineage-python"]
 pandas = ["pandas<2.4.0"]
 postgres = ["psycopg[binary]<3.4.0", "pgvector<0.5.0", "sqlglot<30.9.0", "connectorx>=0.4.4,<0.5.0"]
 ray = [

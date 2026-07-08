@@ -1512,6 +1512,7 @@ all = [
     { name = "mypy-boto3-glue" },
     { name = "numpy" },
     { name = "openai" },
+    { name = "openlineage-python" },
     { name = "pandas", version = "2.2.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
     { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
     { name = "pgvector" },
@@ -1576,6 +1577,9 @@ openai = [
     { name = "numpy" },
     { name = "openai" },
     { name = "pillow" },
+]
+openlineage = [
+    { name = "openlineage-python" },
 ]
 pandas = [
     { name = "pandas", version = "2.2.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
@@ -1714,7 +1718,7 @@ requires-dist = [
     { name = "clickhouse-connect", marker = "extra == 'clickhouse'", specifier = "<1.1.0" },
     { name = "connectorx", marker = "extra == 'postgres'", specifier = ">=0.4.4,<0.5.0" },
     { name = "connectorx", marker = "extra == 'sql'", specifier = ">=0.4.4,<0.5.0" },
-    { name = "daft", extras = ["aws", "azure", "clickhouse", "deltalake", "gcp", "google", "gravitino", "hdf5", "hudi", "huggingface", "iceberg", "lance", "numpy", "openai", "pandas", "postgres", "ray", "sentence-transformers", "sql", "transformers", "turbopuffer", "unity", "video"], marker = "extra == 'all'" },
+    { name = "daft", extras = ["aws", "azure", "clickhouse", "deltalake", "gcp", "google", "gravitino", "hdf5", "hudi", "huggingface", "iceberg", "lance", "numpy", "openai", "openlineage", "pandas", "postgres", "ray", "sentence-transformers", "sql", "transformers", "turbopuffer", "unity", "video"], marker = "extra == 'all'" },
     { name = "daft-lance", marker = "extra == 'lance'" },
     { name = "datasets", marker = "extra == 'huggingface'", specifier = "<4.9.0" },
     { name = "deltalake", marker = "extra == 'deltalake'", specifier = ">=1.5.0,<1.7.0" },
@@ -1731,6 +1735,7 @@ requires-dist = [
     { name = "numpy", marker = "extra == 'numpy'", specifier = "<2.4.0" },
     { name = "numpy", marker = "extra == 'openai'", specifier = "<2.4.0" },
     { name = "openai", marker = "extra == 'openai'", specifier = "<2.39.0" },
+    { name = "openlineage-python", marker = "extra == 'openlineage'" },
     { name = "packaging" },
     { name = "pandas", marker = "extra == 'pandas'", specifier = "<2.4.0" },
     { name = "pgvector", marker = "extra == 'postgres'", specifier = "<0.5.0" },
@@ -1756,7 +1761,7 @@ requires-dist = [
     { name = "typing-extensions", marker = "python_full_version < '3.12'", specifier = ">=4.0.0" },
     { name = "unitycatalog", marker = "extra == 'unity'", specifier = "<0.2.0" },
 ]
-provides-extras = ["all", "audio", "aws", "azure", "clickhouse", "deltalake", "gcp", "google", "gravitino", "hdf5", "hudi", "huggingface", "iceberg", "lance", "numpy", "openai", "pandas", "postgres", "ray", "sql", "transformers", "turbopuffer", "unity", "video", "viz"]
+provides-extras = ["all", "audio", "aws", "azure", "clickhouse", "deltalake", "gcp", "google", "gravitino", "hdf5", "hudi", "huggingface", "iceberg", "lance", "numpy", "openai", "openlineage", "pandas", "postgres", "ray", "sql", "transformers", "turbopuffer", "unity", "video", "viz"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -6059,6 +6064,22 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/92/ce/bd17ff5772938267fd49716e94ca24f616ff4cb1ff4c6be13085108037be/opencv_python_headless-4.13.0.92-cp37-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:0525a3d2c0b46c611e2130b5fdebc94cf404845d8fa64d2f3a3b679572a5bd22", size = 56016764, upload-time = "2026-02-05T10:26:48.904Z" },
     { url = "https://files.pythonhosted.org/packages/8f/b4/b7bcbf7c874665825a8c8e1097e93ea25d1f1d210a3e20d4451d01da30aa/opencv_python_headless-4.13.0.92-cp37-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:eb60e36b237b1ebd40a912da5384b348df8ed534f6f644d8e0b4f103e272ba7d", size = 35010236, upload-time = "2026-02-05T10:28:11.031Z" },
     { url = "https://files.pythonhosted.org/packages/4b/33/b5db29a6c00eb8f50708110d8d453747ca125c8b805bc437b289dbdcc057/opencv_python_headless-4.13.0.92-cp37-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:0bd48544f77c68b2941392fcdf9bcd2b9cdf00e98cb8c29b2455d194763cf99e", size = 60391106, upload-time = "2026-02-05T10:30:14.236Z" },
+]
+
+[[package]]
+name = "openlineage-python"
+version = "1.51.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "attrs" },
+    { name = "httpx" },
+    { name = "packaging" },
+    { name = "python-dateutil" },
+    { name = "pyyaml" },
+    { name = "requests" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/39/33/ec58ea03fbcb32bc62c4d012e9d2a0710817e423fff41b2880241f9c95f3/openlineage_python-1.51.0-py3-none-any.whl", hash = "sha256:bbf03eeb2271ccb23dc6b7a5f39e9968585d10160fa1d7ac345d07f59b45f568", size = 114334, upload-time = "2026-07-06T11:46:41.801Z" },
 ]
 
 [[package]]
