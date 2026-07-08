@@ -44,3 +44,27 @@ def test_convert_to_s3_config():
     expected_s3_config.update(endpoint_url="https://s3.us-east-2.amazonaws.com")
     expected_s3_config.pop("virtual_hosted_style_request")
     assert config == expected_s3_config
+
+
+def test_convert_oss_to_s3_config():
+    # Alibaba Cloud OSS is S3-compatible and is routed through the S3 storage options.
+    # See: https://github.com/Eventual-Inc/Daft/issues/5539
+    s3_config = S3Config(
+        region_name="oss-cn-hangzhou",
+        endpoint_url="https://oss-cn-hangzhou.aliyuncs.com",
+        key_id="dummy_ak",
+        access_key="dummy_sk",
+        force_virtual_addressing=True,
+    )
+    table_uri = "oss://dummy_bucket/path"
+
+    config = io_config_to_storage_options(IOConfig(s3=s3_config), table_uri=table_uri)
+
+    # OSS must resolve to the S3 storage options (previously returned None).
+    assert config is not None
+    assert config["region"] == "oss-cn-hangzhou"
+    assert config["access_key_id"] == "dummy_ak"
+    assert config["secret_access_key"] == "dummy_sk"
+    # Virtual-hosted-style addressing rewrites the endpoint to include the bucket.
+    assert config["virtual_hosted_style_request"] == "true"
+    assert config["endpoint_url"] == "https://dummy_bucket.oss-cn-hangzhou.aliyuncs.com"
