@@ -14,7 +14,7 @@ use futures::{
 use reqwest::StatusCode;
 use reqwest_middleware::{
     ClientWithMiddleware,
-    reqwest::header::{CONTENT_LENGTH, RANGE},
+    reqwest::header::{CONTENT_LENGTH, LINK, RANGE},
 };
 use serde::{Deserialize, Serialize};
 use snafu::{IntoError, ResultExt};
@@ -45,7 +45,9 @@ enum ItemType {
 #[serde(rename_all = "snake_case")]
 struct Item {
     r#type: ItemType,
-    oid: String,
+    // The datasets/models/spaces tree APIs return a git `oid` per entry; the buckets tree
+    // API returns xet metadata instead and has no `oid` field.
+    oid: Option<String>,
     size: u64,
     path: String,
 }
@@ -56,11 +58,45 @@ pub struct HFSource {
     xet: XetContext,
 }
 
+/// Map an HTTP 401 to the right error for the repo type. Hugging Face returns 401 for
+/// buckets that are private *or* nonexistent (e.g. when a user assumes a dataset is also
+/// available as a bucket), so bucket 401s get a dedicated, actionable message.
+fn hf_unauthorized_error(parts: &HFPathParts) -> Error {
+    if parts.repo_type == HFRepoType::Buckets {
+        Error::BucketUnauthorized {
+            repository: parts.repository.clone(),
+        }
+    } else {
+        Error::Unauthorized
+    }
+}
+
+/// Same as [`hf_unauthorized_error`], for call sites that only have the original URI.
+fn hf_unauthorized_error_for_uri(uri: &str) -> Error {
+    match hf_path_parts_from_uri(uri) {
+        Ok(Some(parts)) => hf_unauthorized_error(&parts),
+        _ => Error::Unauthorized,
+    }
+}
+
+/// Extract the `rel="next"` URL from an HTTP `Link` header.
+fn parse_link_header_next(link: &str) -> Option<String> {
+    link.split(',').find_map(|entry| {
+        let (url, params) = entry.split_once(';')?;
+        params.contains("rel=\"next\"").then(|| {
+            url.trim()
+                .trim_start_matches('<')
+                .trim_end_matches('>')
+                .to_string()
+        })
+    })
+}
+
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
         use Error::{
-            PrivateDataset, UnableToConnect, UnableToDetermineSize, UnableToOpenFile,
-            UnableToReadBytes, Unauthorized, XetOperationFailed,
+            BucketUnauthorized, PrivateDataset, UnableToConnect, UnableToDetermineSize,
+            UnableToOpenFile, UnableToReadBytes, Unauthorized, XetOperationFailed,
         };
         match error {
             UnableToOpenFile { path, source } => {
@@ -103,6 +139,11 @@ impl From<Error> for super::Error {
             PrivateDataset => Self::Unauthorized {
                 store: super::SourceType::HF,
                 path: String::new(),
+                source: error.into(),
+            },
+            BucketUnauthorized { ref repository } => Self::Unauthorized {
+                store: super::SourceType::HF,
+                path: repository.clone(),
                 source: error.into(),
             },
             XetOperationFailed { path, message } => Self::Generic {
@@ -188,6 +229,14 @@ impl HFSource {
                     // Retry with cache busting to bypass the improperly cached response and get correct file metadata.
                     Some(StatusCode::RANGE_NOT_SATISFIABLE) => {
                         self.request(uri, true, range, client).await
+                    }
+                    Some(StatusCode::UNAUTHORIZED)
+                        if matches!(&path, HFPath::Hf(parts) if parts.repo_type == HFRepoType::Buckets) =>
+                    {
+                        let HFPath::Hf(parts) = &path else {
+                            unreachable!()
+                        };
+                        Err(hf_unauthorized_error(parts).into())
                     }
                     _ => Err(e)
                         .context(error::UnableToOpenFileSnafu::<String> { path: uri.clone() })?,
@@ -328,7 +377,10 @@ impl HFSource {
             .context(error::UnableToConnectSnafu::<String> { path: uri.into() })?;
         let response = response.error_for_status().map_err(|e| {
             if e.status().map(|s| s.as_u16()) == Some(401) {
-                Error::Unauthorized
+                match &path {
+                    HFPath::Hf(parts) => hf_unauthorized_error(parts),
+                    HFPath::Http(_) => Error::Unauthorized,
+                }
             } else {
                 Error::UnableToOpenFile {
                     path: uri.clone(),
@@ -381,7 +433,7 @@ impl ObjectSource for HFSource {
             match self.get_via_xet(uri, range.clone(), io_stats.clone()).await {
                 Ok(Some(result)) => return Ok(result),
                 Ok(None) => {}
-                Err(Error::Unauthorized) => return Err(Error::Unauthorized.into()),
+                Err(Error::Unauthorized) => return Err(hf_unauthorized_error_for_uri(uri).into()),
                 Err(e) => {
                     log::debug!("Xet read failed for {uri}, falling back to HTTP: {e}");
                 }
@@ -410,7 +462,7 @@ impl ObjectSource for HFSource {
             {
                 Ok(Some(resolved)) => return Ok(resolved.file_size as usize),
                 Ok(None) => {}
-                Err(Error::Unauthorized) => return Err(Error::Unauthorized.into()),
+                Err(Error::Unauthorized) => return Err(hf_unauthorized_error_for_uri(uri).into()),
                 Err(e) => {
                     log::debug!("Xet size probe failed for {uri}, falling back to HTTP: {e}");
                 }
@@ -455,7 +507,11 @@ impl ObjectSource for HFSource {
                 // hf://datasets/user/repo
                 // but not
                 // hf://datasets/user/repo/file.parquet
-                if file_format == Some(FileFormat::Parquet) {
+                // Buckets are plain object storage with no parquet-conversion API, so they
+                // always go through regular globbing.
+                if file_format == Some(FileFormat::Parquet)
+                    && parts.repo_type != HFRepoType::Buckets
+                {
                     let res =
                         try_parquet_api(parts, limit, io_stats.clone(), &self.http_source.client)
                             .await;
@@ -495,7 +551,12 @@ impl ObjectSource for HFSource {
                 .await;
         };
 
-        let api_uri = HFPath::Hf(path_parts.clone()).get_api_uri();
+        // The continuation token, when present, is the fully-qualified `rel="next"` URL from
+        // the previous page's `Link` header.
+        let api_uri = match continuation_token {
+            Some(token) => token.to_string(),
+            None => HFPath::Hf(path_parts.clone()).get_api_uri(),
+        };
 
         let request = self.http_source.client.get(api_uri.clone());
         let response = request
@@ -507,7 +568,7 @@ impl ObjectSource for HFSource {
 
         let response = response.error_for_status().map_err(|e| {
             if e.status().map(|s| s.as_u16()) == Some(401) {
-                Error::Unauthorized
+                hf_unauthorized_error(&path_parts)
             } else {
                 Error::UnableToOpenFile {
                     path: api_uri.clone(),
@@ -519,6 +580,13 @@ impl ObjectSource for HFSource {
         if let Some(is) = io_stats.as_ref() {
             is.mark_list_requests(1);
         }
+        // The tree APIs paginate (1000 entries per page) and advertise the next page in the
+        // `Link` header.
+        let continuation_token = response
+            .headers()
+            .get(LINK)
+            .and_then(|v| v.to_str().ok())
+            .and_then(parse_link_header_next);
         let response =
             response
                 .json::<Vec<Item>>()
@@ -557,7 +625,7 @@ impl ObjectSource for HFSource {
             .collect();
         Ok(LSResult {
             files,
-            continuation_token: None,
+            continuation_token,
         })
     }
 
@@ -641,8 +709,98 @@ async fn try_parquet_api(
 #[cfg(test)]
 mod tests {
     use common_io_config::{HTTPConfig, HuggingFaceConfig};
+    use futures::TryStreamExt;
 
     use crate::{huggingface::HFSource, object_io::ObjectSource};
+
+    #[test]
+    fn test_parse_link_header_next() {
+        let link = "<https://huggingface.co/api/buckets/commoncrawl/commoncrawl/tree?limit=1000&cursor=abc>; rel=\"next\"";
+        assert_eq!(
+            super::parse_link_header_next(link).as_deref(),
+            Some(
+                "https://huggingface.co/api/buckets/commoncrawl/commoncrawl/tree?limit=1000&cursor=abc"
+            )
+        );
+        assert_eq!(
+            super::parse_link_header_next("<https://example.com>; rel=\"prev\""),
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn test_bucket_ls() -> crate::Result<()> {
+        let config = HuggingFaceConfig::default();
+        let client = HFSource::get_client(&config, &HTTPConfig::default()).await?;
+
+        let result = client
+            .ls(
+                "hf://buckets/the-hf-stack/zenml-experiments/",
+                true,
+                None,
+                None,
+                None,
+            )
+            .await?;
+        assert!(!result.files.is_empty());
+        assert!(
+            result
+                .files
+                .iter()
+                .all(|f| f.filepath.starts_with("hf://buckets/the-hf-stack/zenml-experiments/"))
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_bucket_glob_from_copied_tree_url() -> crate::Result<()> {
+        // The naive flow from #7217: copy the browser URL of a bucket tree page, swap the
+        // scheme for hf://, and glob.
+        let config = HuggingFaceConfig::default();
+        let client = HFSource::get_client(&config, &HTTPConfig::default()).await?;
+
+        let files: Vec<_> = client
+            .glob(
+                "hf://buckets/the-hf-stack/zenml-experiments/tree/trackio/data/*.parquet",
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await?
+            .try_collect()
+            .await?;
+        assert_eq!(files.len(), 1);
+        assert_eq!(
+            files[0].filepath,
+            "hf://buckets/the-hf-stack/zenml-experiments/trackio/data/train-00000-of-00001.parquet"
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_bucket_unauthorized_hint_for_dataset_repo() -> crate::Result<()> {
+        // wikimedia/wikipedia is a (public) dataset but not a bucket. Hugging Face answers
+        // 401 for the nonexistent bucket, which must surface the buckets-vs-datasets hint
+        // instead of a bare credentials error.
+        let config = HuggingFaceConfig::default();
+        let client = HFSource::get_client(&config, &HTTPConfig::default()).await?;
+
+        let err = client
+            .get_size("hf://buckets/wikimedia/wikipedia/foo.parquet", None)
+            .await
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("hf://datasets/wikimedia/wikipedia"),
+            "unexpected error: {msg}"
+        );
+
+        Ok(())
+    }
 
     #[tokio::test]
     async fn test_full_get_from_hf() -> crate::Result<()> {
