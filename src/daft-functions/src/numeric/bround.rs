@@ -17,7 +17,7 @@ pub struct Bround;
 struct BroundArgs<T> {
     input: T,
     #[arg(optional)]
-    decimals: Option<u32>,
+    decimals: Option<i32>,
 }
 
 #[typetag::serde]
@@ -29,7 +29,7 @@ impl ScalarUDF for Bround {
     ) -> DaftResult<Series> {
         let BroundArgs { input, decimals } = inputs.try_into()?;
         let decimals = decimals.unwrap_or(0);
-        bround_impl(&input, decimals as i32)
+        bround_impl(&input, decimals)
     }
 
     fn name(&self) -> &'static str {

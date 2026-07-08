@@ -108,8 +108,8 @@ def test_bround_bad_input() -> None:
     with pytest.raises(DaftCoreException):
         df.with_column("bround", bround(df["values"])).collect()
 
+
 def test_rint_float16() -> None:
-    import pyarrow as pa
     data = pa.array([2.5, 3.5, 4.5, -1.5], type=pa.float16())
     df = daft.from_pydict({"values": data.to_pylist()})
     df = df.with_column("values", df["values"].cast(daft.DataType.float16()))
@@ -118,10 +118,8 @@ def test_rint_float16() -> None:
 
 
 def test_bround_float16() -> None:
-    import pyarrow as pa
     data = pa.array([2.5, 3.5, 4.5, -1.5], type=pa.float16())
     df = daft.from_pydict({"values": data.to_pylist()})
     df = df.with_column("values", df["values"].cast(daft.DataType.float16()))
     result = df.with_column("bround", bround(df["values"])).collect()
     assert result.schema()["bround"].dtype == daft.DataType.float16()
-    

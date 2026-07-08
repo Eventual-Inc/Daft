@@ -199,7 +199,7 @@ def log10(expr: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("log10", expr)
 
 
-def log(expr: Expression, base: int | float = math.e) -> Expression:
+def log(expr: Expression, base: float = math.e) -> Expression:
     """The elementwise log with given base, of a numeric expression.
 
     Args:
@@ -264,7 +264,7 @@ def expm1(expr: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("expm1", expr)
 
 
-def between(expr: Expression, lower: Expression | int | float, upper: Expression | int | float) -> Expression:
+def between(expr: Expression, lower: Expression | float, upper: Expression | float) -> Expression:
     """Checks if values in the Expression are between lower and upper, inclusive.
 
     Args:
