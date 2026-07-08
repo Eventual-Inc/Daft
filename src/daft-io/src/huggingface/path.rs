@@ -179,6 +179,12 @@ impl FromStr for HFPathParts {
             // ^--------------^
             let mut path = uri.to_string().trim_end_matches('/').to_string();
             if repo_type == HFRepoType::Buckets {
+                // `tree` is a reserved segment in Hugging Face's bucket routing: the browser
+                // page for an object lives at `.../buckets/{repo}/tree/{path}`, and our own
+                // listing API call in `get_api_uri` hits `.../api/buckets/{repo}/tree/{path}`.
+                // It never denotes a real bucket object path. Users regularly copy the browser
+                // URL and swap `https://huggingface.co` for `hf://`, landing here with a leading
+                // `tree/` that isn't part of the object key, so strip it. See #7217.
                 path = path
                     .strip_prefix("tree/")
                     .unwrap_or(path.as_str())
