@@ -156,13 +156,10 @@ class _VideoFramesSourceTask(DataSourceTask):
             # Small tolerance for floating point comparisons
             epsilon: float = 1e-9 if sample_interval is None else max(1e-9, sample_interval * 1e-6)
 
-            # Decode the selected stream with a single generator. Recreating the
-            # generator on every iteration (``next(container.decode(stream))``) is
-            # unsupported by PyAV: it drops buffered frames and, depending on the
-            # container, can raise ``EOFError`` immediately, which the loop below
-            # would treat as a clean end-of-stream and silently return zero frames.
-            # This is what caused ``.mkv``/``.webm`` files to yield an empty
-            # DataFrame while ``.mp4`` happened to survive it (see #5172).
+            # recreating the decode generator each iteration (next(container.decode(stream)))
+            # is unsupported by pyav - it drops buffered frames and can raise EOFError early,
+            # which the loop below treated as clean EOF and returned nothing. so .mkv/.webm
+            # gave an empty dataframe while .mp4 happened to survive it (see #5172). create it once.
             frame_iter = container.decode(stream)
 
             frame_index: int = 0

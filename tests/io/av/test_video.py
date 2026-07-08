@@ -31,9 +31,9 @@ def _make_mock_container(frame_times: list[float], key_frames: list[bool] | None
         frame.to_ndarray.return_value = np.zeros((2, 2, 3), dtype="uint8")
         frames.append(frame)
 
-    # PyAV's ``container.decode(stream)`` returns a single generator that is
-    # iterated to completion, so the mock returns one iterator over all frames
-    # rather than a fresh one-frame iterator per call.
+    # pyav's container.decode(stream) returns one generator iterated to completion,
+    # so the mock hands back a single iterator over all frames, not a fresh
+    # one-frame iterator per call.
     mock_container.decode.return_value = iter(frames)
 
     return mock_container
@@ -48,8 +48,8 @@ def test_read_video_eof():
     mock_stream.codec_context = MagicMock()
     mock_container.streams = [mock_stream]
 
-    # PyAV raises EOFError while iterating the decode generator, so model the
-    # error on iteration rather than on the ``decode()`` call itself.
+    # pyav raises EOFError while iterating the decode generator, not on the
+    # decode() call itself - so model it on iteration.
     def _raise_eof():
         raise av.EOFError(0, "mock message", "mock.mp4")
         yield  # pragma: no cover - makes this a generator
@@ -141,9 +141,9 @@ def test_list_frames_no_sampling_returns_all_frames():
 def test_list_frames_uses_single_decode_generator():
     """Regression test for #5172.
 
-    ``_list_frames`` must decode the stream with a single generator. Recreating
-    ``container.decode(stream)`` on every iteration drops buffered frames and, for
-    some containers (e.g. .mkv/.webm), yields zero frames while .mp4 survives it.
+    _list_frames must decode with a single generator. recreating
+    container.decode(stream) each iteration drops buffered frames and, for some
+    containers (.mkv/.webm), yields zero frames while .mp4 survives it.
     """
     frame_times = [0.0, 0.5, 1.0, 1.5, 2.0]
     mock_container = _make_mock_container(frame_times)
@@ -160,7 +160,7 @@ def test_list_frames_uses_single_decode_generator():
     with patch("av.open", return_value=mock_container):
         frames = list(task._list_frames("test.mkv", "dummy_file"))
 
-    # All frames are returned, and decode() is invoked exactly once.
+    # all frames returned, decode() called exactly once.
     assert [f.frame_time for f in frames] == frame_times
     assert mock_container.decode.call_count == 1
 
