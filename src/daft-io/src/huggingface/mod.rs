@@ -230,8 +230,7 @@ impl HFSource {
                     Some(StatusCode::RANGE_NOT_SATISFIABLE) => {
                         self.request(uri, true, range, client).await
                     }
-                    Some(StatusCode::UNAUTHORIZED)
-                        if matches!(&path, HFPath::Hf(parts) if parts.repo_type == HFRepoType::Buckets) =>
+                    Some(StatusCode::UNAUTHORIZED) if matches!(&path, HFPath::Hf(parts) if parts.repo_type == HFRepoType::Buckets) =>
                     {
                         let HFPath::Hf(parts) = &path else {
                             unreachable!()
@@ -743,12 +742,10 @@ mod tests {
             )
             .await?;
         assert!(!result.files.is_empty());
-        assert!(
-            result
-                .files
-                .iter()
-                .all(|f| f.filepath.starts_with("hf://buckets/the-hf-stack/zenml-experiments/"))
-        );
+        assert!(result.files.iter().all(|f| {
+            f.filepath
+                .starts_with("hf://buckets/the-hf-stack/zenml-experiments/")
+        }));
 
         Ok(())
     }
