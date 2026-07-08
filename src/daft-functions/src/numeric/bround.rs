@@ -72,12 +72,8 @@ fn bround_impl(s: &Series, decimal: i32) -> DaftResult<Series> {
         | DataType::UInt32
         | DataType::UInt64 => s.clone().cast(&s.to_floating_data_type()?),
         DataType::Float16 => {
-            let ca = s.f16().unwrap();
-            ca.apply(|v| {
-                let f = f32::from(v);
-                half::f16::from_f32(banker_round_f32(f, decimal))
-            })
-            .map(|arr| arr.into_series())
+            let s = s.cast(&DataType::Float32)?;
+            bround_impl(&s, decimal)
         }
         DataType::Float32 => {
             let ca = s.f32().unwrap();

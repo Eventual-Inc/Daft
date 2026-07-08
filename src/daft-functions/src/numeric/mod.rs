@@ -1,5 +1,6 @@
 pub mod abs;
 pub mod bin;
+pub mod bround;
 pub mod cbrt;
 pub mod ceil;
 pub mod clip;
@@ -14,15 +15,15 @@ pub mod pi;
 pub mod pmod;
 pub mod pow;
 pub mod power;
+pub mod rint;
 pub mod round;
 pub mod sign;
 pub mod sqrt;
 pub mod trigonometry;
-pub mod bround;
-pub mod rint;
 
 use abs::Abs;
 use bin::Bin;
+use bround::Bround;
 use cbrt::Cbrt;
 use ceil::Ceil;
 use clip::Clip;
@@ -43,11 +44,10 @@ use pi::Pi;
 use pmod::Pmod;
 use pow::Pow;
 use power::Power;
+use rint::Rint;
 use round::Round;
 use sign::{Negate, Sign};
 use sqrt::Sqrt;
-use bround::Bround;
-use rint::Rint;
 
 fn to_field_numeric(f: &dyn ScalarUDF, input: &Expr, schema: &Schema) -> DaftResult<Field> {
     let field = input.to_field(schema)?;

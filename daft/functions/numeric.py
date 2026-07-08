@@ -61,6 +61,7 @@ def round(expr: Expression, decimals: Expression | int = 0) -> Expression:
     """
     return Expression._call_builtin_scalar_fn("round", expr, decimals)
 
+
 def rint(expr: Expression) -> Expression:
     """Rounds a number to the nearest integer, returning a float.
 
@@ -68,6 +69,7 @@ def rint(expr: Expression) -> Expression:
     For example, rint(2.5) == 2.0 and rint(3.5) == 4.0.
     """
     return Expression._call_builtin_scalar_fn("rint", expr)
+
 
 def bround(expr: Expression, decimals: Expression | int = 0) -> Expression:
     """Rounds a number to a specified number of decimal places using banker's rounding (round half to even).
@@ -79,6 +81,7 @@ def bround(expr: Expression, decimals: Expression | int = 0) -> Expression:
         decimals: number of decimal places to round to. Defaults to 0.
     """
     return Expression._call_builtin_scalar_fn("bround", expr, decimals)
+
 
 def sqrt(expr: Expression) -> Expression:
     """The square root of a numeric expression."""
