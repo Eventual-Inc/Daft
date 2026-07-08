@@ -8,7 +8,8 @@ from typing import TYPE_CHECKING
 import daft
 from daft.api_annotations import PublicAPI
 from daft.daft import io_glob
-from daft.dependencies import mcap as _mcap_mod, pafs
+from daft.dependencies import mcap as _mcap_mod
+from daft.dependencies import pafs
 from daft.filesystem import _resolve_paths_and_filesystem, get_protocol_from_path
 from daft.io.source import DataSource, DataSourceTask
 from daft.logical.schema import Schema
