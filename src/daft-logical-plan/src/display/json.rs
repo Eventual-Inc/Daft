@@ -3,13 +3,72 @@ use std::{collections::HashMap, fmt::Write};
 use common_error::{DaftError, DaftResult};
 use common_treenode::TreeNodeVisitor;
 use daft_dsl::resolved_col;
+use daft_scan::ScanState;
+use itertools::Itertools;
 use serde_json::json;
 
-use crate::{LogicalPlan, LogicalPlanRef};
+use crate::{LogicalPlan, LogicalPlanRef, SinkInfo, SourceInfo};
 
 pub(crate) fn to_json_value(node: &LogicalPlan) -> serde_json::Value {
     match node {
-        LogicalPlan::Source(_) => json!({}),
+        LogicalPlan::Source(source) => {
+            let mut obj = serde_json::Map::new();
+            match source.source_info.as_ref() {
+                SourceInfo::Physical(scan_info) => {
+                    obj.insert("source_type".to_string(), json!("Physical"));
+                    // Extract file paths from scan tasks if materialized, otherwise from operator
+                    match &scan_info.scan_state {
+                        ScanState::Tasks(scan_tasks) => {
+                            let paths: Vec<String> = scan_tasks
+                                .iter()
+                                .flat_map(|task| {
+                                    task.sources.iter().filter_map(|s| match &s.kind {
+                                        daft_scan::ScanSourceKind::File { path, .. } => {
+                                            Some(path.clone())
+                                        }
+                                        daft_scan::ScanSourceKind::Database { path, .. } => {
+                                            Some(path.clone())
+                                        }
+                                        #[cfg(feature = "python")]
+                                        daft_scan::ScanSourceKind::PythonFactoryFunction {
+                                            ..
+                                        } => None,
+                                    })
+                                })
+                                .unique()
+                                .take(1000)
+                                .collect();
+                            obj.insert("file_paths".to_string(), json!(paths));
+                        }
+                        ScanState::Operator(op) => {
+                            // Extract what we can from the operator display
+                            let display_lines = op.0.multiline_display();
+                            obj.insert("operator_info".to_string(), json!(display_lines));
+                        }
+                    }
+                    if !scan_info.pushdowns.is_empty() {
+                        obj.insert(
+                            "pushdowns".to_string(),
+                            json!(scan_info.pushdowns.multiline_display()),
+                        );
+                    }
+                }
+                SourceInfo::InMemory(info) => {
+                    obj.insert("source_type".to_string(), json!("InMemory"));
+                    obj.insert("num_partitions".to_string(), json!(info.num_partitions));
+                    obj.insert("size_bytes".to_string(), json!(info.size_bytes));
+                    obj.insert("num_rows".to_string(), json!(info.num_rows));
+                }
+                SourceInfo::GlobScan(info) => {
+                    obj.insert("source_type".to_string(), json!("GlobScan"));
+                    obj.insert("glob_paths".to_string(), json!(info.glob_paths));
+                }
+                SourceInfo::PlaceHolder(_) => {
+                    obj.insert("source_type".to_string(), json!("PlaceHolder"));
+                }
+            }
+            json!(obj)
+        }
         // TODO(desmond): is this correct?
         LogicalPlan::Shard(shard) => json!({
             "sharder": shard.sharder,
@@ -90,7 +149,58 @@ pub(crate) fn to_json_value(node: &LogicalPlan) -> serde_json::Value {
             "right_on": asof_join.right_on.to_string(),
             "strategy": asof_join.strategy.to_string(),
         }),
-        LogicalPlan::Sink(_) => json!({}),
+        LogicalPlan::Sink(sink) => {
+            let mut obj = serde_json::Map::new();
+            match sink.sink_info.as_ref() {
+                SinkInfo::OutputFileInfo(output_file_info) => {
+                    obj.insert("sink_type".to_string(), json!("OutputFile"));
+                    obj.insert("root_dir".to_string(), json!(output_file_info.root_dir));
+                    obj.insert(
+                        "file_format".to_string(),
+                        json!(format!("{:?}", output_file_info.file_format)),
+                    );
+                    if let Some(ref partition_cols) = output_file_info.partition_cols {
+                        obj.insert(
+                            "partition_cols".to_string(),
+                            json!(
+                                partition_cols
+                                    .iter()
+                                    .map(|e| e.to_string())
+                                    .collect::<Vec<_>>()
+                            ),
+                        );
+                    }
+                }
+                #[cfg(feature = "python")]
+                SinkInfo::CatalogInfo(catalog_info) => {
+                    obj.insert("sink_type".to_string(), json!("Catalog"));
+                    match &catalog_info.catalog {
+                        crate::sink_info::CatalogType::Iceberg(iceberg_info) => {
+                            obj.insert("catalog_type".to_string(), json!("Iceberg"));
+                            obj.insert("table_name".to_string(), json!(iceberg_info.table_name));
+                            obj.insert(
+                                "table_location".to_string(),
+                                json!(iceberg_info.table_location),
+                            );
+                        }
+                        crate::sink_info::CatalogType::DeltaLake(delta_info) => {
+                            obj.insert("catalog_type".to_string(), json!("DeltaLake"));
+                            obj.insert("path".to_string(), json!(delta_info.path));
+                        }
+                        crate::sink_info::CatalogType::Lance(lance_info) => {
+                            obj.insert("catalog_type".to_string(), json!("Lance"));
+                            obj.insert("path".to_string(), json!(lance_info.path));
+                        }
+                    }
+                }
+                #[cfg(feature = "python")]
+                SinkInfo::DataSinkInfo(data_sink_info) => {
+                    obj.insert("sink_type".to_string(), json!("DataSink"));
+                    obj.insert("name".to_string(), json!(data_sink_info.name));
+                }
+            }
+            json!(obj)
+        }
         LogicalPlan::Sample(sample) => json!({
             "fraction": sample.fraction,
             "size": sample.size,
@@ -291,6 +401,7 @@ mod tests {
                           "children": [
                             {
                               "children": [],
+                              "source_type": "PlaceHolder",
                               "type": "Source"
                             }
                           ],
@@ -311,6 +422,7 @@ mod tests {
                                               "children": [
                                                 {
                                                   "children": [],
+                                                  "source_type": "PlaceHolder",
                                                   "type": "Source"
                                                 }
                                               ],
@@ -387,6 +499,7 @@ mod tests {
                   "name": "id"
                 }
               ],
+              "source_type": "PlaceHolder",
               "type": "Source"
             }
          "#;
