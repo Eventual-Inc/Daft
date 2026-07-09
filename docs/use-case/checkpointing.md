@@ -32,6 +32,7 @@ Imagine you are running a distributed pipeline that embeds millions of markdown 
 
     ```python
     import daft
+    from daft.functions.ai import embed_text
 
     store = daft.CheckpointStore("s3://my-bucket/ckpt/")
 
@@ -40,7 +41,7 @@ Imagine you are running a distributed pipeline that embeds millions of markdown 
         checkpoint=daft.CheckpointConfig(store, on="file_id"),
     )
 
-    df = df.with_column("embedding", embed_text(df["text"]))
+    df = df.with_column("embedding", embed_text(daft.col("text")))
 
     df.write_iceberg(
         table,
