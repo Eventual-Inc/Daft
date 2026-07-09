@@ -41,6 +41,7 @@
             * [Azure Blob Store](connectors/azure.md)
             * [Google Cloud Storage](connectors/gcs.md)
             * [COS (Tencent Cloud)](connectors/cos.md)
+            * [Tigris](connectors/tigris.md)
         * Table Formats
             * [Apache Hudi](connectors/hudi.md)
             * [Apache Iceberg](connectors/iceberg.md)
