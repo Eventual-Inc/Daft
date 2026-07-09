@@ -1,15 +1,4 @@
-use std::{
-    borrow::Cow,
-    collections::HashMap,
-    fmt::Display,
-    num::NonZeroUsize,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-};
-
-static DEPRECATION_WARNED: AtomicBool = AtomicBool::new(false);
+use std::{borrow::Cow, collections::HashMap, fmt::Display, num::NonZeroUsize, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::{
@@ -44,8 +33,6 @@ use daft_shuffles::server::flight_server::ShuffleFlightServer;
 use daft_writers::make_physical_writer_factory;
 use indexmap::IndexSet;
 use snafu::ResultExt;
-#[cfg(feature = "python")]
-use crate::intermediate_ops::distributed_actor_pool_project::DistributedActorPoolProjectOperator;
 
 use crate::{
     ExecutionRuntimeContext, PipelineCreationSnafu,
@@ -53,6 +40,7 @@ use crate::{
     concat::ConcatNode,
     input_sender::InputSender,
     intermediate_ops::{
+        distributed_actor_pool_project::DistributedActorPoolProjectOperator,
         explode::ExplodeOperator, filter::FilterOperator, intermediate_op::IntermediateNode,
         into_batches::IntoBatchesOperator, project::ProjectOperator,
         stage_checkpoint_keys::StageCheckpointKeysOperator, udf::UdfOperator,
@@ -293,7 +281,6 @@ pub struct BuilderContext {
 }
 
 impl BuilderContext {
-    #[allow(dead_code)]
     pub fn new() -> Self {
         Self::new_with_context("".into(), HashMap::new(), None)
     }
@@ -384,7 +371,6 @@ impl BuilderContext {
     }
 }
 
-#[allow(dead_code)]
 pub fn viz_pipeline_mermaid(
     root: &dyn PipelineNode,
     display_type: DisplayLevel,
@@ -398,7 +384,6 @@ pub fn viz_pipeline_mermaid(
     output
 }
 
-#[allow(dead_code)]
 pub fn viz_pipeline_ascii(root: &dyn PipelineNode, simple: bool) -> String {
     let mut s = String::new();
     let level = if simple {
@@ -447,49 +432,6 @@ pub fn translate_physical_plan_to_pipeline(
         MorselSizeRequirement::Flexible(0, cfg.default_morsel_size),
     );
     Ok((pipeline_node, input_senders))
-}
-
-/// Build the optional `SpillConfig` for one operator. Spill is **disabled by default**: it is
-/// enabled only when the user opts in, either globally via a positive `spill_pool_bytes` (the
-/// preferred switch) or per-operator via a positive threshold (legacy, also acts as a cap). A
-/// per-operator `Some(0)` force-disables that operator even when the pool is set. When enabled, the
-/// pool size comes from `spill_pool_bytes` (or the memory-manager default when only a per-operator
-/// threshold is set).
-fn build_spill_config(
-    opt_out: Option<usize>,
-    cfg: &DaftExecutionConfig,
-) -> Option<crate::spill::SpillConfig> {
-    // Per-operator explicit disable always wins.
-    if matches!(opt_out, Some(0)) {
-        return None;
-    }
-    let pool_enabled = matches!(cfg.spill_pool_bytes, Some(n) if n > 0);
-    let per_op_cap = match opt_out {
-        Some(n) if n > 0 => Some(n),
-        _ => None,
-    };
-    // Disabled by default: nothing turns spill on unless the user opts in.
-    if !pool_enabled && per_op_cap.is_none() {
-        return None;
-    }
-    let manager = crate::resource_manager::get_or_init_memory_manager();
-    if let Some(n) = cfg.spill_pool_bytes
-        && n > 0
-    {
-        manager.set_spill_pool_bytes(n as u64);
-    }
-    let pool = manager.spill_pool_bytes() as usize;
-    let mut sc = crate::spill::SpillConfig::new(pool, cfg.flight_shuffle_dirs.clone());
-    if let Some(n) = per_op_cap {
-        if !DEPRECATION_WARNED.swap(true, Ordering::Relaxed) {
-            tracing::warn!(
-                "Per-operator spill threshold ({n} bytes) is deprecated; using shared spill pool with \
-                 this value as a cap. Prefer `spill_pool_bytes`."
-            );
-        }
-        sc.cap_bytes = Some(n);
-    }
-    Some(sc)
 }
 
 fn physical_plan_to_pipeline(
@@ -580,17 +522,11 @@ fn physical_plan_to_pipeline(
             context,
         }) => {
             let input_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-            let window_spill = build_spill_config(cfg.window_spill_threshold_bytes, cfg);
-            let window_partition_only_sink = WindowPartitionOnlySink::new(
-                aggregations,
-                aliases,
-                partition_by,
-                schema,
-                window_spill,
-            )
-            .with_context(|_| PipelineCreationSnafu {
-                plan_name: physical_plan.name(),
-            })?;
+            let window_partition_only_sink =
+                WindowPartitionOnlySink::new(aggregations, aliases, partition_by, schema)
+                    .with_context(|_| PipelineCreationSnafu {
+                        plan_name: physical_plan.name(),
+                    })?;
             BlockingSinkNode::new(
                 Arc::new(window_partition_only_sink),
                 input_node,
@@ -613,7 +549,6 @@ fn physical_plan_to_pipeline(
             context,
         }) => {
             let input_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-            let window_spill = build_spill_config(cfg.window_spill_threshold_bytes, cfg);
             let window_partition_and_order_by_sink = WindowPartitionAndOrderBySink::new(
                 functions,
                 aliases,
@@ -622,7 +557,6 @@ fn physical_plan_to_pipeline(
                 descending,
                 nulls_first,
                 schema,
-                window_spill,
             )
             .with_context(|_| PipelineCreationSnafu {
                 plan_name: physical_plan.name(),
@@ -651,7 +585,6 @@ fn physical_plan_to_pipeline(
             context,
         }) => {
             let input_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-            let window_spill = build_spill_config(cfg.window_spill_threshold_bytes, cfg);
             let window_partition_and_dynamic_frame_sink = WindowPartitionAndDynamicFrameSink::new(
                 functions,
                 *min_periods,
@@ -662,7 +595,6 @@ fn physical_plan_to_pipeline(
                 nulls_first,
                 frame,
                 schema,
-                window_spill,
             )
             .with_context(|_| PipelineCreationSnafu {
                 plan_name: physical_plan.name(),
@@ -1013,13 +945,10 @@ fn physical_plan_to_pipeline(
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-            // Total spill budget for the operator; split across hash buckets inside the sink.
-            let spill_config = build_spill_config(cfg.agg_spill_threshold_bytes, cfg);
-            let agg_sink =
-                GroupedAggregateSink::new(aggregations, group_by, input.schema(), cfg, spill_config)
-                    .with_context(|_| PipelineCreationSnafu {
-                        plan_name: physical_plan.name(),
-                    })?;
+            let agg_sink = GroupedAggregateSink::new(aggregations, group_by, input.schema(), cfg)
+                .with_context(|_| PipelineCreationSnafu {
+                plan_name: physical_plan.name(),
+            })?;
             BlockingSinkNode::new(
                 Arc::new(agg_sink),
                 child_node,
@@ -1037,11 +966,9 @@ fn physical_plan_to_pipeline(
             ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-            let dedup_spill = build_spill_config(cfg.dedup_spill_threshold_bytes, cfg);
-            let dedup_sink =
-                DedupSink::new(columns, dedup_spill).with_context(|_| PipelineCreationSnafu {
-                    plan_name: physical_plan.name(),
-                })?;
+            let dedup_sink = DedupSink::new(columns).with_context(|_| PipelineCreationSnafu {
+                plan_name: physical_plan.name(),
+            })?;
             BlockingSinkNode::new(
                 Arc::new(dedup_sink),
                 child_node,
@@ -1116,16 +1043,7 @@ fn physical_plan_to_pipeline(
             context,
             ..
         }) => {
-            // Sort runs in a single state, so the whole budget is for one buffer.
-            let spill_config = build_spill_config(cfg.sort_spill_threshold_bytes, cfg);
-            let sort_sink = SortSink::new(
-                sort_by.clone(),
-                descending.clone(),
-                nulls_first.clone(),
-                input.schema().clone(),
-                spill_config,
-                cfg.default_morsel_size.get(),
-            );
+            let sort_sink = SortSink::new(sort_by.clone(), descending.clone(), nulls_first.clone());
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
             BlockingSinkNode::new(
                 Arc::new(sort_sink),
@@ -1334,7 +1252,6 @@ fn physical_plan_to_pipeline(
                     true
                 };
 
-                let spill_config = build_spill_config(cfg.hash_join_spill_threshold_bytes, cfg);
                 let hash_join_op = HashJoinOperator::new(
                     key_schema,
                     build_on.clone(),
@@ -1347,7 +1264,6 @@ fn physical_plan_to_pipeline(
                     right_schema.clone(),
                     common_join_cols,
                     schema.clone(),
-                    spill_config,
                 )?;
                 let build_child_node = physical_plan_to_pipeline(build_child, cfg, ctx, input_senders)?;
                 let probe_child_node = physical_plan_to_pipeline(probe_child, cfg, ctx, input_senders)?;
@@ -1789,7 +1705,6 @@ fn physical_plan_to_pipeline(
                     let (shuffle_server, shuffle_address) = ctx
                         .shuffle_server()
                         .expect("Flight shuffle server must be initialized for Flight repartition plans when using flight_shuffle algorithm");
-                    let spill_config = build_spill_config(cfg.repartition_spill_threshold_bytes, cfg);
                     let repartition_sink = RepartitionSink::try_new_flight(
                         *num_partitions,
                         schema.clone(),
@@ -1799,7 +1714,6 @@ fn physical_plan_to_pipeline(
                         compression.clone(),
                         shuffle_server,
                         shuffle_address,
-                        spill_config,
                     )
                     .with_context(|_| PipelineCreationSnafu {
                         plan_name: physical_plan.name(),
@@ -1923,27 +1837,4 @@ fn physical_plan_to_pipeline(
     };
 
     Ok(pipeline_node)
-}
-
-#[cfg(test)]
-mod spill_config_tests {
-    use super::*;
-
-    #[test]
-    fn spill_is_disabled_by_default() {
-        let cfg = DaftExecutionConfig::default();
-        // Off by default: no operator spills unless the user opts in.
-        assert!(build_spill_config(None, &cfg).is_none());
-        // Explicit per-operator disable stays off.
-        assert!(build_spill_config(Some(0), &cfg).is_none());
-        // Opt in via a positive per-operator threshold (legacy path).
-        assert!(build_spill_config(Some(1024), &cfg).is_some());
-
-        // Opt in via the shared-pool master switch.
-        let mut cfg_pool = DaftExecutionConfig::default();
-        cfg_pool.spill_pool_bytes = Some(1 << 20);
-        assert!(build_spill_config(None, &cfg_pool).is_some());
-        // ...but a per-operator opt-out still force-disables that operator.
-        assert!(build_spill_config(Some(0), &cfg_pool).is_none());
-    }
 }
