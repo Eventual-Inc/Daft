@@ -5,7 +5,7 @@ use daft_dsl::{
     functions::{BuiltinScalarFn, BuiltinScalarFnVariant, FunctionArgs},
     lit,
 };
-use daft_geo::{StArea, StAsText, StBuffer, StCentroid, StContains, StConvexHull, StCoveredBy, StCovers, StCrosses, StDifference, StDisjoint, StDistance, StDwithin, StEnvelope, StEquals, StGeohash, StGeometryType, StGeomFromGeoJson, StGeomFromText, StGeoJsonFromGeom, StIntersection, StIntersects, StIsValid, StLength, StMakeLine, StOverlaps, StPoint, StSimplify, StSymDifference, StTouches, StUnion, StWithin, StX, StY};
+use daft_geo::{StArea, StAsText, StBbox, StBuffer, StCentroid, StContains, StConvexHull, StCoveredBy, StCovers, StCrosses, StDifference, StDisjoint, StDistance, StDwithin, StEnvelope, StEquals, StGeohash, StGeometryType, StGeomFromGeoJson, StGeomFromText, StGeoJsonFromGeom, StIntersection, StIntersects, StIsValid, StLength, StMakeLine, StOverlaps, StPoint, StSimplify, StSymDifference, StTouches, StUnion, StWithin, StX, StY};
 use sqlparser::ast;
 
 use super::SQLModule;
@@ -26,6 +26,7 @@ impl SQLModule for SQLModuleSpatial {
         parent.add_fn("st_x", SQLSpatialUnary(Arc::new(StX)));
         parent.add_fn("st_y", SQLSpatialUnary(Arc::new(StY)));
         parent.add_fn("st_centroid", SQLSpatialUnary(Arc::new(StCentroid)));
+        parent.add_fn("st_bbox", SQLSpatialUnary(Arc::new(StBbox)));
         parent.add_fn("st_contains", SQLSpatialBinary(Arc::new(StContains)));
         parent.add_fn("st_intersects", SQLSpatialBinary(Arc::new(StIntersects)));
         parent.add_fn("st_within", SQLSpatialBinary(Arc::new(StWithin)));

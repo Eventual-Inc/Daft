@@ -522,6 +522,18 @@ def test_envelope_sql_parity():
     assert py_result["e"][0] == sql_result["e"][0]
 
 
+def test_st_bbox_sql_parity():
+    """SQL st_bbox should return the same bounding-box struct as Python."""
+    from daft.functions import st_bbox
+    df = daft.from_pydict({"g": ["POLYGON((0 0, 4 0, 4 3, 0 3, 0 0))"]})
+    py_result = df.select(
+        st_bbox(st_geomfromtext(daft.col("g"))).alias("b")
+    ).to_pydict()
+    sql_result = daft.sql("SELECT st_bbox(st_geomfromtext(g)) AS b FROM df").to_pydict()
+    assert py_result["b"][0] == {"min_x": 0.0, "min_y": 0.0, "max_x": 4.0, "max_y": 3.0}
+    assert py_result["b"][0] == sql_result["b"][0]
+
+
 def test_convexhull_triangle():
     """Convex hull of a concave set of points should be the outer triangle."""
     from daft.functions import st_convexhull, st_astext, st_geometrytype
