@@ -1616,6 +1616,7 @@ unity = [
 ]
 video = [
     { name = "av" },
+    { name = "pillow" },
 ]
 
 [package.dev-dependencies]
@@ -1742,6 +1743,7 @@ requires-dist = [
     { name = "pillow", marker = "extra == 'google'", specifier = "==12.2.0" },
     { name = "pillow", marker = "extra == 'openai'", specifier = "==12.2.0" },
     { name = "pillow", marker = "extra == 'transformers'", specifier = "==12.2.0" },
+    { name = "pillow", marker = "extra == 'video'", specifier = "==12.2.0" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'postgres'", specifier = "<3.4.0" },
     { name = "pyarrow", specifier = ">=16.0.0,<25.0.0" },
     { name = "pyarrow", marker = "extra == 'hudi'", specifier = ">=16.0.0,<25.0.0" },
