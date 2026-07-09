@@ -1735,7 +1735,7 @@ requires-dist = [
     { name = "numpy", marker = "extra == 'numpy'", specifier = "<2.4.0" },
     { name = "numpy", marker = "extra == 'openai'", specifier = "<2.4.0" },
     { name = "openai", marker = "extra == 'openai'", specifier = "<2.39.0" },
-    { name = "openlineage-python", marker = "extra == 'openlineage'" },
+    { name = "openlineage-python", marker = "extra == 'openlineage'", specifier = "<2" },
     { name = "packaging" },
     { name = "pandas", marker = "extra == 'pandas'", specifier = "<2.4.0" },
     { name = "pgvector", marker = "extra == 'postgres'", specifier = "<0.5.0" },

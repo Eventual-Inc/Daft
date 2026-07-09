@@ -45,7 +45,7 @@ iceberg = ["pyiceberg >= 0.7.0, != 0.9.1, != 0.10.0, <= 0.11.1"]
 lance = ["daft-lance"]
 numpy = ["numpy<2.4.0"]
 openai = ["openai<2.39.0", "numpy<2.4.0", "pillow==12.2.0"]
-openlineage = ["openlineage-python"]
+openlineage = ["openlineage-python<2"]
 pandas = ["pandas<2.4.0"]
 postgres = ["psycopg[binary]<3.4.0", "pgvector<0.5.0", "sqlglot<30.9.0", "connectorx>=0.4.4,<0.5.0"]
 ray = [
