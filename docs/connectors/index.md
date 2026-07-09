@@ -12,6 +12,7 @@ Daft natively supports reading and writing data to major cloud object storage pr
 | [Azure Blob Storage](azure.md) | `az://`, `abfs://` | [`AzureConfig`][daft.io.AzureConfig] |
 | [Google Cloud Storage](gcs.md) | `gs://`, `gcs://` | [`GCSConfig`][daft.io.GCSConfig] |
 | [Tencent Cloud COS](cos.md) | `cos://`, `cosn://` | [`CosConfig`][daft.io.CosConfig] |
+| [Tigris](tigris.md) | `s3://` | [`S3Config`][daft.io.S3Config] |
 
 ## Table Formats
 
