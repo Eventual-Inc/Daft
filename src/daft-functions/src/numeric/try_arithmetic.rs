@@ -76,6 +76,36 @@ impl CheckedOp {
     }
 }
 
+fn is_unsigned(dtype: &DataType) -> bool {
+    matches!(
+        dtype,
+        DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64
+    )
+}
+
+/// The 64-bit type the checked kernels compute in. Integer pairs always compute in
+/// 64-bit integers, including mixed signed/unsigned pairs, which the regular arithmetic
+/// inference would promote to Float64 and thereby silently skip the overflow check.
+fn checked_target(op: CheckedOp, left: &DataType, right: &DataType) -> DaftResult<DataType> {
+    if !left.is_numeric() || !right.is_numeric() {
+        return Err(DaftError::TypeError(format!(
+            "Expected inputs to {} to be numeric, got {} and {}",
+            op.fn_name(),
+            left,
+            right
+        )));
+    }
+    if left.is_integer() && right.is_integer() {
+        if is_unsigned(left) && is_unsigned(right) {
+            Ok(DataType::UInt64)
+        } else {
+            Ok(DataType::Int64)
+        }
+    } else {
+        op.infer(left, right).map(normalize_kernel_dtype)
+    }
+}
+
 fn try_arithmetic_field(
     op: CheckedOp,
     inputs: FunctionArgs<ExprRef>,
@@ -84,24 +114,47 @@ fn try_arithmetic_field(
     let TryArithmeticArgs { left, right } = inputs.try_into()?;
     let left_field = left.to_field(schema)?;
     let right_field = right.to_field(schema)?;
-    if !left_field.dtype.is_numeric() || !right_field.dtype.is_numeric() {
-        return Err(DaftError::TypeError(format!(
-            "Expected inputs to {} to be numeric, got {} and {}",
-            op.fn_name(),
-            left_field.dtype,
-            right_field.dtype
-        )));
-    }
-    let dtype = op
-        .infer(&left_field.dtype, &right_field.dtype)
-        .map(normalize_kernel_dtype)?;
+    let dtype = checked_target(op, &left_field.dtype, &right_field.dtype)?;
     Ok(Field::new(left_field.name, dtype))
 }
 
 fn try_arithmetic_impl(op: CheckedOp, left: Series, right: Series) -> DaftResult<Series> {
-    let target = op
-        .infer(left.data_type(), right.data_type())
-        .map(normalize_kernel_dtype)?;
+    let target = checked_target(op, left.data_type(), right.data_type())?;
+    // A signed/UInt64 pair has no common 64-bit integer type: keep the UInt64 side
+    // unsigned and range-check each value into Int64, so values above i64::MAX null
+    // out like any other overflow instead of wrapping through a cast.
+    let left_is_u64 = matches!(left.data_type(), DataType::UInt64);
+    let right_is_u64 = matches!(right.data_type(), DataType::UInt64);
+    if target == DataType::Int64 && (left_is_u64 || right_is_u64) {
+        let (l, r) = align_lengths(
+            left.cast(if left_is_u64 {
+                &DataType::UInt64
+            } else {
+                &DataType::Int64
+            })?,
+            right.cast(if right_is_u64 {
+                &DataType::UInt64
+            } else {
+                &DataType::Int64
+            })?,
+        )?;
+        let iter: Box<dyn Iterator<Item = Option<i64>>> = if left_is_u64 {
+            let (a, b) = (l.u64().unwrap(), r.i64().unwrap());
+            Box::new(a.iter().zip(b.iter()).map(move |(x, y)| match (x, y) {
+                (Some(x), Some(y)) => i64::try_from(x).ok().and_then(|x| op.i64(x, y)),
+                _ => None,
+            }))
+        } else {
+            let (a, b) = (l.i64().unwrap(), r.u64().unwrap());
+            Box::new(a.iter().zip(b.iter()).map(move |(x, y)| match (x, y) {
+                (Some(x), Some(y)) => i64::try_from(y).ok().and_then(|y| op.i64(x, y)),
+                _ => None,
+            }))
+        };
+        return Ok(
+            Int64Array::from_iter(Field::new(l.name(), DataType::Int64), iter).into_series(),
+        );
+    }
     let (left, right) = align_lengths(left.cast(&target)?, right.cast(&target)?)?;
     let result = match target {
         DataType::Int64 => {
@@ -137,7 +190,13 @@ fn try_arithmetic_impl(op: CheckedOp, left: Series, right: Series) -> DaftResult
             });
             Float64Array::from_iter(Field::new(a.name(), DataType::Float64), iter).into_series()
         }
-        _ => unreachable!("normalize_kernel_dtype only returns int64/uint64/float32/float64"),
+        other => {
+            return Err(DaftError::TypeError(format!(
+                "{} cannot compute in {}",
+                op.fn_name(),
+                other
+            )));
+        }
     };
     Ok(result)
 }

@@ -1125,6 +1125,33 @@ def test_try_arithmetic_broadcast() -> None:
     assert values == [None, 2, 3]
 
 
+def test_try_arithmetic_mixed_sign_computes_in_int64() -> None:
+    # Signed + UInt64 has no 64-bit integer supertype; the regular `+` promotes to
+    # Float64, but the try_ functions must stay integer so the overflow check holds.
+    table = MicroPartition.from_pydict(
+        {
+            "a": pa.array([5, 2**63 - 1, -1, 7], type=pa.int64()),
+            "b": pa.array([3, 1, 2**63, 2], type=pa.uint64()),
+        }
+    )
+    result = table.eval_expression_list([try_add(col("a"), col("b")).alias("result")])
+    assert result.get_column_by_name("result").datatype() == DataType.int64()
+    # 5+3 ok; i64::MAX+1 overflows; u64 operand above i64::MAX nulls; 7+2 ok.
+    assert result.get_column_by_name("result").to_pylist() == [8, None, None, 9]
+
+
+def test_try_arithmetic_mixed_sign_u64_on_left() -> None:
+    table = MicroPartition.from_pydict(
+        {
+            "a": pa.array([3, 2**64 - 1], type=pa.uint64()),
+            "b": pa.array([5, 1], type=pa.int64()),
+        }
+    )
+    result = table.eval_expression_list([try_subtract(col("a"), col("b")).alias("result")])
+    assert result.get_column_by_name("result").datatype() == DataType.int64()
+    assert result.get_column_by_name("result").to_pylist() == [-2, None]
+
+
 def test_try_arithmetic_bad_dtype() -> None:
     table = MicroPartition.from_pydict({"a": ["1", "2"], "b": [1, 2]})
     with pytest.raises(ValueError, match="Expected inputs to try_add to be numeric"):
