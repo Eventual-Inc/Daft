@@ -1283,6 +1283,21 @@ class DistributedDeltaMergeBuilder:
 
         self._check_unsupported_table_features()
 
+        # Merge internals claim the "__daft_dm_" name prefix (markers, clause
+        # indices) and the ".__src__" join suffix; a user column with such a
+        # name would be silently clobbered mid-plan. Refuse loudly instead.
+        reserved = sorted(
+            c
+            for c in {*(f.name for f in self._source.schema()), *self._target_columns}
+            if c.startswith("__daft_dm_") or c.endswith(".__src__")
+        )
+        if reserved:
+            raise ValueError(
+                f"distributed_merge_deltalake does not support column name(s) {reserved}: "
+                'names starting with "__daft_dm_" or ending with ".__src__" are reserved '
+                "for merge internals."
+            )
+
         on = self._on
 
         # Materialize the source once when small enough to hold: it is reused by
@@ -1406,9 +1421,23 @@ class DistributedDeltaMergeBuilder:
                 expr = when(cond, lit(i)).otherwise(expr)
             return expr
 
-        matched_idx = _first_match_idx(matched_clauses, is_matched)
-        by_source_idx = _first_match_idx(by_source_clauses, is_target_only)
-        insert_idx = _first_match_idx(insert_clauses, is_source_only)
+        # Materialize the first-match indices as columns: every marker and
+        # output-column expression below references them, and embedding the
+        # raw when-chains by value would grow the plan (and, without CSE,
+        # re-evaluate every clause predicate) once per output column.
+        _MIDX = "__daft_dm_midx__"
+        _BSIDX = "__daft_dm_bsidx__"
+        _IIDX = "__daft_dm_iidx__"
+        joined = joined.with_columns(
+            {
+                _MIDX: _first_match_idx(matched_clauses, is_matched),
+                _BSIDX: _first_match_idx(by_source_clauses, is_target_only),
+                _IIDX: _first_match_idx(insert_clauses, is_source_only),
+            }
+        )
+        matched_idx = col(_MIDX)
+        by_source_idx = col(_BSIDX)
+        insert_idx = col(_IIDX)
 
         def _kind_fires(idx_expr: Any, clauses: list, kinds: "tuple[str, ...]") -> Any:
             fired = lit(False)
@@ -1590,14 +1619,15 @@ class DistributedDeltaMergeBuilder:
             merge_metadata = {**(self._custom_metadata or {}), "daft.operation": "DISTRIBUTED_MERGE"}
             if partition_cols and affected is not None:
                 # Partition-scoped copy-on-write: rewrite only affected partitions.
-                # OR-of-AND equality per tuple (not per-column is_in) so exactly
-                # the touched partitions are rewritten.
-                part_filter = lit(False)
-                for tup in affected:
-                    tup_match = lit(True)
-                    for pc, v in zip(partition_cols, tup):
-                        tup_match = tup_match & (col(pc) == lit(v))
-                    part_filter = part_filter | tup_match
+                # `affected` is its own per-column cartesian closure (expanded in
+                # pass 1), so conjoined per-column IN filters select exactly the
+                # same partitions as enumerating the tuples — with one expression
+                # per partition column instead of an O(tuples) boolean chain.
+                part_filter = lit(True)
+                for i, pc in enumerate(partition_cols):
+                    values = sorted({tup[i] for tup in affected}, key=repr)
+                    pc_filter = (col(pc) == lit(values[0])) if len(values) == 1 else col(pc).is_in(values)
+                    part_filter = part_filter & pc_filter
                 write_df = annotated.where(col(_EMIT) & part_filter).select(*[col(c) for c in target_columns])
                 # One writer per rewritten partition tuple instead of one per
                 # join shuffle partition.
