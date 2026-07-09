@@ -1,6 +1,6 @@
 # Reading from and Writing to Tigris
 
-[Tigris](https://www.tigrisdata.com/docs/overview/) is an S3-compatible object storage service. Daft connects to it through its native S3 support: use `s3://` URLs together with an [`daft.io.S3Config`][daft.io.S3Config] that points `endpoint_url` at Tigris.
+[Tigris](https://www.tigrisdata.com/docs/overview/) is an S3-compatible object storage service. Daft connects to it through its native S3 support: use `s3://` URLs together with a [`daft.io.S3Config`][daft.io.S3Config] that points `endpoint_url` at Tigris.
 
 Two properties of the service are relevant when running Daft against it:
 
@@ -52,7 +52,7 @@ If instead you wish to have Daft use credentials from the "driver", you may wish
 
 ### Manually specify credentials
 
-You may also choose to pass these values into your Daft I/O function calls using an [`daft.io.S3Config`][daft.io.S3Config] config object.
+You may also choose to pass these values into your Daft I/O function calls using a [`daft.io.S3Config`][daft.io.S3Config] config object.
 
 [`daft.set_planning_config`][daft.context.set_planning_config] is a convenient way to set your [`daft.io.IOConfig`][daft.io.IOConfig] as the default config to use on any subsequent Daft method calls.
 
