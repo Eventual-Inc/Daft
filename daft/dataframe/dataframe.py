@@ -45,6 +45,7 @@ from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.execution.native_executor import NativeExecutor
 from daft.expressions import Expression, ExpressionsProjection, col, lit
+from daft.lineage import build_lineage
 from daft.logical.builder import LogicalPlanBuilder
 from daft.recordbatch import MicroPartition, RecordBatch
 from daft.runners import get_or_create_runner
@@ -404,8 +405,6 @@ class DataFrame:
             ``pip install daft[openlineage]`` (or ``pip install openlineage-python``)
             for native OL object support.
         """
-        from daft.lineage import build_lineage
-
         return build_lineage(self)
 
     def num_partitions(self) -> int | None:
