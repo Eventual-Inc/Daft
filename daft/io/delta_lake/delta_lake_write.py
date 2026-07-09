@@ -229,7 +229,7 @@ def _normalize_delta_timestamp_type(dtype: pa.DataType) -> pa.DataType:
     if pa.types.is_list(dtype):
         return pa.list_(norm_field(dtype.value_field))
     if pa.types.is_map(dtype):
-        return pa.map_(norm_field(dtype.key_field), norm_field(dtype.item_field))
+        return pa.map_(norm_field(dtype.key_field), norm_field(dtype.item_field), keys_sorted=dtype.keys_sorted)
     return dtype
 
 
