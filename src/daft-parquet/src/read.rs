@@ -127,6 +127,8 @@ pub struct PerFileOptions {
     pub delete_rows: Option<Vec<i64>>,
     /// See [`ParquetReadOptions::metadata`].
     pub metadata: Option<Arc<DaftParquetMetadata>>,
+    /// See [`ParquetReadOptions::size_bytes`].
+    pub size_bytes: Option<usize>,
 }
 
 /// Options for bulk reads. Fields without `per_file` apply to every uri;
@@ -190,7 +192,7 @@ fn single_opts_for(opts: &ParquetBulkReadOptions, i: usize) -> ParquetReadOption
         delete_rows: per.delete_rows,
         batch_size: opts.batch_size,
         metadata: per.metadata,
-        size_bytes: None,
+        size_bytes: per.size_bytes,
         ignore_corrupt_files: false,
         skipped_corrupt_files: None,
     }

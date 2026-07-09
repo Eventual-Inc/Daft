@@ -142,6 +142,7 @@ async fn read_parquet(
             .and_then(|s| s.get_parquet_metadata().cloned()),
         ignore_corrupt_files: cfg.ignore_corrupt_files,
         skipped_corrupt_files: skipped_corrupt_files.clone(),
+        size_bytes: source.size_bytes.map(|s| s as usize),
         ..Default::default()
     };
     // Box::pin: setup future is large (~20KB) due to many tuning args.

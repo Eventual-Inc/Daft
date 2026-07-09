@@ -569,6 +569,7 @@ fn read_parquet_into_loaded_micropartition<T: AsRef<str>>(
                 row_groups: row_groups.and_then(|rgs| rgs[i].clone()),
                 delete_rows: delete_map.as_ref().and_then(|m| m.get(*uri).cloned()),
                 metadata: None,
+                size_bytes: None,
             })
             .collect()
     };
