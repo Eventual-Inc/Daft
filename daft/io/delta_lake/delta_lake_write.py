@@ -201,6 +201,46 @@ class DeltaLakeWriteVisitors:
         return MicroPartition.from_pydict({col_name: self.add_actions})
 
 
+def _normalize_delta_timestamp_type(dtype: pa.DataType) -> pa.DataType:
+    """Rewrite tz-aware timestamps to use the ``UTC`` timezone label, recursing into nested types.
+
+    Delta Lake stores every timezone-aware timestamp as a UTC instant, and
+    deltalake>=1.0.0's ``Schema.from_arrow`` only accepts the literal timezone
+    ``"UTC"`` -- it rejects the fixed-offset spelling (``"+00:00"``) that Daft's
+    ``DataType.to_arrow_dtype()`` emits, as well as any named zone. The int64
+    values are unchanged (same absolute instant), so relabeling the timezone to
+    ``UTC`` is a lossless conversion, not a reinterpretation.
+    """
+    from daft.dependencies import pa
+
+    def norm_field(field: pa.Field) -> pa.Field:
+        return field.with_type(_normalize_delta_timestamp_type(field.type))
+
+    if pa.types.is_timestamp(dtype):
+        if dtype.tz is not None and dtype.tz != "UTC":
+            return pa.timestamp(dtype.unit, tz="UTC")
+        return dtype
+    if pa.types.is_struct(dtype):
+        return pa.struct([norm_field(dtype.field(i)) for i in range(dtype.num_fields)])
+    if pa.types.is_large_list(dtype):
+        return pa.large_list(norm_field(dtype.value_field))
+    if pa.types.is_fixed_size_list(dtype):
+        return pa.list_(norm_field(dtype.value_field), dtype.list_size)
+    if pa.types.is_list(dtype):
+        return pa.list_(norm_field(dtype.value_field))
+    if pa.types.is_map(dtype):
+        return pa.map_(norm_field(dtype.key_field), norm_field(dtype.item_field))
+    return dtype
+
+
+def _normalize_delta_schema_timestamps(schema: pa.Schema) -> pa.Schema:
+    """Apply :func:`_normalize_delta_timestamp_type` to every field of a schema."""
+    from daft.dependencies import pa
+
+    normalized = [field.with_type(_normalize_delta_timestamp_type(field.type)) for field in schema]
+    return pa.schema(normalized, metadata=schema.metadata)
+
+
 def convert_pa_schema_to_delta(schema: pa.Schema, large_dtypes: bool) -> pa.Schema:
     import deltalake
     from packaging.version import parse
@@ -217,9 +257,12 @@ def convert_pa_schema_to_delta(schema: pa.Schema, large_dtypes: bool) -> pa.Sche
         schema_conversion_mode = ArrowSchemaConversionMode.LARGE if large_dtypes else ArrowSchemaConversionMode.NORMAL
         return _convert_pa_schema_to_delta(schema, schema_conversion_mode=schema_conversion_mode)
     else:
-        # deltalake>=1.0.0 passes through Arrow data types without modification
-        # https://delta-io.github.io/delta-rs/upgrade-guides/guide-1.0.0/#large_dtypes-removed
-        return schema
+        # deltalake>=1.0.0 passes Arrow data types through without modification, EXCEPT
+        # that its Schema.from_arrow rejects tz-aware timestamps whose timezone is not the
+        # literal "UTC" (e.g. the "+00:00" that Daft emits). The pre-1.0.0 converters above
+        # normalized this for us; restore that normalization here so tz-aware timestamps
+        # commit correctly. https://delta-io.github.io/delta-rs/upgrade-guides/guide-1.0.0/#large_dtypes-removed
+        return _normalize_delta_schema_timestamps(schema)
 
 
 def create_table_with_add_actions(
