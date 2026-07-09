@@ -845,8 +845,7 @@ mod tests {
             size_bytes: Some(PUBLIC_PARQUET_SIZE),
             ..Default::default()
         };
-        let stream =
-            read_parquet(PUBLIC_PARQUET, io_client, Some(io_stats.clone()), opts).await?;
+        let stream = read_parquet(PUBLIC_PARQUET, io_client, Some(io_stats.clone()), opts).await?;
         let batches: Vec<_> = stream.try_collect().await?;
         let num_rows: usize = batches.iter().map(|rb| rb.len()).sum();
 
@@ -889,7 +888,10 @@ mod tests {
             ..Default::default()
         };
         let result = read_parquet(PUBLIC_PARQUET, io_client, None, opts).await;
-        assert!(result.is_err(), "a wrong size must error, not silently read");
+        assert!(
+            result.is_err(),
+            "a wrong size must error, not silently read"
+        );
         Ok(())
     }
 }
