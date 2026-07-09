@@ -10,6 +10,7 @@ from PIL import Image
 import daft
 from daft import DataType as dt
 from daft.datatype import MediaType
+from daft.file.file import BUFFER_COPY
 from daft.functions import file, image_file
 from tests.conftest import get_tests_daft_runner_name
 
@@ -220,3 +221,20 @@ def test_imagefile_decode_with_default_buffer(sample_png: Path):
     f = daft.ImageFile(str(sample_png))
     img = f.decode()
     assert img.size == (80, 50)
+
+
+def test_imagefile_decode_uses_copy_buffer_by_default(sample_png: Path, monkeypatch):
+    f = daft.ImageFile(str(sample_png))
+    original_open = f.open
+    seen_buffer_sizes: list[int | None] = []
+
+    def track_open(buffer_size=None):
+        seen_buffer_sizes.append(buffer_size)
+        return original_open(buffer_size=buffer_size)
+
+    monkeypatch.setattr(f, "open", track_open)
+
+    img = f.decode()
+
+    assert img.size == (80, 50)
+    assert seen_buffer_sizes == [BUFFER_COPY]

@@ -17,6 +17,7 @@
         * [Documents](modalities/documents.md)
         * [JSON and Nested Data](modalities/json.md)
         * [Files and URLs](modalities/files.md)
+        * [Tensors](modalities/tensors.md)
         * [Embeddings](modalities/embeddings.md)
         * [Custom Modalities](modalities/custom.md)
     * User Defined Functions

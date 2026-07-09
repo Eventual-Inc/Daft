@@ -7,14 +7,8 @@ pytest.importorskip("h5py")
 import numpy as np
 
 import daft
-from daft.file.hdf5 import HDF5_DEFAULT_BUFFER_SIZE
-from daft.functions.hdf5 import (
-    _field_name_from_dataset,
-    _normalize_datasets,
-    hdf5_keys_impl,
-    hdf5_read_impl,
-    hdf5_read_many_impl,
-)
+from daft.file.hdf5 import HDF5_DEFAULT_BUFFER_SIZE, HDF5_SCAN_BUFFER_SIZE
+from daft.functions.hdf5 import hdf5_keys_impl
 
 SAMPLE_HDF5_ROOT_KEYS = ["action", "float32_values", "int_values", "observation", "values"]
 
@@ -33,7 +27,7 @@ def sample_hdf5_path(tmp_path):
         f.create_dataset("float32_values", data=np.array([1.0, 2.0, 3.0], dtype=np.float32))
 
         # A nested group+dataset covers keys(), visit(), metadata(), and
-        # read/read_many for hierarchical dataset paths.
+        # direct reads for hierarchical dataset paths.
         action = f.create_group("action")
         action.create_dataset("proprio", data=np.zeros((4, 7)))
 
@@ -52,12 +46,31 @@ def test_hdf5_file_open_uses_hdf5_buffer_default():
     assert daft.Hdf5File.open.__defaults__ == (HDF5_DEFAULT_BUFFER_SIZE,)
 
 
-def test_hdf5_file_read_many_and_attrs(sample_hdf5_path):
+def test_hdf5_file_metadata_methods_use_scan_buffer(sample_hdf5_path, monkeypatch):
     file = daft.Hdf5File(sample_hdf5_path)
-    data = file.read({"values": "values", "proprio": "action/proprio"})
+    original_open_h5py = file._open_h5py
+    seen_buffer_sizes: list[int | None] = []
+
+    def track_open_h5py(buffer_size=HDF5_DEFAULT_BUFFER_SIZE):
+        seen_buffer_sizes.append(buffer_size)
+        return original_open_h5py(buffer_size)
+
+    monkeypatch.setattr(file, "_open_h5py", track_open_h5py)
+
+    assert file.keys() == SAMPLE_HDF5_ROOT_KEYS
+    assert file.attrs()["source"] == "unit-test"
+    assert "action/proprio" in file.visit()
+    assert any(obj["h5path"] == "action/proprio" for obj in file.metadata())
+
+    assert seen_buffer_sizes == [HDF5_SCAN_BUFFER_SIZE] * 4
+
+
+def test_hdf5_file_read_sequence_and_attrs(sample_hdf5_path):
+    file = daft.Hdf5File(sample_hdf5_path)
+    data = file.read(["values", "action/proprio"])
 
     assert np.allclose(data["values"], [1.0, 2.0, 3.0])
-    assert data["proprio"].shape == (4, 7)
+    assert data["action/proprio"].shape == (4, 7)
     assert file.attrs()["source"] == "unit-test"
     assert file.attrs(h5path="values")["unit"] == "meters"
 
@@ -70,6 +83,38 @@ def test_hdf5_file_read_single_and_sequence(sample_hdf5_path):
     data = file.read(["values", "action/proprio"])
     assert np.allclose(data["values"], [1.0, 2.0, 3.0])
     assert data["action/proprio"].shape == (4, 7)
+
+
+def test_hdf5_file_read_rejects_mapping(sample_hdf5_path):
+    file = daft.Hdf5File(sample_hdf5_path)
+
+    with pytest.raises(TypeError, match="alias mappings"):
+        file.read({"values": "action/proprio"})
+
+
+def test_hdf5_file_read_missing_dataset_errors(sample_hdf5_path):
+    file = daft.Hdf5File(sample_hdf5_path)
+
+    with pytest.raises(KeyError, match="missing"):
+        file.read("missing")
+
+    with pytest.raises(KeyError, match="missing"):
+        file.read(["values", "missing"])
+
+
+def test_hdf5_file_read_empty_file_errors(tmp_path):
+    import h5py
+
+    path = tmp_path / "empty.h5"
+    with h5py.File(path, "w"):
+        pass
+
+    file = daft.Hdf5File(str(path))
+
+    assert file.keys() == []
+    assert file.metadata() == []
+    with pytest.raises(KeyError, match="values"):
+        file.read("values")
 
 
 def test_hdf5_file_read_group_errors(sample_hdf5_path):
@@ -155,133 +200,38 @@ def test_hdf5_keys_expression(sample_hdf5_path):
     assert result["keys"][0] == SAMPLE_HDF5_ROOT_KEYS
 
 
-def test_hdf5_read_expression(sample_hdf5_path):
+def test_hdf5_metadata_expression(sample_hdf5_path):
     df = daft.from_pydict({"path": [sample_hdf5_path]})
     df = df.select(daft.functions.hdf5_file(daft.col("path")).alias("trajectory")).with_column(
-        "values",
-        daft.functions.hdf5_read(daft.col("trajectory"), dataset="int_values"),
+        "metadata",
+        daft.functions.hdf5_metadata(daft.col("trajectory"), group="/"),
     )
 
-    assert df.schema()["values"].dtype == daft.DataType.python()
-    result = df.collect().to_pydict()
-    assert result["values"][0].dtype == np.int32
-    assert np.array_equal(result["values"][0], [1, 2, 3])
+    objects = df.collect().to_pydict()["metadata"][0]
+    assert {"h5path": "action", "kind": "group", "shape": [], "dtype": "", "chunks": [], "compression": ""} in objects
+    assert any(obj["h5path"] == "action/proprio" and obj["shape"] == [4, 7] for obj in objects)
 
-
-def test_hdf5_read_expression_with_dtype(sample_hdf5_path):
-    df = daft.from_pydict({"path": [sample_hdf5_path]})
-    df = df.select(daft.functions.hdf5_file(daft.col("path")).alias("trajectory")).with_column(
-        "values",
-        daft.functions.hdf5_read(
-            daft.col("trajectory"),
-            dataset="int_values",
-            dtype=daft.DataType.int32(),
-        ),
+    expr_df = daft.from_pydict({"path": [sample_hdf5_path]})
+    expr_df = expr_df.select(daft.functions.hdf5_file(daft.col("path")).alias("trajectory")).with_column(
+        "metadata", daft.col("trajectory").hdf5_metadata(group="action")
     )
-
-    assert df.schema()["values"].dtype == daft.DataType.tensor(daft.DataType.int32())
-    result = df.collect().to_pydict()
-    assert result["values"][0].dtype == np.int32
-    assert np.array_equal(result["values"][0], [1, 2, 3])
-
-
-def test_hdf5_read_many_expression(sample_hdf5_path):
-    df = daft.from_pydict({"path": [sample_hdf5_path]})
-    df = df.select(
-        daft.functions.hdf5_read_many(
-            daft.functions.hdf5_file(daft.col("path")),
-            {"values": "values", "proprio": "action/proprio"},
-        ).alias("datasets")
-    )
-
-    assert df.schema()["datasets"].dtype == daft.DataType.struct(
+    action_objects = expr_df.collect().to_pydict()["metadata"][0]
+    assert action_objects == [
         {
-            "values": daft.DataType.python(),
-            "proprio": daft.DataType.python(),
+            "h5path": "action/proprio",
+            "kind": "dataset",
+            "shape": [4, 7],
+            "dtype": "float64",
+            "chunks": [],
+            "compression": "",
         }
-    )
-    result = df.collect().to_pydict()
-    assert np.allclose(result["datasets"][0]["values"], [1.0, 2.0, 3.0])
-    assert result["datasets"][0]["proprio"].shape == (4, 7)
-
-
-def test_hdf5_read_many_expression_with_dtypes(sample_hdf5_path):
-    df = daft.from_pydict({"path": [sample_hdf5_path]})
-    df = df.select(
-        daft.functions.hdf5_read_many(
-            daft.functions.hdf5_file(daft.col("path")),
-            {
-                "ints": "int_values",
-                "floats": "float32_values",
-            },
-            dtypes={
-                "ints": daft.DataType.from_numpy_dtype(np.dtype("int32")),
-                "floats": daft.DataType.from_numpy_dtype(np.dtype("float32")),
-            },
-        ).alias("datasets")
-    )
-
-    assert df.schema()["datasets"].dtype == daft.DataType.struct(
-        {
-            "ints": daft.DataType.tensor(daft.DataType.int32()),
-            "floats": daft.DataType.tensor(daft.DataType.float32()),
-        }
-    )
-    result = df.collect().to_pydict()["datasets"][0]
-    assert result["ints"].dtype == np.int32
-    assert result["floats"].dtype == np.float32
+    ]
 
 
 def test_hdf5_function_impls(sample_hdf5_path):
     file = daft.Hdf5File(sample_hdf5_path)
 
     assert hdf5_keys_impl(file, group="/") == SAMPLE_HDF5_ROOT_KEYS
-    assert np.allclose(hdf5_read_impl(file, dataset="values"), [1.0, 2.0, 3.0])
-    data = hdf5_read_many_impl(file, datasets={"values": "values"})
-    assert np.allclose(data["values"], [1.0, 2.0, 3.0])
-
-
-def test_hdf5_read_many_normalizes_dataset_inputs(sample_hdf5_path):
-    df = daft.from_pydict({"path": [sample_hdf5_path]})
-
-    single = df.select(
-        daft.functions.hdf5_read_many(
-            daft.functions.hdf5_file(daft.col("path")),
-            "values",
-        ).alias("datasets")
-    )
-    assert np.allclose(single.collect().to_pydict()["datasets"][0]["values"], [1.0, 2.0, 3.0])
-
-    many = df.select(
-        daft.functions.hdf5_read_many(
-            daft.functions.hdf5_file(daft.col("path")),
-            ["values", "action/proprio"],
-        ).alias("datasets")
-    )
-    result = many.collect().to_pydict()["datasets"][0]
-    assert np.allclose(result["values"], [1.0, 2.0, 3.0])
-    assert result["action_proprio"].shape == (4, 7)
-
-
-def test_hdf5_read_many_rejects_invalid_dataset_inputs(sample_hdf5_path):
-    assert _field_name_from_dataset("/") == "dataset"
-    assert _normalize_datasets({"values": "values"}) == {"values": "values"}
-
-    with pytest.raises(ValueError, match="duplicate output field names"):
-        _normalize_datasets(["action/proprio", "action-proprio"])
-    with pytest.raises(ValueError, match="at least one"):
-        _normalize_datasets([])
-    with pytest.raises(TypeError, match="string aliases"):
-        _normalize_datasets({1: "values"})  # ty: ignore[invalid-argument-type]
-    with pytest.raises(TypeError, match="string aliases"):
-        _normalize_datasets({"values": 1})  # ty: ignore[invalid-argument-type]
-
-    with pytest.raises(ValueError, match="dtypes must match"):
-        daft.functions.hdf5_read_many(
-            daft.lit(daft.Hdf5File(sample_hdf5_path)),
-            {"values": "values"},
-            dtypes={"other": daft.DataType.float64()},
-        )
 
 
 def test_as_hdf5_from_generic_file(sample_hdf5_path):
