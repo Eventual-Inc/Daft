@@ -1319,6 +1319,8 @@ class DataFrame:
 
         Can be run in either `append` or `overwrite` mode which will either appends the rows in the DataFrame or will delete the existing rows and then append the DataFrame rows respectively.
 
+        ``write_iceberg`` supports checkpointing via the ``checkpoint=`` parameter. For the conceptual overview, see the [Checkpointing guide](../use-case/checkpointing.md).
+
         Args:
             table (pyiceberg.table.Table): Destination [PyIceberg Table](https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table) to write dataframe to.
             mode (str, optional): Operation mode of the write. `append` or `overwrite` Iceberg Table. Defaults to `append`.
@@ -1368,6 +1370,16 @@ class DataFrame:
             >>> table = pyiceberg.Table(...)  # doctest: +SKIP
             >>> df = daft.from_pydict({"user_id": [1, 2, 3], "name": ["Alice", "Bob", "Charlie"]})
             >>> df = df.write_iceberg(table, mode="overwrite")  # doctest: +SKIP
+            >>>
+            >>> store = daft.CheckpointStore("s3://my-bucket/ckpt/")  # doctest: +SKIP
+            >>> df = daft.read_parquet(
+            ...     "s3://my-bucket/input/",
+            ...     checkpoint=daft.CheckpointConfig(store, on="file_id"),
+            ... )  # doctest: +SKIP
+            >>> df.write_iceberg(
+            ...     table,
+            ...     checkpoint=daft.IdempotentCommit(store, idempotence_key="run-2026-05-21"),
+            ... )  # doctest: +SKIP
 
         """
         import pyarrow as pa
@@ -1749,6 +1761,8 @@ class DataFrame:
     ) -> "DataFrame":
         """Writes the DataFrame to a [Delta Lake](https://docs.delta.io/latest/index.html) table, returning a new DataFrame with the operations that occurred.
 
+        ``write_deltalake`` supports checkpointing via the ``checkpoint=`` parameter. For the conceptual overview, see the [Checkpointing guide](../use-case/checkpointing.md).
+
         Args:
             table (Union[str, pathlib.Path, deltalake.DeltaTable, UnityCatalogTable]): Destination [Delta Lake Table](https://delta-io.github.io/delta-rs/api/delta_table/) or table URI to write dataframe to.
             partition_cols (List[str], optional): How to subpartition each partition further. If table exists, expected to match table's existing partitioning scheme, otherwise creates the table with specified partition columns. Defaults to None.
@@ -1806,6 +1820,16 @@ class DataFrame:
             >>> import deltalake
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
             >>> df.write_deltalake("s3://my-bucket/my-deltalake-table")  # doctest: +SKIP
+            >>>
+            >>> store = daft.CheckpointStore("s3://my-bucket/ckpt/")  # doctest: +SKIP
+            >>> df = daft.read_parquet(
+            ...     "s3://my-bucket/input/",
+            ...     checkpoint=daft.CheckpointConfig(store, on="file_id"),
+            ... )  # doctest: +SKIP
+            >>> df.write_deltalake(
+            ...     "s3://my-bucket/my-deltalake-table",
+            ...     checkpoint=daft.IdempotentCommit(store, idempotence_key="run-2026-05-21"),
+            ... )  # doctest: +SKIP
         """
         import json
 
