@@ -13,7 +13,7 @@ Daft provides a simple, performant, and responsible way to access Common Crawl d
  There are 3 main methods for accessing Common Crawl data:
 
 | Method | Enabled | URL Scheme | Best For | Credentials Required | Warnings |
-|--------|-----------|----------|---------------------|
+|--------|---------|------------|----------|----------------------|----------|
 | AWS S3 | ``s3://commoncrawl/...`` | Inside AWS (us-east-1) | Yes | Data transfer fees apply if outside of AWS us-east-1. |
 | HuggingFace Buckets | ``hf://buckets/commoncrawl/commoncrawl/...`` | Cross-region, outside AWS, cheapest | No (public) | Only 2026+ crawls are available |
 | HTTPS | ``https://data.commoncrawl.org/...`` | Fallback when no credentials | No | Slowest option |
@@ -29,7 +29,7 @@ The access method chosen depends on the arguments passed to `daft.datasets.commo
 
 ## Accessing Common Crawl from AWS
 
-Common Crawl data is hosted by [Amazon Web Services' Open Data Sets Sponsorships program](https://aws.amazon.com/opendata/) which makes it freely accessible.
+Common Crawl data is hosted by the [Amazon Web Services' Open Data Sets Sponsorships program](https://aws.amazon.com/opendata/) which makes it freely accessible.
 However, access does require AWS authentication when downloading Common Crawl data from S3 directly. (_Outside of AWS, you can access Common Crawl without an AWS account_).
 
 **NOTE**: When using `daft.datasets.common_crawl`, you _must_ provide `in_aws=True` when accessing data within the AWS Cloud!
@@ -45,6 +45,7 @@ All Common Crawl data is stored in the `us-east-1` region. It is **highly recomm
 ### Authentication option 1: AWS Configurations
 
 If your environment has AWS credentials configured, Daft will automatically detect and use them. The default order of precedence is:
+
 1. AWS environment variables (e.g. `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`)
 2. Shared AWS CLI or SSO credentials (e.g. `~/.aws/config`, `~/.aws/credentials`)
 3. IAM roles for EC2, ECS, EKS, or other AWS services
@@ -71,7 +72,7 @@ daft.datasets.common_crawl("CC-MAIN-2025-33", io_config=io_config, in_aws=True)
 
 ## Accessing Common Crawl from HuggingFace
 
-If you are running _outside_ of AWS, we recommend reading through the [Hugging Face Buckets](#access-from-hugging-face-buckets) interface as it is the most accessible option. Daft will read from the official [HuggingFace Common Crawl bucket](https://huggingface.co/buckets/commoncrawl/commoncrawl) if the crawl is available or if `source="hf"` is set. Currently, only crawls from 2026 onwards are available.
+If you are running _outside_ of AWS, we recommend using the [Hugging Face Buckets](#access-from-hugging-face-buckets) interface as it is the most accessible option. Daft will read from the official [HuggingFace Common Crawl bucket](https://huggingface.co/buckets/commoncrawl/commoncrawl) if the crawl is available or if `source="hf"` is set. Currently, only crawls from 2026 onwards are available.
 
 ```python
 import daft
@@ -93,7 +94,7 @@ daft.read_warc("hf://buckets/commoncrawl/commoncrawl/crawl-data/CC-MAIN-2026-17/
 
 ### Authentication
 
-For the public Common Crawl data, no authentication is needed; however, may cause more aggressive rate limiting. For best access, pass a token via ``IOConfig``:
+For the public Common Crawl data, no authentication is needed; however, this may lead to more aggressive rate limiting. For best access, pass a token via ``IOConfig``:
 
 ```python
 from daft.io import IOConfig
@@ -104,7 +105,7 @@ daft.read_warc(
 )
 ```
 
-You can also authenticate using ``hf auth login`` — the token is picked up automatically.
+You can also authenticate using ``hf auth login``; the token is picked up automatically.
 
 
 ## Accessing Common Crawl from HTTP
