@@ -1,6 +1,6 @@
 # Datasets
 
-Daft provides simple, performant, and responsible ways to access useful datasets like [Common Crawl](https://commoncrawl.org/get-started) and [DROID](https://droid-dataset.github.io/).
+Daft provides simple, performant, and responsible ways to access useful datasets like [Common Crawl](https://commoncrawl.org/get-started), [DROID](https://droid-dataset.github.io/), and [EgoDex](https://github.com/apple/ml-egodex).
 
 ## Common Crawl
 
@@ -52,6 +52,25 @@ Check out our [DROID dataset guide](../datasets/droid.md) for more examples!
         heading_level: 3
 
 ::: daft.datasets.droid.camera_frames
+    options:
+        filters: ["!^_"]
+        heading_level: 3
+
+## EgoDex
+
+Check out our [EgoDex dataset guide](../datasets/egodex.md) for more examples!
+
+::: daft.datasets.egodex.raw
+    options:
+        filters: ["!^_"]
+        heading_level: 3
+
+::: daft.datasets.egodex.trajectory
+    options:
+        filters: ["!^_"]
+        heading_level: 3
+
+::: daft.datasets.egodex.camera_frames
     options:
         filters: ["!^_"]
         heading_level: 3

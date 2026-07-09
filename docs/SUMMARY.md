@@ -34,6 +34,7 @@
         * [Common Crawl](datasets/common-crawl.md)
         * [LeRobot v3](datasets/lerobot.md)
         * [DROID](datasets/droid.md)
+        * [EgoDex](datasets/egodex.md)
     * Data Connectors
         * [Overview](connectors/index.md)
         * Object Storage
@@ -112,6 +113,7 @@
     * [Window Functions](examples/window-functions.md)
     * [Working with Common Crawl Data](examples/common-crawl-daft-tutorial.md)
     * [Document Processing](examples/document-processing.md)
+    * [EgoDex Pose Curation](examples/egodex-pose-features.md)
 * Python API
     * [Python API](api/index.md)
     * [AI](api/ai.md)
