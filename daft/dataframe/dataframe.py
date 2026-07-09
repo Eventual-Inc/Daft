@@ -1381,6 +1381,23 @@ class DataFrame:
             >>> df = daft.from_pydict({"user_id": [1, 2, 3], "name": ["Alice", "Bob", "Charlie"]})
             >>> df = df.write_iceberg(table, mode="overwrite")  # doctest: +SKIP
 
+            Idempotent commit with a checkpoint store. The same store is
+            paired into the source for the upstream anti-join and into the
+            sink for the commit marker:
+            >>> store = daft.CheckpointStore("s3://bucket/ckpt")  # doctest: +SKIP
+            >>> df = daft.read_parquet(  # doctest: +SKIP
+            ...     "s3://input/",
+            ...     checkpoint=daft.CheckpointConfig(store=store, on="file_id"),
+            ... )
+            >>> df.write_iceberg(  # doctest: +SKIP
+            ...     table,
+            ...     checkpoint=daft.IdempotentCommit(store=store, idempotence_key="job-2026-05-04"),
+            ... )
+
+        See Also:
+            [Checkpointing guide](../use-case/checkpointing.md) for the
+            conceptual overview of the ``checkpoint=`` parameter.
+
         """
         import pyarrow as pa
         import pyiceberg
@@ -1818,6 +1835,22 @@ class DataFrame:
             >>> import deltalake
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
             >>> df.write_deltalake("s3://my-bucket/my-deltalake-table")  # doctest: +SKIP
+
+            Idempotent commit with a checkpoint store. Same store on both
+            sides of the pipeline:
+            >>> store = daft.CheckpointStore("s3://bucket/ckpt")  # doctest: +SKIP
+            >>> df = daft.read_parquet(  # doctest: +SKIP
+            ...     "s3://input/",
+            ...     checkpoint=daft.CheckpointConfig(store=store, on="file_id"),
+            ... )
+            >>> df.write_deltalake(  # doctest: +SKIP
+            ...     "s3://my-bucket/my-table/",
+            ...     checkpoint=daft.IdempotentCommit(store=store, idempotence_key="job-2026-05-04"),
+            ... )
+
+        See Also:
+            [Checkpointing guide](../use-case/checkpointing.md) for the
+            conceptual overview of the ``checkpoint=`` parameter.
         """
         import json
 
