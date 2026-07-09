@@ -15,7 +15,7 @@ Daft provides a simple, performant, and responsible way to access Common Crawl d
 | Method | URL Scheme | Best For | Credentials Required | Warnings |
 |--------|------------|----------|----------------------|----------|
 | AWS S3 | ``s3://commoncrawl/...`` | Inside AWS (us-east-1) | Yes | Data transfer fees apply if outside of AWS us-east-1. |
-| HuggingFace Buckets | ``hf://buckets/commoncrawl/commoncrawl/...`` | Cross-region, outside AWS, cheapest | No (public) | Only 2026+ crawls are available |
+| HuggingFace Buckets | ``hf://buckets/commoncrawl/commoncrawl/...`` | Cross-region, outside AWS, cheapest | No (Optional, preferred) | Only 2026+ crawls are available |
 | HTTPS | ``https://data.commoncrawl.org/...`` | Fallback when no credentials | No | Slowest option |
 
 The access method chosen depends on the arguments passed to `daft.datasets.common_crawl`
