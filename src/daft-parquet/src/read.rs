@@ -107,6 +107,11 @@ pub struct ParquetReadOptions {
     pub field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     pub delete_rows: Option<Vec<i64>>,
     pub batch_size: Option<usize>,
+    /// Exact on-disk file size when already known (e.g. from a catalog transaction
+    /// log or an object-store LIST). When set, the remote reader skips its
+    /// per-file HEAD request and fetches the footer with an exact byte range.
+    /// A wrong value fails the footer parse; it is trusted like the catalog log.
+    pub size_bytes: Option<usize>,
     // TODO(arrow-rs): wire this through to the arrowrs reader to skip redundant footer reads.
     // The arrowrs reader currently reads its own metadata via ArrowReaderMetadata::load(),
     // but callers (e.g. scan_task.rs) already have pre-fetched DaftParquetMetadata from planning.
@@ -185,6 +190,7 @@ fn single_opts_for(opts: &ParquetBulkReadOptions, i: usize) -> ParquetReadOption
         delete_rows: per.delete_rows,
         batch_size: opts.batch_size,
         metadata: per.metadata,
+        size_bytes: None,
         ignore_corrupt_files: false,
         skipped_corrupt_files: None,
     }
@@ -636,7 +642,7 @@ mod tests {
 
     use arrow::datatypes::DataType;
     use common_error::DaftResult;
-    use daft_io::{IOClient, IOConfig};
+    use daft_io::{IOClient, IOConfig, IOStatsContext};
     use futures::StreamExt;
     use parquet::schema::types::Type as ParquetSchemaType;
 
@@ -819,5 +825,71 @@ mod tests {
             "stream with limit=5 on 5-row file should return 5 rows"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    const PUBLIC_PARQUET: &str = "s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet";
+    const PUBLIC_PARQUET_SIZE: usize = 9882;
+
+    fn anonymous_io_client() -> DaftResult<Arc<IOClient>> {
+        let mut io_config = IOConfig::default();
+        io_config.s3.anonymous = true;
+        Ok(Arc::new(IOClient::new(io_config.into())?))
+    }
+
+    #[tokio::test]
+    async fn known_size_skips_head_request() -> DaftResult<()> {
+        let io_client = anonymous_io_client()?;
+        let io_stats = IOStatsContext::new("known_size_skips_head_request");
+
+        let opts = ParquetReadOptions {
+            size_bytes: Some(PUBLIC_PARQUET_SIZE),
+            ..Default::default()
+        };
+        let stream =
+            read_parquet(PUBLIC_PARQUET, io_client, Some(io_stats.clone()), opts).await?;
+        let batches: Vec<_> = stream.try_collect().await?;
+        let num_rows: usize = batches.iter().map(|rb| rb.len()).sum();
+
+        assert_eq!(num_rows, 100);
+        assert_eq!(
+            io_stats.load_head_requests(),
+            0,
+            "a read with a known file size must not issue HEAD requests"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn unknown_size_still_heads_once() -> DaftResult<()> {
+        let io_client = anonymous_io_client()?;
+        let io_stats = IOStatsContext::new("unknown_size_still_heads_once");
+
+        let stream = read_parquet(
+            PUBLIC_PARQUET,
+            io_client,
+            Some(io_stats.clone()),
+            ParquetReadOptions::default(),
+        )
+        .await?;
+        let batches: Vec<_> = stream.try_collect().await?;
+        let num_rows: usize = batches.iter().map(|rb| rb.len()).sum();
+
+        assert_eq!(num_rows, 100);
+        assert_eq!(io_stats.load_head_requests(), 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn wrong_size_fails_loudly() -> DaftResult<()> {
+        let io_client = anonymous_io_client()?;
+        let opts = ParquetReadOptions {
+            // Plausible but wrong size: large enough to pass the min-size check,
+            // small enough that the footer magic lands in the wrong place.
+            size_bytes: Some(1260),
+            ..Default::default()
+        };
+        let result = read_parquet(PUBLIC_PARQUET, io_client, None, opts).await;
+        assert!(result.is_err(), "a wrong size must error, not silently read");
+        Ok(())
     }
 }
