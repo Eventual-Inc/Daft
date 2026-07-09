@@ -178,7 +178,7 @@ def log10(expr: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("log10", expr)
 
 
-def log(expr: Expression, base: int | float = math.e) -> Expression:
+def log(expr: Expression, base: float = math.e) -> Expression:
     """The elementwise log with given base, of a numeric expression.
 
     Args:
@@ -243,7 +243,7 @@ def expm1(expr: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("expm1", expr)
 
 
-def between(expr: Expression, lower: Expression | int | float, upper: Expression | int | float) -> Expression:
+def between(expr: Expression, lower: Expression | float, upper: Expression | float) -> Expression:
     """Checks if values in the Expression are between lower and upper, inclusive.
 
     Args:
@@ -304,6 +304,35 @@ def conv(expr: Expression, from_base: int, to_base: int) -> Expression:
     magnitude exceeds 2^63.
     """
     return Expression._call_builtin_scalar_fn("conv", expr, from_base, to_base)
+
+
+def try_add(left: Expression, right: Expression) -> Expression:
+    """Adds two numbers, returning NULL on integer overflow instead of wrapping.
+
+    Integer inputs are promoted to 64-bit before the operation (``try_add`` on two
+    Int32 columns returns Int64); NULL is returned only when the 64-bit operation
+    itself overflows. Float inputs never produce overflow NULLs (they follow IEEE
+    754 and saturate to infinity).
+    """
+    return Expression._call_builtin_scalar_fn("try_add", left, right)
+
+
+def try_subtract(left: Expression, right: Expression) -> Expression:
+    """Subtracts two numbers, returning NULL on integer overflow instead of wrapping.
+
+    Integer inputs are promoted to 64-bit before the operation. Subtraction of
+    unsigned integers returns NULL when the result would be negative.
+    """
+    return Expression._call_builtin_scalar_fn("try_subtract", left, right)
+
+
+def try_multiply(left: Expression, right: Expression) -> Expression:
+    """Multiplies two numbers, returning NULL on integer overflow instead of wrapping.
+
+    Integer inputs are promoted to 64-bit before the operation; NULL is returned
+    only when the 64-bit operation itself overflows.
+    """
+    return Expression._call_builtin_scalar_fn("try_multiply", left, right)
 
 
 def is_nan(expr: Expression) -> Expression:

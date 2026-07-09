@@ -63,7 +63,7 @@ fn pmod_supertype(a: &DataType, b: &DataType) -> DaftResult<DataType> {
 
 // Collapse the supertype to one of {Int64, UInt64, Float32, Float64} so the
 // kernel only has four code paths. Smaller int widths fit losslessly.
-fn normalize_kernel_dtype(dtype: DataType) -> DataType {
+pub(super) fn normalize_kernel_dtype(dtype: DataType) -> DataType {
     match dtype {
         DataType::Int8 | DataType::Int16 | DataType::Int32 => DataType::Int64,
         DataType::UInt8 | DataType::UInt16 | DataType::UInt32 => DataType::UInt64,
@@ -83,13 +83,13 @@ fn pmod_impl(a: Series, b: Series) -> DaftResult<Series> {
     }
 }
 
-fn align_lengths(a: Series, b: Series) -> DaftResult<(Series, Series)> {
+pub(super) fn align_lengths(a: Series, b: Series) -> DaftResult<(Series, Series)> {
     match (a.len(), b.len()) {
         (x, y) if x == y => Ok((a, b)),
         (1, n) => Ok((a.broadcast(n)?, b)),
         (n, 1) => Ok((a, b.broadcast(n)?)),
         (x, y) => Err(DaftError::ValueError(format!(
-            "Cannot pmod arrays of different lengths: {x} vs {y}"
+            "Cannot align arrays of different lengths: {x} vs {y}"
         ))),
     }
 }
