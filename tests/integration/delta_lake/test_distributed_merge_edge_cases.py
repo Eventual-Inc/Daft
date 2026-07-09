@@ -355,6 +355,109 @@ def test_null_partition_value_falls_back_to_full_overwrite(tmp_path):
     assert result["num_target_rows_updated"][0] == 1
 
 
+# ---------------------------------------------------------------------------
+# Write-pass pruning invariants + materialize_join
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("broadcast", [None, True])
+def test_match_in_unaffected_partition_not_duplicated(tmp_path, broadcast):
+    """A source row matched in an untouched partition must not be re-inserted.
+
+    id=2's target row lives in partition b (untouched by this merge), but its
+    source row carries p="a" (an affected partition). A write pass that only
+    sees the affected slice of the target would misread id=2 as source-only
+    and insert a duplicate into partition a.
+    """
+    path = str(tmp_path / "t")
+    daft.from_pydict({"id": [1, 2], "p": ["a", "b"], "v": ["x", "y"]}).write_deltalake(
+        path, partition_cols=["p"]
+    )
+    b_files_before = {f for f in _data_files(path) if "p=b" in f}
+    source = daft.from_pydict({"id": [1, 2, 3], "p": ["a", "a", "a"], "v": ["X", "y", "z"]})
+    result = (
+        daft.distributed_merge_deltalake(
+            table=path,
+            source=source,
+            predicate="target.id = source.id",
+            broadcast_join=broadcast,
+        )
+        .when_matched_update_all(predicate="source.v != target.v")
+        .when_not_matched_insert_all()
+        .execute()
+    ).to_pydict()
+
+    rows = _read_sorted(path)
+    # id=2 appears exactly once, untouched, still in partition b.
+    assert rows["id"] == [1, 2, 3]
+    assert rows["p"] == ["a", "b", "a"]
+    assert rows["v"] == ["X", "y", "z"]
+    assert result["num_target_rows_inserted"][0] == 1
+    assert result["num_target_rows_updated"][0] == 1
+    assert {f for f in _data_files(path) if "p=b" in f} == b_files_before
+
+
+def test_affected_partition_mixed_outcomes_with_untouched_partition(tmp_path):
+    """Update + by-source delete + copy within one affected partition.
+
+    The other partition is untouched and its files survive as-is.
+    """
+    path = str(tmp_path / "t")
+    daft.from_pydict(
+        {
+            "id": [1, 2, 3, 4],
+            "p": ["a", "a", "b", "a"],
+            "flag": [False, True, False, False],
+            "v": ["v1", "v2", "v3", "v4"],
+        }
+    ).write_deltalake(path, partition_cols=["p"])
+    b_files_before = {f for f in _data_files(path) if "p=b" in f}
+    source = daft.from_pydict({"id": [1], "p": ["a"], "flag": [False], "v": ["V1"]})
+    result = (
+        daft.distributed_merge_deltalake(table=path, source=source, predicate="target.id = source.id")
+        .when_matched_update_all()
+        .when_not_matched_by_source_delete(predicate="target.flag = true")
+        .execute()
+    ).to_pydict()
+
+    rows = _read_sorted(path)
+    # id=1 updated, id=2 deleted (by-source, flag), id=3 untouched in b,
+    # id=4 copied (by-source predicate false) and rewritten within a.
+    assert rows["id"] == [1, 3, 4]
+    assert rows["v"] == ["V1", "v3", "v4"]
+    assert result["num_target_rows_updated"][0] == 1
+    assert result["num_target_rows_deleted"][0] == 1
+    assert {f for f in _data_files(path) if "p=b" in f} == b_files_before
+
+
+@pytest.mark.parametrize("partitioned", [True, False])
+def test_materialize_join_equivalence(tmp_path, partitioned):
+    """materialize_join=True executes the join once; results are identical."""
+    path = str(tmp_path / "t")
+    daft.from_pydict(
+        {"id": [1, 2, 3, 4], "p": ["a", "a", "b", "c"], "v": ["w", "x", "y", "z"]}
+    ).write_deltalake(path, partition_cols=["p"] if partitioned else None)
+    source = daft.from_pydict({"id": [1, 3, 5], "p": ["a", "b", "a"], "v": ["W", "Y", "new"]})
+    result = (
+        daft.distributed_merge_deltalake(
+            table=path,
+            source=source,
+            predicate="target.id = source.id",
+            materialize_join=True,
+        )
+        .when_matched_update_all()
+        .when_not_matched_insert_all()
+        .execute()
+    ).to_pydict()
+
+    rows = _read_sorted(path)
+    assert rows["id"] == [1, 2, 3, 4, 5]
+    assert rows["v"] == ["W", "x", "Y", "z", "new"]
+    assert result["num_target_rows_updated"][0] == 2
+    assert result["num_target_rows_inserted"][0] == 1
+    assert result["num_target_rows_copied"][0] == (1 if partitioned else 2)
+
+
 def test_insert_only_many_new_partitions(tmp_path):
     path = str(tmp_path / "t")
     daft.from_pydict({"id": [1, 2], "p": ["p0", "p0"], "v": ["a", "b"]}).write_deltalake(

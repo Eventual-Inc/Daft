@@ -572,6 +572,7 @@ def distributed_merge_deltalake(
     validate_unique_keys: bool = True,
     broadcast_join: bool | None = None,
     materialize_source: bool = True,
+    materialize_join: bool = False,
 ) -> "DistributedDeltaMergeBuilder":
     """Create a distributed Delta Lake MERGE builder that uses Daft's distributed join.
 
@@ -610,6 +611,12 @@ def distributed_merge_deltalake(
             ``False`` for very large sources (e.g. 100M+ rows): the source plan
             is then re-executed per pass (with column pruning) instead of being
             pinned in cluster memory.
+        materialize_join: If ``True``, execute the join once and pin the merged
+            result in cluster memory (spillable on the Ray runner) so the
+            statistics pass and the write pass both read from it. If ``False``
+            (default), the joined plan is re-executed per pass and never held
+            in memory; on partitioned tables the write pass then re-reads only
+            the affected partitions of the target.
 
     Returns:
         DistributedDeltaMergeBuilder: A builder for chaining merge clauses.
@@ -620,8 +627,10 @@ def distributed_merge_deltalake(
         workers and never funneled through the driver. Execution is two-pass
         streaming: a narrow statistics pass (metrics + affected partitions)
         followed by a write pass — the joined table is never materialized in
-        memory. Best for cases where the source is large relative to the
-        target, or when single-node merge causes OOM.
+        memory (unless ``materialize_join=True``). On partitioned tables the
+        write pass re-reads only the affected partitions of the target. Best
+        for cases where the source is large relative to the target, or when
+        single-node merge causes OOM.
 
         Writes are **incremental on partitioned tables**: only partitions
         containing an insert, update, or delete are rewritten (including the
@@ -718,6 +727,7 @@ def distributed_merge_deltalake(
         validate_unique_keys=validate_unique_keys,
         broadcast_join=broadcast_join,
         materialize_source=materialize_source,
+        materialize_join=materialize_join,
     )
 
 
@@ -925,6 +935,7 @@ class DistributedDeltaMergeBuilder:
         validate_unique_keys: bool = True,
         broadcast_join: bool | None = None,
         materialize_source: bool = True,
+        materialize_join: bool = False,
     ) -> None:
         self._resolved_table = resolved_table
         self._storage_options = storage_options
@@ -937,6 +948,7 @@ class DistributedDeltaMergeBuilder:
         self._validate_unique_keys = validate_unique_keys
         self._broadcast_join = broadcast_join
         self._materialize_source = materialize_source
+        self._materialize_join = materialize_join
 
         # Target column names, used to decide which source columns collide (and
         # therefore receive the ".__src__" join suffix). Read from the Delta log
@@ -1086,8 +1098,10 @@ class DistributedDeltaMergeBuilder:
         self,
         target_tagged: DataFrame,
         source_tagged: DataFrame,
+        anti_join_target: DataFrame | None = None,
+        strategy: "str | None" = "broadcast",
     ) -> DataFrame:
-        """Full outer join decomposed into broadcast-friendly LEFT + ANTI joins.
+        """Full outer join decomposed into LEFT + ANTI joins.
 
         A full outer join cannot use a broadcast strategy, so when the source is
         small this decomposition avoids shuffling the (large) target:
@@ -1098,13 +1112,23 @@ class DistributedDeltaMergeBuilder:
         The union of the two is exactly the full outer join, with an identical
         schema. On runners without broadcast support (native), the strategy hint
         falls back to a hash join and the result is still correct.
+
+        Args:
+            anti_join_target: Frame supplying the ANTI-join keyset; defaults to
+                ``target_tagged``. Must be the FULL target whenever
+                ``target_tagged`` is partition-pruned — a source row matched
+                outside the pruned slice would otherwise be misread as an
+                insert.
+            strategy: Join strategy hint for the LEFT join (``None`` lets the
+                engine choose; only pass ``"broadcast"`` for small sources).
         """
         from daft import col, lit
 
         left = target_tagged.join(
-            source_tagged, on=self._on, how="left", strategy="broadcast", suffix=".__src__"
+            source_tagged, on=self._on, how="left", strategy=strategy, suffix=".__src__"
         )
-        target_keys = target_tagged.select(*[col(k) for k in self._on])
+        keys_frame = anti_join_target if anti_join_target is not None else target_tagged
+        target_keys = keys_frame.select(*[col(k) for k in self._on])
         source_only = source_tagged.join(target_keys, on=self._on, how="anti")
 
         # Align source_only to the left-join schema (names, dtypes, order).
@@ -1178,15 +1202,16 @@ class DistributedDeltaMergeBuilder:
         self,
         write_df: DataFrame,
         partition_cols: list[str],
-        affected: "set[tuple]",
+        filters: "list[tuple]",
         pinned_version: int,
         merge_metadata: dict[str, str],
     ) -> "tuple[int, int]":
         """Distributed copy-on-write commit scoped to the affected partitions.
 
         Data files are written by workers via Daft's native Delta writer; the
-        single atomic commit removes only files in the affected partitions
-        (``partitions_filters``), leaving all other partitions untouched.
+        single atomic commit removes only files matching ``filters`` (the
+        delta-rs partition filters covering the affected-partition closure),
+        leaving all other partitions untouched.
 
         Returns:
             (files_added, files_removed) counts for merge metrics.
@@ -1210,14 +1235,6 @@ class DistributedDeltaMergeBuilder:
         wdf.collect()  # workers write data files; only add-action metadata is collected
         add_actions = wdf.to_pydict().get("add_action", [])
 
-        # delta-rs accepts only a single conjunction filter; the caller has
-        # already expanded `affected` to its per-column cartesian closure, so
-        # per-column filters cover exactly the same partitions the write pass
-        # rewrote ("=" for a single value keeps the filter minimal).
-        filters = []
-        for i, pc in enumerate(partition_cols):
-            values = sorted({_delta_partition_value_str(tup[i]) for tup in affected})
-            filters.append((pc, "=", values[0]) if len(values) == 1 else (pc, "in", values))
         files_removed = len(self._resolved_table.file_uris(partition_filters=filters))
 
         # Record operationMetrics like every other Daft delta commit (see
@@ -1260,13 +1277,17 @@ class DistributedDeltaMergeBuilder:
            partitions (any partition containing an insert, update, or delete —
            including the pre-image partition of rows that migrate). Only tiny
            aggregates reach the driver.
-        2. **Write pass** — the same plan is re-executed, filtered to affected
-           partitions, and written distributed via Daft's native Delta writer
-           with a partition-scoped atomic commit. Untouched partitions' files
-           are preserved as-is. Unpartitioned tables fall back to a streaming
-           full overwrite, and a merge that modifies nothing skips the commit.
+        2. **Write pass** — the merge plan is re-executed against only the
+           affected partitions of the target (plus a key-only target scan for
+           insert detection) and written distributed via Daft's native Delta
+           writer with a partition-scoped atomic commit. Untouched partitions'
+           files are preserved as-is. Unpartitioned tables fall back to a
+           streaming full overwrite, and a merge that modifies nothing skips
+           the commit.
 
-        The joined table is never materialized in memory.
+        The joined table is never materialized in memory unless
+        ``materialize_join=True``, in which case the join executes once and
+        the pinned result is shared by both passes.
 
         Returns:
             DataFrame: A single-row DataFrame with merge metrics columns.
@@ -1428,13 +1449,11 @@ class DistributedDeltaMergeBuilder:
         _MIDX = "__daft_dm_midx__"
         _BSIDX = "__daft_dm_bsidx__"
         _IIDX = "__daft_dm_iidx__"
-        joined = joined.with_columns(
-            {
-                _MIDX: _first_match_idx(matched_clauses, is_matched),
-                _BSIDX: _first_match_idx(by_source_clauses, is_target_only),
-                _IIDX: _first_match_idx(insert_clauses, is_source_only),
-            }
-        )
+        idx_columns = {
+            _MIDX: _first_match_idx(matched_clauses, is_matched),
+            _BSIDX: _first_match_idx(by_source_clauses, is_target_only),
+            _IIDX: _first_match_idx(insert_clauses, is_source_only),
+        }
         matched_idx = col(_MIDX)
         by_source_idx = col(_BSIDX)
         insert_idx = col(_IIDX)
@@ -1506,7 +1525,7 @@ class DistributedDeltaMergeBuilder:
 
             output_exprs.append(expr.cast(dtype).alias(col_name))
 
-        # --- Annotated plan (lazy — never materialized) -------------------------
+        # --- Annotated plan (lazy unless materialize_join) ----------------------
         partition_cols = list(self._resolved_table.metadata().partition_columns)
         _EMIT = "__daft_dm_emit__"
         # Pre-image partition values (raw target-side values, before any update
@@ -1514,17 +1533,26 @@ class DistributedDeltaMergeBuilder:
         # partitions also rewrites the partition it left.
         pre_alias = {pc: f"__daft_dm_pre_{i}__" for i, pc in enumerate(partition_cols)}
 
-        annotated = joined.select(
-            *output_exprs,
-            emitted.alias(_EMIT),
-            inserted.alias("__ins__"),
-            updated.alias("__upd__"),
-            deleted.alias("__del__"),
-            copied.alias("__cop__"),
-            is_matched.alias("__m__"),
-            is_source_only.alias("__so__"),
-            *[col(pc).alias(pre_alias[pc]) for pc in partition_cols],
-        )
+        def _annotate(frame: DataFrame) -> DataFrame:
+            """Apply the merge clause logic to a joined frame (stays lazy)."""
+            return frame.with_columns(idx_columns).select(
+                *output_exprs,
+                emitted.alias(_EMIT),
+                inserted.alias("__ins__"),
+                updated.alias("__upd__"),
+                deleted.alias("__del__"),
+                copied.alias("__cop__"),
+                is_matched.alias("__m__"),
+                is_source_only.alias("__so__"),
+                *[col(pc).alias(pre_alias[pc]) for pc in partition_cols],
+            )
+
+        annotated = _annotate(joined)
+        if self._materialize_join:
+            # One join execution shared by both passes: pinned in cluster
+            # memory (spillable on the Ray runner) instead of recomputed
+            # for the write pass.
+            annotated = annotated.collect()
 
         # --- Pass 1: narrow stats (metrics + affected partitions) ---------------
         t_stats = time.monotonic()
@@ -1628,7 +1656,29 @@ class DistributedDeltaMergeBuilder:
                     values = sorted({tup[i] for tup in affected}, key=repr)
                     pc_filter = (col(pc) == lit(values[0])) if len(values) == 1 else col(pc).is_in(values)
                     part_filter = part_filter & pc_filter
-                write_df = annotated.where(col(_EMIT) & part_filter).select(*[col(c) for c in target_columns])
+                filters = _delta_partition_filters(partition_cols, affected)
+
+                # Prune the write pass to the affected partitions: the write
+                # emits only rows of closure partitions (pass 1 put every
+                # modified row's pre- AND post-image in `affected`), so the
+                # target scan can skip everything else. Insert detection must
+                # still see the FULL target keyset — a source row matched in
+                # an unaffected partition would otherwise be re-inserted.
+                write_annotated = annotated
+                if not self._materialize_join:
+                    total_files = len(self._resolved_table.file_uris())
+                    affected_files = len(self._resolved_table.file_uris(partition_filters=filters))
+                    if affected_files < total_files:
+                        joined_pruned = self._decomposed_outer_join(
+                            target_tagged.where(part_filter),
+                            source_tagged,
+                            anti_join_target=target_tagged,
+                            strategy="broadcast" if decompose else None,
+                        )
+                        write_annotated = _annotate(joined_pruned)
+                write_df = write_annotated.where(col(_EMIT) & part_filter).select(
+                    *[col(c) for c in target_columns]
+                )
                 # One writer per rewritten partition tuple instead of one per
                 # join shuffle partition.
                 write_df = _repartition_for_write(
@@ -1636,7 +1686,7 @@ class DistributedDeltaMergeBuilder:
                 )
                 self._check_no_concurrent_commit(pinned_version)
                 files_added, files_removed = self._write_partition_scoped(
-                    write_df, partition_cols, affected, pinned_version, merge_metadata
+                    write_df, partition_cols, filters, pinned_version, merge_metadata
                 )
             else:
                 # Unpartitioned (or unfilterable partition values): streaming
@@ -1722,6 +1772,21 @@ def _should_decompose_join(
     if runner_name != "ray":
         return False
     return source_size_bytes is not None and source_size_bytes <= _BROADCAST_SOURCE_MAX_BYTES
+
+
+def _delta_partition_filters(partition_cols: "list[str]", affected: "set[tuple]") -> "list[tuple]":
+    """delta-rs DNF partition filters covering the affected-tuple closure.
+
+    delta-rs accepts only a single conjunction filter; the caller has already
+    expanded ``affected`` to its per-column cartesian closure, so per-column
+    filters cover exactly the same partitions the write pass rewrites ("="
+    for a single value keeps the filter minimal).
+    """
+    filters = []
+    for i, pc in enumerate(partition_cols):
+        values = sorted({_delta_partition_value_str(tup[i]) for tup in affected})
+        filters.append((pc, "=", values[0]) if len(values) == 1 else (pc, "in", values))
+    return filters
 
 
 def _delta_partition_value_str(value: Any) -> str:
