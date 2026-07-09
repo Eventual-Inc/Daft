@@ -21,9 +21,9 @@ Function names are identical across Rust, Python, and SQL. Import from Python as
 
 | Surface | Count |
 |---|---|
-| Rust `SpatialFunctions` module | **37** |
-| Python bindings (`daft.functions`) | **36** |
-| SQL (`ST_*`) | **35** |
+| Rust `SpatialFunctions` module | **40** |
+| Python bindings (`daft.functions`) | **39** |
+| SQL (`ST_*`) | **38** |
 
 ### Functions NOT exposed everywhere
 
@@ -32,7 +32,7 @@ Function names are identical across Rust, Python, and SQL. Import from Python as
 | `great_circle_distance` | ✅ | ❌ | Great-circle distance in meters from lat/lon scalars. No SQL binding. |
 | `st_geohash_covers` | ❌ | ❌ | **Rust-only.** Internal optimizer helper for geohash partition pruning — not a user-facing function. |
 
-Everything else (35 functions) is available identically in both Python and SQL.
+Everything else (38 functions) is available identically in both Python and SQL.
 
 ## Function catalog
 
@@ -44,9 +44,11 @@ Legend: **P** = Python, **S** = SQL.
 |---|---|:-:|:-:|---|
 | `st_area` | `st_area(geom, use_spheroid=False)` | ✅ | ✅ | 2D area; `use_spheroid=True` for WGS84 geodesic area. |
 | `st_length` | `st_length(geom, use_spheroid=False)` | ✅ | ✅ | Length of line geometries (0 for non-lines); optional geodesic. |
+| `st_perimeter` | `st_perimeter(geom, use_spheroid=False)` | ✅ | ✅ | Perimeter of Polygon/MultiPolygon (0 for non-areal); optional geodesic. |
 | `st_x` | `st_x(geom)` | ✅ | ✅ | X / longitude of a Point. |
 | `st_y` | `st_y(geom)` | ✅ | ✅ | Y / latitude of a Point. |
 | `st_centroid` | `st_centroid(geom)` | ✅ | ✅ | Centroid as a Point geometry. |
+| `st_pointonsurface` | `st_pointonsurface(geom)` | ✅ | ✅ | A Point guaranteed to lie on the geometry's surface. |
 | `st_bbox` | `st_bbox(geom)` | ✅ | ✅ | Bounding box as struct `{min_x, min_y, max_x, max_y}`. |
 | `st_geometrytype` | `st_geometrytype(geom)` | ✅ | ✅ | Geometry type name (string). |
 | `st_isvalid` | `st_isvalid(geom)` | ✅ | ✅ | OGC topological validity → bool. |
@@ -91,6 +93,7 @@ Legend: **P** = Python, **S** = SQL.
 | `st_convexhull` | `st_convexhull(geom)` | ✅ | ✅ | Convex hull polygon. |
 | `st_simplify` | `st_simplify(geom, tolerance)` | ✅ | ✅ | Ramer–Douglas–Peucker simplification. |
 | `st_buffer` | `st_buffer(geom, distance)` | ✅ | ✅ | Planar buffer by `distance`. |
+| `st_makevalid` | `st_makevalid(geom)` | ✅ | ✅ | Repairs invalid polygonal geometries → valid MultiPolygon; non-polygonal types pass through. |
 
 ### Constructors
 

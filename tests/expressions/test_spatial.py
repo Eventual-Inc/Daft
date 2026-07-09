@@ -534,6 +534,85 @@ def test_st_bbox_sql_parity():
     assert py_result["b"][0] == sql_result["b"][0]
 
 
+def test_st_perimeter_polygon_and_sql_parity():
+    """st_perimeter sums all ring lengths; SQL and Python must agree."""
+    from daft.functions import st_perimeter
+    # 4x3 rectangle → perimeter = 2*(4+3) = 14.0
+    df = daft.from_pydict({"g": ["POLYGON((0 0, 4 0, 4 3, 0 3, 0 0))"]})
+    py = df.select(st_perimeter(st_geomfromtext(daft.col("g"))).alias("p")).to_pydict()
+    sql = daft.sql("SELECT st_perimeter(st_geomfromtext(g)) AS p FROM df").to_pydict()
+    assert abs(py["p"][0] - 14.0) < 1e-9
+    assert py["p"][0] == sql["p"][0]
+
+
+def test_st_perimeter_non_areal_is_zero_and_geodesic_differs():
+    """Non-areal geometries return 0.0; geodesic perimeter is in meters (much larger)."""
+    from daft.functions import st_perimeter
+    df = daft.from_pydict({"line": ["LINESTRING(0 0, 1 1)"], "poly": ["POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))"]})
+    out = df.select(
+        st_perimeter(st_geomfromtext(daft.col("line"))).alias("line_p"),
+        st_perimeter(st_geomfromtext(daft.col("poly"))).alias("planar"),
+        st_perimeter(st_geomfromtext(daft.col("poly")), use_spheroid=True).alias("geodesic"),
+    ).to_pydict()
+    assert out["line_p"][0] == 0.0
+    assert abs(out["planar"][0] - 4.0) < 1e-9
+    # 1 degree ≈ 111 km, so a 1°x1° box perimeter is hundreds of thousands of meters
+    assert out["geodesic"][0] > 100_000.0
+
+
+def test_st_pointonsurface_lies_on_geometry_and_sql_parity():
+    """st_pointonsurface returns a Point that intersects the input geometry."""
+    from daft.functions import st_pointonsurface, st_geometrytype, st_intersects, st_astext
+    g = "POLYGON((0 0, 4 0, 4 4, 0 4, 0 0))"
+    df = daft.from_pydict({"g": [g]})
+    geom = st_geomfromtext(daft.col("g"))
+    out = df.select(
+        st_geometrytype(st_pointonsurface(geom)).alias("t"),
+        st_intersects(geom, st_pointonsurface(geom)).alias("on_surface"),
+        st_astext(st_pointonsurface(geom)).alias("wkt"),
+    ).to_pydict()
+    assert out["t"][0] == "Point"
+    assert out["on_surface"][0] is True
+    sql = daft.sql("SELECT st_astext(st_pointonsurface(st_geomfromtext(g))) AS wkt FROM df").to_pydict()
+    assert out["wkt"][0] == sql["wkt"][0]
+
+
+def test_st_makevalid_repairs_bowtie_and_sql_parity():
+    """st_makevalid turns a self-intersecting bowtie into a valid geometry."""
+    from daft.functions import st_makevalid, st_isvalid, st_area
+    # Self-intersecting "bowtie" polygon — invalid per OGC rules
+    bowtie = "POLYGON((0 0, 4 4, 4 0, 0 4, 0 0))"
+    df = daft.from_pydict({"g": [bowtie]})
+    geom = st_geomfromtext(daft.col("g"))
+    out = df.select(
+        st_isvalid(geom).alias("before"),
+        st_isvalid(st_makevalid(geom)).alias("after"),
+        st_area(st_makevalid(geom)).alias("area"),
+    ).to_pydict()
+    assert out["before"][0] is False
+    assert out["after"][0] is True
+    assert out["area"][0] > 0.0
+    # SQL parity: the repair is geometrically equivalent, but geo's RepairPolygon
+    # does not emit a canonical ring vertex order, so compare area (rotation-
+    # invariant) and validity rather than the exact WKT string.
+    sql = daft.sql(
+        "SELECT st_isvalid(st_makevalid(st_geomfromtext(g))) AS v, "
+        "st_area(st_makevalid(st_geomfromtext(g))) AS a FROM df"
+    ).to_pydict()
+    assert sql["v"][0] is True
+    assert abs(sql["a"][0] - out["area"][0]) < 1e-9
+
+
+def test_st_makevalid_passes_through_non_polygon():
+    """Non-polygonal geometries are returned unchanged by st_makevalid."""
+    from daft.functions import st_makevalid, st_astext
+    df = daft.from_pydict({"g": ["POINT(1 2)"]})
+    geom = st_geomfromtext(daft.col("g"))
+    out = df.select(st_astext(st_makevalid(geom)).alias("w")).to_pydict()
+    assert "POINT" in out["w"][0].upper()
+    assert "1" in out["w"][0] and "2" in out["w"][0]
+
+
 def test_convexhull_triangle():
     """Convex hull of a concave set of points should be the outer triangle."""
     from daft.functions import st_convexhull, st_astext, st_geometrytype

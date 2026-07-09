@@ -30,8 +30,11 @@ pub mod st_intersects;
 pub mod st_isvalid;
 pub mod st_length;
 pub mod st_makeline;
+pub mod st_makevalid;
 pub mod st_overlaps;
+pub mod st_perimeter;
 pub mod st_point;
+pub mod st_pointonsurface;
 pub mod st_simplify;
 pub mod st_symdifference;
 pub mod st_touches;
@@ -69,8 +72,11 @@ pub use st_intersects::StIntersects;
 pub use st_isvalid::StIsValid;
 pub use st_length::StLength;
 pub use st_makeline::StMakeLine;
+pub use st_makevalid::StMakeValid;
 pub use st_overlaps::StOverlaps;
+pub use st_perimeter::StPerimeter;
 pub use st_point::StPoint;
+pub use st_pointonsurface::StPointOnSurface;
 pub use st_simplify::StSimplify;
 pub use st_symdifference::StSymDifference;
 pub use st_touches::StTouches;
@@ -122,5 +128,8 @@ impl FunctionModule for SpatialFunctions {
         parent.add_fn(StEnvelope);
         parent.add_fn(StConvexHull);
         parent.add_fn(StSimplify);
+        parent.add_fn(StPerimeter);
+        parent.add_fn(StPointOnSurface);
+        parent.add_fn(StMakeValid);
     }
 }

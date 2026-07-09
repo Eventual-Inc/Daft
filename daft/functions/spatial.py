@@ -500,3 +500,59 @@ def st_bbox(geom: Expression) -> Expression:
         Returns null for null or empty geometries.
     """
     return Expression._call_builtin_scalar_fn("st_bbox", geom)
+
+
+# ── Perimeter / representative point / repair ────────────────────────────────
+
+
+def st_perimeter(geom: Expression, use_spheroid: bool = False) -> Expression:
+    """Return the perimeter of areal geometries (Polygon, MultiPolygon).
+
+    Sums the length of the exterior ring and all interior rings (holes). All
+    non-areal types (Point, LineString, MultiLineString, etc.) return 0.0.
+
+    Args:
+        geom: A column of type ``DataType.geometry()`` or ``DataType.binary()`` (WKB).
+        use_spheroid: If True, compute geodesic perimeter in WGS84 meters (lon/lat input
+            assumed). Default False uses planar Euclidean length (coordinate units).
+
+    Returns:
+        Float64 column. Returns 0.0 for non-areal geometries; planar (coordinate units)
+        by default, WGS84 geodesic meters when use_spheroid=True.
+    """
+    if use_spheroid:
+        return Expression._call_builtin_scalar_fn("st_perimeter", geom, use_spheroid)
+    return Expression._call_builtin_scalar_fn("st_perimeter", geom)
+
+
+def st_pointonsurface(geom: Expression) -> Expression:
+    """Return a Point guaranteed to lie on the surface of a geometry.
+
+    Unlike ``st_centroid`` (which may fall outside a concave shape or a hole),
+    the returned point always intersects the input geometry.
+
+    Args:
+        geom: A column of type ``DataType.geometry()`` or ``DataType.binary()`` (WKB).
+
+    Returns:
+        Geometry column containing Point geometries. Returns null for empty
+        or unparseable geometries.
+    """
+    return Expression._call_builtin_scalar_fn("st_pointonsurface", geom)
+
+
+def st_makevalid(geom: Expression) -> Expression:
+    """Repair an invalid geometry, returning a valid one.
+
+    Repairs invalid **polygonal** geometries (self-intersections, bowties, etc.)
+    and returns a valid ``MultiPolygon``. Non-polygonal geometries (Point,
+    LineString, ...) are returned unchanged, since the pure-Rust engine only
+    repairs areal geometries (unlike PostGIS/GEOS, which handles all types).
+
+    Args:
+        geom: A column of type ``DataType.geometry()`` or ``DataType.binary()`` (WKB).
+
+    Returns:
+        Geometry column. Returns null when the geometry cannot be repaired.
+    """
+    return Expression._call_builtin_scalar_fn("st_makevalid", geom)

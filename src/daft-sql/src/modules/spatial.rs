@@ -5,7 +5,7 @@ use daft_dsl::{
     functions::{BuiltinScalarFn, BuiltinScalarFnVariant, FunctionArgs},
     lit,
 };
-use daft_geo::{StArea, StAsText, StBbox, StBuffer, StCentroid, StContains, StConvexHull, StCoveredBy, StCovers, StCrosses, StDifference, StDisjoint, StDistance, StDwithin, StEnvelope, StEquals, StGeohash, StGeometryType, StGeomFromGeoJson, StGeomFromText, StGeoJsonFromGeom, StIntersection, StIntersects, StIsValid, StLength, StMakeLine, StOverlaps, StPoint, StSimplify, StSymDifference, StTouches, StUnion, StWithin, StX, StY};
+use daft_geo::{StArea, StAsText, StBbox, StBuffer, StCentroid, StContains, StConvexHull, StCoveredBy, StCovers, StCrosses, StDifference, StDisjoint, StDistance, StDwithin, StEnvelope, StEquals, StGeohash, StGeometryType, StGeomFromGeoJson, StGeomFromText, StGeoJsonFromGeom, StIntersection, StIntersects, StIsValid, StLength, StMakeLine, StMakeValid, StOverlaps, StPerimeter, StPoint, StPointOnSurface, StSimplify, StSymDifference, StTouches, StUnion, StWithin, StX, StY};
 use sqlparser::ast;
 
 use super::SQLModule;
@@ -21,12 +21,15 @@ impl SQLModule for SQLModuleSpatial {
     fn register(parent: &mut SQLFunctions) {
         parent.add_fn("st_area", SQLStMeasureUnary("st_area"));
         parent.add_fn("st_length", SQLStMeasureUnary("st_length"));
+        parent.add_fn("st_perimeter", SQLStMeasureUnary("st_perimeter"));
         parent.add_fn("st_isvalid", SQLSpatialUnary(Arc::new(StIsValid)));
         parent.add_fn("st_geometrytype", SQLSpatialUnary(Arc::new(StGeometryType)));
         parent.add_fn("st_x", SQLSpatialUnary(Arc::new(StX)));
         parent.add_fn("st_y", SQLSpatialUnary(Arc::new(StY)));
         parent.add_fn("st_centroid", SQLSpatialUnary(Arc::new(StCentroid)));
         parent.add_fn("st_bbox", SQLSpatialUnary(Arc::new(StBbox)));
+        parent.add_fn("st_pointonsurface", SQLSpatialUnary(Arc::new(StPointOnSurface)));
+        parent.add_fn("st_makevalid", SQLSpatialUnary(Arc::new(StMakeValid)));
         parent.add_fn("st_contains", SQLSpatialBinary(Arc::new(StContains)));
         parent.add_fn("st_intersects", SQLSpatialBinary(Arc::new(StIntersects)));
         parent.add_fn("st_within", SQLSpatialBinary(Arc::new(StWithin)));
@@ -292,6 +295,7 @@ impl SQLFunction for SQLStMeasureUnary {
         let func: Arc<dyn daft_dsl::functions::ScalarUDF> = match self.0 {
             "st_area" => Arc::new(StArea),
             "st_length" => Arc::new(StLength),
+            "st_perimeter" => Arc::new(StPerimeter),
             name => invalid_operation_err!("unknown measure function: {}", name),
         };
         let mut args = vec![daft_dsl::functions::FunctionArg::unnamed(geom)];
@@ -312,6 +316,7 @@ impl SQLFunction for SQLStMeasureUnary {
         match self.0 {
             "st_area" => "2D area. Coordinate units² by default; WGS84 geodesic m² when use_spheroid=true.".to_string(),
             "st_length" => "Length/perimeter. Coordinate units by default; WGS84 geodesic meters when use_spheroid=true.".to_string(),
+            "st_perimeter" => "Perimeter of areal geometries (Polygon, MultiPolygon); 0 for non-areal types. Coordinate units by default; WGS84 geodesic meters when use_spheroid=true.".to_string(),
             _ => format!("{} measure function", self.0),
         }
     }
