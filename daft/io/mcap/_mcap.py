@@ -2,15 +2,18 @@ from __future__ import annotations
 
 import pathlib
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-import daft
 from daft.api_annotations import PublicAPI
-from daft.daft import io_glob
-from daft.dependencies import mcap as _mcap_mod
+from daft.daft import PyMcapReader, io_glob
+from daft.datatype import DataType, MediaType
 from daft.dependencies import pafs
+from daft.file.file import File
+from daft.file.mcap import McapFile
 from daft.filesystem import _resolve_paths_and_filesystem, get_protocol_from_path
+from daft.io.mcap._pushdown import McapFilter, explicit_mcap_filter, extract_mcap_filter
 from daft.io.source import DataSource, DataSourceTask
 from daft.logical.schema import Schema
 from daft.recordbatch import RecordBatch
@@ -65,6 +68,8 @@ def list_files(
     # Special case for handling HuggingFace paths
     # TODO: Remove once we remove fsspec-based filesystem resolution
     if get_protocol_from_path(root_dir) == "hf":
+        if "*" not in root_dir and root_dir.endswith(".mcap"):
+            return [root_dir]
         glob_path = root_dir if "*" in root_dir else root_dir.rstrip("/")
         if not glob_path.endswith(".mcap"):
             glob_path = f"{glob_path}/**/*.mcap" if "**" not in glob_path else glob_path
@@ -121,7 +126,8 @@ def read_mcap(
             max(start_time, topic_start_time_resolver(file)[topic]).
 
     Returns:
-        DataFrame: DataFrame with the schema converted from the specified MCAP file.
+        DataFrame: One row per message, including ``source_path`` provenance and
+            a binary ``data`` payload.
     """
     return MCAPSource(
         file_path=path,
@@ -145,14 +151,13 @@ class MCAPSource(DataSource):
         io_config: IOConfig | None = None,
         topic_start_time_resolver: TopicStartTimeResolver | None = None,
     ):
-        if not _mcap_mod.module_available():
-            raise ImportError(
-                "The 'daft[mcap]' extra is required to read MCAP files. "
-                "Please install it with: pip install 'daft[mcap]'"
-            )
-        self._start_time = start_time
-        self._end_time = end_time
-        self._topics = topics
+        if batch_size <= 0:
+            raise ValueError(f"batch_size must be positive, got {batch_size}")
+        explicit_filter = explicit_mcap_filter(topics, start_time, end_time)
+        self._start_time = explicit_filter.start_time
+        self._end_time = explicit_filter.end_time
+        self._topics = None if explicit_filter.topics is None else sorted(explicit_filter.topics)
+        self._explicit_filter = explicit_filter
         self._batch_size = batch_size
         self._topic_start_time_resolver = topic_start_time_resolver
         self._file_paths = [
@@ -183,61 +188,102 @@ class MCAPSource(DataSource):
         ]
 
     def _infer_schema(self) -> Schema:
-        import pyarrow as pa
-
-        schema = pa.schema(
+        return Schema.from_field_name_and_types(
             [
-                pa.field("topic", pa.string()),
-                pa.field("log_time", pa.int64()),
-                pa.field("publish_time", pa.int64()),
-                pa.field("sequence", pa.int32()),
-                pa.field("data", pa.string()),
+                ("source_path", DataType.string()),
+                ("topic", DataType.string()),
+                ("log_time", DataType.uint64()),
+                ("publish_time", DataType.uint64()),
+                ("sequence", DataType.uint32()),
+                ("data", DataType.binary()),
             ]
         )
-        return Schema.from_pyarrow_schema(schema)
+
+    def _task_schema(self, pushdowns: Pushdowns) -> Schema:
+        if pushdowns.columns is None:
+            return self._schema
+
+        required = set(pushdowns.columns) | pushdowns.filter_required_column_names()
+        fields = [(name, self._schema[name].dtype) for name in self._schema.column_names() if name in required]
+        return Schema.from_field_name_and_types(fields)
+
+    def _file_may_match(self, file_path: str, filters: McapFilter) -> bool:
+        if filters.topics is None and filters.start_time is None and filters.end_time is None:
+            return True
+
+        metadata = McapFile(file_path, io_config=self._io_config)._read_metadata()
+        if not metadata["has_summary"]:
+            return True
+
+        if filters.topics is not None and metadata["has_chunk_indexes"] and metadata["channels"]:
+            file_topics = {channel["topic"] for channel in metadata["channels"]}
+            if file_topics.isdisjoint(filters.topics):
+                return False
+
+        statistics = metadata["statistics"]
+        if statistics is not None:
+            if filters.start_time is not None and statistics["message_end_time"] < filters.start_time:
+                return False
+            if filters.end_time is not None and statistics["message_start_time"] >= filters.end_time:
+                return False
+        return True
 
     async def get_tasks(self, pushdowns: Pushdowns) -> AsyncIterator[MCAPSourceTask]:
+        planner_filter = extract_mcap_filter(pushdowns.filters)
+        filters = self._explicit_filter.intersect(planner_filter)
+        if filters.empty:
+            return
+
+        task_schema = self._task_schema(pushdowns)
+        columns = task_schema.column_names()
+        effective_topics = None if filters.topics is None else sorted(filters.topics)
+        native_limit = pushdowns.limit if pushdowns.filters is None or planner_filter.exact else None
+
         for file_path in self._file_paths:
+            if len(self._file_paths) > 1 and not self._file_may_match(file_path, filters):
+                continue
+
+            topics = effective_topics
             keyframes: dict[str, int] | None = None
             if self._topic_start_time_resolver is not None:
-                try:
+                with suppress(Exception):
                     keyframes = self._topic_start_time_resolver(file_path)
-                except Exception:
-                    keyframes = None
 
             if not keyframes:
                 yield MCAPSourceTask(
                     _file_path=file_path,
-                    _schema=self._schema,
+                    _schema=task_schema,
+                    _columns=columns,
                     _batch_size=self._batch_size,
-                    _start_time=self._start_time,
-                    _end_time=self._end_time,
-                    _topics=self._topics,
+                    _start_time=filters.start_time,
+                    _end_time=filters.end_time,
+                    _topics=topics,
+                    _limit=native_limit,
                     _io_config=self._io_config,
                 )
                 continue
 
-            if self._topics is None:
+            if topics is None:
                 topics = list(keyframes.keys())
-            else:
-                topics = self._topics
 
             for topic in topics:
-                start_time = self._start_time
+                start_time = filters.start_time
                 keyframe_time = keyframes.get(topic)
                 if keyframe_time is not None:
                     start_time = keyframe_time if start_time is None else max(start_time, keyframe_time)
 
-                if self._end_time is not None and start_time is not None and start_time >= self._end_time:
+                if filters.end_time is not None and start_time is not None and start_time >= filters.end_time:
                     continue
 
                 yield MCAPSourceTask(
                     _file_path=file_path,
-                    _schema=self._schema,
+                    _schema=task_schema,
+                    _columns=columns,
                     _batch_size=self._batch_size,
                     _start_time=start_time,
-                    _end_time=self._end_time,
+                    _end_time=filters.end_time,
                     _topics=[topic],
+                    _limit=native_limit,
                     _io_config=self._io_config,
                 )
 
@@ -246,10 +292,12 @@ class MCAPSource(DataSource):
 class MCAPSourceTask(DataSourceTask):
     _file_path: str
     _schema: Schema
+    _columns: list[str]
     _batch_size: int = 1000
     _start_time: int | None = None
     _end_time: int | None = None
     _topics: list[str] | None = None
+    _limit: int | None = None
     _io_config: IOConfig | None = None
 
     @property
@@ -257,37 +305,15 @@ class MCAPSourceTask(DataSourceTask):
         return self._schema
 
     async def read(self) -> AsyncIterator[RecordBatch]:
-        make_reader = _mcap_mod.reader.make_reader
-
-        with daft.open_file(self._file_path, "rb", io_config=self._io_config) as f:
-            reader = make_reader(f, decoder_factories=[])
-
-            buffer: list[dict[str, object]] = []
-            for _, channel, message in reader.iter_messages(
-                topics=self._topics,
-                start_time=self._start_time,
-                end_time=self._end_time,
-                log_time_order=True,
-            ):
-                buffer.append(
-                    {
-                        "topic": channel.topic,
-                        "log_time": message.log_time,
-                        "publish_time": message.publish_time,
-                        "sequence": message.sequence,
-                        "data": str(message.data),
-                    }
-                )
-
-                if len(buffer) >= self._batch_size:
-                    yield self._create_recordbatch(buffer)
-                    buffer.clear()
-
-            if buffer:
-                yield self._create_recordbatch(buffer)
-
-    def _create_recordbatch(self, data: list[dict[str, object]]) -> RecordBatch:
-        import pyarrow as pa
-
-        arrow_batch = pa.RecordBatch.from_pylist(data, schema=self._schema.to_pyarrow_schema())
-        return RecordBatch.from_arrow_record_batches([arrow_batch], arrow_schema=self._schema.to_pyarrow_schema())
+        file = File(self._file_path, self._io_config, MediaType.mcap())
+        reader = PyMcapReader(
+            file._inner,
+            self._columns,
+            batch_size=self._batch_size,
+            start_time=self._start_time,
+            end_time=self._end_time,
+            topics=self._topics,
+            limit=self._limit,
+        )
+        while (batch := reader.next_batch()) is not None:
+            yield RecordBatch._from_pyrecordbatch(batch)

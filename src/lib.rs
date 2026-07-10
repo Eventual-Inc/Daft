@@ -7,6 +7,9 @@ use tikv_jemallocator::Jemalloc;
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
+#[cfg(feature = "python")]
+mod mcap_reader;
+
 #[cfg(not(target_env = "msvc"))]
 union U {
     x: &'static u8,
@@ -140,6 +143,7 @@ pub mod pylib {
         daft_session::register_modules(m)?;
         daft_sql::register_modules(m)?;
         daft_file::python::register_modules(m)?;
+        crate::mcap_reader::register_modules(m)?;
         // Register testing module
         let testing_module = PyModule::new(m.py(), "testing")?;
         m.add_submodule(&testing_module)?;

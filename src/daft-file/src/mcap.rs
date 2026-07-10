@@ -209,7 +209,7 @@ fn read_header(file: &mut DaftFile) -> DaftResult<HeaderMetadata> {
     }
 }
 
-fn read_summary(file: &mut DaftFile, file_size: u64) -> DaftResult<Option<Summary>> {
+fn read_summary_with_size(file: &mut DaftFile, file_size: u64) -> DaftResult<Option<Summary>> {
     let mut reader = SummaryReader::new_with_options(
         SummaryReaderOptions::default()
             .with_file_size(file_size)
@@ -232,6 +232,15 @@ fn read_summary(file: &mut DaftFile, file_size: u64) -> DaftResult<Option<Summar
     Ok(reader.finish())
 }
 
+/// Read the footer summary using bounded seeks and reads.
+pub fn read_summary(file: &mut DaftFile) -> DaftResult<Option<Summary>> {
+    let file_size: u64 = file
+        .size()?
+        .try_into()
+        .map_err(|_| mcap_error("file size does not fit in u64"))?;
+    read_summary_with_size(file, file_size)
+}
+
 pub fn read_metadata(file: &mut DaftFile) -> DaftResult<McapMetadata> {
     read_metadata_with_options(file, ReadMetadataOptions::default())
 }
@@ -245,7 +254,7 @@ pub fn read_metadata_with_options(
         .try_into()
         .map_err(|_| mcap_error("file size does not fit in u64"))?;
     let header = read_header(file)?;
-    let Some(summary) = read_summary(file, file_size)? else {
+    let Some(summary) = read_summary_with_size(file, file_size)? else {
         return Ok(McapMetadata {
             file_size,
             has_summary: false,

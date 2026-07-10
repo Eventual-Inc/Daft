@@ -2945,6 +2945,21 @@ class PyDaftFile:
     def __enter__(self) -> PyDaftFile: ...
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None: ...
 
+class PyMcapReader:
+    def __init__(
+        self,
+        file: PyFileReference,
+        columns: list[str],
+        batch_size: int = 1000,
+        start_time: int | None = None,
+        end_time: int | None = None,
+        topics: list[str] | None = None,
+        limit: int | None = None,
+    ) -> None: ...
+    @property
+    def indexed(self) -> bool: ...
+    def next_batch(self) -> PyRecordBatch | None: ...
+
 class PyMediaType:
     @staticmethod
     def unknown() -> PyMediaType: ...
