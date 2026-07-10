@@ -246,6 +246,7 @@ def merge_deltalake(
     max_spill_size: int | None = None,
     max_temp_directory_size: int | None = None,
     post_commithook_properties: "deltalake.PostCommitHookProperties | None" = None,
+    compression: str | None = None,
 ) -> "DeltaMergeBuilder":
     """Create a Delta Lake MERGE operation builder for composable merge clauses.
 
@@ -267,6 +268,10 @@ def merge_deltalake(
         max_spill_size: Maximum spill size in bytes for streamed execution.
         max_temp_directory_size: Maximum temporary directory size in bytes for streamed execution.
         post_commithook_properties: Optional post-commit hook properties.
+        compression: Compression codec for the parquet data files this merge writes.
+            Defaults to "snappy" when `writer_properties` is not supplied. Mutually
+            exclusive with `writer_properties` (which already carries its own
+            `compression` field) — passing both raises `ValueError`.
 
     Returns:
         DeltaMergeBuilder: A builder object for chaining merge clauses with ``.execute()`` finalizer that returns a DataFrame.
@@ -319,6 +324,25 @@ def merge_deltalake(
             )
             metrics = result._metadata["merge_metrics"]
     """
+    if compression is not None and writer_properties is not None:
+        raise ValueError(
+            "Pass either `compression` or `writer_properties`, not both. "
+            "`writer_properties` already carries a `compression` field; setting both is "
+            "ambiguous, and deltalake's WriterProperties cannot be safely copied "
+            "(it is decorated @dataclass but declares no fields, so dataclasses.replace "
+            "silently resets every other option)."
+        )
+
+    if writer_properties is None:
+        import deltalake
+
+        from daft.io.delta_lake.delta_lake_write import normalize_delta_compression
+
+        codec = normalize_delta_compression("snappy" if compression is None else compression)
+        # delta-rs spells uncompressed as 'UNCOMPRESSED'; it rejects 'NONE'.
+        wp_codec = "UNCOMPRESSED" if codec == "none" else codec.upper()
+        writer_properties = deltalake.WriterProperties(compression=wp_codec)
+
     from deltalake import CommitProperties
 
     if isinstance(source, DataFrame):
