@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     import pyarrow as pa
 
     from daft.catalog.__unity._client import UnityCatalogTable
+    from daft.datatype import DataType
 
 
 @PublicAPI
@@ -942,6 +943,30 @@ def _parse_merge_predicate(
     return join_keys, residual_predicates
 
 
+# Casts that can never lose a value. Sound for lossless only: anything absent from this
+# set is guarded by an actual null-introduction check, so a missing entry costs one extra
+# pass but never a wrong error.
+_LOSSLESS_NUMERIC_WIDENINGS = {
+    ("Int8", "Int16"), ("Int8", "Int32"), ("Int8", "Int64"),
+    ("Int16", "Int32"), ("Int16", "Int64"),
+    ("Int32", "Int64"),
+    ("UInt8", "UInt16"), ("UInt8", "UInt32"), ("UInt8", "UInt64"),
+    ("UInt16", "UInt32"), ("UInt16", "UInt64"),
+    ("UInt32", "UInt64"),
+    ("UInt8", "Int16"), ("UInt8", "Int32"), ("UInt8", "Int64"),
+    ("UInt16", "Int32"), ("UInt16", "Int64"),
+    ("UInt32", "Int64"),
+    ("Float32", "Float64"),
+}  # fmt: skip
+
+
+def _is_definitely_lossless_cast(src: "DataType", dst: "DataType") -> bool:
+    """True only when every representable source value survives the cast unchanged."""
+    if src == dst:
+        return True
+    return (str(src), str(dst)) in _LOSSLESS_NUMERIC_WIDENINGS
+
+
 class DistributedDeltaMergeBuilder:
     """Builder for distributed Delta Lake merge using Daft's distributed join engine.
 
@@ -1182,6 +1207,71 @@ class DistributedDeltaMergeBuilder:
                 aligned.append(lit(None).cast(f.dtype).alias(name))
         return left.concat(source_only.select(*aligned))
 
+    def _target_dtypes(self) -> "dict[str, DataType]":
+        """Daft dtypes of the target table's columns, from the committed Delta schema.
+
+        Reuses ``delta_schema_to_pyarrow`` — the module's single Delta->Arrow source of
+        truth (version-robust: ``schema.to_pyarrow()`` before deltalake 1.0.0, an arro3
+        ``pa.schema(schema.to_arrow())`` conversion after). This is exactly what
+        ``DeltaLakeScanOperator`` feeds ``Schema.from_pyarrow_schema`` to build the schema
+        that ``execute()`` reads its target from, so the dtypes checked here are the same
+        ones the alignment (``_decomposed_outer_join``) and output casts actually run. No
+        data is read.
+        """
+        import daft
+
+        arrow_schema = delta_schema_to_pyarrow(self._resolved_table.schema())
+        return {f.name: f.dtype for f in daft.Schema.from_pyarrow_schema(arrow_schema)}
+
+    def _check_source_casts(self) -> None:
+        """Raise if aligning the source to the target schema would turn a value into NULL.
+
+        Daft's `cast` returns NULL on overflow where PyArrow raises. The merge aligns the
+        source to the target's dtypes, so an out-of-range value is silently discarded and
+        the merge reports success. Guard only the casts that are not provably lossless;
+        the check is data-dependent, so a merge that narrows within range still succeeds.
+        """
+        import daft
+        from daft import col
+
+        target_dtypes = self._target_dtypes()
+        risky = [
+            f
+            for f in self._source.schema()
+            if f.name in target_dtypes
+            and not _is_definitely_lossless_cast(f.dtype, target_dtypes[f.name])
+        ]
+        if not risky:
+            return
+
+        # A row whose source value is non-null but whose cast result is null is a value
+        # that did not fit. Count them per column in one pass.
+        lost = (
+            self._source.select(
+                *[
+                    (
+                        (~col(f.name).is_null())
+                        & col(f.name).cast(target_dtypes[f.name]).is_null()
+                    )
+                    .cast(daft.DataType.int64())
+                    .alias(f.name)
+                    for f in risky
+                ]
+            )
+            .sum(*[f.name for f in risky])
+            .to_pydict()
+        )
+
+        for f in risky:
+            count = lost[f.name][0] or 0
+            if count:
+                raise ValueError(
+                    f"Merging into column {f.name!r} would discard {count} value(s): "
+                    f"casting {f.dtype} to the target's {target_dtypes[f.name]} produces "
+                    f"NULL for values outside its range. Cast the column explicitly "
+                    f"before merging if that is intended."
+                )
+
     def _check_unsupported_table_features(self) -> None:
         """Reject tables relying on write-time enforcement.
 
@@ -1328,6 +1418,11 @@ class DistributedDeltaMergeBuilder:
             DataFrame: A single-row DataFrame with merge metrics columns.
                        Raw metrics dict also stored in ``._metadata["merge_metrics"]``.
         """
+        # Guard first — before any join, write, or version pin: aligning the source to a
+        # narrower target dtype would silently null out-of-range values (Daft's cast
+        # returns NULL where PyArrow raises), so refuse loudly instead of committing them.
+        self._check_source_casts()
+
         import time
 
         import daft
