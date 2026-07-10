@@ -78,6 +78,21 @@ def partitioned_table_to_deltalake_iter(
         yield converted_arrow_table, "/", {}
 
 
+def _json_safe_bound(value: Any) -> tuple[bool, Any]:
+    """Return (is_safe, value) for a parquet min/max bound.
+
+    Binary bounds that are not valid UTF-8 have no faithful JSON representation. The old
+    `unicode_escape` decode produced a string that is not what the data contains, and other
+    engines read these bounds for data skipping. Omitting a bound is always safe.
+    """
+    if isinstance(value, bytes):
+        try:
+            return True, value.decode("utf-8")
+        except UnicodeDecodeError:
+            return False, None
+    return True, value
+
+
 def get_file_stats_from_metadata(
     metadata: Any,
 ) -> dict[str, int | dict[str, Any]]:
@@ -106,21 +121,21 @@ def get_file_stats_from_metadata(
 
             # Min / max may not exist for some column types, or if all values are null
             if any(group.column(column_idx).statistics.has_min_max for group in iter_groups(metadata)):
-                # Min and Max are recorded in physical type, not logical type
-                # https://stackoverflow.com/questions/66753485/decoding-parquet-min-max-statistics-for-decimal-type
-                # TODO: Add logic to decode physical type for DATE, DECIMAL
-
                 minimums = (group.column(column_idx).statistics.min for group in iter_groups(metadata))
                 # If some row groups have all null values, their min and max will be null too.
                 min_value = min(minimum for minimum in minimums if minimum is not None)
-                # Infinity cannot be serialized to JSON, so we skip it. Saying
-                # min/max is infinity is equivalent to saying it is null, anyways.
-                if min_value != -inf:
-                    stats["minValues"][name] = min_value
                 maximums = (group.column(column_idx).statistics.max for group in iter_groups(metadata))
                 max_value = max(maximum for maximum in maximums if maximum is not None)
-                if max_value != inf:
-                    stats["maxValues"][name] = max_value
+
+                min_ok, min_json = _json_safe_bound(min_value)
+                max_ok, max_json = _json_safe_bound(max_value)
+                if min_ok and max_ok:
+                    # Infinity cannot be serialized to JSON, so we skip it. Saying
+                    # min/max is infinity is equivalent to saying it is null, anyways.
+                    if min_json != -inf:
+                        stats["minValues"][name] = min_json
+                    if max_json != inf:
+                        stats["maxValues"][name] = max_json
     return stats
 
 
