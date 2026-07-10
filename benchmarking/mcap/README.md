@@ -1,28 +1,46 @@
 # MCAP pushdown benchmark: ABC-130k
 
-This benchmark measures the MCAP path Daft is optimizing. Object discovery is a
-small, separate `from_glob_path` stage; every message-level stage starts at
-`daft.read_mcap`. The default input is an exact 390 MB episode pinned to ABC-130k
-revision `29136bc9b9e38d320b00ffcddbbe4cd0e3278c58`, so dataset changes cannot
-silently move the baseline.
+This benchmark measures the MCAP path Daft is optimizing. Object discovery is
+separate from payload reads: it times both an exact `from_glob_path` lookup and
+the task-scoped `daft.datasets.abc.raw` catalog before selecting one episode.
+Direct message stages start at `daft.read_mcap` and are checked against the
+bounded `daft.datasets.abc.messages` wrapper. The default input is an exact 390
+MB episode pinned to ABC-130k revision
+`29136bc9b9e38d320b00ffcddbbe4cd0e3278c58`, so dataset changes cannot silently
+move the baseline.
 
 The script reports these stages as structured JSON:
 
 1. object metadata scan (`path`, object size, split/task/episode identity),
 2. native range-read MCAP summary/schema/channel/chunk sniff,
-3. full `read_mcap` message count,
-4. a deliberately unpushed full metadata scan followed by the equivalent Arrow filter,
-5. topic-only, time-only, and combined reader-filtered reads,
-6. the same combined predicate expressed with Daft `.where(...)`, exercising planner pushdown,
-7. raw payload materialization and allocation throughput,
-8. stateful Foxglove video decode without image materialization,
-9. stateful Foxglove video decode with RGB image materialization.
+3. task-scoped ABC catalog discovery followed by an exact episode filter and `limit(1)`,
+4. normalized `daft.datasets.abc.metadata` for that one bounded episode,
+5. full `read_mcap` message count,
+6. a deliberately unpushed full metadata scan followed by the equivalent Arrow filter,
+7. topic-only, time-only, and combined reader-filtered reads,
+8. the same combined predicate expressed with Daft `.where(...)`, exercising planner pushdown,
+9. the equivalent bounded `daft.datasets.abc.messages` query,
+10. raw payload materialization and allocation throughput,
+11. stateful Foxglove video decode without image materialization,
+12. stateful Foxglove video decode with RGB image materialization.
 
-The combined reader and planner result counts must equal the unpushed baseline.
-The report computes median pushdown speedups only between those equivalent
-queries. `source_file_bytes` is the object size, not a claim about network bytes;
+The combined reader, planner, and ABC wrapper result counts must equal the
+unpushed baseline. The report computes median pushdown speedups only between
+those equivalent queries and reports wrapper/direct latency as a separate ratio.
+`source_file_bytes` is the object size, not a claim about network bytes;
 `arrow_bytes` and `payload_value_bytes` are bytes actually materialized by the
 process.
+
+The catalog stage deliberately scopes discovery to the benchmark episode's split
+and task before applying the episode ID and `limit(1)`. It is not a timing for
+listing all 130,703 episodes. The metadata stage runs after the native summary
+stage in the same process and can therefore reuse cached footer ranges; use a
+fresh process when measuring isolated cold metadata latency.
+
+For ABC's deep Hugging Face layout, `abc.raw` uses the official Hub client's
+paginated recursive-tree API instead of walking every episode directory through
+the generic glob bridge. It preserves an `@revision`-qualified root, so catalog,
+metadata, and message stages all address the same pinned release.
 
 ## Authentication and setup
 

@@ -47,6 +47,24 @@ application-specific schemas in Python.
     df.show()
     ```
 
+=== "Bounded Exact Paths"
+
+    ```python
+    import daft
+
+    selected_paths = [
+        "s3://robot-logs/episode-001.mcap",
+        "s3://robot-logs/episode-019.mcap",
+    ]
+    df = daft.read_mcap(selected_paths, topics=["/left-arm-state"])
+    df.show()
+    ```
+
+    An empty path sequence returns an empty DataFrame with the standard MCAP
+    schema, which is useful after a catalog filter selects no episodes. A
+    nonempty sequence fails if one of its exact path selectors cannot be
+    resolved, rather than silently returning partial data.
+
 ## Output Schema
 
 The `read_mcap` function returns a DataFrame with the following schema:

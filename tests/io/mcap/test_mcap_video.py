@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import asyncio
 from fractions import Fraction
 
 import pytest
 
 import daft
+from daft.io.mcap._mcap import MCAPSource
 from daft.io.mcap._video import (
     _av_codec_name,
     _find_previous_video_keyframe,
     _parse_foxglove_compressed_video,
 )
+from daft.io.pushdowns import Pushdowns
 from tests.io.mcap._foxglove_video_fixtures import foxglove_compressed_video_payload
 
 
@@ -126,6 +129,27 @@ def foxglove_video_mcap(tmp_path):
             )
         writer.finish()
     return path
+
+
+def test_mcap_video_prunes_absent_topics_before_creating_tasks(foxglove_video_mcap) -> None:
+    source = MCAPSource(
+        foxglove_video_mcap,
+        topics=["/camera", "/missing-camera"],
+        decode_video=True,
+    )
+
+    async def collect_topics() -> list[str]:
+        return [task._topic async for task in source.get_tasks(Pushdowns.empty())]
+
+    assert asyncio.run(collect_topics()) == ["/camera"]
+    assert (
+        daft.read_mcap(
+            foxglove_video_mcap,
+            topics=["/missing-camera", "/also-missing-camera"],
+            decode_video=True,
+        ).count_rows()
+        == 0
+    )
 
 
 def test_read_mcap_decodes_stateful_foxglove_video(foxglove_video_mcap) -> None:

@@ -158,6 +158,79 @@ def test_mcap_read(mcap_dataset_path):
     assert pdf["publish_time"].between(0, 9900).all()
 
 
+def test_mcap_read_sequence_of_exact_paths_preserves_source_path(tmp_path):
+    paths = [tmp_path / "a.mcap", tmp_path / "b.mcap"]
+    expected = []
+    for index, path in enumerate(paths):
+        topic = f"/topic-{index}"
+        payload = f"payload-{index}".encode()
+        with path.open("wb") as output:
+            writer = MCAPWriter(output, compression=CompressionType.NONE)
+            writer.start()
+            schema_id = writer.register_schema(name="", encoding="", data=b"")
+            channel_id = writer.register_channel(topic=topic, message_encoding="", schema_id=schema_id)
+            writer.add_message(
+                channel_id,
+                log_time=index + 1,
+                publish_time=index + 11,
+                sequence=index,
+                data=payload,
+            )
+            writer.finish()
+        expected.append((str(path), topic, index + 1, index + 11, index, payload))
+
+    result = daft.read_mcap(paths).sort("source_path").to_pydict()
+
+    assert (
+        list(
+            zip(
+                result["source_path"],
+                result["topic"],
+                result["log_time"],
+                result["publish_time"],
+                result["sequence"],
+                result["data"],
+            )
+        )
+        == expected
+    )
+    assert daft.read_mcap(paths).where(daft.col("topic") == "/missing").count_rows() == 0
+
+
+def test_mcap_read_empty_path_sequence_returns_standard_empty_schema():
+    dataframe = daft.read_mcap([])
+
+    assert dataframe.schema() == daft.Schema.from_pydict(
+        {
+            "source_path": daft.DataType.string(),
+            "topic": daft.DataType.string(),
+            "log_time": daft.DataType.uint64(),
+            "publish_time": daft.DataType.uint64(),
+            "sequence": daft.DataType.uint32(),
+            "data": daft.DataType.binary(),
+        }
+    )
+    assert dataframe.to_pydict() == {
+        "source_path": [],
+        "topic": [],
+        "log_time": [],
+        "publish_time": [],
+        "sequence": [],
+        "data": [],
+    }
+
+
+def test_mcap_read_nonempty_sequence_rejects_missing_paths(tmp_path):
+    existing = tmp_path / "existing.mcap"
+    existing.write_bytes(b"")
+    missing = tmp_path / "missing.mcap"
+
+    with pytest.raises(FileNotFoundError, match="missing.mcap"):
+        daft.read_mcap([missing])
+    with pytest.raises(FileNotFoundError, match="missing.mcap"):
+        daft.read_mcap([existing, missing])
+
+
 def test_mcap_http_url_resolves_through_pyarrow_fsspec_handler(mcap_http_url):
     [resolved_path], fs = _resolve_paths_and_filesystem(mcap_http_url)
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pathlib
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -102,7 +102,7 @@ def list_files(
 
 @PublicAPI
 def read_mcap(
-    path: str,
+    path: str | pathlib.Path | Sequence[str | pathlib.Path],
     io_config: IOConfig | None = None,
     start_time: int | None = None,
     end_time: int | None = None,
@@ -117,7 +117,8 @@ def read_mcap(
     """Read mcap file.
 
     Args:
-        path: mcap file path
+        path: MCAP file path, directory/glob, or sequence of exact paths. A
+            sequence is useful after selecting a bounded episode catalog.
         start_time: Start time to filter messages (same unit as MCAP message.log_time, typically nanoseconds).
         end_time: End time to filter messages (same unit as MCAP message.log_time, typically nanoseconds).
         topics: List of topics to filter messages.
@@ -166,7 +167,7 @@ def read_mcap(
 class MCAPSource(DataSource):
     def __init__(
         self,
-        file_path: str,
+        file_path: str | pathlib.Path | Sequence[str | pathlib.Path],
         start_time: int | None = None,
         end_time: int | None = None,
         topics: list[str] | None = None,
@@ -203,11 +204,26 @@ class MCAPSource(DataSource):
         self._image_height = image_height
         self._image_width = image_width
         self._video_start_time_resolver = video_start_time_resolver
-        self._file_paths = [
-            normalize_storage_path(file_path, io_config) for file_path in list_files(file_path, io_config)
-        ]
+        if isinstance(file_path, str):
+            is_single_path = True
+            input_paths: list[str | pathlib.Path] = [file_path]
+        elif isinstance(file_path, pathlib.Path):
+            is_single_path = True
+            input_paths = [file_path]
+        else:
+            is_single_path = False
+            input_paths = list(file_path)
+        if any(not isinstance(path, (str, pathlib.Path)) for path in input_paths):
+            raise TypeError("MCAP paths must be strings or pathlib.Path values")
+        discovered: list[str] = []
+        for root in input_paths:
+            files = list_files(root, io_config)
+            if not files:
+                raise FileNotFoundError(f"Path not found: {root}")
+            discovered.extend(normalize_storage_path(path, io_config) for path in files)
+        self._file_paths = list(dict.fromkeys(discovered))
 
-        if not self._file_paths:
+        if not self._file_paths and is_single_path:
             raise FileNotFoundError(f"Path not found: {file_path}")
 
         self._schema = self._infer_schema()
@@ -278,23 +294,38 @@ class MCAPSource(DataSource):
                 return False
         return True
 
+    def _existing_file_topics(self, file_path: str, topics: list[str]) -> list[str]:
+        """Prune absent topics when one logical video alias expands to several streams."""
+        metadata = McapFile(file_path, io_config=self._io_config)._read_metadata()
+        if not metadata["has_summary"] or not metadata["channels"]:
+            return topics
+        available = {channel["topic"] for channel in metadata["channels"]}
+        return [topic for topic in topics if topic in available]
+
     async def get_tasks(self, pushdowns: Pushdowns) -> AsyncIterator[DataSourceTask]:
         planner_filter = extract_mcap_filter(pushdowns.filters)
         filters = self._explicit_filter.intersect(planner_filter)
+        task_schema = self._task_schema(pushdowns)
+        if not self._file_paths:
+            yield MCAPEmptySourceTask(task_schema)
+            return
         if filters.empty:
             return
 
-        task_schema = self._task_schema(pushdowns)
         columns = task_schema.column_names()
         effective_topics = None if filters.topics is None else sorted(filters.topics)
         native_limit = pushdowns.limit if pushdowns.filters is None or planner_filter.exact else None
 
         if self._decode_video:
             assert effective_topics is not None
+            emitted_task = False
             for file_path in self._file_paths:
                 if len(self._file_paths) > 1 and not self._file_may_match(file_path, filters):
                     continue
-                for topic in effective_topics:
+                file_topics = effective_topics
+                if len(effective_topics) > 1:
+                    file_topics = self._existing_file_topics(file_path, effective_topics)
+                for topic in file_topics:
                     scan_start_time = None
                     if filters.start_time is not None and self._video_start_time_resolver is not None:
                         scan_start_time = self._video_start_time_resolver(file_path, topic, filters.start_time)
@@ -307,6 +338,7 @@ class MCAPSource(DataSource):
                                 "video_start_time_resolver must return an unsigned keyframe time "
                                 "at or before requested_start_time"
                             )
+                    emitted_task = True
                     yield MCAPVideoSourceTask(
                         _file_path=file_path,
                         _schema=task_schema,
@@ -324,8 +356,11 @@ class MCAPSource(DataSource):
                         _image_width=self._image_width,
                         _limit=native_limit,
                     )
+            if not emitted_task:
+                yield MCAPEmptySourceTask(task_schema)
             return
 
+        emitted_task = False
         for file_path in self._file_paths:
             if len(self._file_paths) > 1 and not self._file_may_match(file_path, filters):
                 continue
@@ -337,6 +372,7 @@ class MCAPSource(DataSource):
                     keyframes = self._topic_start_time_resolver(file_path)
 
             if not keyframes:
+                emitted_task = True
                 yield MCAPSourceTask(
                     _file_path=file_path,
                     _schema=task_schema,
@@ -362,6 +398,7 @@ class MCAPSource(DataSource):
                 if filters.end_time is not None and start_time is not None and start_time >= filters.end_time:
                     continue
 
+                emitted_task = True
                 yield MCAPSourceTask(
                     _file_path=file_path,
                     _schema=task_schema,
@@ -373,6 +410,8 @@ class MCAPSource(DataSource):
                     _limit=native_limit,
                     _io_config=self._io_config,
                 )
+        if not emitted_task:
+            yield MCAPEmptySourceTask(task_schema)
 
 
 @dataclass
@@ -404,6 +443,18 @@ class MCAPSourceTask(DataSourceTask):
         )
         while (batch := reader.next_batch()) is not None:
             yield RecordBatch._from_pyrecordbatch(batch)
+
+
+@dataclass
+class MCAPEmptySourceTask(DataSourceTask):
+    _schema: Schema
+
+    @property
+    def schema(self) -> Schema:
+        return self._schema
+
+    async def read(self) -> AsyncIterator[RecordBatch]:
+        yield RecordBatch.empty(self._schema)
 
 
 @dataclass
