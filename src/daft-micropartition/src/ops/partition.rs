@@ -56,31 +56,6 @@ impl MicroPartition {
         self.vec_part_tables_to_mps(part_tables)
     }
 
-    /// Seeded variant of [`Self::partition_by_hash`] used for recursive sub-partitioning of an
-    /// overflowing aggregation bucket (see `RecordBatch::partition_by_hash_seeded`).
-    pub fn partition_by_hash_seeded(
-        &self,
-        exprs: &[BoundExpr],
-        num_partitions: usize,
-        seed: u64,
-    ) -> DaftResult<Vec<Self>> {
-        let tables = self.record_batches();
-
-        if tables.is_empty() {
-            return Ok(
-                std::iter::repeat_with(|| Self::empty(Some(self.schema.clone())))
-                    .take(num_partitions)
-                    .collect(),
-            );
-        }
-
-        let part_tables = tables
-            .iter()
-            .map(|t| t.partition_by_hash_seeded(exprs, num_partitions, seed))
-            .collect::<DaftResult<Vec<_>>>()?;
-        self.vec_part_tables_to_mps(part_tables)
-    }
-
     pub fn partition_by_random(&self, num_partitions: usize, seed: u64) -> DaftResult<Vec<Self>> {
         let tables = self.record_batches();
 

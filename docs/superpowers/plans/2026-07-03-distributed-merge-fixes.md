@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Run all tests with: `DAFT_RUNNER=native DAFT_HASH_JOIN_SPILL_THRESHOLD=0 .venv/bin/pytest -o addopts="" -q <file-or-node> -x` (the fork's spill join hangs otherwise; `-o addopts=""` bypasses the `not integration` marker exclusion).
+- Run all tests with: `DAFT_RUNNER=native .venv/bin/pytest -o addopts="" -q <file-or-node> -x` (the fork's spill join hangs otherwise; `-o addopts=""` bypasses the `not integration` marker exclusion).
 - New tests live in `tests/integration/delta_lake/test_distributed_merge_review_fixes.py` following the existing plain-pytest + `tmp_path` local-table style of `test_distributed_merge_fixes.py`.
 - All production edits are in `daft/io/delta_lake/_deltalake.py` unless stated.
 - Public API compatibility: `str` and `Expression` predicates/update values keep working; parse failures must now RAISE `ValueError` instead of silently guessing.
@@ -110,7 +110,7 @@ class TestParser:
 
 - [ ] **Step 2: Run tests, verify they fail**
 
-Run: `DAFT_RUNNER=native DAFT_HASH_JOIN_SPILL_THRESHOLD=0 .venv/bin/pytest -o addopts="" -q tests/integration/delta_lake/test_distributed_merge_review_fixes.py -x`
+Run: `DAFT_RUNNER=native .venv/bin/pytest -o addopts="" -q tests/integration/delta_lake/test_distributed_merge_review_fixes.py -x`
 Expected: FAIL (wrong values from lit(True) fallbacks / ValueError from strptime).
 
 - [ ] **Step 3: Implement the rewriter and delegate to sql_expr**
@@ -290,7 +290,7 @@ Delete `_parse_single_predicate` entirely (no other callers — verify with grep
 - [ ] **Step 4: Run tests, verify pass**
 
 Run the Task 1 tests plus the existing suite:
-`DAFT_RUNNER=native DAFT_HASH_JOIN_SPILL_THRESHOLD=0 .venv/bin/pytest -o addopts="" -q tests/integration/delta_lake/test_distributed_merge_review_fixes.py tests/integration/delta_lake/test_distributed_merge_fixes.py`
+`DAFT_RUNNER=native .venv/bin/pytest -o addopts="" -q tests/integration/delta_lake/test_distributed_merge_review_fixes.py tests/integration/delta_lake/test_distributed_merge_fixes.py`
 Expected: PASS.
 
 - [ ] **Step 5: Commit** — `fix(delta): parse merge predicates with daft.sql_expr instead of hand-rolled parser`
@@ -1099,7 +1099,7 @@ def _suffixed_ref(name: str, on: "list[str]", collision_names: "set[str] | list[
 
 - [ ] **Step 5: Run BOTH new and all three existing distributed-merge test files, verify PASS.**
 
-Run: `DAFT_RUNNER=native DAFT_HASH_JOIN_SPILL_THRESHOLD=0 .venv/bin/pytest -o addopts="" -q tests/integration/delta_lake/test_distributed_merge_review_fixes.py tests/integration/delta_lake/test_distributed_merge_fixes.py tests/integration/delta_lake/test_distributed_merge.py`
+Run: `DAFT_RUNNER=native .venv/bin/pytest -o addopts="" -q tests/integration/delta_lake/test_distributed_merge_review_fixes.py tests/integration/delta_lake/test_distributed_merge_fixes.py tests/integration/delta_lake/test_distributed_merge.py`
 
 - [ ] **Step 6: Commit** — `refactor(delta): dedupe suffix logic, old-deltalake compat, commit operationMetrics`
 
@@ -1119,7 +1119,7 @@ Run: `DAFT_RUNNER=native DAFT_HASH_JOIN_SPILL_THRESHOLD=0 .venv/bin/pytest -o ad
 
 - [ ] **Step 2: Full run** of all distributed-merge suites plus the merge e2e file:
 
-`DAFT_RUNNER=native DAFT_HASH_JOIN_SPILL_THRESHOLD=0 .venv/bin/pytest -o addopts="" -q tests/integration/delta_lake/test_distributed_merge_review_fixes.py tests/integration/delta_lake/test_distributed_merge_fixes.py tests/integration/delta_lake/test_distributed_merge.py tests/integration/delta_lake/test_merge_e2e.py`
+`DAFT_RUNNER=native .venv/bin/pytest -o addopts="" -q tests/integration/delta_lake/test_distributed_merge_review_fixes.py tests/integration/delta_lake/test_distributed_merge_fixes.py tests/integration/delta_lake/test_distributed_merge.py tests/integration/delta_lake/test_merge_e2e.py`
 Expected: PASS (no skips beyond pre-existing ones).
 
 - [ ] **Step 3: Commit** — `docs(delta): document distributed merge parsing, NULL, and concurrency semantics`

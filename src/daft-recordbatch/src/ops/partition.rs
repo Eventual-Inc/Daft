@@ -69,31 +69,6 @@ impl RecordBatch {
         self.partition_by_index(&targets, num_partitions)
     }
 
-    /// Like [`Self::partition_by_hash`] but mixes a `seed` into the row hash. Equal keys stay
-    /// co-located within a single seed; different seeds spread keys differently. Used for recursive
-    /// sub-partitioning of an overflowing aggregation bucket.
-    pub fn partition_by_hash_seeded(
-        &self,
-        exprs: &[BoundExpr],
-        num_partitions: usize,
-        seed: u64,
-    ) -> DaftResult<Vec<Self>> {
-        if num_partitions == 0 {
-            return Err(DaftError::ValueError(
-                "Can not partition a Table by 0 partitions".to_string(),
-            ));
-        }
-
-        let targets = self
-            .eval_expression_list(exprs)?
-            .hash_rows_seeded(seed)?
-            .rem(&UInt64Array::from_slice(
-                "num_partitions",
-                &[num_partitions as u64],
-            ))?;
-        self.partition_by_index(&targets, num_partitions)
-    }
-
     pub fn partition_by_random(&self, num_partitions: usize, seed: u64) -> DaftResult<Vec<Self>> {
         if num_partitions == 0 {
             return Err(DaftError::ValueError(
@@ -162,72 +137,5 @@ impl RecordBatch {
             })
             .collect::<DaftResult<Vec<_>>>()?;
         Ok((output_tables, pkeys_per_output_table))
-    }
-}
-
-#[cfg(test)]
-mod seeded_hash_tests {
-    use daft_core::{datatypes::*, prelude::*, series::IntoSeries};
-    use daft_dsl::{expr::bound_expr::BoundExpr, resolved_col};
-
-    use crate::RecordBatch;
-
-    fn make_batch() -> (RecordBatch, Vec<BoundExpr>) {
-        // 1000 rows over 50 distinct keys.
-        let keys: Vec<i64> = (0..1000).map(|i| (i % 50) as i64).collect();
-        let key_series = Int64Array::from_vec("k", keys).into_series();
-        let schema = Schema::new(vec![Field::new("k", DataType::Int64)]);
-        let rb = RecordBatch::from_nonempty_columns(vec![key_series]).unwrap();
-        let exprs = vec![BoundExpr::try_new(resolved_col("k"), &schema).unwrap()];
-        (rb, exprs)
-    }
-
-    /// Collect, per partition, the set of distinct key values present.
-    fn key_sets(parts: &[RecordBatch]) -> Vec<std::collections::BTreeSet<i64>> {
-        parts
-            .iter()
-            .map(|p| {
-                let col = p.get_column(0).i64().unwrap();
-                col.into_iter().flatten().collect()
-            })
-            .collect()
-    }
-
-    #[test]
-    fn seeded_hash_colocates_equal_keys() {
-        let (rb, exprs) = make_batch();
-        let parts = rb.partition_by_hash_seeded(&exprs, 8, 1234).unwrap();
-        // Each key value must appear in exactly one partition (groups stay co-located).
-        let sets = key_sets(&parts);
-        for k in 0..50i64 {
-            let count = sets.iter().filter(|s| s.contains(&k)).count();
-            assert_eq!(count, 1, "key {k} appeared in {count} partitions");
-        }
-        // Row count is preserved.
-        let total: usize = parts.iter().map(RecordBatch::len).sum();
-        assert_eq!(total, 1000);
-    }
-
-    #[test]
-    fn different_seeds_produce_different_assignments() {
-        let (rb, exprs) = make_batch();
-        let a = rb.partition_by_hash_seeded(&exprs, 8, 1).unwrap();
-        let b = rb.partition_by_hash_seeded(&exprs, 8, 2).unwrap();
-        // The two seeds must not produce identical per-partition key sets, otherwise recursive
-        // sub-partitioning of an overflowing bucket would never make progress.
-        assert_ne!(
-            key_sets(&a),
-            key_sets(&b),
-            "seeds 1 and 2 produced identical partition assignments"
-        );
-    }
-
-    #[test]
-    fn seeded_matches_unseeded_row_count_and_colocation() {
-        // Sanity: unseeded partitioning also co-locates; seeded just shifts the mapping.
-        let (rb, exprs) = make_batch();
-        let parts = rb.partition_by_hash(&exprs, 8).unwrap();
-        let total: usize = parts.iter().map(RecordBatch::len).sum();
-        assert_eq!(total, 1000);
     }
 }

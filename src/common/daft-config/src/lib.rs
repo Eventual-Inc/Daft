@@ -153,39 +153,6 @@ pub struct DaftExecutionConfig {
     pub flight_shuffle_dirs: Vec<String>,
     pub flight_shuffle_compression: Option<String>,
     pub enable_multi_glob_path_tasks: bool,
-    // NOTE: Spill is DISABLED by default. It is enabled by setting a positive `spill_pool_bytes`
-    // (preferred, enables all operators) or a positive per-operator threshold below (legacy, also a
-    // cap). A per-operator `Some(0)` force-disables that operator even when the pool is set.
-    /// Hash join build-side grace-hash-join spill, spilled to `flight_shuffle_dirs`. Off by default;
-    /// a positive value enables spilling for this operator and caps its resident build at that many
-    /// bytes. `Some(0)` force-disables.
-    pub hash_join_spill_threshold_bytes: Option<usize>,
-    /// Sort external-merge-sort spill, spilled to `flight_shuffle_dirs`. Off by default; a positive
-    /// value enables + caps. `Some(0)` force-disables.
-    pub sort_spill_threshold_bytes: Option<usize>,
-    /// Grouped Aggregation grace-aggregation spill (total budget across all hash buckets), spilled
-    /// to `flight_shuffle_dirs`. Off by default; a positive value enables + caps. `Some(0)`
-    /// force-disables.
-    pub agg_spill_threshold_bytes: Option<usize>,
-    /// Dedup/Distinct grace-dedup spill (total budget across all hash buckets), spilled to
-    /// `flight_shuffle_dirs`. Off by default; a positive value enables + caps. `Some(0)`
-    /// force-disables.
-    pub dedup_spill_threshold_bytes: Option<usize>,
-    /// Partitioned Window spill (total budget across all hash buckets), spilled to
-    /// `flight_shuffle_dirs`. Off by default; a positive value enables + caps. `Some(0)`
-    /// force-disables.
-    pub window_spill_threshold_bytes: Option<usize>,
-    /// `RepartitionSink` (Flight backend) `post_repartitioned` buffer spill, spilled to
-    /// `flight_shuffle_dirs`. Without spilling this buffer grows to the full task dataset size and
-    /// can OOM for large inputs. Off by default; a positive value enables + caps. `Some(0)`
-    /// force-disables.
-    pub repartition_spill_threshold_bytes: Option<usize>,
-    /// Total size (bytes) of the shared spill pool that all spill-capable operators draw from, and
-    /// the master switch for spill: **spill is disabled unless this is set to a positive value**
-    /// (or a per-operator threshold above is positive). When set, sizes the pool; otherwise the
-    /// per-operator-enabled path uses `max(64 MiB, 0.3 × (DAFT_MEMORY_LIMIT or system RAM))`. Env
-    /// override: `DAFT_SPILL_POOL_BYTES`.
-    pub spill_pool_bytes: Option<usize>,
 }
 
 #[cfg(not(debug_assertions))]
@@ -233,13 +200,6 @@ impl Default for DaftExecutionConfig {
             flight_shuffle_dirs: vec!["/tmp".to_string()],
             flight_shuffle_compression: Some("lz4".to_string()),
             enable_multi_glob_path_tasks: false,
-            hash_join_spill_threshold_bytes: None,
-            sort_spill_threshold_bytes: None,
-            agg_spill_threshold_bytes: None,
-            dedup_spill_threshold_bytes: None,
-            window_spill_threshold_bytes: None,
-            repartition_spill_threshold_bytes: None,
-            spill_pool_bytes: None,
         }
     }
 }
@@ -255,13 +215,6 @@ impl DaftExecutionConfig {
     const ENV_JSON_INFLATION_FACTOR: &'static str = "DAFT_JSON_INFLATION_FACTOR";
     const ENV_TEXT_INFLATION_FACTOR: &'static str = "DAFT_TEXT_INFLATION_FACTOR";
     const ENV_DAFT_MAINTAIN_ORDER: &'static str = "DAFT_MAINTAIN_ORDER";
-    const ENV_DAFT_HASH_JOIN_SPILL_THRESHOLD: &'static str = "DAFT_HASH_JOIN_SPILL_THRESHOLD";
-    const ENV_DAFT_SORT_SPILL_THRESHOLD: &'static str = "DAFT_SORT_SPILL_THRESHOLD";
-    const ENV_DAFT_AGG_SPILL_THRESHOLD: &'static str = "DAFT_AGG_SPILL_THRESHOLD";
-    const ENV_DAFT_DEDUP_SPILL_THRESHOLD: &'static str = "DAFT_DEDUP_SPILL_THRESHOLD";
-    const ENV_DAFT_WINDOW_SPILL_THRESHOLD: &'static str = "DAFT_WINDOW_SPILL_THRESHOLD";
-    const ENV_DAFT_REPARTITION_SPILL_THRESHOLD: &'static str = "DAFT_REPARTITION_SPILL_THRESHOLD";
-    const ENV_DAFT_SPILL_POOL_BYTES: &'static str = "DAFT_SPILL_POOL_BYTES";
 
     #[must_use]
     pub fn from_env() -> Self {
@@ -325,64 +278,6 @@ impl DaftExecutionConfig {
             parse_number_from_env(Self::ENV_TEXT_INFLATION_FACTOR, cfg.text_inflation_factor)
         {
             cfg.text_inflation_factor = val;
-        }
-
-        if let Ok(val) = std::env::var(Self::ENV_DAFT_HASH_JOIN_SPILL_THRESHOLD) {
-            if let Ok(parsed) = val.trim().parse::<usize>() {
-                cfg.hash_join_spill_threshold_bytes = Some(parsed);
-            } else {
-                eprintln!(
-                    "Invalid DAFT_HASH_JOIN_SPILL_THRESHOLD value: {val}, ignoring"
-                );
-            }
-        }
-
-        if let Ok(val) = std::env::var(Self::ENV_DAFT_SORT_SPILL_THRESHOLD) {
-            if let Ok(parsed) = val.trim().parse::<usize>() {
-                cfg.sort_spill_threshold_bytes = Some(parsed);
-            } else {
-                eprintln!("Invalid DAFT_SORT_SPILL_THRESHOLD value: {val}, ignoring");
-            }
-        }
-
-        if let Ok(val) = std::env::var(Self::ENV_DAFT_AGG_SPILL_THRESHOLD) {
-            if let Ok(parsed) = val.trim().parse::<usize>() {
-                cfg.agg_spill_threshold_bytes = Some(parsed);
-            } else {
-                eprintln!("Invalid DAFT_AGG_SPILL_THRESHOLD value: {val}, ignoring");
-            }
-        }
-
-        if let Ok(val) = std::env::var(Self::ENV_DAFT_DEDUP_SPILL_THRESHOLD) {
-            if let Ok(parsed) = val.trim().parse::<usize>() {
-                cfg.dedup_spill_threshold_bytes = Some(parsed);
-            } else {
-                eprintln!("Invalid DAFT_DEDUP_SPILL_THRESHOLD value: {val}, ignoring");
-            }
-        }
-
-        if let Ok(val) = std::env::var(Self::ENV_DAFT_WINDOW_SPILL_THRESHOLD) {
-            if let Ok(parsed) = val.trim().parse::<usize>() {
-                cfg.window_spill_threshold_bytes = Some(parsed);
-            } else {
-                eprintln!("Invalid DAFT_WINDOW_SPILL_THRESHOLD value: {val}, ignoring");
-            }
-        }
-
-        if let Ok(val) = std::env::var(Self::ENV_DAFT_REPARTITION_SPILL_THRESHOLD) {
-            if let Ok(parsed) = val.trim().parse::<usize>() {
-                cfg.repartition_spill_threshold_bytes = Some(parsed);
-            } else {
-                eprintln!("Invalid DAFT_REPARTITION_SPILL_THRESHOLD value: {val}, ignoring");
-            }
-        }
-
-        if let Ok(val) = std::env::var(Self::ENV_DAFT_SPILL_POOL_BYTES) {
-            if let Ok(parsed) = val.trim().parse::<usize>() {
-                cfg.spill_pool_bytes = Some(parsed);
-            } else {
-                eprintln!("Invalid DAFT_SPILL_POOL_BYTES value: {val}, ignoring");
-            }
         }
 
         cfg
@@ -530,12 +425,6 @@ mod tests {
                 std::env::remove_var(DaftPlanningConfig::ENV_DAFT_DEV_ENABLE_DP_CCP_JOIN_ORDERING);
             }
         }
-    }
-
-    #[test]
-    fn test_spill_pool_bytes_defaults_none() {
-        let cfg = DaftExecutionConfig::default();
-        assert_eq!(cfg.spill_pool_bytes, None);
     }
 
     #[test]

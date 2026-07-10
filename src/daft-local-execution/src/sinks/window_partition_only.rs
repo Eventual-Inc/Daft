@@ -11,17 +11,13 @@ use tracing::{Span, instrument};
 
 use super::{
     blocking_sink::{
-        BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+        BlockingSink, BlockingSinkFinalizeResult, BlockingSinkOutput, BlockingSinkSinkResult,
     },
-    window_base::{
-        WindowBaseState, WindowSinkParams, finalize_partitioned_windows,
-        window_spill_dirs,
-    },
+    window_base::{WindowBaseState, WindowSinkParams},
 };
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{InputId, NodeName},
-    spill::SpillConfig,
 };
 
 struct WindowPartitionOnlyParams {
@@ -47,7 +43,6 @@ impl WindowSinkParams for WindowPartitionOnlyParams {
 
 pub struct WindowPartitionOnlySink {
     window_partition_only_params: Arc<WindowPartitionOnlyParams>,
-    spill_config: Option<SpillConfig>,
 }
 
 impl WindowPartitionOnlySink {
@@ -56,7 +51,6 @@ impl WindowPartitionOnlySink {
         aliases: &[String],
         partition_by: &[BoundExpr],
         schema: &SchemaRef,
-        spill_config: Option<SpillConfig>,
     ) -> DaftResult<Self> {
         Ok(Self {
             window_partition_only_params: Arc::new(WindowPartitionOnlyParams {
@@ -65,7 +59,6 @@ impl WindowPartitionOnlySink {
                 partition_by: partition_by.to_vec(),
                 original_schema: schema.clone(),
             }),
-            spill_config,
         })
     }
 
@@ -106,16 +99,68 @@ impl BlockingSink for WindowPartitionOnlySink {
     ) -> BlockingSinkFinalizeResult {
         let params = self.window_partition_only_params.clone();
         let num_partitions = self.num_partitions();
-        let schema = params.original_schema.clone();
-
-        let compute = move |all_partitions: Vec<RecordBatch>| -> DaftResult<RecordBatch> {
-            let input_data = RecordBatch::concat(&all_partitions)?;
-            input_data.window_grouped_agg(&params.agg_exprs, &params.aliases, &params.partition_by)
-        };
 
         spawner
             .spawn(
-                finalize_partitioned_windows(states, num_partitions, schema, compute),
+                async move {
+                    let mut state_iters = states
+                        .into_iter()
+                        .map(|mut state| state.finalize(params.name()).into_iter())
+                        .collect::<Vec<_>>();
+
+                    let mut per_partition_tasks = tokio::task::JoinSet::new();
+
+                    for _partition_idx in 0..num_partitions {
+                        let per_partition_state = state_iters.iter_mut().map(|state| {
+                            state
+                                .next()
+                                .expect("WindowBaseState should have SinglePartitionWindowState")
+                        });
+
+                        let all_partitions: Vec<RecordBatch> = per_partition_state
+                            .flatten()
+                            .flat_map(|state| state.partitions)
+                            .collect();
+
+                        if all_partitions.is_empty() {
+                            continue;
+                        }
+
+                        let params = params.clone();
+
+                        per_partition_tasks.spawn(async move {
+                            let input_data = {
+                                let batches = all_partitions;
+                                RecordBatch::concat(&batches)?
+                            };
+                            input_data.window_grouped_agg(
+                                &params.agg_exprs,
+                                &params.aliases,
+                                &params.partition_by,
+                            )
+                        });
+                    }
+
+                    let results = per_partition_tasks
+                        .join_all()
+                        .await
+                        .into_iter()
+                        .collect::<DaftResult<Vec<_>>>()?;
+
+                    if results.is_empty() {
+                        let empty_result =
+                            MicroPartition::empty(Some(params.original_schema.clone()));
+                        return Ok(BlockingSinkOutput::Partitions(vec![empty_result]));
+                    }
+
+                    let final_result = MicroPartition::new_loaded(
+                        params.original_schema.clone(),
+                        results.into(),
+                        None,
+                    );
+
+                    Ok(BlockingSinkOutput::Partitions(vec![final_result]))
+                },
                 Span::current(),
             )
             .into()
@@ -151,10 +196,6 @@ impl BlockingSink for WindowPartitionOnlySink {
     }
 
     fn make_state(&self, _input_id: InputId) -> DaftResult<Self::State> {
-        WindowBaseState::make_base_state(
-            self.num_partitions(),
-            window_spill_dirs(&self.spill_config),
-            self.spill_config.as_ref().and_then(|sc| sc.cap()),
-        )
+        WindowBaseState::make_base_state(self.num_partitions())
     }
 }

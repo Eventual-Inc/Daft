@@ -33,7 +33,7 @@ use tokio_util::sync::CancellationToken;
 #[cfg(feature = "python")]
 use {
     common_daft_config::PyDaftExecutionConfig,
-    daft_context::{python::PyDaftContext},
+    daft_context::python::PyDaftContext,
     daft_local_plan::python::PyExecutionStats,
     daft_logical_plan::PyLogicalPlanBuilder,
     daft_micropartition::python::PyMicroPartition,
@@ -54,7 +54,6 @@ use crate::{
     runtime_stats::{RuntimeStatsManager, RuntimeStatsManagerHandle},
 };
 
-#[allow(dead_code)]
 enum ExecutionEngineResultItem {
     Partition(MicroPartition),
     FlightPartitionRef(FlightPartitionRef),
@@ -179,7 +178,6 @@ struct PlanState {
     feature = "python",
     pyclass(module = "daft.daft", name = "NativeExecutor", frozen)
 )]
-#[allow(dead_code)]
 pub struct PyNativeExecutor {
     executor: Arc<Mutex<NativeExecutor>>,
     address: Option<String>,
@@ -630,7 +628,6 @@ impl NativeExecutor {
         self.plans.remove(&fingerprint);
     }
 
-    #[allow(dead_code)]
     fn repr_ascii(
         logical_plan_builder: &LogicalPlanBuilder,
         cfg: Arc<DaftExecutionConfig>,
@@ -645,7 +642,6 @@ impl NativeExecutor {
         viz_pipeline_ascii(pipeline_node.as_ref(), simple)
     }
 
-    #[allow(dead_code)]
     fn repr_mermaid(
         logical_plan_builder: &LogicalPlanBuilder,
         cfg: Arc<DaftExecutionConfig>,
@@ -685,7 +681,6 @@ pub struct ExecutionEngineResult {
 }
 
 impl ExecutionEngineResult {
-    #[allow(dead_code)]
     async fn next(&mut self) -> Option<ExecutionEngineResultItem> {
         self.receiver.recv().await
     }
@@ -711,7 +706,6 @@ impl ExecutionEngineResult {
     feature = "python",
     pyclass(module = "daft.daft", name = "PyResultReceiver", frozen)
 )]
-#[allow(dead_code)]
 pub struct PyResultReceiver {
     result: Arc<tokio::sync::Mutex<Option<ExecutionEngineResult>>>,
     fingerprint: u64,
