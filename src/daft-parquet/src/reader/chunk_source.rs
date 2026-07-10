@@ -104,6 +104,10 @@ pub(super) async fn prepare_remote_chunk_source(
     let (parquet_metadata_res, file_size) = if let Some(known_size) = opts.size_bytes {
         // The scan task already knows the exact file size (catalog log or LIST),
         // so skip the HEAD entirely and fetch the footer with an exact range.
+        // Because no HEAD was issued, a footer/metadata failure here is most
+        // often a stale/approximate scan-task size; wrap the error so it names
+        // the size assumption instead of surfacing a bare footer-magic error.
+        // Stays fail-loud -- there is no HEAD-retry fallback.
         let metadata_res = Box::pin(crate::metadata::read_parquet_metadata(
             uri,
             Some(known_size),
@@ -112,7 +116,12 @@ pub(super) async fn prepare_remote_chunk_source(
             None,
             None,
         ))
-        .await;
+        .await
+        .map_err(|source| crate::Error::KnownFileSizeMetadata {
+            path: uri.to_string(),
+            size_bytes: known_size,
+            source: Box::new(source),
+        });
         (metadata_res, known_size)
     } else {
         let (metadata_res, file_size_res) = Box::pin(futures::future::join(

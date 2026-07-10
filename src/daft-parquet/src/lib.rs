@@ -136,6 +136,24 @@ pub enum Error {
     #[snafu(display("Parquet reader invariant violated for {path}: {message}"))]
     ReaderInternal { path: String, message: String },
 
+    /// The remote read trusted a caller-supplied exact file size and skipped
+    /// the HEAD, so a footer/metadata failure here most likely means that size
+    /// was stale or approximate. Names the trusted size so the message points
+    /// at the real cause instead of a bare footer-magic error.
+    #[snafu(display(
+        "Failed to read parquet metadata for {path} using the caller-supplied file size of \
+         {size_bytes} bytes (the HEAD request was skipped because the scan task reported an \
+         exact size); a stale or approximate scan-task size is the likely cause: {source}"
+    ))]
+    KnownFileSizeMetadata {
+        path: String,
+        size_bytes: usize,
+        // Concrete `Error` (not `Self`) to match the sibling `RemoteFetchFailed`
+        // idiom and because snafu's derived context selector requires the named
+        // type here.
+        source: Box<Error>,
+    },
+
     /// Remote fetch tasks store their results in a `Shared` future whose error
     /// type must be `Clone`, so we keep `Arc<Error>` internally and surface the
     /// typed source to every consumer.
@@ -166,6 +184,31 @@ impl From<Error> for DaftError {
             )),
             // Lets retry logic key on `DaftError::ReadTimeout`.
             Error::FileReadTimeout { .. } => Self::ReadTimeout(err.into()),
+            // The known-size (HEAD-skipped) branch wraps *every* metadata
+            // failure in `KnownFileSizeMetadata`, so classify by the underlying
+            // cause rather than the wrapper. A footer/metadata-shape cause is
+            // genuine corruption -- fail loud, keeping the size-naming message.
+            // A transient IO fault (S3 timeout/throttle/socket) must map to
+            // exactly the typed `DaftError` it would on the `None`-size path so
+            // `ignore_corrupt_files` never silently drops the file as "corrupt".
+            Error::KnownFileSizeMetadata {
+                source,
+                path,
+                size_bytes,
+            } => {
+                if is_footer_shape_error(&source) {
+                    Self::CorruptFile(
+                        Error::KnownFileSizeMetadata {
+                            source,
+                            path,
+                            size_bytes,
+                        }
+                        .to_string(),
+                    )
+                } else {
+                    (*source).into()
+                }
+            }
             Error::InvalidParquetFile { .. }
             | Error::FileTooSmall { .. }
             | Error::InvalidParquetFooterSize { .. }
@@ -175,6 +218,21 @@ impl From<Error> for DaftError {
             _ => Self::External(err.into()),
         }
     }
+}
+
+/// Footer/metadata-shape errors are the failures a stale or approximate
+/// caller-supplied file size actually produces: bad footer magic, a file
+/// smaller than the footer, a footer-size overrun, or a thrift metadata parse
+/// failure. Transient IO faults are deliberately excluded -- they are not
+/// corruption and must not be reclassified as such on the known-size path.
+fn is_footer_shape_error(err: &Error) -> bool {
+    matches!(
+        err,
+        Error::InvalidParquetFile { .. }
+            | Error::FileTooSmall { .. }
+            | Error::InvalidParquetFooterSize { .. }
+            | Error::ParquetMetadata { .. }
+    )
 }
 
 impl From<daft_io::Error> for Error {

@@ -890,10 +890,86 @@ mod tests {
             ..Default::default()
         };
         let result = read_parquet(PUBLIC_PARQUET, io_client, None, opts).await;
+        let err = match result {
+            Ok(_) => panic!("a wrong size must error, not silently read"),
+            Err(e) => e,
+        };
+        // A genuinely stale/wrong size still fails loud *as corruption*, and the
+        // diagnostic must name the caller-supplied size so it points at the real
+        // cause instead of surfacing a bare footer-magic error.
         assert!(
-            result.is_err(),
-            "a wrong size must error, not silently read"
+            err.to_string().contains("1260"),
+            "wrong-size error must name the caller-supplied size, got: {err}"
+        );
+        assert!(
+            is_parquet_corrupt(&err),
+            "a genuinely wrong/stale size must classify as corrupt, got {err:?}"
         );
         Ok(())
+    }
+
+    /// Load-bearing regression test for the known-size (HEAD-skipped) fast path.
+    ///
+    /// A transient IO fault on the footer fetch (S3 timeout/throttle/socket)
+    /// propagates as `Error::IO`, wrapped by the known-size branch into
+    /// `KnownFileSizeMetadata`. It must classify to the *same* typed `DaftError`
+    /// it would on the `None`-size path and NOT be treated as file corruption —
+    /// otherwise `ignore_corrupt_files=true` silently drops the file's rows on a
+    /// mere network blip.
+    #[test]
+    fn known_size_transient_io_is_not_corrupt() {
+        use common_error::DaftError;
+
+        let io_err = daft_io::Error::ReadTimeout {
+            path: PUBLIC_PARQUET.to_string(),
+            source: Box::new(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "read timed out",
+            )),
+        };
+        let wrapped = crate::Error::KnownFileSizeMetadata {
+            path: PUBLIC_PARQUET.to_string(),
+            size_bytes: PUBLIC_PARQUET_SIZE,
+            source: Box::new(crate::Error::IO { source: io_err }),
+        };
+
+        let daft_err: DaftError = wrapped.into();
+        assert!(
+            !is_parquet_corrupt(&daft_err),
+            "transient IO on the known-size path must not be classified as corrupt (got {daft_err:?})"
+        );
+        assert!(
+            matches!(daft_err, DaftError::ReadTimeout(_)),
+            "transient IO must surface the same typed variant as the None-size path, got {daft_err:?}"
+        );
+    }
+
+    /// The other direction: a genuinely wrong/stale caller-supplied size surfaces
+    /// as a footer/metadata-shape error, which must still fail loud as corruption
+    /// with a message that names the size. Mirrors `wrong_size_fails_loudly`
+    /// without touching the network.
+    #[test]
+    fn known_size_footer_shape_is_corrupt_and_names_size() {
+        use common_error::DaftError;
+
+        let footer_err = crate::Error::InvalidParquetFile {
+            path: PUBLIC_PARQUET.to_string(),
+            footer: vec![1, 2, 3, 4],
+        };
+        let wrapped = crate::Error::KnownFileSizeMetadata {
+            path: PUBLIC_PARQUET.to_string(),
+            size_bytes: 1260,
+            source: Box::new(footer_err),
+        };
+
+        let daft_err: DaftError = wrapped.into();
+        assert!(
+            is_parquet_corrupt(&daft_err),
+            "a footer-shape failure on the known-size path must classify as corrupt, got {daft_err:?}"
+        );
+        assert!(
+            daft_err.to_string().contains("1260"),
+            "the corrupt-file message must name the caller-supplied size, got: {daft_err}"
+        );
     }
 }
