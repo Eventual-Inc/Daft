@@ -63,6 +63,10 @@ The tz fix has **no tests of its own** — its coverage lived in the parity suit
 dropped. The new branch must add them, or it silently ships an untested fix for a bug
 that breaks `main`.
 
+This spec, and the implementation plan derived from it, are committed on
+`perf/s3-delta-fast-path`. They must be cherry-picked onto the new branch as its first
+commit, before any code, so the branch carries its own design record.
+
 ## Verified defect inventory
 
 Everything below was measured against the PyArrow path, not assumed. Two widely-believed
@@ -130,7 +134,10 @@ completely through both `deltalake.DeltaTable` and `daft.read_deltalake`.
 `DistributedDeltaMergeBuilder` has **two** write branches and both need it:
 `_write_partition_scoped` calls `write_df._builder.write_deltalake(...)` directly
 (bypassing `DataFrame.write_deltalake` and its default), and `execute()`'s full-rewrite
-branch calls `write_df.write_deltalake(...)`.
+branch calls `write_df.write_deltalake(...)`. The codec therefore has to be validated in
+`distributed_merge_deltalake`, passed into `DistributedDeltaMergeBuilder.__init__`, stored
+as `self._compression`, and read by both branches — the builder-level call has no default
+to fall back on.
 
 Because `DeltalakeWriter` is constructed from Rust, the codec is carried as one
 `compression: String` field on `DeltaLakeCatalogInfo`, threaded through the `delta_write`
