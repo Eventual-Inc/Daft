@@ -193,7 +193,9 @@ def test_double_cover_negated_quaternion_is_the_same_rotation():
     negated = [[-c for c in q] for q in UNIT_QUATS_XYZW]
     a = _quat_col("q", UNIT_QUATS_XYZW).select(quat_to_matrix(col("q"))).to_pydict()["q"]
     b = _quat_col("q", negated).select(quat_to_matrix(col("q"))).to_pydict()["q"]
-    np.testing.assert_allclose(np.asarray([np.asarray(m) for m in a]), np.asarray([np.asarray(m) for m in b]), atol=1e-12)
+    np.testing.assert_allclose(
+        np.asarray([np.asarray(m) for m in a]), np.asarray([np.asarray(m) for m in b]), atol=1e-12
+    )
 
 
 def test_matrices_are_special_orthogonal():
@@ -236,7 +238,9 @@ def test_wxyz_order_agrees_with_xyzw_on_the_same_rotation():
     wxyz = [[q[3], q[0], q[1], q[2]] for q in UNIT_QUATS_XYZW]
     a = _quat_col("q", UNIT_QUATS_XYZW).select(quat_to_matrix(col("q"))).to_pydict()["q"]
     b = _quat_col("q", wxyz).select(quat_to_matrix(col("q"), order="wxyz")).to_pydict()["q"]
-    np.testing.assert_allclose(np.asarray([np.asarray(m) for m in a]), np.asarray([np.asarray(m) for m in b]), atol=1e-12)
+    np.testing.assert_allclose(
+        np.asarray([np.asarray(m) for m in a]), np.asarray([np.asarray(m) for m in b]), atol=1e-12
+    )
 
 
 def test_matrix_to_quat_respects_order():
@@ -316,11 +320,7 @@ def test_literal_vector_is_broadcast():
 def test_literal_quaternion_is_broadcast():
     quat = [0.5, 0.5, 0.5, 0.5]
     vectors = VECTORS
-    df = (
-        _frame(v=vectors)
-        .select(col("v").cast(VEC3))
-        .select(quat_rotate(lit(quat).cast(QUAT), col("v")).alias("r"))
-    )
+    df = _frame(v=vectors).select(col("v").cast(VEC3)).select(quat_rotate(lit(quat).cast(QUAT), col("v")).alias("r"))
     got = np.asarray([np.asarray(v) for v in df.to_pydict()["r"]])
     assert len(got) == len(vectors)
     want = scipy_rotation.from_quat(np.asarray([quat] * len(vectors))).apply(np.asarray(vectors))
@@ -440,7 +440,7 @@ def test_non_finite_inputs_produce_null_everywhere(bad):
         ),
     }
     for name, df in cases.items():
-        got = list(df.to_pydict().values())[0][0]
+        got = next(iter(df.to_pydict().values()))[0]
         assert got is None, f"{name} returned {got!r} for a {bad} input, expected null"
 
 
