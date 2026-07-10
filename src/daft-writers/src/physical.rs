@@ -1,5 +1,5 @@
 use common_error::{DaftError, DaftResult};
-use common_file_formats::FileFormat;
+use common_file_formats::{FileFormat, WriteMode};
 use daft_core::prelude::*;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::{OutputFileInfo, sink_info::FormatSinkOption};
@@ -64,6 +64,11 @@ impl PhysicalWriterFactory {
         native_enabled: bool,
     ) -> DaftResult<WriterType> {
         if !native_enabled {
+            if output_file_info.single_file {
+                return Err(DaftError::NotImplemented(
+                    "`single_file=True` is not supported when the native Parquet writer is disabled".to_string(),
+                ));
+            }
             return Ok(WriterType::Pyarrow);
         }
 
@@ -72,6 +77,10 @@ impl PhysicalWriterFactory {
 
         if native_supported {
             Ok(WriterType::Native)
+        } else if output_file_info.single_file {
+            Err(DaftError::NotImplemented(
+                "`single_file=True` is not supported for this schema or path (native Parquet writer fell back to PyArrow)".to_string(),
+            ))
         } else {
             Ok(WriterType::Pyarrow)
         }
@@ -121,6 +130,8 @@ impl WriterFactory for PhysicalWriterFactory {
                 self.output_file_info.io_config.clone(),
                 self.output_file_info.format_option.clone(),
                 self.output_file_info.compression.as_deref(),
+                self.output_file_info.single_file,
+                self.output_file_info.write_mode,
             ),
             WriterType::Pyarrow => create_pyarrow_file_writer(
                 &self.output_file_info.root_dir,
@@ -182,6 +193,8 @@ fn create_native_writer(
     io_config: Option<daft_io::IOConfig>,
     format_option: Option<FormatSinkOption>,
     compression: Option<&str>,
+    single_file: bool,
+    write_mode: WriteMode,
 ) -> DaftResult<Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Option<RecordBatch>>>> {
     let (path, io_config) = parse_url_and_config(root_dir, io_config)?;
     let root_dir = path.as_str();
@@ -203,13 +216,25 @@ fn create_native_writer(
                 parquet_option.column_compression.as_deref(),
                 crs,
                 geometry_columns.as_deref(),
+                single_file,
+                single_file && matches!(write_mode, WriteMode::Overwrite),
             )
         }
         FileFormat::Json => {
+            if single_file {
+                return Err(DaftError::NotImplemented(
+                    "`single_file=True` is not yet supported for JSON writes".to_string(),
+                ));
+            }
             let json_option = format_option.map(|opt| opt.to_json()).unwrap_or_default();
             create_native_json_writer(root_dir, file_idx, partition_values, io_config, json_option)
         }
         FileFormat::Csv => {
+            if single_file {
+                return Err(DaftError::NotImplemented(
+                    "`single_file=True` is not yet supported for CSV writes".to_string(),
+                ));
+            }
             let csv_option = format_option.map(|opt| opt.to_csv()).unwrap_or_default();
             create_native_csv_writer(root_dir, file_idx, partition_values, io_config, csv_option)
         }
