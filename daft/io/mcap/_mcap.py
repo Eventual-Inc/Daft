@@ -28,6 +28,8 @@ if TYPE_CHECKING:
 
 TopicToStartTime = dict[str, int]
 TopicStartTimeResolver = Callable[[str], TopicToStartTime]
+VideoStartTimeResolver = Callable[[str, str, int], int | None]
+MCAP_VIDEO_OUTPUT_BATCH_BYTES = 10 * 1024 * 1024
 
 
 # mcap format details see: https://github.com/foxglove/mcap
@@ -107,6 +109,10 @@ def read_mcap(
     topics: list[str] | None = None,
     batch_size: int = 1000,
     topic_start_time_resolver: TopicStartTimeResolver | None = None,
+    decode_video: bool = False,
+    image_height: int | None = None,
+    image_width: int | None = None,
+    video_start_time_resolver: VideoStartTimeResolver | None = None,
 ) -> DataFrame:
     """Read mcap file.
 
@@ -124,10 +130,23 @@ def read_mcap(
 
             will create one scan task per (file, topic) and set the task's start_time to:
             max(start_time, topic_start_time_resolver(file)[topic]).
+        decode_video: Decode Foxglove ``CompressedVideo`` payloads with a persistent
+            PyAV codec context per topic. This requires explicit ``topics`` and the
+            optional ``video`` dependencies. Defaults to False, returning raw bytes.
+        image_height: Optional decoded image height. Must be supplied with ``image_width``.
+        image_width: Optional decoded image width. Must be supplied with ``image_height``.
+        video_start_time_resolver: Optional callable invoked as
+            ``resolver(file_path, topic, requested_start_time)``. It must return the
+            log time of a preceding keyframe at or before the requested start. Video
+            decoding reads from that physical bound, then suppresses warmup frames
+            before the logical query bound. Without a resolver, indexed files are
+            reverse-scanned to find that keyframe automatically; unindexed files
+            decode from the beginning of the topic for correctness.
 
     Returns:
         DataFrame: One row per message, including ``source_path`` provenance and
-            a binary ``data`` payload.
+            a binary ``data`` payload. With ``decode_video=True``, one row per
+            decoded frame and an image ``data`` column are returned instead.
     """
     return MCAPSource(
         file_path=path,
@@ -137,6 +156,10 @@ def read_mcap(
         batch_size=batch_size,
         io_config=io_config,
         topic_start_time_resolver=topic_start_time_resolver,
+        decode_video=decode_video,
+        image_height=image_height,
+        image_width=image_width,
+        video_start_time_resolver=video_start_time_resolver,
     ).read()
 
 
@@ -150,9 +173,25 @@ class MCAPSource(DataSource):
         batch_size: int = 1000,
         io_config: IOConfig | None = None,
         topic_start_time_resolver: TopicStartTimeResolver | None = None,
+        decode_video: bool = False,
+        image_height: int | None = None,
+        image_width: int | None = None,
+        video_start_time_resolver: VideoStartTimeResolver | None = None,
     ):
         if batch_size <= 0:
             raise ValueError(f"batch_size must be positive, got {batch_size}")
+        if (image_height is None) != (image_width is None):
+            raise ValueError("image_height and image_width must be supplied together")
+        if image_height is not None and (image_height <= 0 or image_width is None or image_width <= 0):
+            raise ValueError("image_height and image_width must be positive")
+        if not decode_video and (image_height is not None or video_start_time_resolver is not None):
+            raise ValueError("image sizing and video_start_time_resolver require decode_video=True")
+        if decode_video and not topics:
+            raise ValueError("decode_video=True requires at least one explicit topic")
+        if decode_video and topic_start_time_resolver is not None:
+            raise ValueError(
+                "Use video_start_time_resolver for decoded video; topic_start_time_resolver cannot backscan"
+            )
         explicit_filter = explicit_mcap_filter(topics, start_time, end_time)
         self._start_time = explicit_filter.start_time
         self._end_time = explicit_filter.end_time
@@ -160,6 +199,10 @@ class MCAPSource(DataSource):
         self._explicit_filter = explicit_filter
         self._batch_size = batch_size
         self._topic_start_time_resolver = topic_start_time_resolver
+        self._decode_video = decode_video
+        self._image_height = image_height
+        self._image_width = image_width
+        self._video_start_time_resolver = video_start_time_resolver
         self._file_paths = [
             normalize_storage_path(file_path, io_config) for file_path in list_files(file_path, io_config)
         ]
@@ -179,7 +222,10 @@ class MCAPSource(DataSource):
         return self._schema
 
     def display_name(self) -> str:
-        return f"MCAPSource({self._file_paths}, start_time={self._start_time}, end_time={self._end_time}, topics={self._topics})"
+        return (
+            f"MCAPSource({self._file_paths}, start_time={self._start_time}, end_time={self._end_time}, "
+            f"topics={self._topics}, decode_video={self._decode_video})"
+        )
 
     def multiline_display(self) -> list[str]:
         return [
@@ -188,6 +234,10 @@ class MCAPSource(DataSource):
         ]
 
     def _infer_schema(self) -> Schema:
+        if self._decode_video:
+            from daft.io.mcap._video import mcap_video_schema
+
+            return mcap_video_schema(self._image_height, self._image_width)
         return Schema.from_field_name_and_types(
             [
                 ("source_path", DataType.string()),
@@ -228,7 +278,7 @@ class MCAPSource(DataSource):
                 return False
         return True
 
-    async def get_tasks(self, pushdowns: Pushdowns) -> AsyncIterator[MCAPSourceTask]:
+    async def get_tasks(self, pushdowns: Pushdowns) -> AsyncIterator[DataSourceTask]:
         planner_filter = extract_mcap_filter(pushdowns.filters)
         filters = self._explicit_filter.intersect(planner_filter)
         if filters.empty:
@@ -238,6 +288,43 @@ class MCAPSource(DataSource):
         columns = task_schema.column_names()
         effective_topics = None if filters.topics is None else sorted(filters.topics)
         native_limit = pushdowns.limit if pushdowns.filters is None or planner_filter.exact else None
+
+        if self._decode_video:
+            assert effective_topics is not None
+            for file_path in self._file_paths:
+                if len(self._file_paths) > 1 and not self._file_may_match(file_path, filters):
+                    continue
+                for topic in effective_topics:
+                    scan_start_time = None
+                    if filters.start_time is not None and self._video_start_time_resolver is not None:
+                        scan_start_time = self._video_start_time_resolver(file_path, topic, filters.start_time)
+                        if scan_start_time is not None and (
+                            isinstance(scan_start_time, bool)
+                            or not isinstance(scan_start_time, int)
+                            or not 0 <= scan_start_time <= filters.start_time
+                        ):
+                            raise ValueError(
+                                "video_start_time_resolver must return an unsigned keyframe time "
+                                "at or before requested_start_time"
+                            )
+                    yield MCAPVideoSourceTask(
+                        _file_path=file_path,
+                        _schema=task_schema,
+                        _columns=columns,
+                        _batch_size=self._batch_size,
+                        _scan_start_time=scan_start_time,
+                        _auto_keyframe_scan=(
+                            filters.start_time is not None and self._video_start_time_resolver is None
+                        ),
+                        _emit_start_time=filters.start_time,
+                        _end_time=filters.end_time,
+                        _topic=topic,
+                        _io_config=self._io_config,
+                        _image_height=self._image_height,
+                        _image_width=self._image_width,
+                        _limit=native_limit,
+                    )
+            return
 
         for file_path in self._file_paths:
             if len(self._file_paths) > 1 and not self._file_may_match(file_path, filters):
@@ -317,3 +404,86 @@ class MCAPSourceTask(DataSourceTask):
         )
         while (batch := reader.next_batch()) is not None:
             yield RecordBatch._from_pyrecordbatch(batch)
+
+
+@dataclass
+class MCAPVideoSourceTask(DataSourceTask):
+    _file_path: str
+    _schema: Schema
+    _columns: list[str]
+    _batch_size: int
+    _scan_start_time: int | None
+    _auto_keyframe_scan: bool
+    _emit_start_time: int | None
+    _end_time: int | None
+    _topic: str
+    _io_config: IOConfig | None
+    _image_height: int | None
+    _image_width: int | None
+    _limit: int | None
+
+    @property
+    def schema(self) -> Schema:
+        return self._schema
+
+    async def read(self) -> AsyncIterator[RecordBatch]:
+        from daft.io.mcap._video import McapVideoDecoder, _find_previous_video_keyframe
+
+        if self._limit == 0:
+            return
+        file = File(self._file_path, self._io_config, MediaType.mcap())
+        scan_start_time = self._scan_start_time
+        if self._auto_keyframe_scan:
+            assert self._emit_start_time is not None
+            scan_start_time = _find_previous_video_keyframe(
+                file._inner,
+                self._topic,
+                self._emit_start_time,
+            )
+        reader = PyMcapReader(
+            file._inner,
+            ["source_path", "topic", "log_time", "publish_time", "sequence", "data"],
+            batch_size=self._batch_size,
+            start_time=scan_start_time,
+            end_time=self._end_time,
+            topics=[self._topic],
+            limit=None,
+        )
+        decoder = McapVideoDecoder(
+            output_schema=self._schema,
+            columns=self._columns,
+            emit_start_time=self._emit_start_time,
+            image_height=self._image_height,
+            image_width=self._image_width,
+        )
+        frames = []
+        emitted = 0
+        buffered_bytes = 0
+        while (batch := reader.next_batch()) is not None:
+            native_batch = RecordBatch._from_pyrecordbatch(batch)
+            for frame in decoder.decode_batch(native_batch):
+                frames.append(frame)
+                emitted += 1
+                buffered_bytes += frame.size_bytes
+                if len(frames) >= self._batch_size or buffered_bytes >= MCAP_VIDEO_OUTPUT_BATCH_BYTES:
+                    yield decoder.to_record_batch(frames)
+                    frames.clear()
+                    buffered_bytes = 0
+                if self._limit is not None and emitted >= self._limit:
+                    if frames:
+                        yield decoder.to_record_batch(frames)
+                    return
+        for frame in decoder.flush():
+            frames.append(frame)
+            emitted += 1
+            buffered_bytes += frame.size_bytes
+            if len(frames) >= self._batch_size or buffered_bytes >= MCAP_VIDEO_OUTPUT_BATCH_BYTES:
+                yield decoder.to_record_batch(frames)
+                frames.clear()
+                buffered_bytes = 0
+            if self._limit is not None and emitted >= self._limit:
+                if frames:
+                    yield decoder.to_record_batch(frames)
+                return
+        if frames:
+            yield decoder.to_record_batch(frames)

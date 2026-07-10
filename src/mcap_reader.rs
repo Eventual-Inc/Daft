@@ -195,6 +195,7 @@ impl NativeMcapReader {
         end_time: Option<u64>,
         topics: Option<Vec<String>>,
         limit: Option<usize>,
+        reverse: bool,
     ) -> DaftResult<Self> {
         let source_path = file_ref.url.clone();
         let columns = columns
@@ -237,7 +238,12 @@ impl NativeMcapReader {
             } else if let Some(summary) = summary
                 .filter(|summary| !summary.chunk_indexes.is_empty() && !summary.channels.is_empty())
             {
-                let mut options = IndexedReaderOptions::new().with_order(ReadOrder::LogTime);
+                let order = if reverse {
+                    ReadOrder::ReverseLogTime
+                } else {
+                    ReadOrder::LogTime
+                };
+                let mut options = IndexedReaderOptions::new().with_order(order);
                 if let Some(start_time) = start_time {
                     options = options.log_time_on_or_after(start_time);
                 }
@@ -253,6 +259,10 @@ impl NativeMcapReader {
                     ),
                     true,
                 )
+            } else if reverse {
+                // Reverse reads are an indexed-only optimization. Callers can
+                // inspect `indexed` and fall back to a forward scan.
+                (McapReaderMode::Empty, false)
             } else {
                 file.seek(SeekFrom::Start(0)).map_err(mcap_error)?;
                 let options = LinearReaderOptions::default().with_prevalidate_chunk_crcs(true);
@@ -428,7 +438,7 @@ pub struct PyMcapReader {
 #[pymethods]
 impl PyMcapReader {
     #[new]
-    #[pyo3(signature = (file, columns, batch_size=1000, start_time=None, end_time=None, topics=None, limit=None))]
+    #[pyo3(signature = (file, columns, batch_size=1000, start_time=None, end_time=None, topics=None, limit=None, reverse=false))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         py: Python<'_>,
@@ -439,12 +449,13 @@ impl PyMcapReader {
         end_time: Option<u64>,
         topics: Option<Vec<String>>,
         limit: Option<usize>,
+        reverse: bool,
     ) -> PyResult<Self> {
         let file_ref = file.file_reference();
         py.detach(move || {
             Ok(Self {
                 inner: NativeMcapReader::new(
-                    file_ref, columns, batch_size, start_time, end_time, topics, limit,
+                    file_ref, columns, batch_size, start_time, end_time, topics, limit, reverse,
                 )?,
             })
         })
