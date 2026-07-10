@@ -151,6 +151,52 @@ def make_deltalake_add_action(
     )
 
 
+# Codecs PyArrow's parquet writer can encode. `lz4` is included: with a single writer
+# there is no ambiguity about which parquet codec it maps to.
+_DELTA_COMPRESSION_CODECS = frozenset({"none", "snappy", "gzip", "brotli", "lz4", "zstd"})
+
+# `uncompressed` is a spelling of `none`, not a distinct codec. PyArrow's writer rejects
+# the string but accepts `none`; `write_parquet` documents `uncompressed`, so we keep it
+# working here rather than gratuitously diverging.
+_DELTA_COMPRESSION_ALIASES = {"uncompressed": "none"}
+
+# Codecs the parquet format defines but PyArrow cannot encode. `lzo` is the treacherous
+# one: `pq.ParquetWriter(compression="lzo")` constructs successfully and raises on the
+# first `write_table`, so a zero-row capability probe reports it as supported.
+_DELTA_COMPRESSION_REJECTED = {
+    "lz4_raw": "PyArrow's parquet writer cannot encode it. Use 'lz4' instead.",
+    "lzo": (
+        "PyArrow's C++ Parquet implementation does not support LZO encoding "
+        "(it fails on the first write, not at writer construction). "
+        "Use 'snappy' or 'zstd' instead."
+    ),
+}
+
+
+def normalize_delta_compression(compression: str) -> str:
+    """Validate a Delta write compression codec and return its canonical name.
+
+    Case-insensitive; surrounding whitespace is ignored. Maps ``uncompressed`` to
+    ``none``. Raises ``ValueError`` both for codecs PyArrow cannot encode and for
+    unrecognized codec names, so the failure surfaces at call time rather than mid-write.
+    """
+    codec = compression.strip().lower()
+    codec = _DELTA_COMPRESSION_ALIASES.get(codec, codec)
+
+    if codec in _DELTA_COMPRESSION_REJECTED:
+        raise ValueError(
+            f"compression={compression!r} is not supported for Delta writes: "
+            f"{_DELTA_COMPRESSION_REJECTED[codec]}"
+        )
+    if codec not in _DELTA_COMPRESSION_CODECS:
+        accepted = ", ".join(sorted(_DELTA_COMPRESSION_CODECS | {"uncompressed"}))
+        raise ValueError(
+            f"Unsupported compression codec {compression!r} for Delta writes. "
+            f"Accepted codecs: {accepted}."
+        )
+    return codec
+
+
 def make_deltalake_fs(path: str, io_config: IOConfig | None = None) -> pafs.PyFileSystem:
     from deltalake.fs import DeltaStorageHandler
     from pyarrow.fs import PyFileSystem
