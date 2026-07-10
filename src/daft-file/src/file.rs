@@ -150,7 +150,11 @@ impl DaftFile {
         {
             Some(mut multipart_writer) => {
                 let part_size = multipart_writer.part_size();
-                assert!(part_size > 0, "Object multipart part size must be non-zero");
+                if part_size == 0 {
+                    return Err(DaftError::InternalError(
+                        "Object multipart part size must be non-zero".to_string(),
+                    ));
+                }
                 let (tx, mut rx) = tokio::sync::mpsc::channel(1);
                 let commit = Arc::new(AtomicBool::new(false));
                 let should_commit = commit.clone();
@@ -178,9 +182,12 @@ impl DaftFile {
                 FileWriter::Multipart {
                     part_buffer: Vec::new(),
                     part_size,
+                    parts_sent: false,
                     tx: Some(tx),
                     commit,
                     upload_task: Some(upload_task),
+                    source,
+                    uri: path,
                 }
             }
             None => FileWriter::Buffered {
@@ -215,6 +222,7 @@ impl DaftFile {
             FileWriter::Multipart {
                 part_buffer,
                 part_size,
+                parts_sent,
                 tx,
                 ..
             } => {
@@ -232,6 +240,7 @@ impl DaftFile {
                         upload_died = true;
                         break;
                     }
+                    *parts_sent = true;
                 }
             }
             FileWriter::Buffered { buffer, .. } => {
@@ -267,11 +276,32 @@ impl DaftFile {
         match writer {
             FileWriter::Multipart {
                 part_buffer,
+                parts_sent,
                 commit: commit_flag,
                 tx,
                 upload_task,
+                source,
+                uri,
                 ..
             } => {
+                if commit && !parts_sent {
+                    // No part was ever streamed, so the multipart upload is empty and
+                    // completing it would be rejected by the store (S3 requires at
+                    // least one part). Leave the commit flag unset so the upload task
+                    // aborts the empty upload, then commit the buffered bytes (possibly
+                    // zero of them) with a single put, like the buffered path.
+                    drop(tx);
+                    upload_task.map(await_upload_task).unwrap_or(Ok(()))?;
+                    let rt = common_runtime::get_io_runtime(true);
+                    rt.block_within_async_context(async move {
+                        source
+                            .put(&uri, Bytes::from(part_buffer), None)
+                            .await
+                            .map_err(DaftError::from)
+                    })
+                    .flatten()?;
+                    return Ok(());
+                }
                 commit_flag.store(commit, Ordering::SeqCst);
                 let mut send_result = Ok(());
                 if commit
@@ -550,9 +580,14 @@ pub(crate) enum FileWriter {
     Multipart {
         part_buffer: Vec<u8>,
         part_size: usize,
+        /// Whether any full part has been streamed to the upload task. If none was,
+        /// the multipart upload is empty and commit falls back to a single put.
+        parts_sent: bool,
         tx: Option<tokio::sync::mpsc::Sender<Bytes>>,
         commit: Arc<AtomicBool>,
         upload_task: Option<RuntimeTask<DaftResult<()>>>,
+        source: Arc<dyn ObjectSource>,
+        uri: String,
     },
     /// Buffers all bytes in memory and uploads them with a single put on close, for
     /// sources without multipart upload support (e.g. local files).

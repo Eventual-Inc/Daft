@@ -54,6 +54,39 @@ def test_file_write_multipart_nothing_visible_before_close(minio_io_config):
 
 
 @pytest.mark.integration()
+def test_file_write_empty_commit_creates_empty_object(minio_io_config):
+    # Committing without streaming any part cannot complete the multipart upload
+    # (S3 rejects CompleteMultipartUpload with zero parts), so the writer aborts
+    # the empty upload and commits with a single put instead.
+    with minio_create_bucket(minio_io_config=minio_io_config) as (_, bucket_name):
+        url = f"s3://{bucket_name}/out/empty.bin"
+
+        f = daft.File(url, io_config=minio_io_config)
+        with f.open("wb"):
+            pass
+
+        with daft.File(url, io_config=minio_io_config).open() as reader:
+            assert reader.read() == b""
+        assert _list_incomplete_uploads(minio_io_config, bucket_name) == []
+
+
+@pytest.mark.integration()
+def test_file_write_small_commit_below_part_size(minio_io_config):
+    # Sub-part-size writes never stream a part either; they take the same
+    # abort-then-put path as the empty case.
+    with minio_create_bucket(minio_io_config=minio_io_config) as (_, bucket_name):
+        url = f"s3://{bucket_name}/out/small.bin"
+
+        f = daft.File(url, io_config=minio_io_config)
+        with f.open("wb") as writer:
+            writer.write(b"small payload")
+
+        with daft.File(url, io_config=minio_io_config).open() as reader:
+            assert reader.read() == b"small payload"
+        assert _list_incomplete_uploads(minio_io_config, bucket_name) == []
+
+
+@pytest.mark.integration()
 def test_file_write_multipart_exception_aborts_upload(minio_io_config):
     with minio_create_bucket(minio_io_config=minio_io_config) as (_, bucket_name):
         url = f"s3://{bucket_name}/out/aborted.bin"
