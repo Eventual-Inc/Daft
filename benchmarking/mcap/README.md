@@ -14,7 +14,9 @@ The script reports these stages as structured JSON:
 4. a deliberately unpushed full metadata scan followed by the equivalent Arrow filter,
 5. topic-only, time-only, and combined reader-filtered reads,
 6. the same combined predicate expressed with Daft `.where(...)`, exercising planner pushdown,
-7. raw payload materialization and allocation throughput.
+7. raw payload materialization and allocation throughput,
+8. stateful Foxglove video decode without image materialization,
+9. stateful Foxglove video decode with RGB image materialization.
 
 The combined reader and planner result counts must equal the unpushed baseline.
 The report computes median pushdown speedups only between those equivalent
@@ -67,6 +69,13 @@ contains `data/train/...`:
 
 Use `--no-xet` for an HTTP comparison. Use `--include-plan` to include optimized
 logical/physical plans in the report.
+
+When the indexed channel catalog contains a `foxglove.CompressedVideo` schema,
+the harness automatically benchmarks its first topic through
+`daft.read_mcap(..., decode_video=True)`. Override it with `--video-topic`, or
+bound image work with `--video-frame-limit` (32 by default). The metadata-only
+decode projection deliberately omits `data`, measuring codec/cardinality work
+without RGB ndarray materialization.
 
 ## Selection and smoke episodes
 

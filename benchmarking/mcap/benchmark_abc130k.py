@@ -85,6 +85,16 @@ def parse_args() -> argparse.Namespace:
         help="Local episode.mcap, or an ABC-130k mirror root containing data/<split>/...",
     )
     parser.add_argument("--topic", action="append", dest="topics", help="Topic to select; repeat for multiple topics")
+    parser.add_argument(
+        "--video-topic",
+        help="Foxglove CompressedVideo topic to benchmark; defaults to the first matching indexed schema",
+    )
+    parser.add_argument(
+        "--video-frame-limit",
+        type=int,
+        default=32,
+        help="Maximum decoded frames to materialize per video stage (default: 32)",
+    )
     parser.add_argument("--start-time", type=int, help="Inclusive MCAP log-time bound")
     parser.add_argument("--end-time", type=int, help="Exclusive MCAP log-time bound")
     parser.add_argument(
@@ -115,8 +125,10 @@ def parse_args() -> argparse.Namespace:
         parser.error("--start-time must be less than --end-time")
     if not 0 < args.time_window_fraction <= 1:
         parser.error("--time-window-fraction must be in (0, 1]")
-    if args.batch_size <= 0 or args.repeat <= 0 or args.payload_limit < 0:
-        parser.error("--batch-size and --repeat must be positive; --payload-limit cannot be negative")
+    if args.batch_size <= 0 or args.repeat <= 0 or args.payload_limit < 0 or args.video_frame_limit <= 0:
+        parser.error(
+            "--batch-size, --repeat, and --video-frame-limit must be positive; --payload-limit cannot be negative"
+        )
     if args.mode == "local" and args.local_mirror is None:
         parser.error("--mode local requires --local-mirror")
     return args
@@ -273,14 +285,23 @@ def choose_filter(metadata: dict[str, Any], args: argparse.Namespace) -> FilterW
     )
 
 
+def choose_video_topic(metadata: dict[str, Any], args: argparse.Namespace) -> tuple[str | None, str]:
+    if args.video_topic:
+        return args.video_topic, "explicit"
+    for channel in metadata.get("channels", []):
+        if channel.get("topic") and channel.get("schema_name") == "foxglove.CompressedVideo":
+            return str(channel["topic"]), "first_indexed_foxglove_compressed_video"
+    return None, "no_indexed_foxglove_compressed_video_channel"
+
+
 def arrow_filter_count(table: Any, window: FilterWindow) -> int:
     import pyarrow as pa
     import pyarrow.compute as pc
 
     topic_set = pa.array(window.topics, type=table["topic"].type)
     mask = pc.is_in(table["topic"], value_set=topic_set)
-    mask = pc.and_(mask, pc.greater_equal(table["log_time"], window.start_time))
-    mask = pc.and_(mask, pc.less(table["log_time"], window.end_time))
+    mask = pc.and_(mask, pc.greater_equal(table["log_time"], pa.scalar(window.start_time)))
+    mask = pc.and_(mask, pc.less(table["log_time"], pa.scalar(window.end_time)))
     return int(pc.sum(pc.cast(mask, pa.int64())).as_py() or 0)
 
 
@@ -390,6 +411,7 @@ def run_iteration(
     window: FilterWindow,
     source_bytes: int,
     iteration: int,
+    video_topic: str | None,
 ) -> list[StageResult]:
     results: list[StageResult] = []
 
@@ -497,6 +519,72 @@ def run_iteration(
         )
 
     results.append(timed_stage("read_mcap_payload_materialization", iteration, materialize_payload))
+
+    if video_topic is not None:
+
+        def decode_video_metadata() -> StagePayload:
+            table = (
+                read_df(
+                    daft,
+                    path,
+                    io_config,
+                    args,
+                    topics=[video_topic],
+                    start_time=window.start_time,
+                    end_time=window.end_time,
+                    decode_video=True,
+                )
+                .select("source_path", "topic", "log_time", "frame_id", "format", "frame_index")
+                .limit(args.video_frame_limit)
+                .to_arrow()
+            )
+            return StagePayload(
+                rows=table.num_rows,
+                source_file_bytes=source_bytes,
+                arrow_bytes=table.nbytes,
+                details={
+                    "topic": video_topic,
+                    "start_time": window.start_time,
+                    "end_time": window.end_time,
+                    "limit": args.video_frame_limit,
+                    "image_materialized": False,
+                    **provenance_details(table),
+                },
+            )
+
+        results.append(timed_stage("read_mcap_video_decode_metadata", iteration, decode_video_metadata))
+
+        def decode_video_frames() -> StagePayload:
+            table = (
+                read_df(
+                    daft,
+                    path,
+                    io_config,
+                    args,
+                    topics=[video_topic],
+                    start_time=window.start_time,
+                    end_time=window.end_time,
+                    decode_video=True,
+                )
+                .select("source_path", "topic", "log_time", "frame_id", "format", "frame_index", "data")
+                .limit(args.video_frame_limit)
+                .to_arrow()
+            )
+            return StagePayload(
+                rows=table.num_rows,
+                source_file_bytes=source_bytes,
+                arrow_bytes=table.nbytes,
+                details={
+                    "topic": video_topic,
+                    "start_time": window.start_time,
+                    "end_time": window.end_time,
+                    "limit": args.video_frame_limit,
+                    "image_materialized": True,
+                    **provenance_details(table),
+                },
+            )
+
+        results.append(timed_stage("read_mcap_video_decode_frames", iteration, decode_video_frames))
     return results
 
 
@@ -540,14 +628,17 @@ def make_report(args: argparse.Namespace, cold_cache: Path | None) -> dict[str, 
     metadata_result = timed_stage("mcap_summary_sniff", 0, sniff_metadata)
     metadata = metadata_holder["metadata"]
     window = choose_filter(metadata, args)
+    video_topic, video_topic_selection = choose_video_topic(metadata, args)
 
     if args.mode == "remote-warm":
         print("warming every read_mcap stage once (results discarded) ...", file=sys.stderr, flush=True)
-        run_iteration(daft, path, io_config, args, window, source_bytes, iteration=-1)
+        run_iteration(daft, path, io_config, args, window, source_bytes, iteration=-1, video_topic=video_topic)
 
     message_results: list[StageResult] = []
     for iteration in range(1, args.repeat + 1):
-        message_results.extend(run_iteration(daft, path, io_config, args, window, source_bytes, iteration))
+        message_results.extend(
+            run_iteration(daft, path, io_config, args, window, source_bytes, iteration, video_topic=video_topic)
+        )
 
     medians = median_by_stage(message_results)
     baseline = medians["read_mcap_unpushed_filter_baseline"]
@@ -582,6 +673,12 @@ def make_report(args: argparse.Namespace, cold_cache: Path | None) -> dict[str, 
         "batch_size": args.batch_size,
         "repeat": args.repeat,
         "filter": asdict(window),
+        "video_decode": {
+            "topic": video_topic,
+            "topic_selection": video_topic_selection,
+            "frame_limit": args.video_frame_limit,
+            "stages_enabled": video_topic is not None,
+        },
         "byte_semantics": {
             "source_file_bytes": "object size, not measured network transfer",
             "arrow_bytes": "materialized Arrow table size",

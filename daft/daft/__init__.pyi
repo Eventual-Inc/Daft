@@ -2955,6 +2955,7 @@ class PyMcapReader:
         end_time: int | None = None,
         topics: list[str] | None = None,
         limit: int | None = None,
+        reverse: bool = False,
     ) -> None: ...
     @property
     def indexed(self) -> bool: ...

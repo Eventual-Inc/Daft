@@ -22,7 +22,8 @@ hf://datasets/XDOF/ABC-130k@29136bc9b9e38d320b00ffcddbbe4cd0e3278c58/data/train/
 
 This is intentionally reported as an access blocker, not as a parser result.
 Run the cold, warm, and local commands in the adjacent README after providing a
-token to fill in the ABC-specific table.
+token to fill in the ABC-specific table, including the bounded Foxglove video
+decode stages when the summary advertises a `foxglove.CompressedVideo` channel.
 
 ## Instrumented range-I/O regression
 
@@ -47,6 +48,26 @@ exceed object size because the current `DaftFile` bridge uses buffered range
 readers and does not yet feed the scan operator's native `IOStats`; this is why
 the benchmark uses server-side byte accounting.
 
+## Stateful video decode smoke
+
+A local indexed MCAP smoke used 128 conforming Foxglove H.264 messages (64x48,
+eight GOPs), interleaved with 128 non-video sensor messages. The video topic was
+pushed into `read_mcap` before decode and the codec context persisted across
+16-message source batches. The query used a 16-frame time window beginning at a
+keyframe, exercising the reverse keyframe lookup and ranged forward read. Three
+recorded runs produced these medians:
+
+| Projection | Median seconds | Rows | Arrow bytes |
+|---|---:|---:|---:|
+| Frame metadata, no RGB `data` | 0.00628 | 16 | 1,728 |
+| Frame metadata + RGB `data` | 0.0140 | 16 | 149,488 |
+
+This is a bounded functional/memory-allocation smoke, not an ABC throughput
+claim. It demonstrates that projection pushdown avoids RGB ndarray
+materialization (2.2x lower wall time on this fixture) while still running the
+stateful decoder to preserve correct frame cardinality. The gated ABC run is
+still required for production codec, resolution, and remote-I/O numbers.
+
 ## Public Hugging Face sanity run
 
 The full staged harness also ran three warm repetitions on the public 1.4 MB
@@ -62,7 +83,7 @@ explicit-reader, planner, and unpushed topic/time predicates.
 
 That fixture shows only 1.06x wall-time speedup because roughly six seconds of
 per-query Hugging Face setup dominates a 1.4 MB object. It is a correctness and
-latency-floor check, not evidence against chunk pruning. The 16x range-byte
+latency-floor check, not evidence against chunk pruning. The 32.1x range-byte
 result is the representative selectivity signal available without ABC access;
 the 390 MB ABC run remains required before making a dataset-specific wall-time
 claim.
