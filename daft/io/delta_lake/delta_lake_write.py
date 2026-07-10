@@ -42,7 +42,18 @@ def sanitize_table_for_deltalake(
         arrow_table = arrow_table.drop_columns(partition_keys)
 
     arrow_batch = convert_pa_schema_to_delta(arrow_table.schema, large_dtypes)
-    return arrow_table.cast(arrow_batch)
+    try:
+        return arrow_table.cast(arrow_batch)
+    except Exception as exc:  # pa.ArrowInvalid and friends
+        unsigned = [f.name for f in arrow_table.schema if str(f.type).startswith("uint")]
+        if unsigned:
+            raise ValueError(
+                f"Failed to write column(s) {unsigned} to Delta Lake. Delta has no "
+                f"unsigned integer types; uint64 values above 2**63-1 cannot be "
+                f"represented. Cast the column explicitly (e.g. to decimal) before "
+                f"writing. Original error: {exc}"
+            ) from exc
+        raise
 
 
 def partitioned_table_to_deltalake_iter(
@@ -287,6 +298,61 @@ def _normalize_delta_schema_timestamps(schema: pa.Schema) -> pa.Schema:
     return pa.schema(normalized, metadata=schema.metadata)
 
 
+# Delta Lake has no unsigned types: delta-rs maps uint8->byte(int8), uint16->short(int16),
+# uint32->integer(int32), uint64->long(int64). Any value above the corresponding SIGNED
+# maximum commits and then cannot be read. Widen to the next signed type that holds every
+# value. uint64 has no lossless target; values above i64::MAX raise at cast time.
+_DELTA_UNSIGNED_WIDENING = [
+    ("uint8", "int16"),
+    ("uint16", "int32"),
+    ("uint32", "int64"),
+    ("uint64", "int64"),
+]
+
+
+def _widen_unsigned_type(dtype: pa.DataType) -> pa.DataType:
+    """Rewrite unsigned integer types to a signed type Delta can represent.
+
+    Recurses into nested types. uint8/uint16/uint32 widen losslessly. uint64 widens to
+    int64, which is lossless up to i64::MAX; beyond that the table cast raises, which is
+    strictly better than committing a table nobody can read.
+    """
+    from daft.dependencies import pa
+
+    def widen_field(field: pa.Field) -> pa.Field:
+        return field.with_type(_widen_unsigned_type(field.type))
+
+    if pa.types.is_uint8(dtype):
+        return pa.int16()
+    if pa.types.is_uint16(dtype):
+        return pa.int32()
+    if pa.types.is_uint32(dtype) or pa.types.is_uint64(dtype):
+        return pa.int64()
+    if pa.types.is_struct(dtype):
+        return pa.struct([widen_field(dtype.field(i)) for i in range(dtype.num_fields)])
+    if pa.types.is_large_list(dtype):
+        return pa.large_list(widen_field(dtype.value_field))
+    if pa.types.is_fixed_size_list(dtype):
+        return pa.list_(widen_field(dtype.value_field), dtype.list_size)
+    if pa.types.is_list(dtype):
+        return pa.list_(widen_field(dtype.value_field))
+    if pa.types.is_map(dtype):
+        return pa.map_(
+            widen_field(dtype.key_field),
+            widen_field(dtype.item_field),
+            keys_sorted=dtype.keys_sorted,
+        )
+    return dtype
+
+
+def _widen_unsigned_schema(schema: pa.Schema) -> pa.Schema:
+    """Apply :func:`_widen_unsigned_type` to every field of a schema."""
+    from daft.dependencies import pa
+
+    widened = [field.with_type(_widen_unsigned_type(field.type)) for field in schema]
+    return pa.schema(widened, metadata=schema.metadata)
+
+
 def convert_pa_schema_to_delta(schema: pa.Schema, large_dtypes: bool) -> pa.Schema:
     import deltalake
     from packaging.version import parse
@@ -308,7 +374,9 @@ def convert_pa_schema_to_delta(schema: pa.Schema, large_dtypes: bool) -> pa.Sche
         # literal "UTC" (e.g. the "+00:00" that Daft emits). The pre-1.0.0 converters above
         # normalized this for us; restore that normalization here so tz-aware timestamps
         # commit correctly. https://delta-io.github.io/delta-rs/upgrade-guides/guide-1.0.0/#large_dtypes-removed
-        return _normalize_delta_schema_timestamps(schema)
+        # Delta also has no unsigned integer types, so widen those too (see
+        # _widen_unsigned_type).
+        return _widen_unsigned_schema(_normalize_delta_schema_timestamps(schema))
 
 
 def create_table_with_add_actions(
