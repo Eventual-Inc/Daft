@@ -20,6 +20,10 @@ def _codecs(path) -> set[str]:
     }
 
 
+# Sentinel object to distinguish "not provided" from None
+_OMIT = object()
+
+
 def _seed(path, partitioned: bool):
     df = daft.from_arrow(
         pa.table(
@@ -34,7 +38,7 @@ def _seed(path, partitioned: bool):
     df.write_deltalake(str(path), compression="none", **kwargs)
 
 
-def _merge(path, compression):
+def _merge(path, compression=_OMIT):
     src = daft.from_arrow(
         pa.table(
             {
@@ -44,15 +48,16 @@ def _merge(path, compression):
             }
         )
     )
+    kwargs = {} if compression is _OMIT else {"compression": compression}
     builder = distributed_merge_deltalake(
-        str(path), src, predicate="source.k = target.k", on="k", compression=compression
+        str(path), src, predicate="source.k = target.k", on="k", **kwargs
     )
     builder.when_matched_update_all().when_not_matched_insert_all().execute()
 
 
 def test_distributed_merge_defaults_to_snappy(tmp_path):
     _seed(tmp_path, partitioned=False)
-    _merge(tmp_path, compression="snappy")
+    _merge(tmp_path)
     # Seed file is UNCOMPRESSED; every file the merge wrote must be SNAPPY.
     assert "SNAPPY" in _codecs(tmp_path)
 
