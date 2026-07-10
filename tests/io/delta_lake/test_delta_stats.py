@@ -101,15 +101,22 @@ def test_int_and_string_bounds(tmp_path):
         str(tmp_path)
     )
     s = stats_of(tmp_path)
-    assert s["minValues"]["i"] == -7 and s["maxValues"]["i"] == 20
-    assert s["minValues"]["s"] == "apple" and s["maxValues"]["s"] == "cherry"
+    assert s["minValues"]["i"] == -7
+    assert s["maxValues"]["i"] == 20
+    assert s["minValues"]["s"] == "apple"
+    assert s["maxValues"]["s"] == "cherry"
 
 
-def test_nan_bound_is_dropped(tmp_path):
+def test_nan_never_becomes_a_bound(tmp_path):
+    """NaN is never reported as a min or max bound; finite values always win.
+
+    When a column contains NaN alongside finite values, the finite value becomes the bound.
+    Parquet stats simply ignore NaN when computing min/max.
+    """
     daft.from_pydict({"f": [1.0, float("nan")]}).write_deltalake(str(tmp_path))
     s = stats_of(tmp_path)
-    # Parquet stats ignore NaN; the finite value survives as the bound.
     assert s["minValues"]["f"] == 1.0
+    assert s["maxValues"]["f"] == 1.0
 
 
 def test_infinite_bounds_are_dropped(tmp_path):
@@ -144,14 +151,22 @@ def test_nested_struct_uses_dotted_stat_keys(tmp_path):
     )
     daft.from_arrow(tbl).write_deltalake(str(tmp_path))
     s = stats_of(tmp_path)
-    assert s["minValues"]["point.x"] == 1 and s["maxValues"]["point.x"] == 9
-    assert s["minValues"]["point.y"] == "a" and s["maxValues"]["point.y"] == "b"
+    assert s["minValues"]["point.x"] == 1
+    assert s["maxValues"]["point.x"] == 9
+    assert s["minValues"]["point.y"] == "a"
+    assert s["maxValues"]["point.y"] == "b"
 
 
-def test_long_string_bounds_are_valid(tmp_path):
-    """PyArrow emits exact bounds for strings past parquet's 64-byte truncation limit."""
+def test_long_string_bounds_are_exact(tmp_path):
+    """PyArrow does not truncate long strings; it emits exact bounds past parquet's 64-byte limit.
+
+    Parquet's standard behavior for long string stats is truncate-and-bump: truncate the min to a
+    64-byte prefix, and truncate the max then increment its last byte. Those truncated bounds are
+    *valid* (min <= data, max >= data), but checking only validity would miss a regression to
+    truncation. This test asserts exact equality to catch truncate-and-bump regressions.
+    """
     lo, hi = "a" * 80, "z" * 80
     daft.from_pydict({"s": [lo, hi]}).write_deltalake(str(tmp_path))
     s = stats_of(tmp_path)
-    assert s["minValues"]["s"] <= lo
-    assert s["maxValues"]["s"] >= hi
+    assert s["minValues"]["s"] == lo
+    assert s["maxValues"]["s"] == hi
