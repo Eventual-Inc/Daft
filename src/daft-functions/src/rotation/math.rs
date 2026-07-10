@@ -126,11 +126,27 @@ pub(super) fn quat_to_mat(q: [f64; 4]) -> Option<[f64; 9]> {
     ])
 }
 
+/// How far a quantity may drift from its exact value before its input is judged
+/// not to be a rotation. Rounding in `Float64` costs a few units in the last
+/// place, and single precision inputs, which are widened on the way in, cost
+/// about `1e-7`. A larger excursion means a scaling, a reflection, or noise.
+const TOL: f64 = 1e-6;
+
 /// Quaternion of a rotation matrix, via Shepperd's method.
 ///
 /// Branching on the largest diagonal term keeps the divisor away from zero, which
 /// the naive trace formula does not do for rotations near a half turn.
-pub(super) fn mat_to_quat(m: [f64; 9]) -> [f64; 4] {
+///
+/// `None` when `m` is not a rotation. Shepperd's method yields a unit quaternion
+/// exactly when its input lies in `SO(3)`, so the norm of the result is a cheap
+/// test: a scaled matrix, a reflection, and arbitrary numbers all fail it.
+pub(super) fn mat_to_quat(m: [f64; 9]) -> Option<[f64; 4]> {
+    let q = shepperd(m);
+    let norm_sq = q.iter().map(|c| c * c).sum::<f64>();
+    ((norm_sq - 1.0).abs() <= TOL).then_some(q)
+}
+
+fn shepperd(m: [f64; 9]) -> [f64; 4] {
     let (m00, m01, m02) = (m[0], m[1], m[2]);
     let (m10, m11, m12) = (m[3], m[4], m[5]);
     let (m20, m21, m22) = (m[6], m[7], m[8]);
@@ -191,10 +207,16 @@ pub(super) fn rot6d_to_mat(r: &[f64]) -> Option<[f64; 9]> {
 /// Geodesic (angular) distance between two rotations, in radians on `[0, pi]`.
 ///
 /// `arccos((tr(A B^T) - 1) / 2)`, the angle of the relative rotation `A B^T`.
-pub(super) fn geodesic_angle(a: &[f64], b: &[f64]) -> f64 {
+///
+/// For genuine rotations the cosine can land a hair outside `[-1, 1]` through
+/// rounding, so it is clamped. A larger excursion means the arguments are not
+/// both rotations, and the angle between them is undefined: report `None` rather
+/// than let the clamp turn nonsense into a plausible `0` or `pi`.
+pub(super) fn geodesic_angle(a: &[f64], b: &[f64]) -> Option<f64> {
     // tr(A B^T) is the elementwise inner product of A and B.
     let trace: f64 = a.iter().zip(b).map(|(x, y)| x * y).sum();
-    (0.5 * (trace - 1.0)).clamp(-1.0, 1.0).acos()
+    let cos = 0.5 * (trace - 1.0);
+    (cos.abs() <= 1.0 + TOL).then(|| cos.clamp(-1.0, 1.0).acos())
 }
 
 #[cfg(test)]
@@ -307,7 +329,7 @@ mod tests {
     #[test]
     fn quat_to_mat_round_trips_up_to_sign() {
         for q in sample_quats() {
-            let back = normalize(mat_to_quat(quat_to_mat(q).unwrap())).unwrap();
+            let back = normalize(mat_to_quat(quat_to_mat(q).unwrap()).unwrap()).unwrap();
             // q and -q are the same rotation, so compare up to a global sign.
             let same = q.iter().zip(&back).all(|(a, b)| approx(*a, *b, 1e-9));
             let flipped = q.iter().zip(&back).all(|(a, b)| approx(*a, -*b, 1e-9));
@@ -324,7 +346,7 @@ mod tests {
             [0.0, 0.0, 0.0, 1.0],
         ] {
             let m = quat_to_mat(q).unwrap();
-            let back = normalize(mat_to_quat(m)).unwrap();
+            let back = normalize(mat_to_quat(m).unwrap()).unwrap();
             assert!(back.iter().all(|c| c.is_finite()), "{back:?}");
             let same = q.iter().zip(&back).all(|(a, b)| approx(*a, *b, 1e-9));
             let flipped = q.iter().zip(&back).all(|(a, b)| approx(*a, -*b, 1e-9));
@@ -375,13 +397,13 @@ mod tests {
     fn geodesic_angle_is_zero_on_the_diagonal_and_symmetric() {
         for q in sample_quats() {
             let m = quat_to_mat(q).unwrap();
-            assert!(approx(geodesic_angle(&m, &m), 0.0, 1e-7));
+            assert!(approx(geodesic_angle(&m, &m).unwrap(), 0.0, 1e-7));
         }
         let a = quat_to_mat(sample_quats()[4]).unwrap();
         let b = quat_to_mat(sample_quats()[6]).unwrap();
         assert!(approx(
-            geodesic_angle(&a, &b),
-            geodesic_angle(&b, &a),
+            geodesic_angle(&a, &b).unwrap(),
+            geodesic_angle(&b, &a).unwrap(),
             1e-12
         ));
     }
@@ -394,7 +416,7 @@ mod tests {
             let m = quat_to_mat([c, 0.0, 0.0, s]).unwrap();
             let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
             assert!(
-                approx(geodesic_angle(&m, &identity), theta, 1e-7),
+                approx(geodesic_angle(&m, &identity).unwrap(), theta, 1e-7),
                 "theta {theta}"
             );
         }
@@ -405,7 +427,7 @@ mod tests {
         // trace slightly above 3 must not produce NaN from acos.
         let m = [1.0 + 1e-15, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
         let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
-        assert!(geodesic_angle(&m, &identity).is_finite());
+        assert!(geodesic_angle(&m, &identity).unwrap().is_finite());
     }
 
     #[test]
@@ -424,5 +446,67 @@ mod tests {
         assert_eq!(QuatOrder::parse("XYZW"), Some(QuatOrder::Xyzw));
         assert_eq!(QuatOrder::parse("wxyz"), Some(QuatOrder::Wxyz));
         assert_eq!(QuatOrder::parse("wxzy"), None);
+    }
+
+    #[test]
+    fn mat_to_quat_rejects_matrices_outside_so3() {
+        let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+        // Arbitrary numbers. Shepperd's method used to return finite nonsense here.
+        assert!(mat_to_quat([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]).is_none());
+        // A uniform scaling of a rotation is not a rotation.
+        assert!(mat_to_quat(identity.map(|c| 2.0 * c)).is_none());
+        // A reflection has determinant -1.
+        assert!(mat_to_quat([1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0]).is_none());
+        assert!(mat_to_quat(identity.map(|c| -c)).is_none());
+        // Genuine rotations still pass.
+        for q in sample_quats() {
+            assert!(mat_to_quat(quat_to_mat(q).unwrap()).is_some());
+        }
+    }
+
+    #[test]
+    fn mat_to_quat_tolerates_single_precision_rounding() {
+        // Widen a rotation matrix that has been through f32, as the expressions do.
+        for q in sample_quats() {
+            let m = quat_to_mat(q).unwrap();
+            let rounded = m.map(|c| f64::from(c as f32));
+            assert!(mat_to_quat(rounded).is_some(), "{rounded:?}");
+        }
+    }
+
+    #[test]
+    fn geodesic_angle_rejects_arguments_outside_so3() {
+        let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+        // trace(A B^T) = 15, so the cosine is 7: the clamp used to turn this into 0.
+        assert!(
+            geodesic_angle(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0], &identity).is_none()
+        );
+        // A scaled rotation.
+        let scaled: Vec<f64> = identity.iter().map(|c| 2.0 * c).collect();
+        assert!(geodesic_angle(&scaled, &identity).is_none());
+    }
+
+    #[test]
+    fn geodesic_angle_rejects_non_finite_arguments() {
+        let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+        let mut nan = identity;
+        nan[0] = f64::NAN;
+        assert!(geodesic_angle(&nan, &identity).is_none());
+        let mut inf = identity;
+        inf[4] = f64::INFINITY;
+        assert!(geodesic_angle(&inf, &identity).is_none());
+    }
+
+    #[test]
+    fn geodesic_angle_absorbs_rounding_at_the_endpoints() {
+        // Nearly identical rotations: the cosine drifts just past 1 and must clamp.
+        let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+        let nudged = identity.map(|c| c * (1.0 + 1e-13));
+        let angle = geodesic_angle(&nudged, &identity).expect("rounding must not reject");
+        assert!(angle.is_finite() && angle < 1e-5, "{angle}");
+        // A half turn: the cosine drifts just past -1.
+        let flip = quat_to_mat([0.0, 1.0, 0.0, 0.0]).unwrap();
+        let angle = geodesic_angle(&flip, &identity).unwrap();
+        assert!(approx(angle, std::f64::consts::PI, 1e-7), "{angle}");
     }
 }

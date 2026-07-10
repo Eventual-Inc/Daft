@@ -356,6 +356,100 @@ def test_filtered_input_reads_the_right_rows():
     np.testing.assert_allclose(got, want, atol=1e-12)
 
 
+@pytest.mark.parametrize(
+    "matrix,reason",
+    [
+        ([1.0, 2, 3, 4, 5, 6, 7, 8, 9], "arbitrary numbers"),
+        ([2.0, 0, 0, 0, 2, 0, 0, 0, 2], "a scaled rotation"),
+        ([1.0, 0, 0, 0, 1, 0, 0, 0, -1], "a reflection"),
+        ([-1.0, 0, 0, 0, -1, 0, 0, 0, -1], "negated identity, determinant -1"),
+    ],
+)
+def test_matrix_to_quat_rejects_matrices_outside_so3(matrix, reason):
+    got = _frame(m=[matrix]).select(col("m").cast(MAT3)).select(matrix_to_quat(col("m"))).to_pydict()["m"]
+    assert got[0] is None, f"{reason} should not yield a quaternion, got {got[0]}"
+
+
+@pytest.mark.parametrize(
+    "matrix,reason",
+    [
+        ([1.0, 2, 3, 4, 5, 6, 7, 8, 9], "cosine is 7, far outside [-1, 1]"),
+        ([2.0, 0, 0, 0, 2, 0, 0, 0, 2], "a scaled rotation"),
+    ],
+)
+def test_geodesic_angle_rejects_arguments_outside_so3(matrix, reason):
+    """The clamp that absorbs rounding must not turn nonsense into a plausible angle."""
+    identity = [1.0, 0, 0, 0, 1, 0, 0, 0, 1]
+    df = _frame(a=[matrix], b=[identity]).select(col("a").cast(MAT3), col("b").cast(MAT3))
+    got = df.select(rotation_geodesic_angle(col("a"), col("b"))).to_pydict()["a"]
+    assert got[0] is None, f"{reason} should yield null, got {got[0]}"
+
+
+def test_geodesic_angle_still_absorbs_rounding_for_real_rotations():
+    rotations = scipy_rotation.random(64, random_state=3)
+    left = [m.flatten().tolist() for m in rotations.as_matrix()]
+    df = _frame(a=left, b=left).select(col("a").cast(MAT3), col("b").cast(MAT3))
+    got = df.select(rotation_geodesic_angle(col("a"), col("b"))).to_pydict()["a"]
+    assert all(v is not None for v in got), "rounding must not reject genuine rotations"
+    np.testing.assert_allclose(np.asarray(got), 0.0, atol=1e-6)
+
+
+def test_float32_rotations_are_not_rejected_by_the_tolerance():
+    """f32 rounding costs about 1e-7, well inside the 1e-6 tolerance."""
+    dtype = DataType.tensor(DataType.float32(), (3, 3))
+    rotations = scipy_rotation.random(64, random_state=5)
+    rows = [m.flatten().tolist() for m in rotations.as_matrix()]
+    got = _frame(m=rows).select(col("m").cast(dtype)).select(matrix_to_quat(col("m"))).to_pydict()["m"]
+    assert all(q is not None for q in got), "f32 rotation matrices must survive"
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_non_finite_inputs_produce_null_everywhere(bad):
+    """One policy across the module: a row that is not a rotation is null, never NaN."""
+    identity_q = [0.0, 0.0, 0.0, 1.0]
+    identity_m = [1.0, 0, 0, 0, 1, 0, 0, 0, 1]
+    q_bad = [bad, 0.0, 0.0, 1.0]
+    m_bad = [bad] + [0.0] * 8
+
+    cases = {
+        "quat_inverse": _quat_col("q", [q_bad]).select(quat_inverse(col("q"))),
+        "quat_to_matrix": _quat_col("q", [q_bad]).select(quat_to_matrix(col("q"))),
+        "matrix_to_quat": _frame(m=[m_bad]).select(col("m").cast(MAT3)).select(matrix_to_quat(col("m"))),
+        "quat_multiply": (
+            _frame(a=[q_bad], b=[identity_q])
+            .select(col("a").cast(QUAT), col("b").cast(QUAT))
+            .select(quat_multiply(col("a"), col("b")))
+        ),
+        "quat_rotate_bad_quat": (
+            _frame(q=[q_bad], v=[[1.0, 0.0, 0.0]])
+            .select(col("q").cast(QUAT), col("v").cast(VEC3))
+            .select(quat_rotate(col("q"), col("v")))
+        ),
+        "quat_rotate_bad_vector": (
+            _frame(q=[identity_q], v=[[bad, 0.0, 0.0]])
+            .select(col("q").cast(QUAT), col("v").cast(VEC3))
+            .select(quat_rotate(col("q"), col("v")))
+        ),
+        "rot6d_to_matrix": (
+            _frame(r=[[bad, 0.0, 0.0, 0.0, 1.0, 0.0]]).select(col("r").cast(ROT6D)).select(rot6d_to_matrix(col("r")))
+        ),
+        "rotation_geodesic_angle": (
+            _frame(a=[m_bad], b=[identity_m])
+            .select(col("a").cast(MAT3), col("b").cast(MAT3))
+            .select(rotation_geodesic_angle(col("a"), col("b")))
+        ),
+    }
+    for name, df in cases.items():
+        got = list(df.to_pydict().values())[0][0]
+        assert got is None, f"{name} returned {got!r} for a {bad} input, expected null"
+
+
+def test_order_is_case_insensitive():
+    upper = _quat_col("q", UNIT_QUATS_XYZW).select(quat_inverse(col("q"), order="XYZW")).to_pydict()["q"]
+    lower = _quat_col("q", UNIT_QUATS_XYZW).select(quat_inverse(col("q"), order="xyzw")).to_pydict()["q"]
+    np.testing.assert_allclose(np.asarray(upper), np.asarray(lower), atol=0.0)
+
+
 def test_wrong_length_is_rejected():
     wrong = DataType.fixed_size_list(DataType.float64(), 3)
     with pytest.raises(Exception, match="4 floats"):

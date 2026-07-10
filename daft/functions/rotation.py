@@ -7,8 +7,14 @@ rotations does not require a Python UDF.
 Quaternions are fixed-size lists of four floats. The component order defaults to
 ``"xyzw"``, matching ROS, tf2, and ``scipy.spatial.transform.Rotation``. Pass
 ``order="wxyz"`` for the scalar-first convention used by Eigen, MuJoCo, and Isaac Sim.
+The argument is case-insensitive.
 
 Rotation matrices are ``Tensor[Float64; [3, 3]]``, in row-major order.
+
+Every function here returns null for a row that does not denote a rotation: a null
+input, a value that is ``NaN`` or infinite, a zero quaternion, a 6D pair whose two
+vectors are zero or parallel, or a matrix that is not in ``SO(3)``. Nothing is
+silently coerced into a plausible rotation.
 """
 
 from __future__ import annotations
@@ -38,7 +44,8 @@ def rot6d_to_matrix(rot6d: Expression) -> Expression:
     in SO(3). This is the representation of Zhou et al. (2019), widely used as a network
     output because it is continuous, unlike quaternions and Euler angles.
 
-    Rows whose two vectors are zero or parallel produce null, since they determine no rotation.
+    Rows whose two vectors are zero or parallel, or which hold a non-finite value,
+    produce null, since they determine no rotation.
 
     Args:
         rot6d (FixedSizeList[Float64, 6] Expression): The 6D rotation representation.
@@ -60,11 +67,12 @@ def rot6d_to_matrix(rot6d: Expression) -> Expression:
 def quat_to_matrix(quat: Expression, *, order: QuatOrder = "xyzw") -> Expression:
     """Converts a quaternion into a 3x3 rotation matrix.
 
-    The quaternion is normalized first. Zero quaternions produce null.
+    The quaternion is normalized first. Zero quaternions, and rows holding a
+    non-finite value, produce null.
 
     Args:
         quat (FixedSizeList[Float64, 4] Expression): The quaternion.
-        order (str, default="xyzw"): Component order, either "xyzw" or "wxyz".
+        order (str, default="xyzw"): Component order, either "xyzw" or "wxyz". Case-insensitive.
 
     Returns:
         Expression (Tensor[Float64, [3, 3]] Expression): The rotation matrix.
@@ -79,9 +87,13 @@ def matrix_to_quat(matrix: Expression, *, order: QuatOrder = "xyzw") -> Expressi
     naive trace formula loses precision. The sign is not canonicalized, since a
     quaternion and its negation denote the same rotation.
 
+    Shepperd's method yields a unit quaternion exactly when its input lies in ``SO(3)``,
+    so a matrix that is scaled, is a reflection, or holds a non-finite value produces
+    null rather than a plausible quaternion.
+
     Args:
         matrix (Tensor[Float64, [3, 3]] Expression): The rotation matrix.
-        order (str, default="xyzw"): Component order, either "xyzw" or "wxyz".
+        order (str, default="xyzw"): Component order, either "xyzw" or "wxyz". Case-insensitive.
 
     Returns:
         Expression (FixedSizeList[Float64, 4] Expression): The quaternion.
@@ -93,12 +105,13 @@ def quat_multiply(left: Expression, right: Expression, *, order: QuatOrder = "xy
     """Hamilton product of two quaternions.
 
     The result applies `right` first and then `left`, matching composition of the
-    corresponding rotation matrices. Neither input is normalized.
+    corresponding rotation matrices. Neither input is normalized. Rows holding a
+    non-finite value produce null.
 
     Args:
         left (FixedSizeList[Float64, 4] Expression): The left quaternion.
         right (FixedSizeList[Float64, 4] Expression): The right quaternion.
-        order (str, default="xyzw"): Component order, either "xyzw" or "wxyz".
+        order (str, default="xyzw"): Component order, either "xyzw" or "wxyz". Case-insensitive.
 
     Returns:
         Expression (FixedSizeList[Float64, 4] Expression): The product.
@@ -110,11 +123,11 @@ def quat_inverse(quat: Expression, *, order: QuatOrder = "xyzw") -> Expression:
     """Inverse of a quaternion, the conjugate divided by the squared norm.
 
     For unit quaternions this is the conjugate, and it undoes the rotation.
-    Zero quaternions produce null.
+    Zero quaternions, and rows holding a non-finite value, produce null.
 
     Args:
         quat (FixedSizeList[Float64, 4] Expression): The quaternion.
-        order (str, default="xyzw"): Component order, either "xyzw" or "wxyz".
+        order (str, default="xyzw"): Component order, either "xyzw" or "wxyz". Case-insensitive.
 
     Returns:
         Expression (FixedSizeList[Float64, 4] Expression): The inverse.
@@ -126,12 +139,13 @@ def quat_rotate(quat: Expression, vector: Expression, *, order: QuatOrder = "xyz
     """Rotates a 3-vector by a quaternion.
 
     The quaternion is normalized first, so the length of the vector is preserved.
-    Zero quaternions produce null.
+    Zero quaternions, and rows where the quaternion or the vector holds a non-finite
+    value, produce null.
 
     Args:
         quat (FixedSizeList[Float64, 4] Expression): The quaternion.
         vector (FixedSizeList[Float64, 3] Expression): The vector to rotate.
-        order (str, default="xyzw"): Component order, either "xyzw" or "wxyz".
+        order (str, default="xyzw"): Component order, either "xyzw" or "wxyz". Case-insensitive.
 
     Returns:
         Expression (FixedSizeList[Float64, 3] Expression): The rotated vector.
@@ -145,6 +159,10 @@ def rotation_geodesic_angle(left: Expression, right: Expression) -> Expression:
     Computes ``arccos((trace(A @ B.T) - 1) / 2)``, the geodesic distance on SO(3),
     which lies in ``[0, pi]``. This is the bi-invariant Riemannian metric, so it is
     symmetric and unchanged by rotating both arguments.
+
+    Rounding is absorbed by clamping the cosine into ``[-1, 1]``. A row where either
+    argument is not a rotation, and so the cosine lies well outside that range, produces
+    null rather than a plausible angle.
 
     Applied to consecutive frames of a trajectory, it measures how much a body turned
     between them.

@@ -109,12 +109,17 @@ impl<'a> Rows<'a> {
         })
     }
 
-    /// The `i`th row, or `None` when it is null.
+    /// The `i`th row, or `None` when it is null or holds a non-finite value.
+    ///
+    /// A quaternion or matrix containing `NaN` or an infinity denotes no rotation,
+    /// so every expression here treats it the way it treats a null: the result is
+    /// null. Propagating the `NaN` instead would let it masquerade as a rotation.
     fn get(&self, i: usize) -> Option<&'a [f64]> {
         if self.nulls.is_some_and(|n| n.is_null(i)) {
             return None;
         }
-        self.values.get(i * self.width..(i + 1) * self.width)
+        let row = self.values.get(i * self.width..(i + 1) * self.width)?;
+        row.iter().all(|v| v.is_finite()).then_some(row)
     }
 }
 
@@ -231,7 +236,7 @@ impl ScalarUDF for Rot6dToMatrix {
     }
 
     fn docstring(&self) -> &'static str {
-        "Converts the 6D continuous rotation representation of Zhou et al. (2019) into a 3x3 rotation matrix.\n\nThe six values are the first two columns of the matrix. They are orthonormalized by Gram-Schmidt, and the third column is their cross product, so the result always lies in SO(3). Rows whose two vectors are zero or parallel produce null, since they determine no rotation."
+        "Converts the 6D continuous rotation representation of Zhou et al. (2019) into a 3x3 rotation matrix.\n\nThe six values are the first two columns of the matrix. They are orthonormalized by Gram-Schmidt, and the third column is their cross product, so the result always lies in SO(3). Rows whose two vectors are zero or parallel, or which hold a non-finite value, produce null, since they determine no rotation."
     }
 }
 
@@ -273,7 +278,7 @@ impl ScalarUDF for QuatToMatrix {
     }
 
     fn docstring(&self) -> &'static str {
-        "Converts a quaternion into a 3x3 rotation matrix.\n\nThe quaternion is normalized first. Pass order='wxyz' for the scalar-first convention used by Eigen, MuJoCo, and Isaac Sim; the default 'xyzw' matches ROS, tf2, and scipy. Zero quaternions produce null."
+        "Converts a quaternion into a 3x3 rotation matrix.\n\nThe quaternion is normalized first. Pass order='wxyz' for the scalar-first convention used by Eigen, MuJoCo, and Isaac Sim; the default 'xyzw' matches ROS, tf2, and scipy, and the argument is case-insensitive. Zero quaternions, and rows holding a non-finite value, produce null."
     }
 }
 
@@ -300,7 +305,7 @@ impl ScalarUDF for MatrixToQuat {
         let order = parse_order(self.name(), order)?;
         let list = unary(input.name(), &input, MAT3, |m| {
             let m: [f64; MAT3] = m.try_into().ok()?;
-            Some(order.write(math::mat_to_quat(m)))
+            math::mat_to_quat(m).map(|q| order.write(q))
         })?;
         Ok(list.into_series())
     }
@@ -321,7 +326,7 @@ impl ScalarUDF for MatrixToQuat {
     }
 
     fn docstring(&self) -> &'static str {
-        "Converts a 3x3 rotation matrix into a quaternion, using Shepperd's method for numerical stability near a half turn.\n\nThe sign is not canonicalized: a quaternion and its negation denote the same rotation. Pass order='wxyz' for the scalar-first convention; the default is 'xyzw'."
+        "Converts a 3x3 rotation matrix into a quaternion, using Shepperd's method for numerical stability near a half turn.\n\nThe sign is not canonicalized: a quaternion and its negation denote the same rotation. Pass order='wxyz' for the scalar-first convention; the default is 'xyzw', and the argument is case-insensitive. Rows whose matrix is not a rotation, because it is scaled, is a reflection, or holds a non-finite value, produce null."
     }
 }
 
@@ -374,7 +379,7 @@ impl ScalarUDF for QuatMultiply {
     }
 
     fn docstring(&self) -> &'static str {
-        "Hamilton product of two quaternions.\n\nThe result applies the right rotation first, then the left, matching composition of the corresponding rotation matrices. Neither input is normalized."
+        "Hamilton product of two quaternions.\n\nThe result applies the right rotation first, then the left, matching composition of the corresponding rotation matrices. Neither input is normalized. Rows holding a non-finite value produce null."
     }
 }
 
@@ -421,7 +426,7 @@ impl ScalarUDF for QuatInverse {
     }
 
     fn docstring(&self) -> &'static str {
-        "Inverse of a quaternion, the conjugate divided by the squared norm.\n\nFor unit quaternions this is the conjugate, and it undoes the rotation. Zero quaternions produce null."
+        "Inverse of a quaternion, the conjugate divided by the squared norm.\n\nFor unit quaternions this is the conjugate, and it undoes the rotation. Zero quaternions, and rows holding a non-finite value, produce null."
     }
 }
 
@@ -490,7 +495,7 @@ impl ScalarUDF for QuatRotate {
     }
 
     fn docstring(&self) -> &'static str {
-        "Rotates a 3-vector by a quaternion.\n\nThe quaternion is normalized first, so the length of the vector is preserved. Zero quaternions produce null."
+        "Rotates a 3-vector by a quaternion.\n\nThe quaternion is normalized first, so the length of the vector is preserved. Zero quaternions, and rows where the quaternion or the vector holds a non-finite value, produce null."
     }
 }
 
@@ -527,7 +532,7 @@ impl ScalarUDF for RotationGeodesicAngle {
             .map(|i| {
                 a.get(i)
                     .zip(b.get(i))
-                    .map(|(x, y)| math::geodesic_angle(x, y))
+                    .and_then(|(x, y)| math::geodesic_angle(x, y))
             })
             .collect::<Float64Array>()
             .rename(&name);
@@ -555,7 +560,7 @@ impl ScalarUDF for RotationGeodesicAngle {
     }
 
     fn docstring(&self) -> &'static str {
-        "Angle in radians of the relative rotation between two 3x3 rotation matrices.\n\nComputes arccos((trace(A B^T) - 1) / 2), the geodesic distance on SO(3), which lies in [0, pi]. This is the bi-invariant Riemannian metric, so it is symmetric and unchanged by rotating both arguments."
+        "Angle in radians of the relative rotation between two 3x3 rotation matrices.\n\nComputes arccos((trace(A B^T) - 1) / 2), the geodesic distance on SO(3), which lies in [0, pi]. This is the bi-invariant Riemannian metric, so it is symmetric and unchanged by rotating both arguments. Rounding is absorbed by clamping the cosine into [-1, 1]. Rows where either argument is not a rotation, and so the cosine lies well outside that range, produce null rather than a plausible angle."
     }
 }
 
