@@ -80,10 +80,17 @@ defects turned out not to exist.
 | NaN / ±inf float bounds | Correct — bound dropped, which is safe. |
 | All-null columns | Correct — `nullCount` only, no bounds. |
 | **Unsigned integers** | **Broken.** Silent unreadable table. |
+| **Distributed merge, out-of-range cast** | **Broken, worse.** Silently writes `NULL`. |
 | **Binary stats** | **Broken.** Emits a bound that isn't true. |
 | **Compression** | Hardcoded off. Never exposed. |
 
 Do not "fix" the first five. They work.
+
+Every defect reaches `distributed_merge_deltalake`, which writes through the same PyArrow
+writer: it emits `UNCOMPRESSED` files, uses the same binary-stats encoder, and loses
+unsigned data — silently, which is why it gets a fix of its own (Fix 3). It has no
+`writer_properties` parameter, so the `WriterProperties` bug described under Fix 1 cannot
+affect it.
 
 ## Fix 1: Compression
 
@@ -198,7 +205,49 @@ time is strictly better than committing a table nobody can read.
 Consequence, which must be documented: a `uint32` column reads back as `int64`. Delta
 cannot represent it otherwise.
 
-## Fix 3: Binary stats assert something untrue
+## Fix 3: The distributed merge silently nulls values that don't fit
+
+`DistributedDeltaMergeBuilder._decomposed_outer_join`
+(`daft/io/delta_lake/_deltalake.py:1142-1148`) aligns source rows to the target schema
+with `col(name).cast(f.dtype)`. **Daft's `cast` returns `NULL` on overflow** where PyArrow
+raises:
+
+```
+daft   uint32 -> int32 : [None]            <- silently loses the value
+pyarrow uint32 -> int32: ArrowInvalid      <- refuses
+pyarrow, safe=False    : [-1294967296]     <- wraps
+```
+
+Measured end to end: seed a table with a `uint32` column (Delta declares it `integer`),
+then `distributed_merge_deltalake` a row whose value is `3_000_000_000`. The merge
+commits, the table reads back cleanly with the right row count, and the value is `None`.
+Both `deltalake.DeltaTable` and `daft.read_deltalake` agree it is null. Nothing fails.
+
+This is strictly worse than the `write_deltalake` unsigned bug, which at least fails
+loudly at read time. Here the data is simply gone.
+
+**Fix.** Fix 2's widening removes the common cause: a Daft-written `uint32` column is
+declared `long`, so no narrowing cast is needed. But it cannot help a table already
+declared `integer`, where the value genuinely does not fit. That case must raise.
+
+In `_decomposed_outer_join`, classify each alignment cast:
+
+- If the cast is **lossless** for every representable source value (widening within a
+  signedness, or unsigned into a strictly wider signed type), emit it unchanged.
+- Otherwise, the cast is *potentially* lossy. Guard only those columns: a row whose source
+  value is non-null but whose cast result is null indicates a value that did not fit. If
+  any such row exists, raise a `ValueError` naming the column, the source dtype, and the
+  target dtype, before the merge commits.
+
+Guarding only the potentially-lossy columns keeps the check off the hot path. A static
+rejection of every narrowing cast would be simpler but would break merges that narrow
+correctly today because their values happen to fit — the check must be data-dependent, not
+type-dependent.
+
+No opt-out flag. Silently discarding a user's value should not be selectable behavior; a
+caller who wants null-on-overflow can cast explicitly before merging.
+
+## Fix 4: Binary stats assert something untrue
 
 `DeltaJSONEncoder` (`daft/io/delta_lake/delta_lake_write.py:120-121`) serializes `bytes`
 bounds with `obj.decode("unicode_escape", "backslashreplace")`, so `b"\xff\xfe"` becomes
@@ -237,6 +286,20 @@ assertions anchor to **true values**, not to another implementation.
 - `uint8`, `uint16`, `uint32` at their maximum values round-trip and read back exactly.
 - `uint64` within `i64::MAX` works; above it raises a `ValueError` naming the column.
 - Nested unsigned (inside a struct and inside a list) is widened too.
+- A `uint32` column written by `write_deltalake` is declared `long` in the Delta log.
+
+**Distributed merge cast**
+- Merging `3_000_000_000` into a **pre-existing** `integer` column raises a `ValueError`
+  naming the column and both dtypes — it must not commit, and must not write `NULL`.
+  (Today it commits silently and the value becomes null; this is the regression test that
+  would have caught it.)
+- Merging into a table Daft wrote after Fix 2 (column declared `long`) succeeds and
+  preserves `3_000_000_000` exactly.
+- A merge that narrows correctly — `int64` source into an `int32` target where every value
+  fits — still succeeds. The guard must be data-dependent, not type-dependent.
+- A genuinely null source value merged into any column stays null and does not trip the
+  guard.
+- `distributed_merge_deltalake` honors `compression` on both write branches.
 
 **Binary stats**
 - Non-UTF-8 bytes → `minValues`/`maxValues` omit the column, `nullCount` retains it.
@@ -256,8 +319,15 @@ assertions anchor to **true values**, not to another implementation.
    approved. Old files stay readable; tables become mixed-codec, which is normal.
 2. **`uint32` now reads back as `int64`.** Unavoidable — Delta has no unsigned types.
    The alternative is the status quo, which is an unreadable table.
-3. **Binary columns lose their bounds when not UTF-8-decodable.** Deliberate: a missing
+3. **A merge that previously "succeeded" by nulling out-of-range values now raises.**
+   That is the entire point, but it will surface as a new failure in pipelines that were
+   silently losing data. The error names the column and both dtypes so the cause is
+   obvious.
+4. **Binary columns lose their bounds when not UTF-8-decodable.** Deliberate: a missing
    bound is safe, a false one is not.
+5. **The lossy-cast guard costs an extra pass over the guarded columns.** Only columns
+   whose cast is not provably lossless are guarded, so a merge with no narrowing casts
+   pays nothing.
 4. **The cherry-picks may conflict.** `e21bf0b53` touches `delta_lake_write.py`, whose
    surrounding code differs on `main`. Resolve by keeping `main`'s context and applying
    only the tz-normalization functions.
