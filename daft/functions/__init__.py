@@ -320,6 +320,15 @@ from .window import (
     first_value,
     last_value,
 )
+from .rotation import (
+    matrix_to_quat,
+    quat_inverse,
+    quat_multiply,
+    quat_rotate,
+    quat_to_matrix,
+    rot6d_to_matrix,
+    rotation_geodesic_angle,
+)
 
 __all__ = [
     "abs",
@@ -508,6 +517,7 @@ __all__ = [
     "make_timestamp_ltz",
     "map_get",
     "map_keys",
+    "matrix_to_quat",
     "max",
     "mean",
     "median",
@@ -542,6 +552,10 @@ __all__ = [
     "product",
     "prompt",
     "quarter",
+    "quat_inverse",
+    "quat_multiply",
+    "quat_rotate",
+    "quat_to_matrix",
     "radians",
     "random_int",
     "rank",
@@ -558,6 +572,8 @@ __all__ = [
     "resize",
     "reverse",
     "right",
+    "rot6d_to_matrix",
+    "rotation_geodesic_angle",
     "round",
     "row_number",
     "rpad",

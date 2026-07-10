@@ -14,6 +14,7 @@ pub mod numeric;
 #[cfg(feature = "python")]
 pub mod python;
 pub mod random;
+pub mod rotation;
 pub mod simhash;
 pub mod similarity;
 pub mod slice;
