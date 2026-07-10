@@ -3,8 +3,30 @@ from __future__ import annotations
 import os
 import platform
 import threading
-import urllib.parse
-import urllib.request
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ssl import SSLContext
+
+_ANALYTICS_REQUEST_TIMEOUT_SECONDS = 2.0
+
+# A single SSLContext is built on the main thread and reused by the telemetry
+# worker threads. Building it here (rather than letting each urlopen create one)
+# keeps all OpenSSL global initialization on the main thread, so the daemon
+# worker never races the interpreter's OpenSSL teardown at shutdown.
+_ssl_context = None
+_ssl_context_lock = threading.Lock()
+
+
+def _get_ssl_context() -> SSLContext:
+    import ssl
+
+    global _ssl_context
+    if _ssl_context is None:
+        with _ssl_context_lock:
+            if _ssl_context is None:
+                _ssl_context = ssl.create_default_context()
+    return _ssl_context
 
 
 def opted_out() -> bool:
@@ -42,7 +64,18 @@ def _track_on_scarf(
     if build_type == "dev" or opted_out():
         return None, result_container
 
+    # Build/reuse the shared SSLContext on the calling (main) thread. Telemetry is
+    # best-effort, so if SSL setup fails here we skip this event rather than let the
+    # error propagate into the user's import or query execution.
+    try:
+        ssl_context = _get_ssl_context()
+    except Exception:
+        return None, result_container
+
     def send_request(result_container: dict[str, str | None]) -> None:
+        import urllib.parse
+        import urllib.request
+
         response_status = None
         extra_value = extra_params.get("runner") if extra_params else None
 
@@ -65,7 +98,9 @@ def _track_on_scarf(
 
             # Make the GET request to Scarf
             url = f"https://daft.gateway.scarf.sh/{endpoint}?{query_string}"
-            with urllib.request.urlopen(url) as response:
+            with urllib.request.urlopen(
+                url, timeout=_ANALYTICS_REQUEST_TIMEOUT_SECONDS, context=ssl_context
+            ) as response:
                 response_status = f"Response status: {response.status}"
         except Exception as e:
             response_status = f"Analytics error: {e}"
@@ -79,7 +114,7 @@ def _track_on_scarf(
             ot_params.update(params)
             ot_query_string = urllib.parse.urlencode(ot_params)
             ot_url = f"https://osstelemetry.io/data?{ot_query_string}"
-            with urllib.request.urlopen(ot_url):
+            with urllib.request.urlopen(ot_url, timeout=_ANALYTICS_REQUEST_TIMEOUT_SECONDS, context=ssl_context):
                 pass
         except Exception:
             pass

@@ -103,6 +103,8 @@ def frames_impl(
     is_key_frame: bool | None = None,
     sample_interval_seconds: float | None = None,
 ) -> list[VideoFrameData]:
+    if file is None:
+        return []
     return list(
         file.frames(
             start_time=start_time,
