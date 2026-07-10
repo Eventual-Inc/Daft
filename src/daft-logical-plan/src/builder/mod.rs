@@ -950,6 +950,7 @@ impl LogicalPlanBuilder {
         mode: String,
         version: i32,
         large_dtypes: bool,
+        compression: String,
         partition_cols: Option<Vec<String>>,
         io_config: Option<IOConfig>,
     ) -> DaftResult<Self> {
@@ -969,6 +970,7 @@ impl LogicalPlanBuilder {
                 mode,
                 version,
                 large_dtypes,
+                compression,
                 partition_cols,
                 io_config,
             }),
@@ -1767,6 +1769,7 @@ impl PyLogicalPlanBuilder {
         mode,
         version,
         large_dtypes,
+        compression,
         partition_cols=None,
         io_config=None
     ))]
@@ -1777,6 +1780,7 @@ impl PyLogicalPlanBuilder {
         mode: String,
         version: i32,
         large_dtypes: bool,
+        compression: String,
         partition_cols: Option<Vec<String>>,
         io_config: Option<common_io_config::python::IOConfig>,
     ) -> PyResult<Self> {
@@ -1788,6 +1792,7 @@ impl PyLogicalPlanBuilder {
                 mode,
                 version,
                 large_dtypes,
+                compression,
                 partition_cols,
                 io_config.map(|cfg| cfg.config),
             )?

@@ -1856,6 +1856,7 @@ class DataFrame:
         allow_unsafe_rename: bool = False,
         io_config: IOConfig | None = None,
         checkpoint: "IdempotentCommit | None" = None,
+        compression: str = "snappy",
     ) -> "DataFrame":
         """Writes the DataFrame to a [Delta Lake](https://docs.delta.io/latest/index.html) table, returning a new DataFrame with the operations that occurred.
 
@@ -1872,6 +1873,7 @@ class DataFrame:
             allow_unsafe_rename (bool, optional): Whether to allow unsafe rename when writing to S3 or local disk. Defaults to False.
             io_config (IOConfig, optional): configurations to use when interacting with remote storage.
             checkpoint (IdempotentCommit, optional): Bundled checkpoint store + idempotence key for an idempotent commit. When provided, the Delta commit's ``custom_metadata`` is tagged with ``daft.idempotence-key`` and retries with the same key recognize the prior attempt without producing a duplicate commit. Only ``mode='append'`` is supported. Requires the Ray runner.
+            compression (str, optional): compression codec applied to every column of the written Delta data files. Defaults to "snappy". Accepts "snappy", "gzip", "zstd", "lz4", "brotli", "uncompressed", or "none" (case-insensitive). "lz4_raw" and "lzo" are not supported, because PyArrow's parquet writer cannot encode them.
 
         Returns:
             DataFrame: The operations that occurred with this write.
@@ -1914,6 +1916,10 @@ class DataFrame:
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
             >>> df.write_deltalake("s3://my-bucket/my-deltalake-table")  # doctest: +SKIP
         """
+        from daft.io.delta_lake.delta_lake_write import normalize_delta_compression
+
+        compression = normalize_delta_compression(compression)
+
         import json
 
         import deltalake
@@ -2084,6 +2090,7 @@ class DataFrame:
                 configuration=configuration,
                 custom_metadata=custom_metadata,
                 checkpoint=checkpoint,
+                compression=compression,
             )
 
         builder = self._builder.write_deltalake(
@@ -2092,6 +2099,7 @@ class DataFrame:
             version,
             large_dtypes,
             io_config=io_config,
+            compression=compression,
             partition_cols=partition_cols,
         )
         write_df = DataFrame(builder)
@@ -2447,6 +2455,7 @@ class DataFrame:
         configuration: "Mapping[str, str | None] | None",
         custom_metadata: dict[str, str] | None,
         checkpoint: "IdempotentCommit",
+        compression: str = "none",
     ) -> "DataFrame":
         """Idempotent Delta Lake commit identified by ``checkpoint.idempotence_key``.
 
@@ -2488,6 +2497,7 @@ class DataFrame:
             version,
             large_dtypes,
             io_config=io_config,
+            compression=compression,
             partition_cols=partition_cols,
         )
         write_df = DataFrame(builder)

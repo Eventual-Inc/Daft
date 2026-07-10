@@ -100,6 +100,9 @@ pub struct DeltaLakeCatalogInfo<E = ExprRef> {
     pub mode: String,
     pub version: i32,
     pub large_dtypes: bool,
+    /// Canonical parquet compression codec name, already validated and normalized on the
+    /// Python side by `normalize_delta_compression`.
+    pub compression: String,
     pub partition_cols: Option<Vec<E>>,
     pub io_config: Option<IOConfig>,
 }
@@ -115,6 +118,7 @@ where
         res.push(format!("Mode = {}", self.mode));
         res.push(format!("Version = {}", self.version));
         res.push(format!("Large Dtypes = {}", self.large_dtypes));
+        res.push(format!("Compression = {}", self.compression));
         if let Some(ref partition_cols) = self.partition_cols {
             res.push(format!(
                 "Partition cols = {}",
@@ -313,6 +317,7 @@ impl DeltaLakeCatalogInfo {
             mode: self.mode,
             version: self.version,
             large_dtypes: self.large_dtypes,
+            compression: self.compression,
             partition_cols: self
                 .partition_cols
                 .map(|cols| BoundExpr::bind_all(&cols, schema))

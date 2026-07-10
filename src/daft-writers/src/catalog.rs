@@ -52,6 +52,7 @@ pub fn create_pyarrow_catalog_writer(
             version,
             large_dtypes,
             io_config,
+            compression,
             ..
         }) => {
             let writer = PyArrowWriter::new_deltalake_writer(
@@ -61,6 +62,7 @@ pub fn create_pyarrow_catalog_writer(
                 *large_dtypes,
                 partition_values,
                 io_config.as_ref(),
+                compression,
             )?;
             Ok(Box::new(writer))
         }

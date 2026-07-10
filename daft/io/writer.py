@@ -399,12 +399,13 @@ class DeltalakeWriter(ParquetFileWriter):
         large_dtypes: bool,
         partition_values: RecordBatch | None = None,
         io_config: IOConfig | None = None,
+        compression: str = "none",
     ):
         super().__init__(
             root_dir=root_dir,
             file_idx=file_idx,
             partition_values=partition_values,
-            compression=None,
+            compression=compression,
             io_config=io_config,
             version=version,
             default_partition_fallback=None,
