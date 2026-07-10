@@ -1,4 +1,37 @@
-use std::process::Command;
+use std::{io, path::Path, process::Command};
+
+/// Recursively copy the contents of `src` into `dst`.
+fn copy_dir_all(src: &Path, dst: &Path) -> io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let dst = dst.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir_all(&entry.path(), &dst)?;
+        } else {
+            std::fs::copy(entry.path(), &dst)?;
+        }
+    }
+    Ok(())
+}
+
+/// Move `src` to `dst`, falling back to a recursive copy across filesystems.
+///
+/// `OUT_DIR` lives under the cargo target directory, which is routinely on a
+/// different filesystem from the source tree: `CARGO_TARGET_DIR` pointed at a
+/// separate mount or tmpfs, a container with the source bind-mounted and the
+/// target on a volume, a CI cache mount, or a distinct btrfs subvolume. In all
+/// of those cases `rename(2)` fails with `EXDEV` rather than moving the
+/// directory, so fall back to copy-then-remove.
+fn move_dir(src: &Path, dst: &Path) -> io::Result<()> {
+    match std::fs::rename(src, dst) {
+        Err(e) if e.kind() == io::ErrorKind::CrossesDevices => {
+            copy_dir_all(src, dst)?;
+            std::fs::remove_dir_all(src)
+        }
+        result => result,
+    }
+}
 
 fn ci_main(out_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
     let frontend_dir = std::env::var("CARGO_MANIFEST_DIR")? + "/frontend/out";
@@ -19,7 +52,7 @@ fn ci_main(out_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // move the frontend assets to the output directory
-    std::fs::rename(frontend_dir, out_dir)?;
+    move_dir(Path::new(&frontend_dir), Path::new(out_dir))?;
     Ok(())
 }
 
@@ -90,7 +123,7 @@ fn default_main(out_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // move the frontend assets to the output directory
-    std::fs::rename(frontend_dir, out_dir)?;
+    move_dir(Path::new(&frontend_dir), Path::new(out_dir))?;
     Ok(())
 }
 
