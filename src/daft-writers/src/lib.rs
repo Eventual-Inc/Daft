@@ -42,7 +42,7 @@ use daft_dsl::{Expr, expr::bound_expr::BoundExpr};
 use daft_logical_plan::OutputFileInfo;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
-use file::TargetFileSizeWriterFactory;
+use file::{SingleFileWriterFactory, TargetFileSizeWriterFactory};
 use ipc::IPCWriterFactory;
 #[cfg(feature = "python")]
 pub use lance::make_lance_writer_factory;
@@ -146,10 +146,6 @@ pub fn make_physical_writer_factory(
         PhysicalWriterFactory::new(file_info.clone(), data_schema, cfg.native_parquet_writer)?;
     match file_info.file_format {
         FileFormat::Parquet => {
-            let file_size_calculator = TargetInMemorySizeBytesCalculator::new(
-                cfg.parquet_target_filesize,
-                cfg.parquet_inflation_factor,
-            );
             let row_group_size_calculator = TargetInMemorySizeBytesCalculator::new(
                 min(
                     cfg.parquet_target_row_group_size,
@@ -160,6 +156,17 @@ pub fn make_physical_writer_factory(
             let row_group_writer_factory = TargetBatchWriterFactory::new(
                 Arc::new(base_writer_factory),
                 Arc::new(row_group_size_calculator),
+            );
+
+            if file_info.single_file {
+                return Ok(Arc::new(SingleFileWriterFactory::new(Arc::new(
+                    row_group_writer_factory,
+                ))));
+            }
+
+            let file_size_calculator = TargetInMemorySizeBytesCalculator::new(
+                cfg.parquet_target_filesize,
+                cfg.parquet_inflation_factor,
             );
             let file_writer_factory = TargetFileSizeWriterFactory::new(
                 Arc::new(row_group_writer_factory),

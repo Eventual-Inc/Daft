@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from functools import partial, reduce
 from typing import TYPE_CHECKING, Any, Concatenate, Literal, ParamSpec, TypeVar, Union, overload
 
+from packaging.version import parse
+
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
@@ -45,9 +47,10 @@ from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.execution.native_executor import NativeExecutor
 from daft.expressions import Expression, ExpressionsProjection, col, lit
+from daft.filesystem import get_protocol_from_path
 from daft.logical.builder import LogicalPlanBuilder
 from daft.recordbatch import MicroPartition, RecordBatch
-from daft.runners import get_or_create_runner
+from daft.runners import get_or_create_runner, get_or_infer_runner_type
 from daft.runners.partitioning import (
     LocalPartitionSet,
     MaterializedResult,
@@ -128,6 +131,47 @@ def _create_delta_metadata_param(metadata: dict[str, str] | None) -> Any:
     from deltalake import CommitProperties
 
     return CommitProperties(custom_metadata=metadata)
+
+
+def _configure_deltalake_storage_options(
+    table_uri: str,
+    storage_options: dict[str, str],
+    dynamo_table_name: str | None,
+    allow_unsafe_rename: bool,
+    deltalake_version: str,
+) -> bool:
+    """Apply Delta Lake commit options that depend on the destination URI."""
+    changed = False
+
+    def set_storage_option(key: str, value: str) -> None:
+        nonlocal changed
+        if storage_options.get(key) != value:
+            changed = True
+        storage_options[key] = value
+
+    scheme = get_protocol_from_path(table_uri)
+    if scheme == "s3" or scheme == "s3a":
+        if dynamo_table_name is not None:
+            set_storage_option("AWS_S3_LOCKING_PROVIDER", "dynamodb")
+            set_storage_option("DELTA_DYNAMO_TABLE_NAME", dynamo_table_name)
+        elif allow_unsafe_rename:
+            set_storage_option("AWS_S3_ALLOW_UNSAFE_RENAME", "true")
+        elif parse(deltalake_version) < parse("0.23.0"):
+            import warnings
+
+            warnings.warn(
+                "Writing to S3 without DynamoDB or explicit unsafe rename on deltalake<0.23.0 "
+                "defaults to AWS_S3_ALLOW_UNSAFE_RENAME=true. This fallback will be removed in "
+                "Daft v0.8.0. Upgrade deltalake>=0.23.0, pass dynamo_table_name, or set "
+                "allow_unsafe_rename=True explicitly.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            set_storage_option("AWS_S3_ALLOW_UNSAFE_RENAME", "true")
+    elif scheme == "file" and allow_unsafe_rename:
+        set_storage_option("MOUNT_ALLOW_UNSAFE_RENAME", "true")
+
+    return changed
 
 
 def _utc_now() -> datetime:
@@ -972,19 +1016,21 @@ class DataFrame:
         partition_cols: list[ColumnInputType] | None = None,
         io_config: IOConfig | None = None,
         column_compression: dict[str, str] | None = None,
+        single_file: bool = False,
     ) -> "DataFrame":
         """Writes the DataFrame as parquet files, returning a new DataFrame with paths to the files that were written.
 
         Files will be written to `<root_dir>/*` with randomly generated UUIDs as the file names.
 
         Args:
-            root_dir (str): root file path to write parquet files to.
+            root_dir (str): root file path to write parquet files to. When `single_file=True`, this is the exact file path to write to.
             compression (str, optional): default compression codec applied to every column. Defaults to "snappy". Accepts "snappy", "gzip", "zstd", "lz4", "lz4_raw", "brotli", "uncompressed", or "none" (case-insensitive).
             write_mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace the contents of the root directory with new data. `overwrite-partitions` will replace only the contents in the partitions that are being written to. Defaults to "append".
-            write_success_file (bool, optional): Whether to write a `_SUCCESS` file upon successful completion. Defaults to False.
+            write_success_file (bool, optional): Whether to write a `_SUCCESS` file upon successful completion. When `single_file=True`, writes `_SUCCESS` to the output file's parent directory. Defaults to False.
             partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
             io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
             column_compression (Optional[Dict[str, str]], optional): per-column compression overrides. Keys are dot-separated column paths (e.g. `"user.name"` for a nested struct field); values are codec names accepted by `compression`. Columns not listed fall back to `compression`. Defaults to None.
+            single_file (bool, optional): If True, coalesce all data into a single parquet file at `root_dir` (treated as the exact file path). Cannot be combined with `partition_cols` or `overwrite-partitions`. Only supported on the native runner. Defaults to False.
 
         Returns:
             DataFrame: The filenames that were written out as strings.
@@ -996,6 +1042,7 @@ class DataFrame:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
             >>> df.write_parquet("output_dir", write_mode="overwrite")  # doctest: +SKIP
+            >>> df.write_parquet("output.parquet", single_file=True)  # doctest: +SKIP
 
         Tip:
             See also [`df.write_csv()`][daft.DataFrame.write_csv] and [`df.write_json()`][daft.DataFrame.write_json]
@@ -1005,8 +1052,16 @@ class DataFrame:
             raise ValueError(
                 f"Only support `append`, `overwrite`, or `overwrite-partitions` mode. {write_mode} is unsupported"
             )
+        if single_file and write_mode == "overwrite-partitions":
+            raise ValueError("`single_file=True` cannot be combined with `write_mode='overwrite-partitions'`.")
         if write_mode == "overwrite-partitions" and partition_cols is None:
             raise ValueError("Partition columns must be specified to use `overwrite-partitions` mode.")
+        if single_file and partition_cols is not None:
+            raise ValueError("`single_file=True` cannot be combined with `partition_cols`.")
+        if single_file:
+            runner_type = get_or_infer_runner_type()
+            if runner_type != "native":
+                raise ValueError(f"`single_file=True` is only supported on the native runner, got '{runner_type}'.")
 
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
@@ -1029,6 +1084,7 @@ class DataFrame:
             file_format_option=file_format_option,
             compression=compression,
             io_config=io_config,
+            single_file=single_file,
         )
         # Block and write, then retrieve data
         write_df = DataFrame(builder)
@@ -1349,6 +1405,8 @@ class DataFrame:
 
         Can be run in either `append` or `overwrite` mode which will either appends the rows in the DataFrame or will delete the existing rows and then append the DataFrame rows respectively.
 
+        ``write_iceberg`` supports checkpointing via the ``checkpoint=`` parameter. For the conceptual overview, see the [Checkpointing guide](../use-case/checkpointing.md).
+
         Args:
             table (pyiceberg.table.Table): Destination [PyIceberg Table](https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table) to write dataframe to.
             mode (str, optional): Operation mode of the write. `append` or `overwrite` Iceberg Table. Defaults to `append`.
@@ -1398,6 +1456,16 @@ class DataFrame:
             >>> table = pyiceberg.Table(...)  # doctest: +SKIP
             >>> df = daft.from_pydict({"user_id": [1, 2, 3], "name": ["Alice", "Bob", "Charlie"]})
             >>> df = df.write_iceberg(table, mode="overwrite")  # doctest: +SKIP
+            >>>
+            >>> store = daft.CheckpointStore("s3://my-bucket/ckpt/")  # doctest: +SKIP
+            >>> df = daft.read_parquet(
+            ...     "s3://my-bucket/input/",
+            ...     checkpoint=daft.CheckpointConfig(store, on="file_id"),
+            ... )  # doctest: +SKIP
+            >>> df.write_iceberg(
+            ...     table,
+            ...     checkpoint=daft.IdempotentCommit(store, idempotence_key="run-2026-05-21"),
+            ... )  # doctest: +SKIP
 
         """
         import pyarrow as pa
@@ -1779,6 +1847,8 @@ class DataFrame:
     ) -> "DataFrame":
         """Writes the DataFrame to a [Delta Lake](https://docs.delta.io/latest/index.html) table, returning a new DataFrame with the operations that occurred.
 
+        ``write_deltalake`` supports checkpointing via the ``checkpoint=`` parameter. For the conceptual overview, see the [Checkpointing guide](../use-case/checkpointing.md).
+
         Args:
             table (Union[str, pathlib.Path, deltalake.DeltaTable, UnityCatalogTable]): Destination [Delta Lake Table](https://delta-io.github.io/delta-rs/api/delta_table/) or table URI to write dataframe to.
             partition_cols (List[str], optional): How to subpartition each partition further. If table exists, expected to match table's existing partitioning scheme, otherwise creates the table with specified partition columns. Defaults to None.
@@ -1788,8 +1858,11 @@ class DataFrame:
             description (str, optional): User-provided description for this table.
             configuration (Mapping[str, Optional[str]], optional): A map containing configuration options for the metadata action.
             custom_metadata (Dict[str, str], optional): Custom metadata to add to the commit info. Keys with prefix ``daft.idempotence-`` are reserved.
-            dynamo_table_name (str, optional): Name of the DynamoDB table to be used as the locking provider if writing to S3.
-            allow_unsafe_rename (bool, optional): Whether to allow unsafe rename when writing to S3 or local disk. Defaults to False.
+            dynamo_table_name (str, optional): Name of the DynamoDB table to use when explicitly opting into
+                DynamoDB locking for S3 writes. Modern supported ``deltalake`` versions use S3 conditional
+                writes by default.
+            allow_unsafe_rename (bool, optional): Whether to explicitly allow unsafe rename when writing to S3
+                or local disk. Defaults to False.
             io_config (IOConfig, optional): configurations to use when interacting with remote storage.
             checkpoint (IdempotentCommit, optional): Bundled checkpoint store + idempotence key for an idempotent commit. When provided, the Delta commit's ``custom_metadata`` is tagged with ``daft.idempotence-key`` and retries with the same key recognize the prior attempt without producing a duplicate commit. Only ``mode='append'`` is supported. Requires the Ray runner.
 
@@ -1833,6 +1906,16 @@ class DataFrame:
             >>> import deltalake
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
             >>> df.write_deltalake("s3://my-bucket/my-deltalake-table")  # doctest: +SKIP
+            >>>
+            >>> store = daft.CheckpointStore("s3://my-bucket/ckpt/")  # doctest: +SKIP
+            >>> df = daft.read_parquet(
+            ...     "s3://my-bucket/input/",
+            ...     checkpoint=daft.CheckpointConfig(store, on="file_id"),
+            ... )  # doctest: +SKIP
+            >>> df.write_deltalake(
+            ...     "s3://my-bucket/my-deltalake-table",
+            ...     checkpoint=daft.IdempotentCommit(store, idempotence_key="run-2026-05-21"),
+            ... )  # doctest: +SKIP
         """
         import json
 
@@ -1843,7 +1926,6 @@ class DataFrame:
 
         from daft import from_pydict
         from daft.dependencies import unity_catalog
-        from daft.filesystem import get_protocol_from_path
         from daft.io.delta_lake._deltalake import delta_schema_to_pyarrow
         from daft.io.delta_lake.delta_lake_write import (
             AddAction,
@@ -1881,9 +1963,18 @@ class DataFrame:
 
         if isinstance(table, deltalake.DeltaTable):
             table_uri = table.table_uri
-            storage_options = table._storage_options or {}
+            storage_options = dict(table._storage_options or {})
             new_storage_options = io_config_to_storage_options(io_config, table_uri)
             storage_options.update(new_storage_options or {})
+            storage_options_changed = _configure_deltalake_storage_options(
+                table_uri,
+                storage_options,
+                dynamo_table_name,
+                allow_unsafe_rename,
+                deltalake.__version__,
+            )
+            if storage_options_changed:
+                table = deltalake.DeltaTable(table_uri, storage_options=storage_options)
         else:
             if isinstance(table, str):
                 table_uri = os.path.expanduser(table)
@@ -1901,24 +1992,17 @@ class DataFrame:
                 )
 
             storage_options = io_config_to_storage_options(io_config, table_uri) or {}
+            _configure_deltalake_storage_options(
+                table_uri,
+                storage_options,
+                dynamo_table_name,
+                allow_unsafe_rename,
+                deltalake.__version__,
+            )
             try:
                 table = deltalake.DeltaTable(table_uri, storage_options=storage_options)
             except TableNotFoundError:
                 table = None
-
-        # see: https://delta-io.github.io/delta-rs/usage/writing/writing-to-s3-with-locking-provider/
-        scheme = get_protocol_from_path(table_uri)
-        if scheme == "s3" or scheme == "s3a":
-            if dynamo_table_name is not None:
-                storage_options["AWS_S3_LOCKING_PROVIDER"] = "dynamodb"
-                storage_options["DELTA_DYNAMO_TABLE_NAME"] = dynamo_table_name
-            else:
-                storage_options["AWS_S3_ALLOW_UNSAFE_RENAME"] = "true"
-
-                if not allow_unsafe_rename:
-                    warnings.warn("No DynamoDB table specified for Delta Lake locking. Defaulting to unsafe writes.")
-        elif scheme == "file" and allow_unsafe_rename:
-            storage_options["MOUNT_ALLOW_UNSAFE_RENAME"] = "true"
 
         pyarrow_schema = pa.schema((f.name, f.dtype.to_arrow_dtype()) for f in self.schema())
 

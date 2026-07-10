@@ -51,6 +51,15 @@ Example:
     #[snafu(display("Unauthorized access to dataset, please check your credentials."))]
     Unauthorized,
 
+    #[snafu(display(
+        "Unauthorized response (HTTP 401) from Hugging Face bucket '{repository}'.
+Hugging Face returns 401 both for private buckets and for buckets that do not exist.
+Note that storage buckets are separate from datasets: a dataset named '{repository}' is not automatically available as a bucket, so check that https://huggingface.co/buckets/{repository} exists.
+To read a dataset, use 'hf://datasets/{repository}/...' instead.
+If the bucket exists but is private, provide a token via `HuggingFaceConfig(token=...)`."
+    ))]
+    BucketUnauthorized { repository: String },
+
     #[snafu(display("Xet error while accessing {}: {}", path, message))]
     XetOperationFailed { path: String, message: String },
 }
