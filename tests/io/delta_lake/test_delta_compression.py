@@ -148,3 +148,92 @@ def test_mixed_codec_table_reads_correctly(tmp_path):
     from_daft = daft.read_deltalake(p).sort("a").to_pydict()
     assert from_daft["a"] == [1, 2, 3, 4, 5]
     assert from_daft["s"] == ["x", "y", "z", "w", "q"]
+
+
+def _codecs_on_disk(path: str) -> set[str]:
+    """Compression codec of every parquet data file under ``path``, recursively."""
+    import glob
+
+    import pyarrow.parquet as pq
+
+    return {
+        pq.ParquetFile(f).metadata.row_group(0).column(0).compression
+        for f in glob.glob(f"{path}/**/*.parquet", recursive=True)
+    }
+
+
+def test_every_accepted_codec_coexists_in_one_table(tmp_path):
+    """A Delta table holding all six accepted codecs reads back intact through both readers.
+
+    Each append writes its own file with its own codec. Parquet stores the codec in each
+    file's own metadata, so no reader needs to know the table is heterogeneous -- which is
+    what makes the snappy default safe for tables written by older Daft.
+    """
+    p = str(tmp_path)
+    # (codec, on-disk label, rows). "none" is spelled UNCOMPRESSED in parquet metadata.
+    plan = [
+        ("none", "UNCOMPRESSED", (1, "a")),
+        ("snappy", "SNAPPY", (2, "b")),
+        ("gzip", "GZIP", (3, "c")),
+        ("brotli", "BROTLI", (4, "d")),
+        ("lz4", "LZ4", (5, "e")),
+        ("zstd", "ZSTD", (6, "f")),
+    ]
+
+    for i, (codec, _label, (n, s)) in enumerate(plan):
+        mode = "append" if i else "error"
+        daft.from_pydict({"a": [n], "s": [s]}).write_deltalake(p, mode=mode, compression=codec)
+
+    assert _codecs_on_disk(p) == {label for _c, label, _r in plan}
+
+    expected_a = [n for _c, _l, (n, _s) in plan]
+    expected_s = [s for _c, _l, (_n, s) in plan]
+
+    from_delta_rs = deltalake.DeltaTable(p).to_pyarrow_table().sort_by("a")
+    assert from_delta_rs.column("a").to_pylist() == expected_a
+    assert from_delta_rs.column("s").to_pylist() == expected_s
+
+    from_daft = daft.read_deltalake(p).sort("a").to_pydict()
+    assert from_daft["a"] == expected_a
+    assert from_daft["s"] == expected_s
+
+
+def test_mixed_codec_table_survives_projection_and_predicate(tmp_path):
+    """Daft's own scan path decodes a heterogeneous table under pushdown.
+
+    Reading every column of every file would hide a per-file decode bug behind the
+    full-table read above; a projection + filter forces the scan to touch individual
+    column chunks across files written with different codecs.
+    """
+    p = str(tmp_path)
+    daft.from_pydict({"a": [1, 2], "s": ["x", "y"]}).write_deltalake(p, compression="none")
+    daft.from_pydict({"a": [3, 4], "s": ["z", "w"]}).write_deltalake(p, mode="append", compression="gzip")
+    daft.from_pydict({"a": [5, 6], "s": ["p", "q"]}).write_deltalake(p, mode="append", compression="zstd")
+
+    assert _codecs_on_disk(p) == {"UNCOMPRESSED", "GZIP", "ZSTD"}
+
+    # Projection only, and a predicate that straddles all three files.
+    got = daft.read_deltalake(p).where(daft.col("a") >= 2).select("s").sort("s").to_pydict()
+    assert got["s"] == ["p", "q", "w", "y", "z"]
+    assert "a" not in got
+
+
+def test_partitioned_table_mixes_codecs_across_partitions(tmp_path):
+    """Codec is a per-file property, so partitions may disagree and still read correctly."""
+    p = str(tmp_path)
+    daft.from_pydict({"part": ["a", "a"], "v": [1, 2]}).write_deltalake(
+        p, partition_cols=["part"], compression="none"
+    )
+    daft.from_pydict({"part": ["b", "b"], "v": [3, 4]}).write_deltalake(
+        p, mode="append", partition_cols=["part"], compression="zstd"
+    )
+
+    assert _codecs_on_disk(p) == {"UNCOMPRESSED", "ZSTD"}
+
+    from_delta_rs = deltalake.DeltaTable(p).to_pyarrow_table().sort_by("v")
+    assert from_delta_rs.column("v").to_pylist() == [1, 2, 3, 4]
+    assert from_delta_rs.column("part").to_pylist() == ["a", "a", "b", "b"]
+
+    from_daft = daft.read_deltalake(p).sort("v").to_pydict()
+    assert from_daft["v"] == [1, 2, 3, 4]
+    assert from_daft["part"] == ["a", "a", "b", "b"]
