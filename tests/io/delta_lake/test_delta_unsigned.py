@@ -44,6 +44,44 @@ def test_uint64_above_i64_max_raises_naming_the_column(tmp_path):
     assert "uint64" in msg.lower()
 
 
+def test_uint64_above_i64_max_in_struct_raises_naming_the_column(tmp_path):
+    """A uint64 overflow nested inside a struct must raise the helpful ValueError, not let the raw ArrowInvalid escape."""
+    struct_type = pa.struct([pa.field("n", pa.uint64())])
+    tbl = pa.table({"s": pa.array([{"n": (1 << 63) + 42}], type=struct_type)})
+    with pytest.raises(ValueError) as excinfo:
+        daft.from_arrow(tbl).write_deltalake(str(tmp_path))
+    msg = str(excinfo.value)
+    assert "Failed to write column" in msg
+    assert "s" in msg
+    assert "uint64" in msg.lower()
+
+
+def test_uint64_above_i64_max_in_list_raises_naming_the_column(tmp_path):
+    """A uint64 overflow nested inside a list must raise the helpful ValueError, not let the raw ArrowInvalid escape."""
+    tbl = pa.table({"l": pa.array([[(1 << 63) + 42]], type=pa.list_(pa.uint64()))})
+    with pytest.raises(ValueError) as excinfo:
+        daft.from_arrow(tbl).write_deltalake(str(tmp_path))
+    msg = str(excinfo.value)
+    assert "Failed to write column" in msg
+    assert "l" in msg
+    assert "uint64" in msg.lower()
+
+
+def test_uint64_overflow_error_names_only_uint64_column(tmp_path):
+    """A non-overflowing uint8 column must not be named alongside the uint64 column that actually overflowed."""
+    tbl = pa.table(
+        {
+            "small": pa.array([0, 255], pa.uint8()),
+            "big": pa.array([1, (1 << 63) + 42], pa.uint64()),
+        }
+    )
+    with pytest.raises(ValueError) as excinfo:
+        daft.from_arrow(tbl).write_deltalake(str(tmp_path))
+    msg = str(excinfo.value)
+    assert "big" in msg
+    assert "small" not in msg
+
+
 def test_unsigned_nested_in_struct_is_widened(tmp_path):
     struct_type = pa.struct([pa.field("n", pa.uint32())])
     tbl = pa.table({"s": pa.array([{"n": 3_000_000_000}], type=struct_type)})

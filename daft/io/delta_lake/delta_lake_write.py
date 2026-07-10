@@ -35,6 +35,8 @@ except ImportError:
 def sanitize_table_for_deltalake(
     table: MicroPartition, large_dtypes: bool, partition_keys: list[str] | None = None
 ) -> pa.Table:
+    from daft.dependencies import pa
+
     arrow_table = table.to_arrow()
 
     # Remove partition keys from the table since they are already encoded as keys
@@ -44,8 +46,8 @@ def sanitize_table_for_deltalake(
     arrow_batch = convert_pa_schema_to_delta(arrow_table.schema, large_dtypes)
     try:
         return arrow_table.cast(arrow_batch)
-    except Exception as exc:  # pa.ArrowInvalid and friends
-        unsigned = [f.name for f in arrow_table.schema if str(f.type).startswith("uint")]
+    except pa.ArrowInvalid as exc:
+        unsigned = _find_uint64_columns(arrow_table.schema)
         if unsigned:
             raise ValueError(
                 f"Failed to write column(s) {unsigned} to Delta Lake. Delta has no "
@@ -302,14 +304,6 @@ def _normalize_delta_schema_timestamps(schema: pa.Schema) -> pa.Schema:
 # uint32->integer(int32), uint64->long(int64). Any value above the corresponding SIGNED
 # maximum commits and then cannot be read. Widen to the next signed type that holds every
 # value. uint64 has no lossless target; values above i64::MAX raise at cast time.
-_DELTA_UNSIGNED_WIDENING = [
-    ("uint8", "int16"),
-    ("uint16", "int32"),
-    ("uint32", "int64"),
-    ("uint64", "int64"),
-]
-
-
 def _widen_unsigned_type(dtype: pa.DataType) -> pa.DataType:
     """Rewrite unsigned integer types to a signed type Delta can represent.
 
@@ -351,6 +345,39 @@ def _widen_unsigned_schema(schema: pa.Schema) -> pa.Schema:
 
     widened = [field.with_type(_widen_unsigned_type(field.type)) for field in schema]
     return pa.schema(widened, metadata=schema.metadata)
+
+
+def _type_contains_uint64(dtype: pa.DataType) -> bool:
+    """Return whether ``dtype`` is uint64, or contains a uint64 anywhere nested within it.
+
+    Mirrors the container coverage of :func:`_widen_unsigned_type` (struct / list /
+    large_list / fixed_size_list / map, including both the map key and item fields) so
+    that every column the widening step could overflow on uint64 is also detected here.
+    """
+    from daft.dependencies import pa
+
+    if pa.types.is_uint64(dtype):
+        return True
+    if pa.types.is_struct(dtype):
+        return any(_type_contains_uint64(dtype.field(i).type) for i in range(dtype.num_fields))
+    if pa.types.is_large_list(dtype):
+        return _type_contains_uint64(dtype.value_field.type)
+    if pa.types.is_fixed_size_list(dtype):
+        return _type_contains_uint64(dtype.value_field.type)
+    if pa.types.is_list(dtype):
+        return _type_contains_uint64(dtype.value_field.type)
+    if pa.types.is_map(dtype):
+        return _type_contains_uint64(dtype.key_field.type) or _type_contains_uint64(dtype.item_field.type)
+    return False
+
+
+def _find_uint64_columns(schema: pa.Schema) -> list[str]:
+    """Return names of top-level fields whose type is or contains uint64.
+
+    Only uint64 can overflow int64 on cast; uint8/uint16/uint32 widen losslessly and are
+    never named.
+    """
+    return [field.name for field in schema if _type_contains_uint64(field.type)]
 
 
 def convert_pa_schema_to_delta(schema: pa.Schema, large_dtypes: bool) -> pa.Schema:
