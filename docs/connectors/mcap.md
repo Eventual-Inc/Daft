@@ -2,13 +2,9 @@
 
 [MCAP](https://mcap.dev/) is an open-source container file format for multimodal log data, commonly used in robotics and autonomous systems. Daft can read MCAP files using [`daft.read_mcap()`][daft.io.read_mcap].
 
-## Installing Dependencies
-
-MCAP support requires the `mcap` package:
-
-```bash
-pip install mcap
-```
+MCAP reading is built into Daft through the official Foxglove Rust library. The
+optional Python `mcap` packages are only needed when authoring files or decoding
+application-specific schemas in Python.
 
 ## Basic Usage
 
@@ -57,17 +53,19 @@ The `read_mcap` function returns a DataFrame with the following schema:
 
 | Column | Type | Description |
 |--------|------|-------------|
+| `source_path` | `string` | Source MCAP path for episode/file provenance |
 | `topic` | `string` | The topic name the message was published on |
-| `log_time` | `int64` | Timestamp when the message was logged (nanoseconds) |
-| `publish_time` | `int64` | Timestamp when the message was published (nanoseconds) |
-| `sequence` | `int32` | Sequence number of the message |
-| `data` | `string` | Message data as a string |
+| `log_time` | `uint64` | Timestamp when the message was logged (nanoseconds) |
+| `publish_time` | `uint64` | Timestamp when the message was published (nanoseconds) |
+| `sequence` | `uint32` | Sequence number of the message |
+| `data` | `binary` | Raw message payload without string conversion |
 
 ## Filtering Options
 
 ### Time Range
 
-Filter messages by time range. The time unit matches the MCAP `log_time` field (typically nanoseconds):
+Filter messages by time range. The start is inclusive and the end is exclusive;
+the unit matches the MCAP `log_time` field (typically nanoseconds):
 
 ```python
 df = daft.read_mcap(
@@ -77,6 +75,36 @@ df = daft.read_mcap(
 )
 df.show()
 ```
+
+## Query pushdown
+
+For indexed MCAP files, Daft reads the footer summary first and asks the native
+reader only for chunks that can contain the requested topics and log-time range.
+This works for filters supplied directly to `read_mcap` and for equivalent
+planner predicates:
+
+```python
+df = (
+    daft.read_mcap("s3://robot-logs/episode.mcap")
+    .where(
+        daft.col("topic").is_in(["/camera", "/imu"])
+        & (daft.col("log_time") >= start_ns)
+        & (daft.col("log_time") < end_ns)
+    )
+    .select("source_path", "topic", "log_time")
+)
+```
+
+Topic equality/`is_in`, log-time bounds, projection, and safe limits are pushed
+into the reader. The original predicate remains as a residual check. Omitting
+`data` also avoids payload-column allocation. MCAPs without chunk indexes fall
+back to a native sequential scan; that fallback yields file order, while the
+indexed path yields log-time order.
+
+Use `daft.from_glob_path` for cheap file discovery and object sizes, then pass a
+bounded set of exact paths to `daft.read_mcap` for message reads. See
+[`daft.McapFile`][daft.McapFile] for range-backed summary inspection without
+materializing the full object.
 
 ### Topic Filtering
 

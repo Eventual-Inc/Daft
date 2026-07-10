@@ -18,8 +18,14 @@ use crate::file::{DaftFile, FileCursor};
 
 #[pyclass(from_py_object)]
 #[derive(Clone)]
-struct PyFileReference {
+pub struct PyFileReference {
     inner: Arc<FileReference>,
+}
+
+impl PyFileReference {
+    pub fn file_reference(&self) -> FileReference {
+        self.inner.as_ref().clone()
+    }
 }
 
 #[pymethods]
@@ -106,7 +112,7 @@ impl PyFileReference {
 }
 
 #[pyclass]
-struct PyDaftFile {
+pub struct PyDaftFile {
     inner: DaftFile,
     inside_context: AtomicBool,
 }
