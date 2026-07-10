@@ -573,6 +573,7 @@ def distributed_merge_deltalake(
     broadcast_join: bool | None = None,
     materialize_source: bool = True,
     materialize_join: bool = False,
+    compression: str = "snappy",
 ) -> "DistributedDeltaMergeBuilder":
     """Create a distributed Delta Lake MERGE builder that uses Daft's distributed join.
 
@@ -617,6 +618,8 @@ def distributed_merge_deltalake(
             (default), the joined plan is re-executed per pass and never held
             in memory; on partitioned tables the write pass then re-reads only
             the affected partitions of the target.
+        compression: Compression codec for the parquet data files this merge writes.
+            Defaults to "snappy". See :meth:`daft.DataFrame.write_deltalake`.
 
     Returns:
         DistributedDeltaMergeBuilder: A builder for chaining merge clauses.
@@ -686,6 +689,10 @@ def distributed_merge_deltalake(
                 .execute()
             )
     """
+    from daft.io.delta_lake.delta_lake_write import normalize_delta_compression
+
+    compression = normalize_delta_compression(compression)
+
     # Parse predicate to extract join keys and residual conditions
     join_keys, residual_predicates = _parse_merge_predicate(predicate, source_alias, target_alias)
 
@@ -728,6 +735,7 @@ def distributed_merge_deltalake(
         broadcast_join=broadcast_join,
         materialize_source=materialize_source,
         materialize_join=materialize_join,
+        compression=compression,
     )
 
 
@@ -936,6 +944,7 @@ class DistributedDeltaMergeBuilder:
         broadcast_join: bool | None = None,
         materialize_source: bool = True,
         materialize_join: bool = False,
+        compression: str = "snappy",
     ) -> None:
         self._resolved_table = resolved_table
         self._storage_options = storage_options
@@ -949,6 +958,7 @@ class DistributedDeltaMergeBuilder:
         self._broadcast_join = broadcast_join
         self._materialize_source = materialize_source
         self._materialize_join = materialize_join
+        self._compression = compression
 
         # Target column names, used to decide which source columns collide (and
         # therefore receive the ".__src__" join suffix). Read from the Delta log
@@ -1229,6 +1239,7 @@ class DistributedDeltaMergeBuilder:
             pinned_version + 1,
             True,
             io_config=io_config,
+            compression=self._compression,
             partition_cols=list(partition_cols),
         )
         wdf = DataFrame(builder)
@@ -1715,6 +1726,7 @@ class DistributedDeltaMergeBuilder:
                     partition_cols=partition_cols if partition_cols else None,
                     custom_metadata=merge_metadata,
                     io_config=self._io_config,
+                    compression=self._compression,
                 )
                 # The overwrite replaced every file, so the new snapshot's
                 # files are exactly the ones this merge added.
