@@ -194,7 +194,7 @@ class GravitinoIcebergTable(GravitinoTable):
             raise ValueError(f"Expected ICEBERG format, got {inner.table_info.format!r}")
         t = GravitinoIcebergTable.__new__(GravitinoIcebergTable)
         t._inner = inner
-        t._pyiceberg_table = _open_iceberg_table(inner.table_info.storage_location, inner.io_config)
+        t._pyiceberg_table = _open_iceberg_table(inner.table_info, inner.io_config)
         return t
 
     def read(self, **options: Any) -> DataFrame:
@@ -282,8 +282,31 @@ class GravitinoPostgresTable(GravitinoTable):
         self._postgres_table.overwrite(df, **options)
 
 
-def _open_iceberg_table(storage_location: str, io_config: IOConfig | None) -> PyIcebergTable:
-    """Load a PyIceberg Table from a storage directory via HadoopCatalog."""
+def _open_iceberg_table(table_info: GravitinoTableInfo, io_config: IOConfig | None) -> PyIcebergTable:
+    if _is_rest_iceberg_table(table_info):
+        return _open_iceberg_table_via_rest(table_info, io_config)
+    return _open_iceberg_table_via_hadoop(table_info.storage_location, io_config)
+
+
+def _is_rest_iceberg_table(table_info: GravitinoTableInfo) -> bool:
+    props = table_info.properties
+    return props.get("catalog-backend", "").lower() == "rest" and bool(props.get("uri"))
+
+
+def _open_iceberg_table_via_rest(table_info: GravitinoTableInfo, io_config: IOConfig | None) -> PyIcebergTable:
+    from pyiceberg.catalog import load_catalog
+
+    props = table_info.properties.copy()
+    props.update(_io_config_to_pyiceberg_props(io_config))
+    props["type"] = "rest"
+    if not props.get("warehouse"):
+        props.pop("warehouse", None)
+
+    catalog = load_catalog(table_info.catalog, **props)
+    return catalog.load_table(f"{table_info.schema}.{table_info.name}")
+
+
+def _open_iceberg_table_via_hadoop(storage_location: str, io_config: IOConfig | None) -> PyIcebergTable:
     from pyiceberg.catalog.hadoop import HadoopCatalog
 
     parent, table_dir = storage_location.rstrip("/").rsplit("/", 1)
