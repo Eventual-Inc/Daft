@@ -77,6 +77,7 @@ The `daft.File` type is subclassed by
 - [`daft.ImageFile`](../api/datatypes/file_types.md)
 - [`daft.VideoFile`](../api/datatypes/file_types.md)
 - [`daft.Hdf5File`](../api/datatypes/file_types.md)
+- [`daft.McapFile`](../api/datatypes/file_types.md)
 
 Each of these subclasses provide a [pythonic file-like interface](https://docs.python.org/3/library/functions.html#open) with random access capabilities. You can also pass in a custom buffer size to the `open` method to control the amount of data read into memory at once.
 
@@ -189,6 +190,45 @@ df.show(5)
 
 (Showing first 5 rows)
 ```
+
+## Inspecting MCAP metadata
+
+`daft.McapFile` reads the MCAP header and optional footer/summary indexes through
+Daft's native range-readable file interface. On backends that support range
+requests, remote recordings do not need to be copied to a temporary file or
+downloaded in full just to discover their topics, time bounds, schemas, message
+counts, chunk indexes, or metadata records.
+
+```python
+import daft
+
+recording = daft.McapFile("s3://robot-logs/episode.mcap")
+print(recording.topics())
+print(recording.message_count())
+print(recording.time_range())
+```
+
+The same operations are available as lazy expressions. `mcap_metadata` returns
+a JSON catalog so nested, format-specific metadata remains stable in a DataFrame,
+while common planning fields have typed expressions:
+
+```python
+from daft.functions import mcap_file
+
+files = (
+    daft.from_glob_path("s3://robot-logs/**/*.mcap")
+    .with_column("mcap", mcap_file(daft.col("path")))
+    .with_column("topics", daft.col("mcap").mcap_topics())
+    .with_column("message_count", daft.col("mcap").mcap_message_count())
+    .with_column("time_range", daft.col("mcap").mcap_time_range())
+)
+```
+
+MCAP summaries are optional. `has_summary` reports whether one exists.
+`has_chunk_indexes` and `has_message_indexes` report the two index levels used
+for read and count pushdown; `indexed` is shorthand for `has_chunk_indexes`.
+An unindexed summary may still contain schemas, channels, and statistics. Daft
+does not fall back to a full data scan when summary metadata is absent.
 
 ## Byte-Range Reads
 

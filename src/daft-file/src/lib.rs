@@ -1,5 +1,6 @@
 mod file;
 mod functions;
+pub mod mcap;
 mod meta;
 
 pub(crate) use file::guess_mimetype_from_content;

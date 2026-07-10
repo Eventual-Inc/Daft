@@ -3126,6 +3126,30 @@ class Expression:
 
         return hdf5_attrs(self, h5path=h5path)
 
+    def mcap_metadata(self) -> Expression:
+        """Read the native range-backed MCAP metadata catalog as JSON."""
+        from daft.functions import mcap_metadata
+
+        return mcap_metadata(self)
+
+    def mcap_topics(self) -> Expression:
+        """Return topics declared in the MCAP summary."""
+        from daft.functions import mcap_topics
+
+        return mcap_topics(self)
+
+    def mcap_message_count(self) -> Expression:
+        """Return the MCAP summary message count."""
+        from daft.functions import mcap_message_count
+
+        return mcap_message_count(self)
+
+    def mcap_time_range(self) -> Expression:
+        """Return MCAP summary start/end log-time bounds."""
+        from daft.functions import mcap_time_range
+
+        return mcap_time_range(self)
+
 
 class WhenExpr(Expression):
     """Helper class for building a SQL-style CASE WHEN expression.
