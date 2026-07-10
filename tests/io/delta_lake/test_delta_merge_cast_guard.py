@@ -7,7 +7,9 @@ deltalake = pytest.importorskip("deltalake")
 import pyarrow as pa
 
 import daft
+from daft import col
 from daft.io.delta_lake._deltalake import distributed_merge_deltalake
+from tests.conftest import get_tests_daft_runner_name
 
 
 def _merge(path, source_table):
@@ -74,3 +76,54 @@ def test_merge_into_widened_column_preserves_the_value(tmp_path):
 
     table = deltalake.DeltaTable(str(tmp_path)).to_pyarrow_table().sort_by("k")
     assert table.column("v").to_pylist() == [10, 3_000_000_000]
+
+
+# Module-level so a use_process=False function (same process on the native runner)
+# can record how many times the source plan actually executes.
+_SOURCE_EXEC = {"n": 0}
+
+
+@daft.func(return_dtype=daft.DataType.int64(), use_process=False)
+def _counting_passthrough(x: int) -> int:
+    """Increment a module counter once per source-plan execution, then pass the value
+    through unchanged. Row-wise over a single-row source, so one call == one execution.
+    Kept int64 so it feeds a risky Int64->Int32 narrowing cast."""
+    _SOURCE_EXEC["n"] += 1
+    return x
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() == "ray",
+    reason="Ray always runs UDFs in a separate process, so a module-level counter is not visible.",
+)
+def test_guard_does_not_re_execute_the_materialized_source(tmp_path):
+    """Regression: the cast guard must probe the *materialized* source, not re-run the
+    source plan. With a risky cast present and materialize_source=True (default), the
+    source must execute exactly ONCE. Before the guard was reordered to run after
+    materialization it executed twice (once for the guard's probe, once to collect),
+    which both doubled UDF work and — for a non-deterministic source — vetted a
+    different execution than the one written, reopening the silent-null bug."""
+    # Target `v` is int32; the source `v` is int64 and in range, so the cast is risky
+    # (not provably lossless) yet the merge succeeds.
+    daft.from_arrow(
+        pa.table({"k": pa.array([1], pa.int64()), "v": pa.array([10], pa.int32())})
+    ).write_deltalake(str(tmp_path))
+
+    source = daft.from_pydict({"k": [2], "v_raw": [42]}).select(
+        col("k"), _counting_passthrough(col("v_raw")).alias("v")
+    )
+
+    _SOURCE_EXEC["n"] = 0
+    builder = distributed_merge_deltalake(
+        str(tmp_path), source, predicate="source.k = target.k", on="k", materialize_source=True
+    )
+    builder.when_matched_update_all().when_not_matched_insert_all().execute()
+
+    assert _SOURCE_EXEC["n"] == 1, (
+        f"source plan executed {_SOURCE_EXEC['n']} time(s); the guard should reuse the "
+        "materialized source, not trigger a second execution."
+    )
+
+    # The merge still committed the (in-range) value.
+    table = deltalake.DeltaTable(str(tmp_path)).to_pyarrow_table().sort_by("k")
+    assert table.column("v").to_pylist() == [10, 42]

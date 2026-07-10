@@ -1223,13 +1223,19 @@ class DistributedDeltaMergeBuilder:
         arrow_schema = delta_schema_to_pyarrow(self._resolved_table.schema())
         return {f.name: f.dtype for f in daft.Schema.from_pyarrow_schema(arrow_schema)}
 
-    def _check_source_casts(self) -> None:
+    def _check_source_casts(self, source: "DataFrame") -> None:
         """Raise if aligning the source to the target schema would turn a value into NULL.
 
         Daft's `cast` returns NULL on overflow where PyArrow raises. The merge aligns the
         source to the target's dtypes, so an out-of-range value is silently discarded and
         the merge reports success. Guard only the casts that are not provably lossless;
         the check is data-dependent, so a merge that narrows within range still succeeds.
+
+        Probes ``source`` (the *materialized* source when ``materialize_source=True``),
+        not ``self._source``, so the guard vets the exact rows that get written and does
+        not trigger a second execution of the source plan. For a non-deterministic source
+        this is load-bearing: vetting one execution while writing another could let an
+        out-of-range value slip through into the second execution and be silently nulled.
         """
         import daft
         from daft import col
@@ -1237,7 +1243,7 @@ class DistributedDeltaMergeBuilder:
         target_dtypes = self._target_dtypes()
         risky = [
             f
-            for f in self._source.schema()
+            for f in source.schema()
             if f.name in target_dtypes
             and not _is_definitely_lossless_cast(f.dtype, target_dtypes[f.name])
         ]
@@ -1247,7 +1253,7 @@ class DistributedDeltaMergeBuilder:
         # A row whose source value is non-null but whose cast result is null is a value
         # that did not fit. Count them per column in one pass.
         lost = (
-            self._source.select(
+            source.select(
                 *[
                     (
                         (~col(f.name).is_null())
@@ -1418,11 +1424,6 @@ class DistributedDeltaMergeBuilder:
             DataFrame: A single-row DataFrame with merge metrics columns.
                        Raw metrics dict also stored in ``._metadata["merge_metrics"]``.
         """
-        # Guard first — before any join, write, or version pin: aligning the source to a
-        # narrower target dtype would silently null out-of-range values (Daft's cast
-        # returns NULL where PyArrow raises), so refuse loudly instead of committing them.
-        self._check_source_casts()
-
         import time
 
         import daft
@@ -1451,10 +1452,11 @@ class DistributedDeltaMergeBuilder:
 
         on = self._on
 
-        # Materialize the source once when small enough to hold: it is reused by
-        # the guard and by both execution passes. For very large sources
-        # (materialize_source=False), keep it lazy — each pass re-executes the
-        # source plan (column-pruned) instead of pinning it in cluster memory.
+        # Materialize the source once when small enough to hold: the single
+        # collected copy is reused by the guard and by both execution passes. For
+        # very large sources (materialize_source=False), keep it lazy — each pass
+        # (and the guard) re-executes the source plan (column-pruned) instead of
+        # pinning it in cluster memory.
         source_size_bytes: int | None = None
         if self._materialize_source:
             source = self._source.collect()
@@ -1465,6 +1467,13 @@ class DistributedDeltaMergeBuilder:
         else:
             source = self._source
         source_columns = [f.name for f in source.schema()]
+
+        # Guard — before any join, write, or version pin, but *after* the source is
+        # materialized so it probes the exact rows that get written (one execution, not
+        # two): aligning the source to a narrower target dtype would silently null
+        # out-of-range values (Daft's cast returns NULL where PyArrow raises), so refuse
+        # loudly instead of committing them.
+        self._check_source_casts(source)
 
         # Guard (#11): source join keys must be unique — multiple source rows
         # matching one target row is ambiguous and would duplicate target rows
