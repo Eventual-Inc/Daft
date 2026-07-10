@@ -2332,6 +2332,7 @@ class DataFrame:
         max_spill_size: int | None = None,
         max_temp_directory_size: int | None = None,
         post_commithook_properties: "deltalake.PostCommitHookProperties | None" = None,
+        compression: str | None = None,
     ) -> "DeltaMergeBuilder":
         """Create a Delta Lake MERGE operation builder using this DataFrame.
 
@@ -2352,6 +2353,10 @@ class DataFrame:
             max_spill_size: Maximum spill size in bytes for streamed execution.
             max_temp_directory_size: Maximum temporary directory size in bytes for streamed execution.
             post_commithook_properties: Optional post-commit hook properties.
+            compression: Compression codec for the parquet data files this merge writes.
+                Defaults to "snappy" when `writer_properties` is not supplied. Mutually
+                exclusive with `writer_properties` (which already carries its own
+                `compression` field) — passing both raises `ValueError`.
 
         Returns:
             DeltaMergeBuilder: A builder object for chaining merge clauses with ``.execute()`` finalizer that returns a DataFrame.
@@ -2393,6 +2398,7 @@ class DataFrame:
             max_spill_size=max_spill_size,
             max_temp_directory_size=max_temp_directory_size,
             post_commithook_properties=post_commithook_properties,
+            compression=compression,
         )
 
     @staticmethod

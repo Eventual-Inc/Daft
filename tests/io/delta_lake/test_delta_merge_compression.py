@@ -135,16 +135,29 @@ def test_merge_deltalake_rejects_both_compression_and_writer_properties(tmp_path
         )
 
 
-def test_merge_deltalake_passes_writer_properties_through_untouched(tmp_path):
-    """A `dataclasses.replace`-based implementation would silently reset these fields.
+def test_merge_deltalake_passes_writer_properties_through_untouched(tmp_path, monkeypatch):
+    """The object handed to `DeltaTable.merge(...)` must be the caller's own object.
 
-    `deltalake.WriterProperties` is decorated @dataclass but declares no fields, so
-    `replace()` copies nothing and returns a default object.
+    `dataclasses.replace()` never mutates its input — it returns a new object — so a
+    regression that did `writer_properties = dataclasses.replace(writer_properties, ...)`
+    internally (rebinding the local variable) would leave the caller's `wp` completely
+    untouched. Asserting on the caller's `wp` therefore cannot detect that failure mode;
+    instead we intercept `DeltaTable.merge` and assert on the object it actually received.
     """
     _seed_simple(tmp_path)
     wp = deltalake.WriterProperties(
         compression="ZSTD", max_row_group_size=4096, write_batch_size=512
     )
+
+    captured = {}
+    original_merge = deltalake.DeltaTable.merge
+
+    def spy_merge(self, *args, **kwargs):
+        captured["writer_properties"] = kwargs.get("writer_properties")
+        return original_merge(self, *args, **kwargs)
+
+    monkeypatch.setattr(deltalake.DeltaTable, "merge", spy_merge)
+
     (
         merge_deltalake(
             str(tmp_path), _source(), predicate="s.k = t.k",
@@ -154,9 +167,12 @@ def test_merge_deltalake_passes_writer_properties_through_untouched(tmp_path):
         .when_not_matched_insert_all()
         .execute()
     )
-    # The object we handed in must be unmodified, and its other options intact.
-    assert vars(wp)["max_row_group_size"] == 4096
-    assert vars(wp)["write_batch_size"] == 512
+    # The object actually passed to DeltaTable.merge must be the caller's own object
+    # (not a reconstruction), and its other options must survive untouched.
+    captured_wp = captured["writer_properties"]
+    assert captured_wp is wp
+    assert vars(captured_wp)["max_row_group_size"] == 4096
+    assert vars(captured_wp)["write_batch_size"] == 512
     assert "ZSTD" in _codecs(tmp_path)
 
 
@@ -168,3 +184,31 @@ def test_writer_properties_replace_is_lossy_upstream_bug():
     assert dataclasses.fields(wp) == ()  # decorated @dataclass, declares no fields
     replaced = dataclasses.replace(wp, compression="ZSTD")
     assert vars(replaced)["max_row_group_size"] is None  # silently destroyed
+
+
+def test_dataframe_merge_deltalake_honors_compression(tmp_path):
+    """`DataFrame.merge_deltalake` is a thin wrapper; `compression` must reach it."""
+    _seed_simple(tmp_path)
+    (
+        daft.from_arrow(_source())
+        .merge_deltalake(
+            str(tmp_path), predicate="s.k = t.k",
+            source_alias="s", target_alias="t", compression="zstd",
+        )
+        .when_matched_update_all()
+        .when_not_matched_insert_all()
+        .execute()
+    )
+    assert "ZSTD" in _codecs(tmp_path)
+
+
+def test_dataframe_merge_deltalake_rejects_both_compression_and_writer_properties(tmp_path):
+    """The conflict rule must hold through the DataFrame wrapper too."""
+    _seed_simple(tmp_path)
+    wp = deltalake.WriterProperties(compression="ZSTD")
+    with pytest.raises(ValueError, match="writer_properties"):
+        daft.from_arrow(_source()).merge_deltalake(
+            str(tmp_path), predicate="s.k = t.k",
+            source_alias="s", target_alias="t",
+            compression="snappy", writer_properties=wp,
+        )
