@@ -1,12 +1,17 @@
 use std::{io, path::Path, process::Command};
 
-/// Recursively copy the contents of `src` into `dst`.
+/// Recursively copy the contents of `src` into `dst`, resolving symlinks.
+///
+/// `Path::is_dir` follows symlinks, where `DirEntry::file_type` does not. That
+/// matters because `std::fs::copy` also follows them, and refuses a directory:
+/// testing the entry type directly would send a symlinked directory down the
+/// copy branch and fail.
 fn copy_dir_all(src: &Path, dst: &Path) -> io::Result<()> {
     std::fs::create_dir_all(dst)?;
     for entry in std::fs::read_dir(src)? {
         let entry = entry?;
         let dst = dst.join(entry.file_name());
-        if entry.file_type()?.is_dir() {
+        if entry.path().is_dir() {
             copy_dir_all(&entry.path(), &dst)?;
         } else {
             std::fs::copy(entry.path(), &dst)?;
