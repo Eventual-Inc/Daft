@@ -3216,7 +3216,6 @@ dependencies = [
  "arrow-array 59.0.0",
  "arrow-buffer 59.0.0",
  "arrow-ipc",
- "arrow-row",
  "arrow-schema 59.0.0",
  "async-trait",
  "common-checkpoint-config",
@@ -3589,7 +3588,6 @@ dependencies = [
  "daft-schema",
  "daft-writers",
  "futures",
- "tempfile",
  "tokio",
  "tonic",
 ]

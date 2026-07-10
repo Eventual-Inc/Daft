@@ -33,6 +33,7 @@ pub struct OutputFileInfo<E = ExprRef> {
     pub compression: Option<String>,
     pub io_config: Option<IOConfig>,
     pub write_success_file: bool,
+    pub single_file: bool,
 }
 
 #[cfg(feature = "python")]
@@ -200,6 +201,7 @@ where
         compression: Option<String>,
         io_config: Option<IOConfig>,
         write_success_file: bool,
+        single_file: bool,
     ) -> Self {
         Self {
             root_dir,
@@ -210,6 +212,7 @@ where
             compression,
             io_config,
             write_success_file,
+            single_file,
         }
     }
 
@@ -265,6 +268,7 @@ impl OutputFileInfo {
             compression: self.compression,
             io_config: self.io_config,
             write_success_file: self.write_success_file,
+            single_file: self.single_file,
         })
     }
 }

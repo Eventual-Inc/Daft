@@ -25,26 +25,6 @@ impl RecordBatch {
         Ok(hash_so_far)
     }
 
-    /// Like [`Self::hash_rows`] but mixes in a `seed`, producing a different hash for the same rows
-    /// across different seeds. Used for recursive re-partitioning of an overflowing hash bucket
-    /// (spilling grace aggregation): re-hashing with the *same* seed would map every row back into
-    /// the same sub-bucket, so a per-level seed is required for the recursion to make progress.
-    /// Equal keys under the same seed still hash identically (so groups stay co-located).
-    pub fn hash_rows_seeded(&self, seed: u64) -> DaftResult<UInt64Array> {
-        if self.num_columns() == 0 {
-            return Err(DaftError::ValueError(
-                "Attempting to Hash Table with no columns".to_string(),
-            ));
-        }
-        let cols = self.as_materialized_series();
-        let seed_arr = UInt64Array::from_vec("seed", vec![seed; self.len()]);
-        let mut hash_so_far = cols.first().unwrap().hash(Some(&seed_arr))?;
-        for c in cols.iter().skip(1) {
-            hash_so_far = c.hash(Some(&hash_so_far))?;
-        }
-        Ok(hash_so_far)
-    }
-
     pub fn to_probe_hash_table(
         &self,
     ) -> DaftResult<HashMap<IndexHash, VecIndices, IdentityBuildHasher>> {

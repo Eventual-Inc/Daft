@@ -124,13 +124,6 @@ impl PyDaftExecutionConfig {
         flight_shuffle_dirs=None,
         flight_shuffle_compression=None,
         enable_multi_glob_path_tasks=None,
-        hash_join_spill_threshold_bytes=None,
-        sort_spill_threshold_bytes=None,
-        agg_spill_threshold_bytes=None,
-        dedup_spill_threshold_bytes=None,
-        window_spill_threshold_bytes=None,
-        repartition_spill_threshold_bytes=None,
-        spill_pool_bytes=None,
     ))]
     fn with_config_values(
         &self,
@@ -169,13 +162,6 @@ impl PyDaftExecutionConfig {
         flight_shuffle_dirs: Option<Vec<String>>,
         flight_shuffle_compression: Option<&str>,
         enable_multi_glob_path_tasks: Option<bool>,
-        hash_join_spill_threshold_bytes: Option<usize>,
-        sort_spill_threshold_bytes: Option<usize>,
-        agg_spill_threshold_bytes: Option<usize>,
-        dedup_spill_threshold_bytes: Option<usize>,
-        window_spill_threshold_bytes: Option<usize>,
-        repartition_spill_threshold_bytes: Option<usize>,
-        spill_pool_bytes: Option<usize>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
@@ -329,34 +315,6 @@ impl PyDaftExecutionConfig {
 
         if let Some(enable_multi_glob_path_tasks) = enable_multi_glob_path_tasks {
             config.enable_multi_glob_path_tasks = enable_multi_glob_path_tasks;
-        }
-
-        if let Some(hash_join_spill_threshold_bytes) = hash_join_spill_threshold_bytes {
-            config.hash_join_spill_threshold_bytes = Some(hash_join_spill_threshold_bytes);
-        }
-
-        if let Some(sort_spill_threshold_bytes) = sort_spill_threshold_bytes {
-            config.sort_spill_threshold_bytes = Some(sort_spill_threshold_bytes);
-        }
-
-        if let Some(agg_spill_threshold_bytes) = agg_spill_threshold_bytes {
-            config.agg_spill_threshold_bytes = Some(agg_spill_threshold_bytes);
-        }
-
-        if let Some(dedup_spill_threshold_bytes) = dedup_spill_threshold_bytes {
-            config.dedup_spill_threshold_bytes = Some(dedup_spill_threshold_bytes);
-        }
-
-        if let Some(window_spill_threshold_bytes) = window_spill_threshold_bytes {
-            config.window_spill_threshold_bytes = Some(window_spill_threshold_bytes);
-        }
-
-        if let Some(repartition_spill_threshold_bytes) = repartition_spill_threshold_bytes {
-            config.repartition_spill_threshold_bytes = Some(repartition_spill_threshold_bytes);
-        }
-
-        if let Some(spill_pool_bytes) = spill_pool_bytes {
-            config.spill_pool_bytes = Some(spill_pool_bytes);
         }
 
         Ok(Self {
@@ -520,41 +478,6 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn enable_multi_glob_path_tasks(&self) -> PyResult<bool> {
         Ok(self.config.enable_multi_glob_path_tasks)
-    }
-
-    #[getter]
-    fn hash_join_spill_threshold_bytes(&self) -> PyResult<Option<usize>> {
-        Ok(self.config.hash_join_spill_threshold_bytes)
-    }
-
-    #[getter]
-    fn sort_spill_threshold_bytes(&self) -> PyResult<Option<usize>> {
-        Ok(self.config.sort_spill_threshold_bytes)
-    }
-
-    #[getter]
-    fn agg_spill_threshold_bytes(&self) -> PyResult<Option<usize>> {
-        Ok(self.config.agg_spill_threshold_bytes)
-    }
-
-    #[getter]
-    fn dedup_spill_threshold_bytes(&self) -> PyResult<Option<usize>> {
-        Ok(self.config.dedup_spill_threshold_bytes)
-    }
-
-    #[getter]
-    fn window_spill_threshold_bytes(&self) -> PyResult<Option<usize>> {
-        Ok(self.config.window_spill_threshold_bytes)
-    }
-
-    #[getter]
-    fn repartition_spill_threshold_bytes(&self) -> PyResult<Option<usize>> {
-        Ok(self.config.repartition_spill_threshold_bytes)
-    }
-
-    #[getter]
-    fn spill_pool_bytes(&self) -> PyResult<Option<usize>> {
-        Ok(self.config.spill_pool_bytes)
     }
 
     #[getter]

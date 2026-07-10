@@ -4,9 +4,8 @@ use std::{
 };
 
 use common_daft_config::DaftExecutionConfig;
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use common_metrics::ops::NodeType;
-use common_runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::{
     bound_col,
@@ -22,14 +21,7 @@ use super::blocking_sink::{
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{InputId, NodeName},
-    resource_manager::{MemoryReservation, SpillableBuckets, get_or_init_memory_manager,
-        reconcile_reservation},
-    spill::{SpillConfig, SpillStore, SpillWriter},
 };
-
-/// Cap on recursive sub-partitioning depth when a single hash bucket still exceeds the memory
-/// budget at finalize (many distinct groups colliding into one bucket).
-const MAX_AGG_RECURSION: u64 = 4;
 
 #[derive(Clone, Debug)]
 pub(crate) enum AggStrategy {
@@ -68,9 +60,7 @@ impl AggStrategy {
             agged.partition_by_hash(params.final_group_by.as_slice(), inner_states.len())?;
         for (p, state) in partitioned.into_iter().zip(inner_states.iter_mut()) {
             let state = state.get_or_insert_default();
-            let bytes = p.size_bytes();
             state.partially_aggregated.push(p);
-            state.partial_bytes += bytes;
         }
         Ok(())
     }
@@ -92,13 +82,10 @@ impl AggStrategy {
                     params.partial_agg_exprs.as_slice(),
                     params.group_by.as_slice(),
                 )?;
-                state.partial_bytes += aggregated.size_bytes();
                 state.partially_aggregated.push(aggregated);
                 state.unaggregated_size = 0;
-                state.unagg_bytes = 0;
             } else {
                 state.unaggregated_size += p.len();
-                state.unagg_bytes += p.size_bytes();
                 state.unaggregated.push(p);
             }
         }
@@ -115,7 +102,6 @@ impl AggStrategy {
         for (p, state) in partitioned.into_iter().zip(inner_states.iter_mut()) {
             let state = state.get_or_insert_default();
             state.unaggregated_size += p.len();
-            state.unagg_bytes += p.size_bytes();
             state.unaggregated.push(p);
         }
         Ok(())
@@ -127,9 +113,6 @@ pub(crate) struct SinglePartitionAggregateState {
     partially_aggregated: Vec<MicroPartition>,
     unaggregated: Vec<MicroPartition>,
     unaggregated_size: usize,
-    /// Resident bytes of `partially_aggregated` / `unaggregated`, used to decide when to spill.
-    partial_bytes: usize,
-    unagg_bytes: usize,
 }
 
 pub(crate) enum GroupedAggregateState {
@@ -138,15 +121,8 @@ pub(crate) enum GroupedAggregateState {
         strategy: Option<AggStrategy>,
         partial_agg_threshold: usize,
         high_cardinality_threshold_ratio: f64,
-        /// Spill destinations; `None` disables spilling for this sink.
-        spill_dirs: Option<Vec<String>>,
-        /// Lazily created on first spill (one IPC file per hash bucket).
-        spill_writer: Option<SpillWriter>,
-        /// Shared spill-pool reservation held for the lifetime of this state.
-        reservation: MemoryReservation,
-        /// Per-operator cap (from `SpillConfig::cap()`); `None` means pool-only trigger.
-        cap: Option<u64>,
     },
+    Done,
 }
 
 impl GroupedAggregateState {
@@ -154,9 +130,6 @@ impl GroupedAggregateState {
         num_partitions: usize,
         partial_agg_threshold: usize,
         high_cardinality_threshold_ratio: f64,
-        spill_dirs: Option<Vec<String>>,
-        reservation: MemoryReservation,
-        cap: Option<u64>,
     ) -> Self {
         let inner_states = (0..num_partitions).map(|_| None).collect::<Vec<_>>();
         Self::Accumulating {
@@ -164,10 +137,6 @@ impl GroupedAggregateState {
             strategy: None,
             partial_agg_threshold,
             high_cardinality_threshold_ratio,
-            spill_dirs,
-            spill_writer: None,
-            reservation,
-            cap,
         }
     }
 
@@ -177,50 +146,30 @@ impl GroupedAggregateState {
         params: &GroupedAggregateParams,
         global_strategy_lock: &Arc<Mutex<Option<AggStrategy>>>,
     ) -> DaftResult<()> {
-        let spill_enabled = matches!(
-            self,
-            Self::Accumulating { spill_dirs: Some(_), .. }
-        );
-        {
-            let Self::Accumulating {
-                inner_states,
-                strategy,
-                partial_agg_threshold,
-                high_cardinality_threshold_ratio,
-                ..
-            } = self;
-            if let Some(strategy) = strategy {
-                strategy.execute_strategy(inner_states, input, params)?;
-            } else {
-                let decided = Self::determine_agg_strategy(
-                    &input,
-                    params,
-                    *high_cardinality_threshold_ratio,
-                    *partial_agg_threshold,
-                    strategy,
-                    global_strategy_lock,
-                )?;
-                decided.execute_strategy(inner_states, input, params)?;
-            }
-        }
-        if spill_enabled {
-            let Self::Accumulating {
-                inner_states,
-                spill_dirs,
-                spill_writer,
-                reservation,
-                cap,
-                ..
-            } = self;
-            let decomposable = !params.partial_agg_exprs.is_empty();
-            let mut buckets = AggBuckets {
-                inner_states,
-                spill_writer,
-                spill_dirs: spill_dirs.as_ref().unwrap().as_slice(),
-                decomposable,
+        let Self::Accumulating {
+            inner_states,
+            strategy,
+            partial_agg_threshold,
+            high_cardinality_threshold_ratio,
+        } = self
+        else {
+            panic!("GroupedAggregateSink should be in Accumulating state");
+        };
+
+        // If we have determined a strategy, execute it.
+        if let Some(strategy) = strategy {
+            strategy.execute_strategy(inner_states, input, params)?;
+        } else {
+            // Otherwise, determine the strategy and execute
+            let decided_strategy = Self::determine_agg_strategy(
+                &input,
                 params,
-            };
-            reconcile_reservation(&mut buckets, reservation, *cap)?;
+                *high_cardinality_threshold_ratio,
+                *partial_agg_threshold,
+                strategy,
+                global_strategy_lock,
+            )?;
+            decided_strategy.execute_strategy(inner_states, input, params)?;
         }
         Ok(())
     }
@@ -267,115 +216,18 @@ impl GroupedAggregateState {
         Ok(decided_strategy)
     }
 
-    /// Consume the state for finalize, yielding the in-memory per-bucket states and the spill writer
-    /// (if any data was spilled).
-    fn into_finalize_parts(
-        self,
-    ) -> (Vec<Option<SinglePartitionAggregateState>>, Option<SpillWriter>) {
-        let Self::Accumulating {
-            inner_states,
-            spill_writer,
-            ..
-        } = self;
-        (inner_states, spill_writer)
-    }
-}
-
-/// Adapter that lets `reconcile_reservation` drive grace-aggregation spilling: resident bytes are
-/// summed across buckets; `spill_largest_bucket` spills the heaviest bucket (compacting decomposable
-/// aggregates first, exactly as the previous `maybe_spill` did).
-struct AggBuckets<'a> {
-    inner_states: &'a mut [Option<SinglePartitionAggregateState>],
-    spill_writer: &'a mut Option<SpillWriter>,
-    spill_dirs: &'a [String],
-    decomposable: bool,
-    params: &'a GroupedAggregateParams,
-}
-
-impl SpillableBuckets for AggBuckets<'_> {
-    fn resident_bytes(&self) -> u64 {
-        self.inner_states
-            .iter()
-            .flatten()
-            .map(|st| (st.partial_bytes + st.unagg_bytes) as u64)
-            .sum()
-    }
-
-    fn spill_largest_bucket(&mut self) -> DaftResult<bool> {
-        let num_buckets = self.inner_states.len();
-        let Some(p) = (0..num_buckets)
-            .filter(|&p| {
-                self.inner_states[p]
-                    .as_ref()
-                    .is_some_and(|st| st.partial_bytes + st.unagg_bytes > 0)
-            })
-            .max_by_key(|&p| {
-                let st = self.inner_states[p].as_ref().unwrap();
-                st.partial_bytes + st.unagg_bytes
-            })
-        else {
-            return Ok(false);
-        };
-        let st = self.inner_states[p].as_mut().unwrap();
-
-        let to_spill: MicroPartition = if self.decomposable {
-            let mut partials = std::mem::take(&mut st.partially_aggregated);
-            let unagg = std::mem::take(&mut st.unaggregated);
-            st.unaggregated_size = 0;
-            st.partial_bytes = 0;
-            st.unagg_bytes = 0;
-            if !unagg.is_empty() {
-                partials.push(
-                    MicroPartition::concat(unagg)?
-                        .agg(&self.params.partial_agg_exprs, &self.params.group_by)?,
-                );
-            }
-            debug_assert!(!partials.is_empty(), "agg bucket selected with bytes>0 but no resident data (counter drift)");
-            if partials.is_empty() {
-                return Ok(true);
-            }
-            MicroPartition::concat(partials)?
-                .agg(&self.params.final_agg_exprs, &self.params.final_group_by)?
+    fn finalize(&mut self) -> Vec<Option<SinglePartitionAggregateState>> {
+        let res = if let Self::Accumulating { inner_states, .. } = self {
+            std::mem::take(inner_states)
         } else {
-            let unagg = std::mem::take(&mut st.unaggregated);
-            st.unaggregated_size = 0;
-            st.unagg_bytes = 0;
-            st.partial_bytes = 0;
-            debug_assert!(!unagg.is_empty(), "agg bucket selected with bytes>0 but no resident data (counter drift)");
-            if unagg.is_empty() {
-                return Ok(true);
-            }
-            MicroPartition::concat(unagg)?
+            panic!("GroupedAggregateSink should be in Accumulating state");
         };
-
-        if to_spill.len() == 0 {
-            return Ok(true);
-        }
-
-        let writer = match self.spill_writer {
-            Some(w) => w,
-            None => {
-                let schema = to_spill.schema();
-                let w = SpillWriter::new(
-                    num_buckets,
-                    &schema,
-                    self.spill_dirs.to_vec(),
-                    "daft_agg_spill_",
-                )?;
-                *self.spill_writer = Some(w);
-                self.spill_writer.as_mut().unwrap()
-            }
-        };
-        for rb in to_spill.record_batches() {
-            writer.write_batch(p, rb)?;
-        }
-        Ok(true)
+        *self = Self::Done;
+        res
     }
 }
 
 struct GroupedAggregateParams {
-    // Input schema, used to materialize a correctly-typed empty result when there are no rows.
-    input_schema: SchemaRef,
     // The original aggregations and group by expressions
     original_aggregations: Vec<BoundAggExpr>,
     group_by: Vec<BoundExpr>,
@@ -392,8 +244,6 @@ pub struct GroupedAggregateSink {
     partial_agg_threshold: usize,
     high_cardinality_threshold_ratio: f64,
     global_strategy_lock: Arc<Mutex<Option<AggStrategy>>>,
-    /// `Some` enables grace-aggregation spill-to-disk.
-    spill_config: Option<SpillConfig>,
 }
 
 impl GroupedAggregateSink {
@@ -402,7 +252,6 @@ impl GroupedAggregateSink {
         group_by: &[BoundExpr],
         input_schema: &SchemaRef,
         cfg: &DaftExecutionConfig,
-        spill_config: Option<SpillConfig>,
     ) -> DaftResult<Self> {
         let (partial_agg_exprs, final_agg_exprs, final_projections) =
             daft_local_plan::agg::populate_aggregation_stages_bound(
@@ -454,7 +303,6 @@ impl GroupedAggregateSink {
 
         Ok(Self {
             grouped_aggregate_params: Arc::new(GroupedAggregateParams {
-                input_schema: input_schema.clone(),
                 original_aggregations: aggregations.to_vec(),
                 group_by: group_by.to_vec(),
                 partial_agg_exprs,
@@ -465,7 +313,6 @@ impl GroupedAggregateSink {
             partial_agg_threshold: cfg.partial_aggregation_threshold,
             high_cardinality_threshold_ratio: cfg.high_cardinality_aggregation_threshold,
             global_strategy_lock: Arc::new(Mutex::new(strategy)),
-            spill_config,
         })
     }
 
@@ -505,85 +352,68 @@ impl BlockingSink for GroupedAggregateSink {
     ) -> BlockingSinkFinalizeResult {
         let params = self.grouped_aggregate_params.clone();
         let num_partitions = self.num_partitions();
-        // No spill => no recursion (unbounded budget keeps the original single-pass behavior).
-        let recursion_budget = match &self.spill_config {
-            Some(sc) => (sc.pool_bytes / num_partitions.max(1)).max(1),
-            None => usize::MAX,
-        };
         spawner
             .spawn(
                 async move {
-                    // Consume each state: take its per-bucket in-memory data and seal its spill file.
-                    let mut inners: Vec<Vec<Option<SinglePartitionAggregateState>>> =
-                        Vec::with_capacity(states.len());
-                    let mut stores: Vec<Option<SpillStore>> = Vec::with_capacity(states.len());
-                    for state in states {
-                        let (inner, writer) = state.into_finalize_parts();
-                        inners.push(inner);
-                        stores.push(match writer {
-                            Some(w) => Some(w.finish()?),
-                            None => None,
+                    let mut state_iters = states
+                        .into_iter()
+                        .map(|mut state| state.finalize().into_iter())
+                        .collect::<Vec<_>>();
+
+                    let mut per_partition_finalize_tasks = tokio::task::JoinSet::new();
+                    for _ in 0..num_partitions {
+                        let per_partition_state = state_iters
+                            .iter_mut()
+                            .map(|state| {
+                                state.next().expect(
+                                "GroupedAggregateState should have SinglePartitionAggregateState",
+                            )
+                            })
+                            .collect::<Vec<_>>();
+                        let params = params.clone();
+                        per_partition_finalize_tasks.spawn(async move {
+                            let mut unaggregated = vec![];
+                            let mut partially_aggregated = vec![];
+                            for state in per_partition_state.into_iter().flatten() {
+                                unaggregated.extend(state.unaggregated);
+                                partially_aggregated.extend(state.partially_aggregated);
+                            }
+
+                            // If we have no partially aggregated partitions, aggregate the unaggregated partitions using the original aggregations
+                            if params.partial_agg_exprs.is_empty() && !unaggregated.is_empty() {
+                                let concated = MicroPartition::concat(unaggregated)?;
+                                let agged = concated
+                                    .agg(&params.original_aggregations, &params.group_by)?;
+                                Ok(agged)
+                            }
+                            // If we have no unaggregated partitions, finalize the partially aggregated partitions
+                            else if unaggregated.is_empty() {
+                                let concated = MicroPartition::concat(partially_aggregated)?;
+                                let agged = concated
+                                    .agg(&params.final_agg_exprs, &params.final_group_by)?;
+                                let projected =
+                                    agged.eval_expression_list(&params.final_projections)?;
+                                Ok(projected)
+                            }
+                            // Otherwise, partially aggregate the unaggregated partitions, concatenate them with the partially aggregated partitions, and finalize the result.
+                            else {
+                                let leftover_partial_agg = MicroPartition::concat(unaggregated)?
+                                    .agg(&params.partial_agg_exprs, &params.group_by)?;
+                                partially_aggregated.push(leftover_partial_agg);
+                                let concated = MicroPartition::concat(partially_aggregated)?;
+                                let agged = concated
+                                    .agg(&params.final_agg_exprs, &params.final_group_by)?;
+                                let projected =
+                                    agged.eval_expression_list(&params.final_projections)?;
+                                Ok(projected)
+                            }
                         });
                     }
-                    let stores = Arc::new(stores);
-
-                    // Gather, for each hash bucket, that bucket's state across all input states.
-                    let mut per_part: Vec<Vec<Option<SinglePartitionAggregateState>>> = (0
-                        ..num_partitions)
-                        .map(|p| {
-                            inners
-                                .iter_mut()
-                                .map(|v| v.get_mut(p).and_then(Option::take))
-                                .collect()
-                        })
-                        .collect();
-
-                    // Finalize buckets with bounded concurrency to cap peak memory.
-                    let max_inflight = get_compute_pool_num_threads().max(1);
-                    let mut tasks: tokio::task::JoinSet<DaftResult<Option<MicroPartition>>> =
-                        tokio::task::JoinSet::new();
-                    let mut next = 0usize;
-
-                    let mut spawn_next =
-                        |tasks: &mut tokio::task::JoinSet<DaftResult<Option<MicroPartition>>>,
-                         next: &mut usize| {
-                            if *next >= num_partitions {
-                                return;
-                            }
-                            let p = *next;
-                            let parts = std::mem::take(&mut per_part[p]);
-                            let params = params.clone();
-                            let stores = stores.clone();
-                            tasks.spawn(async move {
-                                finalize_bucket(p, parts, stores, params, recursion_budget)
-                            });
-                            *next += 1;
-                        };
-
-                    while tasks.len() < max_inflight && next < num_partitions {
-                        spawn_next(&mut tasks, &mut next);
-                    }
-
-                    let mut results = vec![];
-                    while let Some(res) = tasks.join_next().await {
-                        let bucket_result =
-                            res.map_err(|e| DaftError::InternalError(e.to_string()))??;
-                        if let Some(mp) = bucket_result
-                            && mp.len() > 0
-                        {
-                            results.push(mp);
-                        }
-                        spawn_next(&mut tasks, &mut next);
-                    }
-
-                    // No groups at all (empty input): emit a single correctly-typed empty result so
-                    // downstream consumers still see the aggregation's output schema.
-                    if results.is_empty() {
-                        let empty = MicroPartition::empty(Some(params.input_schema.clone()))
-                            .agg(&params.original_aggregations, &params.group_by)?;
-                        results.push(empty);
-                    }
-
+                    let results = per_partition_finalize_tasks
+                        .join_all()
+                        .await
+                        .into_iter()
+                        .collect::<DaftResult<Vec<_>>>()?;
                     Ok(BlockingSinkOutput::Partitions(results))
                 },
                 Span::current(),
@@ -617,9 +447,6 @@ impl BlockingSink for GroupedAggregateSink {
                 .map(|e| e.to_string())
                 .join(", ")
         ));
-        if self.spill_config.is_some() {
-            display.push("Spill: enabled (grace aggregation)".to_string());
-        }
         display
     }
 
@@ -628,125 +455,6 @@ impl BlockingSink for GroupedAggregateSink {
             self.num_partitions(),
             self.partial_agg_threshold,
             self.high_cardinality_threshold_ratio,
-            self.spill_config.as_ref().map(|sc| sc.spill_dirs.clone()),
-            get_or_init_memory_manager().reservation(),
-            self.spill_config.as_ref().and_then(|sc| sc.cap()),
         ))
-    }
-}
-
-/// Finalize one hash bucket: combine its in-memory and spilled data into the final per-group rows.
-/// Returns `None` if the bucket is empty.
-fn finalize_bucket(
-    p: usize,
-    parts: Vec<Option<SinglePartitionAggregateState>>,
-    stores: Arc<Vec<Option<SpillStore>>>,
-    params: Arc<GroupedAggregateParams>,
-    recursion_budget: usize,
-) -> DaftResult<Option<MicroPartition>> {
-    let decomposable = !params.partial_agg_exprs.is_empty();
-
-    let mut in_partials: Vec<MicroPartition> = vec![];
-    let mut in_unagg: Vec<MicroPartition> = vec![];
-    for st in parts.into_iter().flatten() {
-        in_partials.extend(st.partially_aggregated);
-        in_unagg.extend(st.unaggregated);
-    }
-
-    // Read this bucket's spilled data from every input state.
-    let mut spilled: Vec<MicroPartition> = vec![];
-    for store in stores.iter().flatten() {
-        if store.is_spilled(p) {
-            let batches = store.read_bucket(p)?;
-            if !batches.is_empty() {
-                let schema = batches[0].schema.clone();
-                spilled.push(MicroPartition::new_loaded(schema, Arc::new(batches), None));
-            }
-        }
-    }
-
-    if decomposable {
-        // Spilled data is already partially aggregated; convert any leftover raw rows to partial.
-        if !in_unagg.is_empty() {
-            in_partials.push(
-                MicroPartition::concat(in_unagg)?
-                    .agg(&params.partial_agg_exprs, &params.group_by)?,
-            );
-        }
-        in_partials.extend(spilled);
-
-        let combined = combine_decomposable_partials(
-            in_partials,
-            &params.final_agg_exprs,
-            &params.final_group_by,
-            recursion_budget,
-            0,
-        )?;
-        match combined {
-            None => Ok(None),
-            Some(combined) => Ok(Some(combined.eval_expression_list(&params.final_projections)?)),
-        }
-    } else {
-        // Non-decomposable: aggregate the raw rows for this bucket in one pass. Memory is relieved
-        // *between* buckets via spilling, but a single group must still fit in memory.
-        let mut raw = in_unagg;
-        raw.extend(spilled);
-        if raw.is_empty() {
-            return Ok(None);
-        }
-        Ok(Some(MicroPartition::concat(raw)?.agg(
-            &params.original_aggregations,
-            &params.group_by,
-        )?))
-    }
-}
-
-/// Combine partially-aggregated chunks (all sharing the partial schema) into a single
-/// partially-aggregated result (one row per group). If the combined input would exceed `budget`,
-/// recursively sub-partitions by the group key (with a per-level hash seed so recursion makes
-/// progress) and combines each sub-bucket independently, bounding peak memory.
-fn combine_decomposable_partials(
-    chunks: Vec<MicroPartition>,
-    final_agg_exprs: &[BoundAggExpr],
-    final_group_by: &[BoundExpr],
-    budget: usize,
-    seed: u64,
-) -> DaftResult<Option<MicroPartition>> {
-    if chunks.is_empty() {
-        return Ok(None);
-    }
-    let total: usize = chunks.iter().map(MicroPartition::size_bytes).sum();
-    if seed >= MAX_AGG_RECURSION || total <= budget.max(1) {
-        let combined = MicroPartition::concat(chunks)?.agg(final_agg_exprs, final_group_by)?;
-        return Ok(Some(combined));
-    }
-
-    let sub_n = ((total / budget.max(1)) + 1).clamp(2, 64);
-    let mut subs: Vec<Vec<MicroPartition>> = (0..sub_n).map(|_| vec![]).collect();
-    for chunk in chunks {
-        for (i, sub) in chunk
-            .partition_by_hash_seeded(final_group_by, sub_n, seed)?
-            .into_iter()
-            .enumerate()
-        {
-            if sub.len() > 0 {
-                subs[i].push(sub);
-            }
-        }
-    }
-
-    let mut results = vec![];
-    for sub in subs {
-        if let Some(combined) =
-            combine_decomposable_partials(sub, final_agg_exprs, final_group_by, budget, seed + 1)?
-        {
-            results.push(combined);
-        }
-    }
-    if results.is_empty() {
-        Ok(None)
-    } else {
-        // Sub-buckets hold disjoint groups, so concatenation is the combined partial result.
-        Ok(Some(MicroPartition::concat(results)?))
     }
 }

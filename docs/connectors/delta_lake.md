@@ -88,6 +88,8 @@ You can use [`df.write_deltalake()`][daft.DataFrame.write_deltalake] to write a 
 
 Daft supports multiple write modes. See the API docs for [`df.write_deltalake()`][daft.DataFrame.write_deltalake] for more details.
 
+When writing Delta Lake tables to S3, Daft relies on the native conditional write support in  `deltalake` versions >=0.23.0. DynamoDB locking is not required by default for AWS S3 writes. To explicitly use a DynamoDB locking provider, pass `dynamo_table_name="..."` to [`df.write_deltalake()`][daft.DataFrame.write_deltalake]. For deltalake versions less than 0.23.0, if dynamo_table_name is not provided and allow_unsafe_rename is False, ValueError exception will be raised.
+
 ## Geometry / GeoParquet
 
 Daft supports a geometry round-trip through Delta Lake for `DataType.geometry()` columns (WKB-encoded geometries).
@@ -98,6 +100,14 @@ Daft supports a geometry round-trip through Delta Lake for `DataType.geometry()`
 - The GeoParquet 1.1.0 `"geo"` JSON is persisted as **Arrow field metadata** under the key `daft.geo` on each geometry column's Arrow field. This is a Daft convention: delta-rs 1.6 rejects custom table `configuration` keys, but preserves Arrow field metadata through write → read intact.
 - On read, `daft.read_deltalake()` scans the Arrow field metadata for the `daft.geo` key and automatically re-types those `Binary` columns back to `Geometry`.
 - WKB encoding only. No CRS transforms are performed.
+
+## Checkpointing
+
+Daft supports idempotent writes to Delta Lake via the `checkpoint=` parameter on [`df.write_deltalake()`][daft.DataFrame.write_deltalake]. Retries of the same logical commit — after a crash, a transient catalog error, or a deliberate re-invocation — produce the same Delta state without duplicate commits. See the [Checkpointing user guide](../use-case/checkpointing.md) for concepts; the sections below cover Delta-specific behavior.
+
+### Example
+
+The pattern: one `CheckpointStore` paired into both the source (via `CheckpointConfig`) and the sink (via `IdempotentCommit`). The source records which inputs were processed; the sink stamps the resulting Delta commit with the idempotence key.
 
 === "🐍 Python"
 
@@ -118,6 +128,77 @@ Daft supports a geometry round-trip through Delta Lake for `DataType.geometry()`
     df2.select(st_x(daft.col("geom"))).show()
     ```
 
+## Checkpointing
+
+=== "🐍 Python"
+
+    ```python
+    # One store, paired into both the source and the sink.
+    store = daft.CheckpointStore("s3://my-bucket/ckpt/")
+
+    df = daft.read_parquet(
+        "s3://input/",
+        checkpoint=daft.CheckpointConfig(store, on="file_id"),
+    )
+
+    # Any map-only operations work here: filter, project, UDF, explode, ...
+    df = df.where(df["status"] == "active")
+
+    written = df.write_deltalake(
+        "s3://my-bucket/my-table/",
+        checkpoint=daft.IdempotentCommit(store, idempotence_key="job-2026-05-21-001"),
+    )
+    ```
+
+A fresh run produces one new Delta commit tagged with `daft.idempotence-key=job-2026-05-21-001`. Retries with the same `idempotence_key` recognize the prior commit and exit cleanly — no duplicate commit, no reprocessing of inputs already handled.
+
+### Inspecting the Marker
+
+Every idempotent commit tags its Delta commit info with `daft.idempotence-key`. To verify which logical commit produced the current state of a table:
+
+=== "🐍 Python"
+
+    ```python
+    # Inspect via the deltalake library.
+    from deltalake import DeltaTable
+    table = DeltaTable("s3://my-bucket/my-table/")
+    print(table.history()[0].get("daft.idempotence-key"))
+    # → "job-2026-05-21-001"
+    ```
+
+For older commits, walk `table.history()` and check each entry.
+
+### Constraints
+
+These are constraints specific to the Delta Lake connector. Daft-wide constraints (Ray runner, map-only pipelines, single-writer concurrency, etc.) are in the [user guide's Limitations section](../use-case/checkpointing.md#limitations).
+
+- **`mode='append'` only.** Other modes raise `NotImplementedError` when `checkpoint=` is set.
+- **Reserved `daft.idempotence-*` property prefix.** Keys in `custom_metadata` that start with this prefix raise `ValueError` — Daft uses this namespace internally.
+
+### Idempotence-Key Contract
+
+The user picks the `idempotence_key`. Daft uses it as the marker that identifies a logical commit. The key must be stable across retries and unique across distinct logical commits — both halves matter:
+
+- **Same key, different inputs → silent no-op (data loss).** Daft sees the existing marker and skips the commit. The new data is dropped without an error.
+- **Different key on a retry of the same logical commit → duplicate commit.** Daft doesn't recognize the prior attempt and lands a second commit.
+
+### Recovery
+
+The [user guide's Recovery section](../use-case/checkpointing.md#recovery) walks through the full chronology. The Delta-specific steps:
+
+- **Commit-from-store.** When a run crashes after the pipeline finishes but before the Delta commit lands, Daft reads the staged file references from the store on rerun and commits them as a single new Delta transaction with `daft.idempotence-key` in `custom_metadata`.
+
+- **Marker recognition.** When a run crashes after the Delta commit lands but before the store is marked done — or when the user deliberately re-runs with the same key — Daft walks `table.history()`, finds the marker, marks the store, and exits. No second commit. Returned DataFrame is empty.
+
+**Orphan files on crash.** A worker that crashed mid-task may leave parquet files unreferenced by any Delta commit. Daft doesn't auto-clean these — use the deltalake `vacuum` operation.
+
+### Delta-Specific Notes
+
+- **Parallel history walk.** `table.history()` is already concurrent under the hood (deltalake-rs buffers up to `num_cpus * 4` log reads), so marker recognition is fast even on tables with long commit histories.
+
+- **Fresh-table case handled.** If the target table doesn't exist yet at the configured URI, the first idempotent write creates it.
+
+- **Transient retry on `CommitFailedError`.** Daft retries up to twice on this exception (concurrent-writer conflicts, lock contention). Other exceptions — schema mismatches, metadata-construction errors, network errors — propagate immediately. Wrap the call in your own retry policy if you need broader coverage.
 ## Type System
 
 Daft and Delta Lake have compatible type systems. Here are how types are converted across the two systems.

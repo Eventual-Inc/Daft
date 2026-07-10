@@ -252,10 +252,13 @@ class DeltaLakeScanOperator(ScanOperator):
         # lacks the delta.columnMapping.id annotation"), so we can build the mapping
         # without re-checking that here.
         if cm_mode == "none":
-            self._field_id_mapping: dict[int, PyField] | None = None
+            field_id_mapping: dict[int, PyField] | None = None
             self._stats_physical_to_logical: dict[str, str] = {}
         else:
-            self._field_id_mapping, self._stats_physical_to_logical = _column_mapping_maps(delta_schema)
+            field_id_mapping, self._stats_physical_to_logical = _column_mapping_maps(delta_schema)
+        self._file_format_config = FileFormatConfig.from_parquet_config(
+            ParquetSourceConfig(field_id_mapping=field_id_mapping)
+        )
 
         partition_columns = set(self._table.metadata().partition_columns)
         self._partition_keys = [
@@ -358,9 +361,6 @@ class DeltaLakeScanOperator(ScanOperator):
                 size_bytes = add_actions["size_bytes"][task_idx].as_py()
             except KeyError:
                 size_bytes = None
-            file_format_config = FileFormatConfig.from_parquet_config(
-                ParquetSourceConfig(field_id_mapping=self._field_id_mapping)
-            )
 
             if is_partitioned:
                 dtype = add_actions.schema.field(partition_field_name).type
@@ -422,7 +422,7 @@ class DeltaLakeScanOperator(ScanOperator):
                 stats = None
             st = ScanTask.catalog_scan_task(
                 file=path,
-                file_format=file_format_config,
+                file_format=self._file_format_config,
                 schema=self._schema._schema,
                 num_rows=record_count,
                 storage_config=self._storage_config,
