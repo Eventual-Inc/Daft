@@ -148,6 +148,7 @@ impl FromStr for HFPathParts {
             // [datasets] / {username} / {reponame} @ {revision} / {path from root}
             // ^--------^   !>
             let (repo_type_str, uri) = uri.split_once('/')?;
+            let repo_type = repo_type_str.parse().ok()?;
             // {username} / {reponame} @ {revision} / {path from root}
             // ^--------^   !>
             let (username, uri) = uri.split_once('/')?;
@@ -157,7 +158,7 @@ impl FromStr for HFPathParts {
                 (repo, uri)
             } else {
                 return Some(Self {
-                    repo_type: repo_type_str.parse().ok()?,
+                    repo_type,
                     repository: format!("{username}/{uri}"),
                     revision: "main".to_string(),
                     path: String::new(),
@@ -176,10 +177,27 @@ impl FromStr for HFPathParts {
             let repository = format!("{username}/{repository}");
             // {path from root}
             // ^--------------^
-            let path = uri.to_string().trim_end_matches('/').to_string();
+            let mut path = uri.to_string().trim_end_matches('/').to_string();
+            if repo_type == HFRepoType::Buckets {
+                // `tree` is a reserved segment in Hugging Face's bucket routing: the browser
+                // page for an object lives at `.../buckets/{repo}/tree/{path}` (and the bucket
+                // root at `.../buckets/{repo}/tree`), and our own listing API call in
+                // `get_api_uri` hits `.../api/buckets/{repo}/tree/{path}`. It never denotes a
+                // real bucket object path. Users regularly copy the browser URL and swap
+                // `https://huggingface.co` for `hf://`, landing here with a leading `tree`
+                // segment that isn't part of the object key, so strip it. See #7217.
+                if path == "tree" {
+                    path = String::new();
+                } else {
+                    path = path
+                        .strip_prefix("tree/")
+                        .unwrap_or(path.as_str())
+                        .to_string();
+                }
+            }
 
             Some(Self {
-                repo_type: repo_type_str.parse().ok()?,
+                repo_type,
                 repository,
                 revision,
                 path,
@@ -383,6 +401,114 @@ mod tests {
         };
 
         assert_eq!(parts, expected);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_hf_parts_bucket_from_tree_url() -> DaftResult<()> {
+        let uri = "hf://buckets/the-hf-stack/zenml-experiments/tree/trackio/data/train-00000-of-00001.parquet";
+        let parts = uri.parse::<HFPathParts>().unwrap();
+        let expected = HFPathParts {
+            repo_type: HFRepoType::Buckets,
+            repository: "the-hf-stack/zenml-experiments".to_string(),
+            revision: "main".to_string(),
+            path: "trackio/data/train-00000-of-00001.parquet".to_string(),
+        };
+
+        assert_eq!(parts, expected);
+        assert_eq!(
+            parts.resolve_url(),
+            "https://huggingface.co/buckets/the-hf-stack/zenml-experiments/resolve/trackio/data/train-00000-of-00001.parquet"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_hf_parts_bucket_tree_root() -> DaftResult<()> {
+        // Copied from the bucket root browser page, with and without a trailing slash.
+        for uri in [
+            "hf://buckets/the-hf-stack/zenml-experiments/tree",
+            "hf://buckets/the-hf-stack/zenml-experiments/tree/",
+        ] {
+            let parts = uri.parse::<HFPathParts>().unwrap();
+            assert_eq!(parts.repo_type, HFRepoType::Buckets);
+            assert_eq!(parts.repository, "the-hf-stack/zenml-experiments");
+            assert_eq!(parts.path, "", "uri: {uri}");
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_hf_parts_bucket_tree_directory() -> DaftResult<()> {
+        // Copied from a directory browser page (directory pages end with a trailing slash).
+        let uri = "hf://buckets/the-hf-stack/zenml-experiments/tree/trackio/data/";
+        let parts = uri.parse::<HFPathParts>().unwrap();
+        assert_eq!(parts.path, "trackio/data");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_hf_parts_bucket_glob_under_tree() -> DaftResult<()> {
+        // A wildcard glob written against a copied tree URL.
+        let uri = "hf://buckets/the-hf-stack/zenml-experiments/tree/trackio/**/*.parquet";
+        let parts = uri.parse::<HFPathParts>().unwrap();
+        assert_eq!(parts.path, "trackio/**/*.parquet");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_hf_parts_bucket_tree_like_names_untouched() -> DaftResult<()> {
+        // Object keys that merely start with "tree" (not the reserved segment) must survive.
+        for (uri, expected_path) in [
+            (
+                "hf://buckets/org/repo/treehouse/file.parquet",
+                "treehouse/file.parquet",
+            ),
+            ("hf://buckets/org/repo/tree.parquet", "tree.parquet"),
+            (
+                "hf://buckets/org/repo/data/tree/file.parquet",
+                "data/tree/file.parquet",
+            ),
+        ] {
+            let parts = uri.parse::<HFPathParts>().unwrap();
+            assert_eq!(parts.path, expected_path, "uri: {uri}");
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_bucket_display_canonicalizes_and_is_idempotent() -> DaftResult<()> {
+        // `HFSource::glob` round-trips bucket paths through Display before globbing, and the
+        // glob machinery re-parses the result, so canonicalization must be a fixed point.
+        let uri = "hf://bucket/the-hf-stack/zenml-experiments/tree/trackio/data/file.parquet";
+        let parts = uri.parse::<HFPathParts>().unwrap();
+        let canonical = parts.to_string();
+        assert_eq!(
+            canonical,
+            "hf://buckets/the-hf-stack/zenml-experiments/trackio/data/file.parquet"
+        );
+        let reparsed = canonical.parse::<HFPathParts>().unwrap();
+        assert_eq!(reparsed, parts);
+        assert_eq!(reparsed.to_string(), canonical);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_bucket_api_uri_from_tree_url() -> DaftResult<()> {
+        // The listing API re-inserts the reserved `tree` marker exactly once.
+        let uri = "hf://buckets/the-hf-stack/zenml-experiments/tree/trackio/data";
+        let parts = uri.parse::<HFPathParts>().unwrap();
+        assert_eq!(
+            super::HFPath::Hf(parts).get_api_uri(),
+            "https://huggingface.co/api/buckets/the-hf-stack/zenml-experiments/tree/trackio/data"
+        );
 
         Ok(())
     }

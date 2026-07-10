@@ -94,6 +94,88 @@ This call will then return a DataFrame containing the operations that were perfo
 ╰───────────┴───────┴───────────┴────────────────────────────────╯
 ```
 
+## Checkpointing
+
+Daft supports idempotent writes to Iceberg via the `checkpoint=` parameter on [`df.write_iceberg()`][daft.DataFrame.write_iceberg]. Retries of the same logical commit — after a crash, a transient catalog error, or a deliberate re-invocation — produce the same Iceberg state without duplicate snapshots. See the [Checkpointing user guide](../use-case/checkpointing.md) for concepts; the sections below cover Iceberg-specific behavior.
+
+### Example
+
+The pattern: one `CheckpointStore` paired into both the source (via `CheckpointConfig`) and the sink (via `IdempotentCommit`). The source records which inputs were processed; the sink stamps the resulting Iceberg snapshot with the idempotence key.
+
+=== "🐍 Python"
+
+    ```python
+    import daft
+
+    # One store, paired into both the source and the sink.
+    store = daft.CheckpointStore("s3://my-bucket/ckpt/")
+
+    df = daft.read_parquet(
+        "s3://input/",
+        checkpoint=daft.CheckpointConfig(store, on="file_id"),
+    )
+
+    # Any map-only operations work here: filter, project, UDF, explode, ...
+    df = df.where(df["status"] == "active")
+
+    written = df.write_iceberg(
+        table,
+        checkpoint=daft.IdempotentCommit(store, idempotence_key="job-2026-05-21-001"),
+    )
+    ```
+
+A fresh run produces one new Iceberg snapshot tagged with `daft.idempotence-key=job-2026-05-21-001`. Retries with the same `idempotence_key` recognize the prior commit and exit cleanly — no duplicate snapshot, no reprocessing of inputs already handled.
+
+### Inspecting the Marker
+
+Every idempotent commit tags its Iceberg snapshot summary with `daft.idempotence-key`. To verify which logical commit produced the current state of a table:
+
+=== "🐍 Python"
+
+    ```python
+    # Inspect via pyiceberg's Table API — `table` is the same pyiceberg.table.Table
+    # loaded in the "Reading a Table" section above.
+    summary = table.current_snapshot().summary
+    print(summary.get("daft.idempotence-key"))
+    # → "job-2026-05-21-001"
+    ```
+
+For older commits, walk `table.metadata.snapshots` (order isn't guaranteed — sort by `timestamp_ms` if you need chronological order) and check each snapshot's `summary`.
+
+### Constraints
+
+These are constraints specific to the Iceberg connector. Daft-wide constraints (Ray runner, map-only pipelines, single-writer concurrency, etc.) are in the [user guide's Limitations section](../use-case/checkpointing.md#limitations).
+
+- **`mode='append'` only.** `mode='overwrite'` with `checkpoint=` raises `NotImplementedError`.
+- **Reserved `daft.idempotence-*` property prefix.** Keys in `snapshot_properties` that start with this prefix raise `ValueError` — Daft uses this namespace internally.
+
+### Idempotence-Key Contract
+
+The user picks the `idempotence_key`. Daft uses it as the marker that identifies a logical commit. The key must be stable across retries and unique across distinct logical commits — both halves matter:
+
+- **Same key, different inputs → silent no-op (data loss).** Daft sees the existing marker and skips the commit. The new data is dropped without an error.
+- **Different key on a retry of the same logical commit → duplicate snapshot.** Daft doesn't recognize the prior attempt and lands a second snapshot.
+
+### Recovery
+
+The [user guide's Recovery section](../use-case/checkpointing.md#recovery) walks through the full chronology. The Iceberg-specific steps:
+
+- **Commit-from-store.** When a run crashes after the pipeline finishes but before the snapshot commits, Daft reads the staged file references from the store on rerun and commits them as a single new Iceberg snapshot tagged with `daft.idempotence-key`.
+
+- **Marker recognition.** When a run crashes after the snapshot commits but before the store is marked done — or when the user deliberately re-runs with the same key — Daft walks `table.metadata.snapshots`, finds the marker, marks the store, and exits. No second snapshot. Returned DataFrame is empty.
+
+**Orphan files on crash.** A worker that crashed mid-task may leave parquet files unreferenced by any snapshot. Daft doesn't auto-clean these — use your Iceberg engine's orphan-file cleanup procedures.
+
+### Iceberg-Specific Notes
+
+- **In-memory history walk.** Marker recognition scans `table.metadata.snapshots` directly — fast even on tables with many snapshots, since the metadata is already in memory after refresh.
+
+- **`commit.manifest-merge.enabled` is honored.** If the table is configured for manifest merging, Daft uses `merge_append`; otherwise `fast_append`. Same behavior as a non-checkpoint write.
+
+- **Partitioned tables include a `partitioning` struct column in the result.** Whether `checkpoint=` is set or not — callers don't see schema drift when they toggle the flag.
+
+- **Transient retry on `CommitFailedException`.** Daft retries up to twice on this exception (concurrent-writer conflicts, lock contention). Other exceptions — REST 5xx, network errors, auth — propagate immediately. Wrap the call in your own retry policy if you need broader coverage.
+
 ## Type System
 
 | Iceberg                             | Daft                                                                                         |
