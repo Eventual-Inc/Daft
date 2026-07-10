@@ -1,8 +1,9 @@
 """Benchmark MCAP metadata and reader pushdowns on a pinned ABC-130k episode.
 
 The benchmark deliberately starts from an exact episode URI. Dataset discovery is
-reported separately through ``daft.from_glob_path``; every message-level stage is
-rooted at ``daft.read_mcap``.
+reported separately through ``daft.from_glob_path`` and ``daft.datasets.abc.raw``;
+message stages compare direct ``daft.read_mcap`` with the bounded
+``daft.datasets.abc.messages`` wrapper.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 ABC_REVISION = "29136bc9b9e38d320b00ffcddbbe4cd0e3278c58"
 SMOKE_EPISODE_URI = (
@@ -178,6 +179,19 @@ def hf_revision(path: str) -> str | None:
     if not path.startswith("hf://") or "@" not in path:
         return None
     return path.split("@", 1)[1].split("/", 1)[0]
+
+
+def abc_dataset_context(path: str) -> dict[str, str] | None:
+    """Return the dataset root and path-derived identity for an ABC episode."""
+    identity = abc_identity(path)
+    if not identity or "/data/" not in path:
+        return None
+    return {
+        "root": path.split("/data/", 1)[0],
+        "split": identity["split"],
+        "task": identity["task"],
+        "episode_id": identity["episode_id"].removeprefix("episode_"),
+    }
 
 
 def git_revision() -> str | None:
@@ -403,6 +417,112 @@ def metadata_sniff(daft: Any, path: str, io_config: Any) -> tuple[StagePayload, 
     return StagePayload(source_file_bytes=metadata.get("file_size"), details=details), metadata
 
 
+def abc_catalog_discovery(
+    daft: Any,
+    path: str,
+    io_config: Any,
+    source_bytes: int,
+) -> tuple[StagePayload, Any]:
+    """Discover one task catalog, then retain the exact benchmark episode."""
+    from daft.datasets import abc
+
+    context = abc_dataset_context(path)
+    if context is None:
+        raise ValueError("ABC catalog discovery requires a path under data/<split>/<task>/episode_<id>")
+
+    catalog = abc.raw(
+        context["root"],
+        split=cast(Literal["train", "val"], context["split"]),
+        tasks=[context["task"]],
+        include_annotations=True,
+        io_config=io_config,
+    )
+    bounded = catalog.where(daft.col("episode_id") == context["episode_id"]).limit(1).collect()
+    scalar_columns = [
+        name
+        for name in (
+            "episode_id",
+            "split",
+            "task_slug",
+            "episode_dir",
+            "episode_path",
+            "episode_size",
+            "annotated",
+            "annotation_path",
+            "annotation_size",
+        )
+        if name in bounded.column_names
+    ]
+    table = bounded.select(*scalar_columns).to_arrow()
+    if table.num_rows != 1:
+        raise RuntimeError(
+            "The task-scoped ABC catalog did not resolve the exact benchmark episode: "
+            f"expected 1 row, received {table.num_rows}"
+        )
+    return (
+        StagePayload(
+            rows=table.num_rows,
+            source_file_bytes=source_bytes,
+            arrow_bytes=table.nbytes,
+            details={
+                "api": "daft.datasets.abc.raw",
+                "catalog_root": context["root"],
+                "direct_reader_revision": hf_revision(path),
+                "catalog_root_revision": hf_revision(context["root"]),
+                "downstream_episode_path": path,
+                "catalog_and_reader_share_root": context["root"] == path.split("/data/", 1)[0],
+                "discovery_scope": {"split": context["split"], "tasks": [context["task"]]},
+                "bounded_selection": {"episode_id": context["episode_id"], "limit": 1},
+                "columns": scalar_columns,
+                "episode": table.to_pylist()[0],
+                "payload_read": False,
+            },
+        ),
+        bounded,
+    )
+
+
+def abc_bounded_metadata(catalog: Any, source_bytes: int) -> StagePayload:
+    """Range-read normalized metadata only for the already bounded catalog."""
+    from daft.datasets import abc
+
+    dataframe = abc.metadata(catalog)
+    metadata_columns = [
+        name
+        for name in (
+            "episode_id",
+            "split",
+            "task_slug",
+            "session_id",
+            "task_name",
+            "duration_seconds",
+            "message_count",
+            "message_start_time",
+            "message_end_time",
+            "chunk_count",
+            "topics",
+            "video_topics",
+            "indexed",
+        )
+        if name in dataframe.column_names
+    ]
+    table = dataframe.select(*metadata_columns).to_arrow()
+    if table.num_rows != 1:
+        raise RuntimeError(f"Expected metadata for one bounded ABC episode, received {table.num_rows} rows")
+    return StagePayload(
+        rows=table.num_rows,
+        source_file_bytes=source_bytes,
+        arrow_bytes=table.nbytes,
+        details={
+            "api": "daft.datasets.abc.metadata",
+            "input_episode_rows": 1,
+            "columns": metadata_columns,
+            "metadata": table.to_pylist()[0],
+            "payload_read": False,
+        },
+    )
+
+
 def run_iteration(
     daft: Any,
     path: str,
@@ -412,6 +532,7 @@ def run_iteration(
     source_bytes: int,
     iteration: int,
     video_topic: str | None,
+    abc_catalog: Any | None,
 ) -> list[StageResult]:
     results: list[StageResult] = []
 
@@ -492,6 +613,45 @@ def run_iteration(
             "Filtered row counts disagree: "
             f"baseline={expected_rows}, reader={reader_filtered.rows}, planner={planner_filtered.rows}"
         )
+
+    if abc_catalog is not None:
+
+        def dataset_messages() -> StagePayload:
+            from daft.datasets import abc
+
+            table = metadata_projection(
+                abc.messages(
+                    abc_catalog,
+                    topics=list(window.topics),
+                    start_time=window.start_time,
+                    end_time=window.end_time,
+                    batch_size=args.batch_size,
+                    io_config=io_config,
+                )
+            ).to_arrow()
+            return StagePayload(
+                rows=table.num_rows,
+                source_file_bytes=source_bytes,
+                arrow_bytes=table.nbytes,
+                details={
+                    "api": "daft.datasets.abc.messages",
+                    "input_episode_rows": 1,
+                    "reader_filters": {
+                        "topics": list(window.topics),
+                        "start_time": window.start_time,
+                        "end_time": window.end_time,
+                    },
+                    **provenance_details(table),
+                },
+            )
+
+        wrapper_filtered = timed_stage("abc_messages_topic_time_filter", iteration, dataset_messages)
+        if wrapper_filtered.rows != expected_rows:
+            raise RuntimeError(
+                "ABC messages wrapper row count disagrees with the equivalent direct reader: "
+                f"baseline={expected_rows}, wrapper={wrapper_filtered.rows}"
+            )
+        results.append(wrapper_filtered)
 
     def materialize_payload() -> StagePayload:
         filters: dict[str, Any] = {}
@@ -630,14 +790,51 @@ def make_report(args: argparse.Namespace, cold_cache: Path | None) -> dict[str, 
     window = choose_filter(metadata, args)
     video_topic, video_topic_selection = choose_video_topic(metadata, args)
 
+    dataset_api_results: list[StageResult] = []
+    catalog: Any | None = None
+    dataset_context = abc_dataset_context(path)
+    if dataset_context is not None:
+        catalog_holder: dict[str, Any] = {}
+
+        def discover_catalog() -> StagePayload:
+            payload, bounded = abc_catalog_discovery(daft, path, io_config, source_bytes)
+            catalog_holder["catalog"] = bounded
+            return payload
+
+        dataset_api_results.append(timed_stage("abc_catalog_discovery", 0, discover_catalog))
+        catalog = catalog_holder["catalog"]
+        dataset_api_results.append(
+            timed_stage("abc_bounded_metadata", 0, lambda: abc_bounded_metadata(catalog, source_bytes))
+        )
+
     if args.mode == "remote-warm":
         print("warming every read_mcap stage once (results discarded) ...", file=sys.stderr, flush=True)
-        run_iteration(daft, path, io_config, args, window, source_bytes, iteration=-1, video_topic=video_topic)
+        run_iteration(
+            daft,
+            path,
+            io_config,
+            args,
+            window,
+            source_bytes,
+            iteration=-1,
+            video_topic=video_topic,
+            abc_catalog=catalog,
+        )
 
     message_results: list[StageResult] = []
     for iteration in range(1, args.repeat + 1):
         message_results.extend(
-            run_iteration(daft, path, io_config, args, window, source_bytes, iteration, video_topic=video_topic)
+            run_iteration(
+                daft,
+                path,
+                io_config,
+                args,
+                window,
+                source_bytes,
+                iteration,
+                video_topic=video_topic,
+                abc_catalog=catalog,
+            )
         )
 
     medians = median_by_stage(message_results)
@@ -648,6 +845,11 @@ def make_report(args: argparse.Namespace, cold_cache: Path | None) -> dict[str, 
         "reader_pushdown_vs_unpushed": None if reader == 0 else baseline / reader,
         "planner_pushdown_vs_unpushed": None if planner == 0 else baseline / planner,
     }
+    comparisons = {}
+    if "abc_messages_topic_time_filter" in medians:
+        comparisons["abc_messages_wrapper_to_direct_reader_latency_ratio"] = (
+            None if reader == 0 else medians["abc_messages_topic_time_filter"] / reader
+        )
 
     return {
         "status": "ok",
@@ -679,15 +881,22 @@ def make_report(args: argparse.Namespace, cold_cache: Path | None) -> dict[str, 
             "frame_limit": args.video_frame_limit,
             "stages_enabled": video_topic is not None,
         },
+        "dataset_api": {
+            "status": "measured" if dataset_context is not None else "not_applicable",
+            "context": dataset_context,
+            "catalog_is_bounded_before_metadata_and_messages": dataset_context is not None,
+        },
         "byte_semantics": {
             "source_file_bytes": "object size, not measured network transfer",
             "arrow_bytes": "materialized Arrow table size",
             "payload_value_bytes": "raw binary length, or UTF-8 allocation length for legacy string payloads",
         },
         "setup_stages": [asdict(object_result), asdict(metadata_result)],
+        "dataset_api_stages": [asdict(result) for result in dataset_api_results],
         "message_stages": [asdict(result) for result in message_results],
         "median_seconds": medians,
         "speedups": speedups,
+        "comparisons": comparisons,
     }
 
 

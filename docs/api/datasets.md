@@ -1,6 +1,6 @@
 # Datasets
 
-Daft provides simple, performant, and responsible ways to access useful datasets like [Common Crawl](https://commoncrawl.org/get-started) and [DROID](https://droid-dataset.github.io/).
+Daft provides simple, performant, and responsible ways to access useful datasets like [Common Crawl](https://commoncrawl.org/get-started), [DROID](https://droid-dataset.github.io/), and [ABC-130k](https://huggingface.co/datasets/XDOF/ABC-130k).
 
 ## Common Crawl
 
@@ -52,6 +52,35 @@ Check out our [DROID dataset guide](../datasets/droid.md) for more examples!
         heading_level: 3
 
 ::: daft.datasets.droid.camera_frames
+    options:
+        filters: ["!^_"]
+        heading_level: 3
+
+## ABC-130k
+
+Check out our [ABC-130k dataset guide](../datasets/abc.md) for a staged workflow covering episode discovery, MCAP metadata, native message reads, annotations, and video decoding.
+
+::: daft.datasets.abc.raw
+    options:
+        filters: ["!^_"]
+        heading_level: 3
+
+::: daft.datasets.abc.metadata
+    options:
+        filters: ["!^_"]
+        heading_level: 3
+
+::: daft.datasets.abc.messages
+    options:
+        filters: ["!^_"]
+        heading_level: 3
+
+::: daft.datasets.abc.annotations
+    options:
+        filters: ["!^_"]
+        heading_level: 3
+
+::: daft.datasets.abc.camera_frames
     options:
         filters: ["!^_"]
         heading_level: 3
