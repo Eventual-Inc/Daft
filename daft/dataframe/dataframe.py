@@ -1954,6 +1954,14 @@ class DataFrame:
         Note:
             This call is **blocking** and will execute the DataFrame when called.
 
+            Delta Lake has no unsigned integer types, so an unsigned column is
+            widened to the next signed type that holds every value: ``uint8`` →
+            ``short``, ``uint16`` → ``integer``, ``uint32`` → ``long``,
+            ``uint64`` → ``long``. A ``uint32`` column therefore reads back as
+            ``int64``. ``uint64`` values above ``2**63 - 1`` have no signed
+            target and raise a ``ValueError`` rather than committing a table
+            that cannot be read.
+
             When ``checkpoint`` is provided and ``write_deltalake`` raises
             *after* the Delta commit landed (e.g. a transient failure during
             the post-commit ``mark_committed`` bookkeeping), the user data is
@@ -2545,7 +2553,7 @@ class DataFrame:
         configuration: "Mapping[str, str | None] | None",
         custom_metadata: dict[str, str] | None,
         checkpoint: "IdempotentCommit",
-        compression: str = "none",
+        compression: str,
     ) -> "DataFrame":
         """Idempotent Delta Lake commit identified by ``checkpoint.idempotence_key``.
 
