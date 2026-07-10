@@ -1942,8 +1942,7 @@ class PySeriesIterator:
     def __next__(self) -> Any: ...
     def __iter__(self) -> PySeriesIterator: ...
 
-class PyShowOptions:
-    ...
+class PyShowOptions: ...
 
 class OperatorMetrics:
     def inc_counter(
@@ -2506,7 +2505,6 @@ class LocalPhysicalPlan:
 
 class Input:
     """Input for NativeExecutor execution. Holds ScanTasks or GlobPaths."""
-
 
 class NativeExecutor:
     def __init__(self, is_flotilla_worker: bool, ip: str) -> None: ...
