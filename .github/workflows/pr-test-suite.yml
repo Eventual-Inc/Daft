@@ -62,7 +62,10 @@ jobs:
           ':!SECURITY.md' \
           ':!codecov.yml' \
           ':!mkdocs.yml' \
-          ':!AGENTS.md'
+          ':!AGENTS.md' \
+          ':!.github/workflows/release-drafter.yml' \
+          ':!.github/release-drafter.yml' \
+          ':!.github/release.yml'
         then
           echo "skip=true" >> $GITHUB_OUTPUT
         else

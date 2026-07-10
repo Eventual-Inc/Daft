@@ -97,8 +97,15 @@ class IcebergScanOperator(ScanOperator):
         self._iceberg_schema = iceberg_schema
         self._snapshot_id = snapshot_id
         self._storage_config = storage_config
-        self._ignore_corrupt_files = ignore_corrupt_files
-        self._field_id_mapping = visit(iceberg_schema, SchemaFieldIdMappingVisitor())
+
+        field_id_mapping = visit(iceberg_schema, SchemaFieldIdMappingVisitor())
+        self._file_format_config = FileFormatConfig.from_parquet_config(
+            ParquetSourceConfig(
+                field_id_mapping=field_id_mapping,
+                ignore_corrupt_files=ignore_corrupt_files,
+            )
+        )
+
         self._schema = convert_iceberg_schema(iceberg_schema)
         self._partition_keys = iceberg_partition_spec_to_fields(iceberg_schema, self._iceberg_table.spec())
 
@@ -200,14 +207,7 @@ class IcebergScanOperator(ScanOperator):
             path = file.file_path
             record_count = file.record_count
             file_format = file.file_format
-            if file_format == "PARQUET":
-                file_format_config = FileFormatConfig.from_parquet_config(
-                    ParquetSourceConfig(
-                        field_id_mapping=self._field_id_mapping,
-                        ignore_corrupt_files=self._ignore_corrupt_files,
-                    )
-                )
-            else:
+            if file_format != "PARQUET":
                 # TODO: Support ORC and AVRO when we can read it
                 raise NotImplementedError(f"{file_format} for iceberg not implemented!")
 
@@ -217,7 +217,7 @@ class IcebergScanOperator(ScanOperator):
             pspec = self._iceberg_record_to_partition_spec(self._iceberg_table.specs()[file.spec_id], file.partition)
             st = ScanTask.catalog_scan_task(
                 file=path,
-                file_format=file_format_config,
+                file_format=self._file_format_config,
                 schema=self._schema._schema,
                 num_rows=record_count,
                 storage_config=self._storage_config,
