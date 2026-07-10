@@ -208,6 +208,15 @@ impl PyDaftFile {
         Ok(written)
     }
 
+    /// Writes each item of an iterable to the file, like CPython's `writelines`:
+    /// no separators are added, and each item must match the handle's mode type.
+    fn writelines(&mut self, py: Python<'_>, lines: Bound<'_, PyAny>) -> PyResult<()> {
+        for line in lines.try_iter()? {
+            self.write(py, line?)?;
+        }
+        Ok(())
+    }
+
     /// Flushing is a no-op: writes are buffered in memory and only committed to storage
     /// when the file is closed.
     fn flush(&self) -> PyResult<()> {

@@ -95,6 +95,10 @@ class File:
                 - "r" / "rb": binary read (default).
                 - "wb": binary write; `write()` accepts bytes-like objects.
                 - "w" / "wt": text write; `write()` accepts str, encoded as UTF-8.
+                - "x" / "xt" / "xb": like the corresponding write mode, but raises
+                  `FileExistsError` if the file already exists. The existence check
+                  runs at open time; a concurrent writer between open and close can
+                  still win the race on object stores.
             buffer_size (int | None): Read buffer size in bytes. Only valid for read modes.
 
         Writes are buffered in memory and only committed to storage with a single
@@ -105,11 +109,27 @@ class File:
             if self.position is None and self._inner.size() is None and not self.exists():
                 raise FileNotFoundError(f"File {self.path} does not exist")
             return PyDaftFile._from_file_reference(self._inner, buffer_size=buffer_size)
-        if mode in ("w", "wt", "wb"):
+        if mode in ("w", "wt", "wb", "x", "xt", "xb"):
             if buffer_size is not None:
                 raise ValueError("buffer_size is only supported for read modes")
-            return PyDaftFile._create_writer(self._inner, text=mode != "wb")
-        raise ValueError(f"Unsupported mode: {mode}. Supported modes are 'r', 'rb', 'w', 'wt', and 'wb'")
+            if mode.startswith("x") and self.exists():
+                raise FileExistsError(f"File {self.path} already exists")
+            return PyDaftFile._create_writer(self._inner, text=not mode.endswith("b"))
+        raise ValueError(
+            f"Unsupported mode: {mode}. Supported modes are 'r', 'rb', 'w', 'wt', 'wb', 'x', 'xt', and 'xb'"
+        )
+
+    def write(self, data: bytes | bytearray | memoryview | str) -> int:
+        """Writes `data` to the file in one call, replacing any existing content.
+
+        `str` data is written as UTF-8 text; bytes-like data is written as binary.
+        Returns the number of characters (text) or bytes (binary) written. Equivalent
+        to opening in "w"/"wb" and writing once, so the same commit semantics apply:
+        the content is only visible at the destination once the write completes.
+        """
+        mode = "w" if isinstance(data, str) else "wb"
+        with self.open(mode) as f:
+            return f.write(data)
 
     def __str__(self) -> str:
         return self._inner.__str__()

@@ -148,6 +148,78 @@ def test_byte_range_file_cannot_be_opened_for_writing(tmp_path: Path):
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_file_write_one_shot_text_and_bytes(tmp_path: Path):
+    temp_file = tmp_path / "one_shot.txt"
+    f = daft.File(str(temp_file.absolute()))
+
+    written = f.write("héllo")
+    assert written == 5
+    assert temp_file.read_text(encoding="utf-8") == "héllo"
+
+    written = f.write(b"raw bytes")
+    assert written == 9
+    assert temp_file.read_bytes() == b"raw bytes"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_file_write_one_shot_byte_range_rejected(tmp_path: Path):
+    temp_file = tmp_path / "one_shot.txt"
+    temp_file.write_text("hello world")
+    f = daft.File(str(temp_file.absolute()), position=0, size=5)
+
+    with pytest.raises(Exception, match="cannot be opened for writing"):
+        f.write(b"nope")
+    assert temp_file.read_text() == "hello world"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_exclusive_mode_creates_new_file(tmp_path: Path):
+    temp_file = tmp_path / "fresh.txt"
+    f = daft.File(str(temp_file.absolute()))
+
+    with f.open("x") as writer:
+        writer.write("created")
+    assert temp_file.read_text() == "created"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_exclusive_mode_rejects_existing_file(tmp_path: Path):
+    temp_file = tmp_path / "existing.txt"
+    temp_file.write_text("original")
+    f = daft.File(str(temp_file.absolute()))
+
+    for mode in ("x", "xt", "xb"):
+        with pytest.raises(FileExistsError, match="already exists"):
+            f.open(mode)
+    assert temp_file.read_text() == "original"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_writelines(tmp_path: Path):
+    temp_file = tmp_path / "lines.txt"
+    f = daft.File(str(temp_file.absolute()))
+
+    with f.open("w") as writer:
+        writer.writelines(["one\n", "two\n", "three"])
+    assert temp_file.read_text() == "one\ntwo\nthree"
+
+    with f.open("wb") as writer:
+        writer.writelines([b"a", b"b"])
+    assert temp_file.read_bytes() == b"ab"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_writelines_wrong_type_does_not_commit(tmp_path: Path):
+    temp_file = tmp_path / "lines.txt"
+    temp_file.write_text("original")
+    f = daft.File(str(temp_file.absolute()))
+
+    with pytest.raises(TypeError, match="bytes-like"), f.open("wb") as writer:
+        writer.writelines([b"ok", "not bytes"])
+    assert temp_file.read_text() == "original"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
 def test_file_write_support_in_udf(tmp_path: Path):
     src_path = tmp_path / "src.txt"
     dst_path = tmp_path / "dst.txt"
