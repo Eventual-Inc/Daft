@@ -161,9 +161,6 @@ strip = "none"  # dont strip
 [profile.release.package.daft-parquet]
 opt-level = 2
 
-# Same pathology: at opt-level=3 this crate does not finish after 36 minutes of
-# CPU, all of it inside LLVM's BoUpSLP::buildTreeRec. opt-level=2 disables the
-# SLP vectorizer and it compiles in ~3s. See #7247.
 [profile.release.package.opendal-service-oss]
 opt-level = 2
 
