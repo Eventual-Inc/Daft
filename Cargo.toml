@@ -161,6 +161,9 @@ strip = "none"  # dont strip
 [profile.release.package.daft-parquet]
 opt-level = 2
 
+[profile.release.package.opendal-service-oss]
+opt-level = 2
+
 [profile.release-lto]
 codegen-units = 1
 inherits = "release"
