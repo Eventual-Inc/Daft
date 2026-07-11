@@ -29,7 +29,7 @@ homepage = "https://www.daft.ai"
 repository = "https://github.com/Eventual-Inc/Daft"
 
 [project.optional-dependencies]
-all = ["daft[audio, aws, azure, clickhouse, deltalake, google, gravitino, hdf5, http, huggingface, iceberg, lance, mcap, numpy, openai, pandas, postgres, ray, sql, transformers, turbopuffer, unity, video]"]
+all = ["daft[audio, aws, azure, clickhouse, deltalake, google, gravitino, hdf5, http, huggingface, iceberg, kafka, lance, mcap, numpy, openai, pandas, postgres, ray, sql, transformers, turbopuffer, unity, video]"]
 audio = ["soundfile >= 0.13.0,<0.14.0", "librosa >= 0.11.0,<0.12.0"]
 aws = ["boto3<1.44.0", "mypy-boto3-glue"]
 azure = ["fsspec<2026.8.0", "adlfs<2026.5.0"]
