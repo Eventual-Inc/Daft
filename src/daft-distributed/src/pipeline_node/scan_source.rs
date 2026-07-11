@@ -201,9 +201,9 @@ impl PipelineNodeImpl for ScanSourceNode {
                 #[cfg(feature = "python")]
                 SourceConfig::Database(config) => {
                     if num_scan_tasks == 1 {
-                        res.push(format!("SQL Query = {}", &config.sql));
+                        res.push(format!("SQL Query = {}", config.sql));
                     } else {
-                        res.push(format!("SQL Queries = [{},..]", &config.sql));
+                        res.push(format!("SQL Queries = [{},..]", config.sql));
                     }
                 }
                 #[cfg(feature = "python")]
