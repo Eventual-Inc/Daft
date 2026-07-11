@@ -16,7 +16,7 @@ This example does the following:
     # $ pip install -U "daft[turbopuffer]"
     # $ pip install -U "daft[openai]"
     # OR
-    # $ pip install -U "daft[sentence-transformers]"
+    # $ pip install -U "daft[transformers]"
     import os
 
     import daft

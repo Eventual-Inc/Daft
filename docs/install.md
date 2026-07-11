@@ -82,14 +82,6 @@ Depending on your use case, you may need to install Daft with additional depende
       </label>
 
       <label class="checkbox-item">
-        <input type="checkbox" id="hudi" data-extra="hudi">
-        <span class="checkmark"></span>
-        <div class="checkbox-content">
-          <strong>Apache Hudi</strong> <code>hudi</code>
-        </div>
-      </label>
-
-      <label class="checkbox-item">
         <input type="checkbox" id="unity" data-extra="unity">
         <span class="checkmark"></span>
         <div class="checkbox-content">
