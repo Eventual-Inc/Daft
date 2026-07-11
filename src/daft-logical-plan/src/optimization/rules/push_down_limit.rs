@@ -36,16 +36,12 @@ impl PushDownLimit {
 
 impl OptimizerRule for PushDownLimit {
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
-        plan.transform_down(|node| self.try_optimize_node(node))
+        plan.transform_down(Self::try_optimize_node)
     }
 }
 
 impl PushDownLimit {
-    #[allow(clippy::only_used_in_recursion)]
-    fn try_optimize_node(
-        &self,
-        plan: Arc<LogicalPlan>,
-    ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
+    fn try_optimize_node(plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         match plan.as_ref() {
             LogicalPlan::Limit(LogicalLimit {
                 input,
@@ -171,8 +167,7 @@ impl PushDownLimit {
                             new_eager,
                         )));
                         // we rerun the optimizer, ideally when we move to a visitor pattern this should go away
-                        let optimized = self
-                            .try_optimize_node(new_plan.clone())?
+                        let optimized = Self::try_optimize_node(new_plan.clone())?
                             .or(Transformed::yes(new_plan))
                             .data;
                         Ok(Transformed::yes(optimized))

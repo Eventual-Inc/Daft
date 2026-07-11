@@ -157,6 +157,7 @@ pub enum Error {
     #[snafu(display("Error joining spawned task: {}", source), context(false))]
     JoinError { source: tokio::task::JoinError },
 
+    #[allow(clippy::use_self)]
     #[snafu(display("Cached error: {}", source))]
     CachedError { source: Arc<Error> },
 }
@@ -419,7 +420,7 @@ impl IOClient {
                             Error::MiscTransient { .. }
                             | Error::SocketError { .. }
                             | Error::ConnectTimeout { .. } => {
-                                log::warn!("Transient error during GET, will retry: {}", &e);
+                                log::warn!("Transient error during GET, will retry: {}", e);
                                 crate::retry::RetryError::Transient(e)
                             }
                             _ => crate::retry::RetryError::Permanent(e),

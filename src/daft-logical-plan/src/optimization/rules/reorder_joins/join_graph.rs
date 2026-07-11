@@ -617,13 +617,7 @@ impl JoinGraph {
             if seen.insert(current) {
                 // If this is a new node, add all its neighbors to the stack.
                 if let Some(neighbors) = self.adj_list.edges.get(current) {
-                    stack.extend(neighbors.keys().filter_map(|neighbor| {
-                        if !seen.contains(neighbor) {
-                            Some(neighbor)
-                        } else {
-                            None
-                        }
-                    }));
+                    stack.extend(neighbors.keys().filter(|neighbor| !seen.contains(neighbor)));
                 }
             }
         }

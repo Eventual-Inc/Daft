@@ -100,6 +100,7 @@ pub enum Error {
     /// Remote fetch tasks store their results in a `Shared` future whose error
     /// type must be `Clone`, so we keep `Arc<Error>` internally and surface the
     /// typed source to every consumer.
+    #[allow(clippy::use_self)]
     #[snafu(display("Remote parquet fetch failed for {path}: {source}"))]
     RemoteFetchFailed {
         path: String,

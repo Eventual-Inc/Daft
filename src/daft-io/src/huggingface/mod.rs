@@ -189,7 +189,6 @@ impl HFSource {
 
     #[async_recursion]
     async fn request(
-        &self,
         uri: &str,
         cache_bust: bool,
         range: Option<&GetRange>,
@@ -228,7 +227,7 @@ impl HFSource {
                     // HTTP 416 (Range Not Satisfiable) occurs due to Hugging Face's buggy caching that incorrectly serves the data.
                     // Retry with cache busting to bypass the improperly cached response and get correct file metadata.
                     Some(StatusCode::RANGE_NOT_SATISFIABLE) => {
-                        self.request(uri, true, range, client).await
+                        Self::request(uri, true, range, client).await
                     }
                     Some(StatusCode::UNAUTHORIZED) if matches!(&path, HFPath::Hf(parts) if parts.repo_type == HFRepoType::Buckets) =>
                     {
@@ -245,7 +244,7 @@ impl HFSource {
                 // Check if we got a 206 (Partial Content) response with zero content length.
                 // This can happen due to Hugging Face's buggy caching. Retry with cache busting.
                 if res.status() == StatusCode::PARTIAL_CONTENT && res.content_length() == Some(0) {
-                    self.request(uri, true, range, client).await
+                    Self::request(uri, true, range, client).await
                 } else {
                     Ok((res, use_range))
                 }
@@ -259,9 +258,8 @@ impl HFSource {
         range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
-        let (response, range_applied) = self
-            .request(uri, false, range.as_ref(), &self.http_source.client)
-            .await?;
+        let (response, range_applied) =
+            Self::request(uri, false, range.as_ref(), &self.http_source.client).await?;
 
         let response = response.error_for_status().map_err(|e| {
             if e.status().map(|s| s.as_u16()) == Some(401) {
