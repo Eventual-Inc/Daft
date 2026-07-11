@@ -1,5 +1,3 @@
-#![feature(if_let_guard)]
-
 use std::{
     borrow::Cow,
     collections::HashMap,
