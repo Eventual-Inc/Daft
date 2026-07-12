@@ -81,7 +81,7 @@ The following is an example of appending data to an Iceberg table:
     written_df.show()
     ```
 
-To upsert — updating existing rows and inserting new ones — use `mode="upsert"` with `join_cols` specifying the match key(s). Requires pyiceberg>=0.9.0.
+To upsert — updating existing rows and inserting new ones — use `mode="upsert"` with `join_cols` specifying the match key(s). Requires pyiceberg>=0.9.0. The DataFrame must include every column of the target table: matched rows are replaced in full, so a partial set of columns raises a `ValueError` instead of nulling out the omitted ones.
 
 === "Python"
 

@@ -1337,7 +1337,7 @@ class DataFrame:
         Args:
             table (pyiceberg.table.Table): Destination [PyIceberg Table](https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table) to write dataframe to.
             mode (str, optional): Operation mode of the write. `append`, `overwrite`, or `upsert`. Defaults to `append`.
-            join_cols (list[str], optional): Column name(s) used to match existing rows for ``mode='upsert'``. Required when mode is ``upsert``.
+            join_cols (list[str], optional): Column name(s) used to match existing rows for ``mode='upsert'``. Required when mode is ``upsert``. The DataFrame must include every column of the target table, since matched rows are replaced in full; a partial set of columns raises ``ValueError`` rather than nulling out the omitted ones.
             io_config (IOConfig, optional): A custom IOConfig to use when accessing Iceberg object storage data. If provided, configurations set in `table` are ignored.
             snapshot_properties (dict[str, str], optional): Optional snapshot properties to set while writing to the table. Keys with prefix ``daft.idempotence-`` are reserved.
             checkpoint (IdempotentCommit, optional): Bundled checkpoint store + idempotence key for an idempotent commit. When provided, the snapshot summary is tagged with ``daft.idempotence-key`` and retries with the same key recognize the prior attempt without producing a duplicate snapshot. Only ``mode='append'`` is supported. Requires the Ray runner.
@@ -1421,6 +1421,11 @@ class DataFrame:
                 raise ValueError(f"Upsert is only supported on pyiceberg>=0.9.0, found {pyiceberg.__version__}")
             if not join_cols:
                 raise ValueError("join_cols must be provided and non-empty for mode='upsert'")
+            invalid_join_cols = set(join_cols) - set(self.column_names)
+            if invalid_join_cols:
+                raise ValueError(
+                    f"join_cols must reference columns in the DataFrame; invalid: {sorted(invalid_join_cols)}"
+                )
             if checkpoint is not None:
                 raise NotImplementedError("write_iceberg with checkpoint=... does not support mode='upsert'")
 
@@ -1457,6 +1462,15 @@ class DataFrame:
             from daft.io.iceberg.iceberg_write import coerce_pyarrow_table_to_schema
 
             arrow_schema = schema_to_pyarrow(table.schema())
+
+            missing_cols = set(arrow_schema.names) - set(self.column_names)
+            if missing_cols:
+                raise ValueError(
+                    "write_iceberg(mode='upsert') requires the DataFrame to include every column of the "
+                    "target table, since PyIceberg's upsert() replaces matched rows in full; missing "
+                    f"columns: {sorted(missing_cols)}"
+                )
+
             # PyIceberg's upsert() scans the table for matching rows and diffs them in
             # a single process -- no distributed write path exists, so the whole
             # DataFrame is materialized here.

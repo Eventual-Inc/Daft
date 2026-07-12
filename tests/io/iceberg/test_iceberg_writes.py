@@ -814,3 +814,33 @@ def test_upsert_requires_join_cols(local_catalog):
 
     with pytest.raises(ValueError, match="join_cols"):
         df.write_iceberg(table, mode="upsert", join_cols=[])
+
+    with pytest.raises(ValueError, match="join_cols"):
+        df.write_iceberg(table, mode="upsert", join_cols=["not_a_col"])
+
+
+def test_upsert_requires_all_columns(local_catalog):
+    """A partial-column upsert must raise, not silently null out omitted columns on matched rows."""
+    from packaging.version import parse
+
+    if parse(pyiceberg.__version__) < parse("0.9.0"):
+        pytest.skip("upsert requires pyiceberg>=0.9.0")
+
+    schema = Schema(
+        NestedField(field_id=1, name="id", type=LongType()),
+        NestedField(field_id=2, name="name", type=StringType()),
+        NestedField(field_id=3, name="status", type=StringType()),
+    )
+    table = local_catalog.create_table("default.test_upsert_missing_cols", schema)
+
+    initial = daft.from_pydict({"id": [1, 2], "name": ["Alice", "Bob"], "status": ["active", "active"]})
+    initial.write_iceberg(table)
+
+    partial_update = daft.from_pydict({"id": [2], "status": ["inactive"]})
+    with pytest.raises(ValueError, match="missing"):
+        partial_update.write_iceberg(table, mode="upsert", join_cols=["id"])
+
+    # The rejected write must not have touched the table.
+    read_back = daft.read_iceberg(table).sort("id").to_pydict()
+    assert read_back["name"] == ["Alice", "Bob"]
+    assert read_back["status"] == ["active", "active"]
