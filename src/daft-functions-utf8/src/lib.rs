@@ -1,4 +1,5 @@
 mod ascii;
+mod bit_length;
 mod capitalize;
 mod case;
 mod chr;
@@ -44,6 +45,7 @@ mod upper;
 pub(crate) mod utils;
 
 pub use ascii::*;
+pub use bit_length::*;
 pub use capitalize::*;
 pub use case::*;
 pub use chr::*;
@@ -140,5 +142,6 @@ impl daft_dsl::functions::FunctionModule for Utf8Functions {
         parent.add_fn(UpperSnakeCase);
         parent.add_fn(Ascii);
         parent.add_fn(Chr);
+        parent.add_fn(BitLength);
     }
 }

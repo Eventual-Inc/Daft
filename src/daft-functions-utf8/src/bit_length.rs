@@ -21,6 +21,7 @@ impl ScalarUDF for BitLength {
     fn name(&self) -> &'static str {
         "bit_length"
     }
+
     fn call(
         &self,
         inputs: daft_dsl::functions::FunctionArgs<Series>,

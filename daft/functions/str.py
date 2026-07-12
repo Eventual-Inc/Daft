@@ -1230,6 +1230,36 @@ def length_bytes(expr: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("length_bytes", expr)
 
 
+def bit_length(expr: Expression) -> Expression:
+    """Retrieves the length for a UTF-8 string column in bits.
+
+    Returns:
+        Expression: an UInt64 expression with the length of each string in bits
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import bit_length
+        >>> df = daft.from_pydict({"x": ["😉test", "hey̆", "baz"]})
+        >>> df = df.select(bit_length(df["x"]))
+        >>> df.show()
+        ╭────────╮
+        │ x      │
+        │ ---    │
+        │ UInt64 │
+        ╞════════╡
+        │ 64     │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 40     │
+        ├╌╌╌╌╌╌╌╌┤
+        │ 24     │
+        ╰────────╯
+        <BLANKLINE>
+        (Showing first 3 of 3 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("bit_length", expr)
+
+
 def regexp(expr: Expression, pattern: str | Expression) -> Expression:
     """Check whether each string matches the given regular expression pattern in a string column.
 
