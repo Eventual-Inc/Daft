@@ -1,9 +1,7 @@
 //! Rotation mathematics on plain slices, free of any Daft types.
 //!
-//! Quaternions are canonically `(w, x, y, z)` inside this module. The public
-//! expressions accept either component order and convert on the boundary.
-//!
-//! Rotation matrices are row-major: `m[3 * i + j]` is row `i`, column `j`.
+//! Quaternions are canonically `(w, x, y, z)` here; the expressions convert on the
+//! boundary. Matrices are row-major: `m[3 * i + j]` is row `i`, column `j`.
 
 /// Component order of a quaternion as it is laid out in a column.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -79,9 +77,6 @@ pub(super) fn inverse(q: [f64; 4]) -> Option<[f64; 4]> {
 }
 
 /// Hamilton product `a * b`, applying `b` first when acting on vectors.
-///
-/// Each row below is one component of the product, written as the four terms
-/// that sum to it.
 pub(super) fn multiply(a: [f64; 4], b: [f64; 4]) -> [f64; 4] {
     let [aw, ax, ay, az] = a;
     let [bw, bx, by, bz] = b;
@@ -111,8 +106,7 @@ pub(super) fn quat_to_mat(q: [f64; 4]) -> Option<[f64; 9]> {
     let (xy, xz, yz) = (x * y, x * z, y * z);
     let (wx, wy, wz) = (w * x, w * y, w * z);
 
-    // Bind each doubled term before combining, so no expression is a fused
-    // multiply-add in disguise.
+    // Bind each doubled term before combining, so none of these is an FMA in disguise.
     let diag = [yy + zz, xx + zz, xx + yy].map(|s| {
         let doubled = 2.0 * s;
         1.0 - doubled
@@ -126,24 +120,48 @@ pub(super) fn quat_to_mat(q: [f64; 4]) -> Option<[f64; 9]> {
     ])
 }
 
-/// How far a quantity may drift from its exact value before its input is judged
-/// not to be a rotation. Rounding in `Float64` costs a few units in the last
-/// place, and single precision inputs, which are widened on the way in, cost
-/// about `1e-7`. A larger excursion means a scaling, a reflection, or noise.
+/// How far a quantity may drift before its input is judged not to be a rotation.
+/// `Float64` rounding costs a few ulps; `Float32` inputs, widened on the way in,
+/// cost about `1e-7`. More than this means a scaling, a reflection, or noise.
 const TOL: f64 = 1e-6;
 
-/// Quaternion of a rotation matrix, via Shepperd's method.
+/// Whether `m` is a rotation: `m^T m = I` with determinant `+1`. Both halves are
+/// needed, since orthonormality alone admits reflections and the determinant alone
+/// admits any volume-preserving shear.
+///
+/// Testing instead that Shepperd's method returns a unit quaternion looks
+/// equivalent and is not: on its principal branch it reads only the trace and the
+/// antisymmetric part, so a trace-free symmetric perturbation is invisible to it.
+/// `[[1, 5, 0], [5, 1, 0], [0, 0, 1]]` has determinant `-24` and still yields the
+/// identity quaternion, of unit norm.
+pub(super) fn is_rotation(m: &[f64]) -> bool {
+    let col = |j: usize| [m[j], m[3 + j], m[6 + j]];
+    let (c0, c1, c2) = (col(0), col(1), col(2));
+
+    let gram = [
+        (dot3(c0, c0), 1.0),
+        (dot3(c1, c1), 1.0),
+        (dot3(c2, c2), 1.0),
+        (dot3(c0, c1), 0.0),
+        (dot3(c0, c2), 0.0),
+        (dot3(c1, c2), 0.0),
+    ];
+    if !gram.iter().all(|(got, want)| (got - want).abs() <= TOL) {
+        return false;
+    }
+
+    // The frame is orthonormal, so its determinant is +-1 and only the handedness
+    // is left to check.
+    (dot3(cross(c0, c1), c2) - 1.0).abs() <= TOL
+}
+
+/// Quaternion of a rotation matrix, via Shepperd's method. `None` when `m` is not
+/// a rotation.
 ///
 /// Branching on the largest diagonal term keeps the divisor away from zero, which
 /// the naive trace formula does not do for rotations near a half turn.
-///
-/// `None` when `m` is not a rotation. Shepperd's method yields a unit quaternion
-/// exactly when its input lies in `SO(3)`, so the norm of the result is a cheap
-/// test: a scaled matrix, a reflection, and arbitrary numbers all fail it.
 pub(super) fn mat_to_quat(m: [f64; 9]) -> Option<[f64; 4]> {
-    let q = shepperd(m);
-    let norm_sq = q.iter().map(|c| c * c).sum::<f64>();
-    ((norm_sq - 1.0).abs() <= TOL).then_some(q)
+    is_rotation(&m).then(|| shepperd(m))
 }
 
 fn shepperd(m: [f64; 9]) -> [f64; 4] {
@@ -169,10 +187,9 @@ fn shepperd(m: [f64; 9]) -> [f64; 4] {
 
 /// Rotation matrix from the 6D continuous representation of Zhou et al. (2019).
 ///
-/// The two input vectors are the first two columns of the matrix, up to
-/// Gram-Schmidt orthonormalization. The third column is their cross product, so
-/// the result always has determinant `+1`. `None` when the inputs are parallel
-/// or either is zero, in which case no rotation is determined.
+/// The two input vectors are the first two columns, up to Gram-Schmidt; the third
+/// is their cross product, so the result always has determinant `+1`. `None` when
+/// they are parallel or either is zero, which determines no rotation.
 pub(super) fn rot6d_to_mat(r: &[f64]) -> Option<[f64; 9]> {
     let a1 = [r[0], r[1], r[2]];
     let a2 = [r[3], r[4], r[5]];
@@ -204,19 +221,21 @@ pub(super) fn rot6d_to_mat(r: &[f64]) -> Option<[f64; 9]> {
     ])
 }
 
-/// Geodesic (angular) distance between two rotations, in radians on `[0, pi]`.
-///
+/// Geodesic distance between two rotations, in radians on `[0, pi]`:
 /// `arccos((tr(A B^T) - 1) / 2)`, the angle of the relative rotation `A B^T`.
 ///
-/// For genuine rotations the cosine can land a hair outside `[-1, 1]` through
-/// rounding, so it is clamped. A larger excursion means the arguments are not
-/// both rotations, and the angle between them is undefined: report `None` rather
-/// than let the clamp turn nonsense into a plausible `0` or `pi`.
+/// The angle is only defined between rotations, so an argument outside `SO(3)`
+/// gives `None`. Range-checking the cosine would not be enough: a non-rotation can
+/// land it inside `[-1, 1]`, where the formula reports a plausible angle. Rounding
+/// can push it a hair outside for genuine rotations, which the clamp absorbs.
 pub(super) fn geodesic_angle(a: &[f64], b: &[f64]) -> Option<f64> {
+    if !(is_rotation(a) && is_rotation(b)) {
+        return None;
+    }
     // tr(A B^T) is the elementwise inner product of A and B.
     let trace: f64 = a.iter().zip(b).map(|(x, y)| x * y).sum();
     let cos = 0.5 * (trace - 1.0);
-    (cos.abs() <= 1.0 + TOL).then(|| cos.clamp(-1.0, 1.0).acos())
+    Some(cos.clamp(-1.0, 1.0).acos())
 }
 
 #[cfg(test)]
@@ -229,7 +248,7 @@ mod tests {
         (a - b).abs() < eps
     }
 
-    /// Determinant by cofactor expansion along the first row.
+    // Determinant by cofactor expansion along the first row.
     fn det3(m: [f64; 9]) -> f64 {
         let cofactors = [
             [m[4] * m[8], -(m[5] * m[7])],
@@ -246,7 +265,7 @@ mod tests {
         .sum()
     }
 
-    /// A few rotations spanning identity, small angles, half turns, and generic ones.
+    // Identity, half turns (trace = -1, the hard case), small angles, generic ones.
     fn sample_quats() -> Vec<[f64; 4]> {
         vec![
             [1.0, 0.0, 0.0, 0.0],
@@ -462,6 +481,48 @@ mod tests {
         for q in sample_quats() {
             assert!(mat_to_quat(quat_to_mat(q).unwrap()).is_some());
         }
+    }
+
+    #[test]
+    fn so3_test_sees_trace_free_symmetric_perturbations() {
+        // Determinant -24, and shepperd maps it to the identity quaternion.
+        let shear = [1.0, 5.0, 0.0, 5.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+        assert!(approx(det3(shear), -24.0, 1e-9));
+        let q = shepperd(shear);
+        assert!(
+            approx(q.iter().map(|c| c * c).sum::<f64>(), 1.0, 1e-12),
+            "the norm test passes on this non-rotation: {q:?}"
+        );
+
+        assert!(!is_rotation(&shear));
+        assert!(mat_to_quat(shear).is_none());
+
+        let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+        assert!(geodesic_angle(&shear, &identity).is_none());
+        assert!(geodesic_angle(&identity, &shear).is_none());
+    }
+
+    #[test]
+    fn so3_test_accepts_rotations_and_rejects_the_usual_impostors() {
+        let identity = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+        for q in sample_quats() {
+            let m = quat_to_mat(q).unwrap();
+            assert!(is_rotation(&m), "{m:?}");
+            // Single precision inputs are widened on the way in, and must survive.
+            assert!(is_rotation(&m.map(|c| f64::from(c as f32))), "{m:?}");
+        }
+        // Orthonormal but left handed: the determinant is the only thing that says so.
+        assert!(!is_rotation(&[
+            1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0
+        ]));
+        // Determinant +1 but not orthonormal: a volume-preserving shear.
+        let shear = [1.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+        assert!(approx(det3(shear), 1.0, 1e-12));
+        assert!(!is_rotation(&shear));
+        // Scalings, in both directions.
+        assert!(!is_rotation(&identity.map(|c| 2.0 * c)));
+        assert!(!is_rotation(&identity.map(|c| 0.5 * c)));
+        assert!(!is_rotation(&[0.0; 9]));
     }
 
     #[test]

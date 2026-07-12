@@ -1,10 +1,9 @@
 //! Rotation expressions for pose data.
 //!
-//! Robot trajectories, camera extrinsics, and hand-tracking datasets all carry
-//! rotations. Daft reads that data today (`daft.datasets.droid`,
-//! `daft.datasets.lerobot`, `daft.datasets.egodex`, `daft.read_mcap`) but stores
-//! rotations as untyped float columns, so composing or comparing them means
-//! dropping into a per-row Python UDF. These expressions do the algebra natively.
+//! Daft already reads rotations (`daft.datasets.droid`, `daft.datasets.lerobot`,
+//! `daft.datasets.egodex`, `daft.read_mcap`) but stores them as untyped float
+//! columns, so composing or comparing them means a per-row Python UDF. These
+//! expressions do the algebra natively.
 
 mod functions;
 mod math;

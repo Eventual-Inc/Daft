@@ -363,6 +363,8 @@ def test_filtered_input_reads_the_right_rows():
         ([2.0, 0, 0, 0, 2, 0, 0, 0, 2], "a scaled rotation"),
         ([1.0, 0, 0, 0, 1, 0, 0, 0, -1], "a reflection"),
         ([-1.0, 0, 0, 0, -1, 0, 0, 0, -1], "negated identity, determinant -1"),
+        ([1.0, 5, 0, 5, 1, 0, 0, 0, 1], "identity plus a trace-free symmetric part, determinant -24"),
+        ([1.0, 1, 0, 0, 1, 0, 0, 0, 1], "a volume-preserving shear, determinant +1"),
     ],
 )
 def test_matrix_to_quat_rejects_matrices_outside_so3(matrix, reason):
@@ -375,10 +377,17 @@ def test_matrix_to_quat_rejects_matrices_outside_so3(matrix, reason):
     [
         ([1.0, 2, 3, 4, 5, 6, 7, 8, 9], "cosine is 7, far outside [-1, 1]"),
         ([2.0, 0, 0, 0, 2, 0, 0, 0, 2], "a scaled rotation"),
+        ([1.0, 5, 0, 5, 1, 0, 0, 0, 1], "determinant -24, yet the cosine lands on exactly 1"),
+        ([1.0, 1, 0, 0, 1, 0, 0, 0, 1], "a shear, whose cosine also lands inside [-1, 1]"),
     ],
 )
 def test_geodesic_angle_rejects_arguments_outside_so3(matrix, reason):
-    """The clamp that absorbs rounding must not turn nonsense into a plausible angle."""
+    """The clamp that absorbs rounding must not turn nonsense into a plausible angle.
+
+    The last two cases are the ones a cosine-range check cannot catch: they sit far
+    outside SO(3) and still put the cosine inside [-1, 1], where the formula would
+    happily report an angle of 0.
+    """
     identity = [1.0, 0, 0, 0, 1, 0, 0, 0, 1]
     df = _frame(a=[matrix], b=[identity]).select(col("a").cast(MAT3), col("b").cast(MAT3))
     got = df.select(rotation_geodesic_angle(col("a"), col("b"))).to_pydict()["a"]
@@ -442,6 +451,60 @@ def test_non_finite_inputs_produce_null_everywhere(bad):
     for name, df in cases.items():
         got = next(iter(df.to_pydict().values()))[0]
         assert got is None, f"{name} returned {got!r} for a {bad} input, expected null"
+
+
+def test_null_component_within_a_row_produces_null_everywhere():
+    """A row can be valid while one of its numbers is null.
+
+    The value buffer still holds a number under a null slot, usually a zero, so
+    reading the row without its validity mask turns [1, null, 0, 0] into a perfectly
+    plausible half turn about x. It is not a rotation, and the answer is null.
+    """
+    identity_q = [0.0, 0.0, 0.0, 1.0]
+    identity_m = [1.0, 0, 0, 0, 1, 0, 0, 0, 1]
+    q_bad = [1.0, None, 0.0, 0.0]
+    m_bad = [1.0, None] + [0.0] * 7
+
+    cases = {
+        "quat_inverse": _quat_col("q", [q_bad]).select(quat_inverse(col("q"))),
+        "quat_to_matrix": _quat_col("q", [q_bad]).select(quat_to_matrix(col("q"))),
+        "matrix_to_quat": _frame(m=[m_bad]).select(col("m").cast(MAT3)).select(matrix_to_quat(col("m"))),
+        "quat_multiply": (
+            _frame(a=[q_bad], b=[identity_q])
+            .select(col("a").cast(QUAT), col("b").cast(QUAT))
+            .select(quat_multiply(col("a"), col("b")))
+        ),
+        "quat_rotate_bad_quat": (
+            _frame(q=[q_bad], v=[[1.0, 0.0, 0.0]])
+            .select(col("q").cast(QUAT), col("v").cast(VEC3))
+            .select(quat_rotate(col("q"), col("v")))
+        ),
+        "quat_rotate_bad_vector": (
+            _frame(q=[identity_q], v=[[None, 0.0, 0.0]])
+            .select(col("q").cast(QUAT), col("v").cast(VEC3))
+            .select(quat_rotate(col("q"), col("v")))
+        ),
+        "rot6d_to_matrix": (
+            _frame(r=[[None, 0.0, 0.0, 0.0, 1.0, 0.0]]).select(col("r").cast(ROT6D)).select(rot6d_to_matrix(col("r")))
+        ),
+        "rotation_geodesic_angle": (
+            _frame(a=[m_bad], b=[identity_m])
+            .select(col("a").cast(MAT3), col("b").cast(MAT3))
+            .select(rotation_geodesic_angle(col("a"), col("b")))
+        ),
+    }
+    for name, df in cases.items():
+        got = next(iter(df.to_pydict().values()))[0]
+        assert got is None, f"{name} returned {got!r} for a row with a null component, expected null"
+
+
+def test_null_component_does_not_disturb_its_neighbours():
+    """The offending row goes null; the rows either side of it are untouched."""
+    rows = [UNIT_QUATS_XYZW[6], [1.0, None, 0.0, 0.0], UNIT_QUATS_XYZW[7]]
+    got = _quat_col("q", rows).select(quat_to_matrix(col("q"))).to_pydict()["q"]
+    assert got[1] is None
+    want = scipy_rotation.from_quat(np.asarray([UNIT_QUATS_XYZW[6], UNIT_QUATS_XYZW[7]])).as_matrix()
+    np.testing.assert_allclose(np.asarray([np.asarray(got[0]), np.asarray(got[2])]), want, atol=1e-12)
 
 
 def test_order_is_case_insensitive():

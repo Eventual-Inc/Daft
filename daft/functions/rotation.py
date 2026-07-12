@@ -12,9 +12,9 @@ The argument is case-insensitive.
 Rotation matrices are ``Tensor[Float64; [3, 3]]``, in row-major order.
 
 Every function here returns null for a row that does not denote a rotation: a null
-input, a value that is ``NaN`` or infinite, a zero quaternion, a 6D pair whose two
-vectors are zero or parallel, or a matrix that is not in ``SO(3)``. Nothing is
-silently coerced into a plausible rotation.
+input, a null component within a row, a value that is ``NaN`` or infinite, a zero
+quaternion, a 6D pair whose two vectors are zero or parallel, or a matrix that is
+not in ``SO(3)``. Nothing is silently coerced into a plausible rotation.
 """
 
 from __future__ import annotations
@@ -87,9 +87,9 @@ def matrix_to_quat(matrix: Expression, *, order: QuatOrder = "xyzw") -> Expressi
     naive trace formula loses precision. The sign is not canonicalized, since a
     quaternion and its negation denote the same rotation.
 
-    Shepperd's method yields a unit quaternion exactly when its input lies in ``SO(3)``,
-    so a matrix that is scaled, is a reflection, or holds a non-finite value produces
-    null rather than a plausible quaternion.
+    The matrix is tested for membership in ``SO(3)`` first, so one that is scaled, is a
+    shear, is a reflection, or holds a non-finite value produces null rather than a
+    plausible quaternion.
 
     Args:
         matrix (Tensor[Float64, [3, 3]] Expression): The rotation matrix.
@@ -160,9 +160,9 @@ def rotation_geodesic_angle(left: Expression, right: Expression) -> Expression:
     which lies in ``[0, pi]``. This is the bi-invariant Riemannian metric, so it is
     symmetric and unchanged by rotating both arguments.
 
-    Rounding is absorbed by clamping the cosine into ``[-1, 1]``. A row where either
-    argument is not a rotation, and so the cosine lies well outside that range, produces
-    null rather than a plausible angle.
+    Both arguments are tested for membership in ``SO(3)``, since the angle is only
+    defined between rotations: a row where either is not a rotation produces null rather
+    than a plausible angle. Rounding is absorbed by clamping the cosine into ``[-1, 1]``.
 
     Applied to consecutive frames of a trajectory, it measures how much a body turned
     between them.

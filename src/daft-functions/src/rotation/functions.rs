@@ -34,9 +34,8 @@ fn parse_order(fname: &str, order: Option<String>) -> DaftResult<QuatOrder> {
 }
 
 /// Check that `field` holds `size` floats per row, and name the output field.
-///
-/// Both `FixedSizeList` and the tensor types are accepted, since a fixed-shape
-/// tensor lowers to a fixed size list of the product of its shape.
+/// Tensors are accepted alongside `FixedSizeList`, since a fixed-shape tensor
+/// lowers to a fixed size list of the product of its shape.
 fn validate(fname: &str, field: &Field, size: usize, out: DataType) -> DaftResult<Field> {
     match field.dtype.to_physical() {
         DataType::FixedSizeList(inner, n)
@@ -87,14 +86,16 @@ fn align(fname: &str, a: Series, b: Series) -> DaftResult<(Series, Series)> {
     }
 }
 
-/// A fixed size list of `Float64`, viewed as one contiguous slice plus a validity mask.
+/// A fixed size list of `Float64`, viewed as one contiguous slice plus validity.
 ///
-/// Iterating a `FixedSizeListArray` yields `Option<Series>`, which allocates a
-/// `Series` per row. These expressions run over the flat child instead, so a
-/// column of a million rotations costs no allocation at all.
+/// Iterating a `FixedSizeListArray` yields `Option<Series>`, allocating a `Series`
+/// per row. These expressions run over the flat child instead, so a column of a
+/// million rotations costs no allocation at all.
 struct Rows<'a> {
     values: &'a [f64],
     nulls: Option<&'a NullBuffer>,
+    // A row may be valid while one of its numbers is null. That null lives here.
+    child_nulls: Option<&'a NullBuffer>,
     width: usize,
     len: usize,
 }
@@ -104,21 +105,30 @@ impl<'a> Rows<'a> {
         Ok(Self {
             values: list.flat_child.try_as_slice::<f64>()?,
             nulls: list.nulls(),
+            child_nulls: list.flat_child.nulls(),
             width,
             len: list.len(),
         })
     }
 
-    /// The `i`th row, or `None` when it is null or holds a non-finite value.
+    /// The `i`th row, or `None` when it denotes no rotation: a null row, a null
+    /// component, or a `NaN` or infinity. All three produce a null result.
     ///
-    /// A quaternion or matrix containing `NaN` or an infinity denotes no rotation,
-    /// so every expression here treats it the way it treats a null: the result is
-    /// null. Propagating the `NaN` instead would let it masquerade as a rotation.
+    /// The null component matters. The value buffer still holds a number under a
+    /// null slot, usually a zero, so reading it without the child validity would
+    /// quietly turn `[1, null, 0, 0]` into a half turn about x.
     fn get(&self, i: usize) -> Option<&'a [f64]> {
         if self.nulls.is_some_and(|n| n.is_null(i)) {
             return None;
         }
-        let row = self.values.get(i * self.width..(i + 1) * self.width)?;
+        let (start, end) = (i * self.width, (i + 1) * self.width);
+        if self
+            .child_nulls
+            .is_some_and(|n| (start..end).any(|j| n.is_null(j)))
+        {
+            return None;
+        }
+        let row = self.values.get(start..end)?;
         row.iter().all(|v| v.is_finite()).then_some(row)
     }
 }
@@ -326,7 +336,7 @@ impl ScalarUDF for MatrixToQuat {
     }
 
     fn docstring(&self) -> &'static str {
-        "Converts a 3x3 rotation matrix into a quaternion, using Shepperd's method for numerical stability near a half turn.\n\nThe sign is not canonicalized: a quaternion and its negation denote the same rotation. Pass order='wxyz' for the scalar-first convention; the default is 'xyzw', and the argument is case-insensitive. Rows whose matrix is not a rotation, because it is scaled, is a reflection, or holds a non-finite value, produce null."
+        "Converts a 3x3 rotation matrix into a quaternion, using Shepperd's method for numerical stability near a half turn.\n\nThe sign is not canonicalized: a quaternion and its negation denote the same rotation. Pass order='wxyz' for the scalar-first convention; the default is 'xyzw', and the argument is case-insensitive. Rows whose matrix is not a rotation, because it is scaled, is a shear, is a reflection, or holds a non-finite value, produce null."
     }
 }
 
@@ -560,7 +570,7 @@ impl ScalarUDF for RotationGeodesicAngle {
     }
 
     fn docstring(&self) -> &'static str {
-        "Angle in radians of the relative rotation between two 3x3 rotation matrices.\n\nComputes arccos((trace(A B^T) - 1) / 2), the geodesic distance on SO(3), which lies in [0, pi]. This is the bi-invariant Riemannian metric, so it is symmetric and unchanged by rotating both arguments. Rounding is absorbed by clamping the cosine into [-1, 1]. Rows where either argument is not a rotation, and so the cosine lies well outside that range, produce null rather than a plausible angle."
+        "Angle in radians of the relative rotation between two 3x3 rotation matrices.\n\nComputes arccos((trace(A B^T) - 1) / 2), the geodesic distance on SO(3), which lies in [0, pi]. This is the bi-invariant Riemannian metric, so it is symmetric and unchanged by rotating both arguments. Rounding is absorbed by clamping the cosine into [-1, 1]. Rows where either argument is not a rotation produce null rather than a plausible angle, since the angle is only defined between rotations."
     }
 }
 
