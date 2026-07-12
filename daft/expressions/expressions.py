@@ -2363,6 +2363,16 @@ class Expression:
         from daft.functions import length_bytes
 
         return length_bytes(self)
+    
+    def bit_length(self) -> Expression:
+        """Retrieves the length for a UTF-8 string column in bits.
+
+        Tip: See Also
+            [`daft.functions.bit_length`](https://docs.daft.ai/en/stable/api/functions/bit_length/)
+        """
+        from daft.functions import bit_length
+
+        return bit_length(self)
 
     def hamming_distance_str(self, other: Expression) -> Expression:
         """Compute the character-level Hamming distance between two strings.
