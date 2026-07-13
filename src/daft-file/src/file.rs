@@ -224,9 +224,14 @@ impl Read for ObjectSourceReader {
             return Ok(0);
         }
 
+        if self.position >= self.size {
+            return Ok(0);
+        }
+
         let rt = common_runtime::get_io_runtime(true);
         let start = self.position;
-        let end = start + buf.len();
+        let end = start.saturating_add(buf.len()).min(self.size);
+        let bytes_requested = end - start;
 
         let range = Some(GetRange::Bounded(start..end));
         let source = self.source.clone();
@@ -265,8 +270,14 @@ impl Read for ObjectSourceReader {
             return Ok(0);
         }
 
-        let bytes_to_copy = std::cmp::min(buf.len(), bytes.len());
-        buf[..bytes_to_copy].copy_from_slice(&bytes[..bytes_to_copy]);
+        let data = if bytes.len() > bytes_requested && bytes.len() >= end {
+            &bytes[start..end]
+        } else {
+            &bytes[..bytes.len().min(bytes_requested)]
+        };
+
+        let bytes_to_copy = std::cmp::min(buf.len(), data.len());
+        buf[..bytes_to_copy].copy_from_slice(&data[..bytes_to_copy]);
 
         self.position += bytes_to_copy;
         Ok(bytes_to_copy)
@@ -294,22 +305,10 @@ impl Seek for ObjectSourceReader {
         let new_position = match pos {
             SeekFrom::Start(offset) => offset as usize,
             SeekFrom::End(offset) => {
-                let rt = common_runtime::get_io_runtime(true);
-
-                let source = self.source.clone();
-                let uri = self.uri.clone();
-                let io_stats = self.io_stats.clone();
-
-                let size = rt
-                    .block_within_async_context(async move {
-                        source.get_size(&uri, io_stats).await.map_err(map_get_error)
-                    })
-                    .map_err(map_async_error)??;
-
                 if offset < 0 {
-                    size.saturating_sub((-offset) as usize)
+                    self.size.saturating_sub((-offset) as usize)
                 } else {
-                    size.saturating_add(offset as usize)
+                    self.size.saturating_add(offset as usize)
                 }
             }
             SeekFrom::Current(offset) => {
@@ -506,9 +505,66 @@ fn has_hdf5_signature(buffer: &[u8]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
+    use std::{
+        io::{Cursor, Read, Seek, SeekFrom, Write},
+        net::{TcpListener, TcpStream},
+        thread,
+    };
+
+    use daft_core::file::FileReference;
 
     use super::*;
+
+    fn handle_test_http_connection(mut stream: TcpStream, data: &[u8]) {
+        let mut request = [0_u8; 4096];
+        let Ok(bytes_read) = stream.read(&mut request) else {
+            return;
+        };
+        let request = String::from_utf8_lossy(&request[..bytes_read]);
+        let is_head = request.starts_with("HEAD ");
+        let range = request
+            .lines()
+            .find_map(|line| line.strip_prefix("Range: bytes="))
+            .and_then(|range| {
+                let range = range.trim();
+                let (start, end) = range.split_once('-')?;
+                Some((start.parse::<usize>().ok()?, end.parse::<usize>().ok()?))
+            });
+
+        let (status, body, content_range) = match (is_head, range) {
+            (true, _) => ("200 OK", &[][..], None),
+            (false, Some((start, end))) if start < data.len() && end < data.len() => (
+                "206 Partial Content",
+                &data[start..=end],
+                Some(format!(
+                    "Content-Range: bytes {start}-{end}/{}\r\n",
+                    data.len()
+                )),
+            ),
+            (false, _) => ("200 OK", data, None),
+        };
+
+        let content_range = content_range.unwrap_or_default();
+        let content_length = if is_head { data.len() } else { body.len() };
+        let response = format!(
+            "HTTP/1.1 {status}\r\nContent-Length: {content_length}\r\nAccept-Ranges: bytes\r\n{content_range}Connection: close\r\n\r\n",
+        );
+        let _ = stream.write_all(response.as_bytes());
+        if !is_head {
+            let _ = stream.write_all(body);
+        }
+    }
+
+    fn serve_range_test_data(data: Vec<u8>) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        thread::spawn(move || {
+            for stream in listener.incoming().flatten().take(8) {
+                handle_test_http_connection(stream, &data);
+            }
+        });
+        format!("http://{addr}/file.bin")
+    }
 
     #[test]
     fn test_guess_mimetype_from_url() {
@@ -654,5 +710,44 @@ mod tests {
         let result = guess_mimetype_from_content(&mut reader).unwrap();
         assert_eq!(result.as_deref(), Some("image/png"));
         assert_eq!(reader.position(), 3);
+    }
+
+    #[test]
+    fn test_object_reader_clamps_buffered_tail_range() {
+        let data: Vec<u8> = (0..128).collect();
+        let url = serve_range_test_data(data.clone());
+        let mut file = DaftFile::load_blocking(
+            FileReference::new(MediaType::Unknown, url, None),
+            false,
+            Some(64),
+        )
+        .unwrap();
+
+        file.seek(SeekFrom::End(-8)).unwrap();
+
+        let mut buf = [0_u8; 8];
+        let bytes_read = file.read(&mut buf).unwrap();
+
+        assert_eq!(bytes_read, 8);
+        assert_eq!(&buf, &data[data.len() - 8..]);
+    }
+
+    #[test]
+    fn test_object_reader_returns_empty_after_eof_seek() {
+        let data: Vec<u8> = (0..128).collect();
+        let url = serve_range_test_data(data.clone());
+        let mut file = DaftFile::load_blocking(
+            FileReference::new(MediaType::Unknown, url, None),
+            false,
+            Some(64),
+        )
+        .unwrap();
+
+        file.seek(SeekFrom::Start(data.len() as u64 + 1)).unwrap();
+
+        let mut buf = [0_u8; 8];
+        let bytes_read = file.read(&mut buf).unwrap();
+
+        assert_eq!(bytes_read, 0);
     }
 }
