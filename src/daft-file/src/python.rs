@@ -164,24 +164,28 @@ impl PyDaftFile {
         let current_position = self.inner.position;
         let current_size = cursor.size();
 
-        let result = py.detach(move || {
+        let result: Result<(Vec<u8>, usize, bool, FileCursor), (PyErr, FileCursor)> = py.detach(move || {
             if size == -1 {
                 let mut buffer = Vec::new();
-                let bytes_read = cursor
-                    .read_to_end(&mut buffer)
-                    .map_err(|e| PyIOError::new_err(e.to_string()))?;
-                buffer.truncate(bytes_read);
-                Ok((buffer, bytes_read, true, cursor))
+                match cursor.read_to_end(&mut buffer) {
+                    Ok(bytes_read) => {
+                        buffer.truncate(bytes_read);
+                        Ok((buffer, bytes_read, true, cursor))
+                    }
+                    Err(e) => Err((PyIOError::new_err(e.to_string()), cursor)),
+                }
             } else {
                 if current_position == current_size {
                     return Ok((vec![], 0usize, false, cursor));
                 }
                 let mut buffer = vec![0u8; size as usize];
-                let bytes_read = cursor
-                    .read(&mut buffer)
-                    .map_err(|e| PyIOError::new_err(e.to_string()))?;
-                buffer.truncate(bytes_read);
-                Ok((buffer, bytes_read, false, cursor))
+                match cursor.read(&mut buffer) {
+                    Ok(bytes_read) => {
+                        buffer.truncate(bytes_read);
+                        Ok((buffer, bytes_read, false, cursor))
+                    }
+                    Err(e) => Err((PyIOError::new_err(e.to_string()), cursor)),
+                }
             }
         });
 
@@ -195,7 +199,10 @@ impl PyDaftFile {
                 }
                 Ok(buffer)
             }
-            Err(e) => Err(e),
+            Err((e, cursor_back)) => {
+                self.inner.cursor = Some(cursor_back);
+                Err(e)
+            }
         }
     }
 
@@ -220,11 +227,11 @@ impl PyDaftFile {
             .take()
             .ok_or_else(|| PyValueError::new_err("File not open"))?;
 
-        let result = py.detach(move || {
-            let new_pos = cursor
-                .seek(seek_from)
-                .map_err(|e| PyIOError::new_err(e.to_string()))?;
-            Ok((new_pos, cursor))
+        let result: Result<(u64, FileCursor), (PyErr, FileCursor)> = py.detach(move || {
+            match cursor.seek(seek_from) {
+                Ok(new_pos) => Ok((new_pos, cursor)),
+                Err(e) => Err((PyIOError::new_err(e.to_string()), cursor)),
+            }
         });
 
         match result {
@@ -233,7 +240,10 @@ impl PyDaftFile {
                 self.inner.position = new_pos as usize;
                 Ok(new_pos)
             }
-            Err(e) => Err(e),
+            Err((e, cursor_back)) => {
+                self.inner.cursor = Some(cursor_back);
+                Err(e)
+            }
         }
     }
 
