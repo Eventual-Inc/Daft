@@ -68,7 +68,7 @@ impl ScalarUDF for ToMapFunction {
             })
             .collect::<DaftResult<Vec<_>>>()?;
 
-        let list_field = Field::new("map", DataType::List(Box::new(struct_field.dtype.clone())));
+        let list_field = Field::new("map", DataType::List(Box::new(struct_field.dtype)));
         let entry_refs = entries.iter().collect::<Vec<_>>();
         let physical = Series::zip(list_field, &entry_refs)?.list()?.clone();
         let map_field = Field::new(
