@@ -117,9 +117,6 @@ class SwordfishProgressBar:
     def __init__(self) -> None:
         self._maxinterval = 5.0
         self.tqdm_mod = get_tqdm(False)
-        # tqdm spawns one monitor thread per class that never exits, and get_tqdm may
-        # return a fresh class per call - disable it to avoid leaking a thread per query.
-        self.tqdm_mod.monitor_interval = 0
         self.pbar: Any = None  # Single combined progress bar
         self.pbars: dict[int, str] = dict()  # pbar_id -> latest message
         self.bar_configs: dict[int, str] = dict()  # pbar_id -> name
