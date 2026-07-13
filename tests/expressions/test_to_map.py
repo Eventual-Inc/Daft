@@ -20,9 +20,7 @@ def test_map_constructor_odd_positional_args():
 def test_map_constructor_positional_pairs():
     df = daft.from_pydict({"k1": ["a", "b"], "v1": [1, 2], "k2": ["c", "d"], "v2": [3, 4]})
 
-    result = df.select(to_map(col("k1"), col("v1"), col("k2"), col("v2")).alias("m")).to_pydict(
-        maps_as_pydicts="lossy"
-    )
+    result = df.select(to_map(col("k1"), col("v1"), col("k2"), col("v2")).alias("m")).to_pydict(maps_as_pydicts="lossy")
 
     assert result == {"m": [{"a": 1, "c": 3}, {"b": 2, "d": 4}]}
 
@@ -47,9 +45,7 @@ def test_map_constructor_mixed_pairs_and_map_get():
 def test_map_constructor_value_coercion():
     df = daft.from_pydict({"k": ["a", "b"], "x": [1, 2], "y": [1.5, 2.5]})
 
-    result = df.select(to_map(col("k"), col("x"), "other", col("y")).alias("m")).to_pydict(
-        maps_as_pydicts="lossy"
-    )
+    result = df.select(to_map(col("k"), col("x"), "other", col("y")).alias("m")).to_pydict(maps_as_pydicts="lossy")
 
     assert result == {"m": [{"a": 1.0, "other": 1.5}, {"b": 2.0, "other": 2.5}]}
 

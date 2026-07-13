@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from daft.expressions import Expression
 
 
@@ -90,9 +92,7 @@ def to_map(*items: Expression, **named_items: Expression) -> Expression:
         >>> from daft.functions import to_map
         >>>
         >>> df = daft.from_pydict({"k1": ["a", "b"], "v1": [1, 2], "k2": ["c", "d"], "v2": [3, 4]})
-        >>> df.select(to_map(df["k1"], df["v1"], df["k2"], df["v2"]).alias("my_map")).to_pydict(
-        ...     maps_as_pydicts="lossy"
-        ... )
+        >>> df.select(to_map(df["k1"], df["v1"], df["k2"], df["v2"]).alias("my_map")).to_pydict(maps_as_pydicts="lossy")
         {'my_map': [{'a': 1, 'c': 3}, {'b': 2, 'd': 4}]}
     """
     if not items and not named_items:
@@ -102,7 +102,7 @@ def to_map(*items: Expression, **named_items: Expression) -> Expression:
         msg = "Map constructor requires an even number of positional key/value arguments"
         raise ValueError(msg)
 
-    all_items = list(items)
+    all_items: list[Any] = list(items)
     for name, item in named_items.items():
         all_items.extend([name, item])
     return Expression._call_builtin_scalar_fn("map", *all_items)
