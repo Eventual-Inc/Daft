@@ -73,3 +73,36 @@ def to_struct(*fields: Expression, **named_fields: Expression) -> Expression:
     """
     all_fields = list(fields) + [Expression._to_expression(field).alias(name) for name, field in named_fields.items()]
     return Expression._call_builtin_scalar_fn("struct", *all_fields)
+
+
+def to_map(*items: Expression, **named_items: Expression) -> Expression:
+    """Constructs a map from key/value expressions.
+
+    Args:
+        items: Alternating key and value expressions to use as map entries.
+        named_items: Values to use as map entries, using keyword names as literal string keys.
+
+    Returns:
+        An expression for a map column with the input key/value entries.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import to_map
+        >>>
+        >>> df = daft.from_pydict({"k1": ["a", "b"], "v1": [1, 2], "k2": ["c", "d"], "v2": [3, 4]})
+        >>> df.select(to_map(df["k1"], df["v1"], df["k2"], df["v2"]).alias("my_map")).to_pydict(
+        ...     maps_as_pydicts="lossy"
+        ... )
+        {'my_map': [{'a': 1, 'c': 3}, {'b': 2, 'd': 4}]}
+    """
+    if not items and not named_items:
+        msg = "Map constructor requires at least one key/value pair"
+        raise ValueError(msg)
+    if len(items) % 2 != 0:
+        msg = "Map constructor requires an even number of positional key/value arguments"
+        raise ValueError(msg)
+
+    all_items = list(items)
+    for name, item in named_items.items():
+        all_items.extend([name, item])
+    return Expression._call_builtin_scalar_fn("map", *all_items)
