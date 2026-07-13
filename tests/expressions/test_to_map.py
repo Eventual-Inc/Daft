@@ -52,3 +52,11 @@ def test_map_constructor_value_coercion():
     )
 
     assert result == {"m": [{"a": 1.0, "other": 1.5}, {"b": 2.0, "other": 2.5}]}
+
+
+def test_map_constructor_literal_entries_empty_input():
+    df = daft.from_pydict({"x": []})
+
+    result = df.select(to_map("key", 1).alias("m")).to_pydict(maps_as_pydicts="lossy")
+
+    assert result == {"m": []}

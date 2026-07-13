@@ -33,7 +33,7 @@ impl ScalarUDF for ToMapFunction {
         let inputs = inputs
             .into_iter()
             .map(|s| {
-                if s.len() == 1 && target_len > 1 {
+                if s.len() == 1 && target_len != 1 {
                     s.broadcast(target_len)
                 } else {
                     Ok(s)
