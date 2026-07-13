@@ -1,4 +1,4 @@
-name: PR Labeller
+name: PR Checker
 
 on:
   pull_request_target:
@@ -8,6 +8,7 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  issues: write
 
 jobs:
   validate_pr_title:
@@ -18,3 +19,258 @@ jobs:
       with:
         task_types: '["feat","fix","docs","test","ci","refactor","perf","chore","revert","build"]'
         add_label: 'true'
+
+  issue_guard:
+    if: github.event.action == 'opened' || github.event.action == 'reopened'
+    runs-on: ubuntu-latest
+    steps:
+    - name: Require linked issue for complex feature PRs
+      uses: actions/github-script@v9
+      with:
+        script: |
+          const GUARDED_TYPES = new Set(["feat", "refactor", "perf"]);
+          const LINE_THRESHOLD = 300;
+          const FILE_THRESHOLD = 10;
+          const LOCKFILES = new Set([
+            "Cargo.lock",
+            "uv.lock",
+            "src/daft-dashboard/frontend/package-lock.json",
+          ]);
+          const AWAITING_ISSUE_LABEL = "awaiting-issue";
+
+          const pr = context.payload.pull_request;
+          if (pr.draft) {
+            core.info("PR is already a draft. Skipping issue guard.");
+            return;
+          }
+
+          const titleMatch = pr.title.match(
+            /^(feat|fix|docs|test|ci|refactor|perf|chore|revert|build)(\([^)]*\))?!?:\s*.+/i,
+          );
+          if (!titleMatch) {
+            core.info("PR title does not follow Conventional Commits. Skipping issue guard.");
+            return;
+          }
+
+          const prType = titleMatch[1].toLowerCase();
+          if (!GUARDED_TYPES.has(prType)) {
+            core.info(`PR type '${prType}' is not guarded. Skipping issue guard.`);
+            return;
+          }
+
+          const hasLinkedIssue = await checkLinkedIssue(pr);
+          if (hasLinkedIssue) {
+            core.info("PR has a linked issue. Skipping issue guard.");
+            return;
+          }
+
+          const codeownersResponse = await github.rest.repos.getContent({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            path: ".github/CODEOWNERS",
+            ref: pr.base.ref,
+          });
+          const CODEOWNERS_TEXT = Buffer.from(
+            codeownersResponse.data.content,
+            "base64",
+          ).toString("utf8");
+
+          const changedFiles = await listChangedFiles(pr);
+          const triggers = collectTriggers(pr, changedFiles, CODEOWNERS_TEXT);
+
+          if (triggers.length === 0) {
+            core.info("PR does not meet complexity thresholds. Skipping issue guard.");
+            return;
+          }
+
+          await ensureLabel(AWAITING_ISSUE_LABEL);
+          await github.rest.issues.addLabels({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: pr.number,
+            labels: [AWAITING_ISSUE_LABEL],
+          });
+
+          await github.graphql(
+            `mutation($id: ID!) {
+              convertPullRequestToDraft(input: { pullRequestId: $id }) {
+                pullRequest { isDraft }
+              }
+            }`,
+            { id: pr.node_id },
+          );
+
+          const triggerList = triggers.map((t) => `- ${t}`).join("\n");
+          const body = [
+            "This pull request was converted to a draft because it appears to be a substantial change without a linked issue.",
+            "",
+            "**Triggered because:**",
+            triggerList,
+            "",
+            "Large `feat`, `refactor`, and `perf` changes should be discussed in an issue before implementation.",
+            "",
+            "**To proceed:**",
+            "1. Open or find a related issue describing the change.",
+            '2. Link it in the PR description (for example, `Closes #123`).',
+            "3. Mark the PR as ready for review once the issue is linked.",
+          ].join("\n");
+
+          await github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: pr.number,
+            body,
+          });
+
+          core.info("Issue guard applied: draft + awaiting-issue label + comment.");
+
+          async function checkLinkedIssue(pullRequest) {
+            const result = await github.graphql(
+              `query($id: ID!) {
+                node(id: $id) {
+                  ... on PullRequest {
+                    closingIssuesReferences(first: 1) {
+                      totalCount
+                    }
+                  }
+                }
+              }`,
+              { id: pullRequest.node_id },
+            );
+
+            const closingCount =
+              result.node?.closingIssuesReferences?.totalCount ?? 0;
+            if (closingCount > 0) {
+              return true;
+            }
+
+            const body = pullRequest.body || "";
+            return /(?:^|\s)(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#\d+/i.test(body) ||
+              /(?:^|\s)#\d+(?:\s|$)/m.test(body);
+          }
+
+          async function listChangedFiles(pullRequest) {
+            const files = [];
+            let page = 1;
+            const perPage = 100;
+
+            while (true) {
+              const response = await github.rest.pulls.listFiles({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: pullRequest.number,
+                per_page: perPage,
+                page,
+              });
+
+              files.push(...response.data.map((file) => file.filename));
+
+              if (response.data.length < perPage) {
+                break;
+              }
+              page += 1;
+            }
+
+            return files;
+          }
+
+          function collectTriggers(pullRequest, changedFiles, codeownersText) {
+            const triggers = [];
+            const totalLines = pullRequest.additions + pullRequest.deletions;
+
+            if (
+              totalLines > LINE_THRESHOLD &&
+              pullRequest.changed_files > FILE_THRESHOLD
+            ) {
+              triggers.push(
+                `Large diff (${totalLines} changed lines across ${pullRequest.changed_files} files; threshold is >${LINE_THRESHOLD} lines and >${FILE_THRESHOLD} files)`,
+              );
+            }
+
+            const changedLockfiles = changedFiles.filter((file) =>
+              LOCKFILES.has(file),
+            );
+            if (changedLockfiles.length > 0) {
+              triggers.push(
+                `Dependency lockfile changes (${changedLockfiles.join(", ")})`,
+              );
+            }
+
+            const codeownerPatterns = parseCodeownersPatterns(codeownersText);
+            const ownedFiles = changedFiles.filter((file) =>
+              matchesCodeowners(file, codeownerPatterns),
+            );
+            if (ownedFiles.length > 0) {
+              const preview = ownedFiles.slice(0, 5).join(", ");
+              const suffix =
+                ownedFiles.length > 5
+                  ? `, and ${ownedFiles.length - 5} more`
+                  : "";
+              triggers.push(
+                `Touches CODEOWNER-protected paths (${preview}${suffix})`,
+              );
+            }
+
+            return triggers;
+          }
+
+          function parseCodeownersPatterns(codeownersText) {
+            const patterns = [];
+            const lines = codeownersText.split(/\r?\n/);
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed || trimmed.startsWith("#")) {
+                continue;
+              }
+
+              const pattern = trimmed.split(/\s+/)[0];
+              if (pattern) {
+                patterns.push(pattern);
+              }
+            }
+
+            return patterns;
+          }
+
+          function matchesCodeowners(file, patterns) {
+            for (const pattern of patterns) {
+              if (pattern.endsWith("/")) {
+                const prefix = pattern.slice(1);
+                if (file.startsWith(prefix)) {
+                  return true;
+                }
+              } else if (pattern.startsWith("/")) {
+                const path = pattern.slice(1);
+                if (file === path) {
+                  return true;
+                }
+              } else if (file === pattern || file.endsWith(`/${pattern}`)) {
+                return true;
+              }
+            }
+            return false;
+          }
+
+          async function ensureLabel(name) {
+            try {
+              await github.rest.issues.getLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name,
+              });
+            } catch (error) {
+              if (error?.status !== 404) {
+                throw error;
+              }
+
+              await github.rest.issues.createLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name,
+                color: "FBCA04",
+                description:
+                  "PR needs a linked issue before it can be reviewed",
+              });
+            }
+          }
