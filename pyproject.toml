@@ -240,7 +240,11 @@ root = "tools"
 root = "daft_dashboard"
 
 [tool.pytest.ini_options]
-addopts = "-m 'not (integration or benchmark or hypothesis)'"
+# Per-test timeout (thread method dumps all thread tracebacks on expiry) so a
+# single hung test fails fast and names itself, instead of silently consuming
+# the whole 90-min CI job budget. 600s is well above the slowest legit test
+# (~30s) while still far under the job cap.
+addopts = "-m 'not (integration or benchmark or hypothesis)' --timeout=600 --timeout-method=thread"
 minversion = "6.0"
 testpaths = [
   "tests"
