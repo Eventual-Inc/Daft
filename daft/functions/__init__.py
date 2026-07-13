@@ -306,6 +306,7 @@ from .str import (
     ascii_func,
     chr_func,
     space,
+    bit_length,
 )
 from .struct import unnest, to_struct
 from .url import download, upload, parse_url
@@ -341,6 +342,7 @@ __all__ = [
     "avg",
     "between",
     "bin",
+    "bit_length",
     "bitwise_and",
     "bitwise_or",
     "bitwise_xor",
