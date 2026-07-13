@@ -18,6 +18,11 @@ pub trait MultipartWriter: Sync + Send {
 
     /// Completes the multipart upload. The implementations need ensure all put_parts task are completed before complete the multipart upload.
     async fn complete(&mut self) -> super::Result<()>;
+
+    /// Aborts the multipart upload, discarding any parts uploaded so far. Implementations
+    /// should ensure the store does not retain partial data (e.g. S3's AbortMultipartUpload,
+    /// which stops billing for parts of an incomplete upload).
+    async fn abort(&mut self) -> super::Result<()>;
 }
 
 pub struct MultipartBuffer {

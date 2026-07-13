@@ -59,8 +59,11 @@ class Hdf5File(File):
         if not self.is_hdf5():
             raise ValueError(f"File {self} is not an HDF5 file")
 
-    def open(self, buffer_size: int | None = HDF5_DEFAULT_BUFFER_SIZE) -> PyDaftFile:
-        return super().open(buffer_size=buffer_size)
+    def open(self, mode: str = "rb", *, buffer_size: int | None = HDF5_DEFAULT_BUFFER_SIZE) -> PyDaftFile:
+        if mode in ("r", "rb"):
+            return super().open(mode, buffer_size=buffer_size)
+        # buffer_size is read-mode tuning; don't let its default trip write modes.
+        return super().open(mode)
 
     @contextmanager
     def _open_h5py(self, buffer_size: int | None = HDF5_DEFAULT_BUFFER_SIZE) -> Iterator[h5py.File]:
