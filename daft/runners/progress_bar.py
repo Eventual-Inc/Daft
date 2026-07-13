@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 
@@ -103,11 +104,22 @@ class ProgressBar:
             del p
 
 
+# All tqdm writes happen on this single long-lived thread. Progress updates arrive from
+# native (Rust) threads, which can get a fresh Python thread identity on every call into
+# Python (always on 3.13+), and ipykernel allocates a zmq pipe (~2 fds) per writing
+# thread identity that it only reclaims when that thread dies - so writing directly from
+# native threads leaks fds without bound in Jupyter. See issue #7253.
+_writer = ThreadPoolExecutor(max_workers=1, thread_name_prefix="daft-progress-bar-writer")
+
+
 # Progress Bar for local execution, should only be used in the native executor
 class SwordfishProgressBar:
     def __init__(self) -> None:
         self._maxinterval = 5.0
         self.tqdm_mod = get_tqdm(False)
+        # tqdm spawns one monitor thread per class that never exits, and get_tqdm may
+        # return a fresh class per call - disable it to avoid leaking a thread per query.
+        self.tqdm_mod.monitor_interval = 0
         self.pbar: Any = None  # Single combined progress bar
         self.pbars: dict[int, str] = dict()  # pbar_id -> latest message
         self.bar_configs: dict[int, str] = dict()  # pbar_id -> name
@@ -121,6 +133,9 @@ class SwordfishProgressBar:
         return pbar_id
 
     def update_bar(self, pbar_id: int, message: str) -> None:
+        _writer.submit(self._update_bar, pbar_id, message)
+
+    def _update_bar(self, pbar_id: int, message: str) -> None:
         self.pbars[pbar_id] = message
 
         # Create combined bar on first update
@@ -144,6 +159,11 @@ class SwordfishProgressBar:
         pass
 
     def close(self) -> None:
+        # Wait for the close (and any queued updates before it) to be written, so the
+        # bar is fully drawn before query results are displayed.
+        _writer.submit(self._close).result()
+
+    def _close(self) -> None:
         if self.pbar is not None:
             self.pbar.close()
             self.pbar = None
