@@ -20,6 +20,8 @@ benchmarking/tpcds/data
 *.so
 *.dylib
 *.whl
+*.pyd
+*.pdb
 log/
 *.egg-info
 
