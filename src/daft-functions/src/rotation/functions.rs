@@ -578,3 +578,32 @@ impl ScalarUDF for RotationGeodesicAngle {
 pub fn rotation_geodesic_angle(left: ExprRef, right: ExprRef) -> ExprRef {
     ScalarFn::builtin(RotationGeodesicAngle {}, vec![left, right]).into()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Reading the flat child by `i * width` is only sound because `slice` slices the
+    /// child with it, leaving no offset to carry. Row validity and component validity
+    /// are sliced alongside. A regression here would silently read a neighbouring row.
+    #[test]
+    fn a_sliced_column_reads_from_its_own_first_row() {
+        let field = Field::new("v", DataType::Float64);
+        // Four rows of three, with a null row and, in another row, a null component.
+        let values = (0..12).map(|i| (i != 10).then_some(f64::from(i)));
+        let child = Float64Array::from_iter(field, values).into_series();
+        let rows = FixedSizeListArray::new(
+            Field::new("v", list_dtype(3)),
+            child,
+            Some(NullBuffer::from(vec![true, false, true, true])),
+        );
+
+        let sliced = rows.slice(1, 4).unwrap();
+        let rows = Rows::new(&sliced, 3).unwrap();
+
+        assert_eq!(rows.len, 3);
+        assert_eq!(rows.get(0), None, "the null row, now first");
+        assert_eq!(rows.get(1), Some([6.0, 7.0, 8.0].as_slice()));
+        assert_eq!(rows.get(2), None, "holds the null component");
+    }
+}
