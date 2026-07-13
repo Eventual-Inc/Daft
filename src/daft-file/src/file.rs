@@ -214,6 +214,23 @@ impl ObjectSourceReader {
             .map(|b| b.to_vec())
             .map_err(map_bytes_error)
     }
+
+    fn refresh_size_blocking(&mut self) -> io::Result<usize> {
+        let rt = common_runtime::get_io_runtime(true);
+
+        let source = self.source.clone();
+        let uri = self.uri.clone();
+        let io_stats = self.io_stats.clone();
+
+        let size = rt
+            .block_within_async_context(async move {
+                source.get_size(&uri, io_stats).await.map_err(map_get_error)
+            })
+            .map_err(map_async_error)??;
+
+        self.size = size;
+        Ok(size)
+    }
 }
 
 // Implement Read for synchronous reading
@@ -305,10 +322,11 @@ impl Seek for ObjectSourceReader {
         let new_position = match pos {
             SeekFrom::Start(offset) => offset as usize,
             SeekFrom::End(offset) => {
+                let size = self.refresh_size_blocking()?;
                 if offset < 0 {
-                    self.size.saturating_sub((-offset) as usize)
+                    size.saturating_sub((-offset) as usize)
                 } else {
-                    self.size.saturating_add(offset as usize)
+                    size.saturating_add(offset as usize)
                 }
             }
             SeekFrom::Current(offset) => {
@@ -508,6 +526,7 @@ mod tests {
     use std::{
         io::{Cursor, Read, Seek, SeekFrom, Write},
         net::{TcpListener, TcpStream},
+        sync::{Arc, Mutex},
         thread,
     };
 
@@ -556,10 +575,15 @@ mod tests {
     }
 
     fn serve_range_test_data(data: Vec<u8>) -> String {
+        serve_shared_range_test_data(Arc::new(Mutex::new(data)))
+    }
+
+    fn serve_shared_range_test_data(data: Arc<Mutex<Vec<u8>>>) -> String {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         thread::spawn(move || {
             for stream in listener.incoming().flatten().take(8) {
+                let data = data.lock().unwrap().clone();
                 handle_test_http_connection(stream, &data);
             }
         });
@@ -749,5 +773,27 @@ mod tests {
         let bytes_read = file.read(&mut buf).unwrap();
 
         assert_eq!(bytes_read, 0);
+    }
+
+    #[test]
+    fn test_object_reader_seek_end_refreshes_grown_object_size() {
+        let data = Arc::new(Mutex::new((0..64).collect::<Vec<u8>>()));
+        let url = serve_shared_range_test_data(data.clone());
+        let mut file = DaftFile::load_blocking(
+            FileReference::new(MediaType::Unknown, url, None),
+            false,
+            Some(16),
+        )
+        .unwrap();
+
+        data.lock().unwrap().extend_from_slice(&[64, 65, 66, 67]);
+
+        file.seek(SeekFrom::End(-4)).unwrap();
+
+        let mut buf = [0_u8; 4];
+        let bytes_read = file.read(&mut buf).unwrap();
+
+        assert_eq!(bytes_read, 4);
+        assert_eq!(buf, [64, 65, 66, 67]);
     }
 }
