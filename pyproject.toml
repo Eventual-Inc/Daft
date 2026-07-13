@@ -245,6 +245,14 @@ root = "daft_dashboard"
 # the whole 90-min CI job budget. 600s is well above the slowest legit test
 # (~30s) while still far under the job cap.
 addopts = "-m 'not (integration or benchmark or hypothesis)' --timeout=600 --timeout-method=thread"
+# GIL-proof watchdog. pytest-timeout's thread method needs the GIL to print its
+# dump, so a native deadlock that never releases the GIL (e.g. a #[pymethods]
+# call blocking on async I/O without py.detach — see issue #7256) hangs silently:
+# the run in job 86813213794 stalled at [93%] with timeout=600 active but never
+# fired. faulthandler_timeout arms faulthandler.dump_traceback_later(), a C-level
+# watchdog that dumps every thread's stack WITHOUT the GIL, naming the stuck frame.
+# 300s is ~10x the slowest legit test; a stray dump on a healthy test is harmless.
+faulthandler_timeout = 300
 minversion = "6.0"
 testpaths = [
   "tests"
