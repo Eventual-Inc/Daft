@@ -59,8 +59,12 @@ class Hdf5File(File):
         if not self.is_hdf5():
             raise ValueError(f"File {self} is not an HDF5 file")
 
-    def open(self, buffer_size: int | None = HDF5_DEFAULT_BUFFER_SIZE) -> PyDaftFile:
-        return super().open(buffer_size=buffer_size)
+    def open(self, mode: str = "rb", *, buffer_size: int | None = HDF5_DEFAULT_BUFFER_SIZE) -> PyDaftFile:
+        if mode not in ("r", "rb"):
+            # Write modes would replace a validated HDF5 file with raw bytes,
+            # breaking the invariant established in __init__.
+            raise ValueError("Hdf5File is read-only; use daft.File to write to this path")
+        return super().open(mode, buffer_size=buffer_size)
 
     @contextmanager
     def _open_h5py(self, buffer_size: int | None = HDF5_DEFAULT_BUFFER_SIZE) -> Iterator[h5py.File]:

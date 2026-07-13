@@ -4,6 +4,7 @@ use std::{
     sync::Arc,
 };
 
+use bytes::Bytes;
 use common_error::{DaftError, DaftResult};
 use daft_core::file::FileReference;
 use daft_io::{GetRange, IOConfig, IOStatsRef, ObjectSource};
@@ -14,6 +15,7 @@ pub struct DaftFile {
     pub media_type: MediaType,
     pub(crate) cursor: Option<FileCursor>,
     pub(crate) position: usize,
+    pub(crate) writer: Option<FileWriter>,
 }
 // TODO(universalmind303): convert all the Read and Seek impls to AsyncRead and AsyncSeek.
 // The python wrapper should handle blocking, but the core implementation should be fully async.
@@ -84,6 +86,7 @@ impl DaftFile {
                 media_type,
                 cursor: Some(FileCursor::ObjectReader(buffered_reader)),
                 position: 0,
+                writer: None,
             })
         }
     }
@@ -112,7 +115,81 @@ impl DaftFile {
             media_type,
             cursor: Some(FileCursor::Memory(Cursor::new(bytes))),
             position: 0,
+            writer: None,
         }
+    }
+
+    /// Open a file for writing.
+    ///
+    /// All written bytes are buffered in memory and uploaded with a single put when the
+    /// writer is closed with `close_writer(true)`. Nothing is visible at the destination
+    /// until then.
+    pub async fn create_writer(file_ref: FileReference) -> DaftResult<Self> {
+        if file_ref.position.is_some() || file_ref.size.is_some() {
+            return Err(DaftError::ValueError(
+                "Files with a byte-range (position/size) cannot be opened for writing".to_string(),
+            ));
+        }
+        let media_type = file_ref.media_type;
+        let io_client = daft_io::get_io_client(true, file_ref.io_config.unwrap_or_default())?;
+        let (source, path) = io_client
+            .get_source_and_path(&file_ref.url)
+            .await
+            .map_err(DaftError::from)?;
+
+        Ok(Self {
+            media_type,
+            cursor: None,
+            position: 0,
+            writer: Some(FileWriter {
+                source,
+                uri: path,
+                buffer: Vec::new(),
+            }),
+        })
+    }
+
+    /// Like `create_writer`, but blocks the current thread.
+    pub fn create_writer_blocking(file_ref: FileReference) -> DaftResult<Self> {
+        let rt = common_runtime::get_io_runtime(true);
+        rt.block_within_async_context(Self::create_writer(file_ref))
+            .flatten()
+    }
+
+    pub fn write(&mut self, data: &[u8]) -> DaftResult<usize> {
+        let writer = self
+            .writer
+            .as_mut()
+            .ok_or_else(|| DaftError::IoError(io::Error::other("File not open for writing")))?;
+        writer.buffer.extend_from_slice(data);
+        self.position += data.len();
+        Ok(data.len())
+    }
+
+    /// Close the writer. If `commit` is true, buffered data is uploaded and the object
+    /// becomes visible at the destination; otherwise the write is abandoned and the
+    /// destination is left untouched. No-op if the file is not open for writing.
+    pub fn close_writer(&mut self, commit: bool) -> DaftResult<()> {
+        let Some(writer) = self.writer.take() else {
+            return Ok(());
+        };
+        self.position = 0;
+        if commit {
+            let FileWriter {
+                source,
+                uri,
+                buffer,
+            } = writer;
+            let rt = common_runtime::get_io_runtime(true);
+            rt.block_within_async_context(async move {
+                source
+                    .put(&uri, Bytes::from(buffer), None)
+                    .await
+                    .map_err(DaftError::from)
+            })
+            .flatten()?;
+        }
+        Ok(())
     }
 
     pub fn size(&self) -> DaftResult<usize> {
@@ -326,6 +403,15 @@ impl Seek for ObjectSourceReader {
 
         Ok(self.position as u64)
     }
+}
+
+/// Buffers all written bytes in memory and uploads them with a single put when the
+/// writer is closed with commit. The put goes through `block_within_async_context`
+/// since writes may be issued from executor threads.
+pub(crate) struct FileWriter {
+    source: Arc<dyn ObjectSource>,
+    uri: String,
+    buffer: Vec<u8>,
 }
 
 pub(crate) enum FileCursor {

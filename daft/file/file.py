@@ -31,8 +31,8 @@ class File:
     with Python's file protocol.
 
     The File object can be used with most Python libraries that accept file-like objects,
-    and implements the standard read/seek/tell interface. Files are read-only in the
-    current implementation.
+    and implements the standard read/seek/tell interface. Files can also be opened for
+    writing with `open(mode="wb")` or `open(mode="w")`.
 
     Examples:
         >>> import daft
@@ -86,10 +86,50 @@ class File:
 
         self._inner = PyFileReference._from_tuple((media_type._media_type, url, io_config, position, size))  # type: ignore
 
-    def open(self, buffer_size: int | None = None) -> PyDaftFile:
-        if self.position is None and self._inner.size() is None and not self.exists():
-            raise FileNotFoundError(f"File {self.path} does not exist")
-        return PyDaftFile._from_file_reference(self._inner, buffer_size=buffer_size)
+    def open(self, mode: str = "rb", *, buffer_size: int | None = None) -> PyDaftFile:
+        """Open the file for reading or writing.
+
+        Args:
+            mode (str): Mode to open the file in. Supported modes:
+
+                - "r" / "rb": binary read (default).
+                - "wb": binary write; `write()` accepts bytes-like objects.
+                - "w" / "wt": text write; `write()` accepts str, encoded as UTF-8.
+                - "x" / "xt" / "xb": like the corresponding write mode, but raises
+                  `FileExistsError` if the file already exists. The existence check
+                  runs at open time; a concurrent writer between open and close can
+                  still win the race on object stores.
+            buffer_size (int | None): Read buffer size in bytes. Only valid for read modes.
+
+        Writes are buffered in memory and only committed to storage with a single
+        upload when the file is closed. If the `with` block exits with an exception,
+        nothing is committed and the destination is left untouched.
+        """
+        if mode in ("r", "rb"):
+            if self.position is None and self._inner.size() is None and not self.exists():
+                raise FileNotFoundError(f"File {self.path} does not exist")
+            return PyDaftFile._from_file_reference(self._inner, buffer_size=buffer_size)
+        if mode in ("w", "wt", "wb", "x", "xt", "xb"):
+            if buffer_size is not None:
+                raise ValueError("buffer_size is only supported for read modes")
+            if mode.startswith("x") and self.exists():
+                raise FileExistsError(f"File {self.path} already exists")
+            return PyDaftFile._create_writer(self._inner, text=not mode.endswith("b"))
+        raise ValueError(
+            f"Unsupported mode: {mode}. Supported modes are 'r', 'rb', 'w', 'wt', 'wb', 'x', 'xt', and 'xb'"
+        )
+
+    def write(self, data: bytes | bytearray | memoryview | str) -> int:
+        """Writes `data` to the file in one call, replacing any existing content.
+
+        `str` data is written as UTF-8 text; bytes-like data is written as binary.
+        Returns the number of characters (text) or bytes (binary) written. Equivalent
+        to opening in "w"/"wb" and writing once, so the same commit semantics apply:
+        the content is only visible at the destination once the write completes.
+        """
+        mode = "w" if isinstance(data, str) else "wb"
+        with self.open(mode) as f:
+            return f.write(data)
 
     def __str__(self) -> str:
         return self._inner.__str__()
@@ -98,7 +138,8 @@ class File:
         return True
 
     def writable(self) -> bool:
-        return False
+        # Byte-range files refuse write modes in open(), so mirror that here.
+        return self._inner.position() is None and self._inner.size() is None
 
     def seekable(self) -> bool:
         return True

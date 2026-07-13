@@ -22,7 +22,224 @@ def test_path_file_is_readable_and_seekable(tmp_path: Path):
     assert f.seekable()
     assert f.readable()
     assert not f.isatty()
+    assert f.writable()
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_path_file_can_write_binary(tmp_path: Path):
+    temp_file = tmp_path / "test_file.bin"
+    temp_file.write_bytes(b"before")
+    f = daft.File(str(temp_file.absolute()))
+
+    with f.open("wb") as writer:
+        written = writer.write(b"hello")
+        assert written == 5
+        assert writer.writable()
+        assert not writer.readable()
+
+    assert temp_file.read_bytes() == b"hello"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_path_file_can_write_to_new_file(tmp_path: Path):
+    temp_file = tmp_path / "new_file.bin"
+    f = daft.File(str(temp_file.absolute()))
+
+    with f.open("wb") as writer:
+        writer.write(b"created")
+
+    assert temp_file.read_bytes() == b"created"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_path_file_can_write_text(tmp_path: Path):
+    temp_file = tmp_path / "test_file.txt"
+    temp_file.write_text("before")
+    f = daft.File(str(temp_file.absolute()))
+
+    with f.open("w") as writer:
+        written = writer.write("héllo")
+        assert written == 5
+
+    assert temp_file.read_text(encoding="utf-8") == "héllo"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_path_file_write_buffers_until_close(tmp_path: Path):
+    temp_file = tmp_path / "flush_test.txt"
+    temp_file.write_text("before")
+    f = daft.File(str(temp_file.absolute()))
+
+    with f.open("w") as writer:
+        writer.write("hello")
+        writer.flush()
+        assert temp_file.read_text() == "before"
+        writer.write(" world")
+
+    assert temp_file.read_text() == "hello world"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_path_file_write_context_exception_does_not_commit(tmp_path: Path):
+    temp_file = tmp_path / "error_test.txt"
+    temp_file.write_text("original")
+    f = daft.File(str(temp_file.absolute()))
+
+    with pytest.raises(RuntimeError, match="boom"), f.open("w") as writer:
+        writer.write("partial")
+        raise RuntimeError("boom")
+
+    assert temp_file.read_text() == "original"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_path_file_write_mode_validations(tmp_path: Path):
+    temp_file = tmp_path / "test_file.txt"
+    temp_file.write_text("before")
+    f = daft.File(str(temp_file.absolute()))
+
+    with pytest.raises(ValueError, match="Unsupported mode"):
+        f.open("a")
+
+    with pytest.raises(ValueError, match="buffer_size"):
+        f.open("wb", buffer_size=1024)
+
+    with f.open("wb") as writer, pytest.raises(TypeError, match="bytes-like"):
+        writer.write("text")
+
+    with f.open("w") as writer, pytest.raises(TypeError, match="must be str"):
+        writer.write(b"bytes")
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_path_file_write_handle_is_not_readable_or_seekable(tmp_path: Path):
+    temp_file = tmp_path / "test_file.txt"
+    f = daft.File(str(temp_file.absolute()))
+
+    with f.open("wb") as writer:
+        with pytest.raises(OSError, match="not open for reading"):
+            writer.read()
+        with pytest.raises(OSError, match="seek"):
+            writer.seek(0)
+        assert writer.tell() == 0
+        writer.write(b"abc")
+        assert writer.tell() == 3
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_path_file_read_handle_is_not_writable(tmp_path: Path):
+    temp_file = tmp_path / "test_file.txt"
+    temp_file.write_text("hello")
+    f = daft.File(str(temp_file.absolute()))
+
+    with f.open() as reader, pytest.raises(OSError, match="not open for writing"):
+        reader.write(b"abc")
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_byte_range_file_cannot_be_opened_for_writing(tmp_path: Path):
+    temp_file = tmp_path / "test_file.txt"
+    temp_file.write_text("hello world")
+    f = daft.File(str(temp_file.absolute()), position=0, size=5)
+
     assert not f.writable()
+    with pytest.raises(Exception, match="cannot be opened for writing"):
+        f.open("wb")
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_file_write_one_shot_text_and_bytes(tmp_path: Path):
+    temp_file = tmp_path / "one_shot.txt"
+    f = daft.File(str(temp_file.absolute()))
+
+    written = f.write("héllo")
+    assert written == 5
+    assert temp_file.read_text(encoding="utf-8") == "héllo"
+
+    written = f.write(b"raw bytes")
+    assert written == 9
+    assert temp_file.read_bytes() == b"raw bytes"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_file_write_one_shot_byte_range_rejected(tmp_path: Path):
+    temp_file = tmp_path / "one_shot.txt"
+    temp_file.write_text("hello world")
+    f = daft.File(str(temp_file.absolute()), position=0, size=5)
+
+    with pytest.raises(Exception, match="cannot be opened for writing"):
+        f.write(b"nope")
+    assert temp_file.read_text() == "hello world"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_exclusive_mode_creates_new_file(tmp_path: Path):
+    temp_file = tmp_path / "fresh.txt"
+    f = daft.File(str(temp_file.absolute()))
+
+    with f.open("x") as writer:
+        writer.write("created")
+    assert temp_file.read_text() == "created"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_exclusive_mode_rejects_existing_file(tmp_path: Path):
+    temp_file = tmp_path / "existing.txt"
+    temp_file.write_text("original")
+    f = daft.File(str(temp_file.absolute()))
+
+    for mode in ("x", "xt", "xb"):
+        with pytest.raises(FileExistsError, match="already exists"):
+            f.open(mode)
+    assert temp_file.read_text() == "original"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_writelines(tmp_path: Path):
+    temp_file = tmp_path / "lines.txt"
+    f = daft.File(str(temp_file.absolute()))
+
+    with f.open("w") as writer:
+        writer.writelines(["one\n", "two\n", "three"])
+    assert temp_file.read_text() == "one\ntwo\nthree"
+
+    with f.open("wb") as writer:
+        writer.writelines([b"a", b"b"])
+    assert temp_file.read_bytes() == b"ab"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_writelines_wrong_type_does_not_commit(tmp_path: Path):
+    temp_file = tmp_path / "lines.txt"
+    temp_file.write_text("original")
+    f = daft.File(str(temp_file.absolute()))
+
+    with pytest.raises(TypeError, match="bytes-like"), f.open("wb") as writer:
+        writer.writelines([b"ok", "not bytes"])
+    assert temp_file.read_text() == "original"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_file_write_support_in_udf(tmp_path: Path):
+    src_path = tmp_path / "src.txt"
+    dst_path = tmp_path / "dst.txt"
+    src_path.write_text("hello from udf")
+
+    df = daft.from_pydict({"src": [str(src_path.absolute())], "dst": [str(dst_path.absolute())]})
+    df = df.select(file(daft.col("src")).alias("src"), daft.col("dst"))
+
+    @daft.func(return_dtype=dt.string())
+    def copy_file(src_file: daft.File, dst_path: str) -> str:
+        with src_file.open() as reader:
+            payload = reader.read()
+        dst_file = daft.File(dst_path)
+        with dst_file.open("wb") as writer:
+            writer.write(payload)
+        return dst_path
+
+    out = df.select(copy_file(daft.col("src"), daft.col("dst")).alias("written_path")).to_pydict()
+    assert out["written_path"] == [str(dst_path.absolute())]
+    assert dst_path.read_text() == "hello from udf"
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
@@ -269,26 +486,32 @@ def test_file_exists_expr(tmp_path: Path):
         ("png", lambda: b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01", "image/png"),
         (
             "gif",
-            lambda: b"GIF89a\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff\xff\xff\xff\x2c\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02\x44\x01\x00\x3b",
+            lambda: (
+                b"GIF89a\x01\x00\x01\x00\x80\x00\x00\xff\xff\xff\xff\xff\xff\x2c\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02\x44\x01\x00\x3b"
+            ),
             "image/gif",
         ),
         ("pdf", lambda: b"%PDF-1.7\n1 0 obj\n<<>>\nendobj\n", "application/pdf"),
         ("mp3", lambda: b"ID3\x03\x00\x00\x00\x00\x00\x00" + b"\xff\xfb\x90\x44" + b"\x00" * 32, "audio/mpeg"),
         (
             "wav",
-            lambda: b"RIFF"
-            + struct.pack("<I", 36)
-            + b"WAVE"
-            + b"fmt "
-            + struct.pack("<I", 16)
-            + struct.pack("<HHIIHH", 1, 1, 8000, 8000, 1, 8)
-            + b"data"
-            + struct.pack("<I", 0),
+            lambda: (
+                b"RIFF"
+                + struct.pack("<I", 36)
+                + b"WAVE"
+                + b"fmt "
+                + struct.pack("<I", 16)
+                + struct.pack("<HHIIHH", 1, 1, 8000, 8000, 1, 8)
+                + b"data"
+                + struct.pack("<I", 0)
+            ),
             "audio/wav",
         ),
         (
             "ogg",
-            lambda: b"OggS\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00",
+            lambda: (
+                b"OggS\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00"
+            ),
             "audio/ogg",
         ),
         (
@@ -298,7 +521,9 @@ def test_file_exists_expr(tmp_path: Path):
         ),
         (
             "zip",
-            lambda: b"PK\x03\x04\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+            lambda: (
+                b"PK\x03\x04\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+            ),
             "application/zip",
         ),
         ("html", lambda: b"<!DOCTYPE html><html><head></head><body></body></html>", "text/html"),
@@ -486,14 +711,12 @@ def test_file_partial_range_raises(tmp_path: Path):
     path = str(temp_file.absolute())
 
     f_position_only = daft.File(path, position=10)
-    with pytest.raises(Exception):
-        with f_position_only.open() as fh:
-            fh.read()
+    with pytest.raises(Exception), f_position_only.open() as fh:
+        fh.read()
 
     f_size_only = daft.File(path, size=10)
-    with pytest.raises(Exception):
-        with f_size_only.open() as fh:
-            fh.read()
+    with pytest.raises(Exception), f_size_only.open() as fh:
+        fh.read()
 
 
 # ── buffer_size tests ──

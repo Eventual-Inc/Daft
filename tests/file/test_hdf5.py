@@ -43,7 +43,17 @@ def test_hdf5_file_standalone(sample_hdf5_path):
 
 
 def test_hdf5_file_open_uses_hdf5_buffer_default():
-    assert daft.Hdf5File.open.__defaults__ == (HDF5_DEFAULT_BUFFER_SIZE,)
+    assert daft.Hdf5File.open.__kwdefaults__ == {"buffer_size": HDF5_DEFAULT_BUFFER_SIZE}
+
+
+def test_hdf5_file_rejects_write_modes(sample_hdf5_path):
+    file = daft.Hdf5File(sample_hdf5_path)
+    for mode in ("w", "wt", "wb", "x", "xt", "xb"):
+        with pytest.raises(ValueError, match="read-only"):
+            file.open(mode)
+    # The inherited one-shot write goes through open() and is rejected the same way.
+    with pytest.raises(ValueError, match="read-only"):
+        file.write(b"raw bytes")
 
 
 def test_hdf5_file_metadata_methods_use_scan_buffer(sample_hdf5_path, monkeypatch):
