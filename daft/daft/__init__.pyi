@@ -339,6 +339,36 @@ class DatabaseSourceConfig:
 
     def __init__(self, sql: str, conn_factory: SQLConnection): ...
 
+class MongoSourceConfig:
+    """Configuration of a MongoDB data source."""
+
+    uri: str
+    database: str
+    collection: str
+    filter_json: str | None
+    projection_json: str | None
+    hint_json: str | None
+    max_time_ms: int | None
+    partition_field: str | None
+    partition_lower_json: str | None
+    partition_upper_json: str | None
+    batch_size: int
+
+    def __init__(
+        self,
+        uri: str,
+        database: str,
+        collection: str,
+        filter_json: str | None = None,
+        projection_json: str | None = None,
+        hint_json: str | None = None,
+        max_time_ms: int | None = None,
+        partition_field: str | None = None,
+        partition_lower_json: str | None = None,
+        partition_upper_json: str | None = None,
+        batch_size: int = 1000,
+    ): ...
+
 class TextSourceConfig:
     """Configuration of a text data source."""
 
@@ -1223,6 +1253,20 @@ class ScanTask:
         stats: PyRecordBatch | None,
     ) -> ScanTask:
         """Create a SQL Scan Task."""
+        ...
+
+    @staticmethod
+    def mongo_scan_task(
+        url: str,
+        config: MongoSourceConfig,
+        schema: PySchema,
+        storage_config: StorageConfig,
+        num_rows: int | None,
+        size_bytes: int | None,
+        pushdowns: PyPushdowns | None,
+        stats: PyRecordBatch | None,
+    ) -> ScanTask:
+        """Create a MongoDB Scan Task."""
         ...
 
     @staticmethod

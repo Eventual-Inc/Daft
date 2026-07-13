@@ -313,9 +313,9 @@ pub mod pylib {
 
     use super::{PyDataSourceWrapper, PyFileFormatConfig, PythonTablesFactoryArgs};
     use crate::{
-        DatabaseSourceConfig, FileFormatConfig, PartitionField, Pushdowns, ScanOperator,
-        ScanOperatorRef, ScanSource, ScanSourceKind, ScanTask, ScanTaskRef, SourceConfig,
-        SupportsPushdownFilters,
+        DatabaseSourceConfig, FileFormatConfig, MongoSourceConfig, PartitionField, Pushdowns,
+        ScanOperator, ScanOperatorRef, ScanSource, ScanSourceKind, ScanTask, ScanTaskRef,
+        SourceConfig, SupportsPushdownFilters,
         anonymous::AnonymousScanOperator,
         glob::GlobScanOperator,
         python::pylib_scan_info::{PyPartitionField, PyPushdowns},
@@ -811,6 +811,53 @@ pub mod pylib {
             let scan_task = ScanTask::new(
                 vec![data_source],
                 Arc::new(SourceConfig::Database(config)),
+                schema.schema,
+                storage_config.into(),
+                pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),
+                None,
+            );
+            Ok(Self(Arc::new(scan_task)))
+        }
+
+        #[allow(clippy::too_many_arguments)]
+        #[staticmethod]
+        #[pyo3(signature = (
+            url,
+            config,
+            schema,
+            storage_config,
+            num_rows=None,
+            size_bytes=None,
+            pushdowns=None,
+            stats=None
+        ))]
+        pub fn mongo_scan_task(
+            url: String,
+            config: MongoSourceConfig,
+            schema: PySchema,
+            storage_config: StorageConfig,
+            num_rows: Option<i64>,
+            size_bytes: Option<u64>,
+            pushdowns: Option<PyPushdowns>,
+            stats: Option<PyRecordBatch>,
+        ) -> PyResult<Self> {
+            let statistics = stats
+                .map(|s| TableStatistics::from_stats_table(&s.record_batch))
+                .transpose()?;
+            let data_source = ScanSource {
+                size_bytes,
+                metadata: num_rows.map(|n| TableMetadata {
+                    length: n as usize,
+                    column_sizes: None,
+                }),
+                statistics,
+                partition_spec: None,
+                kind: ScanSourceKind::Database { path: url },
+            };
+
+            let scan_task = ScanTask::new(
+                vec![data_source],
+                Arc::new(SourceConfig::Mongo(config)),
                 schema.schema,
                 storage_config.into(),
                 pushdowns.map(|p| p.0.as_ref().clone()).unwrap_or_default(),

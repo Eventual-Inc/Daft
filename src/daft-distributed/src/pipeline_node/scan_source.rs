@@ -206,6 +206,12 @@ impl PipelineNodeImpl for ScanSourceNode {
                         res.push(format!("SQL Queries = [{},..]", &config.sql));
                     }
                 }
+                SourceConfig::Mongo(config) => {
+                    res.push(format!(
+                        "MongoDB Collection = {}.{}",
+                        &config.database, &config.collection
+                    ));
+                }
                 #[cfg(feature = "python")]
                 SourceConfig::PythonFunction { source_name, .. } => {
                     res.push(format!(

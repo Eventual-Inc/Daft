@@ -354,6 +354,163 @@ impl JsonSourceConfig {
 
 impl_bincode_py_state_serialization!(JsonSourceConfig);
 
+/// Configuration for a MongoDB data source.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "daft.daft", get_all, from_py_object)
+)]
+pub struct MongoSourceConfig {
+    pub uri: String,
+    pub database: String,
+    pub collection: String,
+    pub filter_json: Option<String>,
+    pub projection_json: Option<String>,
+    pub hint_json: Option<String>,
+    pub max_time_ms: Option<u64>,
+    pub partition_field: Option<String>,
+    pub partition_lower_json: Option<String>,
+    pub partition_upper_json: Option<String>,
+    pub batch_size: u32,
+}
+
+impl std::fmt::Debug for MongoSourceConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MongoSourceConfig")
+            .field("uri", &"<redacted>")
+            .field("database", &self.database)
+            .field("collection", &self.collection)
+            .field(
+                "filter_json",
+                &self.filter_json.as_ref().map(|_| "<provided>"),
+            )
+            .field(
+                "projection_json",
+                &self.projection_json.as_ref().map(|_| "<provided>"),
+            )
+            .field("hint_json", &self.hint_json.as_ref().map(|_| "<provided>"))
+            .field("max_time_ms", &self.max_time_ms)
+            .field("partition_field", &self.partition_field)
+            .field(
+                "partition_lower_json",
+                &self.partition_lower_json.as_ref().map(|_| "<provided>"),
+            )
+            .field(
+                "partition_upper_json",
+                &self.partition_upper_json.as_ref().map(|_| "<provided>"),
+            )
+            .field("batch_size", &self.batch_size)
+            .finish()
+    }
+}
+
+impl MongoSourceConfig {
+    #[allow(clippy::too_many_arguments)]
+    #[must_use]
+    pub fn new_internal(
+        uri: String,
+        database: String,
+        collection: String,
+        filter_json: Option<String>,
+        projection_json: Option<String>,
+        hint_json: Option<String>,
+        max_time_ms: Option<u64>,
+        partition_field: Option<String>,
+        partition_lower_json: Option<String>,
+        partition_upper_json: Option<String>,
+        batch_size: u32,
+    ) -> Self {
+        Self {
+            uri,
+            database,
+            collection,
+            filter_json,
+            projection_json,
+            hint_json,
+            max_time_ms,
+            partition_field,
+            partition_lower_json,
+            partition_upper_json,
+            batch_size,
+        }
+    }
+
+    #[must_use]
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![
+            format!("Database = \"{}\"", self.database),
+            format!("Collection = \"{}\"", self.collection),
+            format!("Batch size = {}", self.batch_size),
+        ];
+        if self.filter_json.is_some() {
+            res.push("Filter = <provided>".to_string());
+        }
+        if self.projection_json.is_some() {
+            res.push("Projection = <provided>".to_string());
+        }
+        if self.hint_json.is_some() {
+            res.push("Hint = <provided>".to_string());
+        }
+        if let Some(max_time_ms) = self.max_time_ms {
+            res.push(format!("Max time = {max_time_ms} ms"));
+        }
+        if let Some(partition_field) = &self.partition_field {
+            res.push(format!("Partition field = \"{partition_field}\""));
+        }
+        res
+    }
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl MongoSourceConfig {
+    /// Create a config for a MongoDB data source.
+    #[allow(clippy::too_many_arguments)]
+    #[new]
+    #[pyo3(signature = (
+        uri,
+        database,
+        collection,
+        filter_json = None,
+        projection_json = None,
+        hint_json = None,
+        max_time_ms = None,
+        partition_field = None,
+        partition_lower_json = None,
+        partition_upper_json = None,
+        batch_size = 1000,
+    ))]
+    fn new(
+        uri: String,
+        database: String,
+        collection: String,
+        filter_json: Option<String>,
+        projection_json: Option<String>,
+        hint_json: Option<String>,
+        max_time_ms: Option<u64>,
+        partition_field: Option<String>,
+        partition_lower_json: Option<String>,
+        partition_upper_json: Option<String>,
+        batch_size: u32,
+    ) -> Self {
+        Self::new_internal(
+            uri,
+            database,
+            collection,
+            filter_json,
+            projection_json,
+            hint_json,
+            max_time_ms,
+            partition_field,
+            partition_lower_json,
+            partition_upper_json,
+            batch_size,
+        )
+    }
+}
+
+impl_bincode_py_state_serialization!(MongoSourceConfig);
+
 /// Configuration for a Database data source.
 #[derive(Clone, Serialize, Deserialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]

@@ -25,6 +25,7 @@ from daft.io.iceberg._iceberg import read_iceberg
 from daft.io.paimon._paimon import read_paimon
 from daft.io._json import read_json
 from daft.io._kafka import read_kafka
+from daft.io._mongodb import read_mongodb
 from daft.io._parquet import read_parquet
 from daft.io._sql import read_sql
 from daft.io._warc import read_warc
@@ -78,6 +79,7 @@ __all__ = [
     "read_kafka",
     "read_lance",
     "read_mcap",
+    "read_mongodb",
     "read_paimon",
     "read_parquet",
     "read_sql",

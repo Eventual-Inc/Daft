@@ -80,6 +80,7 @@ pub(crate) async fn read_scan_task(
                 read_text(scan_task, cfg, url, io_client, io_stats, chunk_size).await
             }
         },
+        SourceConfig::Mongo(cfg) => read_mongodb(scan_task, cfg, chunk_size).await,
         #[cfg(feature = "python")]
         SourceConfig::Database(cfg) => read_database(scan_task, cfg).await,
         #[cfg(feature = "python")]
@@ -301,6 +302,14 @@ async fn read_text(
         Some(io_stats),
     )
     .await
+}
+
+async fn read_mongodb(
+    scan_task: &ScanTask,
+    cfg: &daft_scan::MongoSourceConfig,
+    chunk_size: usize,
+) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
+    daft_mongodb::stream_mongodb(scan_task, cfg, chunk_size).await
 }
 
 #[cfg(feature = "python")]

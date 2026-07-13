@@ -166,7 +166,7 @@ impl PushDownFilter {
                         } else {
                             external_info.pushdowns.clone()
                         };
-                        let new_pushdowns = if let Some(partition_filter) = partition_filter {
+                        let mut new_pushdowns = if let Some(partition_filter) = partition_filter {
                             // Merge new partition filters with any existing ones via AND,
                             // rather than overwriting. Partition filters are monotonic under
                             // AND — adding predicates only makes pruning stricter, never
@@ -189,13 +189,15 @@ impl PushDownFilter {
                             scan_op.as_pushdown_filter()
                             && self.strict_pushdown
                         {
-                            let filters_to_push = new_pushdowns.filters.as_slice();
+                            let filters_to_push_len = new_pushdowns.filters.as_slice().len();
 
                             let (pushed_filters, post_filters) =
-                                supports_pushdown.push_filters(filters_to_push);
-                            let _ = new_pushdowns.with_pushed_filters(Some(pushed_filters.clone()));
-                            if !post_filters.is_empty()
-                                && post_filters.len() == filters_to_push.len()
+                                supports_pushdown.push_filters(new_pushdowns.filters.as_slice());
+                            new_pushdowns =
+                                new_pushdowns.with_pushed_filters(Some(pushed_filters.clone()));
+                            if pushed_filters.is_empty()
+                                && !post_filters.is_empty()
+                                && post_filters.len() == filters_to_push_len
                             {
                                 return Ok(Transformed::no(plan));
                             }
@@ -1194,6 +1196,33 @@ mod tests {
         };
 
         assert_optimized_plan_eq(plan, expected, enable_strict_pushdown)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn filter_pushdown_strict_mode_partially_pushes_supported_conjunction() -> DaftResult<()> {
+        let pushable_pred = resolved_col("date_col").lt(lit(10));
+        let residual_pred = resolved_col("value").is_in(vec![lit(2)]);
+        let pred = pushable_pred.clone().and(residual_pred.clone());
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("date_col", DataType::Int64),
+            Field::new("value", DataType::Int64),
+        ]);
+
+        let plan = dummy_scan_node(scan_op.clone())
+            .filter(pred.clone())?
+            .build();
+        let expected = dummy_scan_node_with_pushdowns(
+            scan_op,
+            Pushdowns::default()
+                .with_filters(Some(pred))
+                .with_pushed_filters(Some(vec![pushable_pred])),
+        )
+        .filter(residual_pred)?
+        .build();
+
+        assert_optimized_plan_eq(plan, expected, true)?;
 
         Ok(())
     }

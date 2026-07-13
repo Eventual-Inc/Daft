@@ -263,6 +263,7 @@ impl Source for ScanTaskSource {
                 },
                 #[cfg(feature = "python")]
                 SourceConfig::Database(_) => "Read Database".into(),
+                SourceConfig::Mongo(_) => "Read MongoDB".into(),
                 #[cfg(feature = "python")]
                 SourceConfig::PythonFunction { source_name, .. } => {
                     if let Some(source_name) = source_name {

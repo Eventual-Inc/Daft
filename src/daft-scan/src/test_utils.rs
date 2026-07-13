@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use daft_algebra::boolean::split_conjunction;
 use daft_dsl::ExprRef;
 use daft_schema::schema::SchemaRef;
 use daft_stats::TableMetadata;
@@ -111,7 +112,7 @@ impl SupportsPushdownFilters for DummyScanOperator {
         // Split predicates: those containing IsIn expressions are not pushable
         let (pushable, unpushable): (Vec<_>, Vec<_>) = filters
             .iter()
-            .cloned()
+            .flat_map(split_conjunction)
             .partition(|expr| !contains_in_expression(expr));
 
         (pushable, unpushable)

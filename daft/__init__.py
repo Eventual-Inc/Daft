@@ -156,6 +156,7 @@ from daft.io import (
     read_warc,
     read_huggingface,
     read_mcap,
+    read_mongodb,
 )
 from daft.runners import get_or_create_runner, get_or_infer_runner_type, set_runner_native, set_runner_ray
 from daft.sql import sql, sql_expr
@@ -286,6 +287,7 @@ __all__ = [
     "read_kafka",
     "read_lance",
     "read_mcap",
+    "read_mongodb",
     "read_paimon",
     "read_parquet",
     "read_sql",

@@ -275,6 +275,18 @@ See also [Postgres](postgres.md) for detailed integration.
 
 See also [SQL Databases](sql.md) for detailed integration.
 
+### MongoDB
+
+!!! warning "Experimental"
+
+    This connector is experimental and the API may change.
+
+| Function                                | Description                                      |
+|-----------------------------------------|--------------------------------------------------|
+| [`read_mongodb`][daft.io.read_mongodb]  | Read a MongoDB collection into a DataFrame       |
+
+See also [MongoDB](mongodb.md) for detailed integration.
+
 ### Turbopuffer
 
 | Function                                                              | Description                                  |

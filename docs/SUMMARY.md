@@ -57,6 +57,7 @@
             * [ClickHouse](connectors/clickhouse.md)
             * [Postgres](connectors/postgres.md)
             * [SQL Databases](connectors/sql.md)
+            * [MongoDB](connectors/mongodb.md)
             * [Turbopuffer](connectors/turbopuffer.md)
         * Files
             * [Files](connectors/files.md)

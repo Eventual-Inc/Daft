@@ -2,12 +2,13 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
 use crate::DatabaseSourceConfig;
-use crate::FileFormatConfig;
+use crate::{FileFormatConfig, MongoSourceConfig};
 
 /// Describes how a ScanTask produces data.
 ///
 /// - `File` — read from files using a specific format parser
 /// - `Database` — execute a SQL query against a connection
+/// - `Mongo` — execute a MongoDB find against a collection
 /// - `PythonFunction` — call a Python callable (DataSource/factory)
 #[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
@@ -15,6 +16,7 @@ pub enum SourceConfig {
     File(FileFormatConfig),
     #[cfg(feature = "python")]
     Database(DatabaseSourceConfig),
+    Mongo(MongoSourceConfig),
     #[cfg(feature = "python")]
     PythonFunction {
         source_name: Option<String>,
@@ -37,6 +39,7 @@ impl SourceConfig {
             Self::File(ffc) => ffc.var_name(),
             #[cfg(feature = "python")]
             Self::Database(_) => "Database".to_string(),
+            Self::Mongo(_) => "MongoDB".to_string(),
             #[cfg(feature = "python")]
             Self::PythonFunction {
                 source_name,
@@ -60,6 +63,7 @@ impl SourceConfig {
             Self::File(ffc) => ffc.multiline_display(),
             #[cfg(feature = "python")]
             Self::Database(source) => source.multiline_display(),
+            Self::Mongo(source) => source.multiline_display(),
             #[cfg(feature = "python")]
             Self::PythonFunction {
                 source_name,

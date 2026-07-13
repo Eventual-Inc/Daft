@@ -64,6 +64,10 @@ Daft offers a variety of approaches to creating a DataFrame from reading various
     options:
         heading_level: 3
 
+::: daft.read_mongodb
+    options:
+        heading_level: 3
+
 ::: daft.read_parquet
     options:
         heading_level: 3
