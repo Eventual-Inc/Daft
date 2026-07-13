@@ -23,7 +23,7 @@ impl ScalarUDF for ToMapFunction {
                 "Cannot call map with no inputs".to_string(),
             ));
         }
-        if inputs.len() % 2 != 0 {
+        if !inputs.len().is_multiple_of(2) {
             return Err(DaftError::ValueError(
                 "Map constructor requires an even number of key/value inputs".to_string(),
             ));
@@ -93,7 +93,7 @@ impl ScalarUDF for ToMapFunction {
                 "Cannot call map with no inputs".to_string(),
             ));
         }
-        if inputs.len() % 2 != 0 {
+        if !inputs.len().is_multiple_of(2) {
             return Err(DaftError::ValueError(
                 "Map constructor requires an even number of key/value inputs".to_string(),
             ));
