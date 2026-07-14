@@ -2,6 +2,10 @@
 
 <div class="grid cards" markdown>
 
+- [Hand Tracking for Physical AI](hand-tracking-physical-ai.md)
+
+    Read a LeRobot dataset, run hand tracking as a Daft UDF, and score the results against EgoDex ground truth.
+
 - [HDF5 File Usage Notebook](https://github.com/Eventual-Inc/Daft/blob/main/examples/hdf5_file_usage.ipynb)
 
     Inspect HDF5 files, visit dataset hierarchies, and read selected datasets into DataFrames.
