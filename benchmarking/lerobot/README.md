@@ -23,7 +23,8 @@ requested timestamp. Output is **byte-identical** to the old per-row decode.
 frame decoding for n = 1..10 rows of a remote test dataset (`pepijn223/egodex-test`),
 run once per reader revision (merge-base vs this branch) - the original grows linearly
 to ~34s; the batched version stays flat at ~4s (all 10 frames share one shard → one
-open).
+open). All benchmarks in this directory were run on the same machine, an Apple
+M4 Max (36 GB).
 
 ![original vs batched](charts/chart_old_vs_new.png)
 
