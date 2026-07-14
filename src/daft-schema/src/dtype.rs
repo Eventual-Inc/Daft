@@ -1222,6 +1222,7 @@ mod test {
     #[case(DataType::File(MediaType::Audio))]
     #[case(DataType::File(MediaType::Image))]
     #[case(DataType::File(MediaType::Hdf5))]
+    #[case(DataType::File(MediaType::Mcap))]
     #[case(DataType::Extension("custom".to_string(), Box::new(DataType::Binary), None))]
     #[case(DataType::Extension("custom".to_string(), Box::new(DataType::Int32), Some("meta".to_string())))]
     // To convert extension types to arrow_rs, you must use `Field::to_arrow`

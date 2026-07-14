@@ -57,6 +57,15 @@ impl DaftMediaType for MediaTypeHdf5 {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct MediaTypeMcap;
+
+impl DaftMediaType for MediaTypeMcap {
+    fn get_type() -> MediaType {
+        MediaType::Mcap
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct FileType<T>
 where
@@ -70,6 +79,7 @@ pub type VideoFileType = FileType<MediaTypeVideo>;
 pub type AudioFileType = FileType<MediaTypeAudio>;
 pub type ImageFileType = FileType<MediaTypeImage>;
 pub type Hdf5FileType = FileType<MediaTypeHdf5>;
+pub type McapFileType = FileType<MediaTypeMcap>;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct FileReference {

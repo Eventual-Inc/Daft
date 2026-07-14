@@ -48,3 +48,93 @@ class Hdf5ObjectMetadata(TypedDict):
     dtype: str
     chunks: list[int]
     compression: str
+
+
+class McapHeader(TypedDict):
+    profile: str
+    library: str
+
+
+class McapStatistics(TypedDict):
+    message_count: int
+    schema_count: int
+    channel_count: int
+    attachment_count: int
+    metadata_count: int
+    chunk_count: int
+    message_start_time: int
+    message_end_time: int
+
+
+class McapSchemaMetadata(TypedDict):
+    id: int
+    name: str
+    encoding: str
+    data_size: int
+    data_base64: str | None
+
+
+class McapChannelMetadata(TypedDict):
+    id: int
+    topic: str
+    message_encoding: str
+    schema_id: int | None
+    schema_name: str | None
+    message_count: int | None
+    metadata: dict[str, str]
+
+
+class McapMessageIndexMetadata(TypedDict):
+    channel_id: int
+    position: int
+
+
+class McapChunkMetadata(TypedDict):
+    message_start_time: int
+    message_end_time: int
+    position: int
+    size: int
+    compression: str
+    compressed_size: int
+    uncompressed_size: int
+    message_index_length: int
+    message_index_offsets: list[McapMessageIndexMetadata]
+    channel_ids: list[int]
+    topics: list[str]
+
+
+class McapAttachmentMetadata(TypedDict):
+    position: int
+    size: int
+    log_time: int
+    create_time: int
+    data_size: int
+    name: str
+    media_type: str
+
+
+class McapMetadataRecord(TypedDict):
+    name: str
+    metadata: dict[str, str]
+    position: int
+    size: int
+
+
+class McapFileMetadata(TypedDict):
+    file_size: int
+    has_summary: bool
+    indexed: bool
+    has_chunk_indexes: bool
+    has_message_indexes: bool
+    header: McapHeader
+    statistics: McapStatistics | None
+    schemas: list[McapSchemaMetadata]
+    channels: list[McapChannelMetadata]
+    chunks: list[McapChunkMetadata]
+    attachments: list[McapAttachmentMetadata]
+    metadata: list[McapMetadataRecord]
+
+
+class McapTimeRange(TypedDict):
+    start_time: int | None
+    end_time: int | None

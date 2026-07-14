@@ -147,45 +147,53 @@ impl PyDaftFile {
 impl PyDaftFile {
     #[staticmethod]
     #[pyo3(signature=(f, buffer_size=None))]
-    fn _from_file_reference(f: PyFileReference, buffer_size: Option<usize>) -> PyResult<Self> {
-        Ok(DaftFile::load_blocking(f.inner.as_ref().clone(), false, buffer_size)?.into())
+    fn _from_file_reference(
+        py: Python<'_>,
+        f: PyFileReference,
+        buffer_size: Option<usize>,
+    ) -> PyResult<Self> {
+        py.detach(move || {
+            Ok(DaftFile::load_blocking(f.inner.as_ref().clone(), false, buffer_size)?.into())
+        })
     }
 
     #[pyo3(signature=(size=-1))]
-    fn read(&mut self, size: isize) -> PyResult<Vec<u8>> {
+    fn read(&mut self, py: Python<'_>, size: isize) -> PyResult<Vec<u8>> {
         self.check_context()?;
-        let cursor = self
-            .inner
-            .cursor
-            .as_mut()
-            .ok_or_else(|| PyIOError::new_err("File not open"))?;
+        py.detach(|| {
+            let cursor = self
+                .inner
+                .cursor
+                .as_mut()
+                .ok_or_else(|| PyIOError::new_err("File not open"))?;
 
-        if size == -1 {
-            let mut buffer = Vec::new();
-            let bytes_read = cursor
-                .read_to_end(&mut buffer)
-                .map_err(|e| PyIOError::new_err(e.to_string()))?;
+            if size == -1 {
+                let mut buffer = Vec::new();
+                let bytes_read = cursor
+                    .read_to_end(&mut buffer)
+                    .map_err(|e| PyIOError::new_err(e.to_string()))?;
 
-            buffer.truncate(bytes_read);
-            self.inner.position = bytes_read;
+                buffer.truncate(bytes_read);
+                self.inner.position = bytes_read;
 
-            Ok(buffer)
-        } else {
-            let mut buffer = vec![0u8; size as usize];
+                Ok(buffer)
+            } else {
+                let mut buffer = vec![0u8; size as usize];
 
-            if self.inner.position == cursor.size() {
-                return Ok(vec![]);
+                if self.inner.position == cursor.size() {
+                    return Ok(vec![]);
+                }
+
+                let bytes_read = cursor
+                    .read(&mut buffer)
+                    .map_err(|e| PyIOError::new_err(e.to_string()))?;
+
+                buffer.truncate(bytes_read);
+                self.position += bytes_read;
+
+                Ok(buffer)
             }
-
-            let bytes_read = cursor
-                .read(&mut buffer)
-                .map_err(|e| PyIOError::new_err(e.to_string()))?;
-
-            buffer.truncate(bytes_read);
-            self.position += bytes_read;
-
-            Ok(buffer)
-        }
+        })
     }
 
     // Seek to position
@@ -288,6 +296,27 @@ impl PyDaftFile {
 
     fn guess_mime_type(&mut self) -> Option<String> {
         self.cursor.as_mut().and_then(|c| c.mime_type())
+    }
+
+    #[pyo3(signature = (include_schema_data=true, include_metadata_records=true, include_chunk_indexes=true))]
+    fn _mcap_metadata_json(
+        &mut self,
+        py: Python<'_>,
+        include_schema_data: bool,
+        include_metadata_records: bool,
+        include_chunk_indexes: bool,
+    ) -> PyResult<String> {
+        self.check_context()?;
+        py.detach(|| {
+            Ok(crate::mcap::metadata_json(
+                &mut self.inner,
+                crate::mcap::ReadMetadataOptions {
+                    include_schema_data,
+                    include_metadata_records,
+                    include_chunk_indexes,
+                },
+            )?)
+        })
     }
 }
 

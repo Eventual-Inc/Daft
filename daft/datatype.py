@@ -56,6 +56,11 @@ class MediaType:
         """Represents an HDF5 media type."""
         return cls._from_pyfileformat(PyMediaType.hdf5())
 
+    @classmethod
+    def mcap(cls) -> MediaType:
+        """Represents an MCAP media type."""
+        return cls._from_pyfileformat(PyMediaType.mcap())
+
 
 class TimeUnit:
     _timeunit: PyTimeUnit
@@ -259,6 +264,8 @@ class DataType:
             return cls.file(MediaType.image())
         elif check_type(daft.file.Hdf5File):
             return cls.file(MediaType.hdf5())
+        elif check_type(daft.file.McapFile):
+            return cls.file(MediaType.mcap())
         elif check_type(daft.file.File):
             return cls.file(MediaType.unknown())
         elif check_type(list):

@@ -410,18 +410,22 @@ const HTML_MAGIC_2: &[u8] = &[0x3C, 0x68, 0x74, 0x6D, 0x6C]; // <html
 const HTML_MAGIC_3: &[u8] = &[0x3C, 0x48, 0x54, 0x4D, 0x4C]; // <HTML
 const HDF5_MAGIC: &[u8] = b"\x89HDF\r\n\x1a\n";
 pub(crate) const HDF5_MIME: &str = "application/vnd.hdfgroup.hdf5";
+const MCAP_MAGIC: &[u8] = b"\x89MCAP0\r\n";
+pub(crate) const MCAP_MIME: &str = "application/x-mcap";
 const MIME_SNIFF_BYTES: usize = 4 * 1024 + HDF5_MAGIC.len();
 
 fn guess_mimetype_from_url(url: &str) -> Option<String> {
     let url = Url::parse(url).ok()?;
     let path = url.path();
-    // mime_guess does not map .h5/.hdf5 to the registered HDF5 MIME type, so
-    // handle those extensions before falling back to the library's URL lookup.
-    if std::path::Path::new(path)
-        .extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("h5") || ext.eq_ignore_ascii_case("hdf5"))
-    {
-        return Some(HDF5_MIME.to_string());
+    // mime_guess does not map HDF5 or MCAP, so handle those extensions before
+    // falling back to the library's URL lookup.
+    if let Some(extension) = std::path::Path::new(path).extension() {
+        if extension.eq_ignore_ascii_case("h5") || extension.eq_ignore_ascii_case("hdf5") {
+            return Some(HDF5_MIME.to_string());
+        }
+        if extension.eq_ignore_ascii_case("mcap") {
+            return Some(MCAP_MIME.to_string());
+        }
     }
     let mime = mime_guess::from_path(path).first()?;
     Some(mime.to_string())
@@ -476,6 +480,8 @@ pub(crate) fn guess_mimetype_from_content<R: Read + Seek>(
         Some("text/html")
     } else if has_hdf5_signature(&buffer[..bytes_read]) {
         Some(HDF5_MIME)
+    } else if starts_with(&buffer, MCAP_MAGIC) {
+        Some(MCAP_MIME)
     } else {
         None
     };
@@ -527,6 +533,7 @@ mod tests {
             ("https://example.com/sound.aac", Some("audio/aac")),
             ("https://example.com/data.h5", Some(HDF5_MIME)),
             ("https://example.com/data.hdf5", Some(HDF5_MIME)),
+            ("https://example.com/recording.mcap", Some(MCAP_MIME)),
             ("https://example.com/noextension", None),
             ("https://example.com/unknown.abcde", None),
         ];
@@ -622,6 +629,14 @@ mod tests {
         let mut reader = Cursor::new(data);
         let result = guess_mimetype_from_content(&mut reader).unwrap();
         assert_eq!(result.as_deref(), Some(HDF5_MIME));
+    }
+
+    #[test]
+    fn test_guess_mimetype_from_reader_mcap() {
+        let data = b"\x89MCAP0\r\n\x01\x00\x00\x00";
+        let mut reader = Cursor::new(data);
+        let result = guess_mimetype_from_content(&mut reader).unwrap();
+        assert_eq!(result.as_deref(), Some(MCAP_MIME));
     }
 
     #[test]
