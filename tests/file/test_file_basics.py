@@ -584,7 +584,7 @@ def test_multiple_files_concurrent_read(tmp_path: Path):
             with f.open() as fh:
                 data = fh.read()
                 results[idx] = len(data)
-        except Exception as e:
+        except (OSError, RuntimeError) as e:
             errors.append((idx, e))
 
     threads = [threading.Thread(target=read_file, args=(p, i)) for i, p in enumerate(files)]

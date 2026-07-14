@@ -151,7 +151,11 @@ impl PyDaftFile {
 impl PyDaftFile {
     #[staticmethod]
     #[pyo3(signature=(f, buffer_size=None))]
-    fn _from_file_reference(py: Python<'_>, f: PyFileReference, buffer_size: Option<usize>) -> PyResult<Self> {
+    fn _from_file_reference(
+        py: Python<'_>,
+        f: PyFileReference,
+        buffer_size: Option<usize>,
+    ) -> PyResult<Self> {
         let file_ref = f.inner.as_ref().clone();
         py.detach(move || Ok(DaftFile::load_blocking(file_ref, false, buffer_size)?.into()))
     }
@@ -230,11 +234,9 @@ impl PyDaftFile {
             .take()
             .ok_or_else(|| PyValueError::new_err("File not open"))?;
 
-        let result: SeekResult = py.detach(move || {
-            match cursor.seek(seek_from) {
-                Ok(new_pos) => Ok((new_pos, cursor)),
-                Err(e) => Err((PyIOError::new_err(e.to_string()), cursor)),
-            }
+        let result: SeekResult = py.detach(move || match cursor.seek(seek_from) {
+            Ok(new_pos) => Ok((new_pos, cursor)),
+            Err(e) => Err((PyIOError::new_err(e.to_string()), cursor)),
         });
 
         match result {
