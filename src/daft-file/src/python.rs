@@ -16,6 +16,9 @@ use pyo3::{
 
 use crate::file::{DaftFile, FileCursor};
 
+type ReadResult = Result<(Vec<u8>, usize, bool, FileCursor), (PyErr, FileCursor)>;
+type SeekResult = Result<(u64, FileCursor), (PyErr, FileCursor)>;
+
 #[pyclass(from_py_object)]
 #[derive(Clone)]
 struct PyFileReference {
@@ -164,7 +167,7 @@ impl PyDaftFile {
         let current_position = self.inner.position;
         let current_size = cursor.size();
 
-        let result: Result<(Vec<u8>, usize, bool, FileCursor), (PyErr, FileCursor)> = py.detach(move || {
+        let result: ReadResult = py.detach(move || {
             if size == -1 {
                 let mut buffer = Vec::new();
                 match cursor.read_to_end(&mut buffer) {
@@ -227,7 +230,7 @@ impl PyDaftFile {
             .take()
             .ok_or_else(|| PyValueError::new_err("File not open"))?;
 
-        let result: Result<(u64, FileCursor), (PyErr, FileCursor)> = py.detach(move || {
+        let result: SeekResult = py.detach(move || {
             match cursor.seek(seek_from) {
                 Ok(new_pos) => Ok((new_pos, cursor)),
                 Err(e) => Err((PyIOError::new_err(e.to_string()), cursor)),
