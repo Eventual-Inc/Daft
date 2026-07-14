@@ -32,7 +32,7 @@ df = lerobot.read(DATASET, load_video_frames=IMAGE_COLUMN).limit(LIMIT)
 
 ## Track hands
 
-`track_hands` returns a hand-pose column: a list of `{handedness, confidence, kp2d, kp3d?}` per frame (`kp3d` is null for MediaPipe). It's a lazy, batched Daft UDF, so nothing runs until we materialize below.
+`track_hands` returns a hand-pose column: a list of detected hands per frame, each with `handedness` (left or right), `confidence` (detection score), `kp2d` (21 hand keypoints in image pixels), and `kp3d` (3D keypoints, for methods that produce them - null for MediaPipe). It's a lazy, batched Daft UDF, so nothing runs until we materialize below.
 
 ```python
 df = df.with_column("hands", track_hands(df[IMAGE_COLUMN], method="mediapipe"))
