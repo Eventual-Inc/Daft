@@ -21,6 +21,7 @@ jobs:
         add_label: 'true'
 
   issue_guard:
+    needs: validate_pr_title
     if: github.event.action == 'opened' || github.event.action == 'reopened'
     runs-on: ubuntu-latest
     steps:
@@ -44,19 +45,12 @@ jobs:
             return;
           }
 
-          const titleMatch = pr.title.match(
-            /^(feat|fix|docs|test|ci|refactor|perf|chore|revert|build)(\([^)]*\))?!?:\s*.+/i,
-          );
-          if (!titleMatch) {
-            core.info("PR title does not follow Conventional Commits. Skipping issue guard.");
+          const guardedType = await getGuardedPrTypeFromLabels(pr);
+          if (!guardedType) {
+            core.info("PR does not have a guarded type label. Skipping issue guard.");
             return;
           }
-
-          const prType = titleMatch[1].toLowerCase();
-          if (!GUARDED_TYPES.has(prType)) {
-            core.info(`PR type '${prType}' is not guarded. Skipping issue guard.`);
-            return;
-          }
+          core.info(`PR has guarded type label '${guardedType}'.`);
 
           const hasLinkedIssue = await checkLinkedIssue(pr);
           if (hasLinkedIssue) {
@@ -123,6 +117,26 @@ jobs:
           });
 
           core.info("Issue guard applied: draft + awaiting-issue label + comment.");
+
+          async function getGuardedPrTypeFromLabels(pullRequest) {
+            const response = await github.rest.issues.listLabelsOnIssue({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pullRequest.number,
+              per_page: 100,
+            });
+            const labelNames = new Set(
+              response.data.map((label) => label.name.toLowerCase()),
+            );
+
+            for (const type of GUARDED_TYPES) {
+              if (labelNames.has(type)) {
+                return type;
+              }
+            }
+
+            return null;
+          }
 
           async function checkLinkedIssue(pullRequest) {
             const result = await github.graphql(
