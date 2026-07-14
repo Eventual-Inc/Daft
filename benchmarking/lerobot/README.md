@@ -42,8 +42,21 @@ comparison. See [real_datasets.md](real_datasets.md).
 
 ![original vs batched on public datasets](charts/chart_real_datasets.png)
 
+### Downstream workload: hand tracking
+
+[`hand_tracking.py`](hand_tracking.py) times the
+[daft-physical-ai demo](https://github.com/Eventual-Inc/daft-physical-ai/blob/main/examples/demo.py)
+workload end to end: decode 12 remote frames of `pepijn223/egodex-test` and run
+MediaPipe hand tracking as a Daft UDF. [`run_hand_tracking.sh`](run_hand_tracking.sh)
+runs it once per reader revision (the original pinned to the parent of the #7184
+merge commit) and checks the detected hands match. Measured 2026-07-14:
+**44.8s → 9.8s**, identical detections.
+
+![original vs batched on the hand-tracking workload](charts/chart_hand_tracking.png)
+
 ## Running
 
 ```bash
 python sweep.py --label batched      # rows 1..10 sweep + chart
+./run_hand_tracking.sh               # hand-tracking workload A/B + chart
 ```
