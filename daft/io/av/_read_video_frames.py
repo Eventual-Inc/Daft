@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import tempfile
+import threading
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, TypeAlias
@@ -266,7 +268,7 @@ class _VideoFramesSourceTask(DataSourceTask):
             if os.path.exists(temp_file):
                 os.remove(temp_file)
 
-    async def read(self) -> AsyncIterator[RecordBatch]:
+    def _read_record_batches(self) -> Generator[RecordBatch]:
         with self._open() as file:
             buffer = _VideoFramesBuffer(
                 image_height=self.image_height,
@@ -279,6 +281,42 @@ class _VideoFramesSourceTask(DataSourceTask):
                     buffer.clear()
             if buffer and buffer.size() > 0:
                 yield buffer.to_recordbatch()
+
+    async def read(self) -> AsyncIterator[RecordBatch]:
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue[RecordBatch | Exception | _VideoReadDone] = asyncio.Queue()
+        stop_event = threading.Event()
+
+        def produce() -> None:
+            try:
+                for batch in self._read_record_batches():
+                    if stop_event.is_set():
+                        break
+                    loop.call_soon_threadsafe(queue.put_nowait, batch)
+            except Exception as error:  # noqa: BLE001
+                loop.call_soon_threadsafe(queue.put_nowait, error)
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, _VIDEO_READ_DONE)
+
+        producer = asyncio.create_task(asyncio.to_thread(produce))
+        try:
+            while True:
+                item = await queue.get()
+                if isinstance(item, _VideoReadDone):
+                    break
+                if isinstance(item, Exception):
+                    raise item
+                yield item
+        finally:
+            stop_event.set()
+            await asyncio.shield(producer)
+
+
+class _VideoReadDone:
+    pass
+
+
+_VIDEO_READ_DONE = _VideoReadDone()
 
 
 class _VideoFramesBuffer:

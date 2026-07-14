@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+import threading
+from collections.abc import Iterator
 from fractions import Fraction
 from unittest.mock import MagicMock, patch
 
@@ -72,6 +75,41 @@ def test_read_video_eof():
 
     # Verify container was closed
     mock_container.close.assert_called_once()
+
+
+def test_video_reads_do_not_block_shared_event_loop():
+    barrier = threading.Barrier(2)
+    producer_threads: list[int] = []
+
+    def read_batches() -> Iterator[MagicMock]:
+        producer_threads.append(threading.get_ident())
+        barrier.wait(timeout=1)
+        yield MagicMock()
+
+    tasks = [
+        _VideoFramesSourceTask(
+            path=f"test-{index}.mp4",
+            image_height=480,
+            image_width=640,
+            is_key_frame=None,
+            io_config=None,
+        )
+        for index in range(2)
+    ]
+    for task in tasks:
+        task._read_record_batches = read_batches  # type: ignore[method-assign]
+
+    async def collect(task: _VideoFramesSourceTask) -> list[MagicMock]:
+        return [batch async for batch in task.read()]
+
+    async def collect_all() -> list[list[MagicMock]]:
+        return await asyncio.gather(*(collect(task) for task in tasks))
+
+    results = asyncio.run(collect_all())
+
+    assert [len(result) for result in results] == [1, 1]
+    assert len(set(producer_threads)) == 2
+    assert threading.get_ident() not in producer_threads
 
 
 @pytest.mark.integration()
