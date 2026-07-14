@@ -221,3 +221,50 @@ def test_space_dataframe_and_sql():
 
     assert df_res == expected
     assert sql_res == expected
+
+
+def test_split_part_positive(test_expression):
+    # Spark-parity: out-of-range parts return an empty string; nulls stay null.
+    test_data = ["a,b,c", "x,y", "nodelim", None]
+    expected = ["b", "y", "", None]
+    test_expression(
+        data=test_data,
+        expected=expected,
+        name="split_part",
+        args=[",", 2],
+    )
+
+
+def test_split_part_negative(test_expression):
+    # Spark-parity: negative parts are counted backward from the end.
+    test_data = ["a,b,c", "x,y", "nodelim", None]
+    expected = ["c", "y", "nodelim", None]
+    test_expression(
+        data=test_data,
+        expected=expected,
+        name="split_part",
+        args=[",", -1],
+    )
+
+
+def test_split_part_empty_delimiter(test_expression):
+    # Spark-parity: an empty delimiter means the string is not split.
+    test_data = ["abc", ""]
+    expected = ["abc", ""]
+    test_expression(
+        data=test_data,
+        expected=expected,
+        name="split_part",
+        args=["", 1],
+    )
+
+
+def test_split_part_zero_errors():
+    import pytest
+
+    import daft
+    from daft.functions import split_part
+
+    df = daft.from_pydict({"x": ["a,b,c"]})
+    with pytest.raises(Exception, match="part must not be 0"):
+        df.select(split_part(df["x"], ",", 0)).collect()
