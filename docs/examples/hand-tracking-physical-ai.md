@@ -1,6 +1,6 @@
 # Hand Tracking for Physical AI
 
-This example uses [daft-physical-ai](https://github.com/Eventual-Inc/daft-physical-ai), a Daft extension for physical AI data pipelines. It reads a LeRobot dataset, runs hand tracking (MediaPipe) as a Daft UDF with `track_hands`, and shows the keypoints. Every method returns the same schema: a list of `{handedness, confidence, kp2d, kp3d?}` per frame (`kp3d` is null for MediaPipe).
+This example uses [daft-physical-ai](https://github.com/Eventual-Inc/daft-physical-ai), a Daft extension for physical AI data pipelines. It reads a LeRobot dataset, runs hand tracking (MediaPipe) as a Daft UDF with `track_hands`, and shows the keypoints.
 
 ## Setup
 
@@ -32,7 +32,7 @@ df = lerobot.read(DATASET, load_video_frames=IMAGE_COLUMN).limit(LIMIT)
 
 ## Track hands
 
-`track_hands` returns a hand-pose column. It's a lazy, batched Daft UDF, so nothing runs until we materialize below.
+`track_hands` returns a hand-pose column: a list of `{handedness, confidence, kp2d, kp3d?}` per frame (`kp3d` is null for MediaPipe). It's a lazy, batched Daft UDF, so nothing runs until we materialize below.
 
 ```python
 df = df.with_column("hands", track_hands(df[IMAGE_COLUMN], method="mediapipe"))
