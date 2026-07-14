@@ -104,11 +104,8 @@ class ProgressBar:
             del p
 
 
-# All tqdm writes happen on this single long-lived thread. Progress updates arrive from
-# native (Rust) threads, which can get a fresh Python thread identity on every call into
-# Python (always on 3.13+), and ipykernel allocates a zmq pipe (~2 fds) per writing
-# thread identity that it only reclaims when that thread dies - so writing directly from
-# native threads leaks fds without bound in Jupyter. See issue #7253.
+# All tqdm writes happen on this single long-lived thread; writing from the native (Rust)
+# threads leaks fds in Jupyter. See issue #7253 for details.
 _writer = ThreadPoolExecutor(max_workers=1, thread_name_prefix="daft-progress-bar-writer")
 
 
