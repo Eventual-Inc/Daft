@@ -241,4 +241,3 @@ def test_sql_read_csv_ignore_corrupt_files(tmp_path):
     path, reason, _partial = skipped[0]
     assert path.endswith("zzz_bad.csv")
     assert reason
-
