@@ -304,7 +304,7 @@ class _VideoFramesSourceTask(DataSourceTask):
                 for batch in self._read_record_batches():
                     if not put(batch):
                         return
-            except Exception as error:  # noqa: BLE001
+            except Exception as error:
                 put(error)
             finally:
                 put(_VIDEO_READ_DONE)
