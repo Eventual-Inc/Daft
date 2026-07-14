@@ -2363,7 +2363,7 @@ class Expression:
         from daft.functions import length_bytes
 
         return length_bytes(self)
-    
+
     def bit_length(self) -> Expression:
         """Retrieves the length for a UTF-8 string column in bits.
 

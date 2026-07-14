@@ -228,8 +228,15 @@ def test_bit_length():
     from daft import col, sql
     from daft.functions import bit_length
 
-    data = ["hello", "world", "café", "", None, "🚀"] # "🚀" is 4 bytes = 32 bits
-    expected = [40, 40, 40, 0, None, 32] # "café" is 5 bytes in UTF-8, so 5 * 8 = 40 bits. "🚀" is 4 bytes in UTF-8, so 4 * 8 = 32 bits.
+    data = ["hello", "world", "café", "", None, "🚀"]  # "🚀" is 4 bytes = 32 bits
+    expected = [
+        40,
+        40,
+        40,
+        0,
+        None,
+        32,
+    ]  # "café" is 5 bytes in UTF-8, so 5 * 8 = 40 bits. "🚀" is 4 bytes in UTF-8, so 4 * 8 = 32 bits.
 
     df = daft.from_pydict({"x": data})
     df_res = df.select(bit_length(col("x"))).to_pydict()["x"]
