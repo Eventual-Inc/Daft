@@ -4,6 +4,7 @@ import asyncio
 import os
 import tempfile
 import threading
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, TypeAlias
@@ -284,19 +285,29 @@ class _VideoFramesSourceTask(DataSourceTask):
 
     async def read(self) -> AsyncIterator[RecordBatch]:
         loop = asyncio.get_running_loop()
-        queue: asyncio.Queue[RecordBatch | Exception | _VideoReadDone] = asyncio.Queue()
+        queue: asyncio.Queue[RecordBatch | Exception | _VideoReadDone] = asyncio.Queue(maxsize=1)
         stop_event = threading.Event()
+
+        def put(item: RecordBatch | Exception | _VideoReadDone) -> bool:
+            future = asyncio.run_coroutine_threadsafe(queue.put(item), loop)
+            while not stop_event.is_set():
+                try:
+                    future.result(timeout=0.1)
+                    return True
+                except FutureTimeoutError:
+                    continue
+            future.cancel()
+            return False
 
         def produce() -> None:
             try:
                 for batch in self._read_record_batches():
-                    if stop_event.is_set():
-                        break
-                    loop.call_soon_threadsafe(queue.put_nowait, batch)
+                    if not put(batch):
+                        return
             except Exception as error:  # noqa: BLE001
-                loop.call_soon_threadsafe(queue.put_nowait, error)
+                put(error)
             finally:
-                loop.call_soon_threadsafe(queue.put_nowait, _VIDEO_READ_DONE)
+                put(_VIDEO_READ_DONE)
 
         producer = asyncio.create_task(asyncio.to_thread(produce))
         try:
@@ -309,7 +320,10 @@ class _VideoFramesSourceTask(DataSourceTask):
                 yield item
         finally:
             stop_event.set()
-            await asyncio.shield(producer)
+            if producer.done():
+                producer.result()
+            else:
+                producer.add_done_callback(_consume_task_result)
 
 
 class _VideoReadDone:
@@ -317,6 +331,10 @@ class _VideoReadDone:
 
 
 _VIDEO_READ_DONE = _VideoReadDone()
+
+
+def _consume_task_result(task: asyncio.Task[None]) -> None:
+    task.result()
 
 
 class _VideoFramesBuffer:

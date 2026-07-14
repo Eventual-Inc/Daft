@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+import time
 from collections.abc import Iterator
 from fractions import Fraction
 from unittest.mock import MagicMock, patch
@@ -110,6 +111,81 @@ def test_video_reads_do_not_block_shared_event_loop():
     assert [len(result) for result in results] == [1, 1]
     assert len(set(producer_threads)) == 2
     assert threading.get_ident() not in producer_threads
+
+
+def test_video_read_applies_backpressure():
+    produced_batches = 0
+    producer_done = threading.Event()
+
+    def read_batches() -> Iterator[MagicMock]:
+        nonlocal produced_batches
+        try:
+            for _ in range(100):
+                produced_batches += 1
+                yield MagicMock()
+        finally:
+            producer_done.set()
+
+    task = _VideoFramesSourceTask(
+        path="test.mp4",
+        image_height=480,
+        image_width=640,
+        is_key_frame=None,
+        io_config=None,
+    )
+    task._read_record_batches = read_batches  # type: ignore[method-assign]
+
+    async def read_one() -> None:
+        reader = task.read()
+        await anext(reader)
+        while produced_batches < 3:
+            await asyncio.sleep(0.01)
+        assert produced_batches == 3
+        await reader.aclose()
+        await asyncio.to_thread(producer_done.wait, 1)
+
+    asyncio.run(read_one())
+    assert producer_done.is_set()
+
+
+def test_video_read_close_does_not_wait_for_decode():
+    decode_started = threading.Event()
+    release_decode = threading.Event()
+    producer_done = threading.Event()
+
+    def read_batches() -> Iterator[MagicMock]:
+        try:
+            yield MagicMock()
+            decode_started.set()
+            release_decode.wait(timeout=1)
+            yield MagicMock()
+        finally:
+            producer_done.set()
+
+    task = _VideoFramesSourceTask(
+        path="test.mp4",
+        image_height=480,
+        image_width=640,
+        is_key_frame=None,
+        io_config=None,
+    )
+    task._read_record_batches = read_batches  # type: ignore[method-assign]
+
+    async def close_while_decoding() -> float:
+        reader = task.read()
+        await anext(reader)
+        await asyncio.to_thread(decode_started.wait, 1)
+        start = time.monotonic()
+        await reader.aclose()
+        elapsed = time.monotonic() - start
+        release_decode.set()
+        await asyncio.to_thread(producer_done.wait, 1)
+        return elapsed
+
+    elapsed = asyncio.run(close_while_decoding())
+
+    assert elapsed < 0.1
+    assert producer_done.is_set()
 
 
 @pytest.mark.integration()
