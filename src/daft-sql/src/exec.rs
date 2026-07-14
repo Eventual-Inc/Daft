@@ -29,6 +29,7 @@ pub(crate) fn execute_statement(
         Statement::Set(set) => execute_set(sess, set),
         Statement::Use(use_) => execute_use(sess, use_),
         Statement::ShowTables(show_tables) => execute_show_tables(sess, show_tables),
+        Statement::CreateTable(create_table) => execute_create_table(sess, create_table),
     }
 }
 
@@ -43,6 +44,69 @@ fn execute_set(_: &Session, _: statement::Set) -> SQLPlannerResult<Option<DataFr
 fn execute_use(sess: &Session, use_: statement::Use) -> SQLPlannerResult<Option<DataFrame>> {
     sess.set_catalog(Some(&use_.catalog))?;
     sess.set_namespace(use_.namespace.as_ref())?;
+    Ok(None)
+}
+
+fn execute_create_table(
+    sess: &Session,
+    create_table: statement::CreateTable,
+) -> SQLPlannerResult<Option<DataFrame>> {
+    let name = &create_table.name;
+    let schema = create_table.schema;
+
+    // Resolve the catalog and identifier.
+    let (catalog, ident) = if name.has_qualifier() {
+        if sess.has_catalog(name.get(0)) {
+            // Catalog-qualified: dispatch to the named catalog.
+            let catalog = sess.get_catalog(name.get(0))?;
+            let ident = name.drop(1);
+            (catalog, ident)
+        } else if name.len() >= 3 {
+            // 3+ parts where the first is not a known catalog: error.
+            return Err(PlannerError::invalid_operation(format!(
+                "Catalog '{}' not found",
+                name.get(0)
+            )));
+        } else {
+            // 2-part name where the first is not a catalog: schema-qualified.
+            let catalog = sess.current_catalog()?.ok_or_else(|| {
+                PlannerError::invalid_operation(
+                    "Cannot create a table without a current catalog. Use 'USE <catalog>' or provide a catalog-qualified name.".to_string(),
+                )
+            })?;
+            // Keep the full name as ident (schema.table).
+            (catalog, name.clone())
+        }
+    } else {
+        // Unqualified: prepend the current namespace.
+        let catalog = sess.current_catalog()?.ok_or_else(|| {
+            PlannerError::invalid_operation(
+                "Cannot create a table without a current catalog. Use 'USE <catalog>' or provide a catalog-qualified name.".to_string(),
+            )
+        })?;
+        let ident = {
+            let namespace = sess.current_namespace()?;
+            if let Some(ref namespace) = namespace {
+                if !namespace.is_empty() {
+                    name.qualify(namespace.clone())
+                } else {
+                    name.clone()
+                }
+            } else {
+                name.clone()
+            }
+        };
+        (catalog, ident)
+    };
+
+    // Handle IF NOT EXISTS.
+    if create_table.if_not_exists && catalog.has_table(&ident)? {
+        return Ok(None);
+    }
+
+    // Create the table.
+    catalog.create_table(&ident, Arc::new(schema))?;
+
     Ok(None)
 }
 
