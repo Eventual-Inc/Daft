@@ -7,12 +7,15 @@ import pyarrow as pa
 import pytest
 
 import daft
+from daft.io import IOConfig, S3Config
 
 pyiceberg = pytest.importorskip("pyiceberg")
 
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.schema import Schema
 from pyiceberg.types import LongType, NestedField, StringType
+
+from daft.io.iceberg import iceberg_scan
 
 
 def _metadata_path(metadata_location: str) -> str:
@@ -146,9 +149,6 @@ def test_sql_read_iceberg_uses_default_io_config(tmp_path, monkeypatch):
     StorageConfig (previously the SQL path used an empty default, ignoring it). We capture the
     StorageConfig handed to the scan operator, since io_config is not surfaced in the plan text.
     """
-    from daft.io import IOConfig, S3Config
-    from daft.io.iceberg import iceberg_scan
-
     catalog = SqlCatalog(
         "default",
         uri=f"sqlite:///{tmp_path}/pyiceberg_catalog.db",
