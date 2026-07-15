@@ -92,19 +92,19 @@ fn geometry_to_h3_cells(geom: &Geometry<f64>, res: Resolution) -> HashSet<u64> {
     // Step 2 — bounding-box grid sample (catches interior cells for wide polygons).
     if let Some(bbox) = geom.bounding_rect() {
         let step = h3_step_deg(res as u8);
-        let mut y = bbox.min().y;
-        while y <= bbox.max().y + step {
-            let mut x = bbox.min().x;
-            while x <= bbox.max().x + step {
+        let y_steps = (((bbox.max().y + step - bbox.min().y) / step).ceil() as i64).max(0);
+        let x_steps = (((bbox.max().x + step - bbox.min().x) / step).ceil() as i64).max(0);
+        for iy in 0..=y_steps {
+            let y = (iy as f64).mul_add(step, bbox.min().y);
+            for ix in 0..=x_steps {
+                let x = (ix as f64).mul_add(step, bbox.min().x);
                 if let Ok(ll) = LatLng::new(
-                    y.max(-89.9_f64).min(89.9_f64),
-                    x.max(-179.9_f64).min(179.9_f64),
+                    y.clamp(-89.9_f64, 89.9_f64),
+                    x.clamp(-179.9_f64, 179.9_f64),
                 ) {
                     cells.insert(u64::from(ll.to_cell(res)));
                 }
-                x += step;
             }
-            y += step;
         }
     }
 

@@ -29,7 +29,7 @@ impl ScalarUDF for StCentroid {
         use crate::utils::unary_geom_to_geom;
 
         unary_geom_to_geom(inputs.required(0)?, self.name(), |g| {
-            g.centroid().map(|pt| Geometry::Point(pt))
+            g.centroid().map(Geometry::Point)
         })
     }
 

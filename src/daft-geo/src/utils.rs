@@ -136,7 +136,7 @@ pub fn read_bool_arg_expr(
 /// If the WKB type word has the PostGIS SRID flag (0x20000000) set, return a
 /// new buffer with that flag cleared and the 4-byte SRID removed.  Otherwise
 /// return a slice of the original bytes unchanged.
-fn strip_ewkb_srid<'a>(bytes: &'a [u8]) -> std::borrow::Cow<'a, [u8]> {
+fn strip_ewkb_srid(bytes: &[u8]) -> std::borrow::Cow<'_, [u8]> {
     if bytes.len() < 5 {
         return std::borrow::Cow::Borrowed(bytes);
     }
@@ -222,7 +222,7 @@ pub fn unary_geom_to_f64(
     let mut values = Vec::with_capacity(len);
     let mut validity = NullBufferBuilder::new(len);
 
-    for opt in binary.into_iter() {
+    for opt in binary {
         match opt.and_then(|b| parse_wkb(b).ok()) {
             Some(geom) => {
                 values.push(f(&geom));
@@ -254,7 +254,7 @@ pub fn unary_geom_to_bool(
     }
 
     let mut values: Vec<Option<bool>> = Vec::with_capacity(len);
-    for opt in binary.into_iter() {
+    for opt in binary {
         values.push(opt.and_then(|b| parse_wkb(b).ok()).map(|g| f(&g)));
     }
 
@@ -317,7 +317,7 @@ pub fn unary_geom_to_geom(
     let len = binary.len();
     let mut wkb_values: Vec<Option<Vec<u8>>> = Vec::with_capacity(len);
 
-    for opt in binary.into_iter() {
+    for opt in binary {
         let result = opt
             .and_then(|b| parse_wkb(b).ok())
             .and_then(|g| f(&g))
@@ -412,7 +412,7 @@ pub fn binary_geom_to_geom(
     };
 
     if let Some(rhs_opt) = rhs_geom_scalar {
-        for lopt in lhs_bin.into_iter() {
+        for lopt in lhs_bin {
             wkb_values.push(compute(lopt, rhs_opt.as_ref()));
         }
     } else {
@@ -453,10 +453,10 @@ pub fn binary_geom_to_f64(
     let mut validity = NullBufferBuilder::new(len);
 
     if let Some(rhs_opt) = rhs_geom_scalar {
-        for lopt in lhs_bin.into_iter() {
+        for lopt in lhs_bin {
             match (lopt.and_then(|b| parse_wkb(b).ok()), rhs_opt.as_ref()) {
                 (Some(lg), Some(rg)) => {
-                    values.push(f(&lg, &rg));
+                    values.push(f(&lg, rg));
                     validity.append_non_null();
                 }
                 _ => {

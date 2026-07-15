@@ -1,6 +1,14 @@
 /// Minimum bounding rectangle: `[min_x, min_y, max_x, max_y]`.
 pub type Mbr = [f64; 4];
 
+/// Running min/max accumulator used while scanning WKB coordinates.
+struct MbrAcc {
+    min_x: f64,
+    min_y: f64,
+    max_x: f64,
+    max_y: f64,
+}
+
 // ── Low-level WKB byte helpers ────────────────────────────────────────────
 
 #[inline]
@@ -30,14 +38,7 @@ fn read_f64(data: &[u8], offset: usize, le: bool) -> Option<f64> {
 ///   - ISO WKB Z/M/ZM (types 1001-1007 / 2001-2007 / 3001-3007)
 ///   - EWKB (PostGIS) with SRID/Z/M flags
 ///   - Multi-geometries and GeometryCollections (recursive)
-fn scan_wkb_mbr(
-    data: &[u8],
-    pos: usize,
-    min_x: &mut f64,
-    min_y: &mut f64,
-    max_x: &mut f64,
-    max_y: &mut f64,
-) -> Option<usize> {
+fn scan_wkb_mbr(data: &[u8], pos: usize, acc: &mut MbrAcc) -> Option<usize> {
     let byte_order = *data.get(pos)?;
     let le = byte_order == 1;
 
@@ -78,26 +79,23 @@ fn scan_wkb_mbr(
         n: usize,
         le: bool,
         stride: usize,
-        min_x: &mut f64,
-        min_y: &mut f64,
-        max_x: &mut f64,
-        max_y: &mut f64,
+        acc: &mut MbrAcc,
     ) -> Option<usize> {
         for _ in 0..n {
             let x = read_f64(data, off, le)?;
             let y = read_f64(data, off + 8, le)?;
             if x.is_finite() && y.is_finite() {
-                if x < *min_x {
-                    *min_x = x;
+                if x < acc.min_x {
+                    acc.min_x = x;
                 }
-                if y < *min_y {
-                    *min_y = y;
+                if y < acc.min_y {
+                    acc.min_y = y;
                 }
-                if x > *max_x {
-                    *max_x = x;
+                if x > acc.max_x {
+                    acc.max_x = x;
                 }
-                if y > *max_y {
-                    *max_y = y;
+                if y > acc.max_y {
+                    acc.max_y = y;
                 }
             }
             off += stride;
@@ -108,33 +106,13 @@ fn scan_wkb_mbr(
     match base_type {
         1 => {
             // Point
-            offset = scan_coords(
-                data,
-                offset,
-                1,
-                le,
-                coord_stride,
-                min_x,
-                min_y,
-                max_x,
-                max_y,
-            )?;
+            offset = scan_coords(data, offset, 1, le, coord_stride, acc)?;
         }
         2 => {
             // LineString
             let n = read_u32(data, offset, le)? as usize;
             offset += 4;
-            offset = scan_coords(
-                data,
-                offset,
-                n,
-                le,
-                coord_stride,
-                min_x,
-                min_y,
-                max_x,
-                max_y,
-            )?;
+            offset = scan_coords(data, offset, n, le, coord_stride, acc)?;
         }
         3 => {
             // Polygon
@@ -143,25 +121,15 @@ fn scan_wkb_mbr(
             for _ in 0..n_rings {
                 let n_pts = read_u32(data, offset, le)? as usize;
                 offset += 4;
-                offset = scan_coords(
-                    data,
-                    offset,
-                    n_pts,
-                    le,
-                    coord_stride,
-                    min_x,
-                    min_y,
-                    max_x,
-                    max_y,
-                )?;
+                offset = scan_coords(data, offset, n_pts, le, coord_stride, acc)?;
             }
         }
-        4 | 5 | 6 | 7 => {
+        4..=7 => {
             // Multi* / GeometryCollection — each sub-geometry is a full WKB
             let n_geoms = read_u32(data, offset, le)? as usize;
             offset += 4;
             for _ in 0..n_geoms {
-                offset = scan_wkb_mbr(data, offset, min_x, min_y, max_x, max_y)?;
+                offset = scan_wkb_mbr(data, offset, acc)?;
             }
         }
         _ => return None,
@@ -176,17 +144,19 @@ fn scan_wkb_mbr(
 ///
 /// This scans the raw coordinate bytes directly — no `geo::Geometry` allocation.
 pub fn wkb_to_mbr(wkb: &[u8]) -> Option<Mbr> {
-    let mut min_x = f64::INFINITY;
-    let mut min_y = f64::INFINITY;
-    let mut max_x = f64::NEG_INFINITY;
-    let mut max_y = f64::NEG_INFINITY;
+    let mut acc = MbrAcc {
+        min_x: f64::INFINITY,
+        min_y: f64::INFINITY,
+        max_x: f64::NEG_INFINITY,
+        max_y: f64::NEG_INFINITY,
+    };
 
-    scan_wkb_mbr(wkb, 0, &mut min_x, &mut min_y, &mut max_x, &mut max_y)?;
+    scan_wkb_mbr(wkb, 0, &mut acc)?;
 
-    if min_x.is_infinite() {
+    if acc.min_x.is_infinite() {
         return None; // empty geometry
     }
-    Some([min_x, min_y, max_x, max_y])
+    Some([acc.min_x, acc.min_y, acc.max_x, acc.max_y])
 }
 
 /// Return `true` when the two MBRs intersect (edges touching counts).

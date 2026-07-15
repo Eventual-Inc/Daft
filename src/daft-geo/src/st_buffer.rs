@@ -33,8 +33,8 @@ fn apply_buffer(g: &Geometry, distance: f64) -> Option<Geometry> {
                 .map(|i| {
                     let angle = 2.0 * std::f64::consts::PI * i as f64 / n_points as f64;
                     geo::Coord {
-                        x: p.x() + distance * angle.cos(),
-                        y: p.y() + distance * angle.sin(),
+                        x: distance.mul_add(angle.cos(), p.x()),
+                        y: distance.mul_add(angle.sin(), p.y()),
                     }
                 })
                 .collect();

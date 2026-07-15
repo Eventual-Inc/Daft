@@ -580,7 +580,7 @@ mod tests {
     fn filter_with_udf_not_pushed_down_into_scan() -> DaftResult<()> {
         let pred: ExprRef = BuiltinScalarFn::new_async(
             UrlDownload,
-            vec![resolved_col("a"), lit(1), lit(true), lit(true)],
+            vec![resolved_col("b"), lit(true)],
         )
         .into();
         let plan = dummy_scan_node(dummy_scan_operator(vec![

@@ -41,18 +41,15 @@ impl ScalarUDF for StGeohashCovers {
             .collect();
 
         let hash_arr = hash_series.utf8()?;
-        let values: Vec<Option<bool>> = hash_arr
-            .into_iter()
-            .map(|opt| {
-                opt.map(|h| {
-                    covering
-                        .iter()
-                        .any(|c| h.starts_with(c.as_str()) || c.starts_with(h))
-                })
+        let values = hash_arr.into_iter().map(|opt| {
+            opt.map(|h| {
+                covering
+                    .iter()
+                    .any(|c| h.starts_with(c.as_str()) || c.starts_with(h))
             })
-            .collect();
+        });
 
-        Ok(BooleanArray::from_iter(self.name(), values.into_iter()).into_series())
+        Ok(BooleanArray::from_iter(self.name(), values).into_series())
     }
 
     fn get_return_field(
