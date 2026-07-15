@@ -2,6 +2,7 @@
 # isort: dont-add-import: from __future__ import annotations
 
 import inspect
+import re
 
 import daft
 from daft.api_annotations import PublicAPI
@@ -13,6 +14,100 @@ from daft.dataframe import DataFrame
 from daft.exceptions import DaftCoreException
 from daft.expressions import Expression
 from daft.logical.builder import LogicalPlanBuilder
+
+# ── BUILD SPATIAL INDEX statement ──────────────────────────────────────────
+# Syntax (case-insensitive):
+#   BUILD SPATIAL INDEX ON '<directory>'
+#       [USING '<geom_col>']
+#       [RESOLUTION <n>]
+#       [GLOB '<pattern>']
+#
+# Returns a DataFrame: (directory, file, h3_cells, resolution)
+#
+_BUILD_SPATIAL_INDEX_RE = re.compile(
+    r"""
+    ^\s*BUILD\s+SPATIAL\s+INDEX\s+ON\s+
+    '(?P<directory>[^']+)'
+    (?:\s+USING\s+'(?P<geom_col>[^']+)')?
+    (?:\s+RESOLUTION\s+(?P<resolution>\d+))?
+    (?:\s+GLOB\s+'(?P<glob>[^']+)')?
+    \s*;?\s*$
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
+def _handle_build_spatial_index(sql: str) -> "DataFrame | None":
+    """If *sql* is a BUILD SPATIAL INDEX statement, execute it and return a DataFrame.
+
+    When *directory* contains partition subdirectories (any sub-folder that holds
+    .parquet files), indexes are built for every subdirectory in parallel using a
+    thread pool.  Otherwise the directory itself is indexed as a single unit.
+
+    Returns None if the statement doesn't match.
+    """
+    import os
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    m = _BUILD_SPATIAL_INDEX_RE.match(sql)
+    if m is None:
+        return None
+
+    from daft.functions.spatial_index import build_spatial_index
+
+    directory = m.group("directory")
+    geom_col = m.group("geom_col") or "geom"
+    resolution = int(m.group("resolution") or 7)
+    glob_pattern = m.group("glob") or "*.parquet"
+
+    # Detect partition subdirectories: any sub-folder that contains .parquet files.
+    try:
+        subdirs = [
+            entry.path
+            for entry in os.scandir(directory)
+            if entry.is_dir()
+            and any(f.endswith(".parquet") for f in os.listdir(entry.path))
+        ]
+    except OSError:
+        subdirs = []
+
+    targets = sorted(subdirs) if subdirs else [directory]
+
+    def _build_one(target: str) -> dict:
+        file_cells = build_spatial_index(
+            target,
+            geom_col=geom_col,
+            glob_pattern=glob_pattern,
+            h3_resolution=resolution,
+        )
+        return {fname: (target, len(cells)) for fname, cells in file_cells.items()}
+
+    # Inner pool uses bbox cols when available (cheap), so outer parallelism
+    # is safe — peak memory per partition worker stays bounded.
+    workers = min(os.cpu_count() or 4, len(targets), 4)
+    rows: list[dict] = []
+    n_done = 0
+    n_total = len(targets)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futs = {pool.submit(_build_one, t): t for t in targets}
+        for fut in as_completed(futs):
+            for fname, (tgt, n_cells) in fut.result().items():
+                rows.append({"directory": tgt, "file": fname,
+                             "h3_cells": n_cells, "resolution": resolution})
+            n_done += 1
+            if n_total > 1 and (n_done % max(1, n_total // 20) == 0 or n_done == n_total):
+                print(f"  spatial index: {n_done}/{n_total} partitions done")
+
+    rows.sort(key=lambda r: (r["directory"], r["file"] or ""))
+    if not rows:
+        rows = [{"directory": directory, "file": None, "h3_cells": 0, "resolution": resolution}]
+
+    return daft.from_pydict({
+        "directory": [r["directory"] for r in rows],
+        "file":      [r["file"] for r in rows],
+        "h3_cells":  [r["h3_cells"] for r in rows],
+        "resolution":[r["resolution"] for r in rows],
+    })
 
 
 @PublicAPI
@@ -144,6 +239,11 @@ def sql(
         <BLANKLINE>
         (Showing first 3 of 3 rows)
     """
+    # Handle custom Daft SQL extensions before passing to Rust.
+    result = _handle_build_spatial_index(sql)
+    if result is not None:
+        return result
+
     # This the CTE bindings map which is built in the order globals->catalog->ctes.
     py_ctes: dict[str, _PyLogicalPlanBuilder] = {}
 

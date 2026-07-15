@@ -142,6 +142,9 @@ pub enum DataType {
     /// A logical type for sparse tensors with the same shape.
     FixedShapeSparseTensor(Box<DataType>, Vec<u64>, bool),
 
+    /// A logical type for geospatial geometries stored as WKB (Well-Known Binary).
+    Geometry,
+
     #[cfg(feature = "python")]
     Python,
 
@@ -222,6 +225,7 @@ impl Display for DataType {
                 f,
                 "FixedShapeSparseTensor[{dtype}; {shape:?}; indices_offset: {indices_offset}]"
             ),
+            Self::Geometry => write!(f, "Geometry"),
             #[cfg(feature = "python")]
             Self::Python => write!(f, "Python"),
             Self::Unknown => write!(f, "Unknown"),
@@ -339,6 +343,7 @@ impl DataType {
             }
             Self::Date => arrow_schema::DataType::Date32,
             Self::Time(time_unit) => arrow_schema::DataType::Time64(time_unit.to_arrow()),
+            Self::Geometry => arrow_schema::DataType::LargeBinary,
             Self::Union(fields, ids, mode) => arrow_schema::DataType::Union(
                 arrow_schema::UnionFields::try_new(
                     ids.clone(),
@@ -420,6 +425,7 @@ impl DataType {
                     Field::new("indices", List(Box::new(minimal_indices_dtype)))
                 },
             ]),
+            Geometry => Binary,
             Extension(_, storage, _) => storage.to_physical(),
             File(..) => Struct(vec![
                 Field::new("url", Utf8),
@@ -714,6 +720,11 @@ impl DataType {
     }
 
     #[inline]
+    pub fn is_geometry(&self) -> bool {
+        matches!(self, Self::Geometry)
+    }
+
+    #[inline]
     pub fn is_fixed_size_list(&self) -> bool {
         matches!(self, Self::FixedSizeList(..))
     }
@@ -848,6 +859,7 @@ impl DataType {
                 | Self::Timestamp(..)
                 | Self::Duration(..)
                 | Self::Uuid
+                | Self::Geometry
                 | Self::Embedding(..)
                 | Self::Image(..)
                 | Self::FixedShapeImage(..)
@@ -1052,9 +1064,13 @@ impl TryFrom<&arrow_schema::DataType> for DataType {
             arrow_schema::DataType::Duration(time_unit) => Self::Duration(time_unit.into()),
             arrow_schema::DataType::Interval(IntervalUnit::MonthDayNano) => Self::Interval,
             arrow_schema::DataType::FixedSizeBinary(size) => Self::FixedSizeBinary(*size as _),
-            arrow_schema::DataType::LargeBinary | arrow_schema::DataType::Binary => Self::Binary,
+            arrow_schema::DataType::LargeBinary
+            | arrow_schema::DataType::Binary
+            | arrow_schema::DataType::BinaryView => Self::Binary,
 
-            arrow_schema::DataType::LargeUtf8 | arrow_schema::DataType::Utf8 => Self::Utf8,
+            arrow_schema::DataType::LargeUtf8
+            | arrow_schema::DataType::Utf8
+            | arrow_schema::DataType::Utf8View => Self::Utf8,
 
             arrow_schema::DataType::FixedSizeList(field, size) => {
                 Self::FixedSizeList(Box::new(Field::try_from(field.as_ref())?.dtype), *size as _)

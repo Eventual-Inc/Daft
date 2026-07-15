@@ -59,6 +59,7 @@ pub enum NodeType {
     SortMergeJoin,
     AsofJoin,
     CrossJoin,
+    NestedLoopJoin,
     // Specific to distributed only
     BroadcastJoin,
     KeyFilteringJoin,

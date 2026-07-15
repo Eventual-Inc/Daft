@@ -4,7 +4,7 @@ mod explode;
 mod groups;
 pub mod hash;
 mod inline_agg;
-mod joins;
+pub mod joins;
 mod partition;
 mod pivot;
 mod search_sorted;

@@ -128,7 +128,11 @@ async fn read_parquet(
         num_rows: scan_task.pushdowns.limit,
         row_groups,
         predicate: scan_task.pushdowns.filters.clone(),
-        schema_infer: ParquetSchemaInferenceOptions::new(Some(cfg.coerce_int96_timestamp_unit)),
+        schema_infer: ParquetSchemaInferenceOptions {
+            coerce_int96_timestamp_unit: cfg.coerce_int96_timestamp_unit,
+            geometry: cfg.geometry,
+            ..Default::default()
+        },
         field_id_mapping: cfg.field_id_mapping.clone(),
         delete_rows: delete_map.as_ref().and_then(|m| m.get(url).cloned()),
         batch_size: cfg.chunk_size.or(Some(chunk_size)),

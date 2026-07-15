@@ -12,11 +12,13 @@ daft-functions = {path = "../daft-functions"}
 daft-functions-list = {path = "../daft-functions-list"}
 daft-functions-temporal = {path = "../daft-functions-temporal"}
 daft-functions-utf8 = {path = "../daft-functions-utf8"}
+daft-geo = {path = "../daft-geo"}
 daft-logical-plan = {path = "../daft-logical-plan"}
 daft-micropartition = {path = "../daft-micropartition", default-features = false}
 daft-recordbatch = {path = "../daft-recordbatch"}
 daft-session = {path = "../daft-session"}
 itertools = {workspace = true}
+ordered-float = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 sqlparser = {workspace = true}
 regex.workspace = true

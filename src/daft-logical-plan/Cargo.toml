@@ -15,6 +15,7 @@ daft-checkpoint = {path = "../daft-checkpoint", default-features = false, featur
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-functions = {path = "../daft-functions", default-features = false}
+daft-geo = {path = "../daft-geo", default-features = false}
 daft-scan = {path = "../daft-scan", default-features = false}
 daft-functions-list = {path = "../daft-functions-list", default-features = false}
 daft-functions-uri = {path = "../daft-functions-uri", default-features = false}
@@ -25,6 +26,7 @@ indexmap = {workspace = true}
 itertools = {workspace = true}
 log = {workspace = true}
 num-format = {workspace = true}
+parquet = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true, features = ["rc"]}
 snafu = {workspace = true}
@@ -33,12 +35,16 @@ serde_json.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+arrow = {workspace = true}
 daft-dsl = {path = "../daft-dsl", features = ["test-utils"]}
 daft-functions-utf8 = {path = "../daft-functions-utf8", default-features = false}
+geo = {workspace = true}
+h3o = {workspace = true}
 indoc = "2"
 pretty_assertions = {workspace = true}
 rand = {workspace = true}
 rstest = {workspace = true}
+tempfile = {workspace = true}
 test-log = {workspace = true}
 
 [features]

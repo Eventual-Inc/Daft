@@ -1016,11 +1016,17 @@ class DataFrame:
         partition_cols: list[ColumnInputType] | None = None,
         io_config: IOConfig | None = None,
         column_compression: dict[str, str] | None = None,
+        crs: str | None = None,
+        geometry_columns: list[str] | None = None,
         single_file: bool = False,
     ) -> "DataFrame":
         """Writes the DataFrame as parquet files, returning a new DataFrame with paths to the files that were written.
 
         Files will be written to `<root_dir>/*` with randomly generated UUIDs as the file names.
+
+        If the DataFrame contains ``Geometry`` columns, GeoParquet 1.1.0 ``"geo"`` footer metadata is
+        emitted automatically (WKB encoding; no CRS transforms). Use ``crs=`` to embed a CRS string,
+        or ``geometry_columns=`` to restrict which Geometry columns are included in the metadata.
 
         Args:
             root_dir (str): root file path to write parquet files to. When `single_file=True`, this is the exact file path to write to.
@@ -1030,6 +1036,8 @@ class DataFrame:
             partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
             io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
             column_compression (Optional[Dict[str, str]], optional): per-column compression overrides. Keys are dot-separated column paths (e.g. `"user.name"` for a nested struct field); values are codec names accepted by `compression`. Columns not listed fall back to `compression`. Defaults to None.
+            crs (Optional[str], optional): CRS identifier to embed in GeoParquet `"geo"` metadata (e.g. `"OGC:CRS84"`). When `None`, the CRS key is omitted, which GeoParquet interprets as the default OGC:CRS84 (lon/lat WGS84). Only relevant when the DataFrame contains Geometry columns. Defaults to None.
+            geometry_columns (Optional[List[str]], optional): explicit list of geometry column names to include in GeoParquet metadata. When `None`, all columns with a Geometry dtype are included automatically. Defaults to None.
             single_file (bool, optional): If True, coalesce all data into a single parquet file at `root_dir` (treated as the exact file path). Cannot be combined with `partition_cols` or `overwrite-partitions`. Only supported on the native runner. Defaults to False.
 
         Returns:
@@ -1070,9 +1078,11 @@ class DataFrame:
             cols = column_inputs_to_expressions(tuple(partition_cols))
 
         file_format_option: PyFormatSinkOption | None = None
-        if column_compression:
+        if column_compression or crs is not None or geometry_columns is not None:
             file_format_option = PyFormatSinkOption.parquet(
-                column_compression=list(column_compression.items()),
+                column_compression=list(column_compression.items()) if column_compression else None,
+                crs=crs,
+                geometry_columns=geometry_columns,
             )
 
         builder = self._builder.write_tabular(
@@ -1972,6 +1982,19 @@ class DataFrame:
             for c in partition_cols:
                 if self.schema()[c].dtype == DataType.binary():
                     raise NotImplementedError("Binary partition columns are not yet supported for Delta Lake writes")
+
+        # Attach geo metadata as Arrow field metadata on geometry columns.
+        # This is remote-safe: it goes through the normal write_deltalake / create_table_with_add_actions
+        # API and is preserved by delta-rs in the Delta log schema, surviving a read-back via
+        # DeltaTable.schema().to_arrow().field(name).metadata.
+        # We annotate when creating a new table (table is None) or when overwriting (mode == "overwrite").
+        # Pure appends to an existing table inherit the field metadata already in the table schema.
+        if table is None or mode == "overwrite":
+            from daft.io._geoparquet import attach_geo_field_metadata, build_geo_metadata
+
+            geo_json = build_geo_metadata(self.schema())
+            if geo_json is not None:
+                delta_schema = attach_geo_field_metadata(delta_schema, geo_json)
 
         if checkpoint is not None:
             return self._write_deltalake_with_checkpoint(
@@ -3463,6 +3486,39 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
+    def with_spatial_bbox(self, geom_col: str) -> "DataFrame":
+        """Add ``rtree_min_x``, ``rtree_min_y``, ``rtree_max_x``, ``rtree_max_y`` Float64 columns
+        holding the bounding box of ``geom_col``.
+
+        These are the column names the native spatial-join operator detects as a precomputed
+        R-tree index, letting it skip per-row WKB bounding-box extraction during the join. When the
+        DataFrame is used as a side of a spatial join (e.g. ``df.join(other, on=st_intersects(...))``),
+        the engine preserves these columns through to the join's build side automatically — so you
+        do not need to keep them in your final projection for the index to take effect. They are
+        dropped from the join output unless you select them explicitly.
+
+        The ``rtree_*``-named columns also persist through Parquet/Delta writes, so a table written
+        with them carries its spatial index for fast joins on read-back.
+
+        Args:
+            geom_col: name of a Geometry (or WKB Binary) column.
+
+        Returns:
+            DataFrame: DataFrame with four new Float64 columns (``rtree_min_x`` … ``rtree_max_y``).
+        """
+        from daft.functions import st_bbox
+
+        bbox = st_bbox(col(geom_col))
+        return self.with_columns(
+            {
+                "rtree_min_x": bbox.get("min_x"),
+                "rtree_min_y": bbox.get("min_y"),
+                "rtree_max_x": bbox.get("max_x"),
+                "rtree_max_y": bbox.get("max_y"),
+            }
+        )
+
+    @DataframePublicAPI
     def with_column_renamed(self, existing: str, new: str) -> "DataFrame":
         """Renames a column in the current DataFrame.
 
@@ -3912,7 +3968,17 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 2 of 2 rows)
         """
-        if how == "cross":
+        on_predicate = None
+        if how != "cross" and on is not None and isinstance(on, Expression) and not on.is_column():
+            # `on` is a boolean predicate expression (e.g. st_intersects(...)) → predicate join.
+            if left_on is not None or right_on is not None:
+                raise ValueError("If `on` is a predicate expression, `left_on`/`right_on` must be None")
+            if how != "inner":
+                raise ValueError("Predicate (e.g. spatial) joins support how='inner' only")
+            on_predicate = on
+            left_on = []
+            right_on = []
+        elif how == "cross":
             if any(side_on is not None for side_on in [on, left_on, right_on]):
                 raise ValueError("In a cross join, `on`, `left_on`, and `right_on` cannot be set")
             if strategy is not None:
@@ -3946,6 +4012,7 @@ class DataFrame:
             strategy=join_strategy,
             prefix=prefix,
             suffix=suffix,
+            on_predicate=on_predicate._expr if on_predicate is not None else None,
         )
         return DataFrame(builder)
 

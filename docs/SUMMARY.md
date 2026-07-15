@@ -86,6 +86,7 @@
             * [Partitioning and Batching](optimization/partitioning.md)
             * [Shuffle Algorithms](optimization/shuffle.md)
             * [Join Strategies](optimization/join-strategies.md)
+            * [Spatial Joins](optimization/spatial-joins.md)
     * [Checkpointing](use-case/checkpointing.md)
     * Observability
         * [Dashboard](observability/dashboard.md)

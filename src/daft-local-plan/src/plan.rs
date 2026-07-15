@@ -102,6 +102,7 @@ pub enum LocalPhysicalPlan {
     Concat(Concat),
     HashJoin(HashJoin),
     CrossJoin(CrossJoin),
+    NestedLoopJoin(NestedLoopJoin),
     // BroadcastJoin(BroadcastJoin),
     PhysicalWrite(PhysicalWrite),
     CommitWrite(CommitWrite),
@@ -180,6 +181,7 @@ impl LocalPhysicalPlan {
             | Self::Concat(Concat { stats_state, .. })
             | Self::HashJoin(HashJoin { stats_state, .. })
             | Self::CrossJoin(CrossJoin { stats_state, .. })
+            | Self::NestedLoopJoin(NestedLoopJoin { stats_state, .. })
             | Self::SortMergeJoin(SortMergeJoin { stats_state, .. })
             | Self::AsofJoin(AsofJoin { stats_state, .. })
             | Self::PhysicalWrite(PhysicalWrite { stats_state, .. })
@@ -233,6 +235,7 @@ impl LocalPhysicalPlan {
             | Self::Concat(Concat { context, .. })
             | Self::HashJoin(HashJoin { context, .. })
             | Self::CrossJoin(CrossJoin { context, .. })
+            | Self::NestedLoopJoin(NestedLoopJoin { context, .. })
             | Self::SortMergeJoin(SortMergeJoin { context, .. })
             | Self::AsofJoin(AsofJoin { context, .. })
             | Self::PhysicalWrite(PhysicalWrite { context, .. })
@@ -282,6 +285,7 @@ impl LocalPhysicalPlan {
             | Self::Pivot(Pivot { context, .. })
             | Self::Concat(Concat { context, .. })
             | Self::HashJoin(HashJoin { context, .. })
+            | Self::NestedLoopJoin(NestedLoopJoin { context, .. })
             | Self::CrossJoin(CrossJoin { context, .. })
             | Self::SortMergeJoin(SortMergeJoin { context, .. })
             | Self::AsofJoin(AsofJoin { context, .. })
@@ -914,6 +918,29 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    pub fn nested_loop_join(
+        left: LocalPhysicalPlanRef,
+        right: LocalPhysicalPlanRef,
+        filter: BoundExpr,
+        build_side: JoinSide,
+        partition_key: Option<[usize; 2]>,
+        schema: SchemaRef,
+        stats_state: StatsState,
+        context: LocalNodeContext,
+    ) -> LocalPhysicalPlanRef {
+        Self::NestedLoopJoin(NestedLoopJoin {
+            left,
+            right,
+            filter,
+            build_side,
+            partition_key,
+            schema,
+            stats_state,
+            context,
+        })
+        .arced()
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn sort_merge_join(
         left: LocalPhysicalPlanRef,
@@ -1194,6 +1221,7 @@ impl LocalPhysicalPlan {
             | Self::Sample(Sample { schema, .. })
             | Self::HashJoin(HashJoin { schema, .. })
             | Self::CrossJoin(CrossJoin { schema, .. })
+            | Self::NestedLoopJoin(NestedLoopJoin { schema, .. })
             | Self::SortMergeJoin(SortMergeJoin { schema, .. })
             | Self::AsofJoin(AsofJoin { schema, .. })
             | Self::Explode(Explode { schema, .. })
@@ -1291,6 +1319,7 @@ impl LocalPhysicalPlan {
 
             Self::HashJoin(HashJoin { left, right, .. }) => vec![left.clone(), right.clone()],
             Self::CrossJoin(CrossJoin { left, right, .. }) => vec![left.clone(), right.clone()],
+            Self::NestedLoopJoin(NestedLoopJoin { left, right, .. }) => vec![left.clone(), right.clone()],
             Self::SortMergeJoin(SortMergeJoin { left, right, .. }) => {
                 vec![left.clone(), right.clone()]
             }
@@ -1829,6 +1858,9 @@ impl LocalPhysicalPlan {
                 Self::CrossJoin(_) => {
                     panic!("LocalPhysicalPlan::with_new_children: CrossJoin should have 2 children")
                 }
+                Self::NestedLoopJoin(_) => {
+                    panic!("LocalPhysicalPlan::with_new_children: NestedLoopJoin should have 2 children")
+                }
                 Self::SortMergeJoin(_) => {
                     panic!(
                         "LocalPhysicalPlan::with_new_children: SortMergeJoin should have 2 children"
@@ -1875,6 +1907,24 @@ impl LocalPhysicalPlan {
                 }) => Self::cross_join(
                     new_left.clone(),
                     new_right.clone(),
+                    schema.clone(),
+                    stats_state.clone(),
+                    context.clone(),
+                ),
+                Self::NestedLoopJoin(NestedLoopJoin {
+                    filter,
+                    build_side,
+                    partition_key,
+                    schema,
+                    stats_state,
+                    context,
+                    ..
+                }) => Self::nested_loop_join(
+                    new_left.clone(),
+                    new_right.clone(),
+                    filter.clone(),
+                    *build_side,
+                    *partition_key,
                     schema.clone(),
                     stats_state.clone(),
                     context.clone(),
@@ -2248,6 +2298,26 @@ pub struct HashJoin {
 pub struct CrossJoin {
     pub left: LocalPhysicalPlanRef,
     pub right: LocalPhysicalPlanRef,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+    pub context: LocalNodeContext,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct NestedLoopJoin {
+    pub left: LocalPhysicalPlanRef,
+    pub right: LocalPhysicalPlanRef,
+    /// Filter predicate evaluated on the cross-product of left × right.
+    pub filter: BoundExpr,
+    /// Which physical child (left = probe, right = build) the build table comes from.
+    /// This fixes the tile-schema column ordering to match the bound filter indices.
+    pub build_side: JoinSide,
+    /// Optional equality partition key extracted from the original join's ON clause.
+    /// [0] = column index in the build-side schema, [1] = column index in the probe-side schema.
+    /// When set, the NLJ groups the build side by key and probes only the matching group,
+    /// keeping memory proportional to the largest single partition rather than the full table.
+    pub partition_key: Option<[usize; 2]>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,

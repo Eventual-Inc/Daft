@@ -204,6 +204,8 @@ fn create_native_writer(
             let parquet_option = format_option
                 .map(|opt| opt.to_parquet())
                 .unwrap_or_default();
+            let crs = parquet_option.crs.as_deref();
+            let geometry_columns: Option<Vec<String>> = parquet_option.geometry_columns.clone();
             create_native_parquet_writer(
                 root_dir,
                 schema,
@@ -212,6 +214,8 @@ fn create_native_writer(
                 io_config,
                 compression,
                 parquet_option.column_compression.as_deref(),
+                crs,
+                geometry_columns.as_deref(),
                 single_file,
                 single_file && matches!(write_mode, WriteMode::Overwrite),
             )

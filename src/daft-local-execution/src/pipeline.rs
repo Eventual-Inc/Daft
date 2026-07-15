@@ -47,7 +47,8 @@ use crate::{
         unpivot::UnpivotOperator,
     },
     join::{
-        AsofJoinOperator, CrossJoinOperator, HashJoinOperator, JoinNode, SortMergeJoinOperator,
+        AsofJoinOperator, CrossJoinOperator, HashJoinOperator, JoinNode, NestedLoopJoinOperator,
+        SortMergeJoinOperator,
     },
     sinks::{
         aggregate::AggregateSink,
@@ -1324,6 +1325,42 @@ fn physical_plan_to_pipeline(
 
             JoinNode::new(
                 Arc::new(cross_join_op),
+                build_child_node,
+                probe_child_node,
+                stats_state.clone(),
+                ctx,
+                context,
+            )
+            .boxed()
+        }
+        LocalPhysicalPlan::NestedLoopJoin(daft_local_plan::NestedLoopJoin {
+            left,
+            right,
+            filter,
+            build_side,
+            partition_key,
+            schema,
+            stats_state,
+            context,
+        }) => {
+            // Convention from translate.rs: phys_left = probe, phys_right = build.
+            // Use build_side from the plan (set at translate time) so the tile-schema
+            // column ordering matches the bound filter indices.
+            let probe_child = left;
+            let build_child = right;
+
+            let build_child_node =
+                physical_plan_to_pipeline(build_child, cfg, ctx, input_senders)?;
+            let probe_child_node =
+                physical_plan_to_pipeline(probe_child, cfg, ctx, input_senders)?;
+
+            // Convert partition_key from plan-level [usize; 2] to operator-level Option<(usize,usize)>.
+            let pk = partition_key.map(|[bk, pk]| (bk, pk));
+            let nested_loop_op =
+                NestedLoopJoinOperator::new(filter.clone(), schema.clone(), *build_side, build_child.schema().len(), pk);
+
+            JoinNode::new(
+                Arc::new(nested_loop_op),
                 build_child_node,
                 probe_child_node,
                 stats_state.clone(),

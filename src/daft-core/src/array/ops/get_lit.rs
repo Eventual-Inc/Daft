@@ -207,6 +207,23 @@ impl UuidArray {
     }
 }
 
+impl GeometryArray {
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
+
+        if self.physical.is_valid(idx) {
+            Literal::Binary(self.physical.get(idx).unwrap().to_vec())
+        } else {
+            Literal::Null
+        }
+    }
+}
+
 impl ExtensionArray {
     pub fn get_lit(&self, idx: usize) -> Literal {
         assert!(

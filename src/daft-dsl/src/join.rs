@@ -1,8 +1,9 @@
 use common_error::DaftResult;
+use common_treenode::{Transformed, TreeNode};
 use daft_core::{prelude::*, utils::supertype::try_get_supertype};
 use indexmap::IndexSet;
 
-use crate::{ExprRef, deduplicate_expr_names};
+use crate::{Column, Expr, ExprRef, ResolvedColumn, deduplicate_expr_names, unresolved_col};
 
 pub fn get_common_join_cols<'a>(
     left_schema: &'a SchemaRef,
@@ -94,4 +95,18 @@ pub fn normalize_join_keys(
     let right_on = deduplicate_expr_names(&right_on);
 
     Ok((left_on, right_on))
+}
+
+/// Convert `ResolvedColumn::JoinSide(field, _)` markers in a join residual predicate
+/// into plain unresolved column references (by the post-deduplication field name),
+/// so the predicate can be re-bound against the join output schema.
+pub fn strip_join_side_cols(expr: ExprRef) -> DaftResult<ExprRef> {
+    Ok(expr
+        .transform(|e| match e.as_ref() {
+            Expr::Column(Column::Resolved(ResolvedColumn::JoinSide(field, _))) => {
+                Ok(Transformed::yes(unresolved_col(field.name.clone())))
+            }
+            _ => Ok(Transformed::no(e)),
+        })?
+        .data)
 }

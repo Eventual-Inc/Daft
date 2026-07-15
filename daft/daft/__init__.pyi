@@ -2380,6 +2380,7 @@ class LogicalPlanBuilder:
         prefix: str | None = None,
         suffix: str | None = None,
         key_filtering_config: KeyFilteringConfig | None = None,
+        on_predicate: PyExpr | None = None,
     ) -> LogicalPlanBuilder: ...
     def join_asof(
         self,

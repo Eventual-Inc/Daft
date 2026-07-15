@@ -217,6 +217,7 @@ members = [
   "src/daft-functions-tokenize",
   "src/daft-functions-utf8",
   "src/daft-functions-temporal",
+  "src/daft-geo",
   "src/daft-hash",
   "src/daft-image",
   "src/daft-io",
@@ -300,6 +301,7 @@ daft-functions-temporal = {path = "src/daft-functions-temporal"}
 daft-functions-tokenize = {path = "src/daft-functions-tokenize"}
 daft-functions-uri = {path = "src/daft-functions-uri"}
 daft-functions-utf8 = {path = "src/daft-functions-utf8"}
+daft-geo = {path = "src/daft-geo"}
 daft-hash = {path = "src/daft-hash"}
 daft-io = {path = "src/daft-io"}
 daft-local-execution = {path = "src/daft-local-execution"}
@@ -311,9 +313,16 @@ daft-scan = {path = "src/daft-scan"}
 daft-schema = {path = "src/daft-schema"}
 daft-session = {path = "src/daft-session"}
 daft-sql = {path = "src/daft-sql"}
-dashmap = "6.1.0"
+dashmap = "6.2.1"
 educe = "0.6.0"
 futures = "0.3.30"
+geo = "0.33.1"
+geo-buffer = "0.2"
+geo-traits = "0.3"
+geohash = "0.13"
+geojson = "1.0"
+h3o = "0.10.0"
+wkt = { version = "0.14", features = ["geo-types"] }
 half = {version = "2.7.1", features = ["num-traits", "bytemuck", "serde"]}
 hashbrown = "0.16"
 html-escape = "0.2.13"
@@ -344,6 +353,11 @@ prost = "0.13.5"
 prost-types = "0.13.5"
 rand = "^0.9"
 rayon = "1.11.0"
+rstar = "0.13.0"
+wkb = "0.9.2"
+md5 = "0.8.1"
+tempfile = "3.23.0"
+ordered-float = { version = "5.3.0", features = ["serde"] }
 regex = "1.12.2"
 rstest = "0.26.1"
 reqwest = {version = "0.12.19", default-features = false, features = ["json"]}

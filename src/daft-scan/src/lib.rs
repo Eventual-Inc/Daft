@@ -12,7 +12,8 @@ use common_display::DisplayAs;
 use common_error::DaftError;
 use daft_parquet::DaftParquetMetadata;
 use daft_schema::schema::{Schema, SchemaRef};
-use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
+use daft_stats::{TableMetadata, TableStatistics};
+pub use daft_stats::PartitionSpec;
 use either::Either;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -963,6 +964,7 @@ mod test {
             row_groups: None,
             chunk_size: None,
             ignore_corrupt_files: false,
+            geometry: true,
         }));
 
         ScanTask::new(
@@ -982,6 +984,7 @@ mod test {
             row_groups: None,
             chunk_size: None,
             ignore_corrupt_files: false,
+            geometry: true,
         });
 
         let mut sources: Vec<String> = Vec::new();
@@ -1258,6 +1261,7 @@ mod test {
                     row_groups: None,
                     chunk_size: None,
                     ignore_corrupt_files: false,
+                    geometry: true,
                 },
             ))),
             schema,
@@ -1310,6 +1314,7 @@ mod test {
                     row_groups: None,
                     chunk_size: None,
                     ignore_corrupt_files: false,
+                    geometry: true,
                 },
             ))),
             schema,
@@ -1355,6 +1360,7 @@ mod test {
                     row_groups: None,
                     chunk_size: None,
                     ignore_corrupt_files: false,
+                    geometry: true,
                 },
             ))),
             schema,
@@ -1405,6 +1411,7 @@ mod test {
                     row_groups: None,
                     chunk_size: None,
                     ignore_corrupt_files: false,
+                    geometry: true,
                 },
             ))),
             schema,
@@ -1468,6 +1475,7 @@ mod test {
                     row_groups: None,
                     chunk_size: None,
                     ignore_corrupt_files: false,
+                    geometry: true,
                 },
             ))),
             schema,
@@ -1578,6 +1586,7 @@ mod test {
                     row_groups: None,
                     chunk_size: None,
                     ignore_corrupt_files: false,
+                    geometry: true,
                 },
             ))),
             schema,

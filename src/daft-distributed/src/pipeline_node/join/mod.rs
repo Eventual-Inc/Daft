@@ -5,6 +5,7 @@ pub(crate) mod hash_join;
 #[cfg(feature = "python")]
 pub(crate) mod key_filtering_join;
 pub(crate) mod sort_merge_join;
+pub(crate) mod spatial_hash_join;
 mod stats;
 pub(crate) mod translate_asof_join;
 pub(crate) mod translate_join;
@@ -16,3 +17,4 @@ pub(crate) use hash_join::HashJoinNode;
 #[cfg(feature = "python")]
 pub(crate) use key_filtering_join::KeyFilteringJoinNode;
 pub(crate) use sort_merge_join::SortMergeJoinNode;
+pub(crate) use spatial_hash_join::SpatialHashJoinNode;

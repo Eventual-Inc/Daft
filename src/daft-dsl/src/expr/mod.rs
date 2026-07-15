@@ -2111,16 +2111,32 @@ impl Expr {
             Self::Not(expr) => {
                 let child_field = expr.to_field(schema)?;
                 match child_field.dtype {
-                    DataType::Boolean => Ok(Field::new(expr.name(), DataType::Boolean)),
+                    // Name the output after the child's *evaluated* field name (not
+                    // `expr.name()`, which for a builtin ScalarFn is the first argument's
+                    // name and can differ from the field name the ScalarFn actually
+                    // evaluates to, e.g. `st_intersects(a as g, b)` evaluates to a series
+                    // named "st_intersects", not "g"). `!child_series` preserves the
+                    // child's evaluated name, so the expected name must match it here.
+                    DataType::Boolean => Ok(Field::new(child_field.name, DataType::Boolean)),
                     // NOT of a null-typed expression produces a null boolean (SQL-1999 6.30.2: NOT (unknown) = unknown).
-                    DataType::Null => Ok(Field::new(expr.name(), DataType::Boolean)),
+                    DataType::Null => Ok(Field::new(child_field.name, DataType::Boolean)),
                     _ => Err(DaftError::TypeError(format!(
                         "Expected argument to be a Boolean expression, but received {child_field}",
                     ))),
                 }
             }
-            Self::IsNull(expr) => Ok(Field::new(expr.name(), DataType::Boolean)),
-            Self::NotNull(expr) => Ok(Field::new(expr.name(), DataType::Boolean)),
+            Self::IsNull(expr) => {
+                // See the comment in the `Not` arm above: name after the child's
+                // evaluated field name, since `.is_null()` preserves the child's name.
+                let child_field = expr.to_field(schema)?;
+                Ok(Field::new(child_field.name, DataType::Boolean))
+            }
+            Self::NotNull(expr) => {
+                // See the comment in the `Not` arm above: name after the child's
+                // evaluated field name, since `.not_null()` preserves the child's name.
+                let child_field = expr.to_field(schema)?;
+                Ok(Field::new(child_field.name, DataType::Boolean))
+            }
             Self::FillNull(expr, fill_value) => {
                 let expr_field = expr.to_field(schema)?;
                 let fill_value_field = fill_value.to_field(schema)?;

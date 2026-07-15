@@ -91,6 +91,21 @@ impl DaftParquetMetadata {
     pub fn schema_descriptor(&self) -> &parquet::schema::types::SchemaDescriptor {
         self.inner.file_metadata().schema_descr()
     }
+
+    /// Return the value of the `"geo"` key from the file-level key-value metadata, if present.
+    ///
+    /// GeoParquet files embed a JSON document under the `"geo"` key in the Parquet footer.
+    /// Returns `None` when the file has no key-value metadata or no `"geo"` entry.
+    pub fn geo_metadata(&self) -> Option<String> {
+        self.inner
+            .file_metadata()
+            .key_value_metadata()
+            .and_then(|kv| {
+                kv.iter()
+                    .find(|entry| entry.key == "geo")
+                    .and_then(|entry| entry.value.clone())
+            })
+    }
 }
 
 // Custom Serialize: write footer thrift bytes + original_indices + num_rows

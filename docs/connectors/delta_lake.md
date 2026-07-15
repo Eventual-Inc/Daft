@@ -90,6 +90,17 @@ Daft supports multiple write modes. See the API docs for [`df.write_deltalake()`
 
 When writing Delta Lake tables to S3, Daft relies on the native conditional write support in  `deltalake` versions >=0.23.0. DynamoDB locking is not required by default for AWS S3 writes. To explicitly use a DynamoDB locking provider, pass `dynamo_table_name="..."` to [`df.write_deltalake()`][daft.DataFrame.write_deltalake]. For deltalake versions less than 0.23.0, if dynamo_table_name is not provided and allow_unsafe_rename is False, ValueError exception will be raised.
 
+## Geometry / GeoParquet
+
+Daft supports a geometry round-trip through Delta Lake for `DataType.geometry()` columns (WKB-encoded geometries).
+
+**How it works:**
+
+- Geometry columns are stored as WKB `LargeBinary` in the underlying Parquet files (Delta has no native geometry type).
+- The GeoParquet 1.1.0 `"geo"` JSON is persisted as **Arrow field metadata** under the key `daft.geo` on each geometry column's Arrow field. This is a Daft convention: delta-rs 1.6 rejects custom table `configuration` keys, but preserves Arrow field metadata through write → read intact.
+- On read, `daft.read_deltalake()` scans the Arrow field metadata for the `daft.geo` key and automatically re-types those `Binary` columns back to `Geometry`.
+- WKB encoding only. No CRS transforms are performed.
+
 ## Checkpointing
 
 Daft supports idempotent writes to Delta Lake via the `checkpoint=` parameter on [`df.write_deltalake()`][daft.DataFrame.write_deltalake]. Retries of the same logical commit — after a crash, a transient catalog error, or a deliberate re-invocation — produce the same Delta state without duplicate commits. See the [Checkpointing user guide](../use-case/checkpointing.md) for concepts; the sections below cover Delta-specific behavior.
@@ -102,7 +113,26 @@ The pattern: one `CheckpointStore` paired into both the source (via `CheckpointC
 
     ```python
     import daft
+    from daft.functions import st_point, st_x
 
+    df = daft.from_pydict({"x": [1.0, 2.0], "y": [3.0, 4.0]}).select(
+        st_point(daft.col("x"), daft.col("y")).alias("geom")
+    )
+
+    # Write: geometry stored as WKB LargeBinary; "geo" JSON saved as Arrow field metadata (daft.geo)
+    df.write_deltalake("my-geo-table", mode="overwrite")
+
+    # Read: daft.geo field metadata detected → geom column re-typed to Geometry automatically
+    df2 = daft.read_deltalake("my-geo-table")
+    assert df2.schema()["geom"].dtype == daft.DataType.geometry()
+    df2.select(st_x(daft.col("geom"))).show()
+    ```
+
+## Checkpointing
+
+=== "🐍 Python"
+
+    ```python
     # One store, paired into both the source and the sink.
     store = daft.CheckpointStore("s3://my-bucket/ckpt/")
 
@@ -169,7 +199,6 @@ The [user guide's Recovery section](../use-case/checkpointing.md#recovery) walks
 - **Fresh-table case handled.** If the target table doesn't exist yet at the configured URI, the first idempotent write creates it.
 
 - **Transient retry on `CommitFailedError`.** Daft retries up to twice on this exception (concurrent-writer conflicts, lock contention). Other exceptions — schema mismatches, metadata-construction errors, network errors — propagate immediately. Wrap the call in your own retry policy if you need broader coverage.
-
 ## Type System
 
 Daft and Delta Lake have compatible type systems. Here are how types are converted across the two systems.

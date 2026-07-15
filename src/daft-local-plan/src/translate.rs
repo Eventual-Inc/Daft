@@ -1,14 +1,17 @@
 use std::collections::HashMap;
 
 use common_error::{DaftError, DaftResult};
-use daft_core::join::JoinStrategy;
+use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
+use daft_core::{join::{JoinSide, JoinStrategy}, prelude::Schema};
 use daft_dsl::{
+    Expr, ExprRef,
     expr::{
+        Column,
         agg::extract_agg_expr,
         bound_expr::{BoundAggExpr, BoundExpr, BoundVLLMExpr, BoundWindowExpr},
     },
-    join::normalize_join_keys,
-    resolved_col, window_to_agg_exprs,
+    join::{normalize_join_keys, strip_join_side_cols},
+    resolved_col, unresolved_col, window_to_agg_exprs,
 };
 use daft_functions::random::random_int_expr;
 use daft_logical_plan::{JoinType, LogicalPlan, LogicalPlanRef, SourceInfo, stats::StatsState};
@@ -17,6 +20,155 @@ use daft_scan::{ScanState, ScanTaskRef};
 
 use super::plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef, SamplingMethod};
 use crate::{Input, SourceId, SourceIdCounter};
+
+/// Spatial predicate function names that trigger NestedLoopJoin instead of a cross-join + filter.
+const SPATIAL_PREDICATES: &[&str] = &[
+    "st_contains",
+    "st_intersects",
+    "st_within",
+    "st_covers",
+    "st_covered_by",
+    "st_disjoint",
+    "st_touches",
+    "st_overlaps",
+    "st_crosses",
+    "st_equals",
+    "st_dwithin",
+];
+
+fn is_spatial_predicate(expr: &ExprRef) -> bool {
+    let mut found = false;
+    let _ = expr.apply(|e: &ExprRef| {
+        if let Expr::ScalarFn(daft_dsl::functions::scalar::ScalarFn::Builtin(sf)) = e.as_ref() {
+            if SPATIAL_PREDICATES.contains(&sf.func.name()) {
+                found = true;
+                return Ok(TreeNodeRecursion::Stop);
+            }
+        }
+        Ok(TreeNodeRecursion::Continue)
+    });
+    found
+}
+
+/// Re-bind `expr` to `schema` by name.
+///
+/// `BoundExpr::try_new` does NOT re-bind already-`Column::Bound` nodes — it leaves them
+/// with their old indices. This helper first converts every `Bound` column back to an
+/// unresolved column reference (using the stored field name), then calls
+/// `BoundExpr::try_new` so the indices are correct for the new schema.
+fn rebind_predicate(expr: ExprRef, schema: &Schema) -> DaftResult<BoundExpr> {
+    let unbound = expr
+        .transform(|e| {
+            if let Expr::Column(Column::Bound(bc)) = e.as_ref() {
+                Ok(Transformed::yes(unresolved_col(bc.field.name.as_ref())))
+            } else {
+                Ok(Transformed::no(e))
+            }
+        })?
+        .data;
+    BoundExpr::try_new(unbound, schema)
+}
+
+/// Build the R-tree-backed `NestedLoopJoin` for a spatial-predicate inner join.
+/// `predicate_expr` references columns by name resolvable in `join.output_schema`
+/// (JoinSide markers already stripped). `phys_left`/`phys_right` are the translated
+/// children in logical-join order (left, right).
+fn build_spatial_nested_loop_join(
+    join: &daft_logical_plan::ops::Join,
+    predicate_expr: ExprRef,
+    phys_left: LocalPhysicalPlanRef,
+    phys_right: LocalPhysicalPlanRef,
+    left_inputs: HashMap<SourceId, Input>,
+    stats_state: StatsState,
+) -> DaftResult<(LocalPhysicalPlanRef, HashMap<SourceId, Input>)> {
+    let output_schema = join.output_schema.clone();
+    let filter_expr = rebind_predicate(predicate_expr, &output_schema)?;
+
+    let left_schema_len = join.left.schema().len();
+    let build_on_left: bool = (|| -> bool {
+        fn spatial_arg0_idx(expr: &ExprRef) -> Option<usize> {
+            match expr.as_ref() {
+                Expr::ScalarFn(daft_dsl::functions::scalar::ScalarFn::Builtin(sf))
+                    if SPATIAL_PREDICATES.contains(&sf.func.name()) =>
+                {
+                    let arg0 = sf.inputs.required(0).ok()?;
+                    if let Expr::Column(Column::Bound(bc)) = arg0.as_ref() {
+                        Some(bc.index)
+                    } else {
+                        None
+                    }
+                }
+                Expr::BinaryOp { left, right, .. } => {
+                    spatial_arg0_idx(left).or_else(|| spatial_arg0_idx(right))
+                }
+                Expr::Not(inner) => spatial_arg0_idx(inner),
+                _ => None,
+            }
+        }
+        // `filter_expr` has been rebound to `join.output_schema`, so its Column::Bound
+        // indices are positions in the concatenated [left | right] join output — for BOTH
+        // call sites (Filter predicate, and the JoinSide-stripped Join residual).
+        if let Some(idx) = spatial_arg0_idx(filter_expr.inner()) {
+            idx < left_schema_len
+        } else {
+            let left_stats = join.left.materialized_stats();
+            let right_stats = join.right.materialized_stats();
+            left_stats.approx_stats.num_rows <= right_stats.approx_stats.num_rows
+        }
+    })();
+
+    let (phys_left, phys_right, build_side) = if build_on_left {
+        (phys_right, phys_left, JoinSide::Left)
+    } else {
+        (phys_left, phys_right, JoinSide::Right)
+    };
+
+    let partition_key: Option<[usize; 2]> = (|| -> Option<[usize; 2]> {
+        let (_, left_eq_keys, right_eq_keys, _) = join.on.split_eq_preds();
+        if left_eq_keys.len() != 1 || right_eq_keys.len() != 1 {
+            return None;
+        }
+        let (probe_eq_key, build_eq_key) = if build_on_left {
+            (&right_eq_keys[0], &left_eq_keys[0])
+        } else {
+            (&left_eq_keys[0], &right_eq_keys[0])
+        };
+        let probe_col_name = match probe_eq_key.as_ref() {
+            Expr::Column(col) => col.name(),
+            _ => return None,
+        };
+        let build_col_name = match build_eq_key.as_ref() {
+            Expr::Column(col) => col.name(),
+            _ => return None,
+        };
+        let probe_idx = phys_left.schema().get_index(&probe_col_name).ok()?;
+        let build_idx = phys_right.schema().get_index(&build_col_name).ok()?;
+        // Grouping compares raw per-side values via `str_value`. Equal values of
+        // DIFFERENT dtypes can render differently (e.g. Date vs Timestamp), which
+        // would place matching keys in different groups and silently drop rows —
+        // now that the filter is complete, grouping must be match-preserving.
+        if phys_left.schema().fields()[probe_idx].dtype
+            != phys_right.schema().fields()[build_idx].dtype
+        {
+            return None;
+        }
+        Some([build_idx, probe_idx])
+    })();
+
+    Ok((
+        LocalPhysicalPlan::nested_loop_join(
+            phys_left,
+            phys_right,
+            filter_expr,
+            build_side,
+            partition_key,
+            output_schema,
+            stats_state,
+            LocalNodeContext::default(),
+        ),
+        left_inputs,
+    ))
+}
 
 pub fn translate(
     plan: &LogicalPlanRef,
@@ -100,6 +252,51 @@ fn translate_helper(
             "Sharding should have been folded into a source".to_string(),
         )),
         LogicalPlan::Filter(filter) => {
+            // ── Spatial-join rewrite ──────────────────────────────────────────────
+            // When the WHERE clause contains a spatial predicate (e.g. st_contains)
+            // and the input is a Join (or a Project over a Join — which the optimizer
+            // often inserts to trim extra key columns), rewrite to NestedLoopJoin so
+            // we never materialise the full Cartesian product in memory.
+            if is_spatial_predicate(&filter.predicate) {
+                let maybe_join = match filter.input.as_ref() {
+                    LogicalPlan::Join(join) => Some(join),
+                    // The optimizer inserts a Project between Filter and Join to drop
+                    // extra key columns; look through exactly one Project level.
+                    LogicalPlan::Project(proj) => {
+                        if let LogicalPlan::Join(join) = proj.input.as_ref() {
+                            Some(join)
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                };
+                if let Some(join) = maybe_join {
+                    if join.join_type == JoinType::Inner {
+                        let (left_plan, mut left_inputs) =
+                            translate_helper(&join.left, source_counter, psets)?;
+                        let (right_plan, right_inputs) =
+                            translate_helper(&join.right, source_counter, psets)?;
+                        left_inputs.extend(right_inputs);
+                        // Fold the join's own ON condition (if any) into the NLJ filter
+                        // so its equality conjuncts are actually evaluated — they are
+                        // not enforced by candidate generation.
+                        let mut predicate = filter.predicate.clone();
+                        if let Some(on_expr) = join.on.inner() {
+                            predicate = predicate.and(strip_join_side_cols(on_expr.clone())?);
+                        }
+                        return build_spatial_nested_loop_join(
+                            join,
+                            predicate,
+                            left_plan,
+                            right_plan,
+                            left_inputs,
+                            filter.stats_state.clone(),
+                        );
+                    }
+                }
+            }
+            // ── Normal filter ─────────────────────────────────────────────────────
             let (input_plan, inputs) = translate_helper(&filter.input, source_counter, psets)?;
             let predicate = BoundExpr::try_new(filter.predicate.clone(), input_plan.schema())?;
             Ok((
@@ -456,6 +653,24 @@ fn translate_helper(
             let (remaining_on, left_on, right_on, null_equals_nulls) = join.on.split_eq_preds();
 
             if !remaining_on.is_empty() {
+                let resid = remaining_on.inner().expect("non-empty residual has an expr").clone();
+                if join.join_type == JoinType::Inner && is_spatial_predicate(&resid) {
+                    // The NLJ filter is the ONLY place join semantics are enforced —
+                    // candidate generation (R-tree, per-key grouping) is a superset
+                    // optimization. Pass the FULL on-predicate (equality AND spatial),
+                    // never just the residual: partition grouping may fail to resolve
+                    // (composite keys, expression keys) and must not carry semantics.
+                    let full_on = join.on.inner().expect("non-empty on has an expr").clone();
+                    let predicate = strip_join_side_cols(full_on)?;
+                    return build_spatial_nested_loop_join(
+                        join,
+                        predicate,
+                        left_plan,
+                        right_plan,
+                        left_inputs,
+                        join.stats_state.clone(),
+                    );
+                }
                 return Err(DaftError::not_implemented("Execution of non-equality join"));
             }
 

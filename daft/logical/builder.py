@@ -303,6 +303,7 @@ class LogicalPlanBuilder:
         prefix: str | None = None,
         suffix: str | None = None,
         key_filtering_config: Any = None,
+        on_predicate: Any = None,
     ) -> LogicalPlanBuilder:
         builder = self._builder.join(
             right._builder,
@@ -313,6 +314,7 @@ class LogicalPlanBuilder:
             prefix,
             suffix,
             key_filtering_config,
+            on_predicate,
         )
         return LogicalPlanBuilder(builder)
 

@@ -1,11 +1,12 @@
 use std::{cmp::max, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
+use daft_core::join::JoinSide;
 use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr, is_exact_partition_match};
 use daft_logical_plan::{
     JoinStrategy, JoinType,
     ops::Join,
-    partitioning::{HashRepartitionConfig, RepartitionSpec},
+    partitioning::{ClusteringSpec, HashRepartitionConfig, RepartitionSpec},
     stats::ApproxStats,
 };
 use daft_schema::schema::SchemaRef;
@@ -14,7 +15,7 @@ use daft_schema::schema::SchemaRef;
 use crate::pipeline_node::join::KeyFilteringJoinNode;
 use crate::pipeline_node::{
     DistributedPipelineNode,
-    join::{BroadcastJoinNode, CrossJoinNode, HashJoinNode, SortMergeJoinNode},
+    join::{BroadcastJoinNode, CrossJoinNode, HashJoinNode, SortMergeJoinNode, SpatialHashJoinNode},
     translate::LogicalPlanToPipelineNodeTranslator,
 };
 
@@ -154,6 +155,112 @@ impl LogicalPlanToPipelineNodeTranslator {
                 right_on,
                 Some(null_equals_nulls),
                 join_type,
+                num_partitions,
+                left,
+                right,
+                output_schema,
+            )),
+            &self.meter,
+        ))
+    }
+
+    /// Like `gen_hash_join_nodes` but runs `NestedLoopJoin` (R-tree) locally within each
+    /// hash-partitioned task instead of a hash join.  This avoids materialising the full
+    /// cross-product within a geohash cell, which causes OOM for dense urban areas.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn gen_spatial_hash_join_nodes(
+        &mut self,
+        left: DistributedPipelineNode,
+        right: DistributedPipelineNode,
+        left_on: Vec<BoundExpr>,
+        right_on: Vec<BoundExpr>,
+        join_type: JoinType,
+        build_side: JoinSide,
+        spatial_filter: BoundExpr,
+        output_schema: SchemaRef,
+        left_stats: &ApproxStats,
+        right_stats: &ApproxStats,
+    ) -> DaftResult<DistributedPipelineNode> {
+        // Determine the number of hash partitions — same logic as gen_hash_join_nodes.
+        let left_spec = &left.config().clustering_spec;
+        let right_spec = &right.config().clustering_spec;
+
+        let is_left_hash_partitioned = matches!(left_spec, ClusteringSpec::Hash(..))
+            && is_exact_partition_match(left_spec.partition_by(), &left_on);
+        let is_right_hash_partitioned = matches!(right_spec, ClusteringSpec::Hash(..))
+            && is_exact_partition_match(right_spec.partition_by(), &right_on);
+        let num_left_partitions = left_spec.num_partitions();
+        let num_right_partitions = right_spec.num_partitions();
+
+        let num_partitions = match (
+            is_left_hash_partitioned,
+            is_right_hash_partitioned,
+            num_left_partitions,
+            num_right_partitions,
+        ) {
+            (true, true, a, b) | (false, false, a, b) => max(a, b),
+            (_, _, 1, x) | (_, _, x, 1) => x,
+            (true, false, a, b)
+                if (a as f64)
+                    >= (b as f64) * self.plan_config.config.hash_join_partition_size_leniency =>
+            {
+                a
+            }
+            (false, true, a, b)
+                if (b as f64)
+                    >= (a as f64) * self.plan_config.config.hash_join_partition_size_leniency =>
+            {
+                b
+            }
+            (_, _, a, b) => max(a, b),
+        };
+
+        let _ = left_stats;
+        let _ = right_stats;
+
+        // Repartition each side by the equi-join key if needed.
+        let left = if num_left_partitions != num_partitions
+            || (num_partitions > 1 && !is_left_hash_partitioned)
+        {
+            self.gen_repartition_node(
+                RepartitionSpec::Hash(HashRepartitionConfig::new(
+                    Some(num_partitions),
+                    left_on.iter().map(|e| e.clone().into()).collect(),
+                )),
+                left.config().schema.clone(),
+                left,
+                left_stats.size_bytes,
+            )?
+        } else {
+            left
+        };
+
+        let right = if num_right_partitions != num_partitions
+            || (num_partitions > 1 && !is_right_hash_partitioned)
+        {
+            self.gen_repartition_node(
+                RepartitionSpec::Hash(HashRepartitionConfig::new(
+                    Some(num_partitions),
+                    right_on.iter().map(|e| e.clone().into()).collect(),
+                )),
+                right.config().schema.clone(),
+                right,
+                right_stats.size_bytes,
+            )?
+        } else {
+            right
+        };
+
+        let node_id = self.get_next_pipeline_node_id();
+        Ok(DistributedPipelineNode::new(
+            Arc::new(SpatialHashJoinNode::new(
+                node_id,
+                &self.plan_config,
+                left_on,
+                right_on,
+                join_type,
+                build_side,
+                spatial_filter,
                 num_partitions,
                 left,
                 right,

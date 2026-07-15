@@ -14,6 +14,7 @@ use self::hash_join::{hash_inner_join, hash_left_right_join, hash_outer_join};
 use crate::RecordBatch;
 mod hash_join;
 mod merge_join;
+pub mod nested_loop_join;
 
 fn match_types_for_tables(
     left: &RecordBatch,

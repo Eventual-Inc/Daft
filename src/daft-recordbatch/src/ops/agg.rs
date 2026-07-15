@@ -1,5 +1,6 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
+#[allow(unused_imports)]
 use daft_dsl::{
     AggExpr,
     expr::{

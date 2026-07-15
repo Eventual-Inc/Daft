@@ -1,3 +1,4 @@
+#[allow(unused_imports)]
 use std::collections::HashMap;
 
 use common_py_serde::impl_bincode_py_state_serialization;

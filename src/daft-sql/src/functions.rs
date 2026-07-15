@@ -24,7 +24,8 @@ use crate::{
     invalid_operation_err,
     modules::{
         SQLModule, SQLModuleAggs, SQLModuleConfig, SQLModuleMap, SQLModulePartitioning,
-        SQLModulePython, SQLModuleSketch, SQLModuleStructs, SQLModuleTemporal, SQLModuleWindow,
+        SQLModulePython, SQLModuleSketch, SQLModuleSpatial, SQLModuleStructs, SQLModuleTemporal,
+        SQLModuleWindow,
     },
     planner::SQLPlanner,
     unsupported_sql_err,
@@ -77,6 +78,7 @@ pub(crate) static SQL_FUNCTIONS: LazyLock<SQLFunctions> = LazyLock::new(|| {
     functions.register::<SQLModuleConfig>();
     functions.register::<SQLModuleTemporal>();
     functions.register::<SQLModuleWindow>();
+    functions.register::<SQLModuleSpatial>();
     functions.add_fn("concat", SQLConcat);
     functions.add_fn("element", SQLElement);
     functions.add_fn("coalesce", SQLCoalesce);

@@ -18,7 +18,7 @@ use crate::lit::Literal;
 use crate::prelude::PythonArray;
 use crate::{
     array::{
-        DataArray, FixedSizeListArray, ListArray, StructArray, UnionArray, UuidArray,
+        DataArray, FixedSizeListArray, GeometryArray, ListArray, StructArray, UnionArray, UuidArray,
         growable::make_growable,
         image_array::ImageArraySidecarData,
         ops::{DaftCompare, full::FullNull},
@@ -78,6 +78,24 @@ where
             #[cfg(feature = "python")]
             DataType::Python => {
                 Series::from_arrow(self.field().clone(), self.data.clone())?.cast_to_python()
+            }
+            DataType::Geometry => {
+                // Only Binary carries a WKB representation. Numeric/Utf8/Boolean
+                // sources cast to Binary via their STRING representation (see the
+                // arrow2-compat routing below), so allowing them here would mint a
+                // Geometry column of non-WKB bytes that every ST_* function
+                // null-ifies — silent garbage far from the actual mistake.
+                if !matches!(self.data_type(), DataType::Binary) {
+                    return Err(DaftError::TypeError(format!(
+                        "Cannot cast {} to Geometry: only Binary (WKB-encoded) data can \
+                         be cast to Geometry",
+                        self.data_type()
+                    )));
+                }
+                let binary_series = self.cast(&DataType::Binary)?;
+                let physical = binary_series.binary().unwrap().clone();
+                let field = Field::new(self.name(), DataType::Geometry);
+                Ok(GeometryArray::new(field, physical).into_series())
             }
             DataType::Extension(name, storage_type, metadata) => {
                 let casted_to_storage = self.cast(storage_type.as_ref())?;
@@ -1737,6 +1755,24 @@ impl UuidArray {
             DataType::Python => self.clone().into_series().cast_to_python(),
             _ => Err(DaftError::TypeError(format!(
                 "Cannot cast UUID to {}",
+                dtype
+            ))),
+        }
+    }
+}
+
+impl GeometryArray {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        match dtype {
+            DataType::Null => {
+                Ok(NullArray::full_null(self.name(), dtype, self.len()).into_series())
+            }
+            DataType::Geometry => Ok(self.clone().into_series()),
+            DataType::Binary => Ok(self.physical.clone().into_series()),
+            #[cfg(feature = "python")]
+            DataType::Python => self.clone().into_series().cast_to_python(),
+            _ => Err(DaftError::TypeError(format!(
+                "Cannot cast Geometry to {}",
                 dtype
             ))),
         }

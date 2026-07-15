@@ -1,9 +1,19 @@
 [dependencies]
 arrow-buffer = {workspace = true}
+common-error = {workspace = true}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
+geo = {workspace = true}
+geo-buffer = {workspace = true}
+geo-traits = {workspace = true}
+geohash = {workspace = true}
+geojson = {workspace = true}
+h3o = {workspace = true}
+wkt = {workspace = true}
+ordered-float = {workspace = true}
 serde = {workspace = true}
 typetag = {workspace = true}
+wkb = {workspace = true}
 
 [lints]
 workspace = true
