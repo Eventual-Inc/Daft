@@ -321,7 +321,7 @@ geo-buffer = "0.2"
 geo-traits = "0.3"
 geohash = "0.13"
 geojson = "1.0"
-h3o = "0.9"
+h3o = "=0.9.4"
 wkt = {version = "0.14", features = ["geo-types"]}
 half = {version = "2.7.1", features = ["num-traits", "bytemuck", "serde"]}
 hashbrown = "0.16"
