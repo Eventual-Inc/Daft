@@ -6,7 +6,10 @@ use daft_core::prelude::Operator;
 use daft_dsl::{
     Column, Expr, ExprRef, ResolvedColumn,
     common_treenode::{Transformed, TreeNode, TreeNodeRecursion},
-    functions::{FunctionExpr, partitioning},
+    functions::{
+        FunctionExpr,
+        partitioning::{self, PartitioningExpr},
+    },
     null_lit, resolved_col,
 };
 
@@ -174,9 +177,65 @@ pub fn rewrite_predicate_for_partitioning(
         }
     };
 
+    // Matches expressions that apply a partition field's own transform to that field's source
+    // column, e.g. `partition_days(col("ts"))` on a table day-partitioned on "ts". Such an
+    // expression evaluates to exactly the partition value, so predicates on it can reference the
+    // partition field directly, keeping the original comparison operator and value.
+    let get_pfield_for_transform_expr = |expr: &ExprRef| -> Option<&&PartitionField> {
+        let Expr::Function {
+            func: FunctionExpr::Partitioning(transform_expr),
+            inputs,
+        } = expr.as_ref()
+        else {
+            return None;
+        };
+        let [input] = inputs.as_slice() else {
+            return None;
+        };
+        let pfield = get_pfield_for_col(input)?;
+        use PartitionTransform as PT;
+        use PartitioningExpr as PE;
+        let transform_matches = match (pfield.transform, transform_expr) {
+            (Some(PT::Year), PE::Years)
+            | (Some(PT::Month), PE::Months)
+            | (Some(PT::Day), PE::Days)
+            | (Some(PT::Hour), PE::Hours) => true,
+            (Some(PT::IcebergBucket(n)), PE::IcebergBucket(m)) => u64::try_from(*m) == Ok(n),
+            (Some(PT::IcebergTruncate(w)), PE::IcebergTruncate(v)) => u64::try_from(*v) == Ok(w),
+            _ => false,
+        };
+        transform_matches.then_some(pfield)
+    };
+
     let with_part_cols = predicate.transform(&|expr: ExprRef| {
         use Operator::{Eq, Gt, GtEq, Lt, LtEq, NotEq};
         match expr.as_ref() {
+            // Binary Op where one side applies the partition field's own transform to its source
+            // column, e.g. `partition_days(col("ts")) == 19723` on a day-partitioned table.
+            // The transformed side is exactly the partition value, so the predicate maps directly
+            // onto the partition field: the value needs no transformation, all comparison
+            // operators are precise, and no boundary relaxation is needed.
+            Expr::BinaryOp { op, left, right }
+                if matches!(op, Eq | NotEq | Lt | LtEq | Gt | GtEq)
+                    && (get_pfield_for_transform_expr(left).is_some()
+                        || get_pfield_for_transform_expr(right).is_some()) =>
+            {
+                let (new_left, new_right) =
+                    if let Some(pfield) = get_pfield_for_transform_expr(left) {
+                        (resolved_col(pfield.field.name.as_ref()), right.clone())
+                    } else {
+                        let pfield = get_pfield_for_transform_expr(right).unwrap();
+                        (left.clone(), resolved_col(pfield.field.name.as_ref()))
+                    };
+                Ok(Transformed::yes(
+                    Expr::BinaryOp {
+                        op: *op,
+                        left: new_left,
+                        right: new_right,
+                    }
+                    .arced(),
+                ))
+            }
             // Binary Op for Eq
             // All transforms should work as is
             Expr::BinaryOp {
@@ -307,12 +366,25 @@ pub fn rewrite_predicate_for_partitioning(
                 Ok(Transformed::no(expr))
             }
 
-            Expr::IsNull(expr) if let Some(pfield) = get_pfield_for_col(expr) => Ok(
-                Transformed::yes(Expr::IsNull(resolved_col(pfield.field.name.as_ref())).arced()),
-            ),
-            Expr::NotNull(expr) if let Some(pfield) = get_pfield_for_col(expr) => Ok(
-                Transformed::yes(Expr::NotNull(resolved_col(pfield.field.name.as_ref())).arced()),
-            ),
+            // The partitioning transforms matched by `get_pfield_for_transform_expr` are all
+            // null-preserving (null in <=> null out), so null checks on the transformed source
+            // column map directly onto the partition field.
+            Expr::IsNull(expr)
+                if let Some(pfield) =
+                    get_pfield_for_col(expr).or_else(|| get_pfield_for_transform_expr(expr)) =>
+            {
+                Ok(Transformed::yes(
+                    Expr::IsNull(resolved_col(pfield.field.name.as_ref())).arced(),
+                ))
+            }
+            Expr::NotNull(expr)
+                if let Some(pfield) =
+                    get_pfield_for_col(expr).or_else(|| get_pfield_for_transform_expr(expr)) =>
+            {
+                Ok(Transformed::yes(
+                    Expr::NotNull(resolved_col(pfield.field.name.as_ref())).arced(),
+                ))
+            }
             _ => Ok(Transformed::no(expr)),
         }
     })?;
@@ -344,4 +416,182 @@ pub fn rewrite_predicate_for_partitioning(
         data_preds,
         needs_filter_op_preds,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use daft_core::prelude::{DataType, Field, TimeUnit};
+    use daft_dsl::{functions::partitioning, lit, resolved_col};
+
+    use super::*;
+
+    fn day_pfield() -> PartitionField {
+        PartitionField::new(
+            Field::new("ts_day", DataType::Date),
+            Some(Field::new(
+                "ts",
+                DataType::Timestamp(TimeUnit::Microseconds, None),
+            )),
+            Some(PartitionTransform::Day),
+        )
+        .unwrap()
+    }
+
+    fn bucket_pfield(num_buckets: u64) -> PartitionField {
+        PartitionField::new(
+            Field::new("id_bucket", DataType::Int32),
+            Some(Field::new("id", DataType::Int64)),
+            Some(PartitionTransform::IcebergBucket(num_buckets)),
+        )
+        .unwrap()
+    }
+
+    fn truncate_pfield(width: u64) -> PartitionField {
+        PartitionField::new(
+            Field::new("name_trunc", DataType::Utf8),
+            Some(Field::new("name", DataType::Utf8)),
+            Some(PartitionTransform::IcebergTruncate(width)),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn day_transform_eq_becomes_partition_filter() -> DaftResult<()> {
+        let predicate = partitioning::days(resolved_col("ts")).eq(lit(19723));
+        let groups = rewrite_predicate_for_partitioning(&predicate, &[day_pfield()])?;
+        assert_eq!(
+            groups.partition_only_filter,
+            vec![resolved_col("ts_day").eq(lit(19723))]
+        );
+        // The original predicate is still applicable at the data level.
+        assert_eq!(groups.data_only_filter, vec![predicate]);
+        assert!(groups.needing_filter_op.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn day_transform_eq_matches_on_right_side() -> DaftResult<()> {
+        let predicate = lit(19723).eq(partitioning::days(resolved_col("ts")));
+        let groups = rewrite_predicate_for_partitioning(&predicate, &[day_pfield()])?;
+        assert_eq!(
+            groups.partition_only_filter,
+            vec![lit(19723).eq(resolved_col("ts_day"))]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn day_transform_comparison_is_not_relaxed() -> DaftResult<()> {
+        // Unlike `ts < X` (which must relax to `ts_day <= days(X)` because the transform is
+        // lossy), `partition_days(ts) < X` is exactly the partition value, so the strict
+        // operator is preserved.
+        let predicate = partitioning::days(resolved_col("ts")).lt(lit(19723));
+        let groups = rewrite_predicate_for_partitioning(&predicate, &[day_pfield()])?;
+        assert_eq!(
+            groups.partition_only_filter,
+            vec![resolved_col("ts_day").lt(lit(19723))]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn day_transform_not_eq_becomes_partition_filter() -> DaftResult<()> {
+        // `ts != X` cannot be pushed for lossy transforms, but `partition_days(ts) != X` is a
+        // precise predicate on the partition value itself.
+        let predicate = partitioning::days(resolved_col("ts")).not_eq(lit(19723));
+        let groups = rewrite_predicate_for_partitioning(&predicate, &[day_pfield()])?;
+        assert_eq!(
+            groups.partition_only_filter,
+            vec![resolved_col("ts_day").not_eq(lit(19723))]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn day_transform_null_checks_become_partition_filters() -> DaftResult<()> {
+        let predicate = partitioning::days(resolved_col("ts")).is_null();
+        let groups = rewrite_predicate_for_partitioning(&predicate, &[day_pfield()])?;
+        assert_eq!(
+            groups.partition_only_filter,
+            vec![resolved_col("ts_day").is_null()]
+        );
+
+        let predicate = partitioning::days(resolved_col("ts")).not_null();
+        let groups = rewrite_predicate_for_partitioning(&predicate, &[day_pfield()])?;
+        assert_eq!(
+            groups.partition_only_filter,
+            vec![resolved_col("ts_day").not_null()]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn mismatched_transform_is_not_pushed() -> DaftResult<()> {
+        // Table is day-partitioned, but the predicate uses the month transform.
+        let predicate = partitioning::months(resolved_col("ts")).eq(lit(648));
+        let groups = rewrite_predicate_for_partitioning(&predicate, &[day_pfield()])?;
+        assert!(groups.partition_only_filter.is_empty());
+        assert_eq!(groups.data_only_filter, vec![predicate]);
+        Ok(())
+    }
+
+    #[test]
+    fn transform_on_non_source_column_is_not_pushed() -> DaftResult<()> {
+        let predicate = partitioning::days(resolved_col("other")).eq(lit(19723));
+        let groups = rewrite_predicate_for_partitioning(&predicate, &[day_pfield()])?;
+        assert!(groups.partition_only_filter.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn bucket_transform_eq_requires_matching_num_buckets() -> DaftResult<()> {
+        let predicate = partitioning::iceberg_bucket(resolved_col("id"), 16).eq(lit(3));
+        let groups = rewrite_predicate_for_partitioning(&predicate, &[bucket_pfield(16)])?;
+        assert_eq!(
+            groups.partition_only_filter,
+            vec![resolved_col("id_bucket").eq(lit(3))]
+        );
+
+        let groups = rewrite_predicate_for_partitioning(&predicate, &[bucket_pfield(8)])?;
+        assert!(groups.partition_only_filter.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn truncate_transform_eq_requires_matching_width() -> DaftResult<()> {
+        let predicate = partitioning::iceberg_truncate(resolved_col("name"), 4).eq(lit("abcd"));
+        let groups = rewrite_predicate_for_partitioning(&predicate, &[truncate_pfield(4)])?;
+        assert_eq!(
+            groups.partition_only_filter,
+            vec![resolved_col("name_trunc").eq(lit("abcd"))]
+        );
+
+        let groups = rewrite_predicate_for_partitioning(&predicate, &[truncate_pfield(2)])?;
+        assert!(groups.partition_only_filter.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn transform_predicate_mixed_with_data_column_needs_filter_op() -> DaftResult<()> {
+        // An OR with a data column cannot be pruned on the partition value alone.
+        let predicate = partitioning::days(resolved_col("ts"))
+            .eq(lit(19723))
+            .or(resolved_col("x").gt(lit(5)));
+        let groups = rewrite_predicate_for_partitioning(&predicate, &[day_pfield()])?;
+        assert!(groups.partition_only_filter.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn source_column_comparison_still_relaxed() -> DaftResult<()> {
+        // Sanity check that the pre-existing source-column path is unaffected: `ts < X` on a
+        // day-partitioned table must relax to `ts_day <= days(X)`.
+        let predicate = resolved_col("ts").lt(lit(0i64));
+        let groups = rewrite_predicate_for_partitioning(&predicate, &[day_pfield()])?;
+        assert_eq!(
+            groups.partition_only_filter,
+            vec![resolved_col("ts_day").lt_eq(partitioning::days(lit(0i64)))]
+        );
+        Ok(())
+    }
 }
