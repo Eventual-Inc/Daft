@@ -210,28 +210,28 @@ pub fn rewrite_predicate_for_partitioning(
     let with_part_cols = predicate.transform(&|expr: ExprRef| {
         use Operator::{Eq, Gt, GtEq, Lt, LtEq, NotEq};
         match expr.as_ref() {
-            // Binary Op where one side applies the partition field's own transform to its source
-            // column, e.g. `partition_days(col("ts")) == 19723` on a day-partitioned table.
-            // The transformed side is exactly the partition value, so the predicate maps directly
-            // onto the partition field: the value needs no transformation, all comparison
-            // operators are precise, and no boundary relaxation is needed.
+            // Binary Op where either side applies the partition field's own transform to its
+            // source column, e.g. `partition_days(col("ts")) == 19723` on a day-partitioned
+            // table. A transformed side is exactly the partition value, so it maps directly onto
+            // the partition field: the other side needs no transformation, all comparison
+            // operators are precise, and no boundary relaxation is needed. If both sides are
+            // matching transform expressions, both are rewritten.
             Expr::BinaryOp { op, left, right }
                 if matches!(op, Eq | NotEq | Lt | LtEq | Gt | GtEq)
                     && (get_pfield_for_transform_expr(left).is_some()
                         || get_pfield_for_transform_expr(right).is_some()) =>
             {
-                let (new_left, new_right) =
-                    if let Some(pfield) = get_pfield_for_transform_expr(left) {
-                        (resolved_col(pfield.field.name.as_ref()), right.clone())
-                    } else {
-                        let pfield = get_pfield_for_transform_expr(right).unwrap();
-                        (left.clone(), resolved_col(pfield.field.name.as_ref()))
-                    };
+                let rewrite_side = |side: &ExprRef| {
+                    get_pfield_for_transform_expr(side).map_or_else(
+                        || side.clone(),
+                        |pfield| resolved_col(pfield.field.name.as_ref()),
+                    )
+                };
                 Ok(Transformed::yes(
                     Expr::BinaryOp {
                         op: *op,
-                        left: new_left,
-                        right: new_right,
+                        left: rewrite_side(left),
+                        right: rewrite_side(right),
                     }
                     .arced(),
                 ))
@@ -568,6 +568,36 @@ mod tests {
 
         let groups = rewrite_predicate_for_partitioning(&predicate, &[truncate_pfield(2)])?;
         assert!(groups.partition_only_filter.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn transform_predicates_on_both_sides_are_both_rewritten() -> DaftResult<()> {
+        let pfield_a = PartitionField::new(
+            Field::new("ts_a_day", DataType::Date),
+            Some(Field::new(
+                "ts_a",
+                DataType::Timestamp(TimeUnit::Microseconds, None),
+            )),
+            Some(PartitionTransform::Day),
+        )
+        .unwrap();
+        let pfield_b = PartitionField::new(
+            Field::new("ts_b_day", DataType::Date),
+            Some(Field::new(
+                "ts_b",
+                DataType::Timestamp(TimeUnit::Microseconds, None),
+            )),
+            Some(PartitionTransform::Day),
+        )
+        .unwrap();
+        let predicate =
+            partitioning::days(resolved_col("ts_a")).eq(partitioning::days(resolved_col("ts_b")));
+        let groups = rewrite_predicate_for_partitioning(&predicate, &[pfield_a, pfield_b])?;
+        assert_eq!(
+            groups.partition_only_filter,
+            vec![resolved_col("ts_a_day").eq(resolved_col("ts_b_day"))]
+        );
         Ok(())
     }
 

@@ -377,6 +377,8 @@ def test_day_transform_predicate_eq_pushes_partition_filter():
     result = extract_comparison(pushdowns.partition_filters)
     assert result["op"] == "equal", f"Expected equal, got op={result['op']}"
     assert result["left"]["name"] == "p_day", f"Expected partition column 'p_day', got: {result['left']}"
+    # Partition pruning is file-level; the original predicate must also remain as a data filter.
+    assert pushdowns.filters is not None, "Expected the original predicate to remain as a data filter"
 
 
 def test_day_transform_predicate_comparison_is_not_relaxed():
@@ -392,6 +394,7 @@ def test_day_transform_predicate_comparison_is_not_relaxed():
     result = extract_comparison(pushdowns.partition_filters)
     assert result["op"] == "less_than", f"Exact transform predicate must NOT be relaxed, got op={result['op']}"
     assert result["left"]["name"] == "p_day", f"Expected partition column 'p_day', got: {result['left']}"
+    assert pushdowns.filters is not None, "Expected the original predicate to remain as a data filter"
 
 
 def test_day_transform_predicate_not_eq_pushes_partition_filter():
@@ -407,6 +410,7 @@ def test_day_transform_predicate_not_eq_pushes_partition_filter():
     result = extract_comparison(pushdowns.partition_filters)
     assert result["op"] == "not_equal", f"Expected not_equal, got op={result['op']}"
     assert result["left"]["name"] == "p_day", f"Expected partition column 'p_day', got: {result['left']}"
+    assert pushdowns.filters is not None, "Expected the original predicate to remain as a data filter"
 
 
 def test_mismatched_transform_predicate_is_not_pushed():
@@ -438,6 +442,7 @@ def test_bucket_transform_predicate_requires_matching_num_buckets():
     result = extract_comparison(pushdowns.partition_filters)
     assert result["op"] == "equal", f"Expected equal, got op={result['op']}"
     assert result["left"]["name"] == "p_bucket", f"Expected partition column 'p_bucket', got: {result['left']}"
+    assert pushdowns.filters is not None, "Expected the original predicate to remain as a data filter"
 
     pushdowns = _build_df_and_capture(
         columns=[("id", DataType.int64())],
@@ -462,6 +467,11 @@ def test_day_transform_predicate_and_data_predicate():
     result = extract_comparison(pushdowns.partition_filters)
     assert result["op"] == "equal", f"Expected equal, got op={result['op']}"
     assert result["left"]["name"] == "p_day", f"Expected partition column 'p_day', got: {result['left']}"
+    # Both conjuncts must remain in the data-level filter.
+    assert pushdowns.filters is not None, "Expected the original predicates to remain as data filters"
+    data_ops = _collect_ops(extract_comparison(pushdowns.filters))
+    assert "equal" in data_ops, f"Expected the transform predicate in the data filter, got ops: {data_ops}"
+    assert "greater_than" in data_ops, f"Expected the data-column predicate in the data filter, got ops: {data_ops}"
 
 
 def test_identity_pred_with_scalar_fn_both_directions():
