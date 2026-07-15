@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import threading
+import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -285,7 +286,8 @@ def set_execution_config(
         pre_shuffle_merge_partition_threshold: Number of partitions threshold to enable pre-shuffle merge when shuffle_algorithm is "auto". Defaults to 200.
         scantask_max_parallel: Set the max parallelism for running scan tasks simultaneously. Currently, this only works for Native Runner. If set to 0, all available CPUs will be used. Defaults to 8.
         native_parquet_writer: Whether to use the native parquet writer vs the pyarrow parquet writer. Defaults to `True`.
-        min_cpu_per_task: Minimum CPU per task in the Ray runner. Defaults to 0.5.
+        min_cpu_per_task: Deprecated. This was used by the old Ray runner and has no effect on
+            distributed scheduling. It will be removed in v0.8.0.
         actor_udf_ready_timeout: Timeout for UDF actors to be ready. Defaults to 120 seconds.
         maintain_order: Whether to maintain order during execution. Defaults to True. Some blocking sink operators (e.g. write_parquet) won't respect this flag and will always keep maintain_order as false, and propagate to child operators. It's useful to set this to False for running df.collect() when no ordering is required.
         enable_dynamic_batching: Whether to enable dynamic batching. Defaults to False.
@@ -295,6 +297,14 @@ def set_execution_config(
         enable_multi_glob_path_tasks: Whether to create multiple glob path tasks in Ray Runner to achieve parallel glob. Defaults to False.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
+    if min_cpu_per_task is not None:
+        warnings.warn(
+            "`min_cpu_per_task` is deprecated as of v0.7.0 and has no effect on distributed scheduling. "
+            "It will be removed from v0.8.0 onwards.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
     ctx = get_context()
     with ctx._lock:
         old_daft_execution_config = ctx._ctx._daft_execution_config if config is None else config

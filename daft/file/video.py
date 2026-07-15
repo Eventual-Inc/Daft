@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from daft.datatype import MediaType
 from daft.dependencies import av, pil_image
 from daft.file import File
-from daft.file.file import BUFFER_METADATA
+from daft.file.file import BUFFER_COPY, BUFFER_METADATA
 from daft.file.typing import VideoFrameData, VideoMetadata
 
 if TYPE_CHECKING:
@@ -29,72 +29,74 @@ class VideoFile(File):
     def __init__(self, url: str, io_config: IOConfig | None = None) -> None:
         if not av.module_available():
             raise ImportError("The 'av' module is required to create video files.")
+        if not pil_image.module_available():
+            raise ImportError(
+                "The 'pillow' module is required to create video files. Install it with `pip install daft[video]`."
+            )
         super().__init__(url, io_config, MediaType.video())
 
-    def __post_init__(self) -> None:
         if not self.is_video():
             raise ValueError(f"File {self} is not a video file")
 
-    def metadata(self) -> VideoMetadata:
+    def metadata(self, buffer_size: int = BUFFER_METADATA) -> VideoMetadata:
         """Extract basic video metadata from container headers.
 
         Returns:
             VideoMetadata: Video metadata object containing width, height, fps, frame_count, time_base, keyframe_pts, keyframe_indices
 
         """
-        with self.open(buffer_size=BUFFER_METADATA) as f:
-            with av.open(f, mode="r", metadata_encoding="utf-8") as container:
-                video = next(
-                    (stream for stream in container.streams if stream.type == "video"),
-                    None,
-                )
-                if video is None:
-                    return VideoMetadata(
-                        width=None,
-                        height=None,
-                        fps=None,
-                        duration=None,
-                        frame_count=None,
-                        time_base=None,
-                    )
-
-                # Basic stream properties ----------
-                width = video.width
-                height = video.height
-                time_base = float(video.time_base) if video.time_base else None
-
-                # Frame rate -----------------------
-                fps = None
-                if video.average_rate:
-                    fps = float(video.average_rate)
-                elif video.guessed_rate:
-                    fps = float(video.guessed_rate)
-
-                # Duration -------------------------
-                duration = None
-                if container.duration and container.duration > 0:
-                    duration = container.duration / 1_000_000.0
-                elif video.duration:
-                    # Fallback time_base only for duration computation if missing
-                    tb_for_dur = float(video.time_base) if video.time_base else (1.0 / 1_000_000.0)
-                    duration = float(video.duration * tb_for_dur)
-
-                # Frame count -----------------------
-                frame_count = video.frames
-                if not frame_count or frame_count <= 0:
-                    if duration and fps:
-                        frame_count = int(round(duration * fps))
-                    else:
-                        frame_count = None
-
+        with self.open(buffer_size=buffer_size) as f, av.open(f, mode="r", metadata_encoding="utf-8") as container:
+            video = next(
+                (stream for stream in container.streams if stream.type == "video"),
+                None,
+            )
+            if video is None:
                 return VideoMetadata(
-                    width=width,
-                    height=height,
-                    fps=fps,
-                    duration=duration,
-                    frame_count=frame_count,
-                    time_base=time_base,
+                    width=None,
+                    height=None,
+                    fps=None,
+                    duration=None,
+                    frame_count=None,
+                    time_base=None,
                 )
+
+            # Basic stream properties ----------
+            width = video.width
+            height = video.height
+            time_base = float(video.time_base) if video.time_base else None
+
+            # Frame rate -----------------------
+            fps = None
+            if video.average_rate:
+                fps = float(video.average_rate)
+            elif video.guessed_rate:
+                fps = float(video.guessed_rate)
+
+            # Duration -------------------------
+            duration = None
+            if container.duration and container.duration > 0:
+                duration = container.duration / 1_000_000.0
+            elif video.duration:
+                # Fallback time_base only for duration computation if missing
+                tb_for_dur = float(video.time_base) if video.time_base else (1.0 / 1_000_000.0)
+                duration = float(video.duration * tb_for_dur)
+
+            # Frame count -----------------------
+            frame_count = video.frames
+            if not frame_count or frame_count <= 0:
+                if duration and fps:
+                    frame_count = int(round(duration * fps))
+                else:
+                    frame_count = None
+
+            return VideoMetadata(
+                width=width,
+                height=height,
+                fps=fps,
+                duration=duration,
+                frame_count=frame_count,
+                time_base=time_base,
+            )
 
     def keyframes(self, start_time: float = 0, end_time: float | None = None) -> Iterator[PIL.Image.Image]:
         """Lazy iterator of keyframes as PIL Images within time range."""
@@ -109,6 +111,7 @@ class VideoFile(File):
         height: int | None = None,
         is_key_frame: bool | None = None,
         sample_interval_seconds: float | None = None,
+        buffer_size: int = BUFFER_COPY,
     ) -> Iterator[VideoFrameData]:
         """Lazy iterator of all decoded frames with metadata within time range.
 
@@ -140,88 +143,87 @@ class VideoFile(File):
             raise ValueError("Both width and height must be specified together for resizing.")
         if sample_interval_seconds is not None and sample_interval_seconds <= 0:
             raise ValueError("sample_interval_seconds must be positive if provided")
-        with self.open() as f:
-            with av.open(f) as container:
-                video = next(
-                    (stream for stream in container.streams if stream.type == "video"),
-                    None,
-                )
-                if video is None:
-                    raise ValueError("No video stream found")
+        with self.open(buffer_size=buffer_size) as f, av.open(f) as container:
+            video = next(
+                (stream for stream in container.streams if stream.type == "video"),
+                None,
+            )
+            if video is None:
+                raise ValueError("No video stream found")
 
-                if is_key_frame:
-                    video.codec_context.skip_frame = "NONKEY"
+            if is_key_frame:
+                video.codec_context.skip_frame = "NONKEY"
 
-                # Seek to start time
-                if start_time > 0 and video.time_base:
-                    seek_timestamp = int(start_time / float(video.time_base))
-                    container.seek(seek_timestamp, stream=video)
+            # Seek to start time
+            if start_time > 0 and video.time_base:
+                seek_timestamp = int(start_time / float(video.time_base))
+                container.seek(seek_timestamp, stream=video)
 
-                time_base = float(video.time_base) if video.time_base else None
-                fps = float(video.average_rate) if video.average_rate else None
-                if fps is None and video.guessed_rate:
-                    fps = float(video.guessed_rate)
-                start_pts = video.start_time or 0
+            time_base = float(video.time_base) if video.time_base else None
+            fps = float(video.average_rate) if video.average_rate else None
+            if fps is None and video.guessed_rate:
+                fps = float(video.guessed_rate)
+            start_pts = video.start_time or 0
 
-                # Sampling targets are start_time, start_time + interval, ... — same algorithm
-                # as `daft.read_video_frames`. Epsilon absorbs float-precision drift between
-                # the target time and the frame's PTS-derived `frame.time`.
-                next_sample_time: float | None = float(start_time) if sample_interval_seconds is not None else None
-                epsilon: float = 1e-9 if sample_interval_seconds is None else max(1e-9, sample_interval_seconds * 1e-6)
+            # Sampling targets are start_time, start_time + interval, ... — same algorithm
+            # as `daft.read_video_frames`. Epsilon absorbs float-precision drift between
+            # the target time and the frame's PTS-derived `frame.time`.
+            next_sample_time: float | None = float(start_time) if sample_interval_seconds is not None else None
+            epsilon: float = 1e-9 if sample_interval_seconds is None else max(1e-9, sample_interval_seconds * 1e-6)
 
-                frame_index: int = 0
-                for frame in container.decode(video):
-                    # Skip frames before start_time (seek may land earlier)
-                    if frame.time is not None and frame.time < start_time:
-                        frame_index += 1
-                        continue
-
-                    # Stop at end_time
-                    if end_time is not None:
-                        if frame.time is not None and frame.time > end_time:
-                            break
-
-                    if is_key_frame is False and frame.key_frame:
-                        frame_index += 1
-                        continue
-
-                    # Time-interval sampling: emit only when the frame has reached the next target.
-                    if sample_interval_seconds is not None:
-                        if frame.time is None:
-                            frame_index += 1
-                            continue
-                        assert next_sample_time is not None
-                        if frame.time + epsilon < next_sample_time:
-                            frame_index += 1
-                            continue
-                        # Advance past every target this frame already covers, so a long gap
-                        # between frames (VFR / large interval) doesn't queue up extra emits.
-                        while next_sample_time is not None and frame.time + epsilon >= next_sample_time:
-                            next_sample_time += sample_interval_seconds
-
-                    # Resize if requested
-                    output_frame = frame
-                    if width is not None and height is not None:
-                        output_frame = frame.reformat(width=width, height=height)
-
-                    current_frame_index = frame_index
-                    if frame.pts is not None and time_base is not None and fps is not None:
-                        current_frame_index = int(round((frame.pts - start_pts) * time_base * fps))
-
-                    yield VideoFrameData(
-                        frame_index=current_frame_index,
-                        frame_time=frame.time,
-                        frame_time_base=str(frame.time_base) if frame.time_base else None,
-                        frame_pts=frame.pts,
-                        frame_dts=frame.dts,
-                        frame_duration=frame.duration,
-                        is_key_frame=frame.key_frame,
-                        data=output_frame.to_image(),
-                    )
-
+            frame_index: int = 0
+            for frame in container.decode(video):
+                # Skip frames before start_time (seek may land earlier)
+                if frame.time is not None and frame.time < start_time:
                     frame_index += 1
+                    continue
 
-    def get_frame_by_idx(self, idx: int) -> PIL.Image.Image:
+                # Stop at end_time
+                if end_time is not None:
+                    if frame.time is not None and frame.time > end_time:
+                        break
+
+                if is_key_frame is False and frame.key_frame:
+                    frame_index += 1
+                    continue
+
+                # Time-interval sampling: emit only when the frame has reached the next target.
+                if sample_interval_seconds is not None:
+                    if frame.time is None:
+                        frame_index += 1
+                        continue
+                    assert next_sample_time is not None
+                    if frame.time + epsilon < next_sample_time:
+                        frame_index += 1
+                        continue
+                    # Advance past every target this frame already covers, so a long gap
+                    # between frames (VFR / large interval) doesn't queue up extra emits.
+                    while next_sample_time is not None and frame.time + epsilon >= next_sample_time:
+                        next_sample_time += sample_interval_seconds
+
+                # Resize if requested
+                output_frame = frame
+                if width is not None and height is not None:
+                    output_frame = frame.reformat(width=width, height=height)
+
+                current_frame_index = frame_index
+                if frame.pts is not None and time_base is not None and fps is not None:
+                    current_frame_index = int(round((frame.pts - start_pts) * time_base * fps))
+
+                yield VideoFrameData(
+                    frame_index=current_frame_index,
+                    frame_time=frame.time,
+                    frame_time_base=str(frame.time_base) if frame.time_base else None,
+                    frame_pts=frame.pts,
+                    frame_dts=frame.dts,
+                    frame_duration=frame.duration,
+                    is_key_frame=frame.key_frame,
+                    data=output_frame.to_image(),
+                )
+
+                frame_index += 1
+
+    def get_frame_by_idx(self, idx: int, buffer_size: int = BUFFER_COPY) -> PIL.Image.Image:
         if not pil_image.module_available():
             raise ImportError(
                 "The 'pillow' module is required for frame decoding. Install it with `pip install daft[video]`."
@@ -229,35 +231,34 @@ class VideoFile(File):
         if idx < 0:
             raise IndexError(f"Frame index {idx} is out of range")
 
-        with self.open() as f:
-            with av.open(f) as container:
-                video = next(
-                    (stream for stream in container.streams if stream.type == "video"),
-                    None,
-                )
-                if video is None:
-                    raise ValueError("No video stream found")
+        with self.open(buffer_size=buffer_size) as f, av.open(f) as container:
+            video = next(
+                (stream for stream in container.streams if stream.type == "video"),
+                None,
+            )
+            if video is None:
+                raise ValueError("No video stream found")
 
-                time_base = float(video.time_base) if video.time_base else None
-                fps = float(video.average_rate) if video.average_rate else None
-                if fps is None and video.guessed_rate:
-                    fps = float(video.guessed_rate)
-                start_pts = video.start_time or 0
+            time_base = float(video.time_base) if video.time_base else None
+            fps = float(video.average_rate) if video.average_rate else None
+            if fps is None and video.guessed_rate:
+                fps = float(video.guessed_rate)
+            start_pts = video.start_time or 0
 
-                # Seek to the nearest preceding keyframe at or before the target frame.
-                if idx > 0 and time_base is not None and fps is not None:
-                    target_time = idx / fps
-                    seek_timestamp = int(target_time / time_base)
-                    container.seek(seek_timestamp, stream=video, backward=True)
+            # Seek to the nearest preceding keyframe at or before the target frame.
+            if idx > 0 and time_base is not None and fps is not None:
+                target_time = idx / fps
+                seek_timestamp = int(target_time / time_base)
+                container.seek(seek_timestamp, stream=video, backward=True)
 
-                for frame_idx, frame in enumerate(container.decode(video)):
-                    current_frame_index = frame_idx
-                    if frame.pts is not None and time_base is not None and fps is not None:
-                        current_frame_index = int(round((frame.pts - start_pts) * time_base * fps))
+            for frame_idx, frame in enumerate(container.decode(video)):
+                current_frame_index = frame_idx
+                if frame.pts is not None and time_base is not None and fps is not None:
+                    current_frame_index = int(round((frame.pts - start_pts) * time_base * fps))
 
-                    if current_frame_index == idx:
-                        return frame.to_image()
-                    if current_frame_index > idx:
-                        break
+                if current_frame_index == idx:
+                    return frame.to_image()
+                if current_frame_index > idx:
+                    break
 
-                raise IndexError(f"Frame index {idx} is out of range")
+            raise IndexError(f"Frame index {idx} is out of range")

@@ -105,6 +105,11 @@ from .similarity import (
 )
 
 from .image_file_ import image_file_metadata, decode_image_file
+from .hdf5 import (
+    hdf5_attrs,
+    hdf5_keys,
+    hdf5_metadata,
+)
 from .file_ import (
     file,
     file_path,
@@ -306,7 +311,6 @@ from .struct import unnest, to_struct
 from .url import download, upload, parse_url
 from .audio import audio_metadata, resample
 from .video import video_metadata, video_keyframes, video_frames
-from .hdf5 import hdf5_keys, hdf5_read, hdf5_read_many
 from .window import (
     row_number,
     rank,
@@ -438,10 +442,10 @@ __all__ = [
     "hamming_distance",
     "hamming_distance_str",
     "hash",
+    "hdf5_attrs",
     "hdf5_file",
     "hdf5_keys",
-    "hdf5_read",
-    "hdf5_read_many",
+    "hdf5_metadata",
     "hour",
     "hypot",
     "ilike",

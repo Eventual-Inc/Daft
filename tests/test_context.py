@@ -375,3 +375,9 @@ def test_set_scantask_max_parallelism_greater_than_partition_num():
         df = daft.range(start=0, end=1024, partitions=10)
         df.explain(show_all=True, file=str_io)
         assert "Num Parallel Scan Tasks = 17" in str_io.getvalue().strip()
+
+
+def test_min_cpu_per_task_is_deprecated():
+    with pytest.warns(DeprecationWarning, match="min_cpu_per_task"):
+        with daft.execution_config_ctx(min_cpu_per_task=0.1):
+            assert daft.context.get_context().daft_execution_config.min_cpu_per_task == 0.1

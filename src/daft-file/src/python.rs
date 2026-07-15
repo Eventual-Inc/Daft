@@ -16,6 +16,9 @@ use pyo3::{
 
 use crate::file::{DaftFile, FileCursor};
 
+type ReadResult = Result<(Vec<u8>, usize, bool, FileCursor), (PyErr, FileCursor)>;
+type SeekResult = Result<(u64, FileCursor), (PyErr, FileCursor)>;
+
 #[pyclass(from_py_object)]
 #[derive(Clone)]
 struct PyFileReference {
@@ -30,8 +33,9 @@ impl PyFileReference {
         Ok(Self { inner: Arc::new(f) })
     }
 
-    pub fn __enter__(&self) -> PyResult<PyDaftFile> {
-        Ok(DaftFile::load_blocking(self.inner.as_ref().clone(), true, None)?.into())
+    pub fn __enter__(&self, py: Python<'_>) -> PyResult<PyDaftFile> {
+        let file_ref = self.inner.as_ref().clone();
+        py.detach(move || Ok(DaftFile::load_blocking(file_ref, true, None)?.into()))
     }
 
     pub fn _get_file(&self) -> FileReference {
@@ -147,52 +151,72 @@ impl PyDaftFile {
 impl PyDaftFile {
     #[staticmethod]
     #[pyo3(signature=(f, buffer_size=None))]
-    fn _from_file_reference(f: PyFileReference, buffer_size: Option<usize>) -> PyResult<Self> {
-        Ok(DaftFile::load_blocking(f.inner.as_ref().clone(), false, buffer_size)?.into())
+    fn _from_file_reference(
+        py: Python<'_>,
+        f: PyFileReference,
+        buffer_size: Option<usize>,
+    ) -> PyResult<Self> {
+        let file_ref = f.inner.as_ref().clone();
+        py.detach(move || Ok(DaftFile::load_blocking(file_ref, false, buffer_size)?.into()))
     }
 
     #[pyo3(signature=(size=-1))]
-    fn read(&mut self, size: isize) -> PyResult<Vec<u8>> {
+    fn read(&mut self, py: Python<'_>, size: isize) -> PyResult<Vec<u8>> {
         self.check_context()?;
-        let cursor = self
+        let mut cursor = self
             .inner
             .cursor
-            .as_mut()
+            .take()
             .ok_or_else(|| PyIOError::new_err("File not open"))?;
+        let current_position = self.inner.position;
+        let current_size = cursor.size();
 
-        if size == -1 {
-            let mut buffer = Vec::new();
-            let bytes_read = cursor
-                .read_to_end(&mut buffer)
-                .map_err(|e| PyIOError::new_err(e.to_string()))?;
-
-            buffer.truncate(bytes_read);
-            self.inner.position = bytes_read;
-
-            Ok(buffer)
-        } else {
-            let mut buffer = vec![0u8; size as usize];
-
-            if self.inner.position == cursor.size() {
-                return Ok(vec![]);
+        let result: ReadResult = py.detach(move || {
+            if size == -1 {
+                let mut buffer = Vec::new();
+                match cursor.read_to_end(&mut buffer) {
+                    Ok(bytes_read) => {
+                        buffer.truncate(bytes_read);
+                        Ok((buffer, bytes_read, true, cursor))
+                    }
+                    Err(e) => Err((PyIOError::new_err(e.to_string()), cursor)),
+                }
+            } else {
+                if current_position == current_size {
+                    return Ok((vec![], 0usize, false, cursor));
+                }
+                let mut buffer = vec![0u8; size as usize];
+                match cursor.read(&mut buffer) {
+                    Ok(bytes_read) => {
+                        buffer.truncate(bytes_read);
+                        Ok((buffer, bytes_read, false, cursor))
+                    }
+                    Err(e) => Err((PyIOError::new_err(e.to_string()), cursor)),
+                }
             }
+        });
 
-            let bytes_read = cursor
-                .read(&mut buffer)
-                .map_err(|e| PyIOError::new_err(e.to_string()))?;
-
-            buffer.truncate(bytes_read);
-            self.position += bytes_read;
-
-            Ok(buffer)
+        match result {
+            Ok((buffer, bytes_read, is_read_all, cursor_back)) => {
+                self.inner.cursor = Some(cursor_back);
+                if is_read_all {
+                    self.inner.position = bytes_read;
+                } else {
+                    self.inner.position += bytes_read;
+                }
+                Ok(buffer)
+            }
+            Err((e, cursor_back)) => {
+                self.inner.cursor = Some(cursor_back);
+                Err(e)
+            }
         }
     }
 
-    // Seek to position
     #[pyo3(signature=(offset, whence=Some(0)))]
-    fn seek(&mut self, offset: i64, whence: Option<usize>) -> PyResult<u64> {
+    fn seek(&mut self, py: Python<'_>, offset: i64, whence: Option<usize>) -> PyResult<u64> {
         self.check_context()?;
-        let whence = match whence.unwrap_or(0) {
+        let seek_from = match whence.unwrap_or(0) {
             0 => {
                 if offset < 0 {
                     return Err(PyValueError::new_err("Seek offset cannot be negative"));
@@ -204,17 +228,28 @@ impl PyDaftFile {
             _ => return Err(PyValueError::new_err("Invalid whence value")),
         };
 
-        let cursor = self
+        let mut cursor = self
+            .inner
             .cursor
-            .as_mut()
+            .take()
             .ok_or_else(|| PyValueError::new_err("File not open"))?;
 
-        let new_pos = cursor
-            .seek(whence)
-            .map_err(|e| PyIOError::new_err(e.to_string()))?;
+        let result: SeekResult = py.detach(move || match cursor.seek(seek_from) {
+            Ok(new_pos) => Ok((new_pos, cursor)),
+            Err(e) => Err((PyIOError::new_err(e.to_string()), cursor)),
+        });
 
-        self.position = new_pos as usize;
-        Ok(new_pos)
+        match result {
+            Ok((new_pos, cursor_back)) => {
+                self.inner.cursor = Some(cursor_back);
+                self.inner.position = new_pos as usize;
+                Ok(new_pos)
+            }
+            Err((e, cursor_back)) => {
+                self.inner.cursor = Some(cursor_back);
+                Err(e)
+            }
+        }
     }
 
     // Return current position
@@ -257,28 +292,28 @@ impl PyDaftFile {
         Ok(self.cursor.is_none())
     }
 
-    fn _supports_range_requests(&mut self) -> PyResult<bool> {
+    fn _supports_range_requests(&mut self, py: Python<'_>) -> PyResult<bool> {
         let cursor = self
+            .inner
             .cursor
             .as_mut()
             .ok_or_else(|| PyIOError::new_err("File not open"))?;
 
-        // Try to read a single byte from the beginning
-        let supports_range = match cursor {
+        match cursor {
             FileCursor::ObjectReader(reader) => {
                 let rt = common_runtime::get_io_runtime(true);
                 let inner_reader = reader.get_ref();
                 let uri = inner_reader.uri.clone();
                 let source = inner_reader.source.clone();
 
-                rt.block_within_async_context(async move {
-                    source.supports_range(&uri).await.map_err(DaftError::from)
-                })??
+                Ok(py.detach(move || {
+                    rt.block_within_async_context(async move {
+                        source.supports_range(&uri).await.map_err(DaftError::from)
+                    })
+                })??)
             }
-            FileCursor::Memory(_) => true,
-        };
-
-        Ok(supports_range)
+            FileCursor::Memory(_) => Ok(true),
+        }
     }
 
     #[pyo3(name = "size")]
