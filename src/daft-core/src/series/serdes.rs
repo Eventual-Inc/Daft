@@ -11,8 +11,8 @@ use crate::{
     datatypes::{
         logical::{
             DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
-            FixedShapeSparseTensorArray, FixedShapeTensorArray, GeometryArray, ImageArray, MapArray,
-            SparseTensorArray, TensorArray, TimeArray, TimestampArray,
+            FixedShapeSparseTensorArray, FixedShapeTensorArray, GeometryArray, ImageArray,
+            MapArray, SparseTensorArray, TensorArray, TimeArray, TimestampArray,
         },
         *,
     },
@@ -306,8 +306,11 @@ impl<'d> serde::Deserialize<'d> for Series {
                         type PType = <<GeometryType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType;
                         let physical = map.next_value::<Series>()?;
                         Ok(
-                            GeometryArray::new(field, physical.downcast::<PType>().unwrap().clone())
-                                .into_series(),
+                            GeometryArray::new(
+                                field,
+                                physical.downcast::<PType>().unwrap().clone(),
+                            )
+                            .into_series(),
                         )
                     }
                     DataType::Embedding(..) => {

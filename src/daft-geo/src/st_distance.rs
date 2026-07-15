@@ -1,10 +1,18 @@
 use common_error::DaftResult;
-use daft_core::{prelude::{DataType, Field, Schema}, series::Series};
-use daft_dsl::{ExprRef, functions::{FunctionArgs, ScalarUDF, scalar::ScalarFn}};
+use daft_core::{
+    prelude::{DataType, Field, Schema},
+    series::Series,
+};
+use daft_dsl::{
+    ExprRef,
+    functions::{FunctionArgs, ScalarUDF, scalar::ScalarFn},
+};
 use geo::{Distance, Euclidean, Geodesic, Geometry};
 use serde::{Deserialize, Serialize};
 
-use crate::utils::{binary_geom_to_f64, validate_geometry_field, read_bool_arg, read_bool_arg_expr};
+use crate::utils::{
+    binary_geom_to_f64, read_bool_arg, read_bool_arg_expr, validate_geometry_field,
+};
 
 pub(crate) fn geom_distance(a: &Geometry, b: &Geometry) -> f64 {
     let euclidean = Euclidean;
@@ -31,15 +39,29 @@ pub struct StDistance;
 
 #[typetag::serde]
 impl ScalarUDF for StDistance {
-    fn name(&self) -> &'static str { "st_distance" }
+    fn name(&self) -> &'static str {
+        "st_distance"
+    }
 
-    fn call(&self, inputs: FunctionArgs<Series>, _ctx: &daft_dsl::functions::scalar::EvalContext) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let use_spheroid = read_bool_arg(&inputs, 2, "use_spheroid", self.name())?;
-        let f = if use_spheroid { geom_distance_geodesic } else { geom_distance };
+        let f = if use_spheroid {
+            geom_distance_geodesic
+        } else {
+            geom_distance
+        };
         binary_geom_to_f64(inputs.required(0)?, inputs.required(1)?, self.name(), f)
     }
 
-    fn get_return_field(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         validate_geometry_field(&inputs, schema, 0, "geom_a", self.name())?;
         validate_geometry_field(&inputs, schema, 1, "geom_b", self.name())?;
         read_bool_arg_expr(&inputs, 2, "use_spheroid", self.name())?;

@@ -88,11 +88,7 @@ pub fn nested_loop_inner_join(
         tile_columns.extend(right_columns);
 
         let n_rows = tile_size * build_len;
-        let tile_batch = RecordBatch::new_with_size(
-            Arc::new(tile_schema),
-            tile_columns,
-            n_rows,
-        )?;
+        let tile_batch = RecordBatch::new_with_size(Arc::new(tile_schema), tile_columns, n_rows)?;
 
         // Evaluate the filter on the tile.
         let mask = tile_batch.eval_expression(filter)?;
@@ -197,8 +193,7 @@ pub fn nested_loop_inner_join_indexed(
     );
 
     let n_cands = cand_probe_idx.len();
-    let tile_batch =
-        RecordBatch::new_with_size(Arc::new(tile_schema), tile_columns, n_cands)?;
+    let tile_batch = RecordBatch::new_with_size(Arc::new(tile_schema), tile_columns, n_cands)?;
 
     // Evaluate the spatial (or arbitrary) filter on the candidate pairs.
     let mask = tile_batch.eval_expression(filter)?;

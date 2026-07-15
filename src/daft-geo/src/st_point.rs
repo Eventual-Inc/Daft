@@ -45,8 +45,16 @@ impl ScalarUDF for StPoint {
 
         let mut wkb_values: Vec<Option<Vec<u8>>> = Vec::with_capacity(n);
         for i in 0..n {
-            let x_val = if x_len == 1 { x_arr.get(0) } else { x_arr.get(i) };
-            let y_val = if y_len == 1 { y_arr.get(0) } else { y_arr.get(i) };
+            let x_val = if x_len == 1 {
+                x_arr.get(0)
+            } else {
+                x_arr.get(i)
+            };
+            let y_val = if y_len == 1 {
+                y_arr.get(0)
+            } else {
+                y_arr.get(i)
+            };
             let wkb = match (x_val, y_val) {
                 (Some(x), Some(y)) => {
                     let geom = Geometry::Point(Point::new(x, y));

@@ -67,9 +67,7 @@ pub fn read_f64_arg_expr(
     expr.as_literal()
         .and_then(|l| l.as_f64().or_else(|| l.as_i64().map(|v| v as f64)))
         .ok_or_else(|| {
-            DaftError::ValueError(format!(
-                "{fn_name}: {name} must be a numeric literal"
-            ))
+            DaftError::ValueError(format!("{fn_name}: {name} must be a numeric literal"))
         })
 }
 
@@ -127,12 +125,9 @@ pub fn read_bool_arg_expr(
     let opt = inputs.optional((pos, name))?;
     match opt {
         None => Ok(false),
-        Some(expr) => expr
-            .as_literal()
-            .and_then(|l| l.as_bool())
-            .ok_or_else(|| {
-                DaftError::ValueError(format!("{fn_name}: {name} must be a boolean literal"))
-            }),
+        Some(expr) => expr.as_literal().and_then(|l| l.as_bool()).ok_or_else(|| {
+            DaftError::ValueError(format!("{fn_name}: {name} must be a boolean literal"))
+        }),
     }
 }
 
@@ -308,8 +303,7 @@ pub(crate) fn wkb_opts_to_geometry_series(
 
     let phys_field = Field::new(out_name, DataType::Binary);
     let phys_arr = BinaryArray::from_iter(&phys_field.name, phys_values.into_iter());
-    let logical =
-        LogicalArray::<GeometryType>::new(field, phys_arr.with_nulls(builder.finish())?);
+    let logical = LogicalArray::<GeometryType>::new(field, phys_arr.with_nulls(builder.finish())?);
     Ok(logical.into_series())
 }
 

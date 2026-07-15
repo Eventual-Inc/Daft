@@ -1349,15 +1349,18 @@ fn physical_plan_to_pipeline(
             let probe_child = left;
             let build_child = right;
 
-            let build_child_node =
-                physical_plan_to_pipeline(build_child, cfg, ctx, input_senders)?;
-            let probe_child_node =
-                physical_plan_to_pipeline(probe_child, cfg, ctx, input_senders)?;
+            let build_child_node = physical_plan_to_pipeline(build_child, cfg, ctx, input_senders)?;
+            let probe_child_node = physical_plan_to_pipeline(probe_child, cfg, ctx, input_senders)?;
 
             // Convert partition_key from plan-level [usize; 2] to operator-level Option<(usize,usize)>.
             let pk = partition_key.map(|[bk, pk]| (bk, pk));
-            let nested_loop_op =
-                NestedLoopJoinOperator::new(filter.clone(), schema.clone(), *build_side, build_child.schema().len(), pk);
+            let nested_loop_op = NestedLoopJoinOperator::new(
+                filter.clone(),
+                schema.clone(),
+                *build_side,
+                build_child.schema().len(),
+                pk,
+            );
 
             JoinNode::new(
                 Arc::new(nested_loop_op),

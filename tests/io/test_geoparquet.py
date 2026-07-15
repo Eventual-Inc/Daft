@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 
 import pyarrow as pa
@@ -96,7 +98,5 @@ def test_python_helper_matches_rust_geo_json(tmp_path):
     rust_geo = json.loads(pq.read_metadata(next(tmp_path.rglob("*.parquet"))).metadata[b"geo"])
     py_geo = json.loads(build_geo_metadata(df.schema()))
     assert py_geo == rust_geo, (
-        f"Python helper JSON differs from Rust writer JSON.\n"
-        f"  py_geo:   {py_geo}\n"
-        f"  rust_geo: {rust_geo}"
+        f"Python helper JSON differs from Rust writer JSON.\n  py_geo:   {py_geo}\n  rust_geo: {rust_geo}"
     )

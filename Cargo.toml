@@ -321,8 +321,8 @@ geo-buffer = "0.2"
 geo-traits = "0.3"
 geohash = "0.13"
 geojson = "1.0"
-h3o = "0.10.0"
-wkt = { version = "0.14", features = ["geo-types"] }
+h3o = "0.9"
+wkt = {version = "0.14", features = ["geo-types"]}
 half = {version = "2.7.1", features = ["num-traits", "bytemuck", "serde"]}
 hashbrown = "0.16"
 html-escape = "0.2.13"
@@ -357,7 +357,7 @@ rstar = "0.13.0"
 wkb = "0.9.2"
 md5 = "0.8.1"
 tempfile = "3.23.0"
-ordered-float = { version = "5.3.0", features = ["serde"] }
+ordered-float = {version = "5.3.0", features = ["serde"]}
 regex = "1.12.2"
 rstest = "0.26.1"
 reqwest = {version = "0.12.19", default-features = false, features = ["json"]}

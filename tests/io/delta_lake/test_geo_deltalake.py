@@ -1,4 +1,5 @@
 """Round-trip test: Geometry columns survive a write→read cycle through Delta Lake."""
+
 from __future__ import annotations
 
 import pytest

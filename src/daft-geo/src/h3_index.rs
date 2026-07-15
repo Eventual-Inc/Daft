@@ -143,8 +143,9 @@ fn h3_step_deg(res: u8) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::io::Write;
+
+    use super::*;
 
     fn point_wkb(x: f64, y: f64) -> Vec<u8> {
         let mut buf = Vec::new();

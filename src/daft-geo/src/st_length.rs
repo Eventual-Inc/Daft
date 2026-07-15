@@ -1,11 +1,16 @@
 use common_error::DaftResult;
-use daft_core::{prelude::{DataType, Field, Schema}, series::Series};
-use daft_dsl::{ExprRef, functions::{FunctionArgs, ScalarUDF, scalar::ScalarFn}};
-use geo::{Euclidean, Geodesic, Geometry};
-use geo::line_measures::LengthMeasurable;
+use daft_core::{
+    prelude::{DataType, Field, Schema},
+    series::Series,
+};
+use daft_dsl::{
+    ExprRef,
+    functions::{FunctionArgs, ScalarUDF, scalar::ScalarFn},
+};
+use geo::{Euclidean, Geodesic, Geometry, line_measures::LengthMeasurable};
 use serde::{Deserialize, Serialize};
 
-use crate::utils::{unary_geom_to_f64, validate_geometry_field, read_bool_arg, read_bool_arg_expr};
+use crate::utils::{read_bool_arg, read_bool_arg_expr, unary_geom_to_f64, validate_geometry_field};
 
 fn geom_length(g: &Geometry, use_spheroid: bool) -> f64 {
     if use_spheroid {
@@ -33,14 +38,26 @@ pub struct StLength;
 
 #[typetag::serde]
 impl ScalarUDF for StLength {
-    fn name(&self) -> &'static str { "st_length" }
-
-    fn call(&self, inputs: FunctionArgs<Series>, _ctx: &daft_dsl::functions::scalar::EvalContext) -> DaftResult<Series> {
-        let use_spheroid = read_bool_arg(&inputs, 1, "use_spheroid", self.name())?;
-        unary_geom_to_f64(inputs.required(0)?, self.name(), |g| geom_length(g, use_spheroid))
+    fn name(&self) -> &'static str {
+        "st_length"
     }
 
-    fn get_return_field(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn call(
+        &self,
+        inputs: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
+        let use_spheroid = read_bool_arg(&inputs, 1, "use_spheroid", self.name())?;
+        unary_geom_to_f64(inputs.required(0)?, self.name(), |g| {
+            geom_length(g, use_spheroid)
+        })
+    }
+
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         validate_geometry_field(&inputs, schema, 0, "geom", self.name())?;
         read_bool_arg_expr(&inputs, 1, "use_spheroid", self.name())?;
         Ok(Field::new(self.name(), DataType::Float64))

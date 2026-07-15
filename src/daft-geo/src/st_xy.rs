@@ -1,6 +1,12 @@
 use common_error::DaftResult;
-use daft_core::{prelude::{DataType, Field, Schema}, series::Series};
-use daft_dsl::{ExprRef, functions::{FunctionArgs, ScalarUDF, scalar::ScalarFn}};
+use daft_core::{
+    prelude::{DataType, Field, Schema},
+    series::Series,
+};
+use daft_dsl::{
+    ExprRef,
+    functions::{FunctionArgs, ScalarUDF, scalar::ScalarFn},
+};
 use geo::Geometry;
 use serde::{Deserialize, Serialize};
 
@@ -27,13 +33,23 @@ pub struct StX;
 
 #[typetag::serde]
 impl ScalarUDF for StX {
-    fn name(&self) -> &'static str { "st_x" }
+    fn name(&self) -> &'static str {
+        "st_x"
+    }
 
-    fn call(&self, inputs: FunctionArgs<Series>, _ctx: &daft_dsl::functions::scalar::EvalContext) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         unary_geom_to_f64(inputs.required(0)?, self.name(), point_x)
     }
 
-    fn get_return_field(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         validate_geometry_field(&inputs, schema, 0, "geom", self.name())?;
         Ok(Field::new(self.name(), DataType::Float64))
     }
@@ -48,13 +64,23 @@ pub struct StY;
 
 #[typetag::serde]
 impl ScalarUDF for StY {
-    fn name(&self) -> &'static str { "st_y" }
+    fn name(&self) -> &'static str {
+        "st_y"
+    }
 
-    fn call(&self, inputs: FunctionArgs<Series>, _ctx: &daft_dsl::functions::scalar::EvalContext) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         unary_geom_to_f64(inputs.required(0)?, self.name(), point_y)
     }
 
-    fn get_return_field(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         validate_geometry_field(&inputs, schema, 0, "geom", self.name())?;
         Ok(Field::new(self.name(), DataType::Float64))
     }

@@ -173,8 +173,9 @@ pub fn st_buffer(geom: ExprRef, distance: f64) -> ExprRef {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use geo::{Area, Geometry, Point};
+
+    use super::*;
 
     #[test]
     fn test_point_buffer_area_approx_pi_r2() {
@@ -193,13 +194,22 @@ mod tests {
         use geo::{LineString, Polygon};
         // Unit square
         let poly = Polygon::new(
-            LineString::from(vec![(0.0_f64, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0), (0.0, 0.0)]),
+            LineString::from(vec![
+                (0.0_f64, 0.0),
+                (1.0, 0.0),
+                (1.0, 1.0),
+                (0.0, 1.0),
+                (0.0, 0.0),
+            ]),
             vec![],
         );
         let g = Geometry::Polygon(poly);
         let buf = apply_buffer(&g, 1.0).unwrap();
         // Result should have larger area than the unit square (area = 1)
         let a = buf.unsigned_area();
-        assert!(a > 1.0, "buffered polygon area {a} should exceed unit square area");
+        assert!(
+            a > 1.0,
+            "buffered polygon area {a} should exceed unit square area"
+        );
     }
 }

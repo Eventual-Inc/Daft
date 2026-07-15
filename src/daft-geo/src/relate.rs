@@ -1,5 +1,4 @@
-use geo::Geometry;
-use geo::relate::Relate;
+use geo::{Geometry, relate::Relate};
 
 /// The DE-9IM spatial predicate to evaluate.
 #[derive(Debug, Clone, Copy)]
@@ -43,14 +42,17 @@ pub(crate) fn relate_pred(a: &Geometry, b: &Geometry, pred: RelatePred) -> bool 
 
 #[cfg(test)]
 mod tests {
+    use geo::{Coord, Geometry, LineString, Point, Polygon};
+
     use super::*;
-    use geo::{Geometry, Point, Polygon, LineString, Coord};
 
     fn square() -> Geometry {
         // unit square (0,0)-(2,2)
         let ring = LineString(vec![
-            Coord { x: 0.0, y: 0.0 }, Coord { x: 2.0, y: 0.0 },
-            Coord { x: 2.0, y: 2.0 }, Coord { x: 0.0, y: 2.0 },
+            Coord { x: 0.0, y: 0.0 },
+            Coord { x: 2.0, y: 0.0 },
+            Coord { x: 2.0, y: 2.0 },
+            Coord { x: 0.0, y: 2.0 },
             Coord { x: 0.0, y: 0.0 },
         ]);
         Geometry::Polygon(Polygon::new(ring, vec![]))
@@ -80,7 +82,8 @@ mod tests {
         // a type pair the old hand-coded st_intersects fell through to false on
         let poly = square();
         let line = Geometry::LineString(LineString(vec![
-            Coord { x: -1.0, y: 1.0 }, Coord { x: 3.0, y: 1.0 },
+            Coord { x: -1.0, y: 1.0 },
+            Coord { x: 3.0, y: 1.0 },
         ]));
         assert!(relate_pred(&poly, &line, RelatePred::Intersects));
     }

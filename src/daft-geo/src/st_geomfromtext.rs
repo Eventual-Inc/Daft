@@ -40,8 +40,10 @@ impl ScalarUDF for StGeomFromText {
             ))
         })?;
 
-        let values: Vec<Option<Vec<u8>>> =
-            utf8.into_iter().map(|opt| opt.and_then(wkt_to_wkb)).collect();
+        let values: Vec<Option<Vec<u8>>> = utf8
+            .into_iter()
+            .map(|opt| opt.and_then(wkt_to_wkb))
+            .collect();
 
         crate::utils::wkb_opts_to_geometry_series(self.name(), values)
     }

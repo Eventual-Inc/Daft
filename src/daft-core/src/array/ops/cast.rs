@@ -18,7 +18,8 @@ use crate::lit::Literal;
 use crate::prelude::PythonArray;
 use crate::{
     array::{
-        DataArray, FixedSizeListArray, GeometryArray, ListArray, StructArray, UnionArray, UuidArray,
+        DataArray, FixedSizeListArray, GeometryArray, ListArray, StructArray, UnionArray,
+        UuidArray,
         growable::make_growable,
         image_array::ImageArraySidecarData,
         ops::{DaftCompare, full::FullNull},

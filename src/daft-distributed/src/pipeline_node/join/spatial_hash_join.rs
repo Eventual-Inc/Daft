@@ -15,8 +15,7 @@ use super::stats::BasicJoinStats;
 use crate::{
     pipeline_node::{
         ClusteringStrategy, DistributedPipelineNode, NodeID, PipelineNodeConfig,
-        PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
-        clustering::BoundClusteringSpec,
+        PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream, clustering::BoundClusteringSpec,
     },
     plan::{PlanConfig, PlanExecutionContext},
     scheduling::task::SwordfishTaskBuilder,
@@ -168,10 +167,10 @@ impl PipelineNodeImpl for SpatialHashJoinNode {
                                 self.spatial_filter.clone(),
                                 self.build_side,
                                 None, // no per-key R-tree grouping in the distributed path;
-                                      // the equi-keys are enforced by `spatial_filter`, which
-                                      // carries the full ON predicate — hash-partitioning
-                                      // alone does NOT prevent different key values from
-                                      // sharing a partition.
+                                // the equi-keys are enforced by `spatial_filter`, which
+                                // carries the full ON predicate — hash-partitioning
+                                // alone does NOT prevent different key values from
+                                // sharing a partition.
                                 self.config.schema.clone(),
                                 StatsState::NotMaterialized,
                                 LocalNodeContext::new(Some(self.node_id() as usize)),

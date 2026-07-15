@@ -6,13 +6,21 @@ pub type Mbr = [f64; 4];
 #[inline]
 fn read_u32(data: &[u8], offset: usize, le: bool) -> Option<u32> {
     let b: [u8; 4] = data.get(offset..offset + 4)?.try_into().ok()?;
-    Some(if le { u32::from_le_bytes(b) } else { u32::from_be_bytes(b) })
+    Some(if le {
+        u32::from_le_bytes(b)
+    } else {
+        u32::from_be_bytes(b)
+    })
 }
 
 #[inline]
 fn read_f64(data: &[u8], offset: usize, le: bool) -> Option<f64> {
     let b: [u8; 8] = data.get(offset..offset + 8)?.try_into().ok()?;
-    Some(if le { f64::from_le_bytes(b) } else { f64::from_be_bytes(b) })
+    Some(if le {
+        f64::from_le_bytes(b)
+    } else {
+        f64::from_be_bytes(b)
+    })
 }
 
 /// Scan all (x, y) coordinate pairs in a WKB geometry starting at `pos`,
@@ -38,8 +46,8 @@ fn scan_wkb_mbr(
 
     // EWKB flags (PostGIS extension)
     let ewkb_has_srid = (raw_type & 0x20000000) != 0;
-    let ewkb_has_z    = (raw_type & 0x80000000) != 0;
-    let ewkb_has_m    = (raw_type & 0x40000000) != 0;
+    let ewkb_has_z = (raw_type & 0x80000000) != 0;
+    let ewkb_has_m = (raw_type & 0x40000000) != 0;
 
     // Strip all flag bits to get the base ISO type (1–7)
     let base_type_raw = raw_type & 0x0FFF_FFFF;
@@ -70,17 +78,27 @@ fn scan_wkb_mbr(
         n: usize,
         le: bool,
         stride: usize,
-        min_x: &mut f64, min_y: &mut f64,
-        max_x: &mut f64, max_y: &mut f64,
+        min_x: &mut f64,
+        min_y: &mut f64,
+        max_x: &mut f64,
+        max_y: &mut f64,
     ) -> Option<usize> {
         for _ in 0..n {
             let x = read_f64(data, off, le)?;
             let y = read_f64(data, off + 8, le)?;
             if x.is_finite() && y.is_finite() {
-                if x < *min_x { *min_x = x; }
-                if y < *min_y { *min_y = y; }
-                if x > *max_x { *max_x = x; }
-                if y > *max_y { *max_y = y; }
+                if x < *min_x {
+                    *min_x = x;
+                }
+                if y < *min_y {
+                    *min_y = y;
+                }
+                if x > *max_x {
+                    *max_x = x;
+                }
+                if y > *max_y {
+                    *max_y = y;
+                }
             }
             off += stride;
         }
@@ -90,13 +108,33 @@ fn scan_wkb_mbr(
     match base_type {
         1 => {
             // Point
-            offset = scan_coords(data, offset, 1, le, coord_stride, min_x, min_y, max_x, max_y)?;
+            offset = scan_coords(
+                data,
+                offset,
+                1,
+                le,
+                coord_stride,
+                min_x,
+                min_y,
+                max_x,
+                max_y,
+            )?;
         }
         2 => {
             // LineString
             let n = read_u32(data, offset, le)? as usize;
             offset += 4;
-            offset = scan_coords(data, offset, n, le, coord_stride, min_x, min_y, max_x, max_y)?;
+            offset = scan_coords(
+                data,
+                offset,
+                n,
+                le,
+                coord_stride,
+                min_x,
+                min_y,
+                max_x,
+                max_y,
+            )?;
         }
         3 => {
             // Polygon
@@ -105,7 +143,17 @@ fn scan_wkb_mbr(
             for _ in 0..n_rings {
                 let n_pts = read_u32(data, offset, le)? as usize;
                 offset += 4;
-                offset = scan_coords(data, offset, n_pts, le, coord_stride, min_x, min_y, max_x, max_y)?;
+                offset = scan_coords(
+                    data,
+                    offset,
+                    n_pts,
+                    le,
+                    coord_stride,
+                    min_x,
+                    min_y,
+                    max_x,
+                    max_y,
+                )?;
             }
         }
         4 | 5 | 6 | 7 => {
@@ -149,8 +197,9 @@ pub fn mbrs_intersect(a: &Mbr, b: &Mbr) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::io::Write;
+
+    use super::*;
 
     fn point_wkb(x: f64, y: f64) -> Vec<u8> {
         let mut buf = vec![];
@@ -164,11 +213,11 @@ mod tests {
     /// Build a WKB Polygon for a closed box (x0,y0)–(x1,y1).
     fn polygon_box_wkb(x0: f64, y0: f64, x1: f64, y1: f64) -> Vec<u8> {
         let mut buf = vec![];
-        buf.write_all(&[1u8]).unwrap();               // little-endian
-        buf.write_all(&3u32.to_le_bytes()).unwrap();  // Polygon
-        buf.write_all(&1u32.to_le_bytes()).unwrap();  // 1 ring
-        buf.write_all(&5u32.to_le_bytes()).unwrap();  // 5 points (closed)
-        for (x, y) in [(x0,y0),(x1,y0),(x1,y1),(x0,y1),(x0,y0)] {
+        buf.write_all(&[1u8]).unwrap(); // little-endian
+        buf.write_all(&3u32.to_le_bytes()).unwrap(); // Polygon
+        buf.write_all(&1u32.to_le_bytes()).unwrap(); // 1 ring
+        buf.write_all(&5u32.to_le_bytes()).unwrap(); // 5 points (closed)
+        for (x, y) in [(x0, y0), (x1, y0), (x1, y1), (x0, y1), (x0, y0)] {
             buf.write_all(&x.to_le_bytes()).unwrap();
             buf.write_all(&y.to_le_bytes()).unwrap();
         }
@@ -196,7 +245,10 @@ mod tests {
     #[test]
     fn test_intersect() {
         assert!(mbrs_intersect(&[0.0, 0.0, 2.0, 2.0], &[1.0, 1.0, 3.0, 3.0]));
-        assert!(!mbrs_intersect(&[0.0, 0.0, 1.0, 1.0], &[2.0, 2.0, 3.0, 3.0]));
+        assert!(!mbrs_intersect(
+            &[0.0, 0.0, 1.0, 1.0],
+            &[2.0, 2.0, 3.0, 3.0]
+        ));
         // touching edge
         assert!(mbrs_intersect(&[0.0, 0.0, 1.0, 1.0], &[1.0, 1.0, 2.0, 2.0]));
     }

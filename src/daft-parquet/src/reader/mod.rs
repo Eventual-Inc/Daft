@@ -34,7 +34,6 @@ use util::{
 use crate::{
     ArrowSnafu,
     geo_metadata::detect_geo_columns,
-    retype_geo_schema,
     helpers::{
         bool_array_to_row_selection, build_offset_row_selection, build_single_rg_delete_selection,
         combine_selections, predicate_pushable_cols, prune_row_groups, refine_selection,
@@ -44,6 +43,7 @@ use crate::{
         apply_field_ids_to_arrowrs_parquet_metadata, strip_string_types_from_parquet_metadata,
     },
     read::{ParquetReadOptions, ParquetSchemaInferenceOptions, StringEncoding},
+    retype_geo_schema,
 };
 
 pub enum ParquetSource<'a> {
@@ -577,10 +577,7 @@ fn apply_cross_rg_limit(
 ///
 /// Applies a logical re-wrap on each named column — the underlying WKB bytes are
 /// unchanged; only the Daft dtype changes from `Binary` to `Geometry`.
-fn retype_geo_columns(
-    batch: RecordBatch,
-    geo_col_names: &[String],
-) -> DaftResult<RecordBatch> {
+fn retype_geo_columns(batch: RecordBatch, geo_col_names: &[String]) -> DaftResult<RecordBatch> {
     if geo_col_names.is_empty() {
         return Ok(batch);
     }
@@ -610,7 +607,10 @@ pub async fn stream_parquet(
 
     // Extract geo columns from the footer before any modifications to parquet_metadata.
     let geo_cols: Vec<String> = if opts.schema_infer.geometry {
-        let kv_meta = arrow_metadata.metadata().file_metadata().key_value_metadata();
+        let kv_meta = arrow_metadata
+            .metadata()
+            .file_metadata()
+            .key_value_metadata();
         kv_meta
             .and_then(|kv| {
                 kv.iter()
@@ -623,7 +623,10 @@ pub async fn stream_parquet(
                 // parquet_to_arrow_schema to get a quick schema for detection purposes.
                 let arrow_schema_for_detect = parquet::arrow::parquet_to_arrow_schema(
                     arrow_metadata.metadata().file_metadata().schema_descr(),
-                    arrow_metadata.metadata().file_metadata().key_value_metadata(),
+                    arrow_metadata
+                        .metadata()
+                        .file_metadata()
+                        .key_value_metadata(),
                 )
                 .ok()
                 .and_then(|s| Schema::try_from(&s).ok());
@@ -688,10 +691,7 @@ pub async fn stream_parquet(
         // (e.g. iceberg writer) treat any received batch as "there's
         // something to write" and emit metadata for it; a 0-row batch
         // would still land an empty snapshot.
-        return Ok((
-            geo_return_schema,
-            futures::stream::empty().boxed(),
-        ));
+        return Ok((geo_return_schema, futures::stream::empty().boxed()));
     }
     if plan.read_col_indices.is_empty() {
         return count_only_stream(

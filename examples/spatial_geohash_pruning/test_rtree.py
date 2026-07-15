@@ -19,6 +19,7 @@ import daft
 
 # ── Minimal WKB helpers ───────────────────────────────────────────────────
 
+
 def wkb_point(x: float, y: float) -> bytes:
     """WKB little-endian Point."""
     return struct.pack("<BIdd", 1, 1, x, y)
@@ -27,14 +28,20 @@ def wkb_point(x: float, y: float) -> bytes:
 def wkb_polygon_box(x0: float, y0: float, x1: float, y1: float) -> bytes:
     """WKB little-endian closed Polygon (box)."""
     # WKB polygon: byte_order(1) + wkb_type(3) + n_rings(4) + n_pts(4) + 5 coords
-    header = struct.pack("<BII", 1, 3, 1)        # LE, Polygon, 1 ring
-    n_pts  = struct.pack("<I", 5)
-    ring   = struct.pack("<10d",
-        x0, y0,
-        x1, y0,
-        x1, y1,
-        x0, y1,
-        x0, y0,   # close
+    header = struct.pack("<BII", 1, 3, 1)  # LE, Polygon, 1 ring
+    n_pts = struct.pack("<I", 5)
+    ring = struct.pack(
+        "<10d",
+        x0,
+        y0,
+        x1,
+        y0,
+        x1,
+        y1,
+        x0,
+        y1,
+        x0,
+        y0,  # close
     )
     return header + n_pts + ring
 
@@ -44,25 +51,29 @@ def wkb_polygon_box(x0: float, y0: float, x1: float, y1: float) -> bytes:
 # Points: P0(0.5, 0.5) in poly 0; P1(2.5, 0.5) in poly 1;
 #         P2(10.0, 10.0) outside all polys.
 
-polys = daft.from_pydict({
-    "pid":  [0,    1,    2],
-    "cell": [0,    1,    2],
-    "geom": [
-        wkb_polygon_box(0, 0, 1, 1),
-        wkb_polygon_box(2, 0, 3, 1),
-        wkb_polygon_box(4, 0, 5, 1),
-    ],
-})
+polys = daft.from_pydict(
+    {
+        "pid": [0, 1, 2],
+        "cell": [0, 1, 2],
+        "geom": [
+            wkb_polygon_box(0, 0, 1, 1),
+            wkb_polygon_box(2, 0, 3, 1),
+            wkb_polygon_box(4, 0, 5, 1),
+        ],
+    }
+)
 
-points = daft.from_pydict({
-    "qid":  [0,        1,        2],
-    "cell": [0,        1,        0],   # P2 shares cell=0 with poly 0
-    "geom": [
-        wkb_point(0.5,  0.5),          # inside poly 0
-        wkb_point(2.5,  0.5),          # inside poly 1
-        wkb_point(10.0, 10.0),         # outside all
-    ],
-})
+points = daft.from_pydict(
+    {
+        "qid": [0, 1, 2],
+        "cell": [0, 1, 0],  # P2 shares cell=0 with poly 0
+        "geom": [
+            wkb_point(0.5, 0.5),  # inside poly 0
+            wkb_point(2.5, 0.5),  # inside poly 1
+            wkb_point(10.0, 10.0),  # outside all
+        ],
+    }
+)
 
 # ── Join ──────────────────────────────────────────────────────────────────
 
@@ -78,7 +89,6 @@ result = daft.sql(
 )
 
 # ── Check plan for [R-tree] ───────────────────────────────────────────────
-
 buf = io.StringIO()
 result.explain(show_all=True, file=buf)
 plan_text = buf.getvalue()
@@ -108,7 +118,7 @@ if pairs == expected:
     print(f"\n✓  Correct: matched pairs = {sorted(pairs)}")
     sys.exit(0)
 else:
-    print(f"\n✗  WRONG result!")
+    print("\n✗  WRONG result!")
     print(f"   expected: {sorted(expected)}")
     print(f"   got:      {sorted(pairs)}")
     sys.exit(1)

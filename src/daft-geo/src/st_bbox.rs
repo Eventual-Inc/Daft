@@ -6,8 +6,10 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::mbr::wkb_to_mbr;
-use crate::utils::{get_geometry_binary, validate_geometry_field};
+use crate::{
+    mbr::wkb_to_mbr,
+    utils::{get_geometry_binary, validate_geometry_field},
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct StBbox;
@@ -75,7 +77,10 @@ impl ScalarUDF for StBbox {
         schema: &Schema,
     ) -> DaftResult<Field> {
         validate_geometry_field(&inputs, schema, 0, "geom", self.name())?;
-        Ok(Field::new(self.name(), DataType::Struct(bbox_struct_fields())))
+        Ok(Field::new(
+            self.name(),
+            DataType::Struct(bbox_struct_fields()),
+        ))
     }
 
     fn docstring(&self) -> &'static str {

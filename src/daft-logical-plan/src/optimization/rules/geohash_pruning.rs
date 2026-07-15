@@ -4,8 +4,7 @@ use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
 use daft_algebra::boolean::combine_conjunction;
 use daft_dsl::{
-    Expr,
-    ExprRef,
+    Expr, ExprRef,
     expr::{Column, ResolvedColumn},
 };
 use daft_geo::StGeohashCovers;
@@ -97,14 +96,16 @@ fn collect_geohash_preds(
     match expr.as_ref() {
         Expr::ScalarFn(daft_dsl::functions::scalar::ScalarFn::Builtin(sf)) => {
             if SPATIAL_PRED_FNS.contains(&sf.name()) {
-                if let Some(pred) =
-                    maybe_geohash_pred_for_spatial_fn(sf, schema)
-                {
+                if let Some(pred) = maybe_geohash_pred_for_spatial_fn(sf, schema) {
                     out.push(pred);
                 }
             }
         }
-        Expr::BinaryOp { op: daft_core::prelude::Operator::And, left, right } => {
+        Expr::BinaryOp {
+            op: daft_core::prelude::Operator::And,
+            left,
+            right,
+        } => {
             collect_geohash_preds(left, schema, out);
             collect_geohash_preds(right, schema, out);
         }

@@ -17,8 +17,8 @@ import daft
 from daft import col, lit
 from daft.functions.spatial import st_contains, st_geohash, st_intersects
 
-
 # ── WKB helpers ─────────────────────────────────────────────────────────────
+
 
 def _point_wkb(x: float, y: float) -> bytes:
     """Return WKB-encoded Point (little-endian)."""
@@ -31,9 +31,9 @@ def _polygon_wkb(rings: list[list[tuple[float, float]]]) -> bytes:
     Each ring is a list of (x, y) tuples.  The exterior ring must be closed
     (first == last point).
     """
-    buf = struct.pack("<B", 1)          # byte order: little-endian
-    buf += struct.pack("<I", 3)          # geometry type: Polygon
-    buf += struct.pack("<I", len(rings)) # num rings
+    buf = struct.pack("<B", 1)  # byte order: little-endian
+    buf += struct.pack("<I", 3)  # geometry type: Polygon
+    buf += struct.pack("<I", len(rings))  # num rings
     for ring in rings:
         buf += struct.pack("<I", len(ring))
         for x, y in ring:
@@ -93,40 +93,26 @@ def points_df():
 
 # ── Basic correctness tests ───────────────────────────────────────────────────
 
+
 def test_st_intersects_point_in_polygon(points_df):
     """Points inside [0,2]×[0,2] should be returned by st_intersects."""
     query_lit = lit(QUERY_POLYGON)
-    result = (
-        points_df
-        .where(st_intersects(col("geom"), query_lit))
-        .select("id")
-        .sort("id")
-        .to_pydict()
-    )
+    result = points_df.where(st_intersects(col("geom"), query_lit)).select("id").sort("id").to_pydict()
     # P0 (1,1), P3 (1.5,1.5), P4 (0,0) are inside or on the boundary
     assert result["id"] == [0, 3, 4]
 
 
 def test_st_contains_polygon_contains_points(points_df):
     """st_contains(polygon, point) mirrors st_intersects for Point geometries."""
-    # Build a polygon-column DataFrame for the query region
-    query_df = daft.from_pydict(
-        {"query_geom": [QUERY_POLYGON] * len(POINTS)}
-    )
     combined = points_df.with_column("query_geom", lit(QUERY_POLYGON))
-    result = (
-        combined
-        .where(st_contains(col("query_geom"), col("geom")))
-        .select("id")
-        .sort("id")
-        .to_pydict()
-    )
+    result = combined.where(st_contains(col("query_geom"), col("geom"))).select("id").sort("id").to_pydict()
     # st_contains uses strict interior; boundary point P4(0,0) may not be included
     # depending on implementation. Accept either [0, 3] or [0, 3, 4].
     assert result["id"] in ([0, 3], [0, 3, 4]), f"Unexpected result: {result['id']}"
 
 
 # ── Geohash pruning optimizer tests ──────────────────────────────────────────
+
 
 def test_geohash_pruning_injected_in_explain(points_df):
     """Optimizer should inject st_geohash_covers when {col}_geohash column exists."""
@@ -158,18 +144,11 @@ def test_geohash_pruning_correct_results(points_df):
     query_lit = lit(QUERY_POLYGON)
 
     # Pruned query (has geom_geohash column → optimizer injects pre-filter)
-    pruned_ids = (
-        points_df
-        .where(st_intersects(col("geom"), query_lit))
-        .select("id")
-        .sort("id")
-        .to_pydict()["id"]
-    )
+    pruned_ids = points_df.where(st_intersects(col("geom"), query_lit)).select("id").sort("id").to_pydict()["id"]
 
     # Unpruned query (drop the geohash column so the optimizer cannot prune)
     unpruned_ids = (
-        points_df
-        .select("id", "geom")          # no geom_geohash column
+        points_df.select("id", "geom")  # no geom_geohash column
         .where(st_intersects(col("geom"), query_lit))
         .select("id")
         .sort("id")
@@ -185,52 +164,35 @@ def test_geohash_pruning_no_false_negatives(points_df):
     """Geohash pruning must never drop rows that satisfy the spatial predicate."""
     query_lit = lit(QUERY_POLYGON)
 
-    pruned_ids = set(
-        points_df
-        .where(st_intersects(col("geom"), query_lit))
-        .select("id")
-        .to_pydict()["id"]
-    )
+    pruned_ids = set(points_df.where(st_intersects(col("geom"), query_lit)).select("id").to_pydict()["id"])
     unpruned_ids = set(
-        points_df
-        .select("id", "geom")
-        .where(st_intersects(col("geom"), query_lit))
-        .select("id")
-        .to_pydict()["id"]
+        points_df.select("id", "geom").where(st_intersects(col("geom"), query_lit)).select("id").to_pydict()["id"]
     )
 
     # Every row in unpruned must also appear in pruned
     missing = unpruned_ids - pruned_ids
-    assert not missing, (
-        f"Geohash pruning incorrectly dropped row ids: {missing}"
-    )
+    assert not missing, f"Geohash pruning incorrectly dropped row ids: {missing}"
 
 
 # ── Without geohash column — pruning should silently not apply ────────────────
+
 
 def test_no_geohash_column_still_works():
     """Without a _geohash column the filter should still return correct results."""
     df = daft.from_pydict({"id": list(range(5)), "geom": POINTS})
     query_lit = lit(QUERY_POLYGON)
-    result = (
-        df
-        .where(st_intersects(col("geom"), query_lit))
-        .select("id")
-        .sort("id")
-        .to_pydict()
-    )
+    result = df.where(st_intersects(col("geom"), query_lit)).select("id").sort("id").to_pydict()
     assert result["id"] == [0, 3, 4]
 
 
 # ── st_geohash round-trip ─────────────────────────────────────────────────────
 
+
 def test_st_geohash_produces_valid_strings():
     """st_geohash should return non-empty geohash strings for valid geometries."""
     df = daft.from_pydict({"geom": POINTS})
     hashes = df.select(st_geohash(col("geom"), precision=5).alias("h")).to_pydict()["h"]
-    assert all(isinstance(h, str) and len(h) == 5 for h in hashes), (
-        f"Expected 5-char geohash strings, got: {hashes}"
-    )
+    assert all(isinstance(h, str) and len(h) == 5 for h in hashes), f"Expected 5-char geohash strings, got: {hashes}"
 
 
 def test_computed_geohash_matches_precomputed():
@@ -238,12 +200,11 @@ def test_computed_geohash_matches_precomputed():
     df = daft.from_pydict({"geom": POINTS})
     computed = df.select(st_geohash(col("geom"), precision=5).alias("h")).to_pydict()["h"]
     for i, (computed_h, expected_h) in enumerate(zip(computed, POINT_GEOHASHES_P5)):
-        assert computed_h == expected_h, (
-            f"Point {i}: computed geohash {computed_h!r} != expected {expected_h!r}"
-        )
+        assert computed_h == expected_h, f"Point {i}: computed geohash {computed_h!r} != expected {expected_h!r}"
 
 
 # ── st_geohash precision argument ─────────────────────────────────────────────
+
 
 @pytest.mark.parametrize("precision", [1, 2, 5, 6, 8, 12])
 def test_st_geohash_precision_controls_length(precision):
@@ -284,4 +245,3 @@ def test_st_geohash_null_geometry_yields_null():
     hashes = df.select(st_geohash(col("geom"), precision=6).alias("h")).to_pydict()["h"]
     assert hashes[0] is not None and len(hashes[0]) == 6
     assert hashes[1] is None
-

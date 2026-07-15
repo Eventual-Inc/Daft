@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
-use crate::dtype::DataType;
-use crate::schema::Schema;
 use serde::{Deserialize, Serialize};
+
+use crate::{dtype::DataType, schema::Schema};
 
 const GEOPARQUET_VERSION: &str = "1.1.0";
 pub const GEO_METADATA_KEY: &str = "geo";
@@ -40,7 +40,7 @@ pub fn build_geo_metadata(
         .iter()
         .filter(|f| f.dtype == DataType::Geometry)
         .map(|f| f.name.to_string())
-        .filter(|n| only_columns.map_or(true, |only| only.contains(n)))
+        .filter(|n| only_columns.is_none_or(|only| only.contains(n)))
         .collect();
     if geom_cols.is_empty() {
         return None;
@@ -146,14 +146,17 @@ fn classify_crs(crs: &serde_json::Value) -> Option<String> {
         serde_json::Value::String(s) => (s != DEFAULT_CRS).then(|| s.clone()),
         serde_json::Value::Object(_) => {
             let id = crs.get("id");
-            let authority = id.and_then(|id| id.get("authority")).and_then(|a| a.as_str());
+            let authority = id
+                .and_then(|id| id.get("authority"))
+                .and_then(|a| a.as_str());
             let code = id
                 .and_then(|id| id.get("code"))
                 .and_then(crs_id_code_to_string);
-            if let (Some(authority), Some(code)) = (authority, &code) {
-                if authority == "OGC" && (code == "CRS84" || code == "CRS84h") {
-                    return None;
-                }
+            if let (Some(authority), Some(code)) = (authority, &code)
+                && authority == "OGC"
+                && (code == "CRS84" || code == "CRS84h")
+            {
+                return None;
             }
             match (authority, code) {
                 (Some(authority), Some(code)) => Some(format!("{authority}:{code}")),
@@ -164,8 +167,9 @@ fn classify_crs(crs: &serde_json::Value) -> Option<String> {
     }
 }
 
-/// Returns `(column_name, crs)` for every WKB-encoded geometry column in
-/// `geo_json` whose `crs` is present and is not the GeoParquet default
+/// Returns `(column_name, crs)` for every WKB-encoded geometry column with a non-default CRS.
+///
+/// Considers columns in `geo_json` whose `crs` is present and is not the GeoParquet default
 /// (`OGC:CRS84`, in either string or PROJJSON-object form — see
 /// `classify_crs`). Lenient: returns empty on any parse failure, matching
 /// `detect_geo_columns`.
@@ -199,9 +203,7 @@ pub fn non_default_crs_columns(geo_json: &str) -> Vec<(String, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dtype::DataType;
-    use crate::field::Field;
-    use crate::schema::Schema;
+    use crate::{dtype::DataType, field::Field, schema::Schema};
 
     fn schema_with_geo() -> Schema {
         Schema::new(vec![
@@ -249,10 +251,12 @@ mod tests {
         // malformed JSON -> empty
         assert!(detect_geo_columns("{not json", &read_schema).is_empty());
         // non-WKB encoding -> skipped
-        let arrow_geo = r#"{"version":"1.1.0","primary_column":"g","columns":{"g":{"encoding":"point"}}}"#;
+        let arrow_geo =
+            r#"{"version":"1.1.0","primary_column":"g","columns":{"g":{"encoding":"point"}}}"#;
         assert!(detect_geo_columns(arrow_geo, &read_schema).is_empty());
         // declared column absent from schema -> skipped
-        let missing = r#"{"version":"1.1.0","primary_column":"x","columns":{"x":{"encoding":"WKB"}}}"#;
+        let missing =
+            r#"{"version":"1.1.0","primary_column":"x","columns":{"x":{"encoding":"WKB"}}}"#;
         assert!(detect_geo_columns(missing, &read_schema).is_empty());
     }
 
@@ -349,10 +353,7 @@ mod tests {
             }
         }"#;
         let flagged = non_default_crs_columns(json);
-        assert_eq!(
-            flagged,
-            vec![("geom".to_string(), "EPSG:3857".to_string())]
-        );
+        assert_eq!(flagged, vec![("geom".to_string(), "EPSG:3857".to_string())]);
     }
 
     #[test]
@@ -375,10 +376,7 @@ mod tests {
             }
         }"#;
         let flagged = non_default_crs_columns(json);
-        assert_eq!(
-            flagged,
-            vec![("geom".to_string(), "EPSG:4326".to_string())]
-        );
+        assert_eq!(flagged, vec![("geom".to_string(), "EPSG:4326".to_string())]);
     }
 
     #[test]

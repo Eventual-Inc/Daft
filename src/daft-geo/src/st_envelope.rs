@@ -1,6 +1,8 @@
 use common_error::DaftResult;
-use daft_core::prelude::{DataType, Field, Schema};
-use daft_core::series::Series;
+use daft_core::{
+    prelude::{DataType, Field, Schema},
+    series::Series,
+};
 use daft_dsl::{
     ExprRef,
     functions::{FunctionArgs, ScalarUDF, scalar::ScalarFn},

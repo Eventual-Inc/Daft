@@ -65,8 +65,10 @@ struct LoadedIndex {
 }
 
 fn load_index_for_dir(dir: &str) -> Option<LoadedIndex> {
-    use parquet::file::reader::{FileReader, SerializedFileReader};
-    use parquet::record::RowAccessor;
+    use parquet::{
+        file::reader::{FileReader, SerializedFileReader},
+        record::RowAccessor,
+    };
 
     let index_path = Path::new(dir).join(INDEX_FILENAME);
     let file = std::fs::File::open(index_path).ok()?;
@@ -118,7 +120,11 @@ fn load_index_for_dir(dir: &str) -> Option<LoadedIndex> {
             }
         })
         .collect();
-    Some(LoadedIndex { geom_col, h3_resolution, file_cells })
+    Some(LoadedIndex {
+        geom_col,
+        h3_resolution,
+        file_cells,
+    })
 }
 
 /// One loaded index per directory, so a scan spanning many partition directories
@@ -129,7 +135,9 @@ struct IndexCache {
 
 impl IndexCache {
     fn new() -> Self {
-        Self { by_dir: HashMap::new() }
+        Self {
+            by_dir: HashMap::new(),
+        }
     }
 
     fn get(&mut self, dir: &str) -> Option<Arc<LoadedIndex>> {
@@ -184,7 +192,13 @@ impl SpatialPartitionPruning {
         let pruned: Vec<ScanTaskRef> = tasks
             .iter()
             .filter(|t| {
-                task_passes_h3(t, &geom_col, &query_wkb, &mut cache, &mut query_cells_by_res)
+                task_passes_h3(
+                    t,
+                    &geom_col,
+                    &query_wkb,
+                    &mut cache,
+                    &mut query_cells_by_res,
+                )
             })
             .cloned()
             .collect();
@@ -264,7 +278,9 @@ fn task_passes_h3(
     }
     for source in &task.sources {
         let path = local_fs_path(source.get_path());
-        let Some(dir) = Path::new(path).parent().map(|p| p.to_string_lossy().into_owned())
+        let Some(dir) = Path::new(path)
+            .parent()
+            .map(|p| p.to_string_lossy().into_owned())
         else {
             return true;
         };
@@ -277,8 +293,7 @@ fn task_passes_h3(
         let query_cells = query_cells_by_res
             .entry(index.h3_resolution)
             .or_insert_with(|| {
-                wkb_to_h3_cells(query_wkb, index.h3_resolution)
-                    .map(|c| c.into_iter().collect())
+                wkb_to_h3_cells(query_wkb, index.h3_resolution).map(|c| c.into_iter().collect())
             });
         let Some(query_cells) = query_cells.as_ref() else {
             return true;
@@ -349,9 +364,11 @@ mod tests {
         h3_resolution: u8,
         rows: &[(&str, &str)],
     ) {
-        use arrow::array::StringDictionaryBuilder;
-        use arrow::datatypes::{DataType, Field, Int32Type, Schema};
-        use arrow::record_batch::RecordBatch;
+        use arrow::{
+            array::StringDictionaryBuilder,
+            datatypes::{DataType, Field, Int32Type, Schema},
+            record_batch::RecordBatch,
+        };
         use parquet::{arrow::ArrowWriter, file::metadata::KeyValue};
 
         let mut h3_builder: StringDictionaryBuilder<Int32Type> = StringDictionaryBuilder::new();
@@ -396,7 +413,8 @@ mod tests {
         // Parquet footer KV pairs in addition to "ARROW:schema"). Replicate that
         // here so this fixture matches what the real Python writer produces and
         // `load_index_for_dir`'s `key_value_metadata()` lookup finds them.
-        writer.append_key_value_metadata(KeyValue::new("geom_col".to_string(), geom_col.to_string()));
+        writer
+            .append_key_value_metadata(KeyValue::new("geom_col".to_string(), geom_col.to_string()));
         writer.append_key_value_metadata(KeyValue::new(
             "h3_resolution".to_string(),
             h3_resolution.to_string(),
@@ -473,7 +491,7 @@ mod tests {
             5,
             &[
                 // part-0.parquet's sidecar entry is CORRUPT: one valid H3 hex
-                // cell plus one unparseable string, as would result from a
+                // cell plus one unparsable string, as would result from a
                 // hand-edited or otherwise corrupted sidecar file.
                 ("851fb467fffffff", "part-0.parquet"),
                 ("not_a_cell", "part-0.parquet"),
@@ -493,7 +511,7 @@ mod tests {
         // that should have been kept.
         assert!(
             !index.file_cells.contains_key("part-0.parquet"),
-            "a file with any unparseable recorded cell string must be absent \
+            "a file with any unparsable recorded cell string must be absent \
              from file_cells, not present with a shrunken cell list"
         );
         // The directory's other, fully-valid file entry must still load
@@ -588,7 +606,8 @@ mod tests {
         // pass or fail for the wrong reason.
         let query_point = geo::Geometry::Point(geo::Point::new(2.35, 48.85));
         let query_wkb = daft_geo::utils::geom_to_wkb(&query_point).unwrap();
-        let query_cells = wkb_to_h3_cells(&query_wkb, 5).expect("query point must resolve to H3 cells");
+        let query_cells =
+            wkb_to_h3_cells(&query_wkb, 5).expect("query point must resolve to H3 cells");
         let covering_cell_str = h3o::CellIndex::try_from(*query_cells.iter().next().unwrap())
             .unwrap()
             .to_string();
@@ -597,7 +616,8 @@ mod tests {
         // set is guaranteed disjoint from Paris's.
         let other_point = geo::Geometry::Point(geo::Point::new(151.2, -33.87));
         let other_wkb = daft_geo::utils::geom_to_wkb(&other_point).unwrap();
-        let other_cells = wkb_to_h3_cells(&other_wkb, 5).expect("other point must resolve to H3 cells");
+        let other_cells =
+            wkb_to_h3_cells(&other_wkb, 5).expect("other point must resolve to H3 cells");
         let non_covering_cell_str = h3o::CellIndex::try_from(*other_cells.iter().next().unwrap())
             .unwrap()
             .to_string();
@@ -640,7 +660,8 @@ mod tests {
             None,
         );
         psi.scan_state = ScanState::Tasks(StdArc::new(vec![task_a, task_b]));
-        let source = crate::ops::Source::new(schema.clone(), StdArc::new(SourceInfo::Physical(psi)));
+        let source =
+            crate::ops::Source::new(schema.clone(), StdArc::new(SourceInfo::Physical(psi)));
 
         let predicate = daft_geo::st_intersects::st_intersects(
             daft_dsl::resolved_col("geom"),
@@ -716,7 +737,7 @@ mod tests {
         }
 
         // dir_a's part-0.parquet entry is CORRUPT (one valid non-covering cell
-        // + one unparseable string) and must therefore be UNRESOLVABLE, not
+        // + one unparsable string) and must therefore be UNRESOLVABLE, not
         // "confirmed non-covering" — its task must be KEPT even though the one
         // cell that *did* parse is the same non-covering (Sydney) cell used in
         // dir_b, whose task (clean, fully-valid, non-covering) IS pruned. This
@@ -730,7 +751,8 @@ mod tests {
 
         let other_point = geo::Geometry::Point(geo::Point::new(151.2, -33.87)); // Sydney
         let other_wkb = daft_geo::utils::geom_to_wkb(&other_point).unwrap();
-        let other_cells = wkb_to_h3_cells(&other_wkb, 5).expect("other point must resolve to H3 cells");
+        let other_cells =
+            wkb_to_h3_cells(&other_wkb, 5).expect("other point must resolve to H3 cells");
         let non_covering_cell_str = h3o::CellIndex::try_from(*other_cells.iter().next().unwrap())
             .unwrap()
             .to_string();
@@ -773,7 +795,8 @@ mod tests {
             None,
         );
         psi.scan_state = ScanState::Tasks(StdArc::new(vec![task_a, task_b]));
-        let source = crate::ops::Source::new(schema.clone(), StdArc::new(SourceInfo::Physical(psi)));
+        let source =
+            crate::ops::Source::new(schema.clone(), StdArc::new(SourceInfo::Physical(psi)));
 
         let predicate = daft_geo::st_intersects::st_intersects(
             daft_dsl::resolved_col("geom"),

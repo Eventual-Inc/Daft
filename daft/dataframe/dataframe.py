@@ -3489,8 +3489,9 @@ class DataFrame:
 
     @DataframePublicAPI
     def with_spatial_bbox(self, geom_col: str) -> "DataFrame":
-        """Add ``rtree_min_x``, ``rtree_min_y``, ``rtree_max_x``, ``rtree_max_y`` Float64 columns
-        holding the bounding box of ``geom_col``.
+        """Add ``rtree_min_x``, ``rtree_min_y``, ``rtree_max_x``, ``rtree_max_y`` Float64 columns.
+
+        These hold the bounding box of ``geom_col``.
 
         These are the column names the native spatial-join operator detects as a precomputed
         R-tree index, letting it skip per-row WKB bounding-box extraction during the join. When the

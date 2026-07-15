@@ -1,9 +1,15 @@
-use std::{collections::HashMap, sync::{Arc, LazyLock}};
+use std::{
+    collections::HashMap,
+    sync::{Arc, LazyLock},
+};
 
 use common_display::table_display::StrValue;
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
-use daft_core::{join::JoinSide, prelude::{Operator, SchemaRef, UInt64Array}};
+use daft_core::{
+    join::JoinSide,
+    prelude::{Operator, SchemaRef, UInt64Array},
+};
 use daft_dsl::{
     Expr, ExprRef,
     expr::{Column, bound_expr::BoundExpr},
@@ -75,9 +81,16 @@ struct PartitionedRTreeState {
 // ── Spatial function names ────────────────────────────────────────────────
 
 const SPATIAL_FNS: &[&str] = &[
-    "st_intersects", "st_contains", "st_within", "st_covers",
-    "st_covered_by", "st_touches", "st_overlaps",
-    "st_crosses", "st_equals", "st_dwithin",
+    "st_intersects",
+    "st_contains",
+    "st_within",
+    "st_covers",
+    "st_covered_by",
+    "st_touches",
+    "st_overlaps",
+    "st_crosses",
+    "st_equals",
+    "st_dwithin",
 ];
 
 // ── Column-index extraction (no TreeNode dependency) ─────────────────────
@@ -164,10 +177,12 @@ fn extract_from_expr(
         // other branch can be true for pairs whose bboxes do NOT intersect, and
         // under NOT the truth of the wrapped predicate is inverted — in both
         // cases bbox candidate generation would silently drop true rows.
-        Expr::BinaryOp { op: Operator::And, left, right } => {
-            extract_from_expr(left, build_side, output_schema_len, build_n)
-                .or_else(|| extract_from_expr(right, build_side, output_schema_len, build_n))
-        }
+        Expr::BinaryOp {
+            op: Operator::And,
+            left,
+            right,
+        } => extract_from_expr(left, build_side, output_schema_len, build_n)
+            .or_else(|| extract_from_expr(right, build_side, output_schema_len, build_n)),
         _ => None,
     }
 }
@@ -237,9 +252,7 @@ fn build_rtree(
                 let mn_y = min_y_s.get(i)?;
                 let mx_x = max_x_s.get(i)?;
                 let mx_y = max_y_s.get(i)?;
-                if mn_x.is_finite() && mn_y.is_finite()
-                    && mx_x.is_finite() && mx_y.is_finite()
-                {
+                if mn_x.is_finite() && mn_y.is_finite() && mx_x.is_finite() && mx_y.is_finite() {
                     Some(RTreeEntry {
                         bbox: AABB::from_corners([mn_x, mn_y], [mx_x, mx_y]),
                         row_idx: i as u32,
@@ -324,7 +337,10 @@ fn build_partitioned_rtrees(
         let key_series = table.get_column(build_key_col);
         for r_idx in 0..table.len() {
             let key = key_series.str_value(r_idx);
-            key_to_locs.entry(key).or_default().push((t_idx, r_idx as u32));
+            key_to_locs
+                .entry(key)
+                .or_default()
+                .push((t_idx, r_idx as u32));
         }
     }
 
@@ -382,8 +398,10 @@ fn build_partitioned_rtrees(
                         let mn_y = min_y_s.get(i)?;
                         let mx_x = max_x_s.get(i)?;
                         let mx_y = max_y_s.get(i)?;
-                        if mn_x.is_finite() && mn_y.is_finite()
-                            && mx_x.is_finite() && mx_y.is_finite()
+                        if mn_x.is_finite()
+                            && mn_y.is_finite()
+                            && mx_x.is_finite()
+                            && mx_y.is_finite()
                         {
                             Some(RTreeEntry {
                                 bbox: AABB::from_corners([mn_x, mn_y], [mx_x, mx_y]),
@@ -418,7 +436,11 @@ fn build_partitioned_rtrees(
         return None;
     }
 
-    Some(PartitionedRTreeState { groups, probe_key_col, probe_geom_col })
+    Some(PartitionedRTreeState {
+        groups,
+        probe_key_col,
+        probe_geom_col,
+    })
 }
 
 // ── Operator state ────────────────────────────────────────────────────────
@@ -462,15 +484,18 @@ impl NestedLoopJoinOperator {
         // Single walk: column selection and pad both come from the same
         // accelerated node, so they can never disagree (see module-level
         // doc on `extract_from_expr`).
-        let extracted = extract_geom_col_indices(
-            &filter,
-            build_side,
-            output_schema.len(),
-            build_n_cols,
-        );
+        let extracted =
+            extract_geom_col_indices(&filter, build_side, output_schema.len(), build_n_cols);
         let geom_cols = extracted.map(|(build_col, probe_col, _)| (build_col, probe_col));
         let dwithin_distance = extracted.map(|(_, _, pad)| pad);
-        Self { filter, output_schema, build_side, geom_cols, partition_key, dwithin_distance }
+        Self {
+            filter,
+            output_schema,
+            build_side,
+            geom_cols,
+            partition_key,
+            dwithin_distance,
+        }
     }
 }
 
@@ -560,7 +585,9 @@ impl JoinOperator for NestedLoopJoinOperator {
             state
                 .rtree_state
                 .as_ref()
-                .map_or(state.build_tables.is_empty(), |rs| rs.merged_build.is_empty())
+                .map_or(state.build_tables.is_empty(), |rs| {
+                    rs.merged_build.is_empty()
+                })
         };
 
         if input.is_empty() || build_is_empty {
@@ -596,56 +623,56 @@ impl JoinOperator for NestedLoopJoinOperator {
                         // build_idx is relative to that key's group RecordBatch.
                         // Each probe row is independent, so we probe the R-tree in
                         // parallel with rayon and merge the per-row results serially.
-                        let per_key: HashMap<String, (Vec<u64>, Vec<u64>)> =
-                            if let Ok(binary) = get_geometry_binary(probe_geom_series) {
-                                let per_row: Vec<Vec<(String, u64, u64)>> =
-                                    PROBE_POOL.install(|| (0..probe_tbl.len())
-                                        .into_par_iter()
-                                        .map(|i| -> Vec<(String, u64, u64)> {
-                                            let key = key_series.str_value(i);
-                                            let Some((_, group_tree)) =
-                                                ps.groups.get(&key)
-                                            else {
-                                                return vec![];
-                                            };
-                                            let Some(wkb) = binary.get(i) else {
-                                                return vec![];
-                                            };
-                                            let Some([min_x, min_y, max_x, max_y]) =
-                                                wkb_to_mbr(wkb)
-                                            else {
-                                                return vec![];
-                                            };
-                                            let q = AABB::from_corners(
-                                                [min_x - pad, min_y - pad],
-                                                [max_x + pad, max_y + pad],
-                                            );
-                                            group_tree
-                                                .locate_in_envelope_intersecting(q)
-                                                .map(|entry| {
-                                                    (key.clone(), i as u64, entry.row_idx as u64)
-                                                })
-                                                .collect()
-                                        })
-                                        .collect());
-                                let mut map: HashMap<String, (Vec<u64>, Vec<u64>)> =
-                                    HashMap::new();
-                                for row_cands in per_row {
-                                    for (key, pi, bi) in row_cands {
-                                        let e = map.entry(key).or_default();
-                                        e.0.push(pi);
-                                        e.1.push(bi);
-                                    }
+                        let per_key: HashMap<String, (Vec<u64>, Vec<u64>)> = if let Ok(binary) =
+                            get_geometry_binary(probe_geom_series)
+                        {
+                            let per_row: Vec<Vec<(String, u64, u64)>> = PROBE_POOL.install(|| {
+                                (0..probe_tbl.len())
+                                    .into_par_iter()
+                                    .map(|i| -> Vec<(String, u64, u64)> {
+                                        let key = key_series.str_value(i);
+                                        let Some((_, group_tree)) = ps.groups.get(&key) else {
+                                            return vec![];
+                                        };
+                                        let Some(wkb) = binary.get(i) else {
+                                            return vec![];
+                                        };
+                                        let Some([min_x, min_y, max_x, max_y]) = wkb_to_mbr(wkb)
+                                        else {
+                                            return vec![];
+                                        };
+                                        let q = AABB::from_corners(
+                                            [min_x - pad, min_y - pad],
+                                            [max_x + pad, max_y + pad],
+                                        );
+                                        group_tree
+                                            .locate_in_envelope_intersecting(q)
+                                            .map(|entry| {
+                                                (key.clone(), i as u64, entry.row_idx as u64)
+                                            })
+                                            .collect()
+                                    })
+                                    .collect()
+                            });
+                            let mut map: HashMap<String, (Vec<u64>, Vec<u64>)> = HashMap::new();
+                            for row_cands in per_row {
+                                for (key, pi, bi) in row_cands {
+                                    let e = map.entry(key).or_default();
+                                    e.0.push(pi);
+                                    e.1.push(bi);
                                 }
-                                map
-                            } else {
-                                HashMap::new()
-                            };
+                            }
+                            map
+                        } else {
+                            HashMap::new()
+                        };
 
                         // One indexed join call per unique key in this probe morsel.
                         let mut result_batches: Vec<RecordBatch> = Vec::new();
                         for (key, (cp, cb)) in per_key {
-                            if cp.is_empty() { continue; }
+                            if cp.is_empty() {
+                                continue;
+                            }
                             let (group_rb, _) = ps.groups.get(&key).unwrap();
                             let rb = nested_loop_inner_join_indexed(
                                 probe_tbl, group_rb, &filter, build_side, &cp, &cb,
@@ -677,26 +704,28 @@ impl JoinOperator for NestedLoopJoinOperator {
                             // locate_in_envelope_intersecting calls are safe.  Each rayon
                             // task returns its (probe_idx, build_idx) pairs; we flatten
                             // them into the final index vectors afterwards.
-                            let per_row: Vec<Vec<(u64, u64)>> = PROBE_POOL.install(|| (0..probe_tbl.len())
-                                .into_par_iter()
-                                .map(|i| -> Vec<(u64, u64)> {
-                                    let Some(wkb) = binary.get(i) else {
-                                        return vec![];
-                                    };
-                                    let Some([min_x, min_y, max_x, max_y]) = wkb_to_mbr(wkb)
-                                    else {
-                                        return vec![];
-                                    };
-                                    let q = AABB::from_corners(
-                                        [min_x - pad, min_y - pad],
-                                        [max_x + pad, max_y + pad],
-                                    );
-                                    rtree
-                                        .locate_in_envelope_intersecting(q)
-                                        .map(|entry| (i as u64, entry.row_idx as u64))
-                                        .collect()
-                                })
-                                .collect());
+                            let per_row: Vec<Vec<(u64, u64)>> = PROBE_POOL.install(|| {
+                                (0..probe_tbl.len())
+                                    .into_par_iter()
+                                    .map(|i| -> Vec<(u64, u64)> {
+                                        let Some(wkb) = binary.get(i) else {
+                                            return vec![];
+                                        };
+                                        let Some([min_x, min_y, max_x, max_y]) = wkb_to_mbr(wkb)
+                                        else {
+                                            return vec![];
+                                        };
+                                        let q = AABB::from_corners(
+                                            [min_x - pad, min_y - pad],
+                                            [max_x + pad, max_y + pad],
+                                        );
+                                        rtree
+                                            .locate_in_envelope_intersecting(q)
+                                            .map(|entry| (i as u64, entry.row_idx as u64))
+                                            .collect()
+                                    })
+                                    .collect()
+                            });
                             let total: usize = per_row.iter().map(|v| v.len()).sum();
                             let mut cp: Vec<u64> = Vec::with_capacity(total);
                             let mut cb: Vec<u64> = Vec::with_capacity(total);
@@ -740,23 +769,15 @@ impl JoinOperator for NestedLoopJoinOperator {
                             if out.is_empty() {
                                 MicroPartition::empty(Some(output_schema))
                             } else {
-                                MicroPartition::new_loaded(
-                                    output_schema,
-                                    Arc::new(vec![out]),
-                                    None,
-                                )
+                                MicroPartition::new_loaded(output_schema, Arc::new(vec![out]), None)
                             }
                         }
                     } else {
                         // ── Fallback: original per-table loop ─────────────────────
                         let mut result_batches = Vec::new();
                         for build_tbl in &state.build_tables {
-                            let out = nested_loop_inner_join(
-                                probe_tbl,
-                                build_tbl,
-                                &filter,
-                                build_side,
-                            )?;
+                            let out =
+                                nested_loop_inner_join(probe_tbl, build_tbl, &filter, build_side)?;
                             if !out.is_empty() {
                                 result_batches.push(out);
                             }
@@ -810,7 +831,11 @@ impl JoinOperator for NestedLoopJoinOperator {
     }
 
     fn multiline_display(&self) -> Vec<String> {
-        let accel = if self.geom_cols.is_some() { " [R-tree]" } else { "" };
+        let accel = if self.geom_cols.is_some() {
+            " [R-tree]"
+        } else {
+            ""
+        };
         vec![
             format!("Nested Loop Join{accel}"),
             format!("Filter = {}", self.filter.inner()),
@@ -864,8 +889,8 @@ mod acceleration_tests {
 
     #[test]
     fn negated_intersects_is_never_accelerated() {
-        let e = daft_geo::st_intersects::st_intersects(unresolved_col("a"), unresolved_col("b"))
-            .not();
+        let e =
+            daft_geo::st_intersects::st_intersects(unresolved_col("a"), unresolved_col("b")).not();
         assert!(extract(e).is_none());
     }
 

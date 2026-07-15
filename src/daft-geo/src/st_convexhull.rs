@@ -1,6 +1,8 @@
 use common_error::DaftResult;
-use daft_core::prelude::{DataType, Field, Schema};
-use daft_core::series::Series;
+use daft_core::{
+    prelude::{DataType, Field, Schema},
+    series::Series,
+};
 use daft_dsl::{
     ExprRef,
     functions::{FunctionArgs, ScalarUDF, scalar::ScalarFn},
@@ -17,9 +19,7 @@ use crate::utils::{unary_geom_to_geom, validate_geometry_field};
 /// `catch_unwind` for defensive robustness (consistent with the buffer/overlay
 /// ops pattern), even though convex-hull is unlikely to panic.
 fn apply_convexhull(g: &Geometry) -> Option<Geometry> {
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        g.convex_hull()
-    }));
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| g.convex_hull()));
     result.ok().map(Geometry::Polygon)
 }
 

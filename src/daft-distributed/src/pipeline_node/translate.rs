@@ -10,8 +10,7 @@ use common_partitioning::PartitionRef;
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion, TreeNodeVisitor};
 use daft_core::join::JoinSide;
 use daft_dsl::{
-    Expr,
-    clustering_is_covered_by,
+    Expr, clustering_is_covered_by,
     expr::{
         Column,
         agg::extract_agg_expr,
@@ -21,8 +20,7 @@ use daft_dsl::{
     resolved_col,
 };
 use daft_logical_plan::{
-    JoinType, LogicalPlan, LogicalPlanRef, SourceInfo,
-    ops,
+    JoinType, LogicalPlan, LogicalPlanRef, SourceInfo, ops,
     partitioning::{HashRepartitionConfig, RepartitionSpec},
 };
 use daft_scan::{ScanState, scan_task_iters};
@@ -106,7 +104,9 @@ fn rebind_predicate(
     let unbound = expr
         .transform(|e| {
             if let Expr::Column(Column::Bound(bc)) = e.as_ref() {
-                Ok(Transformed::yes(daft_dsl::unresolved_col(bc.field.name.as_ref())))
+                Ok(Transformed::yes(daft_dsl::unresolved_col(
+                    bc.field.name.as_ref(),
+                )))
             } else {
                 Ok(Transformed::no(e))
             }
@@ -150,10 +150,7 @@ impl LogicalPlanToPipelineNodeTranslator {
     /// result node, then restores the saved stack.  Used by the spatial NLJ
     /// rewrite in `f_down` to translate join children before the main traversal
     /// would visit them.
-    fn translate_subtree(
-        &mut self,
-        plan: &LogicalPlanRef,
-    ) -> DaftResult<DistributedPipelineNode> {
+    fn translate_subtree(&mut self, plan: &LogicalPlanRef) -> DaftResult<DistributedPipelineNode> {
         let saved = std::mem::take(&mut self.curr_node);
         let _ = plan.visit(self)?;
         let result = self
@@ -386,10 +383,8 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                             let spatial_node = if let LogicalPlan::Project(p) =
                                 filter.input.as_ref()
                             {
-                                let projection = BoundExpr::bind_all(
-                                    &p.projection,
-                                    p.input.schema().as_ref(),
-                                )?;
+                                let projection =
+                                    BoundExpr::bind_all(&p.projection, p.input.schema().as_ref())?;
                                 DistributedPipelineNode::new(
                                     Arc::new(ProjectNode::new(
                                         self.get_next_pipeline_node_id(),
@@ -432,9 +427,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 let (remaining, left_eq_keys, right_eq_keys, _null_equals_nulls) =
                     join.on.split_eq_preds();
 
-                if !left_eq_keys.is_empty()
-                    && remaining.inner().is_some_and(is_spatial_predicate)
-                {
+                if !left_eq_keys.is_empty() && remaining.inner().is_some_and(is_spatial_predicate) {
                     // No separate WHERE filter here — the full ON predicate (equi
                     // conjuncts AND spatial residual) already IS the complete
                     // semantics the local NLJ must enforce.

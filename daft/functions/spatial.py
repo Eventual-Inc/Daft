@@ -43,7 +43,7 @@ def st_area(geom: Expression, use_spheroid: bool = False) -> Expression:
 
     Returns:
         Float64 column with the unsigned area in coordinate-system units squared (planar)
-        or WGS84 square meters (geodesic). Returns null for null or unparseable geometries.
+        or WGS84 square meters (geodesic). Returns null for null or unparsable geometries.
 
     Examples:
         >>> import daft
@@ -345,7 +345,7 @@ def st_envelope(geom: Expression) -> Expression:
 
     Returns:
         Geometry column containing the bounding-box polygon. Returns null for
-        null or unparseable inputs, or for geometries with no extent.
+        null or unparsable inputs, or for geometries with no extent.
     """
     return Expression._call_builtin_scalar_fn("st_envelope", geom)
 
@@ -358,7 +358,7 @@ def st_convexhull(geom: Expression) -> Expression:
 
     Returns:
         Geometry column containing the convex hull polygon. Returns null for
-        null or unparseable inputs.
+        null or unparsable inputs.
     """
     return Expression._call_builtin_scalar_fn("st_convexhull", geom)
 
@@ -536,7 +536,7 @@ def st_pointonsurface(geom: Expression) -> Expression:
 
     Returns:
         Geometry column containing Point geometries. Returns null for empty
-        or unparseable geometries.
+        or unparsable geometries.
     """
     return Expression._call_builtin_scalar_fn("st_pointonsurface", geom)
 

@@ -32,7 +32,7 @@ import daft
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _POINTS_DIR = os.path.join(_SCRIPT_DIR, "points")
-_POLYS_DIR  = os.path.join(_SCRIPT_DIR, "polygons")
+_POLYS_DIR = os.path.join(_SCRIPT_DIR, "polygons")
 
 
 def run() -> None:
@@ -43,8 +43,8 @@ def run() -> None:
             "--partitions 12 --no-single-file"
         )
 
-    points   = daft.read_parquet(_POINTS_DIR + "/**/*.parquet", hive_partitioning=True).with_column("_jk", daft.lit(1))
-    polygons = daft.read_parquet(_POLYS_DIR  + "/**/*.parquet", hive_partitioning=True).with_column("_jk", daft.lit(1))
+    points = daft.read_parquet(_POINTS_DIR + "/**/*.parquet", hive_partitioning=True).with_column("_jk", daft.lit(1))
+    polygons = daft.read_parquet(_POLYS_DIR + "/**/*.parquet", hive_partitioning=True).with_column("_jk", daft.lit(1))
 
     t0 = time.perf_counter()
 
@@ -55,9 +55,9 @@ def run() -> None:
             z.id   AS polygon_id,
             p.geom AS point_geom,
             z.geom AS polygon_geom
-        FROM   points   AS p, 
+        FROM   points   AS p,
             polygons AS z
-        WHERE  
+        WHERE
             p.partition_gh = z.partition_gh
             AND p.lon BETWEEN z.min_lon AND z.max_lon
             AND p.lat BETWEEN z.min_lat AND z.max_lat

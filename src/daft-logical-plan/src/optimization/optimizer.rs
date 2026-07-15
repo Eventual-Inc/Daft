@@ -7,15 +7,15 @@ use common_treenode::Transformed;
 use super::{
     logical_plan_tracker::LogicalPlanTracker,
     rules::{
-        CollocatedJoin, DetectMonotonicId, DropIntoBatches, DropRepartition, EliminateCrossJoin, EliminateOffsets,
-        EliminateSubqueryAliasRule, EnrichWithStats, ExtractWindowFunction, FilterNullJoinKey,
-        GeohashPruning, LiftProjectFromAgg, MaterializeScans, OptimizerRule, PushDownAggregation,
-    SpatialPartitionPruning,
-        PushDownAntiSemiJoin, PushDownFilter, PushDownJoinPredicate, PushDownLimit,
-        PushDownProjection, PushDownShard, ReorderJoins, RewriteCheckpointSource,
+        CollocatedJoin, DetectMonotonicId, DropIntoBatches, DropRepartition, EliminateCrossJoin,
+        EliminateOffsets, EliminateSubqueryAliasRule, EnrichWithStats, ExtractWindowFunction,
+        FilterNullJoinKey, GeohashPruning, LiftProjectFromAgg, MaterializeScans, OptimizerRule,
+        PushDownAggregation, PushDownAntiSemiJoin, PushDownFilter, PushDownJoinPredicate,
+        PushDownLimit, PushDownProjection, PushDownShard, ReorderJoins, RewriteCheckpointSource,
         RewriteCountDistinct, RewriteOffset, ShardScans, SimplifyExpressionsRule,
-        SimplifyNullFilteredJoin, SplitExplodeFromProject, SplitGranularProjection, SplitUDFs,
-        SplitUDFsFromFilters, UnnestPredicateSubquery, UnnestScalarSubquery,
+        SimplifyNullFilteredJoin, SpatialPartitionPruning, SplitExplodeFromProject,
+        SplitGranularProjection, SplitUDFs, SplitUDFsFromFilters, UnnestPredicateSubquery,
+        UnnestScalarSubquery,
     },
 };
 use crate::{LogicalPlan, optimization::rules::SplitVLLM};
@@ -146,10 +146,7 @@ impl OptimizerBuilder {
             // Rewrite spatial predicates (st_intersects, st_contains, st_within) to also
             // filter on `{col}_geohash` when such a column exists in the schema.
             // Run once, early in the pipeline so PushDownFilter can push the geohash predicate down.
-            RuleBatch::new(
-                vec![Box::new(GeohashPruning)],
-                RuleExecutionStrategy::Once,
-            ),
+            RuleBatch::new(vec![Box::new(GeohashPruning)], RuleExecutionStrategy::Once),
             // --- Filter out null join keys ---
             // This rule should be run once, before any filter pushdown rules.
             RuleBatch::new(
@@ -261,10 +258,7 @@ impl OptimizerBuilder {
             // time to bound peak memory usage.
             // Must run after MaterializeScans (needs ScanState::Tasks) and after
             // SpatialPartitionPruning (pruning first reduces the task lists).
-            RuleBatch::new(
-                vec![Box::new(CollocatedJoin)],
-                RuleExecutionStrategy::Once,
-            ),
+            RuleBatch::new(vec![Box::new(CollocatedJoin)], RuleExecutionStrategy::Once),
         ]);
         self
     }

@@ -48,10 +48,10 @@ from collections import Counter
 
 import daft
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def rect_wkb(x0: float, y0: float, x1: float, y1: float) -> bytes:
     """Return WKB bytes for an axis-aligned rectangle."""
@@ -67,7 +67,7 @@ def rect_wkb(x0: float, y0: float, x1: float, y1: float) -> bytes:
 def _check_parquet_files():
     here = os.path.dirname(__file__)
     points_path = os.path.join(here, "points.parquet")
-    polys_path  = os.path.join(here, "polygons.parquet")
+    polys_path = os.path.join(here, "polygons.parquet")
     if not os.path.exists(points_path) or not os.path.exists(polys_path):
         print("Parquet files not found — run `python generate_data.py` first.")
         sys.exit(1)
@@ -78,12 +78,13 @@ def _check_parquet_files():
 # Main example
 # ---------------------------------------------------------------------------
 
+
 def main():
     points_path, polys_path = _check_parquet_files()
 
     # ── 1. Load data ──────────────────────────────────────────────────────
     points = daft.read_parquet(points_path)
-    polys  = daft.read_parquet(polys_path)
+    polys = daft.read_parquet(polys_path)
 
     print("=== Points schema ===")
     print(points.schema())
@@ -97,9 +98,11 @@ def main():
     # Daft SQL does not support inline WKB hex literals, so we pass the
     # polygon geometry as a bound single-row DataFrame. A scalar subquery
     # ``(SELECT poly FROM query_df LIMIT 1)`` extracts it at query time.
-    query_df = daft.from_pydict({
-        "poly": [rect_wkb(-0.5, 51.3, 0.3, 51.7)],  # London bounding box
-    })
+    query_df = daft.from_pydict(
+        {
+            "poly": [rect_wkb(-0.5, 51.3, 0.3, 51.7)],  # London bounding box
+        }
+    )
     # Also add a constant join key to points for the multi-polygon spatial join.
     points_k = daft.sql("SELECT *, 1 AS join_key FROM points", points=points)
 
@@ -147,11 +150,10 @@ def main():
     unpruned_result.explain(show_all=True)
 
     # ── 5. Verify identical results ────────────────────────────────────────
-    pruned_ids   = set(hits["id"])
+    pruned_ids = set(hits["id"])
     unpruned_ids = set(unpruned_result.to_pydict()["id"])
     assert pruned_ids == unpruned_ids, (
-        f"Results differ!\n  pruned:   {sorted(pruned_ids)}\n"
-        f"  unpruned: {sorted(unpruned_ids)}"
+        f"Results differ!\n  pruned:   {sorted(pruned_ids)}\n  unpruned: {sorted(unpruned_ids)}"
     )
     print("\n✓  Pruned and unpruned queries return identical results.")
 

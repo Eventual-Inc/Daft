@@ -65,15 +65,14 @@ def _handle_build_spatial_index(sql: str) -> "DataFrame | None":
         subdirs = [
             entry.path
             for entry in os.scandir(directory)
-            if entry.is_dir()
-            and any(f.endswith(".parquet") for f in os.listdir(entry.path))
+            if entry.is_dir() and any(f.endswith(".parquet") for f in os.listdir(entry.path))
         ]
     except OSError:
         subdirs = []
 
     targets = sorted(subdirs) if subdirs else [directory]
 
-    def _build_one(target: str) -> dict:
+    def _build_one(target: str) -> dict[str, tuple[str, int]]:
         file_cells = build_spatial_index(
             target,
             geom_col=geom_col,
@@ -85,15 +84,14 @@ def _handle_build_spatial_index(sql: str) -> "DataFrame | None":
     # Inner pool uses bbox cols when available (cheap), so outer parallelism
     # is safe — peak memory per partition worker stays bounded.
     workers = min(os.cpu_count() or 4, len(targets), 4)
-    rows: list[dict] = []
+    rows: list[dict[str, str | int | None]] = []
     n_done = 0
     n_total = len(targets)
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futs = {pool.submit(_build_one, t): t for t in targets}
         for fut in as_completed(futs):
             for fname, (tgt, n_cells) in fut.result().items():
-                rows.append({"directory": tgt, "file": fname,
-                             "h3_cells": n_cells, "resolution": resolution})
+                rows.append({"directory": tgt, "file": fname, "h3_cells": n_cells, "resolution": resolution})
             n_done += 1
             if n_total > 1 and (n_done % max(1, n_total // 20) == 0 or n_done == n_total):
                 print(f"  spatial index: {n_done}/{n_total} partitions done")
@@ -102,12 +100,14 @@ def _handle_build_spatial_index(sql: str) -> "DataFrame | None":
     if not rows:
         rows = [{"directory": directory, "file": None, "h3_cells": 0, "resolution": resolution}]
 
-    return daft.from_pydict({
-        "directory": [r["directory"] for r in rows],
-        "file":      [r["file"] for r in rows],
-        "h3_cells":  [r["h3_cells"] for r in rows],
-        "resolution":[r["resolution"] for r in rows],
-    })
+    return daft.from_pydict(
+        {
+            "directory": [r["directory"] for r in rows],
+            "file": [r["file"] for r in rows],
+            "h3_cells": [r["h3_cells"] for r in rows],
+            "resolution": [r["resolution"] for r in rows],
+        }
+    )
 
 
 @PublicAPI

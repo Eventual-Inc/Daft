@@ -35,7 +35,12 @@ impl ScalarUDF for StMakeLine {
         inputs: FunctionArgs<Series>,
         _ctx: &daft_dsl::functions::scalar::EvalContext,
     ) -> DaftResult<Series> {
-        binary_geom_to_geom(inputs.required(0)?, inputs.required(1)?, self.name(), make_line)
+        binary_geom_to_geom(
+            inputs.required(0)?,
+            inputs.required(1)?,
+            self.name(),
+            make_line,
+        )
     }
 
     fn get_return_field(

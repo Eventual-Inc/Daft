@@ -5,7 +5,14 @@ use daft_dsl::{
     functions::{BuiltinScalarFn, BuiltinScalarFnVariant, FunctionArgs},
     lit,
 };
-use daft_geo::{StArea, StAsText, StBbox, StBuffer, StCentroid, StContains, StConvexHull, StCoveredBy, StCovers, StCrosses, StDifference, StDisjoint, StDistance, StDwithin, StEnvelope, StEquals, StGeohash, StGeometryType, StGeomFromGeoJson, StGeomFromText, StGeoJsonFromGeom, StIntersection, StIntersects, StIsValid, StLength, StMakeLine, StMakeValid, StOverlaps, StPerimeter, StPoint, StPointOnSurface, StSimplify, StSymDifference, StTouches, StUnion, StWithin, StX, StY};
+use daft_geo::{
+    StArea, StAsText, StBbox, StBuffer, StCentroid, StContains, StConvexHull, StCoveredBy,
+    StCovers, StCrosses, StDifference, StDisjoint, StDistance, StDwithin, StEnvelope, StEquals,
+    StGeoJsonFromGeom, StGeohash, StGeomFromGeoJson, StGeomFromText, StGeometryType,
+    StIntersection, StIntersects, StIsValid, StLength, StMakeLine, StMakeValid, StOverlaps,
+    StPerimeter, StPoint, StPointOnSurface, StSimplify, StSymDifference, StTouches, StUnion,
+    StWithin, StX, StY,
+};
 use sqlparser::ast;
 
 use super::SQLModule;
@@ -28,7 +35,10 @@ impl SQLModule for SQLModuleSpatial {
         parent.add_fn("st_y", SQLSpatialUnary(Arc::new(StY)));
         parent.add_fn("st_centroid", SQLSpatialUnary(Arc::new(StCentroid)));
         parent.add_fn("st_bbox", SQLSpatialUnary(Arc::new(StBbox)));
-        parent.add_fn("st_pointonsurface", SQLSpatialUnary(Arc::new(StPointOnSurface)));
+        parent.add_fn(
+            "st_pointonsurface",
+            SQLSpatialUnary(Arc::new(StPointOnSurface)),
+        );
         parent.add_fn("st_makevalid", SQLSpatialUnary(Arc::new(StMakeValid)));
         parent.add_fn("st_contains", SQLSpatialBinary(Arc::new(StContains)));
         parent.add_fn("st_intersects", SQLSpatialBinary(Arc::new(StIntersects)));
@@ -42,9 +52,15 @@ impl SQLModule for SQLModuleSpatial {
         parent.add_fn("st_covers", SQLSpatialBinary(Arc::new(StCovers)));
         parent.add_fn("st_covered_by", SQLSpatialBinary(Arc::new(StCoveredBy)));
         parent.add_fn("st_union", SQLSpatialBinary(Arc::new(StUnion)));
-        parent.add_fn("st_intersection", SQLSpatialBinary(Arc::new(StIntersection)));
+        parent.add_fn(
+            "st_intersection",
+            SQLSpatialBinary(Arc::new(StIntersection)),
+        );
         parent.add_fn("st_difference", SQLSpatialBinary(Arc::new(StDifference)));
-        parent.add_fn("st_symdifference", SQLSpatialBinary(Arc::new(StSymDifference)));
+        parent.add_fn(
+            "st_symdifference",
+            SQLSpatialBinary(Arc::new(StSymDifference)),
+        );
         parent.add_fn("st_buffer", SQLStBuffer);
         parent.add_fn("st_point", SQLStPoint);
         parent.add_fn("st_makeline", SQLSpatialBinary(Arc::new(StMakeLine)));
@@ -55,8 +71,14 @@ impl SQLModule for SQLModuleSpatial {
         parent.add_fn("st_geohash", SQLStGeohash);
         parent.add_fn("st_astext", SQLSpatialUnary(Arc::new(StAsText)));
         parent.add_fn("st_geomfromtext", SQLSpatialUnary(Arc::new(StGeomFromText)));
-        parent.add_fn("st_geomfromgeojson", SQLSpatialUnary(Arc::new(StGeomFromGeoJson)));
-        parent.add_fn("st_geojsonfromgeom", SQLSpatialUnary(Arc::new(StGeoJsonFromGeom)));
+        parent.add_fn(
+            "st_geomfromgeojson",
+            SQLSpatialUnary(Arc::new(StGeomFromGeoJson)),
+        );
+        parent.add_fn(
+            "st_geojsonfromgeom",
+            SQLSpatialUnary(Arc::new(StGeoJsonFromGeom)),
+        );
     }
 }
 
@@ -79,7 +101,9 @@ impl SQLFunction for SQLSpatialUnary {
         let geom = planner.plan_function_arg(&inputs[0])?.into_inner();
         Ok(BuiltinScalarFn {
             func: BuiltinScalarFnVariant::Sync(self.0.clone()),
-            inputs: FunctionArgs::new_unchecked(vec![daft_dsl::functions::FunctionArg::unnamed(geom)]),
+            inputs: FunctionArgs::new_unchecked(vec![daft_dsl::functions::FunctionArg::unnamed(
+                geom,
+            )]),
         }
         .into())
     }
@@ -99,7 +123,11 @@ impl SQLFunction for SQLSpatialBinary {
         planner: &crate::planner::SQLPlanner,
     ) -> SQLPlannerResult<ExprRef> {
         if inputs.len() != 2 {
-            invalid_operation_err!("{} expects 2 arguments, got {}", self.0.name(), inputs.len());
+            invalid_operation_err!(
+                "{} expects 2 arguments, got {}",
+                self.0.name(),
+                inputs.len()
+            );
         }
         let a = planner.plan_function_arg(&inputs[0])?.into_inner();
         let b = planner.plan_function_arg(&inputs[1])?.into_inner();
@@ -129,7 +157,10 @@ impl SQLFunction for SQLStBuffer {
         planner: &crate::planner::SQLPlanner,
     ) -> SQLPlannerResult<ExprRef> {
         if inputs.len() != 2 {
-            invalid_operation_err!("st_buffer expects 2 arguments (geom, distance), got {}", inputs.len());
+            invalid_operation_err!(
+                "st_buffer expects 2 arguments (geom, distance), got {}",
+                inputs.len()
+            );
         }
         let geom = planner.plan_function_arg(&inputs[0])?.into_inner();
         let distance_expr = planner.plan_function_arg(&inputs[1])?.into_inner();
@@ -137,9 +168,11 @@ impl SQLFunction for SQLStBuffer {
         let _ = distance_expr
             .as_literal()
             .and_then(|l| l.as_f64().or_else(|| l.as_i64().map(|v| v as f64)))
-            .ok_or_else(|| crate::error::PlannerError::invalid_operation(
-                "st_buffer: distance must be a numeric literal",
-            ))?;
+            .ok_or_else(|| {
+                crate::error::PlannerError::invalid_operation(
+                    "st_buffer: distance must be a numeric literal",
+                )
+            })?;
         // Pass distance as a trailing positional arg so StBuffer (unit struct) can read it
         Ok(BuiltinScalarFn {
             func: BuiltinScalarFnVariant::Sync(Arc::new(StBuffer)),
@@ -167,7 +200,10 @@ impl SQLFunction for SQLStSimplify {
         planner: &crate::planner::SQLPlanner,
     ) -> SQLPlannerResult<ExprRef> {
         if inputs.len() != 2 {
-            invalid_operation_err!("st_simplify expects 2 arguments (geom, tolerance), got {}", inputs.len());
+            invalid_operation_err!(
+                "st_simplify expects 2 arguments (geom, tolerance), got {}",
+                inputs.len()
+            );
         }
         let geom = planner.plan_function_arg(&inputs[0])?.into_inner();
         let tolerance_expr = planner.plan_function_arg(&inputs[1])?.into_inner();
@@ -204,7 +240,10 @@ impl SQLFunction for SQLStDwithin {
         planner: &crate::planner::SQLPlanner,
     ) -> SQLPlannerResult<ExprRef> {
         if inputs.len() != 3 {
-            invalid_operation_err!("st_dwithin expects 3 arguments (geom, geom, distance), got {}", inputs.len());
+            invalid_operation_err!(
+                "st_dwithin expects 3 arguments (geom, geom, distance), got {}",
+                inputs.len()
+            );
         }
         let a = planner.plan_function_arg(&inputs[0])?.into_inner();
         let b = planner.plan_function_arg(&inputs[1])?.into_inner();
@@ -212,9 +251,11 @@ impl SQLFunction for SQLStDwithin {
         let _ = distance_expr
             .as_literal()
             .and_then(|l| l.as_f64().or_else(|| l.as_i64().map(|v| v as f64)))
-            .ok_or_else(|| crate::error::PlannerError::invalid_operation(
-                "st_dwithin: distance must be a numeric literal",
-            ))?;
+            .ok_or_else(|| {
+                crate::error::PlannerError::invalid_operation(
+                    "st_dwithin: distance must be a numeric literal",
+                )
+            })?;
         Ok(BuiltinScalarFn {
             func: BuiltinScalarFnVariant::Sync(Arc::new(StDwithin)),
             inputs: FunctionArgs::new_unchecked(vec![
@@ -248,22 +289,27 @@ impl SQLFunction for SQLStGeohash {
                 p.as_literal()
                     .and_then(|l| l.as_i64())
                     .and_then(|v| u8::try_from(v).ok())
-                    .ok_or_else(|| crate::error::PlannerError::invalid_operation(
-                        "st_geohash: precision must be an integer literal between 1 and 12",
-                    ))?
+                    .ok_or_else(|| {
+                        crate::error::PlannerError::invalid_operation(
+                            "st_geohash: precision must be an integer literal between 1 and 12",
+                        )
+                    })?
             }
             n => invalid_operation_err!("st_geohash expects 1 or 2 arguments, got {n}"),
         };
         let geom = planner.plan_function_arg(&inputs[0])?.into_inner();
         Ok(BuiltinScalarFn {
             func: BuiltinScalarFnVariant::Sync(Arc::new(StGeohash { precision })),
-            inputs: FunctionArgs::new_unchecked(vec![daft_dsl::functions::FunctionArg::unnamed(geom)]),
+            inputs: FunctionArgs::new_unchecked(vec![daft_dsl::functions::FunctionArg::unnamed(
+                geom,
+            )]),
         }
         .into())
     }
 
     fn docstrings(&self, _alias: &str) -> String {
-        "Returns the geohash string of a geometry's centroid at the given precision (default 5).".to_string()
+        "Returns the geohash string of a geometry's centroid at the given precision (default 5)."
+            .to_string()
     }
 }
 
@@ -283,11 +329,12 @@ impl SQLFunction for SQLStMeasureUnary {
             1 => false,
             2 => {
                 let arg = planner.plan_function_arg(&inputs[1])?.into_inner();
-                arg.as_literal()
-                    .and_then(|l| l.as_bool())
-                    .ok_or_else(|| crate::error::PlannerError::invalid_operation(
-                        format!("{}: use_spheroid must be a boolean literal", self.0),
-                    ))?
+                arg.as_literal().and_then(|l| l.as_bool()).ok_or_else(|| {
+                    crate::error::PlannerError::invalid_operation(format!(
+                        "{}: use_spheroid must be a boolean literal",
+                        self.0
+                    ))
+                })?
             }
             n => invalid_operation_err!("{} expects 1 or 2 arguments, got {n}", self.0),
         };
@@ -338,11 +385,12 @@ impl SQLFunction for SQLStMeasureBinary {
             2 => false,
             3 => {
                 let arg = planner.plan_function_arg(&inputs[2])?.into_inner();
-                arg.as_literal()
-                    .and_then(|l| l.as_bool())
-                    .ok_or_else(|| crate::error::PlannerError::invalid_operation(
-                        format!("{}: use_spheroid must be a boolean literal", self.0),
-                    ))?
+                arg.as_literal().and_then(|l| l.as_bool()).ok_or_else(|| {
+                    crate::error::PlannerError::invalid_operation(format!(
+                        "{}: use_spheroid must be a boolean literal",
+                        self.0
+                    ))
+                })?
             }
             n => invalid_operation_err!("{} expects 2 or 3 arguments, got {n}", self.0),
         };
@@ -401,6 +449,7 @@ impl SQLFunction for SQLStPoint {
     }
 
     fn docstrings(&self, _alias: &str) -> String {
-        "Constructs a Point geometry from x (longitude) and y (latitude) numeric columns.".to_string()
+        "Constructs a Point geometry from x (longitude) and y (latitude) numeric columns."
+            .to_string()
     }
 }

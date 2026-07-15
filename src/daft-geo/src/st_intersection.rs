@@ -14,8 +14,7 @@ use crate::utils::{as_multipolygon, binary_geom_to_geom, validate_geometry_field
 
 fn op_intersection(a: &Geometry, b: &Geometry) -> Option<Geometry> {
     let (amp, bmp) = (as_multipolygon(a)?, as_multipolygon(b)?);
-    let result =
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| amp.intersection(&bmp)));
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| amp.intersection(&bmp)));
     result.ok().map(Geometry::MultiPolygon)
 }
 

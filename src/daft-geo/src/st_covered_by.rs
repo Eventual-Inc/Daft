@@ -1,6 +1,12 @@
 use common_error::DaftResult;
-use daft_core::{prelude::{DataType, Field, Schema}, series::Series};
-use daft_dsl::{ExprRef, functions::{FunctionArgs, ScalarUDF, scalar::ScalarFn}};
+use daft_core::{
+    prelude::{DataType, Field, Schema},
+    series::Series,
+};
+use daft_dsl::{
+    ExprRef,
+    functions::{FunctionArgs, ScalarUDF, scalar::ScalarFn},
+};
 use geo::Geometry;
 use serde::{Deserialize, Serialize};
 
@@ -11,14 +17,30 @@ pub struct StCoveredBy;
 
 #[typetag::serde]
 impl ScalarUDF for StCoveredBy {
-    fn name(&self) -> &'static str { "st_covered_by" }
-
-    fn call(&self, inputs: FunctionArgs<Series>, _ctx: &daft_dsl::functions::scalar::EvalContext) -> DaftResult<Series> {
-        binary_geom_to_bool(inputs.required(0)?, inputs.required(1)?, self.name(),
-            |a: &Geometry, b: &Geometry| crate::relate::relate_pred(a, b, crate::relate::RelatePred::CoveredBy))
+    fn name(&self) -> &'static str {
+        "st_covered_by"
     }
 
-    fn get_return_field(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn call(
+        &self,
+        inputs: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
+        binary_geom_to_bool(
+            inputs.required(0)?,
+            inputs.required(1)?,
+            self.name(),
+            |a: &Geometry, b: &Geometry| {
+                crate::relate::relate_pred(a, b, crate::relate::RelatePred::CoveredBy)
+            },
+        )
+    }
+
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         validate_geometry_field(&inputs, schema, 0, "geom_a", self.name())?;
         validate_geometry_field(&inputs, schema, 1, "geom_b", self.name())?;
         Ok(Field::new(self.name(), DataType::Boolean))

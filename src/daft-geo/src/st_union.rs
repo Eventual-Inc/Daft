@@ -32,7 +32,12 @@ impl ScalarUDF for StUnion {
         inputs: FunctionArgs<Series>,
         _ctx: &daft_dsl::functions::scalar::EvalContext,
     ) -> DaftResult<Series> {
-        binary_geom_to_geom(inputs.required(0)?, inputs.required(1)?, self.name(), op_union)
+        binary_geom_to_geom(
+            inputs.required(0)?,
+            inputs.required(1)?,
+            self.name(),
+            op_union,
+        )
     }
 
     fn get_return_field(

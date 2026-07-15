@@ -4,7 +4,9 @@ use common_error::DaftResult;
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
 use crate::{
-    array::{DataArray, FixedSizeListArray, GeometryArray, ListArray, StructArray, UnionArray, UuidArray},
+    array::{
+        DataArray, FixedSizeListArray, GeometryArray, ListArray, StructArray, UnionArray, UuidArray,
+    },
     datatypes::{
         BinaryArray, BooleanArray, DaftNumericType, DataType, Decimal128Array, ExtensionArray,
         Field, FileArray, FixedSizeBinaryArray, IntervalArray, IntervalValue, NullArray,

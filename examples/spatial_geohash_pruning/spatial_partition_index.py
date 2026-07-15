@@ -27,7 +27,6 @@ import random
 import shutil
 import struct
 import tempfile
-import time
 
 import daft
 from daft.functions.spatial_index import (
@@ -36,6 +35,7 @@ from daft.functions.spatial_index import (
 )
 
 # ── WKB helpers ──────────────────────────────────────────────────────────────
+
 
 def point_wkb(x: float, y: float) -> bytes:
     return struct.pack("<BIdd", 1, 1, x, y)
@@ -66,13 +66,15 @@ def geohash_encode(lon: float, lat: float, precision: int = 5) -> str:
         if even:
             mid = (min_lon + max_lon) / 2
             if lon >= mid:
-                char_idx |= bits[bit_idx]; min_lon = mid
+                char_idx |= bits[bit_idx]
+                min_lon = mid
             else:
                 max_lon = mid
         else:
             mid = (min_lat + max_lat) / 2
             if lat >= mid:
-                char_idx |= bits[bit_idx]; min_lat = mid
+                char_idx |= bits[bit_idx]
+                min_lat = mid
             else:
                 max_lat = mid
         even = not even
@@ -86,24 +88,25 @@ def geohash_encode(lon: float, lat: float, precision: int = 5) -> str:
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 
+
 def main():
     random.seed(42)
     N = 1000
-    PRECISION = 2   # coarse geohash for partitioning (each cell ≈ 1250 km × 625 km)
+    PRECISION = 2  # coarse geohash for partitioning (each cell ≈ 1250 km × 625 km)
 
     # ── 1. Generate random points (western Europe) ────────────────────────
     # Generate lon/lat interleaved (same order as generate_data.py) so
     # the data matches the original example, including the London hit at id=644.
     print("=== Step 1: generate data ===")
-    ids:   list[int]   = []
-    lons:  list[float] = []
-    lats:  list[float] = []
+    ids: list[int] = []
+    lons: list[float] = []
+    lats: list[float] = []
     geoms: list[bytes] = []
-    gh5:   list[str]   = []
-    gh3:   list[str]   = []
+    gh5: list[str] = []
+    gh3: list[str] = []
     for i in range(N):
         lon = round(random.uniform(-10.0, 20.0), 6)
-        lat = round(random.uniform(40.0, 60.0),  6)
+        lat = round(random.uniform(40.0, 60.0), 6)
         ids.append(i)
         lons.append(lon)
         lats.append(lat)
@@ -111,17 +114,21 @@ def main():
         gh5.append(geohash_encode(lon, lat, 5))
         gh3.append(geohash_encode(lon, lat, PRECISION))
 
-    df = daft.from_pydict({
-        "id":           ids,
-        "lon":          lons,
-        "lat":          lats,
-        "geom":         geoms,
-        "geom_geohash": gh5,   # companion column for GeohashPruning rule
-        "partition_gh": gh3,   # used to drive the write partitioning
-    })
+    df = daft.from_pydict(
+        {
+            "id": ids,
+            "lon": lons,
+            "lat": lats,
+            "geom": geoms,
+            "geom_geohash": gh5,  # companion column for GeohashPruning rule
+            "partition_gh": gh3,  # used to drive the write partitioning
+        }
+    )
 
-    print(f"  {N} points generated, unique p{PRECISION} geohash cells: "
-          f"{len(set(gh3))} → {len(set(gh3))} output files/dirs")
+    print(
+        f"  {N} points generated, unique p{PRECISION} geohash cells: "
+        f"{len(set(gh3))} → {len(set(gh3))} output files/dirs"
+    )
 
     # ── 2. Write spatially partitioned parquet ────────────────────────────
     # ``partition_cols`` groups rows by the partition column value and writes
@@ -144,14 +151,14 @@ def _run_example(df, outdir: str, lons, lats, gh5):
     parquet_root = os.path.join(outdir, "points")
     os.makedirs(parquet_root)
 
-    written = (
-        df
-        .repartition(None, "partition_gh")   # shuffle so same cell → same partition
-        .write_parquet(parquet_root, partition_cols=["partition_gh"])
+    written = df.repartition(None, "partition_gh").write_parquet(  # shuffle so same cell → same partition
+        parquet_root, partition_cols=["partition_gh"]
     )
     written_paths = written.to_pydict()["path"]
-    print(f"  Wrote {len(written_paths)} file(s) across "
-          f"{len(set(os.path.dirname(p) for p in written_paths))} partition subdirectories")
+    print(
+        f"  Wrote {len(written_paths)} file(s) across "
+        f"{len(set(os.path.dirname(p) for p in written_paths))} partition subdirectories"
+    )
 
     # ── 3. Build spatial index per partition directory ─────────────────────
     print("\n=== Step 3: build spatial index ===")
@@ -180,16 +187,11 @@ def _run_example(df, outdir: str, lons, lats, gh5):
 
     # 5a. Python-level pruning via SpatialIndex.filter_paths
     #     Only reads files in partitions that overlap the query.
-    t0 = time.perf_counter()
     kept_files: list[str] = []
     skipped_files = 0
     total_files = 0
     for pdir in part_dirs:
-        all_files = sorted(
-            os.path.join(pdir, f)
-            for f in os.listdir(pdir)
-            if f.endswith(".parquet")
-        )
+        all_files = sorted(os.path.join(pdir, f) for f in os.listdir(pdir) if f.endswith(".parquet"))
         total_files += len(all_files)
         idx = load_spatial_index(pdir)
         if idx is not None:
@@ -203,8 +205,7 @@ def _run_example(df, outdir: str, lons, lats, gh5):
     london_df = daft.from_pydict({"poly": [london], "join_key": [1]})
 
     if kept_files:
-        pruned_pts = daft.sql("SELECT *, 1 AS join_key FROM pts",
-                              pts=daft.read_parquet(kept_files))
+        pruned_pts = daft.sql("SELECT *, 1 AS join_key FROM pts", pts=daft.read_parquet(kept_files))
         result_py = daft.sql(
             """
             SELECT   p.id, p.lon, p.lat, p.geom_geohash
@@ -220,22 +221,17 @@ def _run_example(df, outdir: str, lons, lats, gh5):
     else:
         rows_py = {"id": [], "lon": [], "lat": [], "geom_geohash": []}
 
-    t_py = time.perf_counter() - t0
-    print(f"\n  [Python-level pruning]")
+    print("\n  [Python-level pruning]")
     print(f"  Files skipped : {skipped_files}/{total_files}")
     print(f"  Points found  : {len(rows_py['id'])}")
     for i, lo, la, gh in zip(rows_py["id"], rows_py["lon"], rows_py["lat"], rows_py["geom_geohash"]):
         print(f"    id={i:<5} lon={lo:<9.5f} lat={la:<9.5f} geohash={gh}")
 
     # 5b. SQL join path — reads all partition files and joins with london_df.
-    print(f"\n  [SQL join — full scan with st_intersects join condition]")
+    print("\n  [SQL join — full scan with st_intersects join condition]")
     all_parquet = []
     for pdir in part_dirs:
-        all_parquet.extend(
-            os.path.join(pdir, f)
-            for f in os.listdir(pdir)
-            if f.endswith(".parquet")
-        )
+        all_parquet.extend(os.path.join(pdir, f) for f in os.listdir(pdir) if f.endswith(".parquet"))
     flat_df = daft.read_parquet(all_parquet)
     pts_with_key = daft.sql("SELECT *, 1 AS join_key FROM pts", pts=flat_df)
     result_opt = daft.sql(
@@ -270,24 +266,26 @@ def _run_example(df, outdir: str, lons, lats, gh5):
     print(f"  {'Partition dir':<40} {'Files':>5} {'Has index':>9}")
     print("  " + "-" * 57)
     for pdir in sorted(part_dirs):
-    	files = [f for f in os.listdir(pdir) if f.endswith(".parquet")]
-    	has_idx = os.path.exists(os.path.join(pdir, "_spatial_index.idx"))
-    	label = os.path.relpath(pdir, os.path.dirname(pdir))
-    	print(f"  {label:<40} {len(files):>5} {'yes' if has_idx else 'no':>9}")
+        files = [f for f in os.listdir(pdir) if f.endswith(".parquet")]
+        has_idx = os.path.exists(os.path.join(pdir, "_spatial_index.idx"))
+        label = os.path.relpath(pdir, os.path.dirname(pdir))
+        print(f"  {label:<40} {len(files):>5} {'yes' if has_idx else 'no':>9}")
 
     # ── 9. Multi-region query ─────────────────────────────────────────────
     print("\n=== Step 9: multi-region query (SQL GROUP BY) ===")
-    regions = daft.from_pydict({
-        "region": ["London", "Paris", "Amsterdam", "Berlin", "Madrid"],
-        "poly": [
-            rect_wkb(-0.5, 51.3,  0.3, 51.7),
-            rect_wkb( 2.2, 48.7,  2.5, 49.0),
-            rect_wkb( 4.7, 52.2,  5.1, 52.5),
-            rect_wkb(13.2, 52.4, 13.6, 52.6),
-            rect_wkb(-3.9, 40.3, -3.5, 40.6),
-        ],
-        "join_key": [1, 1, 1, 1, 1],
-    })
+    regions = daft.from_pydict(
+        {
+            "region": ["London", "Paris", "Amsterdam", "Berlin", "Madrid"],
+            "poly": [
+                rect_wkb(-0.5, 51.3, 0.3, 51.7),
+                rect_wkb(2.2, 48.7, 2.5, 49.0),
+                rect_wkb(4.7, 52.2, 5.1, 52.5),
+                rect_wkb(13.2, 52.4, 13.6, 52.6),
+                rect_wkb(-3.9, 40.3, -3.5, 40.6),
+            ],
+            "join_key": [1, 1, 1, 1, 1],
+        }
+    )
 
     points_k = daft.sql("SELECT *, 1 AS join_key FROM pts", pts=flat_df)
 

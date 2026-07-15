@@ -1319,7 +1319,9 @@ impl LocalPhysicalPlan {
 
             Self::HashJoin(HashJoin { left, right, .. }) => vec![left.clone(), right.clone()],
             Self::CrossJoin(CrossJoin { left, right, .. }) => vec![left.clone(), right.clone()],
-            Self::NestedLoopJoin(NestedLoopJoin { left, right, .. }) => vec![left.clone(), right.clone()],
+            Self::NestedLoopJoin(NestedLoopJoin { left, right, .. }) => {
+                vec![left.clone(), right.clone()]
+            }
             Self::SortMergeJoin(SortMergeJoin { left, right, .. }) => {
                 vec![left.clone(), right.clone()]
             }
@@ -1859,7 +1861,9 @@ impl LocalPhysicalPlan {
                     panic!("LocalPhysicalPlan::with_new_children: CrossJoin should have 2 children")
                 }
                 Self::NestedLoopJoin(_) => {
-                    panic!("LocalPhysicalPlan::with_new_children: NestedLoopJoin should have 2 children")
+                    panic!(
+                        "LocalPhysicalPlan::with_new_children: NestedLoopJoin should have 2 children"
+                    )
                 }
                 Self::SortMergeJoin(_) => {
                     panic!(

@@ -6,7 +6,7 @@ import os
 import pytest
 
 import daft
-from daft.functions import st_intersects, st_point, st_geomfromtext
+from daft.functions import st_geomfromtext, st_intersects, st_point
 
 
 def _points_polys():
@@ -15,9 +15,9 @@ def _points_polys():
         daft.col("pid"), st_point(daft.col("px"), daft.col("py")).alias("pgeom")
     )
     # one polygon (0,0)-(2,2)
-    polys = daft.from_pydict(
-        {"qid": [10], "wkt": ["POLYGON((0 0,2 0,2 2,0 2,0 0))"]}
-    ).select(daft.col("qid"), st_geomfromtext(daft.col("wkt")).alias("qgeom"))
+    polys = daft.from_pydict({"qid": [10], "wkt": ["POLYGON((0 0,2 0,2 2,0 2,0 0))"]}).select(
+        daft.col("qid"), st_geomfromtext(daft.col("wkt")).alias("qgeom")
+    )
     return pts, polys
 
 
@@ -37,10 +37,7 @@ def test_sql_spatial_join_on():
 def test_python_join_on_predicate():
     pts, polys = _points_polys()
     result = (
-        pts.join(polys, on=st_intersects(pts["pgeom"], polys["qgeom"]))
-        .select("pid", "qid")
-        .sort("pid")
-        .to_pydict()
+        pts.join(polys, on=st_intersects(pts["pgeom"], polys["qgeom"])).select("pid", "qid").sort("pid").to_pydict()
     )
     assert result["pid"] == [1]
     assert result["qid"] == [10]
@@ -112,7 +109,11 @@ def test_spatial_join_partitioned_by_key():
     ).select("region", "pid", st_point(daft.col("x"), daft.col("y")).alias("pg"))
     # Alias the polygon-side region to "pregion" to avoid same-name ambiguity in the predicate resolver
     polys = daft.from_pydict(
-        {"region": ["a", "b"], "qid": [10, 20], "wkt": ["POLYGON((0 0,2 0,2 2,0 2,0 0))", "POLYGON((0 0,2 0,2 2,0 2,0 0))"]}
+        {
+            "region": ["a", "b"],
+            "qid": [10, 20],
+            "wkt": ["POLYGON((0 0,2 0,2 2,0 2,0 0))", "POLYGON((0 0,2 0,2 2,0 2,0 0))"],
+        }
     ).select(daft.col("region").alias("pregion"), "qid", st_geomfromtext(daft.col("wkt")).alias("qg"))
 
     # equality on region + spatial predicate → partitioned R-tree nested-loop path
@@ -134,9 +135,9 @@ def _pts_polys_for_bbox():
     pts = daft.from_pydict({"pid": [1, 2, 3], "x": [1.0, 9.0, 0.5], "y": [1.0, 9.0, 0.5]}).select(
         daft.col("pid"), st_point(daft.col("x"), daft.col("y")).alias("pg")
     )
-    polys = daft.from_pydict(
-        {"qid": [10], "wkt": ["POLYGON((0 0,2 0,2 2,0 2,0 0))"], "shift": [1000.0]}
-    ).select(daft.col("qid"), st_geomfromtext(daft.col("wkt")).alias("qg"), daft.col("shift"))
+    polys = daft.from_pydict({"qid": [10], "wkt": ["POLYGON((0 0,2 0,2 2,0 2,0 0))"], "shift": [1000.0]}).select(
+        daft.col("qid"), st_geomfromtext(daft.col("wkt")).alias("qg"), daft.col("shift")
+    )
     return pts, polys
 
 
@@ -152,10 +153,7 @@ def test_spatial_join_bbox_index_equivalence():
 
     # Baseline: spatial join without precomputed bbox — operator derives MBRs from WKB.
     base = (
-        pts.join(polys, on=st_intersects(polys["qg"], pts["pg"]))
-        .select("pid", "qid")
-        .sort(["pid", "qid"])
-        .to_pydict()
+        pts.join(polys, on=st_intersects(polys["qg"], pts["pg"])).select("pid", "qid").sort(["pid", "qid"]).to_pydict()
     )
 
     # Indexed: precompute bbox on the build side; select ONLY non-bbox columns. Transparent
@@ -244,9 +242,9 @@ def test_spatial_join_composite_equi_key():
 
 def test_spatial_join_null_key_never_matches():
     """A NULL equi-join key must never match another NULL key under standard `=` semantics."""
-    left = daft.from_pydict(
-        {"lid": [1, 2], "key": [None, "k"], "x": [1.0, 1.0], "y": [1.0, 1.0]}
-    ).select("lid", "key", st_point(daft.col("x"), daft.col("y")).alias("lg"))
+    left = daft.from_pydict({"lid": [1, 2], "key": [None, "k"], "x": [1.0, 1.0], "y": [1.0, 1.0]}).select(
+        "lid", "key", st_point(daft.col("x"), daft.col("y")).alias("lg")
+    )
     # Alias the right-side key to "rkey" to avoid same-name ambiguity in the predicate
     # resolver (see test_spatial_join_partitioned_by_key above) — this only renames the
     # schema field and does not change the NULL-collision semantics under test.
@@ -263,17 +261,19 @@ def test_spatial_join_null_key_never_matches():
 
 
 def test_spatial_join_literal_none_string_key_does_not_match_null():
-    """A key column holding the literal string 'None' must not join against NULL keys
-    (today both str_value-render to "None" and collide into one group)."""
-    left = daft.from_pydict(
-        {"lid": [1], "key": ["None"], "x": [1.0], "y": [1.0]}
-    ).select("lid", "key", st_point(daft.col("x"), daft.col("y")).alias("lg"))
+    """A literal 'None' string key must not join against NULL keys.
+
+    Today both str_value-render to "None" and collide into one group.
+    """
+    left = daft.from_pydict({"lid": [1], "key": ["None"], "x": [1.0], "y": [1.0]}).select(
+        "lid", "key", st_point(daft.col("x"), daft.col("y")).alias("lg")
+    )
     # Alias the right-side key to "rkey" to avoid same-name ambiguity in the predicate
     # resolver (see test_spatial_join_partitioned_by_key above) — this only renames the
     # schema field and does not change the NULL-vs-"None" semantics under test.
-    right = daft.from_pydict(
-        {"rid": [10], "key": [None], "wkt": ["POLYGON((0 0,2 0,2 2,0 2,0 0))"]}
-    ).select("rid", daft.col("key").alias("rkey"), st_geomfromtext(daft.col("wkt")).alias("rg"))
+    right = daft.from_pydict({"rid": [10], "key": [None], "wkt": ["POLYGON((0 0,2 0,2 2,0 2,0 0))"]}).select(
+        "rid", daft.col("key").alias("rkey"), st_geomfromtext(daft.col("wkt")).alias("rg")
+    )
     right = right.with_column("rkey", right["rkey"].cast(daft.DataType.string()))
     got = (
         left.join(right, on=(left["key"] == right["rkey"]) & st_intersects(right["rg"], left["lg"]))
@@ -284,9 +284,10 @@ def test_spatial_join_literal_none_string_key_does_not_match_null():
 
 
 def test_spatial_join_null_safe_key_collision():
-    """A literal string "None" must NOT null-safe-match a real NULL key, even though both
-    render to the same string "None" via `str_value` during partition-key R-tree grouping
-    and would land in the same candidate group.
+    """A literal string "None" must NOT null-safe-match a real NULL key.
+
+    Even though both render to the same string "None" via `str_value` during partition-key
+    R-tree grouping and would land in the same candidate group.
 
     `FilterNullJoinKey` only strips NULLs ahead of STANDARD (`=`) equi-keys — it explicitly
     skips null-safe (`<=>`) keys (see `filter_null_join_key.rs`, `!*null_eq_null` filter) —
@@ -296,15 +297,15 @@ def test_spatial_join_null_safe_key_collision():
     equality re-check. Post-fix, the complete filter re-evaluates `key <=> rkey`, which is
     false for a literal string vs a real NULL under null-safe semantics, so no row joins.
     """
-    left = daft.from_pydict(
-        {"lid": [1], "key": ["None"], "x": [1.0], "y": [1.0]}
-    ).select("lid", "key", st_point(daft.col("x"), daft.col("y")).alias("lg"))
+    left = daft.from_pydict({"lid": [1], "key": ["None"], "x": [1.0], "y": [1.0]}).select(
+        "lid", "key", st_point(daft.col("x"), daft.col("y")).alias("lg")
+    )
     # Alias the right-side key to "rkey" to avoid same-name ambiguity in the predicate
     # resolver (see test_spatial_join_partitioned_by_key above) — this only renames the
     # schema field and does not change the NULL-vs-"None" semantics under test.
-    right = daft.from_pydict(
-        {"rid": [10], "key": [None], "wkt": ["POLYGON((0 0,2 0,2 2,0 2,0 0))"]}
-    ).select("rid", daft.col("key").alias("rkey"), st_geomfromtext(daft.col("wkt")).alias("rg"))
+    right = daft.from_pydict({"rid": [10], "key": [None], "wkt": ["POLYGON((0 0,2 0,2 2,0 2,0 0))"]}).select(
+        "rid", daft.col("key").alias("rkey"), st_geomfromtext(daft.col("wkt")).alias("rg")
+    )
     right = right.with_column("rkey", right["rkey"].cast(daft.DataType.string()))
     got = (
         left.join(
@@ -320,7 +321,9 @@ def test_spatial_join_null_safe_key_collision():
 
 
 def test_spatial_join_cross_dtype_equi_key():
-    """Equi-key columns holding EQUAL values at DIFFERENT dtypes (Date `2024-01-01` vs
+    """Equal equi-key values at different dtypes must still join.
+
+    Equi-key columns holding EQUAL values at DIFFERENT dtypes (Date `2024-01-01` vs
     Timestamp `2024-01-01T00:00:00`) must still join: the translate.rs dtype guard in the
     `partition_key` closure detects the mismatch and falls back to unpartitioned candidate
     generation with the complete filter, rather than letting per-key `str_value` grouping
@@ -334,9 +337,9 @@ def test_spatial_join_cross_dtype_equi_key():
     always including a time component), which DO differ, so this pair genuinely exercises
     the guard.
     """
-    left = daft.from_pydict(
-        {"lid": [1], "key": [datetime.date(2024, 1, 1)], "x": [1.0], "y": [1.0]}
-    ).select("lid", "key", st_point(daft.col("x"), daft.col("y")).alias("lg"))
+    left = daft.from_pydict({"lid": [1], "key": [datetime.date(2024, 1, 1)], "x": [1.0], "y": [1.0]}).select(
+        "lid", "key", st_point(daft.col("x"), daft.col("y")).alias("lg")
+    )
     # Alias the right-side key to "rkey" to avoid same-name ambiguity in the predicate
     # resolver (see test_spatial_join_partitioned_by_key above).
     right = daft.from_pydict(
@@ -364,7 +367,9 @@ def test_spatial_join_cross_dtype_equi_key():
     reason="SpatialHashJoinNode only exists in the distributed (Ray) pipeline",
 )
 def test_distributed_spatial_hash_join_does_not_hash_collide_different_keys():
-    """Many distinct keys, few partitions: hash collisions are guaranteed. The equi-key
+    """Hash collisions must not let non-matching keys join.
+
+    Many distinct keys, few partitions: hash collisions are guaranteed. The equi-key
     must still be enforced, not just the spatial predicate.
 
     Note: written as an equi-join followed by `.where(st_intersects(...))` rather than a
@@ -412,7 +417,9 @@ def test_distributed_spatial_hash_join_does_not_hash_collide_different_keys():
     reason="SpatialHashJoinNode only exists in the distributed (Ray) pipeline",
 )
 def test_distributed_spatial_join_combined_on_predicate():
-    """The natural way to write a distributed spatial join: a single combined `on=`
+    """A combined `on=` equality + spatial predicate must route to the spatial hash join.
+
+    The natural way to write a distributed spatial join: a single combined `on=`
     predicate mixing an equality key and a spatial predicate, e.g.
     `df.join(other, on=(a == b) & st_intersects(...))`.
 
@@ -460,8 +467,11 @@ def test_distributed_spatial_join_combined_on_predicate():
 
 
 def test_python_join_st_disjoint():
-    """st_disjoint must not be R-tree-accelerated: its true matches typically have
-    NON-intersecting bboxes, which bbox candidate generation silently drops."""
+    """st_disjoint must not be R-tree-accelerated.
+
+    Its true matches typically have NON-intersecting bboxes, which bbox candidate
+    generation silently drops.
+    """
     from daft.functions import st_disjoint
 
     left = daft.from_pydict({"lid": [1, 2], "lx": [0.0, 100.0], "ly": [0.0, 100.0]}).select(
@@ -470,12 +480,7 @@ def test_python_join_st_disjoint():
     right = daft.from_pydict({"rid": [10], "rx": [0.0], "ry": [0.0]}).select(
         daft.col("rid"), st_point(daft.col("rx"), daft.col("ry")).alias("rg")
     )
-    result = (
-        left.join(right, on=st_disjoint(left["lg"], right["rg"]))
-        .select("lid", "rid")
-        .sort("lid")
-        .to_pydict()
-    )
+    result = left.join(right, on=st_disjoint(left["lg"], right["rg"])).select("lid", "rid").sort("lid").to_pydict()
     # lid=1 coincides with rid=10 (not disjoint); lid=2 is far away (disjoint).
     assert result["lid"] == [2]
     assert result["rid"] == [10]
@@ -490,16 +495,20 @@ def test_not_st_intersects_select():
     root fix (Not/IsNull/NotNull::to_field naming) independently of the join machinery
     exercised by `test_python_join_not_st_intersects` below.
     """
-    df = daft.from_pydict(
-        {
-            "x": [1.0, 9.0],
-            "y": [1.0, 9.0],
-            "wkt": ["POLYGON((0 0,2 0,2 2,0 2,0 0))", "POLYGON((0 0,2 0,2 2,0 2,0 0))"],
-        }
-    ).select(
-        st_point(daft.col("x"), daft.col("y")).alias("a"),
-        st_geomfromtext(daft.col("wkt")).alias("b"),
-    ).collect()
+    df = (
+        daft.from_pydict(
+            {
+                "x": [1.0, 9.0],
+                "y": [1.0, 9.0],
+                "wkt": ["POLYGON((0 0,2 0,2 2,0 2,0 0))", "POLYGON((0 0,2 0,2 2,0 2,0 0))"],
+            }
+        )
+        .select(
+            st_point(daft.col("x"), daft.col("y")).alias("a"),
+            st_geomfromtext(daft.col("wkt")).alias("b"),
+        )
+        .collect()
+    )
 
     result = df.select((~st_intersects(daft.col("a"), daft.col("b"))).alias("r")).to_pydict()
     # (1,1) is inside the polygon -> st_intersects True -> negated False.
@@ -513,29 +522,27 @@ def test_python_join_not_st_intersects():
     left = daft.from_pydict({"lid": [1, 2], "lx": [1.0, 100.0], "ly": [1.0, 100.0]}).select(
         daft.col("lid"), st_point(daft.col("lx"), daft.col("ly")).alias("lg")
     )
-    right = daft.from_pydict(
-        {"rid": [10], "wkt": ["POLYGON((0 0,2 0,2 2,0 2,0 0))"]}
-    ).select(daft.col("rid"), st_geomfromtext(daft.col("wkt")).alias("rg"))
-    result = (
-        left.join(right, on=~st_intersects(left["lg"], right["rg"]))
-        .select("lid", "rid")
-        .sort("lid")
-        .to_pydict()
+    right = daft.from_pydict({"rid": [10], "wkt": ["POLYGON((0 0,2 0,2 2,0 2,0 0))"]}).select(
+        daft.col("rid"), st_geomfromtext(daft.col("wkt")).alias("rg")
     )
+    result = left.join(right, on=~st_intersects(left["lg"], right["rg"])).select("lid", "rid").sort("lid").to_pydict()
     # lid=1 is inside the polygon -> excluded by NOT; lid=2 is far outside -> included.
     assert result["lid"] == [2]
     assert result["rid"] == [10]
 
 
 def test_python_join_or_composed_spatial_predicate():
-    """An OR-composed predicate must skip acceleration: a pair failing the spatial
-    branch (and its bbox test) can still satisfy the other OR branch."""
+    """An OR-composed predicate must skip acceleration.
+
+    A pair failing the spatial branch (and its bbox test) can still satisfy the other
+    OR branch.
+    """
     left = daft.from_pydict({"lid": [1, 2], "lx": [1.0, 100.0], "ly": [1.0, 100.0]}).select(
         daft.col("lid"), st_point(daft.col("lx"), daft.col("ly")).alias("lg")
     )
-    right = daft.from_pydict(
-        {"rid": [10], "wkt": ["POLYGON((0 0,2 0,2 2,0 2,0 0))"]}
-    ).select(daft.col("rid"), st_geomfromtext(daft.col("wkt")).alias("rg"))
+    right = daft.from_pydict({"rid": [10], "wkt": ["POLYGON((0 0,2 0,2 2,0 2,0 0))"]}).select(
+        daft.col("rid"), st_geomfromtext(daft.col("wkt")).alias("rg")
+    )
     result = (
         left.join(
             right,

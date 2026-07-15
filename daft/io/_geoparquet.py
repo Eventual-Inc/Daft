@@ -1,10 +1,15 @@
 """Geo metadata helpers for the GeoParquet/Delta path (Python mirror of daft-parquet's geo_metadata)."""
+
 from __future__ import annotations
 
 import json
+from typing import TYPE_CHECKING
 
 from daft.datatype import DataType
 from daft.schema import Schema
+
+if TYPE_CHECKING:
+    import pyarrow as pa
 
 _GEOPARQUET_VERSION = "1.1.0"
 GEO_METADATA_KEY = "geo"  # parquet footer key
@@ -26,9 +31,7 @@ def build_geo_metadata(
         {
             "version": "1.1.0",
             "primary_column": "<first geometry column>",
-            "columns": {
-                "<col>": {"encoding": "WKB", "geometry_types": []}
-            }
+            "columns": {"<col>": {"encoding": "WKB", "geometry_types": []}},
         }
 
     Args:
@@ -37,14 +40,10 @@ def build_geo_metadata(
         only_columns: If given, restrict to this subset of column names.
     """
     geom_dtype = DataType.geometry()
-    cols = [
-        f.name
-        for f in schema
-        if f.dtype == geom_dtype and (only_columns is None or f.name in only_columns)
-    ]
+    cols = [f.name for f in schema if f.dtype == geom_dtype and (only_columns is None or f.name in only_columns)]
     if not cols:
         return None
-    col_meta: dict = {"encoding": "WKB", "geometry_types": []}
+    col_meta: dict[str, object] = {"encoding": "WKB", "geometry_types": []}
     if crs is not None:
         col_meta["crs"] = crs
     return json.dumps(
@@ -77,13 +76,11 @@ def detect_geo_columns(geo_json: str, schema: Schema) -> list[str]:
     return [
         name
         for name, c in columns.items()
-        if isinstance(c, dict)
-        and str(c.get("encoding", "")).upper() == "WKB"
-        and names.get(name) in binary_like
+        if isinstance(c, dict) and str(c.get("encoding", "")).upper() == "WKB" and names.get(name) in binary_like
     ]
 
 
-def attach_geo_field_metadata(schema: "pa.Schema", geo_json: str) -> "pa.Schema":
+def attach_geo_field_metadata(schema: pa.Schema, geo_json: str) -> pa.Schema:
     """Return a copy of *schema* with geometry columns annotated with *geo_json*.
 
     For each column named in the ``"columns"`` dict of *geo_json*, the

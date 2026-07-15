@@ -8,7 +8,7 @@ use daft_dsl::{
     functions::{FunctionArgs, ScalarUDF, scalar::ScalarFn},
 };
 use geo::{BoundingRect, Centroid, Geometry, Intersects};
-use geohash::{encode, Coord as GeohashCoord};
+use geohash::{Coord as GeohashCoord, encode};
 use serde::{Deserialize, Serialize};
 
 use crate::utils::{get_geometry_binary, parse_wkb, read_f64_arg, validate_geometry_field};
@@ -124,7 +124,10 @@ pub fn geohash_covers_geometry(g: &Geometry, precision: usize) -> Vec<String> {
     };
 
     let Ok(start_hash) = geohash::encode(
-        GeohashCoord { x: bbox.min().x, y: bbox.min().y },
+        GeohashCoord {
+            x: bbox.min().x,
+            y: bbox.min().y,
+        },
         precision,
     ) else {
         return vec![];
@@ -186,8 +189,14 @@ fn collect_covering_cells(
             continue;
         };
         for neighbor in [
-            neighbors.n, neighbors.ne, neighbors.e, neighbors.se,
-            neighbors.s, neighbors.sw, neighbors.w, neighbors.nw,
+            neighbors.n,
+            neighbors.ne,
+            neighbors.e,
+            neighbors.se,
+            neighbors.s,
+            neighbors.sw,
+            neighbors.w,
+            neighbors.nw,
         ] {
             if neighbor.len() != precision || cells.contains(&neighbor) {
                 continue;
@@ -211,7 +220,9 @@ fn collect_covering_cells(
 /// Check if a geohash string is covered by any of the given covering cells.
 /// Used as a fast pre-filter before exact spatial evaluation.
 pub fn geohash_in_covering_cells(hash: &str, covering: &[String]) -> bool {
-    covering.iter().any(|c| hash.starts_with(c.as_str()) || c.starts_with(hash))
+    covering
+        .iter()
+        .any(|c| hash.starts_with(c.as_str()) || c.starts_with(hash))
 }
 
 #[cfg(test)]
@@ -232,7 +243,10 @@ mod covering_tests {
         let got: HashSet<String> = cells.into_iter().collect();
         for (x, y) in [(0.02, 0.02), (0.06, 0.02), (0.02, 0.06), (0.06, 0.06)] {
             let h = geohash::encode(GeohashCoord { x, y }, 5).unwrap();
-            assert!(got.contains(&h), "missing cell {h} containing bbox corner ({x},{y})");
+            assert!(
+                got.contains(&h),
+                "missing cell {h} containing bbox corner ({x},{y})"
+            );
         }
     }
 

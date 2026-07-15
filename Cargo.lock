@@ -4767,16 +4767,15 @@ dependencies = [
 
 [[package]]
 name = "h3o"
-version = "0.10.0"
+version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f033ee4f3b98f6842df9ce5111ff2dd36fd9be9804b9c0afd43e69e3891a6fbf"
+checksum = "eaed017cf85070a94c3426db925ea8de919abaa26f495da26a8f23ecd28335ec"
 dependencies = [
  "ahash",
  "either",
  "float_eq",
  "h3o-bit",
  "libm",
- "ordered-float",
 ]
 
 [[package]]

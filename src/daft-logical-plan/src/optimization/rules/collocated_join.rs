@@ -58,9 +58,7 @@ impl OptimizerRule for CollocatedJoin {
 
 /// Extract (tasks, partitioning_key_names) from a Source node that has already
 /// been materialized.  Returns `None` for any other node type.
-fn source_partition_info(
-    plan: &LogicalPlan,
-) -> Option<(Arc<Vec<ScanTaskRef>>, Vec<String>)> {
+fn source_partition_info(plan: &LogicalPlan) -> Option<(Arc<Vec<ScanTaskRef>>, Vec<String>)> {
     let LogicalPlan::Source(source) = plan else {
         return None;
     };
@@ -155,7 +153,10 @@ fn group_tasks_by_partition_col(
 /// HashMap order, which is not deterministic. Not reachable for real hive
 /// scans; noted so a future reader doesn't over-trust the "unique" claim.
 fn group_sort_key(key: &Option<PartitionSpec>, tasks: &[ScanTaskRef]) -> (String, Vec<String>) {
-    let rendered = key.as_ref().map(|ps| ps.keys.to_string()).unwrap_or_default();
+    let rendered = key
+        .as_ref()
+        .map(|ps| ps.keys.to_string())
+        .unwrap_or_default();
     let mut paths: Vec<String> = tasks.iter().flat_map(|t| t.get_file_paths()).collect();
     paths.sort();
     (rendered, paths)
@@ -256,8 +257,7 @@ impl CollocatedJoin {
             return Ok(Transformed::no(plan));
         }
 
-        let Some(pk_col) =
-            find_shared_partition_key(&l_pkeys, &r_pkeys, &l_eq_keys, &r_eq_keys)
+        let Some(pk_col) = find_shared_partition_key(&l_pkeys, &r_pkeys, &l_eq_keys, &r_eq_keys)
         else {
             return Ok(Transformed::no(plan));
         };
@@ -338,7 +338,9 @@ impl CollocatedJoin {
                     sub_plans.push(make_sub_join(l_keyed_tasks.clone(), r_unkeyed.clone())?);
                 }
                 SubJoin::KeyedPair(ps) => {
-                    let l_sub = l_groups.get(&Some(ps.clone())).expect("planned implies present");
+                    let l_sub = l_groups
+                        .get(&Some(ps.clone()))
+                        .expect("planned implies present");
                     let r_sub = r_groups.get(&Some(ps)).expect("planned implies present");
                     sub_plans.push(make_sub_join(l_sub.clone(), r_sub.clone())?);
                 }
@@ -434,7 +436,10 @@ mod pairing_tests {
         let r_pkeys: Vec<String> = vec![];
         let l_eq = vec![resolved_col("region")];
         let r_eq = vec![resolved_col("region")];
-        assert_eq!(find_shared_partition_key(&l_pkeys, &r_pkeys, &l_eq, &r_eq), None);
+        assert_eq!(
+            find_shared_partition_key(&l_pkeys, &r_pkeys, &l_eq, &r_eq),
+            None
+        );
         let r_pkeys = vec!["region".to_string()];
         assert_eq!(
             find_shared_partition_key(&l_pkeys, &r_pkeys, &l_eq, &r_eq),
@@ -458,15 +463,15 @@ mod materialization_tests {
     use daft_core::{datatypes::Utf8Array, series::IntoSeries};
     use daft_dsl::{left_col, right_col};
     use daft_recordbatch::RecordBatch;
-    use daft_schema::{
-        dtype::DataType,
-        field::Field,
-        schema::{Schema, SchemaRef},
-    };
     use daft_scan::{
         FileFormatConfig, ParquetSourceConfig, PartitionField, PhysicalScanInfo, Pushdowns,
         ScanOperatorRef, ScanSource, ScanSourceKind, ScanTask, SourceConfig,
         storage_config::StorageConfig, test_utils::DummyScanOperator,
+    };
+    use daft_schema::{
+        dtype::DataType,
+        field::Field,
+        schema::{Schema, SchemaRef},
     };
 
     use super::*;
@@ -519,7 +524,10 @@ mod materialization_tests {
 
     /// A materialized `Source` plan over `tasks`, hive-partitioned on `region`.
     fn make_source(schema: SchemaRef, tasks: Vec<ScanTaskRef>) -> Arc<LogicalPlan> {
-        let scan_op = StdArc::new(DummyScanOperator { schema: schema.clone(), ..Default::default() });
+        let scan_op = StdArc::new(DummyScanOperator {
+            schema: schema.clone(),
+            ..Default::default()
+        });
         let mut psi = PhysicalScanInfo::new(
             ScanOperatorRef(scan_op),
             schema.clone(),
@@ -572,8 +580,10 @@ mod materialization_tests {
 
     #[test]
     fn right_unkeyed_pairs_with_keyed_left_only_not_all_left_tasks() {
-        let schema =
-            StdArc::new(Schema::new(vec![region_field(), Field::new("value", DataType::Int64)]));
+        let schema = StdArc::new(Schema::new(vec![
+            region_field(),
+            Field::new("value", DataType::Int64),
+        ]));
 
         // Left: one unkeyed task + one task keyed to "A".
         let l_unkeyed = make_task("left/unkeyed/part-0.parquet", schema.clone(), None);
@@ -592,7 +602,10 @@ mod materialization_tests {
         let plan = Arc::new(LogicalPlan::Join(join));
 
         let result = CollocatedJoin.try_optimize(plan).unwrap();
-        assert!(result.transformed, "rule must fire: shared region key on both sides");
+        assert!(
+            result.transformed,
+            "rule must fire: shared region key on both sides"
+        );
 
         let sub_joins = collect_sub_joins(&result.data);
         assert_eq!(

@@ -1,6 +1,12 @@
 use common_error::DaftResult;
-use daft_core::{prelude::{DataType, Field, Schema}, series::Series};
-use daft_dsl::{ExprRef, functions::{FunctionArgs, ScalarUDF, scalar::ScalarFn}};
+use daft_core::{
+    prelude::{DataType, Field, Schema},
+    series::Series,
+};
+use daft_dsl::{
+    ExprRef,
+    functions::{FunctionArgs, ScalarUDF, scalar::ScalarFn},
+};
 use geo::Geometry;
 use serde::{Deserialize, Serialize};
 
@@ -27,13 +33,23 @@ pub struct StGeometryType;
 
 #[typetag::serde]
 impl ScalarUDF for StGeometryType {
-    fn name(&self) -> &'static str { "st_geometrytype" }
+    fn name(&self) -> &'static str {
+        "st_geometrytype"
+    }
 
-    fn call(&self, inputs: FunctionArgs<Series>, _ctx: &daft_dsl::functions::scalar::EvalContext) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         unary_geom_to_utf8(inputs.required(0)?, self.name(), geometry_type_name)
     }
 
-    fn get_return_field(&self, inputs: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
         validate_geometry_field(&inputs, schema, 0, "geom", self.name())?;
         Ok(Field::new(self.name(), DataType::Utf8))
     }

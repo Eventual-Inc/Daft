@@ -2,7 +2,10 @@ use std::collections::HashMap;
 
 use common_error::{DaftError, DaftResult};
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
-use daft_core::{join::{JoinSide, JoinStrategy}, prelude::Schema};
+use daft_core::{
+    join::{JoinSide, JoinStrategy},
+    prelude::Schema,
+};
 use daft_dsl::{
     Expr, ExprRef,
     expr::{
@@ -653,7 +656,10 @@ fn translate_helper(
             let (remaining_on, left_on, right_on, null_equals_nulls) = join.on.split_eq_preds();
 
             if !remaining_on.is_empty() {
-                let resid = remaining_on.inner().expect("non-empty residual has an expr").clone();
+                let resid = remaining_on
+                    .inner()
+                    .expect("non-empty residual has an expr")
+                    .clone();
                 if join.join_type == JoinType::Inner && is_spatial_predicate(&resid) {
                     // The NLJ filter is the ONLY place join semantics are enforced —
                     // candidate generation (R-tree, per-key grouping) is a superset

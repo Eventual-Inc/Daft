@@ -15,7 +15,9 @@ use daft_schema::schema::SchemaRef;
 use crate::pipeline_node::join::KeyFilteringJoinNode;
 use crate::pipeline_node::{
     DistributedPipelineNode,
-    join::{BroadcastJoinNode, CrossJoinNode, HashJoinNode, SortMergeJoinNode, SpatialHashJoinNode},
+    join::{
+        BroadcastJoinNode, CrossJoinNode, HashJoinNode, SortMergeJoinNode, SpatialHashJoinNode,
+    },
     translate::LogicalPlanToPipelineNodeTranslator,
 };
 
