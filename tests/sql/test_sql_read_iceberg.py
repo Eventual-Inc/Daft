@@ -139,6 +139,53 @@ def test_sql_read_iceberg_ignore_corrupt_files_skips_data_file(tmp_path):
         catalog.engine.dispose()
 
 
+def test_sql_read_iceberg_uses_default_io_config(tmp_path, monkeypatch):
+    """The SQL read_iceberg path resolves io_config like the Python API.
+
+    Without an explicit io_config, the context ``default_io_config`` must reach the scan's
+    StorageConfig (previously the SQL path used an empty default, ignoring it). We capture the
+    StorageConfig handed to the scan operator, since io_config is not surfaced in the plan text.
+    """
+    from daft.io import IOConfig, S3Config
+    from daft.io.iceberg import iceberg_scan
+
+    catalog = SqlCatalog(
+        "default",
+        uri=f"sqlite:///{tmp_path}/pyiceberg_catalog.db",
+        warehouse=f"file://{tmp_path}",
+    )
+    try:
+        catalog.create_namespace("default")
+        table = catalog.create_table("default.t_iocfg", Schema(NestedField(1, "x", LongType())))
+        daft.from_pydict({"x": [1, 2, 3]}).write_iceberg(table)
+        table.refresh()
+        metadata_location = _metadata_path(table.metadata_location)
+
+        captured: dict = {}
+        original_init = iceberg_scan.IcebergScanOperator.__init__
+
+        def capturing_init(self, iceberg_table, snapshot_id, storage_config, ignore_corrupt_files=False):
+            captured["storage_config"] = storage_config
+            return original_init(self, iceberg_table, snapshot_id, storage_config, ignore_corrupt_files)
+
+        monkeypatch.setattr(iceberg_scan.IcebergScanOperator, "__init__", capturing_init)
+
+        default = IOConfig(s3=S3Config(region_name="us-west-2"))
+        old = daft.context.get_context().daft_planning_config.default_io_config
+        daft.context.set_planning_config(default_io_config=default)
+        try:
+            df = daft.sql(f"SELECT * FROM read_iceberg('{metadata_location}')")
+            assert df.sort("x").to_pydict() == {"x": [1, 2, 3]}
+        finally:
+            daft.context.set_planning_config(default_io_config=old)
+
+        storage_config = captured["storage_config"]
+        assert storage_config.io_config is not None
+        assert storage_config.io_config.s3.region_name == "us-west-2"
+    finally:
+        catalog.engine.dispose()
+
+
 @pytest.mark.skip(
     "invoke manually via `uv run tests/sql/test_table_functions/test_read_iceberg.py <metadata_location>`"
 )

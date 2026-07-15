@@ -749,19 +749,3 @@ impl SQLPlanner<'_> {
         }
     }
 }
-
-/// A namespace for function argument parsing helpers.
-pub(crate) mod args {
-    use common_io_config::IOConfig;
-
-    use super::SQLFunctionArguments;
-    use crate::{error::PlannerError, modules::config::expr_to_iocfg};
-
-    /// Parses io_config which is used in several SQL functions.
-    pub(crate) fn parse_io_config(args: &SQLFunctionArguments) -> Result<IOConfig, PlannerError> {
-        args.get_named("io_config")
-            .map(expr_to_iocfg)
-            .transpose()
-            .map(|op| op.unwrap_or_default())
-    }
-}

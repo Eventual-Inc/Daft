@@ -407,7 +407,6 @@ pub fn iceberg_scan<T: AsRef<str>>(
     ignore_corrupt_files: bool,
 ) -> DaftResult<LogicalPlanBuilder> {
     use pyo3::IntoPyObjectExt;
-    let storage_config: StorageConfig = io_config.unwrap_or_default().into();
     let scan_operator = Python::attach(|py| -> DaftResult<ScanOperatorHandle> {
         let iceberg_table_module = PyModule::import(py, "pyiceberg.table")?;
         let iceberg_static_table = iceberg_table_module.getattr("StaticTable")?;
@@ -417,6 +416,16 @@ pub fn iceberg_scan<T: AsRef<str>>(
         let snapshot_id = iceberg_helper_module
             .getattr("resolve_snapshot_id")?
             .call1((&iceberg_table, snapshot_id, branch, tag))?;
+        // Resolve the IOConfig with the same precedence as the Python `read_iceberg` API:
+        // explicit arg > table FileIO properties > context `default_io_config`. Without this,
+        // the SQL path would ignore both the table's embedded credentials and the global default.
+        let py_io_config = io_config.map(common_io_config::python::IOConfig::from);
+        let resolved_io_config: Option<common_io_config::python::IOConfig> = iceberg_helper_module
+            .getattr("resolve_iceberg_io_config")?
+            .call1((&iceberg_table, py_io_config))?
+            .extract()?;
+        let storage_config =
+            StorageConfig::new_internal(true, resolved_io_config.map(|c| c.config));
         let iceberg_scan_module = PyModule::import(py, "daft.io.iceberg.iceberg_scan")?;
         let iceberg_scan_class = iceberg_scan_module.getattr("IcebergScanOperator")?;
         let iceberg_scan = iceberg_scan_class
