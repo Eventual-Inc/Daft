@@ -97,6 +97,8 @@ pub fn normalize_join_keys(
     Ok((left_on, right_on))
 }
 
+/// Strip `JoinSide` markers from a join residual predicate.
+///
 /// Convert `ResolvedColumn::JoinSide(field, _)` markers in a join residual predicate
 /// into plain unresolved column references (by the post-deduplication field name),
 /// so the predicate can be re-bound against the join output schema.

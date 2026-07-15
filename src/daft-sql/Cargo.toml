@@ -18,7 +18,6 @@ daft-micropartition = {path = "../daft-micropartition", default-features = false
 daft-recordbatch = {path = "../daft-recordbatch"}
 daft-session = {path = "../daft-session"}
 itertools = {workspace = true}
-ordered-float = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 sqlparser = {workspace = true}
 regex.workspace = true

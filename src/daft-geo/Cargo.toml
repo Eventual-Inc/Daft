@@ -10,7 +10,6 @@ geohash = {workspace = true}
 geojson = {workspace = true}
 h3o = {workspace = true}
 wkt = {workspace = true}
-ordered-float = {workspace = true}
 serde = {workspace = true}
 typetag = {workspace = true}
 wkb = {workspace = true}
