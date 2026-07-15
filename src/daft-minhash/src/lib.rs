@@ -325,8 +325,10 @@ pub fn minhash_in(
         simd_permute_and_min_batch(chunk_simd, perm_a_simd, perm_b_simd, &mut min_hash_values);
     }
 
-    for hash in chunks.into_remainder() {
-        simd_permute_and_min_single(hash, perm_a_simd, perm_b_simd, &mut min_hash_values);
+    if let Some(remainder) = chunks.into_remainder() {
+        for hash in remainder {
+            simd_permute_and_min_single(hash, perm_a_simd, perm_b_simd, &mut min_hash_values);
+        }
     }
 
     // Convert SIMD results to a flat vector of u32 values
