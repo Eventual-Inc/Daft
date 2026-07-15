@@ -11,6 +11,7 @@ Run:
 
 from __future__ import annotations
 
+import io
 import struct
 import sys
 
@@ -78,7 +79,6 @@ result = daft.sql(
 
 # ── Check plan for [R-tree] ───────────────────────────────────────────────
 
-import io
 buf = io.StringIO()
 result.explain(show_all=True, file=buf)
 plan_text = buf.getvalue()

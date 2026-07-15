@@ -241,3 +241,47 @@ def test_computed_geohash_matches_precomputed():
         assert computed_h == expected_h, (
             f"Point {i}: computed geohash {computed_h!r} != expected {expected_h!r}"
         )
+
+
+# ── st_geohash precision argument ─────────────────────────────────────────────
+
+@pytest.mark.parametrize("precision", [1, 2, 5, 6, 8, 12])
+def test_st_geohash_precision_controls_length(precision):
+    """The precision argument must control the geohash string length.
+
+    Regression test: st_geohash previously ignored the caller-supplied precision
+    and always produced 5-character hashes (it read the value baked in at
+    registration instead of the function argument).
+    """
+    df = daft.from_pydict({"geom": POINTS})
+    hashes = df.select(st_geohash(col("geom"), precision=precision).alias("h")).to_pydict()["h"]
+    assert all(len(h) == precision for h in hashes), (
+        f"Expected {precision}-char geohashes, got lengths {[len(h) for h in hashes]}"
+    )
+
+
+def test_st_geohash_default_precision_is_five():
+    """Calling st_geohash without a precision argument yields 5-character hashes."""
+    df = daft.from_pydict({"geom": POINTS})
+    hashes = df.select(st_geohash(col("geom")).alias("h")).to_pydict()["h"]
+    assert all(len(h) == 5 for h in hashes)
+
+
+def test_st_geohash_precision_is_hierarchical():
+    """A higher-precision geohash must extend the lower-precision one (shared prefix)."""
+    df = daft.from_pydict({"geom": POINTS})
+    out = df.select(
+        st_geohash(col("geom"), precision=4).alias("h4"),
+        st_geohash(col("geom"), precision=8).alias("h8"),
+    ).to_pydict()
+    for h4, h8 in zip(out["h4"], out["h8"]):
+        assert h8.startswith(h4), f"{h8!r} should start with {h4!r}"
+
+
+def test_st_geohash_null_geometry_yields_null():
+    """Null geometries should produce null geohash output; valid rows are unaffected."""
+    df = daft.from_pydict({"geom": [POINTS[0], None]})
+    hashes = df.select(st_geohash(col("geom"), precision=6).alias("h")).to_pydict()["h"]
+    assert hashes[0] is not None and len(hashes[0]) == 6
+    assert hashes[1] is None
+

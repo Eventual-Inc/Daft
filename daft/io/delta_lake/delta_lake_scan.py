@@ -28,11 +28,13 @@ from daft.daft import (
     ScanTask,
     StorageConfig,
 )
+from daft.io._geoparquet import GEO_FIELD_METADATA_KEY, detect_geo_columns
 from daft.io.delta_lake._deltalake import delta_schema_to_pyarrow
 from daft.io.delta_lake.utils import construct_delta_file_path
 from daft.io.object_store_options import io_config_to_storage_options
 from daft.io.scan import ScanOperator
 from daft.logical.schema import Schema
+from daft.schema import Field
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -216,9 +218,6 @@ class DeltaLakeScanOperator(ScanOperator):
         # GeoParquet 1.1.0 JSON blob.  Any one geometry field's metadata holds the full table-level
         # "geo" JSON, so we read it from the first field that has the key.
         try:
-            from daft.io._geoparquet import GEO_FIELD_METADATA_KEY, detect_geo_columns
-            from daft.schema import Field
-
             geo_json: str | None = None
             for i in range(len(arrow_schema)):
                 field_meta = arrow_schema.field(i).metadata or {}

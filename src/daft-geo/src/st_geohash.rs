@@ -11,7 +11,7 @@ use geo::{BoundingRect, Centroid, Geometry, Intersects};
 use geohash::{encode, Coord as GeohashCoord};
 use serde::{Deserialize, Serialize};
 
-use crate::utils::{get_geometry_binary, parse_wkb, validate_geometry_field};
+use crate::utils::{get_geometry_binary, parse_wkb, read_f64_arg, validate_geometry_field};
 
 /// Compute geohash of the centroid of a geometry.
 fn geom_geohash(g: &Geometry, precision: usize) -> Option<String> {
@@ -39,7 +39,11 @@ impl ScalarUDF for StGeohash {
         inputs: FunctionArgs<Series>,
         _ctx: &daft_dsl::functions::scalar::EvalContext,
     ) -> DaftResult<Series> {
-        let precision = self.precision as usize;
+        // Read precision from the function arguments (Python path). Fall back to
+        // `self.precision` for the Rust-API path where only `geom` is in `inputs`.
+        let precision = read_f64_arg(&inputs, 1, "precision", self.name())
+            .map(|v| v as usize)
+            .unwrap_or(self.precision as usize);
         let binary = get_geometry_binary(inputs.required(0)?)?;
 
         let values: Vec<Option<String>> = binary

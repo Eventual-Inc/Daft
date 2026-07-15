@@ -1990,6 +1990,8 @@ class DataFrame:
         # We annotate when creating a new table (table is None) or when overwriting (mode == "overwrite").
         # Pure appends to an existing table inherit the field metadata already in the table schema.
         if table is None or mode == "overwrite":
+            # Imported lazily: the daft.io package __init__ imports DataFrame, so a
+            # top-level import here would be circular.
             from daft.io._geoparquet import attach_geo_field_metadata, build_geo_metadata
 
             geo_json = build_geo_metadata(self.schema())
@@ -3506,6 +3508,8 @@ class DataFrame:
         Returns:
             DataFrame: DataFrame with four new Float64 columns (``rtree_min_x`` … ``rtree_max_y``).
         """
+        # Imported lazily: daft.functions pulls in daft.session/daft.catalog, which
+        # import DataFrame, so a top-level import here would be circular.
         from daft.functions import st_bbox
 
         bbox = st_bbox(col(geom_col))
