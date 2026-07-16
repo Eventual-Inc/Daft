@@ -1,8 +1,8 @@
-# Reward scoring demo - Robometer on nvidia/LIBERO_LeRobot_v3
+# Reward Scoring for Physical AI
 
-This demo scores robot episodes with a reward model ([Robometer-4B](https://huggingface.co/robometer/Robometer-4B)) as a Daft pipeline: per-frame task progress (0-1) plus success probability, written back as a dataset column with `score_rewards`. Downstream uses: filter failed or stalled episodes before BC training, dense reward for RL post-training, and catching mislabeled tasks (all-zero progress usually means the task text is wrong).
+This example uses [daft-physical-ai](https://github.com/Eventual-Inc/daft-physical-ai), a Daft extension for physical AI data pipelines. It scores robot episodes with a reward model ([Robometer-4B](https://huggingface.co/robometer/Robometer-4B)) as a Daft pipeline: per-frame task progress (0-1) plus success probability, written back as a dataset column with `score_rewards`. Downstream uses: filter failed or stalled episodes before BC training, dense reward for RL post-training, and catching mislabeled tasks (all-zero progress usually means the task text is wrong).
 
-Scoring is a pure HTTP call - you bring a running Robometer eval server (`run_robometer_server.py` on any NVIDIA GPU, or `modal deploy modal_eval_server.py`; both can be found next to this demo) and point `ROBOMETER_URL` at it.
+Scoring is a pure HTTP call - you bring a running Robometer eval server ([`run_robometer_server.py`](https://github.com/Eventual-Inc/daft-physical-ai/blob/main/examples/rewards/run_robometer_server.py) on any NVIDIA GPU, or `modal deploy` [`modal_eval_server.py`](https://github.com/Eventual-Inc/daft-physical-ai/blob/main/examples/rewards/modal_eval_server.py); both can be found in [the daft-physical-ai repo](https://github.com/Eventual-Inc/daft-physical-ai/tree/main/examples/rewards)) and point `ROBOMETER_URL` at it.
 
 ## Setup
 
@@ -29,7 +29,7 @@ MAX_FRAMES = 8  # frames sampled per episode (first + last always included)
 
 ## Point at your Robometer server
 
-The pipeline takes a URL and doesn't care what's behind it - a local GPU ([`run_robometer_server.py`](run_robometer_server.py)), Modal ([`modal_eval_server.py`](modal_eval_server.py)), or anything else that serves the eval server's `/evaluate_batch_npy`.
+The pipeline takes a URL and doesn't care what's behind it - a local GPU ([`run_robometer_server.py`](https://github.com/Eventual-Inc/daft-physical-ai/blob/main/examples/rewards/run_robometer_server.py)), Modal ([`modal_eval_server.py`](https://github.com/Eventual-Inc/daft-physical-ai/blob/main/examples/rewards/modal_eval_server.py)), or anything else that serves the eval server's `/evaluate_batch_npy`.
 
 ```python
 import os
@@ -132,7 +132,7 @@ plt.tight_layout()
 plt.show()
 ```
 
-![Robometer per-frame task progress](demo_progress.png)
+![Robometer per-frame task progress](../img/reward-scoring-progress.png)
 
 ## Filter with a Daft query
 
