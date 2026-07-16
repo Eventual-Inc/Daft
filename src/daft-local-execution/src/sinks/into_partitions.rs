@@ -11,8 +11,11 @@ use daft_shuffles::{
 };
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkOutput, BlockingSinkSinkResult,
+use super::{
+    blocking_sink::{
+        BlockingSink, BlockingSinkFinalizeResult, BlockingSinkOutput, BlockingSinkSinkResult,
+    },
+    shuffle_backend::{FlightShuffleContext, LocalShuffleBackend},
 };
 use crate::{
     ExecutionTaskSpawner,
@@ -55,14 +58,14 @@ impl RayIntoPartitionsState {
 }
 
 pub(crate) struct FlightIntoPartitionsState {
-    shared: Arc<FlightShared>,
+    shared: Arc<FlightShuffleContext>,
     caches: Vec<InProgressShuffleCache>,
     rotation_offset: usize,
 }
 
 impl FlightIntoPartitionsState {
     fn try_new(
-        shared: Arc<FlightShared>,
+        shared: Arc<FlightShuffleContext>,
         input_id: InputId,
         num_partitions: usize,
     ) -> DaftResult<Self> {
@@ -156,45 +159,18 @@ impl IntoPartitionsState {
     }
 }
 
-/// Shared Flight config for all states produced by one IntoPartitionsSink.
-struct FlightShared {
-    shuffle_id: u64,
-    shuffle_dirs: Vec<String>,
-    compression: Option<String>,
-    local_server: Arc<ShuffleFlightServer>,
-    shuffle_address: String,
-    target_in_memory_size_per_partition: usize,
-    schema: SchemaRef,
-}
-
-// Mirrors the pattern in `sinks/gather.rs::GatherBackend` and
-// `sinks/repartition.rs::RepartitionBackend` — a runtime enum that picks
-// between the Ray path and the Flight path and carries Flight's runtime handles.
-#[derive(Clone)]
-enum IntoPartitionsBackend {
-    Ray { schema: SchemaRef },
-    Flight(Arc<FlightShared>),
-}
-
-impl IntoPartitionsBackend {
-    fn name(&self) -> &'static str {
-        match self {
-            Self::Ray { .. } => "Ray",
-            Self::Flight(_) => "Flight",
-        }
-    }
-}
-
 pub struct IntoPartitionsSink {
     num_partitions: usize,
-    backend: IntoPartitionsBackend,
+    schema: SchemaRef,
+    backend: LocalShuffleBackend,
 }
 
 impl IntoPartitionsSink {
     pub fn new_ray(num_partitions: usize, schema: SchemaRef) -> Self {
         Self {
             num_partitions,
-            backend: IntoPartitionsBackend::Ray { schema },
+            schema,
+            backend: LocalShuffleBackend::Ray,
         }
     }
 
@@ -216,7 +192,8 @@ impl IntoPartitionsSink {
         .clamp(1024 * 1024 * 8, 1024 * 1024 * 128);
         Ok(Self {
             num_partitions,
-            backend: IntoPartitionsBackend::Flight(Arc::new(FlightShared {
+            schema: schema.clone(),
+            backend: LocalShuffleBackend::Flight(Arc::new(FlightShuffleContext {
                 shuffle_id,
                 shuffle_dirs,
                 compression,
@@ -259,12 +236,13 @@ impl BlockingSink for IntoPartitionsSink {
     ) -> BlockingSinkFinalizeResult {
         let backend = self.backend.clone();
         let num_partitions = self.num_partitions;
+        let schema = self.schema.clone();
 
         spawner
             .spawn(
                 async move {
                     match backend {
-                        IntoPartitionsBackend::Ray { schema } => {
+                        LocalShuffleBackend::Ray => {
                             let ray_states = states
                                 .into_iter()
                                 .map(|s| match s {
@@ -279,7 +257,7 @@ impl BlockingSink for IntoPartitionsSink {
                             )?;
                             Ok(BlockingSinkOutput::Partitions(outputs))
                         }
-                        IntoPartitionsBackend::Flight(_) => {
+                        LocalShuffleBackend::Flight(_) => {
                             debug_assert_eq!(
                                 states.len(),
                                 1,
@@ -321,12 +299,10 @@ impl BlockingSink for IntoPartitionsSink {
 
     fn make_state(&self, input_id: InputId) -> DaftResult<Self::State> {
         match &self.backend {
-            IntoPartitionsBackend::Ray { .. } => {
-                Ok(IntoPartitionsState::Ray(RayIntoPartitionsState {
-                    partitions: Vec::new(),
-                }))
-            }
-            IntoPartitionsBackend::Flight(shared) => Ok(IntoPartitionsState::Flight(
+            LocalShuffleBackend::Ray => Ok(IntoPartitionsState::Ray(RayIntoPartitionsState {
+                partitions: Vec::new(),
+            })),
+            LocalShuffleBackend::Flight(shared) => Ok(IntoPartitionsState::Flight(
                 FlightIntoPartitionsState::try_new(shared.clone(), input_id, self.num_partitions)?,
             )),
         }
