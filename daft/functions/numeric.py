@@ -306,6 +306,23 @@ def conv(expr: Expression, from_base: int, to_base: int) -> Expression:
     return Expression._call_builtin_scalar_fn("conv", expr, from_base, to_base)
 
 
+def width_bucket(
+    value: Expression,
+    min: Expression,
+    max: Expression,
+    num_bucket: Expression,
+) -> Expression:
+    """Returns the 1-indexed bucket of ``value`` in an equiwidth histogram over ``[min, max]``.
+
+    Returns ``0`` below the range and ``num_bucket + 1`` at or above; descending bounds
+    (``min > max``) flip the orientation. Non-integer ``num_bucket`` truncates toward zero.
+    Examples: ``width_bucket(5.3, 0.2, 10.6, 5) == 3``, ``width_bucket(-2.1, 1.3, 3.4, 3) == 0``.
+    Returns NULL when ``num_bucket <= 0``, ``min == max``, ``value`` is NaN, or
+    ``min``/``max`` is NaN/Infinite.
+    """
+    return Expression._call_builtin_scalar_fn("width_bucket", value, min, max, num_bucket)
+
+
 def is_nan(expr: Expression) -> Expression:
     """Checks if values are NaN (a special float value indicating not-a-number).
 

@@ -9,6 +9,7 @@ import pyarrow as pa
 import pytest
 
 from daft import col, lit
+from daft.functions import width_bucket
 from daft.recordbatch import MicroPartition
 from tests.recordbatch import daft_numeric_types
 
@@ -1186,3 +1187,94 @@ def test_pmod_bad_input() -> None:
     table = MicroPartition.from_pydict({"a": ["x", "y"], "b": [1, 2]})
     with pytest.raises(ValueError, match="Expected inputs to pmod to be numeric"):
         table.eval_expression_list([pmod(col("a"), col("b"))])
+
+
+def test_width_bucket_basic() -> None:
+    table = MicroPartition.from_pydict(
+        {
+            "v": [5.3, -2.1, 8.1, -0.9],
+            "mn": [0.2, 1.3, 0.0, 5.2],
+            "mx": [10.6, 3.4, 5.7, 0.5],
+            "nb": [5, 3, 4, 2],
+        }
+    )
+    result = table.eval_expression_list([width_bucket(col("v"), col("mn"), col("mx"), col("nb")).alias("bucket")])
+    assert result.get_column_by_name("bucket").to_pylist() == [3, 0, 5, 3]
+
+
+def test_width_bucket_descending() -> None:
+    """Min > max flips orientation; v > min underflows, v <= max overflows."""
+    table = MicroPartition.from_pydict({"v": [11.0, 5.0, 0.0, -1.0]})
+    result = table.eval_expression_list([width_bucket(col("v"), lit(10.0), lit(0.0), lit(5)).alias("bucket")])
+    # min=10, max=0, nb=5: v=11 underflows -> 0; v=5 mid -> floor(5*(10-5)/10)+1=3;
+    # v=0 == max -> nb+1=6; v=-1 < max -> nb+1=6.
+    assert result.get_column_by_name("bucket").to_pylist() == [0, 3, 6, 6]
+
+
+def test_width_bucket_integer_inputs() -> None:
+    table = MicroPartition.from_pydict({"v": pa.array([3, 5, 7], type=pa.int32())})
+    result = table.eval_expression_list([width_bucket(col("v"), lit(0), lit(10), lit(5)).alias("bucket")])
+    assert result.get_column_by_name("bucket").to_pylist() == [2, 3, 4]
+
+
+def test_width_bucket_below_and_above_range() -> None:
+    table = MicroPartition.from_pydict({"v": [-0.1, 0.0, 5.0, 10.0, 10.1]})
+    result = table.eval_expression_list([width_bucket(col("v"), lit(0.0), lit(10.0), lit(5)).alias("bucket")])
+    # v=0 is at min so bucket 1; v=10 hits the v>=max branch so nb+1=6.
+    assert result.get_column_by_name("bucket").to_pylist() == [0, 1, 3, 6, 6]
+
+
+def test_width_bucket_null_returning() -> None:
+    """Each invalid row exercises a distinct NULL-returning guard in compute_bucket."""
+    i64_max = 2**63 - 1
+    nan, inf = math.nan, math.inf
+    table = MicroPartition.from_pydict(
+        {
+            #     nb<=0  nb==i64::MAX  mn==mx  v=NaN  mn=NaN  mn=Inf  mx=NaN  mx=Inf  valid
+            "v": [1.0, 1.0, 1.0, nan, 1.0, 1.0, 1.0, 1.0, 1.0],
+            "mn": [0.0, 0.0, 5.0, 0.0, nan, inf, 0.0, 0.0, 0.0],
+            "mx": [10.0, 10.0, 5.0, 10.0, 10.0, 10.0, nan, inf, 10.0],
+            "nb": [0, i64_max, 4, 4, 4, 4, 4, 4, 4],
+        }
+    )
+    result = table.eval_expression_list([width_bucket(col("v"), col("mn"), col("mx"), col("nb")).alias("bucket")])
+    values = result.get_column_by_name("bucket").to_pylist()
+    assert values[:-1] == [None] * 8
+    assert values[-1] is not None
+
+
+def test_width_bucket_null_propagation() -> None:
+    table = MicroPartition.from_pydict({"v": [1.0, None, 5.0]})
+    result = table.eval_expression_list([width_bucket(col("v"), lit(0.0), lit(10.0), lit(5)).alias("bucket")])
+    assert result.get_column_by_name("bucket").to_pylist() == [1, None, 3]
+
+
+def test_width_bucket_scalar_broadcast() -> None:
+    table = MicroPartition.from_pydict({"v": [-1.0, 0.0, 2.0, 4.0, 6.0, 8.0, 10.0, 11.0]})
+    result = table.eval_expression_list([width_bucket(col("v"), lit(0.0), lit(10.0), lit(5)).alias("bucket")])
+    assert result.get_column_by_name("bucket").to_pylist() == [0, 1, 2, 3, 4, 5, 6, 6]
+
+
+def test_width_bucket_fractional_num_bucket_truncates() -> None:
+    """Daft promotes any numeric num_bucket to Int64 by truncation."""
+    table = MicroPartition.from_pydict({"v": [3.0]})
+    result = table.eval_expression_list([width_bucket(col("v"), lit(0.0), lit(10.0), lit(5.7)).alias("bucket")])
+    # 5.7 truncates to 5; floor(5 * 3 / 10) + 1 = 2.
+    assert result.get_column_by_name("bucket").to_pylist() == [2]
+
+
+def test_width_bucket_bad_input() -> None:
+    table = MicroPartition.from_pydict({"v": ["a", "b"]})
+    with pytest.raises(ValueError, match="Expected `value` of width_bucket to be numeric"):
+        table.eval_expression_list([width_bucket(col("v"), lit(0.0), lit(10.0), lit(5))])
+
+
+def test_width_bucket_huge_num_bucket() -> None:
+    """Nb just below i64::MAX must saturate, not wrap to i64::MIN."""
+    nb = 2**63 - 2  # one below the i64::MAX None-guard; (nb as f64) rounds up to 2^63
+    table = MicroPartition.from_pydict({"v": [-1.0, 5.0, 11.0]})
+    result = table.eval_expression_list([width_bucket(col("v"), lit(0.0), lit(10.0), lit(nb)).alias("bucket")])
+    values = result.get_column_by_name("bucket").to_pylist()
+    assert values[0] == 0  # below range
+    assert values[1] == 2**62 + 1  # 2^63 * 0.5 truncated to i64, then saturating_add(1)
+    assert values[2] == 2**63 - 1  # at/above range: nb.saturating_add(1) -> i64::MAX
