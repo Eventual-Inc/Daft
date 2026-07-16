@@ -63,6 +63,7 @@ pub(crate) struct FlightIntoPartitionsState {
 impl FlightIntoPartitionsState {
     fn try_new(
         shared: Arc<FlightShuffleContext>,
+        schema: SchemaRef,
         input_id: InputId,
         num_partitions: usize,
     ) -> DaftResult<Self> {
@@ -79,7 +80,7 @@ impl FlightIntoPartitionsState {
             let partition_ref_id = partition_ref_id(input_id, partition_idx);
             let cache = InProgressShuffleCache::try_new(
                 partition_ref_id,
-                shared.schema.clone(),
+                schema.clone(),
                 &shared.shuffle_dirs,
                 shared.shuffle_id,
                 target_in_memory_size_per_partition,
@@ -277,7 +278,12 @@ impl BlockingSink for IntoPartitionsSink {
                 partitions: Vec::new(),
             })),
             LocalShuffleBackend::Flight(shared) => Ok(IntoPartitionsState::Flight(
-                FlightIntoPartitionsState::try_new(shared.clone(), input_id, self.num_partitions)?,
+                FlightIntoPartitionsState::try_new(
+                    shared.clone(),
+                    self.schema.clone(),
+                    input_id,
+                    self.num_partitions,
+                )?,
             )),
         }
     }

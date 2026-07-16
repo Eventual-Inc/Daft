@@ -1,20 +1,19 @@
 use std::sync::Arc;
 
-use daft_core::prelude::SchemaRef;
 use daft_shuffles::server::flight_server::ShuffleFlightServer;
 
 /// Transport handles shared by all Flight-backed states of a single shuffle sink.
 ///
-/// Per-partition sizing (e.g. cache spill targets) is intentionally not stored
-/// here: it is specific to the streaming cache writer used by gather and
-/// into_partitions, and has no analogue in repartition's one-shot writer.
+/// Sink-specific inputs (the schema, per-partition cache spill targets) are
+/// intentionally not stored here: they are owned by each sink, since not every
+/// sink reads them from a shared context (e.g. repartition uses its own schema
+/// and one-shot writer with no per-partition spill knob).
 pub(crate) struct FlightShuffleContext {
     pub(crate) shuffle_id: u64,
     pub(crate) shuffle_dirs: Vec<String>,
     pub(crate) compression: Option<String>,
     pub(crate) local_server: Arc<ShuffleFlightServer>,
     pub(crate) shuffle_address: String,
-    pub(crate) schema: SchemaRef,
 }
 
 /// Picks between the Ray path and the Flight path for local shuffle operators
@@ -33,7 +32,6 @@ impl LocalShuffleBackend {
     pub(crate) fn from_plan(
         backend: &daft_local_plan::ShuffleBackend,
         shuffle_server: Option<(Arc<ShuffleFlightServer>, String)>,
-        schema: SchemaRef,
     ) -> Self {
         match backend {
             daft_local_plan::ShuffleBackend::Ray => Self::Ray,
@@ -51,7 +49,6 @@ impl LocalShuffleBackend {
                     compression: compression.clone(),
                     local_server,
                     shuffle_address,
-                    schema,
                 }))
             }
         }

@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
+use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartition;
 use daft_partition_refs::FlightPartitionRef;
 use daft_shuffles::shuffle_cache::{InProgressShuffleCache, partition_ref_id};
@@ -35,6 +36,7 @@ impl RayGatherState {
 
 pub(crate) struct FlightGatherState {
     shared: Arc<FlightShuffleContext>,
+    schema: SchemaRef,
     input_id: InputId,
     refs: Vec<FlightPartitionRef>,
 }
@@ -45,7 +47,7 @@ impl FlightGatherState {
         let partition_ref_id = partition_ref_id(self.input_id, self.refs.len());
         let cache = InProgressShuffleCache::try_new(
             partition_ref_id,
-            shared.schema.clone(),
+            self.schema.clone(),
             &shared.shuffle_dirs,
             shared.shuffle_id,
             TARGET_IN_MEMORY_SIZE_BYTES,
@@ -113,12 +115,13 @@ fn collect_output(backend: &LocalShuffleBackend, states: Vec<GatherState>) -> Bl
 }
 
 pub struct GatherSink {
+    schema: SchemaRef,
     backend: LocalShuffleBackend,
 }
 
 impl GatherSink {
-    pub fn new(backend: LocalShuffleBackend) -> Self {
-        Self { backend }
+    pub fn new(schema: SchemaRef, backend: LocalShuffleBackend) -> Self {
+        Self { schema, backend }
     }
 }
 
@@ -178,6 +181,7 @@ impl BlockingSink for GatherSink {
             })),
             LocalShuffleBackend::Flight(shared) => Ok(GatherState::Flight(FlightGatherState {
                 shared: shared.clone(),
+                schema: self.schema.clone(),
                 input_id,
                 refs: Vec::new(),
             })),
