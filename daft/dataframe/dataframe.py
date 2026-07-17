@@ -3976,6 +3976,9 @@ class DataFrame:
             left_by: Equality keys on the left when names differ; use with ``right_by``.
             right_by: Equality keys on the right when names differ; use with ``left_by``.
             strategy: Match strategy. ``"backward"`` finds the latest right row at or before the left timestamp. ``"forward"`` finds the earliest right row at or after the left timestamp. ``"nearest"`` finds the right row with the minimum absolute difference in on_key; For tie-breaking, prefer the larger/forward value.
+                Ties on ``(by, on)`` are broken deterministically (greatest right row for
+                ``"backward"``/``"nearest"``, least for ``"forward"``, over the output columns);
+                rows differing only in non-orderable columns remain an arbitrary pick.
             _assume_sorted_and_aligned: Asserts that both inputs have the same number of
                 partitions with identical boundaries, and that rows within each partition are
                 sorted ascending by the on-key. Also requires
