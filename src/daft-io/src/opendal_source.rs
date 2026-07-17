@@ -23,7 +23,9 @@ pub(crate) struct OpenDALSource {
 impl OpenDALSource {
     /// List the OpenDAL service schemes that are compiled into this build.
     fn available_schemes() -> &'static [&'static str] {
-        &["oss", "cos", "obs", "tos", "memory", "fs", "github"]
+        &[
+            "oss", "cos", "obs", "tos", "goosefs", "memory", "fs", "github",
+        ]
     }
 
     pub async fn get_client(

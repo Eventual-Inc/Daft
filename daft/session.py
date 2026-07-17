@@ -316,12 +316,26 @@ class Session:
 
     def create_namespace(self, identifier: Identifier | str) -> None:
         """Creates a namespace in the current catalog."""
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+
+        if resolved := self._resolve_catalog(identifier):
+            cat, identifier = resolved
+            return cat.create_namespace(identifier)
+
         if not (catalog := self.current_catalog()):
             raise ValueError("Cannot create a namespace without a current catalog")
         return catalog.create_namespace(identifier)
 
     def create_namespace_if_not_exists(self, identifier: Identifier | str) -> None:
         """Creates a namespace in the current catalog if it does not already exist."""
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+
+        if resolved := self._resolve_catalog(identifier):
+            cat, identifier = resolved
+            return cat.create_namespace_if_not_exists(identifier)
+
         if not (catalog := self.current_catalog()):
             raise ValueError("Cannot create a namespace without a current catalog")
         return catalog.create_namespace_if_not_exists(identifier)
@@ -439,8 +453,15 @@ class Session:
         """Drop the given namespace in the current catalog.
 
         Args:
-            identifier (Identifier|str): table identifier
+            identifier (Identifier|str): namespace identifier
         """
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+
+        if resolved := self._resolve_catalog(identifier):
+            cat, identifier = resolved
+            return cat.drop_namespace(identifier)
+
         if not (catalog := self.current_catalog()):
             raise ValueError("Cannot drop a namespace without a current catalog")
         return catalog.drop_namespace(identifier)
@@ -460,7 +481,11 @@ class Session:
 
         if not (catalog := self.current_catalog()):
             raise ValueError("Cannot drop a table without a current catalog")
-        # TODO join the identifier with the current namespace
+
+        if len(identifier) == 1:
+            if ns := self.current_namespace():
+                identifier = ns + identifier
+
         return catalog.drop_table(identifier)
 
     ###
@@ -596,6 +621,13 @@ class Session:
 
     def has_namespace(self, identifier: Identifier | str) -> bool:
         """Returns true if a namespace with the given identifier exists."""
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+
+        if resolved := self._resolve_catalog(identifier):
+            cat, identifier = resolved
+            return cat.has_namespace(identifier)
+
         if not (catalog := self.current_catalog()):
             raise ValueError("Cannot call has_namespace without a current catalog")
         return catalog.has_namespace(identifier)
@@ -707,11 +739,12 @@ class Session:
             identifier = Identifier.from_str(identifier)
         self._session.set_namespace(identifier._ident if identifier else None)
 
-    def set_provider(self, identifier: str | None, **options: Any) -> None:
+    def set_provider(self, identifier: str | Provider | None, **options: Any) -> None:
         """Set the default model provider with associated options.
 
         Args:
-            identifier (str | None): provider identifier string or None.
+            identifier (str | Provider | None): provider identifier string, Provider instance, or None.
+                If a Provider instance is given, it is attached to the session before being set as current.
             **options (Any): provider specific options such as an API key or retry limit.
 
         Note:
@@ -719,6 +752,15 @@ class Session:
             like "openai", then we will create and attach this known provider.
             For example, `daft.set_provider("openai")` works.
         """
+        # If a Provider instance is given, attach it and resolve to its name
+        if isinstance(identifier, Provider):
+            if options:
+                raise TypeError(
+                    "Cannot pass keyword options when providing a Provider instance. Configure the Provider instance directly instead."
+                )
+            self.attach_provider(identifier)
+            identifier = identifier.name
+
         # consider using @overload on known providers for better type hints
         if identifier is not None and not self._session.has_provider(identifier) and identifier in PROVIDERS:
             # upsert semantic for known providers e.g. daft.set_provider("openai")
@@ -1039,7 +1081,7 @@ def set_namespace(identifier: Identifier | str | None) -> None:
     _session().set_namespace(identifier)
 
 
-def set_provider(identifier: str | None, **options: Any) -> None:
+def set_provider(identifier: str | Provider | None, **options: Any) -> None:
     """Set the given provider as current_provider for the active session."""
     _session().set_provider(identifier, **options)
 

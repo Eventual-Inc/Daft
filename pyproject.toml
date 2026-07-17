@@ -30,7 +30,7 @@ homepage = "https://www.daft.ai"
 repository = "https://github.com/Eventual-Inc/Daft"
 
 [project.optional-dependencies]
-all = ["daft[aws, azure, clickhouse, deltalake, gcp, google, gravitino, hudi, huggingface, iceberg, lance, numpy, openai, pandas, postgres, ray, sentence-transformers, sql, transformers, turbopuffer, unity, video]"]
+all = ["daft[aws, azure, clickhouse, deltalake, gcp, google, gravitino, hdf5, hudi, huggingface, iceberg, lance, mcap, numpy, openai, pandas, postgres, ray, sentence-transformers, sql, transformers, turbopuffer, unity, video]"]
 aws = ["boto3<1.44.0", "mypy-boto3-glue"]
 azure = []
 clickhouse = ["clickhouse_connect<1.1.0"]
@@ -38,10 +38,12 @@ deltalake = ["deltalake >= 1.5.0,< 1.7.0"]
 gcp = []
 google = ["google-genai<2.7.0", "numpy<2.4.0", "pillow==12.2.0"]
 gravitino = ["requests>=2.28.0,<3.0.0"]
+hdf5 = ["h5py>=3.16.0,<4.0.0", "numpy<2.4.0"]
 hudi = ["pyarrow >= 16.0.0,<25.0.0"]
 huggingface = ["huggingface-hub<1.17.0", "datasets<4.9.0"]
 iceberg = ["pyiceberg >= 0.7.0, != 0.9.1, != 0.10.0, <= 0.11.1"]
 lance = ["daft-lance"]
+mcap = ["mcap>=1.1.0,<2.0.0"]
 numpy = ["numpy<2.4.0"]
 openai = ["openai<2.39.0", "numpy<2.4.0", "pillow==12.2.0"]
 pandas = ["pandas<2.4.0"]
@@ -56,7 +58,7 @@ transformers = ["transformers<5.10.0", "sentence-transformers<5.6.0", "torch<2.1
 sql = ["connectorx>=0.4.4,<0.5.0", "sqlalchemy<2.1.0", "sqlglot<30.9.0"]
 turbopuffer = ["turbopuffer<2.2.0"]
 unity = ["httpx<=0.28.1", "unitycatalog<0.2.0", "deltalake>=1.5.0,<1.7.0"]
-video = ["av >= 15.0.0,< 17.1.0"]
+video = ["av >= 15.0.0,< 17.1.0", "pillow==12.2.0"]
 audio = ["soundfile >= 0.13.0,<0.14.0", "librosa >= 0.11.0,<0.12.0"]
 viz = []
 
@@ -65,6 +67,8 @@ dev = [
   "ipdb==0.13.13",
   "maturin==1.13.3",
   "pre-commit==4.6.0",
+  "ruff==0.15.14",
+  "mypy==2.1.0",
   "docker==7.1.0",
   # Pinned aiohttp due to Ray connection issue in aiohttp==3.12.6
   "aiohttp==3.13.5",
@@ -147,6 +151,7 @@ dev = [
   "google-genai==2.6.0",
   # AV
   "av==17.0.1",
+  "h5py==3.16.0",
   "soundfile==0.13.1",
   "librosa==0.11.0",
   # Clickhouse
@@ -175,12 +180,6 @@ docs = [
   "griffe==2.0.2",
   "mkdocs-literate-nav==0.6.3",
   "Jinja2==3.1.6"
-]
-lint = [
-  "ruff==0.15.14",
-  "black==26.5.1",
-  "isort==8.0.1",
-  "mypy==2.1.0"
 ]
 
 [tool]

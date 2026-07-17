@@ -17,6 +17,7 @@
         * [Documents](modalities/documents.md)
         * [JSON and Nested Data](modalities/json.md)
         * [Files and URLs](modalities/files.md)
+        * [Tensors](modalities/tensors.md)
         * [Embeddings](modalities/embeddings.md)
         * [Custom Modalities](modalities/custom.md)
     * User Defined Functions
@@ -31,6 +32,8 @@
         * [Batch Inference](use-case/batch-inference.md)
     * Datasets
         * [Common Crawl](datasets/common-crawl.md)
+        * [LeRobot v3](datasets/lerobot.md)
+        * [DROID](datasets/droid.md)
     * Data Connectors
         * [Overview](connectors/index.md)
         * Object Storage
@@ -38,6 +41,7 @@
             * [Azure Blob Store](connectors/azure.md)
             * [Google Cloud Storage](connectors/gcs.md)
             * [COS (Tencent Cloud)](connectors/cos.md)
+            * [GooseFS](connectors/goosefs.md)
         * Table Formats
             * [Apache Hudi](connectors/hudi.md)
             * [Apache Iceberg](connectors/iceberg.md)
@@ -82,6 +86,7 @@
             * [Partitioning and Batching](optimization/partitioning.md)
             * [Shuffle Algorithms](optimization/shuffle.md)
             * [Join Strategies](optimization/join-strategies.md)
+    * [Checkpointing](use-case/checkpointing.md)
     * Observability
         * [Dashboard](observability/dashboard.md)
         * [Progress Indicators](observability/progress-indicators.md)

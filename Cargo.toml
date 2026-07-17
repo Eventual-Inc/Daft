@@ -161,6 +161,9 @@ strip = "none"  # dont strip
 [profile.release.package.daft-parquet]
 opt-level = 2
 
+[profile.release.package.opendal-service-oss]
+opt-level = 2
+
 [profile.release-lto]
 codegen-units = 1
 inherits = "release"
@@ -329,7 +332,6 @@ num-derive = "0.4.2"
 num-format = "0.4.4"
 num-traits = "0.2"
 numpy = {version = "0.28", features = ["half"]}
-opendal = {version = "0.57", default-features = false}
 opentelemetry = {version = "0.31", features = ["trace", "metrics", "logs"]}
 opentelemetry-otlp = {version = "0.31", features = ["grpc-tonic", "logs"]}
 opentelemetry_sdk = {version = "0.31", features = ["logs"]}

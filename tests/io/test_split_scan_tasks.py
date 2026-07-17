@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import io
+import re
+
 import pyarrow as pa
 import pyarrow.parquet as papq
 import pytest
@@ -31,6 +34,59 @@ def test_split_parquet_read(parquet_files):
         df = daft.read_parquet(str(parquet_files))
         assert df.num_partitions() == 10, "Should have 10 partitions since we will split the file"
         assert df.to_pydict() == {"data": ["aaa"] * 100}
+
+
+def test_split_parquet_estimate_uses_materialized_size(tmpdir):
+    """The scan size estimate must reflect the materialized buffer size, not encoded size.
+
+    For dictionary/RLE-encoded int64 lists, the encoded size is many times smaller than
+    the decoded Arrow buffer. The estimate is derived from value counts and column types
+    (num_values * 8 for int64), so it should track the materialized size. This also guards
+    against the split path either reusing whole-file sizes (N x over-estimate) or dropping
+    metadata and falling back to the inflation factor.
+    """
+    n_rows = 5000
+    seq = list(range(128))  # repetitive -> highly dictionary-compressible
+    tbl = pa.table(
+        {"position_ids": [seq for _ in range(n_rows)]},
+        schema=pa.schema([("position_ids", pa.list_(pa.int64()))]),
+    )
+    path = tmpdir / "file.pq"
+    papq.write_table(tbl, str(path), use_dictionary=True, row_group_size=1000)
+
+    md = papq.ParquetFile(str(path)).metadata
+    uncompressed = 0
+    num_values = 0
+    for i in range(md.num_row_groups):
+        rg = md.row_group(i)
+        for c in range(rg.num_columns):
+            uncompressed += rg.column(c).total_uncompressed_size
+            num_values += rg.column(c).num_values
+    materialized = num_values * 8  # int64 leaf buffer
+
+    # Tiny byte thresholds: splitting is gated on the (small, dictionary-compressed)
+    # on-disk size, so use 1 to force one split per row group.
+    with daft.execution_config_ctx(
+        enable_scan_task_split_and_merge=True,
+        scan_tasks_min_size_bytes=1,
+        scan_tasks_max_size_bytes=1,
+    ):
+        df = daft.read_parquet(str(path))
+        assert df.num_partitions() > 1, "file should split into multiple tasks"
+        string_io = io.StringIO()
+        df.explain(show_all=True, file=string_io)
+        explain_output = string_io.getvalue()
+
+    match = re.search(r"Estimated Scan Bytes = (\d+)", explain_output)
+    assert match is not None, f"could not find scan bytes in explain output:\n{explain_output}"
+    estimated = int(match.group(1))
+
+    # Tracks the materialized buffer size...
+    assert 0.8 * materialized <= estimated <= 1.2 * materialized, (
+        f"estimated {estimated} should be ~materialized {materialized}"
+    )
+    # ...and is far larger than the encoded size we used to report.
+    assert estimated > 3 * uncompressed, f"estimated {estimated} should be >> uncompressed {uncompressed}"
 
 
 @pytest.mark.skip(reason="Not implemented yet")

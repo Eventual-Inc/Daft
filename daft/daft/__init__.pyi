@@ -809,6 +809,7 @@ class HuggingFaceConfig:
     Args:
         token (str, optional): Your Hugging Face access token, generated from https://huggingface.co/settings/tokens.
         anonymous (bool, optional): Whether or not to use "anonymous mode", which will access Hugging Face without any credentials. Defaults to False.
+        use_xet (bool, optional): When True, attempt to read Xet-backed files via the Xet protocol before falling back to HTTP. Defaults to True.
         use_content_defined_chunking (bool, optional): Set the `use_content_defined_chunking` parameter when creating a `pyarrow.parquet.ParquetWriter`. Only available with pyarrow>=21. Defaults to true if available.
         row_group_size (int, optional): Row group size when writing Parquet files. Defaults to the default `pyarrow.parquet.ParquetWriter` row group size.
         target_filesize (int, optional): Target size in bytes for each written Parquet file. Defaults to 512 MB.
@@ -818,6 +819,7 @@ class HuggingFaceConfig:
 
     token: str | None
     anonymous: bool
+    use_xet: bool
     use_content_defined_chunking: bool
     row_group_size: int | None
     target_filesize: int
@@ -827,6 +829,7 @@ class HuggingFaceConfig:
         self,
         token: str | None = None,
         anonymous: bool | None = None,
+        use_xet: bool | None = None,
         use_content_defined_chunking: bool | None = None,
         row_group_size: int | None = None,
         target_filesize: int | None = None,
@@ -836,6 +839,7 @@ class HuggingFaceConfig:
         self,
         token: str | None = None,
         anonymous: bool | None = None,
+        use_xet: bool | None = None,
         use_content_defined_chunking: bool | None = None,
         row_group_size: int | None = None,
         target_filesize: int | None = None,
@@ -1021,6 +1025,104 @@ class CosConfig:
         COS_SECURITY_TOKEN or TENCENTCLOUD_SECURITY_TOKEN: Security token for COS authentication.
         """
 
+class GooseFSConfig:
+    """I/O configuration for accessing GooseFS (distributed caching file system) via native gRPC.
+
+    Args:
+        root (str, optional): Root path of the backend. All operations happen under this root. Defaults to None ("/").
+        master_addr (str, optional): Master address(es) in ``host:port`` format. Comma-separated for HA, e.g. ``"10.0.0.1:9200,10.0.0.2:9200"``. Defaults to None (uses the URL authority).
+        block_size (int, optional): Block size in bytes for new files. Defaults to None (64 MiB).
+        chunk_size (int, optional): Chunk size in bytes for streaming RPCs. Defaults to None (1 MiB).
+        write_type (str, optional): Default write type for new files. One of ``"must_cache"``, ``"cache_through"``, ``"through"``, ``"async_through"``. Defaults to None (``"cache_through"``).
+        auth_type (str, optional): Authentication type. One of ``"nosasl"``, ``"simple"``. Defaults to None (``"simple"``).
+        auth_username (str, optional): Authentication username used in SIMPLE mode. Defaults to None (current OS user).
+        auth_password (str, optional): Optional authentication password. Defaults to None.
+        anonymous (bool, optional): Whether to use anonymous access. Forces ``auth_type="nosasl"`` and skips credential forwarding. Defaults to False.
+        max_retries (int, optional): Maximum number of retries for failed requests. Defaults to 3.
+        retry_timeout_ms (int, optional): Timeout duration for retry attempts in milliseconds. Defaults to 30000ms.
+        connect_timeout_ms (int, optional): Timeout duration to make a connection in milliseconds. Defaults to 10000ms.
+        read_timeout_ms (int, optional): Timeout duration to read the first byte in milliseconds. Defaults to 30000ms.
+        max_concurrent_requests (int, optional): Maximum number of concurrent requests. Defaults to 50.
+        max_connections (int, optional): Maximum number of connections per IO thread. Defaults to 50.
+
+    Examples:
+        >>> io_config = IOConfig(
+        ...     goosefs=GooseFSConfig(
+        ...         master_addr="10.0.0.1:9200",
+        ...         auth_type="simple",
+        ...         auth_username="alice",
+        ...     )
+        ... )
+        >>> daft.read_parquet("goosefs://10.0.0.1:9200/some-path", io_config=io_config)
+    """
+
+    root: str | None
+    master_addr: str | None
+    block_size: int | None
+    chunk_size: int | None
+    write_type: str | None
+    auth_type: str | None
+    auth_username: str | None
+    auth_password: str | None
+    anonymous: bool
+    max_retries: int
+    retry_timeout_ms: int
+    connect_timeout_ms: int
+    read_timeout_ms: int
+    max_concurrent_requests: int
+    max_connections: int
+
+    def __init__(
+        self,
+        root: str | None = None,
+        master_addr: str | None = None,
+        block_size: int | None = None,
+        chunk_size: int | None = None,
+        write_type: str | None = None,
+        auth_type: str | None = None,
+        auth_username: str | None = None,
+        auth_password: str | None = None,
+        anonymous: bool | None = None,
+        max_retries: int | None = None,
+        retry_timeout_ms: int | None = None,
+        connect_timeout_ms: int | None = None,
+        read_timeout_ms: int | None = None,
+        max_concurrent_requests: int | None = None,
+        max_connections: int | None = None,
+    ): ...
+    def replace(
+        self,
+        root: str | None = None,
+        master_addr: str | None = None,
+        block_size: int | None = None,
+        chunk_size: int | None = None,
+        write_type: str | None = None,
+        auth_type: str | None = None,
+        auth_username: str | None = None,
+        auth_password: str | None = None,
+        anonymous: bool | None = None,
+        max_retries: int | None = None,
+        retry_timeout_ms: int | None = None,
+        connect_timeout_ms: int | None = None,
+        read_timeout_ms: int | None = None,
+        max_concurrent_requests: int | None = None,
+        max_connections: int | None = None,
+    ) -> GooseFSConfig:
+        """Replaces values if provided, returning a new GooseFSConfig."""
+        ...
+
+    @staticmethod
+    def from_env() -> GooseFSConfig:
+        """Creates a GooseFSConfig, retrieving credentials and configurations from the current environment.
+
+        GOOSEFS_MASTER_ADDR: Master address(es) for the GooseFS cluster.
+        GOOSEFS_AUTH_USERNAME: Authentication username. Falls back to ``USER`` / ``USERNAME`` when unset.
+        GOOSEFS_AUTH_PASSWORD: Authentication password.
+        GOOSEFS_AUTH_TYPE: Authentication type (``"simple"`` or ``"nosasl"``).
+        GOOSEFS_WRITE_TYPE: Default write type for new files.
+        GOOSEFS_ROOT: Root path of the backend.
+        """
+
 class IOConfig:
     """Configuration for the native I/O layer, e.g. credentials for accessing cloud storage systems."""
 
@@ -1034,6 +1136,7 @@ class IOConfig:
     tos: TosConfig
     gravitino: GravitinoConfig
     cos: CosConfig
+    goosefs: GooseFSConfig
     opendal_backends: dict[str, dict[str, str]]
     protocol_aliases: dict[str, str]
 
@@ -1049,6 +1152,7 @@ class IOConfig:
         tos: TosConfig | None = None,
         gravitino: GravitinoConfig | None = None,
         cos: CosConfig | None = None,
+        goosefs: GooseFSConfig | None = None,
         opendal_backends: dict[str, dict[str, str]] | None = None,
         protocol_aliases: dict[str, str] | None = None,
     ): ...
@@ -1064,6 +1168,7 @@ class IOConfig:
         tos: TosConfig | None = None,
         gravitino: GravitinoConfig | None = None,
         cos: CosConfig | None = None,
+        goosefs: GooseFSConfig | None = None,
         opendal_backends: dict[str, dict[str, str]] | None = None,
         protocol_aliases: dict[str, str] | None = None,
     ) -> IOConfig:
@@ -2303,6 +2408,7 @@ class LogicalPlanBuilder:
         partition_cols: list[PyExpr] | None = None,
         compression: str | None = None,
         io_config: IOConfig | None = None,
+        single_file: bool = False,
     ) -> LogicalPlanBuilder: ...
     def iceberg_write(
         self,
@@ -2842,5 +2948,7 @@ class PyMediaType:
     def audio() -> PyMediaType: ...
     @staticmethod
     def image() -> PyMediaType: ...
+    @staticmethod
+    def hdf5() -> PyMediaType: ...
 
 def guess_mimetype_from_content(bytes: bytes) -> str | None: ...
