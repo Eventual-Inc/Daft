@@ -24,7 +24,17 @@ from .agg import (
     string_agg,
     product,
 )
-from .binary import encode, try_encode, compress, try_compress, decode, try_decode, decompress, try_decompress
+from .binary import (
+    encode,
+    try_encode,
+    compress,
+    try_compress,
+    decode,
+    try_decode,
+    decompress,
+    try_decompress,
+    try_to_binary,
+)
 from .bitwise import bitwise_and, bitwise_or, bitwise_xor, shift_left, shift_right
 from .columnar import (
     columns_sum,
@@ -623,6 +633,7 @@ __all__ = [
     "try_decompress",
     "try_deserialize",
     "try_encode",
+    "try_to_binary",
     "unix_date",
     "unnest",
     "upload",
