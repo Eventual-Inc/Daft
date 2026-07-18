@@ -12,8 +12,13 @@
     --docsearch-logo-color: var(--daft-magenta) !important;
 }
 
-.DocSearch-Button{
-    width: 11rem !important;
+/* Fixed width only where the header has room. Below 768px DocSearch's own
+   responsive style collapses the button to just the icon; forcing 11rem there
+   overflows the header and gives the whole page a horizontal scroll. */
+@media screen and (min-width: 768px){
+    .DocSearch-Button{
+        width: 11rem !important;
+    }
 }
 
 .DocSearch-Button .DocSearch-Search-Icon{
