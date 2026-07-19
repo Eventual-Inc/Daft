@@ -523,12 +523,31 @@ pub async fn stream_parquet_count_pushdown(
     io_stats: Option<IOStatsRef>,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     aggregation: &ExprRef,
+    row_groups: Option<&[i64]>,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let parquet_metadata =
         read_parquet_metadata(url, io_client, io_stats, field_id_mapping.clone()).await?;
 
     // Currently only CountMode::All is supported for count pushdown.
-    let count = parquet_metadata.num_rows();
+    //
+    // When the ScanTask constrains the read to specific row groups (user-supplied
+    // `row_groups`, or a split subtask's `ChunkSpec::Parquet`), count only those
+    // groups instead of the whole file. This mirrors the normal read path, which
+    // re-reads the full footer and treats these indices as positional into it
+    // (see `prune_row_groups` / `count_only_stream`). Without this, count pushdown
+    // ignores the constraint and returns the whole-file row count — inflating
+    // `count_rows()` by N× once a file is split into N subtasks.
+    let count = match row_groups {
+        None => parquet_metadata.num_rows(),
+        Some(rgs) => {
+            let arrow_md = parquet_metadata.as_arrowrs();
+            let indices = crate::helpers::validate_requested_row_groups(arrow_md, rgs, url)?;
+            indices
+                .iter()
+                .map(|&i| arrow_md.row_group(i).num_rows() as usize)
+                .sum()
+        }
+    };
     let count_field = daft_core::datatypes::Field::new(
         aggregation.name(),
         daft_core::datatypes::DataType::UInt64,
