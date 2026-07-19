@@ -639,6 +639,82 @@ mod tests {
         d.to_str().unwrap().to_string()
     }
 
+    /// Copy the local fixture to a temp path containing the test-only panic
+    /// marker (see `spawn_col_decoders`), so the decoder for column `col`
+    /// panics while other columns decode normally.
+    fn make_decoder_panic_fixture(tag: &str, col: &str) -> std::path::PathBuf {
+        // `--` terminates the column name so e.g. col `a` can't be matched
+        // by a marker targeting a hypothetical col `ab`.
+        let dst = std::env::temp_dir().join(format!(
+            "daft-{}-{tag}-inject-decoder-panic-{col}--.parquet",
+            std::process::id()
+        ));
+        std::fs::copy(get_local_parquet_path(), &dst).unwrap();
+        dst
+    }
+
+    /// A predicate-column decoder panic must fail the query. Before the
+    /// prefilter harvested its decoder tasks, the closed channel looked like
+    /// a normal stream end and the unprocessed rows were silently skipped.
+    #[test]
+    fn test_predicate_prefilter_decoder_panic_fails_query() -> DaftResult<()> {
+        use daft_dsl::{lit, resolved_col};
+
+        let io_client = Arc::new(IOClient::new(IOConfig::default().into())?);
+        let runtime = get_io_runtime(true);
+        // `resolved_col`: predicate pushdown (and thus the prefilter) only
+        // engages when `get_required_columns` sees resolved column refs.
+        let opts = ParquetReadOptions {
+            predicate: Some(resolved_col("a").gt(lit(2i64))),
+            ..Default::default()
+        };
+
+        // Panic only column `a`'s decoder — the predicate column. The data
+        // column `b` decodes normally, so an error can only come from the
+        // prefilter harvesting its decoders (pre-fix: 0-row success).
+        let marked = make_decoder_panic_fixture("prefilter", "a");
+        let result = runtime.block_on_current_thread(read_parquet_into_recordbatch(
+            marked.to_str().unwrap(),
+            io_client.clone(),
+            None,
+            opts.clone(),
+        ));
+        std::fs::remove_file(&marked).ok();
+        assert!(
+            result.is_err(),
+            "decoder panic must fail the query, not return fewer rows"
+        );
+
+        // Control: the same predicate on the unmarked fixture succeeds.
+        let table = runtime.block_on_current_thread(read_parquet_into_recordbatch(
+            &get_local_parquet_path(),
+            io_client,
+            None,
+            opts,
+        ))?;
+        assert_eq!(table.len(), 88);
+        Ok(())
+    }
+
+    /// Contrast case: a data-column decoder panic (no predicate) must also
+    /// fail the query — that path was already harvested via `combine_stream`.
+    #[test]
+    fn test_data_decoder_panic_fails_query() -> DaftResult<()> {
+        let io_client = Arc::new(IOClient::new(IOConfig::default().into())?);
+        let runtime = get_io_runtime(true);
+
+        let marked = make_decoder_panic_fixture("datacol", "b");
+        let result = runtime.block_on_current_thread(read_parquet_into_recordbatch(
+            marked.to_str().unwrap(),
+            io_client,
+            None,
+            ParquetReadOptions::default(),
+        ));
+        std::fs::remove_file(&marked).ok();
+        assert!(result.is_err(), "decoder panic must fail the query");
+        Ok(())
+    }
+
     #[test]
     fn test_parquet_read_from_s3() -> DaftResult<()> {
         let mut io_config = IOConfig::default();

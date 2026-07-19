@@ -4,7 +4,7 @@ use arrow::{
     array::{Array, ArrayRef},
     datatypes::Schema as ArrowSchema,
 };
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_runtime::{JoinSet, get_compute_runtime};
 use daft_core::prelude::*;
 use daft_dsl::expr::bound_expr::BoundExpr;
@@ -33,17 +33,33 @@ fn err_stream<T: Send + 'static>(e: common_error::DaftError) -> BoxStream<'stati
 /// Recv one chunk from each column receiver in lockstep.
 ///
 /// - `Ok(Some(v))` — every receiver yielded; `v` is the per-col array slice for this chunk.
-/// - `Err(e)` — a receiver propagated a decode error.
-/// - `Ok(None)` — at least one receiver closed (stream end). Decoders close their
-///   channel after the final chunk, so the first `None` we see ends the RG.
+/// - `Err(e)` — a receiver propagated a decode error, or the receivers went out
+///   of lockstep (some closed while others yielded — a decoder exited early).
+/// - `Ok(None)` — every receiver closed (stream end). A closed channel alone
+///   does not prove a clean finish — a panicked decoder also drops its sender —
+///   so callers that report success on EOF must also harvest the decoder tasks.
 pub(super) async fn recv_one_chunk(receivers: &mut [ColRx]) -> DaftResult<Option<Vec<ArrayRef>>> {
-    try_join_all(
+    // Zero receivers would return `Ok(Some(vec![]))` forever; every caller
+    // spawns at least one decoder column.
+    debug_assert!(!receivers.is_empty());
+    let chunks = try_join_all(
         receivers
             .iter_mut()
             .map(|r| async { r.recv().await.transpose() }),
     )
-    .await
-    .map(|chunks| chunks.into_iter().collect())
+    .await?;
+    let closed = chunks.iter().filter(|c| c.is_none()).count();
+    if closed == 0 {
+        Ok(Some(chunks.into_iter().flatten().collect()))
+    } else if closed == chunks.len() {
+        Ok(None)
+    } else {
+        Err(DaftError::InternalError(
+            "Parquet column decoders went out of lockstep: some columns ended while others still \
+             had chunks (a column decoder may have exited early)"
+                .to_string(),
+        ))
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -75,6 +91,17 @@ pub(super) async fn spawn_col_decoders(
         let col_leaves: Arc<[usize]> = leaves_for_top_fields(metadata.as_ref(), &[col_idx]).into();
         joinset.spawn_on(
             async move {
+                // Test-only injection: a file path containing this marker
+                // panics the decoder task for the named column, simulating a
+                // decoder bug. Keyed off the path so parallel tests don't
+                // interfere, and off the column so a test can target the
+                // predicate-prefilter decoders without also tripping the
+                // data-column ones.
+                #[cfg(test)]
+                assert!(
+                    !path.contains(&format!("inject-decoder-panic-{}--", arrow_field.name())),
+                    "injected decoder panic"
+                );
                 let chunks = match rg_reader.read_col(col_leaves).await {
                     Ok(c) => c,
                     Err(e) => {
@@ -309,4 +336,52 @@ pub(super) async fn process_rg_predicate_only(
     .boxed();
 
     common_runtime::combine_stream(stream, async move { col_decoders.join_all().await }).boxed()
+}
+
+#[cfg(test)]
+mod tests {
+    use arrow::array::Int64Array;
+
+    use super::*;
+
+    fn arr() -> ArrayRef {
+        Arc::new(Int64Array::from(vec![1, 2, 3]))
+    }
+
+    #[tokio::test]
+    async fn recv_one_chunk_lockstep_then_eof() {
+        let (tx1, rx1) = mpsc::channel(1);
+        let (tx2, rx2) = mpsc::channel(1);
+        tx1.send(Ok(arr())).await.unwrap();
+        tx2.send(Ok(arr())).await.unwrap();
+        drop(tx1);
+        drop(tx2);
+        let mut rxs = vec![rx1, rx2];
+        let chunk = recv_one_chunk(&mut rxs).await.unwrap();
+        assert_eq!(chunk.map(|c| c.len()), Some(2));
+        assert!(recv_one_chunk(&mut rxs).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn recv_one_chunk_mixed_closure_is_error() {
+        // One column still has a chunk while the other already closed — a
+        // decoder exited early (e.g. panicked); must not look like clean EOF.
+        let (tx1, rx1) = mpsc::channel(1);
+        let (tx2, rx2) = mpsc::channel::<DaftResult<ArrayRef>>(1);
+        tx1.send(Ok(arr())).await.unwrap();
+        drop(tx1);
+        drop(tx2);
+        let mut rxs = vec![rx1, rx2];
+        assert!(recv_one_chunk(&mut rxs).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn recv_one_chunk_propagates_decode_error() {
+        let (tx1, rx1) = mpsc::channel::<DaftResult<ArrayRef>>(1);
+        tx1.send(Err(DaftError::InternalError("decode failed".to_string())))
+            .await
+            .unwrap();
+        let mut rxs = vec![rx1];
+        assert!(recv_one_chunk(&mut rxs).await.is_err());
+    }
 }
