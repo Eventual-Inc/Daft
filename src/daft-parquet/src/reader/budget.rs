@@ -112,6 +112,7 @@ impl std::fmt::Debug for ByteBudget {
             .field("in_use", &s.in_use)
             .field("exclusive", &s.exclusive)
             .field("waiters", &s.waiters.len())
+            .field("metrics", &self.metrics)
             .finish()
     }
 }
@@ -139,7 +140,7 @@ impl ByteBudget {
         if s.exclusive {
             return to_notify;
         }
-        for w in s.waiters.iter_mut() {
+        for w in &mut s.waiters {
             if w.granted {
                 continue;
             }
@@ -306,6 +307,7 @@ pub(crate) struct BudgetPermit {
 }
 
 impl BudgetPermit {
+    #[cfg(test)]
     pub(crate) fn bytes(&self) -> usize {
         self.bytes
     }
@@ -343,11 +345,6 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-
-    fn granted_now(b: &Arc<ByteBudget>, bytes: usize) -> Option<BudgetReservation> {
-        let r = b.reserve(bytes);
-        if b.is_granted(r.id) { Some(r) } else { None }
-    }
 
     #[tokio::test]
     async fn sequential_acquire_release() {

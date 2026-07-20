@@ -782,6 +782,14 @@ fn rg_lookahead() -> usize {
     })
 }
 
+/// One in-flight RG: its task handle paired with the channel its batches
+/// arrive on. The coordinator drains the front receiver and then awaits the
+/// matching task to surface Err/panic.
+type InflightRg = (
+    common_runtime::RuntimeTask<DaftResult<()>>,
+    tokio::sync::mpsc::Receiver<DaftResult<RecordBatch>>,
+);
+
 /// Owned-mode pipeline. Structure (each piece is load-bearing):
 ///
 /// - The coordinator registers budget reservations **synchronously** in RG
@@ -815,10 +823,8 @@ fn stream_parquet_owned(
 
     let coordinator: common_runtime::RuntimeTask<DaftResult<()>> = compute.spawn(async move {
         let compute = get_compute_runtime();
-        let mut inflight: std::collections::VecDeque<(
-            common_runtime::RuntimeTask<DaftResult<()>>,
-            tokio::sync::mpsc::Receiver<DaftResult<RecordBatch>>,
-        )> = std::collections::VecDeque::new();
+        let mut inflight: std::collections::VecDeque<InflightRg> =
+            std::collections::VecDeque::new();
         let mut pending = rg_indices
             .into_iter()
             .zip(base_selections)
