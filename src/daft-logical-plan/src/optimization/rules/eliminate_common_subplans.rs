@@ -88,12 +88,15 @@ impl OptimizerRule for EliminateCommonSubplans {
             // the first group is stored. Collided groups are missed (not a
             // correctness bug, just a missed optimization opportunity).
             for group in groups {
-                if group.len() > 1 {
-                    let id = next_cse_id();
-                    duplicates
-                        .entry(*hash)
-                        .or_insert_with(|| (Arc::clone(group[0]), id));
+                // Heuristic: skip CSE for cheap subplans (chain of scan +
+                // filter/project without expensive ops).  See should_apply_cse().
+                if !should_apply_cse(&group) {
+                    continue;
                 }
+                let id = next_cse_id();
+                duplicates
+                    .entry(*hash)
+                    .or_insert_with(|| (Arc::clone(group[0]), id));
             }
         }
 
@@ -162,4 +165,53 @@ fn replace_children(
         .map(|child| replace_duplicates(child, duplicates))
         .collect();
     plan.with_new_children(&new_children).into()
+}
+
+/// Returns true if the subplan contains any operator that makes CSE
+/// worthwhile.  Join, Aggregate, and Sort are expensive to recompute,
+/// so sharing their results is beneficial even when the output is large.
+/// Without such operators, the subplan is typically a chain of cheap
+/// operations (scan → filter → projection) where clone cost may exceed
+/// recompute cost.
+fn subplan_has_expensive_ops(plan: &LogicalPlan) -> bool {
+    match plan {
+        LogicalPlan::Join(_)
+        | LogicalPlan::AsofJoin(_)
+        | LogicalPlan::Aggregate(_)
+        | LogicalPlan::Sort(_) => true,
+        // Bare scans always benefit from CSE: cloning in-memory
+        // results is cheaper than re-reading from disk / re-iterating
+        // in-memory data.
+        LogicalPlan::Source(_) => false,
+        _ => {
+            for child in plan.children() {
+                if subplan_has_expensive_ops(&child) {
+                    return true;
+                }
+            }
+            false
+        }
+    }
+}
+
+/// Returns true if the common subplan is worth CSE'ing.
+///
+/// We apply CSE when:
+///   - The subplan contains expensive ops (Join, Aggregate, Sort)
+///   - The subplan IS a bare scan (saving I/O is always beneficial)
+///
+/// We skip CSE for chains of cheap ops (e.g., `Filter → Project → Scan`)
+/// where the clone cost of potentially large intermediate results may
+/// exceed the recompute cost.
+fn should_apply_cse(group: &[&Arc<LogicalPlan>]) -> bool {
+    if group.len() <= 1 {
+        return false;
+    }
+    let canonical = group[0];
+    // Bare scan: always apply CSE
+    if matches!(canonical.as_ref(), LogicalPlan::Source(_)) {
+        return true;
+    }
+    // Has expensive ops: apply CSE
+    subplan_has_expensive_ops(canonical)
 }

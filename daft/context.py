@@ -174,6 +174,7 @@ def set_planning_config(
     config: PyDaftPlanningConfig | None = None,
     default_io_config: IOConfig | None = None,
     enable_strict_filter_pushdown: bool | None = None,
+    enable_cse: bool | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control Daft plan construction behavior.
 
@@ -184,13 +185,15 @@ def set_planning_config(
             that the old (current) config should be used.
         default_io_config: A default IOConfig to use in the absence of one being explicitly passed into any Expression (e.g. `.download()`)
             or Dataframe operation (e.g. `daft.read_parquet()`).
+        enable_cse: Whether to enable Common Subplan Elimination (default True). When enabled, duplicate subplans are computed once and reused.
     """
     # Replace values in the DaftPlanningConfig with user-specified overrides
     ctx = get_context()
     with ctx._lock:
         old_daft_planning_config = ctx._ctx._daft_planning_config if config is None else config
         new_daft_planning_config = old_daft_planning_config.with_config_values(
-            default_io_config=default_io_config, enable_strict_filter_pushdown=enable_strict_filter_pushdown
+            default_io_config=default_io_config, enable_strict_filter_pushdown=enable_strict_filter_pushdown,
+            enable_cse=enable_cse,
         )
 
         ctx._ctx._daft_planning_config = new_daft_planning_config

@@ -80,7 +80,7 @@ use crate::{
 };
 
 /// Message that can flow through the pipeline - either data (Morsel) or a flush signal
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum PipelineMessage {
     /// Data morsel with input_id and partition
     Morsel {

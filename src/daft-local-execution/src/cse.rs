@@ -3,38 +3,37 @@
 //! When the logical optimizer detects identical subplans, it wraps them in
 //! `CommonSubplan` nodes with a shared id. This module provides the runtime
 //! machinery that computes such a subplan once (via [`CseCacheWriteNode`])
-//! and replays the cached result for subsequent consumers (via
-//! [`CseCacheReadNode`]).
+//! and streams the result to all consumers (via [`CseCacheReadNode`])
+//! through per-reader unbounded mpsc channels.
 //!
 //! ## Architecture
 //!
 //! ```text
-//!                       ┌──────────────────┐
-//!                       │  CseSharedCache  │
-//!                       │  buffer: Vec<M>  │
-//!                       │  done:  AtomicBool
-//!                       │  notify: Notify  │
-//!                       └───┬──────────▲───┘
-//!                    push /  │          │  wait_done + replay
-//!              mark_done /   │          │
-//!     ┌──────────────────┐   │  ┌───────┴──────────┐
-//!     │ CseCacheWriteNode │──┘  │ CseCacheReadNode │
-//!     │ (transparent      │     │ (synthetic       │
-//!     │  passthrough)     │     │  source)         │
-//!     └──────────────────┘     └──────────────────┘
+//!                       ┌──────────────────────┐
+//!                       │    CseSharedCache    │
+//!                       │  txs: Vec<Sender>    │
+//!                       └───┬──────────────▲───┘
+//!             fan-out to all /              │  register sender
+//!                           │              │
+//!     ┌──────────────────┐  │  ┌───────────┴──────────┐
+//!     │ CseCacheWriteNode │──┘  │ CseCacheReadNode(s) │
+//!     │ (transparent      │     │ (synthetic           │
+//!     │  passthrough)     │     │  source(s))          │
+//!     └──────────────────┘     └──────────────────────┘
 //! ```
+//!
+//! Unlike the previous buffer-then-replay design:
+//! - Zero pipeline stall: readers consume as the writer produces.
+//! - No late-subscriber message loss: each reader gets a dedicated
+//!   unbounded channel that the writer populates from the start.
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-};
+use std::sync::Arc;
 
 use common_display::tree::TreeDisplay;
 use common_metrics::ops::{NodeCategory, NodeInfo, NodeType};
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
-use daft_micropartition::MicroPartitionRef;
-use tokio::sync::{Mutex, Notify};
+use tokio::sync::Mutex;
 
 use crate::{
     ExecutionRuntimeContext,
@@ -45,25 +44,19 @@ use crate::{
 // CseSharedCache
 // ---------------------------------------------------------------------------
 
-/// Shared cache between a [`CseCacheWriteNode`] and one or more
-/// [`CseCacheReadNode`]s.
-///
-/// The writer buffers morsels via [`push_morsel`](Self::push_morsel) and
-/// signals completion with [`mark_done`](Self::mark_done).  Readers call
-/// [`wait_done`](Self::wait_done) and then [`replay`](Self::replay).
+/// Fan-out cache: the writer sends each message to every registered reader
+/// through an unbounded mpsc channel.  Readers register their own sender and
+/// consume from the corresponding receiver independently — no late-subscriber
+/// loss and no pipeline stall.
 pub(crate) struct CseSharedCache {
-    buffer: Mutex<Vec<MicroPartitionRef>>,
-    notify: Notify,
-    done: AtomicBool,
+    txs: Mutex<Vec<tokio::sync::mpsc::UnboundedSender<PipelineMessage>>>,
     cse_id: usize,
 }
 
 impl CseSharedCache {
     pub fn new(cse_id: usize) -> Arc<Self> {
         Arc::new(Self {
-            buffer: Mutex::new(Vec::new()),
-            notify: Notify::new(),
-            done: AtomicBool::new(false),
+            txs: Mutex::new(Vec::new()),
             cse_id,
         })
     }
@@ -72,49 +65,23 @@ impl CseSharedCache {
         self.cse_id
     }
 
-    /// Append a morsel to the shared buffer (called by the writer).
-    pub async fn push_morsel(&self, morsel: MicroPartitionRef) {
-        self.buffer.lock().await.push(morsel);
-    }
-
-    /// Signal that the writer is done producing morsels.
-    ///
-    /// Idempotent — safe to call multiple times.
-    pub fn mark_done(&self) {
-        self.done.store(true, Ordering::Release);
-        // Use notify_one() rather than notify_waiters() because
-        // notify_one() stores a permit internally when there are no
-        // waiters, so a reader that has not yet called notified()
-        // will still be able to receive the notification.
-        self.notify.notify_one();
-    }
-
-    /// Wait until the writer has signalled completion.
-    ///
-    /// Returns immediately if [`mark_done`](Self::mark_done) has already been
-    /// called.
-    pub async fn wait_done(&self) {
-        loop {
-            if self.done.load(Ordering::Acquire) {
-                return;
-            }
-            self.notify.notified().await;
-            if self.done.load(Ordering::Acquire) {
-                // Pass the permit to the next reader that may also be
-                // waiting, so that multiple concurrent readers all
-                // eventually wake up.
-                self.notify.notify_one();
-                return;
-            }
+    /// Send a message to all registered readers.  Returns immediately;
+    /// unbounded channels never block the sender.
+    pub async fn fan_out(&self, msg: PipelineMessage) {
+        let txs = self.txs.lock().await;
+        for tx in txs.iter() {
+            let _ = tx.send(msg.clone());
         }
     }
 
-    /// Take a snapshot of all buffered morsels.
-    ///
-    /// Callers should invoke [`wait_done`](Self::wait_done) first to ensure
-    /// the buffer is complete.
-    pub async fn replay(&self) -> Vec<MicroPartitionRef> {
-        self.buffer.lock().await.clone()
+    /// Register a reader and return its receiver.  The writer will fan out
+    /// all messages to this channel.
+    pub async fn register_reader(
+        self: &Arc<Self>,
+    ) -> tokio::sync::mpsc::UnboundedReceiver<PipelineMessage> {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        self.txs.lock().await.push(tx);
+        rx
     }
 }
 
@@ -123,11 +90,8 @@ impl CseSharedCache {
 // ---------------------------------------------------------------------------
 
 /// Pipeline node that wraps a child and transparently forwards its output
-/// downstream while simultaneously buffering morsels into a [`CseSharedCache`].
-///
-/// When the child emits a `Flush`, this node forwards the flush and signals
-/// completion so that any [`CseCacheReadNode`] sharing the same cache can
-/// replay the buffered data.
+/// downstream while simultaneously publishing every message to all registered
+/// [`CseCacheReadNode`]s via per-reader unbounded mpsc channels.
 pub(crate) struct CseCacheWriteNode {
     child: Box<dyn PipelineNode>,
     shared: Arc<CseSharedCache>,
@@ -241,51 +205,24 @@ impl PipelineNode for CseCacheWriteNode {
         let stats_manager = runtime_handle.stats_manager();
         runtime_handle.spawn(
             async move {
-                // Guard: ensure mark_done is called even on panic/error paths.
-                struct DoneGuard(Arc<CseSharedCache>);
-                impl Drop for DoneGuard {
-                    fn drop(&mut self) {
-                        self.0.mark_done();
-                    }
-                }
-                let _guard = DoneGuard(shared.clone());
-
                 stats_manager.activate_node(node_id);
 
                 loop {
                     let msg = child_receiver.recv().await;
                     match msg {
-                        Some(PipelineMessage::Morsel {
-                            input_id,
-                            partition,
-                        }) => {
-                            shared.push_morsel(Arc::new(partition.clone())).await;
-                            if dest_tx
-                                .send(PipelineMessage::Morsel {
-                                    input_id,
-                                    partition,
-                                })
-                                .await
-                                .is_err()
-                            {
+                        Some(msg @ PipelineMessage::Morsel { .. })
+                        | Some(msg @ PipelineMessage::Flush(_)) => {
+                            shared.fan_out(msg.clone()).await;
+                            if dest_tx.send(msg).await.is_err() {
                                 break;
                             }
-                        }
-                        Some(PipelineMessage::Flush(input_id)) => {
-                            let _ = dest_tx.send(PipelineMessage::Flush(input_id)).await;
-                            // DoneGuard calls mark_done() on drop.
-                            break;
                         }
                         Some(PipelineMessage::FlightPartitionRef { .. }) => {
                             unreachable!(
                                 "CseCacheWriteNode should not receive flight partition refs"
                             )
                         }
-                        None => {
-                            // Child closed without flush — DoneGuard calls
-                            // mark_done() on drop.
-                            break;
-                        }
+                        None => break,
                     }
                 }
 
@@ -315,14 +252,11 @@ impl PipelineNode for CseCacheWriteNode {
 // CseCacheReadNode
 // ---------------------------------------------------------------------------
 
-/// Source-like pipeline node that replays morsels buffered by a
-/// [`CseCacheWriteNode`] sharing the same [`CseSharedCache`].
+/// Source-like pipeline node that registers itself with the shared cache and
+/// consumes messages from its dedicated unbounded mpsc channel.
 ///
-/// On [`start`](PipelineNode::start) it waits for the writer to signal
-/// completion, then replays all buffered morsels downstream followed by
-/// a `Flush`.  Morsels are always emitted with `input_id = 0` since this
-/// is a synthetic source that does not receive injected inputs from the
-/// runner.
+/// On [`start`](PipelineNode::start) it registers a sender and forwards each
+/// received message downstream — no waiting for the full subplan to complete.
 pub(crate) struct CseCacheReadNode {
     shared: Arc<CseSharedCache>,
     node_info: Arc<NodeInfo>,
@@ -427,24 +361,31 @@ impl PipelineNode for CseCacheReadNode {
             async move {
                 stats_manager.activate_node(node_id);
 
-                shared.wait_done().await;
-
-                let morsels = shared.replay().await;
-                for morsel in morsels {
-                    let owned = (*morsel).clone();
-                    if dest_tx
-                        .send(PipelineMessage::Morsel {
-                            input_id: 0,
-                            partition: owned,
-                        })
-                        .await
-                        .is_err()
-                    {
-                        break;
+                let mut rx = shared.register_reader().await;
+                // Collect all messages first, then forward downstream.
+                // This avoids interleaving CseCacheRead data with concurrent
+                // CseCacheWrite data into the same downstream HashJoin —
+                // which would deadlock when the join needs to build its
+                // hash table from one side before processing the other.
+                let mut buffer = Vec::new();
+                loop {
+                    match rx.recv().await {
+                        Some(msg) => {
+                            let is_flush = matches!(msg, PipelineMessage::Flush(_));
+                            buffer.push(msg);
+                            if is_flush {
+                                break;
+                            }
+                        }
+                        None => break,
                     }
                 }
 
-                let _ = dest_tx.send(PipelineMessage::Flush(0)).await;
+                for msg in buffer {
+                    if dest_tx.send(msg).await.is_err() {
+                        break;
+                    }
+                }
 
                 stats_manager.finalize_node(node_id);
                 Ok(())
@@ -474,65 +415,62 @@ impl PipelineNode for CseCacheReadNode {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
-    use daft_micropartition::MicroPartition;
-
     use super::*;
 
-    fn make_morsel() -> MicroPartitionRef {
-        Arc::new(MicroPartition::empty(None))
+    #[tokio::test]
+    async fn test_register_and_receive() {
+        let cache = CseSharedCache::new(1);
+        let mut rx = cache.register_reader().await;
+
+        use daft_micropartition::MicroPartition;
+        let mp = MicroPartition::empty(None);
+        let msg = PipelineMessage::Morsel {
+            input_id: 0,
+            partition: mp,
+        };
+        cache.fan_out(msg.clone()).await;
+
+        let received = rx.recv().await.unwrap();
+        assert!(matches!(received, PipelineMessage::Morsel { .. }));
     }
 
     #[tokio::test]
-    async fn test_mark_done_wakes_reader() {
+    async fn test_multiple_readers() {
         let cache = CseSharedCache::new(1);
-        let cache_clone = cache.clone();
+        let mut rx1 = cache.register_reader().await;
+        let mut rx2 = cache.register_reader().await;
 
-        let handle = tokio::spawn(async move {
-            cache_clone.wait_done().await;
-        });
+        use daft_micropartition::MicroPartition;
+        let mp = MicroPartition::empty(None);
+        cache
+            .fan_out(PipelineMessage::Morsel {
+                input_id: 0,
+                partition: mp,
+            })
+            .await;
 
-        tokio::task::yield_now().await;
-
-        cache.mark_done();
-        handle
-            .await
-            .expect("reader should complete after mark_done");
+        assert!(rx1.recv().await.is_some());
+        assert!(rx2.recv().await.is_some());
     }
 
     #[tokio::test]
-    async fn test_wait_done_returns_immediately_if_already_done() {
+    async fn test_reader_registered_before_write_receives_all() {
         let cache = CseSharedCache::new(1);
-        cache.mark_done();
-        cache.wait_done().await;
-    }
+        // Reader registers BEFORE writer sends anything
+        let mut rx = cache.register_reader().await;
 
-    #[tokio::test]
-    async fn test_push_then_replay() {
-        let cache = CseSharedCache::new(1);
-        let m1 = make_morsel();
-        let m2 = make_morsel();
+        use daft_micropartition::MicroPartition;
+        let mp1 = MicroPartition::empty(Some(Arc::new(daft_schema::schema::Schema::empty())));
+        let msg1 = PipelineMessage::Morsel {
+            input_id: 0,
+            partition: mp1,
+        };
+        cache.fan_out(msg1).await;
+        cache.fan_out(PipelineMessage::Flush(0)).await;
 
-        cache.push_morsel(m1.clone()).await;
-        cache.push_morsel(m2.clone()).await;
-        cache.mark_done();
-
-        let replayed = cache.replay().await;
-        assert_eq!(replayed.len(), 2, "should replay all pushed morsels");
-    }
-
-    #[tokio::test]
-    async fn test_multiple_readers_replay_same_data() {
-        let cache = CseSharedCache::new(1);
-        cache.push_morsel(make_morsel()).await;
-        cache.push_morsel(make_morsel()).await;
-        cache.mark_done();
-
-        let r1 = cache.replay().await;
-        let r2 = cache.replay().await;
-        assert_eq!(r1.len(), r2.len());
-        assert_eq!(r1.len(), 2);
+        assert!(rx.recv().await.is_some()); // Morsel
+        assert!(rx.recv().await.is_some()); // Flush
+        assert!(rx.recv().await.is_none()); // closed
     }
 
     #[tokio::test]

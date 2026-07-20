@@ -26,6 +26,8 @@ pub struct OptimizerConfig {
     // Default maximum number of optimization passes the optimizer will make over a fixed-point RuleBatch.
     pub default_max_optimizer_passes: usize,
     pub strict_pushdown: bool,
+    /// Whether Common Subplan Elimination is enabled.
+    pub cse_enabled: bool,
 }
 
 impl OptimizerConfig {
@@ -33,6 +35,7 @@ impl OptimizerConfig {
         Self {
             default_max_optimizer_passes: max_optimizer_passes,
             strict_pushdown,
+            cse_enabled: true,
         }
     }
 }
@@ -233,10 +236,18 @@ impl OptimizerBuilder {
             // Runs after all other canonicalization optimizations have
             // finished, wrapping duplicate subtrees in CommonSubplan nodes
             // so the physical executor can share computation.
-            RuleBatch::new(
+            // Only included when cse_enabled is true (configurable via
+            // DaftPlanningConfig.enable_cse / DAFT_DEV_ENABLE_CSE env var).
+        ]);
+
+        if self.config.cse_enabled {
+            self.rule_batches.push(RuleBatch::new(
                 vec![Box::new(EliminateCommonSubplans::new())],
                 RuleExecutionStrategy::Once,
-            ),
+            ));
+        }
+
+        self.rule_batches.extend(vec![
             // --- Materialize scan nodes ---
             RuleBatch::new(
                 vec![Box::new(MaterializeScans::new())],
@@ -307,6 +318,11 @@ impl OptimizerBuilder {
 
     pub fn when(self, condition: bool, f: impl FnOnce(Self) -> Self) -> Self {
         if condition { f(self) } else { self }
+    }
+
+    pub fn with_cse_enabled(mut self, enabled: bool) -> Self {
+        self.config.cse_enabled = enabled;
+        self
     }
 }
 
@@ -428,8 +444,8 @@ mod tests {
     use crate::{
         LogicalPlan,
         ops::{
-            Concat, Filter, Join, Project, SetQuantifier, UDFProject, Union, UnionStrategy,
-            join::JoinPredicate,
+            Aggregate, Concat, Filter, Join, Project, SetQuantifier, UDFProject, Union,
+            UnionStrategy, join::JoinPredicate,
         },
         optimization::rules::{
             EliminateCommonSubplans, EnrichWithStats, MaterializeScans, OptimizerRule,
@@ -971,20 +987,29 @@ mod tests {
         Ok(())
     }
 
-    /// Test that duplicate nested subplans are wrapped in CommonSubplan nodes.
+    /// Test that duplicate nested subplans with joins are wrapped in CommonSubplan nodes.
+    /// The heuristic only applies CSE to plans with expensive ops (Join, Aggregate, Sort),
+    /// so this test uses duplicate join subplans.
     #[test]
     fn eliminate_common_subplans_nested() -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
 
-        // Create: Union(Filter(Scan), Filter(Scan))
-        let scan1 = dummy_scan_node(scan_op.clone()).build();
-        let scan2 = dummy_scan_node(scan_op).build();
-        let filter1 = Filter::try_new(scan1, resolved_col("a").gt(lit(0)))?;
-        let filter2 = Filter::try_new(scan2, resolved_col("a").gt(lit(0)))?;
+        // Create: Union(Join(Scan, Scan), Join(Scan, Scan))
+        let scan_a1 = dummy_scan_node(scan_op.clone()).build();
+        let scan_a2 = dummy_scan_node(scan_op.clone()).build();
+        let scan_b1 = dummy_scan_node(scan_op.clone()).build();
+        let scan_b2 = dummy_scan_node(scan_op).build();
+
+        let on = JoinPredicate::try_new(Some(
+            left_col(Field::new("a", DataType::Int64))
+                .eq(right_col(Field::new("a", DataType::Int64))),
+        ))?;
+        let join1 = Join::try_new(scan_a1, scan_a2, on.clone(), JoinType::Inner, None)?;
+        let join2 = Join::try_new(scan_b1, scan_b2, on, JoinType::Inner, None)?;
 
         let union = Union::try_new(
-            Arc::new(LogicalPlan::Filter(filter1)),
-            Arc::new(LogicalPlan::Filter(filter2)),
+            Arc::new(LogicalPlan::Join(join1)),
+            Arc::new(LogicalPlan::Join(join2)),
             SetQuantifier::All,
             UnionStrategy::Positional,
         )?;
@@ -995,27 +1020,16 @@ mod tests {
 
         assert!(
             result.transformed,
-            "union with duplicate filters should be transformed"
+            "union with duplicate joins should be transformed"
         );
 
-        // After optimization, both sides should be CommonSubplan(Filter(Scan))
+        // After optimization, both sides should be CommonSubplan(Join(Scan, Scan))
         match result.data.as_ref() {
             LogicalPlan::Union(u) => {
                 if let (LogicalPlan::CommonSubplan(cs1), LogicalPlan::CommonSubplan(cs2)) =
                     (u.lhs.as_ref(), u.rhs.as_ref())
                 {
                     assert_eq!(cs1.id, cs2.id, "CommonSubplan ids should match");
-                    // Verify the subplan is a Filter with equal inputs
-                    if let (LogicalPlan::Filter(f1), LogicalPlan::Filter(f2)) =
-                        (cs1.subplan.as_ref(), cs2.subplan.as_ref())
-                    {
-                        assert!(
-                            Arc::ptr_eq(&f1.input, &f2.input),
-                            "Filter inputs (scans) should share the same Arc"
-                        );
-                    } else {
-                        panic!("expected Filter subplans");
-                    }
                 } else {
                     panic!("expected CommonSubplan children");
                 }
@@ -1025,19 +1039,23 @@ mod tests {
         Ok(())
     }
 
-    /// Test that duplicate Project subplans are wrapped in CommonSubplan nodes.
+    /// Test that duplicate Aggregate subplans are wrapped in CommonSubplan nodes.
+    /// The heuristic only applies CSE to plans with expensive ops (Join, Aggregate, Sort),
+    /// so this test uses duplicate aggregate subplans.
     #[test]
     fn eliminate_common_subplans_project() -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
 
+        // Create: Union(Aggregate(Scan), Aggregate(Scan))
         let scan1 = dummy_scan_node(scan_op.clone()).build();
         let scan2 = dummy_scan_node(scan_op).build();
-        let proj1 = Project::try_new(scan1, vec![resolved_col("a")])?;
-        let proj2 = Project::try_new(scan2, vec![resolved_col("a")])?;
+        let agg_expr = resolved_col("a").sum();
+        let agg1 = Aggregate::try_new(scan1, vec![agg_expr.clone()], vec![])?;
+        let agg2 = Aggregate::try_new(scan2, vec![agg_expr], vec![])?;
 
         let union = Union::try_new(
-            Arc::new(LogicalPlan::Project(proj1)),
-            Arc::new(LogicalPlan::Project(proj2)),
+            Arc::new(LogicalPlan::Aggregate(agg1)),
+            Arc::new(LogicalPlan::Aggregate(agg2)),
             SetQuantifier::All,
             UnionStrategy::Positional,
         )?;
@@ -1048,10 +1066,10 @@ mod tests {
 
         assert!(
             result.transformed,
-            "union with duplicate projects should be transformed"
+            "union with duplicate aggregates should be transformed"
         );
 
-        // After optimization, both sides should be CommonSubplan(Project(Scan))
+        // After optimization, both sides should be CommonSubplan nodes
         match result.data.as_ref() {
             LogicalPlan::Union(u) => {
                 if let (LogicalPlan::CommonSubplan(cs1), LogicalPlan::CommonSubplan(cs2)) =
@@ -1241,21 +1259,30 @@ mod tests {
     }
 
     /// Test that optimization is applied recursively (deep duplicates are eliminated).
+    /// The heuristic only applies CSE to plans with expensive ops, so this test
+    /// uses duplicate self-joins — the inner Scan is duplicated, and CSE should
+    /// detect it and share the Arc.
     #[test]
     fn eliminate_common_subplans_deep_nested() -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
 
-        // Create: Union(Project(Filter(Scan)), Project(Filter(Scan)))
-        let scan1 = dummy_scan_node(scan_op.clone()).build();
-        let scan2 = dummy_scan_node(scan_op).build();
-        let filter1 = Filter::try_new(scan1, resolved_col("a").gt(lit(0)))?;
-        let filter2 = Filter::try_new(scan2, resolved_col("a").gt(lit(0)))?;
-        let proj1 = Project::try_new(filter1.into(), vec![resolved_col("a")])?;
-        let proj2 = Project::try_new(filter2.into(), vec![resolved_col("a")])?;
+        // Create: Union(Join(Scan, Scan), Join(Scan, Scan))
+        // Each Join has its own left/right scans, but structurally identical.
+        let scan1_left = dummy_scan_node(scan_op.clone()).build();
+        let scan1_right = dummy_scan_node(scan_op.clone()).build();
+        let scan2_left = dummy_scan_node(scan_op.clone()).build();
+        let scan2_right = dummy_scan_node(scan_op).build();
+
+        let on = JoinPredicate::try_new(Some(
+            left_col(Field::new("a", DataType::Int64))
+                .eq(right_col(Field::new("a", DataType::Int64))),
+        ))?;
+        let join1 = Join::try_new(scan1_left, scan1_right, on.clone(), JoinType::Inner, None)?;
+        let join2 = Join::try_new(scan2_left, scan2_right, on, JoinType::Inner, None)?;
 
         let union = Union::try_new(
-            Arc::new(LogicalPlan::Project(proj1)),
-            Arc::new(LogicalPlan::Project(proj2)),
+            Arc::new(LogicalPlan::Join(join1)),
+            Arc::new(LogicalPlan::Join(join2)),
             SetQuantifier::All,
             UnionStrategy::Positional,
         )?;
@@ -1266,7 +1293,7 @@ mod tests {
 
         assert!(
             result.transformed,
-            "deep nested duplicates should be eliminated"
+            "deep nested duplicates with joins should be eliminated"
         );
 
         // Verify both sides have CommonSubplan wrappers with matching ids
@@ -1276,24 +1303,11 @@ mod tests {
                     (u.lhs.as_ref(), u.rhs.as_ref())
                 {
                     assert_eq!(cs1.id, cs2.id, "CommonSubplan ids should match");
-                    // Deep: the inner subplan should be Project(Filter(Scan))
-                    // and the Scans should share the same Arc
-                    if let (LogicalPlan::Project(p1), LogicalPlan::Project(p2)) =
-                        (cs1.subplan.as_ref(), cs2.subplan.as_ref())
-                    {
-                        if let (LogicalPlan::Filter(f1), LogicalPlan::Filter(f2)) =
-                            (p1.input.as_ref(), p2.input.as_ref())
-                        {
-                            assert!(
-                                Arc::ptr_eq(&f1.input, &f2.input),
-                                "deep nested scans should share the same Arc"
-                            );
-                        } else {
-                            panic!("expected Filter children");
-                        }
-                    } else {
-                        panic!("expected Project subplans");
-                    }
+                    // Deep: both CommonSubplans should share the same Arc
+                    assert!(
+                        Arc::ptr_eq(&cs1.subplan, &cs2.subplan),
+                        "CommonSubplan inner plans should share the same Arc"
+                    );
                 } else {
                     panic!("expected CommonSubplan children");
                 }
@@ -1305,17 +1319,30 @@ mod tests {
 
     /// Test that CSE works correctly when applied through the full optimizer
     /// pipeline (not just the rule in isolation).
+    /// Uses duplicate join subplans so the heuristic considers them expensive.
     #[test]
     fn eliminate_common_subplans_full_optimizer() -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
 
-        // Create two identical but pointer-distinct subplans
-        let subplan1 = dummy_scan_node(scan_op.clone())
-            .filter(resolved_col("a").gt(lit(0)))?
-            .build();
-        let subplan2 = dummy_scan_node(scan_op)
-            .filter(resolved_col("a").gt(lit(0)))?
-            .build();
+        // Create two identical but pointer-distinct self-join subplans
+        let on = JoinPredicate::try_new(Some(
+            left_col(Field::new("a", DataType::Int64))
+                .eq(right_col(Field::new("a", DataType::Int64))),
+        ))?;
+        let subplan1 = Arc::new(LogicalPlan::Join(Join::try_new(
+            dummy_scan_node(scan_op.clone()).build(),
+            dummy_scan_node(scan_op.clone()).build(),
+            on.clone(),
+            JoinType::Inner,
+            None,
+        )?));
+        let subplan2 = Arc::new(LogicalPlan::Join(Join::try_new(
+            dummy_scan_node(scan_op.clone()).build(),
+            dummy_scan_node(scan_op).build(),
+            on,
+            JoinType::Inner,
+            None,
+        )?));
 
         let concat = crate::ops::Concat::try_new(subplan1, subplan2)?;
         let plan = Arc::new(LogicalPlan::Concat(concat));
