@@ -118,6 +118,27 @@ def test_series_pylist_round_trip_null() -> None:
     assert words["None"] == 2
 
 
+def test_series_pylist_round_trip_all_null_list_with_explicit_dtype() -> None:
+    s = Series.from_pylist([None, None], dtype=DataType.list(DataType.string()))
+
+    assert s.datatype() == DataType.list(DataType.string())
+    assert s.to_pylist() == [None, None]
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        DataType.list(DataType.extension("test.tags", DataType.string())),
+        DataType.list(DataType.list(DataType.extension("test.tags", DataType.string()))),
+    ],
+)
+def test_series_pylist_round_trip_all_null_extension_list_with_explicit_dtype(dtype) -> None:
+    s = Series.from_pylist([None, None], dtype=dtype)
+
+    assert s.datatype() == dtype
+    assert s.to_pylist() == [None, None]
+
+
 @pytest.mark.parametrize("type", [pa.binary(), pa.binary(1)])
 def test_series_pylist_round_trip_binary(type) -> None:
     data = pa.array([b"a", b"b", b"c", None, b"d", None], type=type)
