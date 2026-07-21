@@ -86,7 +86,7 @@ pub const MAX_PIPELINE_NAME_LEN: usize = 18;
 
 struct IndicatifProgressBarManager {
     multi_progress: indicatif::MultiProgress,
-    pbars: Vec<indicatif::ProgressBar>,
+    pbars: HashMap<NodeID, indicatif::ProgressBar>,
     total: usize,
     persist_on_finish: bool,
 }
@@ -112,7 +112,7 @@ impl IndicatifProgressBarManager {
 
         let mut manager = Self {
             multi_progress,
-            pbars: Vec::new(),
+            pbars: HashMap::new(),
             total,
             persist_on_finish,
         };
@@ -126,18 +126,16 @@ impl IndicatifProgressBarManager {
             .unwrap_or(0))
         .min(MAX_PIPELINE_NAME_LEN);
 
-        // For Swordfish only, so node ids should be consecutive
-        for node_id in 0..total {
-            let node_info = node_info_map
-                .get(&node_id)
-                .expect("Expected node info for all node ids in range 0..total");
-            manager.make_new_bar(node_info.as_ref(), max_name_len);
+        let mut node_infos = node_info_map.values().collect::<Vec<_>>();
+        node_infos.sort_by_key(|node_info| node_info.id);
+        for (idx, node_info) in node_infos.into_iter().enumerate() {
+            manager.make_new_bar(node_info.as_ref(), max_name_len, idx + 1);
         }
 
         manager
     }
 
-    fn make_new_bar(&mut self, node_info: &NodeInfo, max_name_len: usize) {
+    fn make_new_bar(&mut self, node_info: &NodeInfo, max_name_len: usize, display_id: usize) {
         let color = match node_info.node_category {
             NodeCategory::Source => ProgressBarColor::Blue,
             NodeCategory::Intermediate => ProgressBarColor::Magenta,
@@ -149,7 +147,7 @@ impl IndicatifProgressBarManager {
         let template_str = format!(
             "🗡️ 🐟[{node_id:>total_len$}/{total}] {{spinner:.green}} {{prefix:.{color}/bold}} | [{{elapsed_precise}}] {{msg}}",
             color = color.to_str(),
-            node_id = (node_info.id + 1),
+            node_id = display_id,
             total = self.total,
             total_len = self.total.to_string().len(),
         );
@@ -174,7 +172,7 @@ impl IndicatifProgressBarManager {
             .with_prefix(formatted_prefix);
         self.multi_progress.add(pb.clone());
         // Additional reference for updating bar directly
-        self.pbars.push(pb);
+        self.pbars.insert(node_info.id, pb);
     }
 }
 
@@ -189,18 +187,27 @@ impl Drop for IndicatifProgressBarManager {
 
 impl ProgressBar for IndicatifProgressBarManager {
     fn initialize_node(&self, node_id: NodeID) {
-        let pb = self.pbars.get(node_id).unwrap();
+        let Some(pb) = self.pbars.get(&node_id) else {
+            log::warn!("Missing progress bar for node_id {node_id} during initialization");
+            return;
+        };
         pb.enable_steady_tick(TICK_INTERVAL);
     }
 
     fn finalize_node(&self, node_id: NodeID, last_snapshot: &StatSnapshot) {
-        let pb = self.pbars.get(node_id).unwrap();
+        let Some(pb) = self.pbars.get(&node_id) else {
+            log::warn!("Missing progress bar for node_id {node_id} during finalization");
+            return;
+        };
         pb.set_message(last_snapshot.to_message());
         pb.finish();
     }
 
     fn handle_event(&self, node_id: NodeID, event: &StatSnapshot) {
-        let pb = self.pbars.get(node_id).unwrap();
+        let Some(pb) = self.pbars.get(&node_id) else {
+            log::warn!("Missing progress bar for node_id {node_id} during event handling");
+            return;
+        };
         pb.set_message(event.to_message());
     }
 
@@ -272,11 +279,9 @@ mod python {
                 let progress_bar_class = module.getattr("SwordfishProgressBar")?;
                 let pb_object = progress_bar_class.call0()?;
 
-                // For Swordfish only, so node ids should be consecutive
-                for node_id in 0..node_info_map.len() {
-                    let node_info = node_info_map
-                        .get(&node_id)
-                        .expect("Expected node info for all node ids in range 0..total");
+                let mut node_infos = node_info_map.values().collect::<Vec<_>>();
+                node_infos.sort_by_key(|node_info| node_info.id);
+                for node_info in node_infos {
                     let bar_format = format!(
                         "🗡️ 🐟 {prefix}: {{elapsed}} {{desc}}",
                         prefix = node_info.name
@@ -318,7 +323,10 @@ mod python {
         fn initialize_node(&self, _: NodeID) {}
 
         fn finalize_node(&self, node_id: NodeID, last_snapshot: &StatSnapshot) {
-            let pb_id = self.node_id_to_pb_id.get(&node_id).unwrap();
+            let Some(pb_id) = self.node_id_to_pb_id.get(&node_id) else {
+                log::warn!("Missing TQDM progress bar for node_id {node_id} during finalization");
+                return;
+            };
             self.update_bar(*pb_id, &last_snapshot.to_message())
                 .expect("Failed to update TQDM progress bar");
 
@@ -326,7 +334,10 @@ mod python {
         }
 
         fn handle_event(&self, node_id: NodeID, event: &StatSnapshot) {
-            let pb_id = self.node_id_to_pb_id.get(&node_id).unwrap();
+            let Some(pb_id) = self.node_id_to_pb_id.get(&node_id) else {
+                log::warn!("Missing TQDM progress bar for node_id {node_id} during event handling");
+                return;
+            };
             self.update_bar(*pb_id, &event.to_message())
                 .expect("Failed to update TQDM progress bar");
         }
@@ -342,7 +353,20 @@ mod python {
 
 #[cfg(test)]
 mod tests {
+    use common_metrics::snapshot::DefaultSnapshot;
+
     use super::*;
+
+    fn default_snapshot() -> StatSnapshot {
+        StatSnapshot::Default(DefaultSnapshot {
+            cpu_us: 0,
+            rows_in: 0,
+            rows_out: 0,
+            bytes_in: 0,
+            bytes_out: 0,
+            num_tasks: 0,
+        })
+    }
 
     #[test]
     fn test_progress_bar_truncation_on_multibyte_utf8() {
@@ -359,5 +383,29 @@ mod tests {
 
         // This panics in make_new_bar due to byte-level string slicing on multi-byte UTF-8
         let _manager = IndicatifProgressBarManager::new(&node_info_map, false);
+    }
+
+    #[test]
+    fn test_progress_bar_manager_handles_non_consecutive_and_unknown_node_ids() {
+        let node_info = Arc::new(NodeInfo {
+            name: "source".into(),
+            id: 7,
+            ..Default::default()
+        });
+        let mut node_info_map = HashMap::new();
+        node_info_map.insert(7, node_info);
+
+        let manager = IndicatifProgressBarManager::new(&node_info_map, false);
+        let snapshot = default_snapshot();
+
+        manager.initialize_node(7);
+        manager.handle_event(7, &snapshot);
+        manager.finalize_node(7, &snapshot);
+
+        manager.initialize_node(0);
+        manager.handle_event(0, &snapshot);
+        manager.finalize_node(0, &snapshot);
+
+        Box::new(manager).finish().unwrap();
     }
 }
