@@ -20,10 +20,9 @@ use daft_local_plan::{
     AsofJoin, CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleReadInput,
     GatherWrite, GlobScan, HashAggregate, HashJoin, InMemoryScan, IntoBatches, Limit,
     LocalNodeContext, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite,
-    Pivot, Project, RepartitionWrite, Sample, ShuffleBackend, ShuffleReadBackend, Sort,
-    SortMergeJoin, SourceId, TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject,
-    WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
-    WindowPartitionOnly,
+    Pivot, Project, RepartitionWrite, Sample, ShuffleReadBackend, Sort, SortMergeJoin, SourceId,
+    TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly,
+    WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
@@ -59,6 +58,7 @@ use crate::{
         into_partitions::IntoPartitionsSink,
         pivot::PivotSink,
         repartition::RepartitionSink,
+        shuffle_backend::LocalShuffleBackend,
         sort::SortSink,
         top_n::TopNSink,
         window_order_by_only::WindowOrderByOnlySink,
@@ -1590,45 +1590,19 @@ fn physical_plan_to_pipeline(
             backend,
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-            match backend {
-                daft_local_plan::ShuffleBackend::Ray => BlockingSinkNode::new(
-                    Arc::new(IntoPartitionsSink::new_ray(*num_partitions, schema.clone())),
-                    child_node,
-                    stats_state.clone(),
-                    ctx,
-                    context,
-                )
-                .boxed(),
-                daft_local_plan::ShuffleBackend::Flight {
-                    shuffle_id,
-                    shuffle_dirs,
-                    compression,
-                } => {
-                    let (shuffle_server, shuffle_address) = ctx
-                        .shuffle_server()
-                        .expect("Flight shuffle server must be initialized for Flight into_partitions plans when using flight_shuffle algorithm");
-                    let into_partitions_sink = IntoPartitionsSink::try_new_flight(
-                        *num_partitions,
-                        schema.clone(),
-                        *shuffle_id,
-                        shuffle_dirs.clone(),
-                        compression.clone(),
-                        shuffle_server,
-                        shuffle_address,
-                    )
-                    .with_context(|_| PipelineCreationSnafu {
-                        plan_name: physical_plan.name(),
-                    })?;
-                    BlockingSinkNode::new(
-                        Arc::new(into_partitions_sink),
-                        child_node,
-                        stats_state.clone(),
-                        ctx,
-                        context,
-                    )
-                    .boxed()
-                }
-            }
+            let backend = LocalShuffleBackend::from_plan(backend, ctx.shuffle_server());
+            BlockingSinkNode::new(
+                Arc::new(IntoPartitionsSink::new(
+                    *num_partitions,
+                    schema.clone(),
+                    backend,
+                )),
+                child_node,
+                stats_state.clone(),
+                ctx,
+                context,
+            )
+            .boxed()
         }
         LocalPhysicalPlan::RepartitionWrite(RepartitionWrite {
             input,
@@ -1640,58 +1614,25 @@ fn physical_plan_to_pipeline(
             context,
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-            match backend {
-                ShuffleBackend::Ray => {
-                    let repartition_sink = RepartitionSink::new_ray(
-                        schema.clone(),
-                        repartition_spec.clone(),
-                        *num_partitions,
-                    )
-                    .with_context(|_| PipelineCreationSnafu {
-                        plan_name: physical_plan.name(),
-                    })?;
+            let backend = LocalShuffleBackend::from_plan(backend, ctx.shuffle_server());
+            let repartition_sink = RepartitionSink::new(
+                schema.clone(),
+                repartition_spec.clone(),
+                *num_partitions,
+                backend,
+            )
+            .with_context(|_| PipelineCreationSnafu {
+                plan_name: physical_plan.name(),
+            })?;
 
-                    BlockingSinkNode::new(
-                        Arc::new(repartition_sink),
-                        child_node,
-                        stats_state.clone(),
-                        ctx,
-                        context,
-                    )
-                    .boxed()
-                }
-                ShuffleBackend::Flight {
-                    shuffle_id,
-                    shuffle_dirs,
-                    compression,
-                } => {
-                    let (shuffle_server, shuffle_address) = ctx
-                        .shuffle_server()
-                        .expect("Flight shuffle server must be initialized for Flight repartition plans when using flight_shuffle algorithm");
-                    let repartition_sink = RepartitionSink::try_new_flight(
-                        *num_partitions,
-                        schema.clone(),
-                        *shuffle_id,
-                        repartition_spec.clone(),
-                        shuffle_dirs.clone(),
-                        compression.clone(),
-                        shuffle_server,
-                        shuffle_address,
-                    )
-                    .with_context(|_| PipelineCreationSnafu {
-                        plan_name: physical_plan.name(),
-                    })?;
-
-                    BlockingSinkNode::new(
-                        Arc::new(repartition_sink),
-                        child_node,
-                        stats_state.clone(),
-                        ctx,
-                        context,
-                    )
-                    .boxed()
-                }
-            }
+            BlockingSinkNode::new(
+                Arc::new(repartition_sink),
+                child_node,
+                stats_state.clone(),
+                ctx,
+                context,
+            )
+            .boxed()
         }
         LocalPhysicalPlan::GatherWrite(GatherWrite {
             input,
@@ -1701,45 +1642,15 @@ fn physical_plan_to_pipeline(
             context,
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-            match backend {
-                ShuffleBackend::Ray => BlockingSinkNode::new(
-                    Arc::new(GatherSink::new_ray()),
-                    child_node,
-                    stats_state.clone(),
-                    ctx,
-                    context,
-                )
-                .boxed(),
-                ShuffleBackend::Flight {
-                    shuffle_id,
-                    shuffle_dirs,
-                    compression,
-                } => {
-                    let (shuffle_server, shuffle_address) = ctx
-                        .shuffle_server()
-                        .expect("Flight shuffle server must be initialized for Flight gather plans when using flight_shuffle algorithm");
-                    let gather_sink = GatherSink::try_new_flight(
-                        schema.clone(),
-                        *shuffle_id,
-                        shuffle_dirs.clone(),
-                        compression.clone(),
-                        shuffle_server,
-                        shuffle_address,
-                    )
-                    .with_context(|_| PipelineCreationSnafu {
-                        plan_name: physical_plan.name(),
-                    })?;
-
-                    BlockingSinkNode::new(
-                        Arc::new(gather_sink),
-                        child_node,
-                        stats_state.clone(),
-                        ctx,
-                        context,
-                    )
-                    .boxed()
-                }
-            }
+            let backend = LocalShuffleBackend::from_plan(backend, ctx.shuffle_server());
+            BlockingSinkNode::new(
+                Arc::new(GatherSink::new(schema.clone(), backend)),
+                child_node,
+                stats_state.clone(),
+                ctx,
+                context,
+            )
+            .boxed()
         }
         LocalPhysicalPlan::ShuffleRead(daft_local_plan::ShuffleRead {
             source_id,

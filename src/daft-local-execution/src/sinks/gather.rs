@@ -5,10 +5,7 @@ use common_metrics::ops::NodeType;
 use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartition;
 use daft_partition_refs::FlightPartitionRef;
-use daft_shuffles::{
-    server::flight_server::ShuffleFlightServer,
-    shuffle_cache::{InProgressShuffleCache, partition_ref_id},
-};
+use daft_shuffles::shuffle_cache::{InProgressShuffleCache, partition_ref_id};
 use tracing::{Span, instrument};
 
 use super::{
@@ -22,6 +19,11 @@ use crate::{
     pipeline::{InputId, NodeName},
 };
 
+// Each input MP gets its own cache (unlike repartition, which keeps N open caches per
+// input and divides a global budget by `num_partitions`). Matches the upper end of
+// `RepartitionSink`'s per-partition clamp so the two sinks spill at similar sizes.
+const TARGET_IN_MEMORY_SIZE_BYTES: usize = 1024 * 1024 * 128;
+
 pub(crate) struct RayGatherState {
     partitions: Vec<MicroPartition>,
 }
@@ -34,6 +36,7 @@ impl RayGatherState {
 
 pub(crate) struct FlightGatherState {
     shared: Arc<FlightShuffleContext>,
+    schema: SchemaRef,
     input_id: InputId,
     refs: Vec<FlightPartitionRef>,
 }
@@ -44,10 +47,10 @@ impl FlightGatherState {
         let partition_ref_id = partition_ref_id(self.input_id, self.refs.len());
         let cache = InProgressShuffleCache::try_new(
             partition_ref_id,
-            shared.schema.clone(),
+            self.schema.clone(),
             &shared.shuffle_dirs,
             shared.shuffle_id,
-            shared.target_in_memory_size_per_partition,
+            TARGET_IN_MEMORY_SIZE_BYTES,
             shared.compression.as_deref(),
         )?;
         cache.push_partition_data(input).await?;
@@ -112,39 +115,13 @@ fn collect_output(backend: &LocalShuffleBackend, states: Vec<GatherState>) -> Bl
 }
 
 pub struct GatherSink {
+    schema: SchemaRef,
     backend: LocalShuffleBackend,
 }
 
 impl GatherSink {
-    pub fn new_ray() -> Self {
-        Self {
-            backend: LocalShuffleBackend::Ray,
-        }
-    }
-
-    pub fn try_new_flight(
-        schema: SchemaRef,
-        shuffle_id: u64,
-        shuffle_dirs: Vec<String>,
-        compression: Option<String>,
-        local_server: Arc<ShuffleFlightServer>,
-        shuffle_address: String,
-    ) -> DaftResult<Self> {
-        // Each input MP gets its own cache (unlike repartition, which keeps N open caches per
-        // input and divides a global budget by `num_partitions`). Matches the upper end of
-        // `RepartitionSink`'s per-partition clamp so the two sinks spill at similar sizes.
-        const TARGET_IN_MEMORY_SIZE_BYTES: usize = 1024 * 1024 * 128;
-        Ok(Self {
-            backend: LocalShuffleBackend::Flight(Arc::new(FlightShuffleContext {
-                shuffle_id,
-                shuffle_dirs,
-                compression,
-                local_server,
-                shuffle_address,
-                target_in_memory_size_per_partition: TARGET_IN_MEMORY_SIZE_BYTES,
-                schema,
-            })),
-        })
+    pub fn new(schema: SchemaRef, backend: LocalShuffleBackend) -> Self {
+        Self { schema, backend }
     }
 }
 
@@ -204,6 +181,7 @@ impl BlockingSink for GatherSink {
             })),
             LocalShuffleBackend::Flight(shared) => Ok(GatherState::Flight(FlightGatherState {
                 shared: shared.clone(),
+                schema: self.schema.clone(),
                 input_id,
                 refs: Vec::new(),
             })),
