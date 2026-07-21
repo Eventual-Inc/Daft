@@ -196,22 +196,48 @@ fn subplan_has_expensive_ops(plan: &LogicalPlan) -> bool {
 
 /// Returns true if the common subplan is worth CSE'ing.
 ///
-/// We apply CSE when:
-///   - The subplan contains expensive ops (Join, Aggregate, Sort)
-///   - The subplan IS a bare scan (saving I/O is always beneficial)
+/// We apply CSE when the subplan contains expensive ops (Join, Aggregate,
+/// Sort) AND also contains an Aggregate or Sort — which naturally reduces
+/// output size (Aggregate) or has such high cost that cloning the result is
+/// always cheaper than recomputing (Sort).
 ///
-/// We skip CSE for chains of cheap ops (e.g., `Filter → Project → Scan`)
-/// where the clone cost of potentially large intermediate results may
-/// exceed the recompute cost.
+/// We skip CSE for:
+///   - Bare scans: small scans may have CSE overhead > re-scan cost
+///     (e.g., TPC-H Q11 nation table with 5 rows).
+///   - Subplans with expensive ops but no reducing operator (e.g., a bare
+///     Join → Filter chain like TPC-H Q11) where the clone cost of the
+///     large intermediate result may exceed the recompute cost.
+///   - Chains of cheap ops (e.g., `Filter → Project → Scan`) where clone
+///     cost may exceed recompute cost.
 fn should_apply_cse(group: &[&Arc<LogicalPlan>]) -> bool {
     if group.len() <= 1 {
         return false;
     }
     let canonical = group[0];
-    // Bare scan: always apply CSE
-    if matches!(canonical.as_ref(), LogicalPlan::Source(_)) {
-        return true;
+    // Has expensive ops AND contains an aggregate or sort that
+    // naturally reduces data size or dominates compute cost:
+    // apply CSE.
+    subplan_has_expensive_ops(canonical) && subplan_contains_aggregate_or_sort(canonical)
+}
+
+/// Returns true if the subplan contains an Aggregate or Sort node.
+///
+/// These operators naturally reduce the data volume (Aggregate groups
+/// rows together) or are so expensive that cloning their output is
+/// always cheaper than recomputing (Sort).  Subplans that contain only
+/// Joins without a downstream Aggregate may produce large intermediate
+/// results whose clone cost exceeds the recompute cost.
+fn subplan_contains_aggregate_or_sort(plan: &LogicalPlan) -> bool {
+    match plan {
+        LogicalPlan::Aggregate(_) | LogicalPlan::Sort(_) => true,
+        LogicalPlan::Source(_) => false,
+        _ => {
+            for child in plan.children() {
+                if subplan_contains_aggregate_or_sort(&child) {
+                    return true;
+                }
+            }
+            false
+        }
     }
-    // Has expensive ops: apply CSE
-    subplan_has_expensive_ops(canonical)
 }

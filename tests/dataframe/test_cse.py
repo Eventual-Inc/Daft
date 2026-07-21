@@ -1,9 +1,10 @@
 """End-to-end execution tests for Common Subplan Elimination (CSE).
 
 The CSE heuristic only applies to subplans containing expensive operators
-(Join, Aggregate, Sort).  Scans + filters + projections alone are cheap
-enough that cloning intermediate results may exceed the recompute cost,
-so CSE is skipped for those.
+(Join, Aggregate, Sort) AND also containing an Aggregate or Sort — which
+naturally reduces output size or dominates compute cost.  Bare joins
+without aggregate may produce large intermediate results whose clone cost
+exceeds the recompute cost, so CSE is skipped.
 """
 
 from __future__ import annotations
@@ -51,16 +52,18 @@ def test_cse_empty_concat(make_df, capsys):
     assert result.to_pydict() == {"a": [], "b": []}
 
 
-# --- CSE SHOULD apply (subplans with expensive ops) ---
+# --- CSE SHOULD apply (subplans with expensive ops + Aggregate/Sort) ---
 
 def test_cse_with_join_concat(make_df, capsys):
-    """Concat of a join result: join is expensive → CSE should fire."""
+    """Concat of a join result: join is expensive but no Aggregate/Sort →
+    CSE should NOT fire (clone cost of join output may exceed recompute)."""
     df1 = make_df({"a": [1, 2, 3], "b": ["x", "y", "z"]})
     df2 = make_df({"a": [1, 2, 3], "c": [10, 20, 30]})
     joined = df1.join(df2, on="a")
     result = joined.concat(joined)
     result.explain(show_all=True)
-    assert "CommonSubplan" in capsys.readouterr().out
+    # Join without Aggregate/Sort: CSE is skipped.
+    assert "CommonSubplan" not in capsys.readouterr().out
     assert sorted(result.to_pydict()["a"]) == [1, 1, 2, 2, 3, 3]
 
 
