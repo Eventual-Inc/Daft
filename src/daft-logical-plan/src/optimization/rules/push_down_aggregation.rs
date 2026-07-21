@@ -60,10 +60,8 @@ impl OptimizerRule for PushDownAggregation {
                                     } else {
                                         external_info.pushdowns.filters.is_none()
                                     };
-                                    // A limit is a global, cross-task semantic; the count
-                                    // shortcut counts each scan task's row groups independently,
-                                    // so pushing count down under a limit could overcount. Leave
-                                    // these to the normal aggregation path.
+                                    // A limit is global, but each scan task counts its own row
+                                    // groups independently — pushing down under a limit overcounts.
                                     let can_pushdown = scan_op.supports_count_pushdown()
                                         && is_count_mode_supported(count_mode)
                                         && is_remaining_filters

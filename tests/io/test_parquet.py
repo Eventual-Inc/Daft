@@ -184,14 +184,9 @@ def test_read_parquet_row_group_edges(tmp_path):
 
 
 def test_count_rows_respects_row_groups(tmp_path):
-    # Regression: count_rows() count-pushdown used to ignore the row group
-    # constraint (ChunkSpec::Parquet) and return the whole-file row count. This
-    # is the same path a split subtask takes on the Ray runner, where the bug
-    # manifested as an N-times-inflated silent overcount.
-    #
-    # Use unequal row groups (sizes 4, 4, 2; 10 total) so subset/duplicate sums
-    # are distinct from the whole-file count — otherwise the assertions would
-    # pass even without the fix.
+    # Regression: count_rows() count-pushdown ignored the row group constraint and
+    # returned the whole-file count. Row groups are unequal (4, 4, 2) so subset and
+    # duplicate sums differ from the whole-file count.
     path = tmp_path / "row_groups.parquet"
     papq.write_table(pa.table({"x": list(range(10))}), path, row_group_size=4)
 
@@ -213,9 +208,8 @@ def test_count_rows_respects_row_groups(tmp_path):
     df = daft.read_parquet([str(path)], row_groups=[[2, 0]])
     assert df.count_rows() == df.agg(daft.col("x").count()).to_pydict()["x"][0]
 
-    # Guard that count_rows() actually goes through the count-pushdown shortcut
-    # (the path this fix touches). `count_rows()` runs eagerly, so build its
-    # underlying plan the same way it does and inspect the optimized plan.
+    # Guard that count_rows() actually takes the pushdown path. It runs eagerly, so
+    # rebuild its plan the same way to inspect it.
     plan = io.StringIO()
     type(df)(df._builder.count()).explain(show_all=True, file=plan)
     assert "Aggregation pushdown = count" in plan.getvalue()

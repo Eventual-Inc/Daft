@@ -114,16 +114,10 @@ async fn read_parquet(
     if let Some(aggregation) = &scan_task.pushdowns.aggregation
         && let Expr::Agg(AggExpr::Count(_, count_mode)) = aggregation.as_ref()
     {
-        // The metadata count shortcut derives a total row count from parquet
-        // metadata; it cannot apply any row-level processing (non-`All` count
-        // modes, filters, limits, delete rows). The optimizer
-        // (`PushDownAggregation::can_pushdown`) and scan materialization
-        // guarantee none of these reach here for built-in sources. If a custom
-        // ScanOperator ever breaks that invariant, error loudly rather than
-        // silently returning a wrong count. Falling back to the normal read path
-        // is not safe: after aggregation pushdown the schema is a single count
-        // field, so a zero-column batch would be filled with nulls and `SUM`
-        // would yield null instead of a count.
+        // The optimizer guarantees built-in sources never reach here with row-level
+        // processing. Error loudly if a custom ScanOperator breaks that: falling back
+        // isn't safe, since the post-pushdown schema is a single count field and
+        // `SUM` over a null-filled batch yields null instead of a count.
         let has_deletes = delete_map
             .as_ref()
             .and_then(|m| m.get(url))
@@ -172,18 +166,9 @@ async fn read_parquet(
     .await
 }
 
-/// Returns `Some(reason)` if the given count aggregation cannot be served by the
-/// parquet metadata count shortcut and must error instead of silently returning
-/// a wrong count. The shortcut only produces a total row count from metadata, so
-/// any row-level processing is unsupported:
-/// - a count mode other than `CountMode::All` (needs per-value null info),
-/// - a pushed-down filter (rows must be counted after filtering),
-/// - a limit (a global, cross-task semantic the shortcut can't honor),
-/// - delete rows (rows must be excluded before counting).
-///
-/// Built-in sources never reach the shortcut with any of these (the optimizer
-/// and scan materialization prevent it); this guards against custom
-/// ScanOperators that bypass those invariants.
+/// Returns `Some(reason)` if the count can't be served from parquet metadata alone.
+/// A non-`All` count mode, filter, limit, or delete rows all require row-level
+/// processing the metadata shortcut can't do.
 fn parquet_count_pushdown_unsupported_reason(
     count_mode: &daft_core::count_mode::CountMode,
     pushdowns: &daft_scan::Pushdowns,

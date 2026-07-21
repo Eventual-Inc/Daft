@@ -530,13 +530,8 @@ pub async fn stream_parquet_count_pushdown(
 
     // Currently only CountMode::All is supported for count pushdown.
     //
-    // When the ScanTask constrains the read to specific row groups (user-supplied
-    // `row_groups`, or a split subtask's `ChunkSpec::Parquet`), count only those
-    // groups instead of the whole file. This mirrors the normal read path, which
-    // re-reads the full footer and treats these indices as positional into it
-    // (see `prune_row_groups` / `count_only_stream`). Without this, count pushdown
-    // ignores the constraint and returns the whole-file row count — inflating
-    // `count_rows()` by N× once a file is split into N subtasks.
+    // When the ScanTask constrains the read to specific row groups, count only those.
+    // Indices are positional into the full footer, mirroring `prune_row_groups`.
     let count = match row_groups {
         None => parquet_metadata.num_rows(),
         Some(rgs) => {
