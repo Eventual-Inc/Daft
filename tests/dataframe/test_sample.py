@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import pyarrow as pa
+import pyarrow.parquet as papq
 import pytest
 
-from tests.conftest import get_tests_daft_runner_name
+import daft
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2])
@@ -136,7 +138,6 @@ def test_sample_with_concat(
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="Sample by size only works on native runner")
 def test_sample_size(make_df, valid_data: list[dict[str, float]], repartition_nparts: int) -> None:
     df = make_df(valid_data, repartition=repartition_nparts)
 
@@ -148,7 +149,6 @@ def test_sample_size(make_df, valid_data: list[dict[str, float]], repartition_np
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="Sample by size only works on native runner")
 def test_sample_size_exceeds_total_without_replacement(
     make_df, valid_data: list[dict[str, float]], repartition_nparts: int
 ) -> None:
@@ -161,7 +161,6 @@ def test_sample_size_exceeds_total_without_replacement(
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="Sample by size only works on native runner")
 def test_sample_size_exceeds_total_with_replacement(
     make_df, valid_data: list[dict[str, float]], repartition_nparts: int
 ) -> None:
@@ -180,7 +179,6 @@ def test_sample_size_exceeds_total_with_replacement(
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="Sample by size only works on native runner")
 def test_sample_size_zero(make_df, valid_data: list[dict[str, float]], repartition_nparts: int) -> None:
     df = make_df(valid_data, repartition=repartition_nparts)
 
@@ -192,7 +190,6 @@ def test_sample_size_zero(make_df, valid_data: list[dict[str, float]], repartiti
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="Sample by size only works on native runner")
 def test_sample_size_negative(make_df, valid_data: list[dict[str, float]], repartition_nparts: int) -> None:
     df = make_df(valid_data, repartition=repartition_nparts)
 
@@ -219,7 +216,6 @@ def test_sample_neither_fraction_nor_size(make_df, valid_data: list[dict[str, fl
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="Sample by size only works on native runner")
 def test_sample_size_with_seed(
     make_df,
     valid_data: list[dict[str, float]],
@@ -235,7 +231,6 @@ def test_sample_size_with_seed(
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="Sample by size only works on native runner")
 def test_sample_size_equals_total_without_replacement(
     make_df, valid_data: list[dict[str, float]], repartition_nparts: int
 ) -> None:
@@ -250,7 +245,6 @@ def test_sample_size_equals_total_without_replacement(
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="Sample by size only works on native runner")
 def test_sample_size_equals_total_with_replacement(
     make_df, valid_data: list[dict[str, float]], repartition_nparts: int
 ) -> None:
@@ -264,11 +258,8 @@ def test_sample_size_equals_total_with_replacement(
     assert df.column_names == list(valid_data[0].keys())
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="Sample by size only works on native runner")
 def test_sample_size_empty_dataframe_without_replacement() -> None:
     # Create empty dataframe
-    import daft
-
     df = daft.from_pydict({"a": [], "b": []})
 
     # Try to sample from empty dataframe without replacement - should raise ValueError
@@ -277,11 +268,8 @@ def test_sample_size_empty_dataframe_without_replacement() -> None:
         df.collect()
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="Sample by size only works on native runner")
 def test_sample_size_empty_dataframe_with_replacement() -> None:
     # Create empty dataframe
-    import daft
-
     df = daft.from_pydict({"a": [], "b": []})
 
     # Sample from empty dataframe with replacement - should return empty
@@ -291,11 +279,8 @@ def test_sample_size_empty_dataframe_with_replacement() -> None:
     assert len(df) == 0
 
 
-@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="Sample by size only works on native runner")
 def test_sample_size_empty_dataframe_zero_size() -> None:
     # Create empty dataframe
-    import daft
-
     df = daft.from_pydict({"a": [], "b": []})
 
     # Sample 0 rows from empty dataframe - should return empty
@@ -305,8 +290,24 @@ def test_sample_size_empty_dataframe_zero_size() -> None:
     assert len(df) == 0
 
 
+def test_sample_size_unequal_partitions(tmp_path) -> None:
+    partition_sizes = [0, 1, 17, 82]
+    start = 0
+    for idx, partition_size in enumerate(partition_sizes):
+        values = list(range(start, start + partition_size))
+        papq.write_table(pa.table({"x": values}), tmp_path / f"part-{idx}.parquet")
+        start += partition_size
+
+    df = daft.read_parquet(str(tmp_path / "part-*.parquet"))
+    sampled = df.sample(size=11, with_replacement=False, seed=123).collect()
+    values = sampled.to_pydict()["x"]
+
+    assert len(values) == 11
+    assert len(set(values)) == 11
+    assert set(values).issubset(set(range(sum(partition_sizes))))
+
+
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="Sample by size only works on native runner")
 def test_sample_size_one_row_dataframe(make_df, repartition_nparts: int) -> None:
     # Create dataframe with one row
     single_row_data: list[dict[str, float]] = [{"a": 1.0, "b": 2.0}]
@@ -329,7 +330,6 @@ def test_sample_size_one_row_dataframe(make_df, repartition_nparts: int) -> None
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="Sample by size only works on native runner")
 def test_sample_size_with_replacement_has_duplicates(
     make_df, valid_data: list[dict[str, float]], repartition_nparts: int
 ) -> None:
@@ -349,7 +349,6 @@ def test_sample_size_with_replacement_has_duplicates(
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
-@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="Sample by size only works on native runner")
 def test_sample_size_without_replacement_no_duplicates(
     make_df, valid_data: list[dict[str, float]], repartition_nparts: int
 ) -> None:
