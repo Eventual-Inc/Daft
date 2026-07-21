@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeType};
 use common_runtime::OrderedJoinSet;
-use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, ShuffleBackend as LocalShuffleBackend};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
@@ -132,15 +132,18 @@ impl IntoPartitionsNode {
                 .collect::<Vec<_>>();
 
             let node_id = self.node_id();
-            let shuffle_backend = self.shuffle_backend.local_shuffle_backend();
-            let builder = self.shuffle_backend.build_refs_task_builder(
+            // The refs here come from executing the input scan tasks, so they are always
+            // RayPartitionRef. Use in-memory scan with LocalShuffleBackend::Ray to coalesce
+            // them: flight shuffle only applies when reading data written to a flight server,
+            // not when reading from intermediate in-memory scan task outputs.
+            let builder = self.shuffle_backend.build_in_memory_task_builder(
                 partition_refs,
                 self.as_ref(),
                 move |input| {
                     LocalPhysicalPlan::into_partitions(
                         input,
                         1,
-                        shuffle_backend,
+                        LocalShuffleBackend::Ray,
                         StatsState::NotMaterialized,
                         LocalNodeContext::new(Some(node_id as usize)),
                     )
