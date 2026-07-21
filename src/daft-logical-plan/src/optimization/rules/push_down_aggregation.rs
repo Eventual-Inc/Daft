@@ -60,8 +60,6 @@ impl OptimizerRule for PushDownAggregation {
                                     } else {
                                         external_info.pushdowns.filters.is_none()
                                     };
-                                    // A limit is global, but each scan task counts its own row
-                                    // groups independently — pushing down under a limit overcounts.
                                     let can_pushdown = scan_op.supports_count_pushdown()
                                         && is_count_mode_supported(count_mode)
                                         && is_remaining_filters
