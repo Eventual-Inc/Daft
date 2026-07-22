@@ -44,6 +44,7 @@ impl TryFrom<SQLFunctionArguments> for CsvScanBuilder {
         let buffer_size = args.try_get_named("buffer_size")?;
         let file_path_column = args.try_get_named("file_path_column")?;
         let hive_partitioning = args.try_get_named("hive_partitioning")?.unwrap_or(false);
+        let ignore_corrupt_files = args.try_get_named("ignore_corrupt_files")?.unwrap_or(false);
         let schema = args
             .try_get_named("schema")?
             .map(try_parse_schema)
@@ -67,6 +68,7 @@ impl TryFrom<SQLFunctionArguments> for CsvScanBuilder {
             allow_variable_columns,
             buffer_size,
             chunk_size,
+            ignore_corrupt_files,
         })
     }
 }
@@ -95,11 +97,23 @@ impl SQLTableFunction for ReadCsvFunction {
                 "hive_partitioning",
                 "buffer_size",
                 "chunk_size",
+                "ignore_corrupt_files",
             ],
             1, // 1 positional argument (path)
         )?;
 
         let runtime = common_runtime::get_io_runtime(true);
+        // Release the GIL while blocking on async schema inference. SQL planning is reached
+        // from `sql_exec` with the GIL held; with `ignore_corrupt_files` enabled the driven
+        // future may emit `log::warn!` for a skipped corrupt file (see `daft-scan` glob
+        // schema inference), which pyo3-log can only forward to Python by re-acquiring the
+        // GIL — deadlocking if we hold it here. Mirrors the DataFrame scan path in
+        // `daft-scan/src/python.rs`. (Same fix as PR #7133 for `read_parquet`.)
+        #[cfg(feature = "python")]
+        let result = pyo3::Python::attach(|py| {
+            py.detach(|| runtime.block_within_async_context(builder.finish()))
+        })??;
+        #[cfg(not(feature = "python"))]
         let result = runtime.block_within_async_context(builder.finish())??;
         Ok(result)
     }

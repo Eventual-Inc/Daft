@@ -145,6 +145,7 @@ pub struct CsvScanBuilder {
     pub allow_variable_columns: bool,
     pub buffer_size: Option<usize>,
     pub chunk_size: Option<usize>,
+    pub ignore_corrupt_files: bool,
 }
 
 impl CsvScanBuilder {
@@ -171,6 +172,7 @@ impl CsvScanBuilder {
             allow_variable_columns: false,
             buffer_size: None,
             chunk_size: None,
+            ignore_corrupt_files: false,
         }
     }
     pub fn infer_schema(mut self, infer_schema: bool) -> Self {
@@ -230,6 +232,11 @@ impl CsvScanBuilder {
         self
     }
 
+    pub fn ignore_corrupt_files(mut self, ignore_corrupt_files: bool) -> Self {
+        self.ignore_corrupt_files = ignore_corrupt_files;
+        self
+    }
+
     pub async fn finish(self) -> DaftResult<LogicalPlanBuilder> {
         let cfg = CsvSourceConfig {
             delimiter: self.delimiter,
@@ -241,7 +248,7 @@ impl CsvScanBuilder {
             allow_variable_columns: self.allow_variable_columns,
             buffer_size: self.buffer_size,
             chunk_size: self.chunk_size,
-            ignore_corrupt_files: false,
+            ignore_corrupt_files: self.ignore_corrupt_files,
         };
 
         let operator = Arc::new(
