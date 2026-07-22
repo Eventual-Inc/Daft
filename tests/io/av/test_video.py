@@ -31,9 +31,6 @@ def _make_mock_container(frame_times: list[float], key_frames: list[bool] | None
         frame.to_ndarray.return_value = np.zeros((2, 2, 3), dtype="uint8")
         frames.append(frame)
 
-    # pyav's container.decode(stream) returns one generator iterated to completion,
-    # so the mock hands back a single iterator over all frames, not a fresh
-    # one-frame iterator per call.
     mock_container.decode.return_value = iter(frames)
 
     return mock_container
