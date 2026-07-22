@@ -62,6 +62,13 @@ class GravitinoFileset:
     io_config: IOConfig | None
 
 
+class GravitinoTableNotFoundError(Exception):
+    """Raised when a table is not found in the Gravitino catalog.
+
+    Analogous to ``NoSuchTableException`` in the upstream Gravitino Python client.
+    """
+
+
 class GravitinoClient:
     """Client to access Apache Gravitino catalog.
 
@@ -284,7 +291,7 @@ class GravitinoClient:
 
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 404:
-                raise Exception(f"Table {table_name} not found")
+                raise GravitinoTableNotFoundError(f"Table {table_name} not found") from e
             else:
                 raise Exception(f"Failed to load table {table_name}: {e}")
         except Exception as e:

@@ -10,6 +10,7 @@ from daft.catalog import Catalog, Function, Identifier, NotFoundError, Propertie
 from daft.catalog.__gravitino._client import GravitinoClient as InnerCatalog
 from daft.catalog.__gravitino._client import GravitinoTable as InnerTable
 from daft.catalog.__gravitino._client import GravitinoTableInfo
+from daft.catalog.__gravitino._client import GravitinoTableNotFoundError
 from daft.io._parquet import read_parquet
 from daft.io.iceberg._iceberg import read_iceberg
 
@@ -82,10 +83,8 @@ class GravitinoCatalog(Catalog):
     def _get_table(self, ident: Identifier) -> GravitinoTable:
         try:
             return GravitinoTable._from_obj(self._inner.load_table(str(ident)))
-        except Exception as e:
-            if "not found" in str(e).lower():
-                raise NotFoundError(f"Table {ident} not found!")
-            raise
+        except GravitinoTableNotFoundError:
+            raise NotFoundError(f"Table {ident} not found!") from None
 
     ###
     # list_.*
@@ -137,13 +136,8 @@ class GravitinoCatalog(Catalog):
         try:
             self._inner.load_table(str(ident))
             return True
-        except Exception as e:
-            # GravitinoClient.load_table wraps 404 in a generic Exception with "not found" message,
-            # so we match on the exact type (not subclasses) and the message content.
-            # TODO: Have load_table raise a typed TableNotFoundError for cleaner matching.
-            if type(e) is Exception and "not found" in str(e).lower():
-                return False
-            raise
+        except GravitinoTableNotFoundError:
+            return False
 
 
 class GravitinoTableTypeError(TypeError):

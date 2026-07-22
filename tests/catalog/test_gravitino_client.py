@@ -8,7 +8,7 @@ import pytest
 
 from daft.catalog.__gravitino._catalog import GravitinoCatalog
 from daft.catalog.__gravitino._client import _io_config_from_storage_location
-from daft.dependencies import requests
+from daft.catalog.__gravitino._client import GravitinoTableNotFoundError
 
 
 class TestS3CredentialKeyFormats:
@@ -73,21 +73,18 @@ class TestS3CredentialKeyFormats:
 
 
 class TestHasTableErrorHandling:
-    """Test that _has_table only catches not-found errors.
+    """Test that _has_table only catches GravitinoTableNotFoundError.
 
     These tests mock ``_inner.load_table`` directly rather than going through
-    ``GravitinoClient.load_table``. In production, ``GravitinoClient.load_table``
-    wraps all errors (including ConnectionError and HTTPError) into a plain
-    ``Exception``, so the actual exception reaching ``_has_table`` is always
-    ``Exception("Failed to load table ...")`` — never a typed error. Mocking at
-    the inner layer keeps the test focused on ``_has_table``'s own branching
-    logic without depending on the client's error-wrapping behavior.
+    ``GravitinoClient.load_table``. This keeps the test focused on
+    ``_has_table``'s own branching logic: it should return ``False`` for
+    ``GravitinoTableNotFoundError`` and re-raise everything else.
     """
 
     def test_table_not_found_returns_false(self):
-        """404 errors should return False."""
+        """GravitinoTableNotFoundError should return False."""
         mock_inner = MagicMock()
-        mock_inner.load_table.side_effect = Exception("Table not found")
+        mock_inner.load_table.side_effect = GravitinoTableNotFoundError("Table cat.schema.nonexistent not found")
 
         catalog = GravitinoCatalog.__new__(GravitinoCatalog)
         catalog._inner = mock_inner
@@ -98,10 +95,16 @@ class TestHasTableErrorHandling:
         result = catalog._has_table(ident)
         assert result is False
 
-    def test_network_error_raises(self):
-        """Network errors should be re-raised, not swallowed."""
+    def test_non_notfound_error_raises(self):
+        """Any exception not GravitinoTableNotFoundError should propagate.
+
+        In production, GravitinoClient.load_table wraps all non-404 errors
+        (network timeouts, auth failures, server errors) into
+        ``Exception("Failed to load table ...")``. _has_table should let these
+        through because they represent real problems, not missing tables.
+        """
         mock_inner = MagicMock()
-        mock_inner.load_table.side_effect = ConnectionError("Network timeout")
+        mock_inner.load_table.side_effect = Exception("Failed to load table cat.schema.tbl: ConnectionError")
 
         catalog = GravitinoCatalog.__new__(GravitinoCatalog)
         catalog._inner = mock_inner
@@ -109,21 +112,5 @@ class TestHasTableErrorHandling:
         ident = MagicMock()
         ident.__str__ = lambda self: "catalog.schema.table"
 
-        with pytest.raises(ConnectionError, match="Network timeout"):
-            catalog._has_table(ident)
-
-    def test_auth_error_raises(self):
-        """Authentication errors should be re-raised."""
-        mock_inner = MagicMock()
-        mock_response = MagicMock()
-        mock_response.status_code = 401
-        mock_inner.load_table.side_effect = requests.exceptions.HTTPError("401 Unauthorized", response=mock_response)
-
-        catalog = GravitinoCatalog.__new__(GravitinoCatalog)
-        catalog._inner = mock_inner
-
-        ident = MagicMock()
-        ident.__str__ = lambda self: "catalog.schema.table"
-
-        with pytest.raises(requests.exceptions.HTTPError):
+        with pytest.raises(Exception, match="Failed to load table"):
             catalog._has_table(ident)
