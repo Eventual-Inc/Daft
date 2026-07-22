@@ -24,7 +24,16 @@ impl OpenDALSource {
     /// List the OpenDAL service schemes that are compiled into this build.
     fn available_schemes() -> &'static [&'static str] {
         &[
-            "oss", "cos", "obs", "tos", "goosefs", "hdfs", "memory", "fs", "github",
+            "oss",
+            "cos",
+            "obs",
+            "tos",
+            "goosefs",
+            #[cfg(feature = "hdfs")]
+            "hdfs",
+            "memory",
+            "fs",
+            "github",
         ]
     }
 
@@ -487,8 +496,15 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "hdfs")]
     #[test]
     fn test_available_schemes_includes_hdfs() {
         assert!(OpenDALSource::available_schemes().contains(&"hdfs"));
+    }
+
+    #[cfg(not(feature = "hdfs"))]
+    #[test]
+    fn test_available_schemes_excludes_hdfs_by_default() {
+        assert!(!OpenDALSource::available_schemes().contains(&"hdfs"));
     }
 }

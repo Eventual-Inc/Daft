@@ -65,6 +65,7 @@ pyo3-log = {workspace = true, optional = true}
 sysinfo = {workspace = true}
 
 [features]
+hdfs = ["daft-io/hdfs"]
 # maturin will turn this on
 python = [
   "dep:pyo3",

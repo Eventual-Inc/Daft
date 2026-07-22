@@ -572,6 +572,7 @@ fn opendal_backend_config(
             let authority = url_authority(path, path)?;
             config.goosefs.to_opendal_config(&authority)
         }
+        #[cfg(feature = "hdfs")]
         "hdfs" => {
             let authority = url_authority(path, path)?;
             if authority.is_empty() {
@@ -661,6 +662,7 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
             },
             fixed_input,
         )),
+        #[cfg(feature = "hdfs")]
         "hdfs" => Ok((
             SourceType::OpenDAL {
                 scheme: "hdfs".to_string(),
@@ -794,7 +796,7 @@ mod resolve_alias_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "hdfs"))]
 mod opendal_config_tests {
     use std::collections::BTreeMap;
 

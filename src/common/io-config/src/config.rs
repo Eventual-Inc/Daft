@@ -98,8 +98,27 @@ impl IOConfig {
     /// Validates that no protocol alias key shadows a built-in scheme.
     pub fn validate_protocol_aliases(&self) -> std::result::Result<(), String> {
         const BUILTIN_SCHEMES: &[&str] = &[
-            "file", "http", "https", "s3", "s3a", "s3n", "az", "abfs", "abfss", "gcs", "gs", "hf",
-            "tos", "cos", "cosn", "goosefs", "hdfs", "vol+dbfs", "dbfs", "gvfs",
+            "file",
+            "http",
+            "https",
+            "s3",
+            "s3a",
+            "s3n",
+            "az",
+            "abfs",
+            "abfss",
+            "gcs",
+            "gs",
+            "hf",
+            "tos",
+            "cos",
+            "cosn",
+            "goosefs",
+            "vol+dbfs",
+            "dbfs",
+            "gvfs",
+            #[cfg(feature = "hdfs")]
+            "hdfs",
         ];
         for key in self.protocol_aliases.keys() {
             if BUILTIN_SCHEMES.contains(&key.as_str()) {
