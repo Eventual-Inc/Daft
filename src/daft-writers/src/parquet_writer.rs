@@ -1,4 +1,10 @@
-use std::{collections::VecDeque, future::Future, path::PathBuf, pin::Pin, sync::Arc};
+use std::{
+    collections::VecDeque,
+    future::Future,
+    path::{Path, PathBuf},
+    pin::Pin,
+    sync::Arc,
+};
 
 use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
@@ -24,7 +30,7 @@ use parquet::{
 use crate::{
     AsyncFileWriter, WriteResult,
     storage_backend::{FileStorageBackend, ObjectStorageBackend, StorageBackend},
-    utils::build_filename,
+    utils::{build_filename, build_filename_single},
 };
 
 type ColumnWriterFuture = dyn Future<Output = DaftResult<ArrowColumnChunk>> + Send;
@@ -93,6 +99,7 @@ pub(crate) fn native_parquet_writer_supported(
         .is_ok())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn create_native_parquet_writer(
     root_dir: &str,
     schema: &SchemaRef,
@@ -101,16 +108,22 @@ pub(crate) fn create_native_parquet_writer(
     io_config: Option<IOConfig>,
     compression: Option<&str>,
     column_compression: Option<&[(String, String)]>,
+    single_file: bool,
+    overwrite_single_file_target: bool,
 ) -> DaftResult<Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Option<RecordBatch>>>> {
     // Parse the root directory and add partition values if present.
     let (source_type, root_dir) = parse_url(root_dir)?;
-    let filename = build_filename(
-        &source_type,
-        root_dir.as_ref(),
-        partition_values,
-        file_idx,
-        "parquet",
-    )?;
+    let filename = if single_file {
+        build_filename_single(&source_type, root_dir.as_ref())?
+    } else {
+        build_filename(
+            &source_type,
+            root_dir.as_ref(),
+            partition_values,
+            file_idx,
+            "parquet",
+        )?
+    };
 
     let default_compression = match compression {
         Some(name) => parse_compression(name)?,
@@ -146,6 +159,7 @@ pub(crate) fn create_native_parquet_writer(
                 parquet_schema,
                 partition_values.cloned(),
                 storage_backend,
+                overwrite_single_file_target,
             )))
         }
         source if source.supports_native_writer() => {
@@ -161,12 +175,22 @@ pub(crate) fn create_native_parquet_writer(
                 parquet_schema,
                 partition_values.cloned(),
                 storage_backend,
+                false,
             )))
         }
         _ => Err(DaftError::InternalError(format!(
             "Unsupported source type for the native writer: {source_type}"
         ))),
     }
+}
+
+fn remove_existing_local_target(filename: &Path) -> DaftResult<()> {
+    if filename.is_dir() {
+        std::fs::remove_dir_all(filename)?;
+    } else if filename.exists() {
+        std::fs::remove_file(filename)?;
+    }
+    Ok(())
 }
 
 struct ParquetWriter<B: StorageBackend> {
@@ -178,6 +202,7 @@ struct ParquetWriter<B: StorageBackend> {
     storage_backend: B,
     file_writer: Option<SerializedFileWriter<B::Writer>>,
     total_bytes_written: usize,
+    overwrite_existing_target: bool,
 }
 
 impl<B: StorageBackend> ParquetWriter<B> {
@@ -190,6 +215,7 @@ impl<B: StorageBackend> ParquetWriter<B> {
         parquet_schema: SchemaDescriptor,
         partition_values: Option<RecordBatch>,
         storage_backend: B,
+        overwrite_existing_target: bool,
     ) -> Self {
         Self {
             filename,
@@ -200,10 +226,14 @@ impl<B: StorageBackend> ParquetWriter<B> {
             storage_backend,
             file_writer: None,
             total_bytes_written: 0,
+            overwrite_existing_target,
         }
     }
 
     async fn create_writer(&mut self) -> DaftResult<()> {
+        if self.overwrite_existing_target {
+            remove_existing_local_target(&self.filename)?;
+        }
         let backend_writer = self.storage_backend.create_writer(&self.filename).await?;
         let file_writer = SerializedFileWriter::new(
             backend_writer,

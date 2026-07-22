@@ -36,6 +36,27 @@ def test_split_parquet_read(parquet_files):
         assert df.to_pydict() == {"data": ["aaa"] * 100}
 
 
+def test_split_parquet_count_rows(parquet_files):
+    """Regression: count_rows() must not N-times overcount a split file.
+
+    When a file is split into N subtasks, each subtask's count-pushdown shortcut
+    used to ignore its row-group constraint (ChunkSpec) and return the WHOLE-file
+    row count, so the sum over subtasks was N x the true count — a silent
+    data-correctness error on the officially recommended split configuration.
+    """
+    with daft.execution_config_ctx(
+        enable_scan_task_split_and_merge=True,
+        scan_tasks_min_size_bytes=1,
+        scan_tasks_max_size_bytes=10,
+    ):
+        df = daft.read_parquet(str(parquet_files))
+        assert df.num_partitions() == 10, "file should split into 10 subtasks"
+        # Fixture is 100 rows; before the fix this returned 100 * 10 = 1000.
+        assert df.count_rows() == 100
+        # Agrees with an explicit count aggregation (which never takes the shortcut).
+        assert df.agg(daft.col("data").count()).to_pydict()["data"][0] == 100
+
+
 def test_split_parquet_estimate_uses_materialized_size(tmpdir):
     """The scan size estimate must reflect the materialized buffer size, not encoded size.
 

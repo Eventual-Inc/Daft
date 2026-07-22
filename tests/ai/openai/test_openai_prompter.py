@@ -442,6 +442,86 @@ def test_openai_prompter_client_params_separation():
         assert prompter.generation_config["max_tokens"] == 100
 
 
+def test_openai_prompter_udf_params_separation():
+    """Test that UDF params are not forwarded as generation params."""
+    with patch("daft.ai.openai.protocols.prompter.AsyncOpenAI") as mock_openai_class:
+        prompter = create_prompter(
+            generation_config={
+                "on_error": "ignore",
+                "concurrency": 8,
+                "num_gpus": 1,
+                "batch_size": 4,
+                "max_retries": 10,
+                "temperature": 0,
+            }
+        )
+
+        assert prompter.generation_config == {"temperature": 0}
+
+        client_call_kwargs = mock_openai_class.call_args.kwargs
+        assert client_call_kwargs["max_retries"] == 10
+        assert "on_error" not in client_call_kwargs
+        assert "concurrency" not in client_call_kwargs
+        assert "num_gpus" not in client_call_kwargs
+        assert "batch_size" not in client_call_kwargs
+
+
+@pytest.mark.parametrize("use_chat_completions", [False, True])
+@pytest.mark.parametrize("structured", [False, True])
+def test_openai_request_does_not_receive_udf_options(use_chat_completions, structured):
+    """Test that UDF params are excluded from all OpenAI request paths."""
+
+    async def _test():
+        return_format = SimpleResponse if structured else None
+        prompter = create_prompter(
+            return_format=return_format,
+            use_chat_completions=use_chat_completions,
+            on_error="ignore",
+            concurrency=8,
+            num_gpus=1,
+            batch_size=4,
+            max_retries=10,
+            temperature=0,
+        )
+
+        mock_client = AsyncMock()
+        if use_chat_completions:
+            mock_response = Mock(usage=None)
+            message = Mock()
+            if structured:
+                message.parsed = SimpleResponse(answer="Yes", confidence=0.95)
+                request = mock_client.chat.completions.parse
+            else:
+                message.content = "Yes"
+                request = mock_client.chat.completions.create
+            mock_response.choices = [Mock(message=message)]
+        else:
+            if structured:
+                mock_response = Mock(
+                    output_parsed=SimpleResponse(answer="Yes", confidence=0.95),
+                    usage=None,
+                )
+                request = mock_client.responses.parse
+            else:
+                mock_response = Mock(output_text="Yes", usage=None)
+                request = mock_client.responses.create
+
+        request.return_value = mock_response
+        prompter.llm = mock_client
+
+        await prompter.prompt(("Is this a test?",))
+
+        request_kwargs = request.call_args.kwargs
+        assert request_kwargs["temperature"] == 0
+        assert "on_error" not in request_kwargs
+        assert "concurrency" not in request_kwargs
+        assert "num_gpus" not in request_kwargs
+        assert "batch_size" not in request_kwargs
+        assert "max_retries" not in request_kwargs
+
+    run_async(_test())
+
+
 def test_openai_prompter_error_handling():
     """Test that errors from the API are propagated."""
 

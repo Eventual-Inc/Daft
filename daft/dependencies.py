@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     import fsspec
     import h5py
     import librosa
+    import mcap
     import numpy as np
     import pandas as pd
     import PIL.Image as pil_image
@@ -44,6 +45,7 @@ else:
     pq = LazyImport("pyarrow.parquet")
     sf = LazyImport("soundfile")
     h5py = LazyImport("h5py")
+    mcap = LazyImport("mcap")
     requests = LazyImport("requests")
     tf = LazyImport("tensorflow")
     torch = LazyImport("torch")
@@ -58,6 +60,7 @@ __all__ = [
     "fsspec",
     "h5py",
     "librosa",
+    "mcap",
     "np",
     "pa",
     "pacsv",

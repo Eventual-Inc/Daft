@@ -183,6 +183,38 @@ def test_read_parquet_row_group_edges(tmp_path):
         daft.read_parquet([str(path)], row_groups=[[2]]).to_pydict()
 
 
+def test_count_rows_respects_row_groups(tmp_path):
+    # Regression: count_rows() count-pushdown ignored the row group constraint and
+    # returned the whole-file count. Row groups are unequal (4, 4, 2) so subset and
+    # duplicate sums differ from the whole-file count.
+    path = tmp_path / "row_groups.parquet"
+    papq.write_table(pa.table({"x": list(range(10))}), path, row_group_size=4)
+
+    assert daft.read_parquet([str(path)]).count_rows() == 10  # whole file
+    assert daft.read_parquet([str(path)], row_groups=[[2]]).count_rows() == 2  # last (partial) group
+    assert daft.read_parquet([str(path)], row_groups=[[0]]).count_rows() == 4
+    assert daft.read_parquet([str(path)], row_groups=[[]]).count_rows() == 0
+    # Non-monotonic indices — sums both selected groups (4 + 2), not the file.
+    assert daft.read_parquet([str(path)], row_groups=[[2, 0]]).count_rows() == 6
+    # Duplicate indices are counted once per occurrence (4 * 3 = 12 > whole file,
+    # impossible to produce without honoring the row-group selection).
+    assert daft.read_parquet([str(path)], row_groups=[[0, 0, 0]]).count_rows() == 12
+
+    with pytest.raises(DaftCoreException, match="Row group index 3 out of bounds"):
+        daft.read_parquet([str(path)], row_groups=[[3]]).count_rows()
+
+    # count_rows() must agree with an explicit count aggregation (which never
+    # takes the count-pushdown shortcut).
+    df = daft.read_parquet([str(path)], row_groups=[[2, 0]])
+    assert df.count_rows() == df.agg(daft.col("x").count()).to_pydict()["x"][0]
+
+    # Guard that count_rows() actually takes the pushdown path. It runs eagerly, so
+    # rebuild its plan the same way to inspect it.
+    plan = io.StringIO()
+    type(df)(df._builder.count()).explain(show_all=True, file=plan)
+    assert "Aggregation pushdown = count" in plan.getvalue()
+
+
 def test_read_parquet_casts_map_values_to_explicit_schema(tmp_path):
     int32_path = tmp_path / "map_i32.parquet"
     int64_path = tmp_path / "map_i64.parquet"

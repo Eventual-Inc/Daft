@@ -1509,6 +1509,7 @@ all = [
     { name = "h5py" },
     { name = "httpx" },
     { name = "huggingface-hub" },
+    { name = "mcap" },
     { name = "mypy-boto3-glue" },
     { name = "numpy" },
     { name = "openai" },
@@ -1568,6 +1569,9 @@ iceberg = [
 ]
 lance = [
     { name = "daft-lance" },
+]
+mcap = [
+    { name = "mcap" },
 ]
 numpy = [
     { name = "numpy" },
@@ -1715,7 +1719,7 @@ requires-dist = [
     { name = "clickhouse-connect", marker = "extra == 'clickhouse'", specifier = "<1.1.0" },
     { name = "connectorx", marker = "extra == 'postgres'", specifier = ">=0.4.4,<0.5.0" },
     { name = "connectorx", marker = "extra == 'sql'", specifier = ">=0.4.4,<0.5.0" },
-    { name = "daft", extras = ["aws", "azure", "clickhouse", "deltalake", "gcp", "google", "gravitino", "hdf5", "hudi", "huggingface", "iceberg", "lance", "numpy", "openai", "pandas", "postgres", "ray", "sentence-transformers", "sql", "transformers", "turbopuffer", "unity", "video"], marker = "extra == 'all'" },
+    { name = "daft", extras = ["aws", "azure", "clickhouse", "deltalake", "gcp", "google", "gravitino", "hdf5", "hudi", "huggingface", "iceberg", "lance", "mcap", "numpy", "openai", "pandas", "postgres", "ray", "sentence-transformers", "sql", "transformers", "turbopuffer", "unity", "video"], marker = "extra == 'all'" },
     { name = "daft-lance", marker = "extra == 'lance'" },
     { name = "datasets", marker = "extra == 'huggingface'", specifier = "<4.9.0" },
     { name = "deltalake", marker = "extra == 'deltalake'", specifier = ">=1.5.0,<1.7.0" },
@@ -1726,6 +1730,7 @@ requires-dist = [
     { name = "httpx", marker = "extra == 'unity'", specifier = "<=0.28.1" },
     { name = "huggingface-hub", marker = "extra == 'huggingface'", specifier = "<1.17.0" },
     { name = "librosa", marker = "extra == 'audio'", specifier = ">=0.11.0,<0.12.0" },
+    { name = "mcap", marker = "extra == 'mcap'", specifier = ">=1.1.0,<2.0.0" },
     { name = "mypy-boto3-glue", marker = "extra == 'aws'" },
     { name = "numpy", marker = "extra == 'google'", specifier = "<2.4.0" },
     { name = "numpy", marker = "extra == 'hdf5'", specifier = "<2.4.0" },
@@ -1758,7 +1763,7 @@ requires-dist = [
     { name = "typing-extensions", marker = "python_full_version < '3.12'", specifier = ">=4.0.0" },
     { name = "unitycatalog", marker = "extra == 'unity'", specifier = "<0.2.0" },
 ]
-provides-extras = ["all", "audio", "aws", "azure", "clickhouse", "deltalake", "gcp", "google", "gravitino", "hdf5", "hudi", "huggingface", "iceberg", "lance", "numpy", "openai", "pandas", "postgres", "ray", "sql", "transformers", "turbopuffer", "unity", "video", "viz"]
+provides-extras = ["all", "audio", "aws", "azure", "clickhouse", "deltalake", "gcp", "google", "gravitino", "hdf5", "hudi", "huggingface", "iceberg", "lance", "mcap", "numpy", "openai", "pandas", "postgres", "ray", "sql", "transformers", "turbopuffer", "unity", "video", "viz"]
 
 [package.metadata.requires-dev]
 dev = [
