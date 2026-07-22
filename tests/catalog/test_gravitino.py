@@ -18,7 +18,7 @@ from daft.catalog.__gravitino._catalog import (
     _open_iceberg_table_via_rest,
 )
 from daft.catalog.__gravitino._catalog import GravitinoTable as TableWrapper
-from daft.catalog.__gravitino._client import GravitinoCatalogInfo, GravitinoClient
+from daft.catalog.__gravitino._client import GravitinoCatalogInfo, GravitinoClient, GravitinoTableNotFoundError
 from daft.catalog.__gravitino._client import GravitinoTable as InnerTable
 from daft.io import IOConfig, S3Config
 
@@ -202,7 +202,7 @@ def test_load_nonexistent_table(mock_request):
 
     client = GravitinoClient("http://localhost:8090", "test_metalake", username="admin")
 
-    with pytest.raises(Exception, match="Table .* not found"):
+    with pytest.raises(GravitinoTableNotFoundError, match="Table .* not found"):
         client.load_table("catalog1.schema1.nonexistent_table")
 
 
@@ -281,7 +281,7 @@ class TestGravitinoCatalog:
 
     def test_get_table_not_found(self, gravitino_catalog, mock_inner_catalog):
         """Test _get_table raises NotFoundError when table not found."""
-        mock_inner_catalog.load_table.side_effect = Exception("Table not found in catalog")
+        mock_inner_catalog.load_table.side_effect = GravitinoTableNotFoundError("Table not found in catalog")
 
         with pytest.raises(NotFoundError, match="Table .* not found"):
             gravitino_catalog._get_table(Identifier.from_str("catalog.schema.nonexistent"))
@@ -389,7 +389,7 @@ class TestGravitinoCatalog:
 
     def test_has_table_not_exists(self, gravitino_catalog, mock_inner_catalog):
         """Test _has_table returns False when table doesn't exist."""
-        mock_inner_catalog.load_table.side_effect = Exception("Table not found")
+        mock_inner_catalog.load_table.side_effect = GravitinoTableNotFoundError("Table not found")
 
         result = gravitino_catalog._has_table(Identifier.from_str("catalog.schema.nonexistent"))
 

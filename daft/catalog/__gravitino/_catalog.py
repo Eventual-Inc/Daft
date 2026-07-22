@@ -9,7 +9,7 @@ from urllib.parse import quote, urlparse
 from daft.catalog import Catalog, Function, Identifier, NotFoundError, Properties, Schema, Table
 from daft.catalog.__gravitino._client import GravitinoClient as InnerCatalog
 from daft.catalog.__gravitino._client import GravitinoTable as InnerTable
-from daft.catalog.__gravitino._client import GravitinoTableInfo
+from daft.catalog.__gravitino._client import GravitinoTableInfo, GravitinoTableNotFoundError
 from daft.io._parquet import read_parquet
 from daft.io.iceberg._iceberg import read_iceberg
 
@@ -82,10 +82,8 @@ class GravitinoCatalog(Catalog):
     def _get_table(self, ident: Identifier) -> GravitinoTable:
         try:
             return GravitinoTable._from_obj(self._inner.load_table(str(ident)))
-        except Exception as e:
-            if "not found" in str(e).lower():
-                raise NotFoundError(f"Table {ident} not found!")
-            raise
+        except GravitinoTableNotFoundError:
+            raise NotFoundError(f"Table {ident} not found!") from None
 
     ###
     # list_.*
@@ -137,7 +135,7 @@ class GravitinoCatalog(Catalog):
         try:
             self._inner.load_table(str(ident))
             return True
-        except Exception:
+        except GravitinoTableNotFoundError:
             return False
 
 
