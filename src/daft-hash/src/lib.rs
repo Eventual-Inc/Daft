@@ -33,17 +33,16 @@ pub fn compute_sha2(data: &[u8], bit_length: u32) -> String {
     }
 }
 
-/// Computes CRC32 and returns an i64 value (Spark-compatible)
+/// Computes CRC32 and returns an i64 value.
 pub fn compute_crc32(data: &[u8]) -> i64 {
     let mut hasher = crc32fast::Hasher::new();
     hasher.update(data);
     hasher.finalize() as i64
 }
 
-/// Computes xxHash64 for multi-column combination (Spark-compatible)
-pub fn compute_xxhash64_seeded(data: &[u8], seed: i64) -> i64 {
-    xxhash_rust::xxh64::xxh64(data, seed as u64) as i64
-}
+// TODO: Spark-compatible xxhash64 (compute_xxhash64_seeded) belongs in a separate
+// Spark compatibility extension / function set. It conflicts with the core
+// `hash(..., hash_function="xxhash64")` kernel (Int64 vs UInt64, null/byte semantics).
 
 /// Converts a byte array to a hex string
 fn hex_encode(bytes: &[u8]) -> String {
