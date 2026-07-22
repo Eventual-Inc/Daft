@@ -752,3 +752,95 @@ def test_protocol_alias_unknown_scheme_raises_without_alias():
     """Without a matching protocol alias, Daft raises NotImplementedError for an unknown URI scheme."""
     with pytest.raises(NotImplementedError, match="Cannot infer PyArrow filesystem"):
         _resolve_paths_and_filesystem("unknownscheme://bucket/path")
+
+
+def test_read_after_write_upsert(local_catalog):
+    from packaging.version import parse
+
+    if parse(pyiceberg.__version__) < parse("0.9.0"):
+        pytest.skip("upsert requires pyiceberg>=0.9.0")
+
+    schema = Schema(
+        NestedField(field_id=1, name="id", type=LongType()),
+        NestedField(field_id=2, name="val", type=StringType()),
+    )
+    table = local_catalog.create_table("default.test_upsert", schema)
+
+    # Write initial rows
+    initial = daft.from_pydict({"id": [1, 2], "val": ["a", "b"]})
+    initial.write_iceberg(table)
+
+    # Upsert: id=2 should be updated, id=3 should be inserted
+    upsert_df = daft.from_pydict({"id": [2, 3], "val": ["B", "c"]})
+    result = upsert_df.write_iceberg(table, mode="upsert", join_cols=["id"])
+
+    result_dict = result.to_pydict()
+    assert result_dict["rows_updated"] == [1]
+    assert result_dict["rows_inserted"] == [1]
+
+    read_back = daft.read_iceberg(table).sort("id").to_pydict()
+    assert read_back["id"] == [1, 2, 3]
+    assert read_back["val"] == ["a", "B", "c"]
+
+
+def test_upsert_version_check(local_catalog):
+    from unittest.mock import patch
+
+    schema = Schema(
+        NestedField(field_id=1, name="id", type=LongType()),
+    )
+    table = local_catalog.create_table("default.test_upsert_version", schema)
+    df = daft.from_pydict({"id": [1]})
+
+    with patch("pyiceberg.__version__", "0.8.0"):
+        with pytest.raises(ValueError, match="pyiceberg>=0.9.0"):
+            df.write_iceberg(table, mode="upsert", join_cols=["id"])
+
+
+def test_upsert_requires_join_cols(local_catalog):
+    from packaging.version import parse
+
+    if parse(pyiceberg.__version__) < parse("0.9.0"):
+        pytest.skip("upsert requires pyiceberg>=0.9.0")
+
+    schema = Schema(
+        NestedField(field_id=1, name="id", type=LongType()),
+    )
+    table = local_catalog.create_table("default.test_upsert_no_join", schema)
+    df = daft.from_pydict({"id": [1]})
+
+    with pytest.raises(ValueError, match="join_cols"):
+        df.write_iceberg(table, mode="upsert", join_cols=None)
+
+    with pytest.raises(ValueError, match="join_cols"):
+        df.write_iceberg(table, mode="upsert", join_cols=[])
+
+    with pytest.raises(ValueError, match="join_cols"):
+        df.write_iceberg(table, mode="upsert", join_cols=["not_a_col"])
+
+
+def test_upsert_requires_all_columns(local_catalog):
+    """A partial-column upsert must raise, not silently null out omitted columns on matched rows."""
+    from packaging.version import parse
+
+    if parse(pyiceberg.__version__) < parse("0.9.0"):
+        pytest.skip("upsert requires pyiceberg>=0.9.0")
+
+    schema = Schema(
+        NestedField(field_id=1, name="id", type=LongType()),
+        NestedField(field_id=2, name="name", type=StringType()),
+        NestedField(field_id=3, name="status", type=StringType()),
+    )
+    table = local_catalog.create_table("default.test_upsert_missing_cols", schema)
+
+    initial = daft.from_pydict({"id": [1, 2], "name": ["Alice", "Bob"], "status": ["active", "active"]})
+    initial.write_iceberg(table)
+
+    partial_update = daft.from_pydict({"id": [2], "status": ["inactive"]})
+    with pytest.raises(ValueError, match="missing"):
+        partial_update.write_iceberg(table, mode="upsert", join_cols=["id"])
+
+    # The rejected write must not have touched the table.
+    read_back = daft.read_iceberg(table).sort("id").to_pydict()
+    assert read_back["name"] == ["Alice", "Bob"]
+    assert read_back["status"] == ["active", "active"]

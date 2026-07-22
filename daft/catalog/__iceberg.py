@@ -290,6 +290,11 @@ class IcebergTable(Table):
 
         df.write_iceberg(self._inner, mode="overwrite")
 
+    def upsert(self, df: DataFrame, join_cols: list[str], **options: Any) -> None:
+        self._validate_options("Iceberg write", options, IcebergTable._write_options)
+
+        df.write_iceberg(self._inner, mode="upsert", join_cols=join_cols)
+
 
 def _to_pyiceberg_ident(ident: Identifier | str) -> tuple[str, ...] | str:
     return tuple(ident) if isinstance(ident, Identifier) else ident
