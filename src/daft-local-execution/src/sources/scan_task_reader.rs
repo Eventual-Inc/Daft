@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::{AggExpr, Expr};
 use daft_io::{GetRange, IOStatsRef};
@@ -104,7 +104,10 @@ async fn read_parquet(
     chunk_size: usize,
     skipped_corrupt_files: SkippedCorruptFilesCollector,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
-    let source = scan_task.sources.first().unwrap();
+    let source = scan_task
+        .sources
+        .first()
+        .ok_or_else(|| DaftError::ValueError("ScanTask has no sources".to_string()))?;
 
     let row_groups = match source.get_chunk_spec() {
         Some(ChunkSpec::Parquet(rgs)) => Some(rgs.clone()),
@@ -272,7 +275,10 @@ async fn read_json(
     io_stats: IOStatsRef,
     chunk_size: usize,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
-    let source = scan_task.sources.first().unwrap();
+    let source = scan_task
+        .sources
+        .first()
+        .ok_or_else(|| DaftError::ValueError("ScanTask has no sources".to_string()))?;
     let schema_of_file = scan_task.schema.clone();
     let convert_options = JsonConvertOptions::new_internal(
         scan_task.pushdowns.limit,
