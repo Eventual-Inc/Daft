@@ -7,8 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from daft.catalog.__gravitino._catalog import GravitinoCatalog
-from daft.catalog.__gravitino._client import _io_config_from_storage_location
-from daft.catalog.__gravitino._client import GravitinoTableNotFoundError
+from daft.catalog.__gravitino._client import GravitinoTableNotFoundError, _io_config_from_storage_location
 
 
 class TestS3CredentialKeyFormats:
