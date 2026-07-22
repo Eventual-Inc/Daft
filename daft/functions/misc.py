@@ -485,8 +485,6 @@ def simhash(
 def md5(expr: Expression) -> Expression:
     """Computes the MD5 hash of the input expression and returns the result as a hex string.
 
-    Compatible with Spark's md5() function.
-
     Args:
         expr (String or Binary Expression): The expression to hash.
 
@@ -506,8 +504,6 @@ def md5(expr: Expression) -> Expression:
 
 def sha1_hex(expr: Expression) -> Expression:
     """Computes the SHA-1 hash of the input expression and returns the result as a hex string.
-
-    Compatible with Spark's sha1() function.
 
     Args:
         expr (String or Binary Expression): The expression to hash.
@@ -529,8 +525,6 @@ def sha1_hex(expr: Expression) -> Expression:
 def sha2_hex(expr: Expression, bit_length: int = 256) -> Expression:
     """Computes the SHA-2 hash of the input expression and returns the result as a hex string.
 
-    Compatible with Spark's sha2() function.
-
     Args:
         expr (String or Binary Expression): The expression to hash.
         bit_length (int): The bit length of the hash. Must be one of 0, 224, 256, 384, or 512.
@@ -550,42 +544,13 @@ def sha2_hex(expr: Expression, bit_length: int = 256) -> Expression:
     return Expression._call_builtin_scalar_fn("sha2", expr, bit_length=bit_length)
 
 
-def spark_xxhash64(*exprs: Expression, seed: int = 42) -> Expression:
-    """Computes the xxHash64 hash of one or more expressions and returns the result as an Int64.
-
-    This is a Spark SQL-compatible implementation of xxhash64. It differs from
-    ``hash(..., hash_function="xxhash64")`` in return type (Int64 vs UInt64),
-    null-handling semantics, and byte representation of inputs.
-
-    Args:
-        exprs: One or more expressions to hash.
-        seed (int): Seed for the hash function. Defaults to 42.
-
-    Returns:
-        Expression (Int64 Expression): The xxHash64 hash value.
-
-    Examples:
-        >>> import daft
-        >>> from daft.functions import spark_xxhash64
-        >>> df = daft.from_pydict({"a": ["hello", "world"], "b": [1, 2]})
-        >>> df = df.select(spark_xxhash64(df["a"]))
-        >>> df.show()  # doctest: +SKIP
-    """
-    if not exprs:
-        raise ValueError("spark_xxhash64() requires at least one expression")
-    normalized = []
-    for expr in exprs:
-        if isinstance(expr, str):
-            normalized.append(col(expr))
-        else:
-            normalized.append(Expression._to_expression(expr))
-    return Expression._call_builtin_scalar_fn("spark_xxhash64", *normalized, seed=seed)
+# TODO: Spark-compatible xxhash64 conflicts with hash(..., hash_function="xxhash64")
+# (Int64 vs UInt64, null/byte semantics). Defer to a separate Spark compatibility
+# extension / function set.
 
 
 def crc32(expr: Expression) -> Expression:
     """Computes the CRC32 checksum of the input expression and returns the result as an Int64.
-
-    Compatible with Spark's crc32() function.
 
     Args:
         expr (String or Binary Expression): The expression to compute CRC32 for.

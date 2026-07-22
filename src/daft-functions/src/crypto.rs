@@ -157,83 +157,9 @@ impl ScalarUDF for Sha2Function {
     }
 }
 
-// ============================================================================
-// Spark XxHash64 Function
-//
-// Spark SQL-compatible xxhash64. Distinct from `hash(..., hash_function="xxhash64")`,
-// which is a general-purpose hash used for partitioning/shuffling and uses a
-// different byte representation, null-handling and return type.
-// ============================================================================
-
-#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub(super) struct SparkXxHash64Function;
-
-#[derive(FunctionArgs)]
-struct SparkXxHash64Args<T> {
-    #[arg(variadic)]
-    input: Vec<T>,
-
-    #[arg(optional)]
-    seed: Option<i64>,
-}
-
-#[typetag::serde]
-impl ScalarUDF for SparkXxHash64Function {
-    fn name(&self) -> &'static str {
-        "spark_xxhash64"
-    }
-
-    fn call(
-        &self,
-        inputs: daft_dsl::functions::FunctionArgs<Series>,
-        _ctx: &daft_dsl::functions::scalar::EvalContext,
-    ) -> DaftResult<Series> {
-        let SparkXxHash64Args { input, seed } = inputs.try_into()?;
-
-        if input.is_empty() {
-            return Err(DaftError::ValueError(
-                "spark_xxhash64() requires at least one expression".to_string(),
-            ));
-        }
-
-        let seed = seed.unwrap_or(42);
-        let first_name = input[0].name().to_string();
-        let num_rows = input[0].len();
-
-        // Convert all inputs to bytes and combine hashes
-        let mut hashes: Vec<i64> = vec![seed; num_rows];
-
-        for series in &input {
-            let bytes_series = input_to_bytes(series)?;
-            for (i, hash) in hashes.iter_mut().enumerate().take(num_rows) {
-                // In Spark, null columns do not update the running hash — the seed is
-                // forwarded unchanged. Only hash when data is non-null.
-                if let Some(data) = bytes_series.get(i) {
-                    *hash = daft_hash::compute_xxhash64_seeded(data, *hash);
-                }
-            }
-        }
-
-        Ok(Int64Array::from_iter(
-            Field::new(first_name, DataType::Int64),
-            hashes.into_iter().map(Some),
-        )
-        .into_series())
-    }
-
-    fn get_return_field(
-        &self,
-        inputs: FunctionArgs<ExprRef>,
-        _schema: &Schema,
-    ) -> DaftResult<Field> {
-        let SparkXxHash64Args { input, .. } = inputs.try_into()?;
-        let first = input.first().ok_or_else(|| {
-            DaftError::ValueError("spark_xxhash64() requires at least one expression".to_string())
-        })?;
-        let input = first.to_field(_schema)?;
-        Ok(Field::new(input.name, DataType::Int64))
-    }
-}
+// TODO: Spark-compatible xxhash64 (Int64 return type, Spark null/byte semantics)
+// conflicts with `hash(..., hash_function="xxhash64")`. Defer to a separate Spark
+// compatibility extension / function set rather than shipping it in the core API.
 
 // ============================================================================
 // CRC32 Function
@@ -391,15 +317,6 @@ pub fn sha1(input: ExprRef) -> ExprRef {
 #[must_use]
 pub fn sha2(input: ExprRef, bit_length: ExprRef) -> ExprRef {
     ScalarFn::builtin(Sha2Function, vec![input, bit_length]).into()
-}
-
-#[must_use]
-pub fn spark_xxhash64(inputs: Vec<ExprRef>, seed: Option<ExprRef>) -> ExprRef {
-    let mut all_inputs = inputs;
-    if let Some(seed) = seed {
-        all_inputs.push(seed);
-    }
-    ScalarFn::builtin(SparkXxHash64Function, all_inputs).into()
 }
 
 #[must_use]
