@@ -15,12 +15,8 @@ def get_doc_structure():
     with open(summary_path, encoding="utf-8") as f:
         content = f.read()
 
-    sections = {
-        "Guide": {"files": []},
-        "Examples": {"files": []},
-        "Python API": {"files": []},
-        "SQL Reference": {"files": []},
-    }
+    section_names = ["Guide", "Examples", "Python API", "SQL Reference", "Contributing"]
+    sections = {name: {"files": []} for name in section_names}
 
     # Parse the markdown structure
     lines = content.split("\n")
@@ -35,17 +31,24 @@ def get_doc_structure():
 
         # Check for main sections (lines starting with *)
         if line.startswith("* "):
+            match = re.search(r"\[([^\]]+)\]\(([^)]+)\)", line)
+            if match and not match.group(2).startswith("http"):
+                # Top-level page not under a named section (e.g. "Daft Skills")
+                name = match.group(1).replace("<sup>↗</sup>", "").strip()
+                file_path = match.group(2)
+                last_section = list(sections.keys())[-1]
+                sections[last_section]["files"].append(
+                    {
+                        "name": name,
+                        "path": file_path,
+                        "url": f"https://docs.daft.ai/en/stable/{file_path.replace('.md', '.txt')}",
+                        "github_url": f"https://raw.githubusercontent.com/Eventual-Inc/Daft/main/docs/{quote(file_path)}",
+                    }
+                )
+                continue
+
             section_name = line[2:].strip()
-            if section_name == "Guide":
-                current_section = "Guide"
-            elif section_name == "Examples":
-                current_section = "Examples"
-            elif section_name == "Python API":
-                current_section = "Python API"
-            elif section_name == "SQL Reference":
-                current_section = "SQL Reference"
-            else:
-                current_section = None
+            current_section = section_name if section_name in sections else None
             continue
 
         # Check for any indented lines (subsections and nested items)
