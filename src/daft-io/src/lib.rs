@@ -291,41 +291,7 @@ impl IOClient {
                 }
             }
             SourceType::OpenDAL { scheme } => {
-                let empty_config = std::collections::BTreeMap::new();
-                let mut backend_config = match scheme.as_str() {
-                    "cos" | "tos" => {
-                        let parsed_url =
-                            url::Url::parse(&path).context(InvalidUrlSnafu { path: input })?;
-                        let bucket = parsed_url.host_str().unwrap_or_default();
-                        match scheme.as_str() {
-                            "cos" => self.config.cos.to_opendal_config(bucket),
-                            _ => self.config.tos.to_opendal_config(bucket),
-                        }
-                    }
-                    "goosefs" => {
-                        // Extract authority (host:port) from URL as default master_addr.
-                        let parsed_url =
-                            url::Url::parse(&path).context(InvalidUrlSnafu { path: input })?;
-                        let authority = match parsed_url.port() {
-                            Some(port) => {
-                                format!("{}:{}", parsed_url.host_str().unwrap_or(""), port)
-                            }
-                            None => parsed_url.host_str().unwrap_or("").to_string(),
-                        };
-                        self.config.goosefs.to_opendal_config(&authority)
-                    }
-                    _ => self
-                        .config
-                        .opendal_backends
-                        .get(scheme)
-                        .unwrap_or(&empty_config)
-                        .clone(),
-                };
-                if let Some(extra) = self.config.opendal_backends.get(scheme) {
-                    for (k, v) in extra {
-                        backend_config.insert(k.clone(), v.clone());
-                    }
-                }
+                let backend_config = opendal_backend_config(scheme, &path, &self.config)?;
                 OpenDALSource::get_client(scheme, &backend_config).await? as Arc<dyn ObjectSource>
             }
         };
@@ -578,6 +544,59 @@ pub fn local_path_to_file_uri(local_path: &str) -> String {
     }
 }
 
+fn url_authority(path: &str, input: &str) -> Result<String> {
+    let parsed_url = url::Url::parse(path).context(InvalidUrlSnafu { path: input })?;
+    Ok(match parsed_url.port() {
+        Some(port) => format!("{}:{}", parsed_url.host_str().unwrap_or(""), port),
+        None => parsed_url.host_str().unwrap_or("").to_string(),
+    })
+}
+
+fn opendal_backend_config(
+    scheme: &str,
+    path: &str,
+    config: &IOConfig,
+) -> Result<std::collections::BTreeMap<String, String>> {
+    let empty_config = std::collections::BTreeMap::new();
+    let mut backend_config = match scheme {
+        "cos" | "tos" => {
+            let parsed_url = url::Url::parse(path).context(InvalidUrlSnafu { path })?;
+            let bucket = parsed_url.host_str().unwrap_or_default();
+            match scheme {
+                "cos" => config.cos.to_opendal_config(bucket),
+                _ => config.tos.to_opendal_config(bucket),
+            }
+        }
+        "goosefs" => {
+            // Extract authority (host:port) from URL as default master_addr.
+            let authority = url_authority(path, path)?;
+            config.goosefs.to_opendal_config(&authority)
+        }
+        "hdfs" => {
+            let authority = url_authority(path, path)?;
+            if authority.is_empty() {
+                std::collections::BTreeMap::new()
+            } else {
+                std::collections::BTreeMap::from([(
+                    "name_node".to_string(),
+                    format!("hdfs://{authority}"),
+                )])
+            }
+        }
+        _ => config
+            .opendal_backends
+            .get(scheme)
+            .unwrap_or(&empty_config)
+            .clone(),
+    };
+    if let Some(extra) = config.opendal_backends.get(scheme) {
+        for (k, v) in extra {
+            backend_config.insert(k.clone(), v.clone());
+        }
+    }
+    Ok(backend_config)
+}
+
 pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
     let mut fixed_input = Cow::Borrowed(input);
     // handle tilde `~` expansion
@@ -639,6 +658,12 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
         "goosefs" => Ok((
             SourceType::OpenDAL {
                 scheme: "goosefs".to_string(),
+            },
+            fixed_input,
+        )),
+        "hdfs" => Ok((
+            SourceType::OpenDAL {
+                scheme: "hdfs".to_string(),
             },
             fixed_input,
         )),
@@ -766,5 +791,54 @@ mod resolve_alias_tests {
         let config = config_with_aliases(&[("custom", "s3")]);
         let result = resolve_url_alias("custom://my-bucket/some/deep/path?query=1", &config);
         assert_eq!(result.as_ref(), "s3://my-bucket/some/deep/path?query=1");
+    }
+}
+
+#[cfg(test)]
+mod opendal_config_tests {
+    use std::collections::BTreeMap;
+
+    use super::*;
+
+    #[test]
+    fn test_hdfs_opendal_config_uses_uri_authority_as_name_node() {
+        let config = IOConfig::default();
+
+        let result = opendal_backend_config(
+            "hdfs",
+            "hdfs://namenode.example.com:8020/user/warehouse/data.parquet",
+            &config,
+        )
+        .unwrap();
+
+        assert_eq!(
+            result.get("name_node"),
+            Some(&"hdfs://namenode.example.com:8020".to_string())
+        );
+    }
+
+    #[test]
+    fn test_hdfs_opendal_config_allows_ioconfig_override() {
+        let mut hdfs_config = BTreeMap::new();
+        hdfs_config.insert("name_node".to_string(), "default".to_string());
+        hdfs_config.insert("root".to_string(), "/warehouse".to_string());
+
+        let mut opendal_backends = BTreeMap::new();
+        opendal_backends.insert("hdfs".to_string(), hdfs_config);
+
+        let config = IOConfig {
+            opendal_backends,
+            ..Default::default()
+        };
+
+        let result = opendal_backend_config(
+            "hdfs",
+            "hdfs://namenode.example.com:8020/user/warehouse/data.parquet",
+            &config,
+        )
+        .unwrap();
+
+        assert_eq!(result.get("name_node"), Some(&"default".to_string()));
+        assert_eq!(result.get("root"), Some(&"/warehouse".to_string()));
     }
 }

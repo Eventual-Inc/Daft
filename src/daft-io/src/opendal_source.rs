@@ -24,7 +24,7 @@ impl OpenDALSource {
     /// List the OpenDAL service schemes that are compiled into this build.
     fn available_schemes() -> &'static [&'static str] {
         &[
-            "oss", "cos", "obs", "tos", "goosefs", "memory", "fs", "github",
+            "oss", "cos", "obs", "tos", "goosefs", "hdfs", "memory", "fs", "github",
         ]
     }
 
@@ -36,8 +36,13 @@ impl OpenDALSource {
         // OperatorRegistry. This is a no-op after the first call.
         opendal::init_default_registry();
 
+        let opendal_scheme = match scheme {
+            "hdfs" => "hdfs-native",
+            _ => scheme,
+        };
+
         let operator =
-            Operator::via_iter(scheme, config.clone()).map_err(|e: opendal::Error| {
+            Operator::via_iter(opendal_scheme, config.clone()).map_err(|e: opendal::Error| {
                 super::Error::UnableToCreateClient {
                     store: super::SourceType::OpenDAL {
                         scheme: scheme.to_string(),
@@ -485,5 +490,17 @@ mod tests {
             url_to_opendal_path("memory://test/hello.txt").unwrap(),
             "hello.txt"
         );
+    }
+
+    #[tokio::test]
+    async fn test_opendal_hdfs_scheme_uses_configured_backend() {
+        let config = BTreeMap::from([(
+            "name_node".to_string(),
+            "hdfs://namenode.example.com:8020".to_string(),
+        )]);
+
+        OpenDALSource::get_client("hdfs", &config)
+            .await
+            .expect("Failed to create hdfs client");
     }
 }
