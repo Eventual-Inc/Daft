@@ -33,7 +33,7 @@ pub fn parse_object_url(uri: &str) -> super::Result<ObjectPath> {
         }),
     }?;
 
-    // Use raw `uri` for object key: URI special character escaping might mangle key
+    // Use raw `uri` for object key: URI special character escaping might mangle key.
     let bucket_scheme_prefix_len = parsed[..Position::AfterHost].len();
     let key = uri[bucket_scheme_prefix_len..].trim_start_matches(GLOB_DELIMITER);
 

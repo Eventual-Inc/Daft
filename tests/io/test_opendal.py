@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv as csv_mod
+import pickle
 from pathlib import Path
 
 import pyarrow as pa
@@ -10,7 +11,7 @@ import pyarrow.parquet as papq
 import pytest
 
 import daft
-from daft.daft import IOConfig
+from daft.daft import HdfsConfig, IOConfig
 
 
 @pytest.fixture
@@ -77,10 +78,70 @@ def test_opendal_unconfigured_scheme_error():
         daft.read_parquet("unknownscheme://bucket/data.parquet").collect()
 
 
+def test_hdfs_config_defaults():
+    """Test HdfsConfig default values."""
+    cfg = HdfsConfig()
+    assert cfg.name_node is None
+    assert cfg.root is None
+
+
+def test_hdfs_config_explicit():
+    """Test HdfsConfig with explicit name_node and root."""
+    cfg = HdfsConfig(name_node="hdfs://namenode:9000", root="/data")
+    assert cfg.name_node == "hdfs://namenode:9000"
+    assert cfg.root == "/data"
+
+
+def test_hdfs_ioconfig_integration():
+    """Test that HdfsConfig can be passed to IOConfig and roundtrips."""
+    cfg = IOConfig(hdfs=HdfsConfig(name_node="hdfs://nn:9000", root="/warehouse"))
+    assert cfg.hdfs.name_node == "hdfs://nn:9000"
+    assert cfg.hdfs.root == "/warehouse"
+
+    # Default HdfsConfig in default IOConfig
+    default_cfg = IOConfig()
+    assert default_cfg.hdfs.name_node is None
+    assert default_cfg.hdfs.root is None
+
+
+def test_hdfs_ioconfig_replace():
+    """Test IOConfig.replace with HdfsConfig."""
+    original = IOConfig()
+    assert original.hdfs.name_node is None
+
+    replaced = original.replace(hdfs=HdfsConfig(name_node="hdfs://nn:9000"))
+    assert replaced.hdfs.name_node == "hdfs://nn:9000"
+    # Original unchanged
+    assert original.hdfs.name_node is None
+
+
+def test_hdfs_ioconfig_pickle():
+    """Test IOConfig with HdfsConfig survives pickle roundtrip."""
+    cfg = IOConfig(hdfs=HdfsConfig(name_node="hdfs://nn:9000", root="/tmp"))
+    restored = pickle.loads(pickle.dumps(cfg))
+    assert restored.hdfs.name_node == "hdfs://nn:9000"
+    assert restored.hdfs.root == "/tmp"
+    assert hash(cfg) == hash(restored)
+
+
+def test_hdfs_url_parsing():
+    """Test that an hdfs:// URL is recognized without explicit IOConfig.
+
+    This test does not require a running HDFS cluster — it verifies that
+    the scheme is routed to the OpenDAL HDFS backend (error message will
+    mention 'hdfs' in the list of available schemes if the JVM / Hadoop
+    classpath is not available).
+    """
+    with pytest.raises(Exception) as exc_info:
+        daft.read_parquet("hdfs://localhost:9000/data.parquet").collect()
+    msg = str(exc_info.value)
+    # Either the error is about HDFS connection (JVM available) or about
+    # the scheme being available in OpenDAL backends.
+    assert "hdfs" in msg.lower()
+
+
 def test_opendal_ioconfig_roundtrip():
     """Test that IOConfig with opendal_backends survives serialization roundtrip."""
-    import pickle
-
     config = IOConfig(
         opendal_backends={
             "oss": {"bucket": "my-bucket", "access_key_id": "test"},

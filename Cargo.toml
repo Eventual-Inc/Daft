@@ -110,6 +110,7 @@ python = [
   "daft-recordbatch/python",
   "daft-writers/python"
 ]
+hdfs = ["daft-io/hdfs"]
 
 [lib]
 crate-type = ["cdylib"]
