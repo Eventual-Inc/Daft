@@ -241,6 +241,15 @@ root = "daft_dashboard"
 
 [tool.pytest.ini_options]
 addopts = "-m 'not (integration or benchmark or hypothesis)'"
+# GIL-proof watchdog kept as a safety net. A native deadlock that never releases
+# the GIL (e.g. a #[pymethods] / SQL-planning call blocking on async I/O without
+# py.detach — cf. issue #7256, and the ignore_corrupt_files GIL↔pyo3-log deadlock
+# fixed in this branch) would otherwise consume the full CI job budget silently:
+# pytest-timeout's thread method needs the GIL to print, so it never fires on such
+# hangs. faulthandler_timeout arms faulthandler.dump_traceback_later(), a C-level
+# watchdog that dumps every thread's stack WITHOUT the GIL, naming the stuck frame.
+# 300s is ~10x the slowest legit test; a stray dump on a healthy test is harmless.
+faulthandler_timeout = 300
 minversion = "6.0"
 testpaths = [
   "tests"
