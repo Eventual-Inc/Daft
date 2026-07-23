@@ -482,6 +482,93 @@ def simhash(
     return Expression._call_builtin_scalar_fn("simhash", text, ngram_size=ngram_size, hash_function=hash_function)
 
 
+def md5(expr: Expression) -> Expression:
+    """Computes the MD5 hash of the input expression and returns the result as a hex string.
+
+    Args:
+        expr (String or Binary Expression): The expression to hash.
+
+    Returns:
+        Expression (String Expression): A 32-character hex string representing the MD5 hash.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import md5
+        >>> df = daft.from_pydict({"data": ["hello", "world", None]})
+        >>> df = df.select(md5(df["data"]))
+        >>> df.show()  # doctest: +SKIP
+    """
+    expr = Expression._to_expression(expr)
+    return Expression._call_builtin_scalar_fn("md5", expr)
+
+
+def sha1_hex(expr: Expression) -> Expression:
+    """Computes the SHA-1 hash of the input expression and returns the result as a hex string.
+
+    Args:
+        expr (String or Binary Expression): The expression to hash.
+
+    Returns:
+        Expression (String Expression): A 40-character hex string representing the SHA-1 hash.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import sha1_hex
+        >>> df = daft.from_pydict({"data": ["hello", "world", None]})
+        >>> df = df.select(sha1_hex(df["data"]))
+        >>> df.show()  # doctest: +SKIP
+    """
+    expr = Expression._to_expression(expr)
+    return Expression._call_builtin_scalar_fn("sha1", expr)
+
+
+def sha2_hex(expr: Expression, bit_length: int = 256) -> Expression:
+    """Computes the SHA-2 hash of the input expression and returns the result as a hex string.
+
+    Args:
+        expr (String or Binary Expression): The expression to hash.
+        bit_length (int): The bit length of the hash. Must be one of 0, 224, 256, 384, or 512.
+            0 is equivalent to 256. Defaults to 256.
+
+    Returns:
+        Expression (String Expression): A hex string representing the SHA-2 hash.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import sha2_hex
+        >>> df = daft.from_pydict({"data": ["hello", "world", None]})
+        >>> df = df.select(sha2_hex(df["data"], 256))
+        >>> df.show()  # doctest: +SKIP
+    """
+    expr = Expression._to_expression(expr)
+    return Expression._call_builtin_scalar_fn("sha2", expr, bit_length=bit_length)
+
+
+# TODO: Spark-compatible xxhash64 conflicts with hash(..., hash_function="xxhash64")
+# (Int64 vs UInt64, null/byte semantics). Defer to a separate Spark compatibility
+# extension / function set.
+
+
+def crc32(expr: Expression) -> Expression:
+    """Computes the CRC32 checksum of the input expression and returns the result as an Int64.
+
+    Args:
+        expr (String or Binary Expression): The expression to compute CRC32 for.
+
+    Returns:
+        Expression (Int64 Expression): The CRC32 checksum value.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import crc32
+        >>> df = daft.from_pydict({"data": ["hello", "world", None]})
+        >>> df = df.select(crc32(df["data"]))
+        >>> df.show()  # doctest: +SKIP
+    """
+    expr = Expression._to_expression(expr)
+    return Expression._call_builtin_scalar_fn("crc32", expr)
+
+
 def length(expr: Expression) -> Expression:
     """Retrieves the length of the given expression.
 
