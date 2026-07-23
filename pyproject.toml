@@ -55,7 +55,7 @@ ray = [
 ]
 transformers = ["transformers<5.10.0", "sentence-transformers<5.6.0", "torch<2.13.0", "torchvision<0.28.0", "pillow==12.2.0"]
 # connectorx 0.4.4 is needed for pgvector support.
-sql = ["connectorx>=0.4.4,<0.5.0", "sqlalchemy<2.1.0", "sqlglot<30.9.0"]
+sql = ["connectorx>=0.4.4,<0.5.0", "pymysql>=1.0.0", "sqlalchemy<2.1.0", "sqlglot<30.9.0"]
 turbopuffer = ["turbopuffer<2.2.0"]
 unity = ["httpx<=0.28.1", "unitycatalog<0.2.0", "deltalake>=1.5.0,<1.7.0"]
 video = ["av >= 15.0.0,< 17.1.0", "pillow==12.2.0"]
