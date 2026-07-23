@@ -74,3 +74,6 @@ CLAUDE.local.md
 .claude/**/*.md
 .claude/worktrees/
 .beads
+.venv312/
+daft/daft.pdb
+daft/daft.pyd

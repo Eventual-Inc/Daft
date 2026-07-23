@@ -62,6 +62,27 @@ def round(expr: Expression, decimals: Expression | int = 0) -> Expression:
     return Expression._call_builtin_scalar_fn("round", expr, decimals)
 
 
+def rint(expr: Expression) -> Expression:
+    """Rounds a number to the nearest integer, returning a float.
+
+    Ties round to the nearest even integer (banker's rounding).
+    For example, rint(2.5) == 2.0 and rint(3.5) == 4.0.
+    """
+    return Expression._call_builtin_scalar_fn("rint", expr)
+
+
+def bround(expr: Expression, decimals: Expression | int = 0) -> Expression:
+    """Rounds a number to a specified number of decimal places using banker's rounding (round half to even).
+
+    For example, bround(2.5) == 2.0 and bround(3.5) == 4.0.
+
+    Args:
+        expr: The expression to round
+        decimals: number of decimal places to round to. Defaults to 0.
+    """
+    return Expression._call_builtin_scalar_fn("bround", expr, decimals)
+
+
 def sqrt(expr: Expression) -> Expression:
     """The square root of a numeric expression."""
     return Expression._call_builtin_scalar_fn("sqrt", expr)
@@ -178,7 +199,7 @@ def log10(expr: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("log10", expr)
 
 
-def log(expr: Expression, base: int | float = math.e) -> Expression:
+def log(expr: Expression, base: float = math.e) -> Expression:
     """The elementwise log with given base, of a numeric expression.
 
     Args:
@@ -243,7 +264,7 @@ def expm1(expr: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("expm1", expr)
 
 
-def between(expr: Expression, lower: Expression | int | float, upper: Expression | int | float) -> Expression:
+def between(expr: Expression, lower: Expression | float, upper: Expression | float) -> Expression:
     """Checks if values in the Expression are between lower and upper, inclusive.
 
     Args:
