@@ -184,7 +184,7 @@ class SQLConnection:
             fallback_conn = self._sa_ready_url()
             try:
                 return self._execute_sql_query_with_sqlalchemy(sql, _conn=fallback_conn)
-            except Exception as sqlalchemy_error:  # noqa: BLE001
+            except Exception as sqlalchemy_error:
                 # Sanitize exception messages: strip the connection URL to
                 # prevent credential leakage (secrets can appear anywhere in a
                 # URL – userinfo, query params, driver extras).  We still expose
