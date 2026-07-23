@@ -62,7 +62,7 @@ def read_sql(
             You can define `num_partitions` or leave it to Daft to decide.
             Daft uses the `partition_bound_strategy` parameter to determine the partitioning strategy:
             - `min_max`: Daft calculates the minimum and maximum values of the specified column, then partitions the query using equal ranges between the minimum and maximum values.
-            - `percentile`: Daft calculates the specified column's percentiles via a `PERCENTILE_DISC` function to determine partitions (e.g., for `num_partitions=3`, it uses the 33rd and 66th percentiles).
+            - `percentile`: Daft calculates the specified column's percentiles to determine partitions (e.g., for `num_partitions=3`, it uses the 33rd and 66th percentiles). Uses `PERCENTILE_DISC` (standard SQL); for ClickHouse, uses `quantileExact` instead.
 
         3. **Execution**:
             Daft executes SQL queries using using [ConnectorX](https://sfu-db.github.io/connector-x/intro.html) or [SQLAlchemy](https://docs.sqlalchemy.org/en/20/orm/quickstart.html#create-an-engine),
