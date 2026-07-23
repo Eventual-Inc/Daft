@@ -1,8 +1,11 @@
 use common_file_formats::FileFormat;
+use common_treenode::{TreeNode, TreeNodeRecursion};
+use daft_dsl::{Expr, ExprRef};
 use serde::Serialize;
 
 use crate::{
     LogicalPlan,
+    logical_plan::downcast_subquery,
     ops::{Sink, Source},
     sink_info::SinkInfo,
     source_info::SourceInfo,
@@ -127,10 +130,73 @@ impl LogicalPlan {
                     lineage.outputs.push(output);
                 }
             }
+            // Subqueries embedded in expressions aren't returned by `children()`,
+            // so recurse into their plans explicitly to capture their sources.
+            Self::Filter(filter) => collect_subquery_lineage(&filter.predicate, lineage),
+            Self::Project(project) => {
+                for expr in &project.projection {
+                    collect_subquery_lineage(expr, lineage);
+                }
+            }
             _ => {}
         }
         for child in self.children() {
             child.collect_lineage(lineage);
         }
+    }
+}
+
+/// Recurse into subquery plans embedded in an expression — scalar, `IN`, and
+/// `EXISTS` subqueries — which aren't reachable through [`LogicalPlan::children`].
+fn collect_subquery_lineage(expr: &ExprRef, lineage: &mut Lineage) {
+    let _ = expr.apply(|e| {
+        if let Expr::Subquery(subquery) | Expr::Exists(subquery) | Expr::InSubquery(_, subquery) =
+            e.as_ref()
+        {
+            downcast_subquery(subquery).collect_lineage(lineage);
+        }
+        Ok(TreeNodeRecursion::Continue)
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use common_error::DaftResult;
+    use daft_dsl::{Expr, Subquery};
+
+    use super::LineageInput;
+    use crate::{LogicalPlan, builder::LogicalPlanBuilder, ops::Filter};
+
+    #[test]
+    fn test_lineage_includes_subquery_sources() -> DaftResult<()> {
+        // Outer source, reachable through `children()`.
+        let outer =
+            LogicalPlanBuilder::from_glob_scan(vec!["/data/a/*.parquet".to_string()], None)?
+                .build();
+
+        // A source that only appears inside an EXISTS subquery, so it's reachable
+        // through the predicate expression rather than `children()`.
+        let sub = LogicalPlanBuilder::from_glob_scan(vec!["/data/b/*.parquet".to_string()], None)?
+            .build();
+        let predicate = Arc::new(Expr::Exists(Subquery { plan: sub }));
+
+        let plan = LogicalPlan::Filter(Filter::try_new(outer, predicate)?).arced();
+        let lineage = plan.lineage();
+
+        let globs: Vec<Vec<String>> = lineage
+            .inputs
+            .iter()
+            .filter_map(|input| match input {
+                LineageInput::GlobScan { glob_paths } => Some(glob_paths.clone()),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(globs.len(), 2);
+        assert!(globs.contains(&vec!["/data/a/*.parquet".to_string()]));
+        assert!(globs.contains(&vec!["/data/b/*.parquet".to_string()]));
+        Ok(())
     }
 }
