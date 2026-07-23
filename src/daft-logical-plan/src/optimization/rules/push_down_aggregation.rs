@@ -62,7 +62,8 @@ impl OptimizerRule for PushDownAggregation {
                                     };
                                     let can_pushdown = scan_op.supports_count_pushdown()
                                         && is_count_mode_supported(count_mode)
-                                        && is_remaining_filters;
+                                        && is_remaining_filters
+                                        && external_info.pushdowns.limit.is_none();
 
                                     if can_pushdown {
                                         // Create new pushdown info with count aggregation
@@ -369,6 +370,22 @@ mod tests {
                 RuleExecutionStrategy::Once,
             )],
         )?;
+        Ok(())
+    }
+
+    #[test]
+    fn agg_count_all_with_limit_should_not_pushdown() -> DaftResult<()> {
+        // A limit is global; the count shortcut counts each scan task's row groups
+        // independently, so count pushdown must not happen under a limit.
+        let scan_op =
+            dummy_scan_operator_for_aggregation(vec![Field::new("a", DataType::UInt64)], true);
+        let plan =
+            dummy_scan_node_with_pushdowns(scan_op, Pushdowns::default().with_limit(Some(10)))
+                .aggregate(vec![unresolved_col("a").count(CountMode::All)], vec![])?
+                .build();
+
+        let expected = plan.clone();
+        assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 

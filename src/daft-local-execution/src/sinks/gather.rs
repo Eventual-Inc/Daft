@@ -5,19 +5,24 @@ use common_metrics::ops::NodeType;
 use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartition;
 use daft_partition_refs::FlightPartitionRef;
-use daft_shuffles::{
-    server::flight_server::ShuffleFlightServer,
-    shuffle_cache::{InProgressShuffleCache, partition_ref_id},
-};
+use daft_shuffles::shuffle_cache::{InProgressShuffleCache, partition_ref_id};
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkOutput, BlockingSinkSinkResult,
+use super::{
+    blocking_sink::{
+        BlockingSink, BlockingSinkFinalizeResult, BlockingSinkOutput, BlockingSinkSinkResult,
+    },
+    shuffle_backend::{FlightShuffleContext, LocalShuffleBackend},
 };
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{InputId, NodeName},
 };
+
+// Each input MP gets its own cache (unlike repartition, which keeps N open caches per
+// input and divides a global budget by `num_partitions`). Matches the upper end of
+// `RepartitionSink`'s per-partition clamp so the two sinks spill at similar sizes.
+const TARGET_IN_MEMORY_SIZE_BYTES: usize = 1024 * 1024 * 128;
 
 pub(crate) struct RayGatherState {
     partitions: Vec<MicroPartition>,
@@ -29,19 +34,9 @@ impl RayGatherState {
     }
 }
 
-/// Shared config for all Flight gather states produced by a single GatherSink.
-struct FlightShared {
-    shuffle_id: u64,
-    shuffle_dirs: Vec<String>,
-    compression: Option<String>,
-    local_server: Arc<ShuffleFlightServer>,
-    shuffle_address: String,
-    target_in_memory_size_per_partition: usize,
-    schema: SchemaRef,
-}
-
 pub(crate) struct FlightGatherState {
-    shared: Arc<FlightShared>,
+    shared: Arc<FlightShuffleContext>,
+    schema: SchemaRef,
     input_id: InputId,
     refs: Vec<FlightPartitionRef>,
 }
@@ -52,10 +47,10 @@ impl FlightGatherState {
         let partition_ref_id = partition_ref_id(self.input_id, self.refs.len());
         let cache = InProgressShuffleCache::try_new(
             partition_ref_id,
-            shared.schema.clone(),
+            self.schema.clone(),
             &shared.shuffle_dirs,
             shared.shuffle_id,
-            shared.target_in_memory_size_per_partition,
+            TARGET_IN_MEMORY_SIZE_BYTES,
             shared.compression.as_deref(),
         )?;
         cache.push_partition_data(input).await?;
@@ -96,79 +91,37 @@ impl GatherState {
     }
 }
 
-// TODO: unify shuffle backends in all local operations
-#[derive(Clone)]
-enum GatherBackend {
-    Ray,
-    Flight(Arc<FlightShared>),
-}
-
-impl GatherBackend {
-    fn name(&self) -> &'static str {
-        match self {
-            Self::Ray => "Ray",
-            Self::Flight(_) => "Flight",
-        }
-    }
-
-    fn collect_output(&self, states: Vec<GatherState>) -> BlockingSinkOutput {
-        match self {
-            Self::Ray => BlockingSinkOutput::Partitions(
-                states
-                    .into_iter()
-                    .flat_map(|s| match s {
-                        GatherState::Ray(s) => s.partitions,
-                        GatherState::Flight(_) => unreachable!("GatherSink state/backend mismatch"),
-                    })
-                    .collect(),
-            ),
-            Self::Flight(_) => BlockingSinkOutput::FlightPartitionRefs(
-                states
-                    .into_iter()
-                    .flat_map(|s| match s {
-                        GatherState::Flight(s) => s.refs,
-                        GatherState::Ray(_) => unreachable!("GatherSink state/backend mismatch"),
-                    })
-                    .collect(),
-            ),
-        }
+fn collect_output(backend: &LocalShuffleBackend, states: Vec<GatherState>) -> BlockingSinkOutput {
+    match backend {
+        LocalShuffleBackend::Ray => BlockingSinkOutput::Partitions(
+            states
+                .into_iter()
+                .flat_map(|s| match s {
+                    GatherState::Ray(s) => s.partitions,
+                    GatherState::Flight(_) => unreachable!("GatherSink state/backend mismatch"),
+                })
+                .collect(),
+        ),
+        LocalShuffleBackend::Flight(_) => BlockingSinkOutput::FlightPartitionRefs(
+            states
+                .into_iter()
+                .flat_map(|s| match s {
+                    GatherState::Flight(s) => s.refs,
+                    GatherState::Ray(_) => unreachable!("GatherSink state/backend mismatch"),
+                })
+                .collect(),
+        ),
     }
 }
 
 pub struct GatherSink {
-    backend: GatherBackend,
+    schema: SchemaRef,
+    backend: LocalShuffleBackend,
 }
 
 impl GatherSink {
-    pub fn new_ray() -> Self {
-        Self {
-            backend: GatherBackend::Ray,
-        }
-    }
-
-    pub fn try_new_flight(
-        schema: SchemaRef,
-        shuffle_id: u64,
-        shuffle_dirs: Vec<String>,
-        compression: Option<String>,
-        local_server: Arc<ShuffleFlightServer>,
-        shuffle_address: String,
-    ) -> DaftResult<Self> {
-        // Each input MP gets its own cache (unlike repartition, which keeps N open caches per
-        // input and divides a global budget by `num_partitions`). Matches the upper end of
-        // `RepartitionSink`'s per-partition clamp so the two sinks spill at similar sizes.
-        const TARGET_IN_MEMORY_SIZE_BYTES: usize = 1024 * 1024 * 128;
-        Ok(Self {
-            backend: GatherBackend::Flight(Arc::new(FlightShared {
-                shuffle_id,
-                shuffle_dirs,
-                compression,
-                local_server,
-                shuffle_address,
-                target_in_memory_size_per_partition: TARGET_IN_MEMORY_SIZE_BYTES,
-                schema,
-            })),
-        })
+    pub fn new(schema: SchemaRef, backend: LocalShuffleBackend) -> Self {
+        Self { schema, backend }
     }
 }
 
@@ -203,7 +156,7 @@ impl BlockingSink for GatherSink {
         let backend = self.backend.clone();
         spawner
             .spawn(
-                async move { Ok(backend.collect_output(states)) },
+                async move { Ok(collect_output(&backend, states)) },
                 Span::current(),
             )
             .into()
@@ -223,11 +176,12 @@ impl BlockingSink for GatherSink {
 
     fn make_state(&self, input_id: InputId) -> DaftResult<Self::State> {
         match &self.backend {
-            GatherBackend::Ray => Ok(GatherState::Ray(RayGatherState {
+            LocalShuffleBackend::Ray => Ok(GatherState::Ray(RayGatherState {
                 partitions: Vec::new(),
             })),
-            GatherBackend::Flight(shared) => Ok(GatherState::Flight(FlightGatherState {
+            LocalShuffleBackend::Flight(shared) => Ok(GatherState::Flight(FlightGatherState {
                 shared: shared.clone(),
+                schema: self.schema.clone(),
                 input_id,
                 refs: Vec::new(),
             })),

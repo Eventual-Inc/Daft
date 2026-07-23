@@ -102,9 +102,15 @@ class OpenAIPrompter(Prompter):
         )
         self.llm = AsyncOpenAI(**merged_provider_options)
 
-        # Remaining options become generation config
+        # Remaining non-provider and non-UDF options become generation config.
+        # UDF options are consumed by the descriptor and must not be forwarded
+        # to the OpenAI request methods.
+        non_generation_keys = {
+            *OpenAIProviderOptions.__annotations__,
+            *UDFOptions.__annotations__,
+        }
         self.generation_config = {
-            k: v for k, v in prompt_options_dict.items() if k not in OpenAIProviderOptions.__annotations__.keys()
+            key: value for key, value in prompt_options_dict.items() if key not in non_generation_keys
         }
 
     IMAGE_EXTENSIONS = frozenset(

@@ -59,6 +59,7 @@ md5 = "0.8.0"
 tempfile = "3.23.0"
 
 [features]
+hdfs = ["opendal/services-hdfs"]
 python = [
   "dep:pyo3",
   "common-error/python",

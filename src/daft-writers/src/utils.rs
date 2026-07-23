@@ -30,6 +30,25 @@ pub(crate) fn build_filename(
     }
 }
 
+/// Helper function to build the filename for the output file, treating `path` as the
+/// exact target file path (no partition dir, no UUID).
+pub(crate) fn build_filename_single(source_type: &SourceType, path: &str) -> DaftResult<PathBuf> {
+    match source_type {
+        SourceType::File => {
+            let stripped = daft_io::strip_file_uri_to_path(path).unwrap_or(path);
+            Ok(PathBuf::from(stripped))
+        }
+        source if source.supports_native_writer() => {
+            let ObjectPath { bucket, key, .. } = daft_io::utils::parse_object_url(path)?;
+            Ok(PathBuf::from(format!("{}/{}", bucket, key)))
+        }
+        _ => Err(DaftError::ValueError(format!(
+            "Unsupported source type: {:?}",
+            source_type
+        ))),
+    }
+}
+
 /// Helper function to get the partition path from the record batch.
 fn get_partition_path(partition_values: Option<&RecordBatch>) -> DaftResult<PathBuf> {
     match partition_values {

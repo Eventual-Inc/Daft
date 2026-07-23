@@ -6,7 +6,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AzureConfig, CosConfig, GCSConfig, GooseFSConfig, HTTPConfig, S3Config,
+    AzureConfig, CosConfig, GCSConfig, GooseFSConfig, HTTPConfig, HdfsConfig, S3Config,
     gravitino::GravitinoConfig, huggingface::HuggingFaceConfig, tos::TosConfig, unity::UnityConfig,
 };
 #[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -23,6 +23,7 @@ pub struct IOConfig {
     pub tos: TosConfig,
     pub cos: CosConfig,
     pub goosefs: GooseFSConfig,
+    pub hdfs: HdfsConfig,
     /// Additional backends configured via OpenDAL.
     /// Keys are scheme names (e.g. "oss", "cos"), values are key-value config maps.
     pub opendal_backends: BTreeMap<String, BTreeMap<String, String>>,
@@ -86,6 +87,10 @@ impl IOConfig {
                 goosefs_lines.join(", ")
             ));
         }
+        let hdfs_lines = self.hdfs.multiline_display();
+        if !hdfs_lines.is_empty() {
+            res.push(format!("HDFS config = {{ {} }}", hdfs_lines.join(", ")));
+        }
         if !self.opendal_backends.is_empty() {
             res.push(format!("OpenDAL backends = {:?}", self.opendal_backends));
         }
@@ -99,7 +104,7 @@ impl IOConfig {
     pub fn validate_protocol_aliases(&self) -> std::result::Result<(), String> {
         const BUILTIN_SCHEMES: &[&str] = &[
             "file", "http", "https", "s3", "s3a", "s3n", "az", "abfs", "abfss", "gcs", "gs", "hf",
-            "tos", "cos", "cosn", "goosefs", "vol+dbfs", "dbfs", "gvfs",
+            "tos", "cos", "cosn", "goosefs", "hdfs", "vol+dbfs", "dbfs", "gvfs",
         ];
         for key in self.protocol_aliases.keys() {
             if BUILTIN_SCHEMES.contains(&key.as_str()) {
@@ -127,6 +132,7 @@ impl Display for IOConfig {
 {}
 {}
 {}
+{}
 {}",
             self.s3,
             self.azure,
@@ -134,6 +140,7 @@ impl Display for IOConfig {
             self.tos,
             self.cos,
             self.goosefs,
+            self.hdfs,
             self.http,
             self.unity,
             self.gravitino,

@@ -7,6 +7,7 @@ mod cos;
 mod gcs;
 mod goosefs;
 mod gravitino;
+mod hdfs;
 mod http;
 mod huggingface;
 mod s3;
@@ -28,6 +29,7 @@ pub use crate::{
     gcs::GCSConfig,
     goosefs::GooseFSConfig,
     gravitino::GravitinoConfig,
+    hdfs::HdfsConfig,
     http::HTTPConfig,
     huggingface::HuggingFaceConfig,
     s3::{S3Config, S3Credentials},

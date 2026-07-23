@@ -156,14 +156,14 @@ class _VideoFramesSourceTask(DataSourceTask):
             # Small tolerance for floating point comparisons
             epsilon: float = 1e-9 if sample_interval is None else max(1e-9, sample_interval * 1e-6)
 
+            frame_iter = container.decode(stream)
+
             frame_index: int = 0
             frame: VideoFrame
             while True:
                 try:
-                    frame = next(container.decode(stream))
-                except av.EOFError:
-                    break
-                except StopIteration:
+                    frame = next(frame_iter)
+                except (av.EOFError, StopIteration):
                     break
 
                 frame_time = frame.time

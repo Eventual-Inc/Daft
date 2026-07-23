@@ -41,6 +41,7 @@
             * [Azure Blob Store](connectors/azure.md)
             * [Google Cloud Storage](connectors/gcs.md)
             * [COS (Tencent Cloud)](connectors/cos.md)
+            * [GooseFS](connectors/goosefs.md)
         * Table Formats
             * [Apache Hudi](connectors/hudi.md)
             * [Apache Iceberg](connectors/iceberg.md)
@@ -85,6 +86,7 @@
             * [Partitioning and Batching](optimization/partitioning.md)
             * [Shuffle Algorithms](optimization/shuffle.md)
             * [Join Strategies](optimization/join-strategies.md)
+    * [Checkpointing](use-case/checkpointing.md)
     * Observability
         * [Dashboard](observability/dashboard.md)
         * [Progress Indicators](observability/progress-indicators.md)
@@ -99,6 +101,8 @@
         * [Usage Telemetry](telemetry.md)
 * Examples
     * [Examples](examples/index.md)
+    * [Hand Tracking for Physical AI](examples/hand-tracking-physical-ai.md)
+    * [Reward Scoring for Physical AI](examples/reward-scoring-physical-ai.md)
     * [Multimodal Structured Outputs: Evaluating Image Understanding](examples/mm_structured_outputs.md)
     * [Voice AI Analytics with Faster-Whisper and embed_text](examples/voice-ai-analytics.md)
     * [Web Text Deduplication](examples/minhash-dedupe.md)
