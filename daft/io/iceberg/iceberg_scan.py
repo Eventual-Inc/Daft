@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import struct
 import warnings
 from typing import TYPE_CHECKING
 
@@ -11,6 +12,7 @@ from daft.daft import (
     CountMode,
     FileFormatConfig,
     ParquetSourceConfig,
+    PyField,
     PyPartitionField,
     PyPushdowns,
     PyRecordBatch,
@@ -32,6 +34,7 @@ from daft.recordbatch import RecordBatch
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from pyiceberg.manifest import DataFile
     from pyiceberg.partitioning import PartitionField as IcebergPartitionField
     from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
     from pyiceberg.schema import Schema as IcebergSchema
@@ -54,6 +57,78 @@ def _iceberg_count_result_function(total_count: int, field_name: str) -> Iterato
     except Exception as e:
         logger.error("Failed to construct Iceberg count result: %s", e)
         raise
+
+
+def _build_iceberg_scan_task_stats(
+    file: DataFile,
+    iceberg_schema: IcebergSchema,
+    field_id_mapping: dict[int, PyField],
+    top_level_primitive_ids: set[int],
+) -> RecordBatch | None:
+    """Convert Iceberg data file stats to a 2-row Arrow RecordBatch.
+
+    Only processes top-level primitive fields from the Iceberg schema.
+    Nested fields (struct/list/map) are skipped as Iceberg does not
+    standardize boundary statistics for complex types.
+
+    Args:
+        file: PyIceberg DataFile with lower_bounds/upper_bounds.
+        iceberg_schema: PyIceberg schema for field lookup.
+        field_id_mapping: Mapping from field_id to Daft PyField.
+        top_level_primitive_ids: Set of top-level primitive field_ids.
+
+    Returns:
+        2-row RecordBatch (row 0=min, row 1=max) or None if no stats.
+    """
+    from pyiceberg.conversions import from_bytes
+    from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+    lower = file.lower_bounds or {}
+    upper = file.upper_bounds or {}
+
+    if not lower and not upper:
+        return None
+
+    arrays: dict[str, daft.Series] = {}
+    for field_id in lower.keys() | upper.keys():
+        if field_id not in top_level_primitive_ids:
+            continue
+        if field_id not in lower or field_id not in upper:
+            continue  # min/max must be paired
+        if field_id not in field_id_mapping:
+            continue  # schema evolution: field not in current schema
+
+        pyfield = field_id_mapping[field_id]
+        field_name = pyfield.name()
+        iceberg_field = iceberg_schema.find_field(field_id)
+
+        try:
+            min_val = from_bytes(iceberg_field.field_type, lower[field_id])
+            max_val = from_bytes(iceberg_field.field_type, upper[field_id])
+            arrow_type = schema_to_pyarrow(iceberg_field.field_type)
+            arrow_arr = pa.array([min_val, max_val], type=arrow_type)
+            arrays[field_name] = daft.Series.from_arrow(arrow_arr, field_name)
+        except (
+            pa.ArrowInvalid,
+            pa.ArrowTypeError,
+            pa.ArrowNotImplementedError,
+            TypeError,
+            ValueError,
+            NotImplementedError,
+            struct.error,
+        ) as e:
+            logger.debug(
+                "Skipping stats for field_id=%d (%s, type=%s): %s",
+                field_id,
+                field_name,
+                iceberg_field.field_type,
+                e,
+            )
+            continue
+
+    if not arrays:
+        return None
+    return daft.recordbatch.RecordBatch.from_pydict(arrays)
 
 
 def _iceberg_partition_field_to_daft_partition_field(
@@ -98,10 +173,15 @@ class IcebergScanOperator(ScanOperator):
         self._snapshot_id = snapshot_id
         self._storage_config = storage_config
 
-        field_id_mapping = visit(iceberg_schema, SchemaFieldIdMappingVisitor())
+        self._field_id_mapping = visit(iceberg_schema, SchemaFieldIdMappingVisitor())
+        from pyiceberg.types import PrimitiveType as _PrimitiveType
+
+        self._top_level_primitive_ids = {
+            field.field_id for field in iceberg_schema.fields if isinstance(field.field_type, _PrimitiveType)
+        }
         self._file_format_config = FileFormatConfig.from_parquet_config(
             ParquetSourceConfig(
-                field_id_mapping=field_id_mapping,
+                field_id_mapping=self._field_id_mapping,
                 ignore_corrupt_files=ignore_corrupt_files,
             )
         )
@@ -213,8 +293,10 @@ class IcebergScanOperator(ScanOperator):
 
             iceberg_delete_files = [f.file_path for f in task.delete_files]
 
-            # TODO: Thread in Statistics to each ScanTask: P2
             pspec = self._iceberg_record_to_partition_spec(self._iceberg_table.specs()[file.spec_id], file.partition)
+            scan_task_stats = _build_iceberg_scan_task_stats(
+                file, self._iceberg_schema, self._field_id_mapping, self._top_level_primitive_ids
+            )
             st = ScanTask.catalog_scan_task(
                 file=path,
                 file_format=self._file_format_config,
@@ -225,7 +307,7 @@ class IcebergScanOperator(ScanOperator):
                 iceberg_delete_files=iceberg_delete_files,
                 pushdowns=pushdowns,
                 partition_values=pspec._recordbatch if pspec is not None else None,
-                stats=None,
+                stats=scan_task_stats._recordbatch if scan_task_stats is not None else None,
             )
             if st is None:
                 continue
