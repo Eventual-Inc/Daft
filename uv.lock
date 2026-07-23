@@ -1489,6 +1489,7 @@ nvtx = [
 name = "daft"
 source = { editable = "." }
 dependencies = [
+    { name = "cffi" },
     { name = "fsspec" },
     { name = "packaging" },
     { name = "pyarrow" },
@@ -1716,6 +1717,7 @@ docs = [
 requires-dist = [
     { name = "av", marker = "extra == 'video'", specifier = ">=15.0.0,<17.1.0" },
     { name = "boto3", marker = "extra == 'aws'", specifier = "<1.44.0" },
+    { name = "cffi" },
     { name = "clickhouse-connect", marker = "extra == 'clickhouse'", specifier = "<1.1.0" },
     { name = "connectorx", marker = "extra == 'postgres'", specifier = ">=0.4.4,<0.5.0" },
     { name = "connectorx", marker = "extra == 'sql'", specifier = ">=0.4.4,<0.5.0" },
