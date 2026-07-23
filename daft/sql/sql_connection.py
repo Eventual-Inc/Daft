@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
@@ -22,6 +23,22 @@ class SQLConnection:
         self.dialect = dialect
         self.driver = driver
         self.url = url
+        self._engine = None
+        self._engine_lock = threading.Lock()
+
+    def __getstate__(self) -> dict:
+        state = self.__dict__.copy()
+        # SQLAlchemy Engine contains connection pools and thread locks
+        # that are not picklable. The engine will be lazily recreated
+        # via _get_or_create_engine() after deserialization.
+        state["_engine"] = None
+        state["_engine_lock"] = None
+        return state
+
+    def __setstate__(self, state: dict) -> None:
+        self.__dict__.update(state)
+        if self._engine_lock is None:
+            self._engine_lock = threading.Lock()
 
     def __repr__(self) -> str:
         # Deliberately omit the URL: secrets can appear anywhere in a
@@ -45,7 +62,7 @@ class SQLConnection:
         try:
             with conn_factory() as connection:
                 if not isinstance(connection, Connection):
-                    raise ValueError(
+                    raise TypeError(
                         f"Connection factory must return a SQLAlchemy connection object, got: {type(connection)}"
                     )
                 dialect = connection.engine.dialect.name
@@ -126,10 +143,7 @@ class SQLConnection:
             "redshift",
         }
 
-        if isinstance(self.conn, str):
-            if self.dialect in connectorx_supported_dbs and self.driver == "":
-                return True
-        return False
+        return isinstance(self.conn, str) and self.dialect in connectorx_supported_dbs and self.driver == ""
 
     def execute_sql_query(self, sql: str, schema: pa.Schema | None = None) -> pa.Table:
         if schema is None and self._should_use_connectorx():
@@ -153,13 +167,49 @@ class SQLConnection:
             # so the URL is redundant here.
             raise RuntimeError(f"Failed to execute sql: {sql}, error: {e}") from e
 
+    def _get_or_create_engine(self):
+        """Get or create a cached SQLAlchemy engine for string connection URLs."""
+        # Fast path: engine already created (no lock needed for the read).
+        if self._engine is not None:
+            return self._engine
+        # Slow path: serialize creation to avoid duplicate connection pools.
+        with self._engine_lock:
+            # Double-check after acquiring the lock.
+            if self._engine is not None:
+                return self._engine
+            if not isinstance(self.conn, str):
+                return None
+            from sqlalchemy import create_engine
+
+            url = self.conn
+            # Auto-rewrite mysql:// to mysql+pymysql:// when pymysql is available
+            # but mysqlclient is not. This avoids ModuleNotFoundError: No module named 'MySQLdb'
+            if url.startswith("mysql://"):
+                try:
+                    import MySQLdb  # noqa: F401
+                except ImportError:
+                    try:
+                        import pymysql  # noqa: F401
+
+                        url = url.replace("mysql://", "mysql+pymysql://", 1)
+                        logger.info("Rewrote mysql:// to mysql+pymysql:// (MySQLdb not available)")
+                    except ImportError:
+                        logger.warning(
+                            "mysql:// URL detected but neither MySQLdb nor pymysql is installed. "
+                            "Install pymysql to avoid ModuleNotFoundError: No module named 'MySQLdb'."
+                        )
+
+            self._engine = create_engine(url)
+        return self._engine
+
     def _execute_sql_query_with_sqlalchemy(self, sql: str, schema: pa.Schema | None = None) -> pa.Table:
-        from sqlalchemy import create_engine, text
+        from sqlalchemy import text
 
         logger.info("Using sqlalchemy to execute sql: %s", sql)
         try:
             if isinstance(self.conn, str):
-                with create_engine(self.conn).connect() as connection:
+                engine = self._get_or_create_engine()
+                with engine.connect() as connection:
                     result = connection.execute(text(sql))
                     rows = result.fetchall()
             else:
