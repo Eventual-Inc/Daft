@@ -45,7 +45,7 @@ class SQLConnection:
         try:
             with conn_factory() as connection:
                 if not isinstance(connection, Connection):
-                    raise ValueError(
+                    raise TypeError(
                         f"Connection factory must return a SQLAlchemy connection object, got: {type(connection)}"
                     )
                 dialect = connection.engine.dialect.name
@@ -57,10 +57,20 @@ class SQLConnection:
 
     def read_schema(self, sql: str, infer_schema_length: int) -> Schema:
         if self._should_use_connectorx():
-            sql = self.construct_sql_query(sql, limit=0)
+            # ConnectorX can infer column types from LIMIT 0 metadata
+            # without transferring data.
+            schema_sql = self.construct_sql_query(sql, limit=0)
+            table = self.execute_sql_query(schema_sql)
+            # When ConnectorX fails and falls back to SQLAlchemy, LIMIT 0
+            # produces null column types because there is no data to infer
+            # from.  Retry with a proper row count, skipping ConnectorX to
+            # avoid a second COM_STMT_PREPARE failure + warning log.
+            if any(dt == pa.null() for dt in table.schema.types):
+                schema_sql = self.construct_sql_query(sql, limit=infer_schema_length)
+                table = self._execute_sql_query_with_sqlalchemy(schema_sql, _conn=self._sa_ready_url())
         else:
-            sql = self.construct_sql_query(sql, limit=infer_schema_length)
-        table = self.execute_sql_query(sql)
+            schema_sql = self.construct_sql_query(sql, limit=infer_schema_length)
+            table = self.execute_sql_query(schema_sql)
         schema = Schema.from_pyarrow_schema(table.schema)
         return schema
 
@@ -126,16 +136,29 @@ class SQLConnection:
             "redshift",
         }
 
-        if isinstance(self.conn, str):
-            if self.dialect in connectorx_supported_dbs and self.driver == "":
-                return True
-        return False
+        return isinstance(self.conn, str) and self.dialect in connectorx_supported_dbs and self.driver == ""
 
     def execute_sql_query(self, sql: str, schema: pa.Schema | None = None) -> pa.Table:
         if schema is None and self._should_use_connectorx():
             return self._execute_sql_query_with_connectorx(sql)
         else:
             return self._execute_sql_query_with_sqlalchemy(sql, schema=schema)
+
+    def _sa_ready_url(self) -> str:
+        """Return a SQLAlchemy-ready URL string.
+
+        Bare ``mysql://`` URLs default to the mysqldb driver which requires
+        ``mysqlclient`` (not included in Daft's sql extra).  Rewrite them to
+        ``mysql+pymysql://`` so PyMySQL (already a dev dependency and widely
+        available) is used instead.
+
+        Must only be called when ``self.conn`` is a string (i.e., when the
+        ConnectorX path or its fallback is relevant).
+        """
+        assert isinstance(self.conn, str), "_sa_ready_url() requires a string connection"
+        if self.conn.startswith("mysql://"):
+            return self.conn.replace("mysql://", "mysql+pymysql://", 1)
+        return self.conn
 
     def _execute_sql_query_with_connectorx(self, sql: str) -> pa.Table:
         import connectorx as cx
@@ -146,20 +169,51 @@ class SQLConnection:
             table = cx.read_sql(conn=self.conn, query=sql, return_type="arrow")
             return table
         except Exception as e:
-            # The connection URL is deliberately omitted from the error message:
-            # secrets can appear anywhere in it (userinfo, query params,
-            # driver-specific extras), so dropping the URL is the only robust
-            # mitigation. The caller knows which connection they passed in,
-            # so the URL is redundant here.
-            raise RuntimeError(f"Failed to execute sql: {sql}, error: {e}") from e
+            # Fallback to SQLAlchemy only for COM_STMT_PREPARE failures.
+            # MySQL-compatible databases like Doris and StarRocks do not support
+            # the binary prepared-statement protocol that ConnectorX uses.
+            # Connection-level errors (auth, network, DNS) should surface immediately.
+            if "COM_STMT_PREPARE" not in str(e):
+                raise RuntimeError(f"Failed to execute sql: {sql}, error: {type(e).__name__}") from e
+            # COM_STMT_PREPARE failures may include the connection URL
+            # in their error message — sanitize before logging.
+            logger.warning(
+                "ConnectorX COM_STMT_PREPARE failed, falling back to SQLAlchemy: %s",
+                str(e).replace(self.conn, "<redacted>") if isinstance(self.conn, str) else e,
+            )
+            fallback_conn = self._sa_ready_url()
+            try:
+                return self._execute_sql_query_with_sqlalchemy(sql, _conn=fallback_conn)
+            except Exception as sqlalchemy_error:  # noqa: BLE001
+                # Sanitize exception messages: strip the connection URL to
+                # prevent credential leakage (secrets can appear anywhere in a
+                # URL – userinfo, query params, driver extras).  We still expose
+                # the exception type and the sanitised message so callers can
+                # diagnose which backend failed and why.
+                if isinstance(self.conn, str):
+                    cx_msg = str(e).replace(self.conn, "<redacted>")
+                    sa_msg = str(sqlalchemy_error).replace(self.conn, "<redacted>")
+                    # Also sanitize the rewritten URL if it differs.
+                    if fallback_conn != self.conn:
+                        sa_msg = sa_msg.replace(fallback_conn, "<redacted>")
+                else:
+                    cx_msg = str(e)
+                    sa_msg = str(sqlalchemy_error)
+                raise RuntimeError(
+                    f"Failed to execute sql with both ConnectorX ({type(e).__name__}: {cx_msg}) "
+                    f"and SQLAlchemy ({type(sqlalchemy_error).__name__}: {sa_msg})"
+                ) from e
 
-    def _execute_sql_query_with_sqlalchemy(self, sql: str, schema: pa.Schema | None = None) -> pa.Table:
+    def _execute_sql_query_with_sqlalchemy(
+        self, sql: str, schema: pa.Schema | None = None, *, _conn: str | None = None
+    ) -> pa.Table:
         from sqlalchemy import create_engine, text
 
         logger.info("Using sqlalchemy to execute sql: %s", sql)
         try:
-            if isinstance(self.conn, str):
-                with create_engine(self.conn).connect() as connection:
+            if _conn is not None or isinstance(self.conn, str):
+                conn_url = _conn if _conn is not None else self.conn
+                with create_engine(conn_url).connect() as connection:
                     result = connection.execute(text(sql))
                     rows = result.fetchall()
             else:
