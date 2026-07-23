@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 from daft.dependencies import pa
@@ -11,7 +11,7 @@ from daft.logical.schema import Schema
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from sqlalchemy.engine import Connection
+    from sqlalchemy.engine import Connection, Engine
 
 
 logger = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ class SQLConnection:
         self._engine = None
         self._engine_lock = threading.Lock()
 
-    def __getstate__(self) -> dict:
+    def __getstate__(self) -> dict[str, Any]:
         state = self.__dict__.copy()
         # SQLAlchemy Engine contains connection pools and thread locks
         # that are not picklable. The engine will be lazily recreated
@@ -35,7 +35,7 @@ class SQLConnection:
         state["_engine_lock"] = None
         return state
 
-    def __setstate__(self, state: dict) -> None:
+    def __setstate__(self, state: dict[str, Any]) -> None:
         self.__dict__.update(state)
         if self._engine_lock is None:
             self._engine_lock = threading.Lock()
@@ -167,7 +167,7 @@ class SQLConnection:
             # so the URL is redundant here.
             raise RuntimeError(f"Failed to execute sql: {sql}, error: {e}") from e
 
-    def _get_or_create_engine(self):
+    def _get_or_create_engine(self) -> Engine | None:
         """Get or create a cached SQLAlchemy engine for string connection URLs."""
         # Fast path: engine already created (no lock needed for the read).
         if self._engine is not None:
@@ -189,7 +189,7 @@ class SQLConnection:
                     import MySQLdb  # noqa: F401
                 except ImportError:
                     try:
-                        import pymysql  # noqa: F401
+                        import pymysql  # type: ignore[import-untyped]  # noqa: F401
 
                         url = url.replace("mysql://", "mysql+pymysql://", 1)
                         logger.info("Rewrote mysql:// to mysql+pymysql:// (MySQLdb not available)")
@@ -209,6 +209,7 @@ class SQLConnection:
         try:
             if isinstance(self.conn, str):
                 engine = self._get_or_create_engine()
+                assert engine is not None  # guaranteed by isinstance(self.conn, str) guard
                 with engine.connect() as connection:
                     result = connection.execute(text(sql))
                     rows = result.fetchall()
