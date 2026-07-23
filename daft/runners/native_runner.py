@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import platform
 import sys
+import time
 from typing import TYPE_CHECKING
 
 import daft
@@ -88,6 +89,7 @@ class NativeRunner(Runner[MicroPartition]):
         results_buffer_size: int | None = None,
     ) -> Generator[LocalMaterializedResult, None, ExecutionMetadata]:
         track_runner_on_scarf(runner=self.name)
+        profile_started_ns = time.perf_counter_ns()
 
         # NOTE: Freeze and use this same execution config for the entire execution
         ctx = get_context()
@@ -124,7 +126,9 @@ class NativeRunner(Runner[MicroPartition]):
         heartbeat.start()
 
         try:
-            return (yield from self._optimize_and_execute(builder, query_id))
+            metadata = yield from self._optimize_and_execute(builder, query_id)
+            metadata._wall_time_us = (time.perf_counter_ns() - profile_started_ns) / 1_000
+            return metadata
         finally:
             heartbeat.stop()
 

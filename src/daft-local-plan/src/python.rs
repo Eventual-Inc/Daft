@@ -142,6 +142,40 @@ impl PyExecutionStats {
     pub fn skipped_corrupt_files(&self) -> Vec<(String, String, bool)> {
         self.inner.skipped_corrupt_files.clone()
     }
+
+    #[getter]
+    pub fn profile_telemetry(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        use pyo3::types::{PyDict, PyDictMethods};
+
+        let telemetry = &self.inner.profile_telemetry;
+        let result = PyDict::new(py);
+        result.set_item("peak_process_rss_bytes", telemetry.peak_process_rss_bytes)?;
+        result.set_item("spilled_bytes", telemetry.spilled_bytes)?;
+
+        let partitions = PyDict::new(py);
+        for (node_id, stats) in &telemetry.partition_stats {
+            let entry = PyDict::new(py);
+            entry.set_item("count", stats.count)?;
+            entry.set_item("total_rows", stats.total_rows)?;
+            entry.set_item("max_rows", stats.max_rows)?;
+            entry.set_item("total_bytes", stats.total_bytes)?;
+            entry.set_item("max_bytes", stats.max_bytes)?;
+            partitions.set_item(*node_id, entry)?;
+        }
+        result.set_item("partition_stats", partitions)?;
+
+        let pushdowns = PyDict::new(py);
+        for (node_id, stats) in &telemetry.scan_pushdowns {
+            let entry = PyDict::new(py);
+            entry.set_item("filter_requested", stats.filter_requested)?;
+            entry.set_item("filter_applied", stats.filter_applied)?;
+            entry.set_item("projection_requested", stats.projection_requested)?;
+            entry.set_item("projection_applied", stats.projection_applied)?;
+            pushdowns.set_item(*node_id, entry)?;
+        }
+        result.set_item("scan_pushdowns", pushdowns)?;
+        Ok(result.into_any().unbind())
+    }
 }
 
 impl From<ExecutionStats> for PyExecutionStats {

@@ -278,6 +278,15 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                 }
                 BlockingSinkOutput::FlightPartitionRefs(partition_refs) => {
                     for partition_ref in partition_refs {
+                        per_input
+                            .runtime_stats
+                            .add_rows_out(partition_ref.num_rows as u64);
+                        per_input
+                            .runtime_stats
+                            .add_bytes_out(partition_ref.size_bytes as u64);
+                        per_input
+                            .runtime_stats
+                            .add_spilled_bytes(partition_ref.size_bytes as u64);
                         let _ = output_tx
                             .send(PipelineMessage::FlightPartitionRef {
                                 input_id,
