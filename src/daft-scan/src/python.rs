@@ -78,6 +78,7 @@ impl PyDataSourceTask {
         path,
         schema,
         *,
+        parquet_config = None,
         pushdowns = None,
         num_rows = None,
         size_bytes = None,
@@ -88,6 +89,7 @@ impl PyDataSourceTask {
     fn parquet(
         path: String,
         schema: PySchema,
+        parquet_config: Option<ParquetSourceConfig>,
         pushdowns: Option<pylib_scan_info::PyPushdowns>,
         num_rows: Option<i64>,
         size_bytes: Option<u64>,
@@ -133,7 +135,7 @@ impl PyDataSourceTask {
         let scan_task = Arc::new(ScanTask::new(
             vec![source],
             Arc::new(SourceConfig::File(FileFormatConfig::Parquet(
-                ParquetSourceConfig::default(),
+                parquet_config.unwrap_or_default(),
             ))),
             schema.schema,
             storage_config,
