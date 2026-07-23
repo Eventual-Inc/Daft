@@ -414,6 +414,33 @@ class DataFrame:
             )
         return None
 
+    @DataframePublicAPI
+    def profile(self, top_n: int = 5, file: "typing.TextIO | None" = None) -> None:
+        """Print a concise execution profile for a fully materialized DataFrame.
+
+        The profile reports wall time, operator CPU time, source rows and bytes,
+        sampled peak process memory, slowest operators, and actionable warnings.
+        This method does not execute the DataFrame; call :meth:`collect` first.
+
+        Args:
+            top_n: Number of slowest operators to display. Must be at least one.
+            file: Text stream to print to. Defaults to ``sys.stdout``.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3]}).collect()
+            >>> df.profile(top_n=3)  # doctest: +SKIP
+        """
+        if isinstance(top_n, bool):
+            raise TypeError("top_n must be an integer")
+        if top_n < 1:
+            raise ValueError("top_n must be a positive integer")
+        if self._result_cache is None:
+            raise ValueError("Profile is not available until the DataFrame has been fully materialized with collect()")
+        if self._metadata is None:
+            raise ValueError("Profile is not available because execution metadata was not recorded")
+        print(self._metadata._format_profile(top_n=top_n), file=file)
+
     def num_partitions(self) -> int | None:
         """Returns the number of partitions that will be used to execute this DataFrame.
 

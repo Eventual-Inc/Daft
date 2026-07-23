@@ -7,7 +7,10 @@ use std::{
 };
 
 use common_error::DaftResult;
-use common_metrics::{Meter, QueryID, ops::NodeInfo};
+use common_metrics::{
+    BYTES_OUT_KEY, BYTES_READ_KEY, Meter, QueryID, ROWS_OUT_KEY, Stat, ops::NodeInfo,
+    snapshot::StatSnapshotImpl,
+};
 use common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_context::{
     get_context,
@@ -16,7 +19,7 @@ use daft_context::{
         events::{OperatorEndEvent, OperatorMeta, OperatorStartEvent},
     },
 };
-use daft_local_plan::ExecutionStats;
+use daft_local_plan::{ExecutionStats, ProfileTelemetry};
 pub use stats::RuntimeStats;
 
 use crate::{
@@ -130,6 +133,7 @@ pub struct StatisticsManager {
     /// exercise the global event bus.
     query_id: QueryID,
     skipped_corrupt_files: Mutex<Vec<(String, String, bool)>>,
+    profile_telemetry: Mutex<ProfileTelemetry>,
 }
 
 impl StatisticsManager {
@@ -170,6 +174,7 @@ impl StatisticsManager {
             subscribers: Mutex::new(subscribers),
             query_id,
             skipped_corrupt_files: Mutex::new(vec![]),
+            profile_telemetry: Mutex::new(ProfileTelemetry::default()),
         }))
     }
 
@@ -180,6 +185,60 @@ impl StatisticsManager {
             && let Ok(mut v) = self.skipped_corrupt_files.lock()
         {
             v.extend(stats.skipped_corrupt_files.iter().cloned());
+        }
+
+        if let TaskEvent::Completed { ref stats, .. } = event
+            && let Ok(mut telemetry) = self.profile_telemetry.lock()
+        {
+            telemetry.peak_process_rss_bytes = match (
+                telemetry.peak_process_rss_bytes,
+                stats.profile_telemetry.peak_process_rss_bytes,
+            ) {
+                (Some(left), Some(right)) => Some(left.max(right)),
+                (left, right) => left.or(right),
+            };
+            telemetry.spilled_bytes = match (
+                telemetry.spilled_bytes,
+                stats.profile_telemetry.spilled_bytes,
+            ) {
+                (Some(left), Some(right)) => Some(left + right),
+                (left, right) => left.or(right),
+            };
+
+            let mut task_partitions: HashMap<usize, (u64, u64)> = HashMap::new();
+            for (node_info, snapshot) in &stats.nodes {
+                let Some(origin_id) = node_info.node_origin_id else {
+                    continue;
+                };
+                if let Some(pushdown) = stats.profile_telemetry.scan_pushdowns.get(&node_info.id) {
+                    telemetry
+                        .scan_pushdowns
+                        .entry(origin_id)
+                        .and_modify(|current| current.merge(pushdown))
+                        .or_insert_with(|| pushdown.clone());
+                }
+                let values = task_partitions.entry(origin_id).or_default();
+                for (name, stat) in snapshot.to_stats().iter() {
+                    match (name, stat) {
+                        (ROWS_OUT_KEY, Stat::Count(value)) if node_info.is_task_root => {
+                            values.0 += *value
+                        }
+                        (BYTES_OUT_KEY | BYTES_READ_KEY, Stat::Bytes(value))
+                            if node_info.is_task_root || node_info.is_task_leaf =>
+                        {
+                            values.1 = values.1.max(*value)
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            for (node_id, (rows, bytes)) in task_partitions {
+                telemetry
+                    .partition_stats
+                    .entry(node_id)
+                    .or_default()
+                    .record(rows, bytes);
+            }
         }
 
         // First, drive per-node lifecycle (Start/End) events. We do this
@@ -298,6 +357,13 @@ impl StatisticsManager {
             .lock()
             .map(|v| v.clone())
             .unwrap_or_default();
-        ExecutionStats::new("".into(), nodes).with_skipped_corrupt_files(skipped_corrupt_files)
+        let profile_telemetry = self
+            .profile_telemetry
+            .lock()
+            .map(|telemetry| telemetry.clone())
+            .unwrap_or_default();
+        ExecutionStats::new("".into(), nodes)
+            .with_skipped_corrupt_files(skipped_corrupt_files)
+            .with_profile_telemetry(profile_telemetry)
     }
 }

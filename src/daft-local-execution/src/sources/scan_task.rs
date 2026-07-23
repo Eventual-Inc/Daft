@@ -291,6 +291,13 @@ impl Source for ScanTaskSource {
     fn schema(&self) -> &SchemaRef {
         &self.schema
     }
+
+    fn applied_scan_pushdowns(&self) -> Option<(bool, bool)> {
+        Some((
+            self.pushdowns.filters.is_some(),
+            self.pushdowns.columns.is_some(),
+        ))
+    }
 }
 
 impl TreeDisplay for ScanTaskSource {

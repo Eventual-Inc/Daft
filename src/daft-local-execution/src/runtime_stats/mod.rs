@@ -4,13 +4,17 @@ mod values;
 
 use std::{
     collections::{HashMap, HashSet},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
     time::{Duration, Instant},
 };
 
 use common_error::DaftResult;
 use common_metrics::{
-    NodeID, QueryEndState, QueryID, StatSnapshot, ops::NodeInfo, snapshot::StatSnapshotImpl,
+    BYTES_OUT_KEY, BYTES_READ_KEY, NodeID, PROCESS_RSS_KEY, QueryEndState, QueryID, ROWS_OUT_KEY,
+    Stat, StatSnapshot, Stats, ops::NodeInfo, snapshot::StatSnapshotImpl,
 };
 use common_runtime::RuntimeTask;
 use daft_context::{
@@ -25,7 +29,7 @@ use daft_context::{
     },
 };
 use daft_dsl::common_treenode::{TreeNode, TreeNodeRecursion};
-use daft_local_plan::{ExecutionStats, InputId};
+use daft_local_plan::{ExecutionStats, InputId, ProfileTelemetry};
 use progress_bar::{ProgressBar, make_progress_bar_manager};
 use tokio::{
     runtime::Handle,
@@ -89,6 +93,7 @@ pub struct RuntimeStatsManagerHandle {
     // Final per-input snapshots are retained here after the stats manager exits so
     // callers can still retrieve metrics during executor teardown.
     finished_snapshots: Arc<Mutex<Option<HashMap<InputId, ExecutionStats>>>>,
+    peak_process_rss_bytes: Arc<AtomicU64>,
 }
 
 impl RuntimeStatsManagerHandle {
@@ -131,7 +136,9 @@ impl RuntimeStatsManagerHandle {
     /// plans do not retain metrics for completed inputs indefinitely.
     #[allow(dead_code)]
     pub async fn take_input_snapshot(&self, input_id: InputId) -> DaftResult<ExecutionStats> {
-        if let Some(stats) = self.take_finished_snapshot(input_id) {
+        if let Some(mut stats) = self.take_finished_snapshot(input_id) {
+            let peak = self.peak_process_rss_bytes.load(Ordering::Relaxed);
+            stats.profile_telemetry.peak_process_rss_bytes = (peak > 0).then_some(peak);
             return Ok(stats);
         }
 
@@ -151,7 +158,11 @@ impl RuntimeStatsManagerHandle {
             });
         }
         match rx.await {
-            Ok(stats) => Ok(stats),
+            Ok(mut stats) => {
+                let peak = self.peak_process_rss_bytes.load(Ordering::Relaxed);
+                stats.profile_telemetry.peak_process_rss_bytes = (peak > 0).then_some(peak);
+                Ok(stats)
+            }
             Err(_) => {
                 // The manager dropped the responder before answering — typically
                 // because it broke out of its event loop (and stopped reading
@@ -256,7 +267,12 @@ impl RuntimeStatsManager {
                 }
                 let _ = respond_tx.send(
                     ExecutionStats::new(query_id.clone(), result)
-                        .with_query_plan(query_plan.clone()),
+                        .with_query_plan(query_plan.clone())
+                        .with_profile_telemetry(profile_telemetry_for_input(
+                            input_stats,
+                            input_id,
+                            node_info_map,
+                        )),
                 );
             }
         }
@@ -381,14 +397,15 @@ impl RuntimeStatsManager {
         let finished_snapshots = Arc::new(Mutex::new(None));
         let (finish_tx, mut finish_rx) = oneshot::channel::<QueryEndState>();
 
-        let mut process_stats = if enable_process_monitor {
-            let meter = common_metrics::Meter::global_scope("daft-process-monitor");
-            process_stats::ProcessStatsCollector::new(&meter)
-        } else {
-            None
-        };
+        let meter = common_metrics::Meter::global_scope("daft-process-monitor");
+        let mut process_stats = process_stats::ProcessStatsCollector::new(&meter);
+        let peak_process_rss_bytes = Arc::new(AtomicU64::new(0));
+        if let Some(ps) = &mut process_stats {
+            update_peak_process_rss(&peak_process_rss_bytes, &ps.sample());
+        }
 
         let finished_snapshots_for_task = finished_snapshots.clone();
+        let peak_process_rss_for_task = peak_process_rss_bytes.clone();
         let task_events_enabled_now = task_events_enabled();
         // TaskStatsUpdate is emitted on a separate (slower) cadence than the
         // 200ms ProcessStats / Event::Stats tick. Per-task amplification means
@@ -404,6 +421,7 @@ impl RuntimeStatsManager {
             // Reuse container for ticks
             let mut snapshot_container = Vec::with_capacity(node_info_map.len());
             let mut last_task_stats_emit: Option<Instant> = None;
+            let mut last_profile_memory_sample = Instant::now();
 
             loop {
                 tokio::select! {
@@ -423,6 +441,9 @@ impl RuntimeStatsManager {
                     }
 
                     _ = &mut finish_rx => {
+                        if let Some(ps) = &mut process_stats {
+                            update_peak_process_rss(&peak_process_rss_for_task, &ps.sample());
+                        }
                         // Drain any messages queued before the finish signal but not yet
                         // processed. Without this, a `RegisterRuntimeStats` send that
                         // races with `finish_tx.send` can be lost when `select!` picks the
@@ -476,7 +497,12 @@ impl RuntimeStatsManager {
                                 (
                                     input_id,
                                     ExecutionStats::new(query_id.clone(), nodes)
-                                        .with_query_plan(query_plan.clone()),
+                                        .with_query_plan(query_plan.clone())
+                                        .with_profile_telemetry(profile_telemetry_for_input(
+                                            &input_stats,
+                                            input_id,
+                                            &node_info_map,
+                                        )),
                                 )
                             })
                             .collect();
@@ -487,13 +513,20 @@ impl RuntimeStatsManager {
                     }
 
                     _ = interval.tick() => {
-                        if let Some(ps) = &mut process_stats {
+                        if let Some(ps) = &mut process_stats
+                            && (enable_process_monitor
+                                || last_profile_memory_sample.elapsed() >= Duration::from_secs(1))
+                        {
                             let ps_stats = ps.sample();
-                            let event = Event::ProcessStats(ProcessStatsEvent {
-                                header: event_header(query_id.clone()),
-                                stats: ps_stats,
-                            });
-                            dispatch_event(&subscribers, &event, "notify process stats");
+                            update_peak_process_rss(&peak_process_rss_for_task, &ps_stats);
+                            last_profile_memory_sample = Instant::now();
+                            if enable_process_monitor {
+                                let event = Event::ProcessStats(ProcessStatsEvent {
+                                    header: event_header(query_id.clone()),
+                                    stats: ps_stats,
+                                });
+                                dispatch_event(&subscribers, &event, "notify process stats");
+                            }
                         }
 
                         if active_nodes.is_empty() {
@@ -559,6 +592,7 @@ impl RuntimeStatsManager {
             handle: RuntimeStatsManagerHandle {
                 tx: node_tx,
                 finished_snapshots,
+                peak_process_rss_bytes,
             },
             finish_tx,
             stats_manager_task: task_handle,
@@ -669,6 +703,66 @@ fn aggregate_node_stats(
     aggregated
 }
 
+fn update_peak_process_rss(peak: &AtomicU64, stats: &Stats) {
+    if let Some(rss) = stats.iter().find_map(|(name, value)| match (name, value) {
+        (PROCESS_RSS_KEY, Stat::Bytes(bytes)) => Some(*bytes),
+        _ => None,
+    }) {
+        peak.fetch_max(rss, Ordering::Relaxed);
+    }
+}
+
+fn profile_telemetry_for_input(
+    input_stats: &HashMap<(NodeID, InputId), Arc<dyn RuntimeStats>>,
+    input_id: InputId,
+    node_info_map: &HashMap<NodeID, Arc<NodeInfo>>,
+) -> ProfileTelemetry {
+    let mut telemetry = ProfileTelemetry {
+        spilled_bytes: Some(0),
+        ..Default::default()
+    };
+    for ((node_id, iid), runtime_stats) in input_stats {
+        if *iid != input_id {
+            continue;
+        }
+        let snapshot = runtime_stats.flush();
+        let mut rows_out = 0;
+        let mut bytes_out = 0;
+        for (name, stat) in snapshot.to_stats().iter() {
+            match (name, stat) {
+                (ROWS_OUT_KEY, Stat::Count(value)) => rows_out = *value,
+                (BYTES_OUT_KEY | BYTES_READ_KEY, Stat::Bytes(value)) => {
+                    bytes_out = bytes_out.max(*value)
+                }
+                _ => {}
+            }
+        }
+        telemetry
+            .partition_stats
+            .entry(*node_id)
+            .or_default()
+            .record(rows_out, bytes_out);
+        *telemetry.spilled_bytes.as_mut().unwrap() += runtime_stats.spilled_bytes();
+        if let Some(node_info) = node_info_map.get(node_id)
+            && let (Some(filter_applied), Some(projection_applied)) = (
+                node_info.context.get("profile.scan.filter_applied"),
+                node_info.context.get("profile.scan.projection_applied"),
+            )
+        {
+            telemetry.scan_pushdowns.insert(
+                *node_id,
+                daft_local_plan::ScanPushdownStats {
+                    filter_requested: false,
+                    filter_applied: filter_applied == "true",
+                    projection_requested: false,
+                    projection_applied: projection_applied == "true",
+                },
+            );
+        }
+    }
+    telemetry
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -748,6 +842,44 @@ mod tests {
             id,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn sampled_process_rss_keeps_the_peak() {
+        let peak = AtomicU64::new(0);
+        for bytes in [100, 80, 120] {
+            let stats = Stats(
+                [(Arc::<str>::from(PROCESS_RSS_KEY), Stat::Bytes(bytes))]
+                    .into_iter()
+                    .collect(),
+            );
+            update_peak_process_rss(&peak, &stats);
+        }
+        assert_eq!(peak.load(Ordering::Relaxed), 120);
+    }
+
+    #[test]
+    fn profile_telemetry_collects_native_input_and_spill_stats() {
+        let runtime_stats = Arc::new(DefaultRuntimeStats::new(
+            &Meter::test_scope("test_profile_telemetry"),
+            &node_info_from_id(7),
+        ));
+        runtime_stats.add_rows_out(100);
+        runtime_stats.add_bytes_out(200);
+        runtime_stats.add_spilled_bytes(50);
+        let input_stats: HashMap<(NodeID, InputId), Arc<dyn RuntimeStats>> =
+            HashMap::from([((7, 3), runtime_stats as Arc<dyn RuntimeStats>)]);
+
+        let telemetry = profile_telemetry_for_input(
+            &input_stats,
+            3,
+            &HashMap::from([(7, Arc::new(node_info_from_id(7)))]),
+        );
+
+        assert_eq!(telemetry.spilled_bytes, Some(50));
+        assert_eq!(telemetry.partition_stats[&7].count, 1);
+        assert_eq!(telemetry.partition_stats[&7].total_rows, 100);
+        assert_eq!(telemetry.partition_stats[&7].max_bytes, 200);
     }
 
     impl Subscriber for MockSubscriber {

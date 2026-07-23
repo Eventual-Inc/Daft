@@ -575,6 +575,7 @@ class RayRunner(Runner[ray.ObjectRef]):
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
     ) -> Generator[RayMaterializedResult, None, ExecutionMetadata]:
         track_runner_on_scarf(runner=self.name)
+        profile_started_ns = time.perf_counter_ns()
 
         # Grab and freeze the current context
         ctx = get_context()
@@ -709,7 +710,12 @@ class RayRunner(Runner[ray.ObjectRef]):
         finally:
             heartbeat.stop()
 
-        return ExecutionMetadata._from_runner_output(stats, query_id, physical_plan_json)
+        return ExecutionMetadata._from_runner_output(
+            stats,
+            query_id,
+            physical_plan_json,
+            wall_time_us=(time.perf_counter_ns() - profile_started_ns) / 1_000,
+        )
 
     def run_iter_tables(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None

@@ -1,4 +1,4 @@
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use common_metrics::{Counter, Meter, StatSnapshot, ops::NodeInfo, snapshot::DefaultSnapshot};
 use opentelemetry::KeyValue;
@@ -36,6 +36,12 @@ pub trait RuntimeStats: Send + Sync + std::any::Any {
     /// to the operator's own scale.
     fn increment_num_tasks(&self);
 
+    /// Record logical bytes written to Flight shuffle spill files.
+    fn add_spilled_bytes(&self, _bytes: u64) {}
+    fn spilled_bytes(&self) -> u64 {
+        0
+    }
+
     /// Record file-metadata blobs staged to a checkpoint store. No-op unless
     /// the node is a checkpoint-enabled write sink.
     fn add_checkpoint_files_staged(&self, _files: u64) {}
@@ -50,6 +56,7 @@ pub struct DefaultRuntimeStats {
     bytes_in: Counter,
     bytes_out: Counter,
     num_tasks: Counter,
+    spilled_bytes: AtomicU64,
     node_kv: Vec<KeyValue>,
 }
 
@@ -63,6 +70,7 @@ impl RuntimeStats for DefaultRuntimeStats {
             bytes_in: meter.bytes_in_metric(),
             bytes_out: meter.bytes_out_metric(),
             num_tasks: meter.num_tasks_metric(),
+            spilled_bytes: AtomicU64::new(0),
             node_kv,
         }
     }
@@ -100,5 +108,13 @@ impl RuntimeStats for DefaultRuntimeStats {
 
     fn increment_num_tasks(&self) {
         self.num_tasks.add(1, self.node_kv.as_slice());
+    }
+
+    fn add_spilled_bytes(&self, bytes: u64) {
+        self.spilled_bytes.fetch_add(bytes, Ordering::Relaxed);
+    }
+
+    fn spilled_bytes(&self) -> u64 {
+        self.spilled_bytes.load(Ordering::Relaxed)
     }
 }
