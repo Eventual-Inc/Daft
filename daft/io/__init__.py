@@ -29,7 +29,7 @@ from daft.io._parquet import read_parquet
 from daft.io._sql import read_sql
 from daft.io._warc import read_warc
 from daft.io.huggingface import read_huggingface
-from daft.io.mcap._mcap import read_mcap
+from daft.io.mcap._mcap import inspect_mcap, plan_mcap_reads, read_mcap
 from daft.io._range import _range
 from daft.io._files import from_files
 from daft.io.file_path import from_glob_path
@@ -69,6 +69,8 @@ __all__ = [
     "_range",
     "from_files",
     "from_glob_path",
+    "inspect_mcap",
+    "plan_mcap_reads",
     "read_csv",
     "read_deltalake",
     "read_hudi",
