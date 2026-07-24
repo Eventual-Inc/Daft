@@ -8,6 +8,7 @@ if sys.version_info < (3, 11):
 else:
     from typing import Unpack
 
+from daft.ai.protocols import TextEmbedderDescriptor
 from daft.ai.provider import Provider, ProviderImportError
 
 if TYPE_CHECKING:
@@ -18,7 +19,7 @@ if TYPE_CHECKING:
         ImageEmbedderDescriptor,
         PrompterDescriptor,
         TextClassifierDescriptor,
-        TextEmbedderDescriptor,
+        TextEmbedder,
     )
     from daft.ai.transformers.protocols.prompter import TransformersPromptOptions
     from daft.ai.typing import (
@@ -27,6 +28,7 @@ if TYPE_CHECKING:
         EmbedImageOptions,
         EmbedTextOptions,
         Options,
+        UDFOptions,
     )
 
 
@@ -52,6 +54,59 @@ class TransformersProvider(Provider):
     def name(self) -> str:
         return self._name
 
+    def _get_udf_options(self, descriptor: TextEmbedderDescriptor) -> UDFOptions:
+        """Overrides the default UDF options with GPU-aware settings."""
+        from daft.ai.utils import get_gpu_udf_options
+
+        udf_options = get_gpu_udf_options()
+        for key, value in descriptor.get("embed_options", {}).items():
+            if key in udf_options.__annotations__:
+                setattr(udf_options, key, value)
+        return udf_options
+
+    # ------------------------------------------------------------------
+    # Transformers Text Embedder
+    # ------------------------------------------------------------------
+
+    def get_text_embedder_descriptor(
+        self,
+        model: str | None = None,
+        dimensions: int | None = None,
+        **options: Unpack[EmbedTextOptions],
+    ) -> TextEmbedderDescriptor:
+        """Validates options and returns a serializable TextEmbedderDescriptor."""
+        from daft.ai.transformers.protocols.text_embedder import resolve_dimensions
+
+        model_name = model or self.DEFAULT_TEXT_EMBEDDER
+        embed_options: EmbedTextOptions = options
+
+        if dimensions is not None:
+            if dimensions <= 0:
+                raise ValueError("Embedding dimensions must be a positive integer.")
+
+        resolved_dims = resolve_dimensions(model_name, dimensions)
+
+        return TextEmbedderDescriptor(
+            provider=self._name,
+            model=model_name,
+            dimensions=resolved_dims,
+            embed_options=embed_options,
+        )
+
+    def get_text_embedder(self, descriptor: TextEmbedderDescriptor) -> TextEmbedder:
+        """Returns a TransformersTextEmbedder implementation from the descriptor."""
+        from daft.ai.transformers.protocols.text_embedder import TransformersTextEmbedder
+
+        return TransformersTextEmbedder(
+            descriptor["model"],
+            dimensions=descriptor["dimensions"].size,
+            **descriptor.get("embed_options", {}),
+        )
+
+    # ------------------------------------------------------------------
+    # Transformers Image Embedder
+    # ------------------------------------------------------------------
+
     def get_image_embedder(
         self,
         model: str | None = None,
@@ -69,6 +124,10 @@ class TransformersProvider(Provider):
         embed_options: EmbedImageOptions = options
         return TransformersImageEmbedderDescriptor(model or self.DEFAULT_IMAGE_EMBEDDER, embed_options=embed_options)
 
+    # ------------------------------------------------------------------
+    # Transformers Text Classifier
+    # ------------------------------------------------------------------
+
     def get_text_classifier(
         self,
         model: str | None = None,
@@ -85,22 +144,9 @@ class TransformersProvider(Provider):
             classify_options=classify_options,
         )
 
-    def get_text_embedder(
-        self,
-        model: str | None = None,
-        dimensions: int | None = None,
-        **options: Unpack[EmbedTextOptions],
-    ) -> TextEmbedderDescriptor:
-        from daft.ai.transformers.protocols.text_embedder import (
-            TransformersTextEmbedderDescriptor,
-        )
-
-        embed_options: EmbedTextOptions = options
-        return TransformersTextEmbedderDescriptor(
-            model=model or self.DEFAULT_TEXT_EMBEDDER,
-            dimensions=dimensions,
-            embed_options=embed_options,
-        )
+    # ------------------------------------------------------------------
+    # Transformers Image Classifier
+    # ------------------------------------------------------------------
 
     def get_image_classifier(
         self,

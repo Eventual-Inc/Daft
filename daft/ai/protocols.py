@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+import sys
 from abc import abstractmethod
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, TypedDict, runtime_checkable
 
-from daft.ai.typing import Descriptor
+if sys.version_info < (3, 11):
+    from typing_extensions import NotRequired
+else:
+    from typing import NotRequired
+
+from daft.ai.typing import Descriptor, EmbeddingDimensions, EmbedTextOptions
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable
 
-    from daft.ai.typing import Embedding, EmbeddingDimensions, Image, Label
+    from daft.ai.typing import Embedding, Image, Label
 
 
 @runtime_checkable
@@ -19,16 +25,16 @@ class TextEmbedder(Protocol):
         """Embeds a batch of text strings into an embedding vector."""
 
 
-class TextEmbedderDescriptor(Descriptor[TextEmbedder]):
-    """Descriptor for a TextEmbedder implementation."""
+class TextEmbedderDescriptor(TypedDict):
+    """Serializable descriptor for a text embedder. No logic — just data.
 
-    @abstractmethod
-    def get_dimensions(self) -> EmbeddingDimensions:
-        """Returns the dimensions of the embeddings produced by the described TextEmbedder."""
+    The ``provider`` field is required for resolution on the other end of serde.
+    """
 
-    def is_async(self) -> bool:
-        """Whether the described TextEmbedder produces awaitable results."""
-        return False
+    provider: str
+    model: str
+    dimensions: EmbeddingDimensions
+    embed_options: NotRequired[EmbedTextOptions]
 
 
 @runtime_checkable
