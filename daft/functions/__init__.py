@@ -319,6 +319,10 @@ from .window import (
     lead,
     first_value,
     last_value,
+    nth_value,
+    cume_dist,
+    percent_rank,
+    ntile,
 )
 
 __all__ = [
@@ -378,6 +382,7 @@ __all__ = [
     "count_matches",
     "crop",
     "csc",
+    "cume_dist",
     "current_date",
     "current_timestamp",
     "current_timezone",
@@ -525,6 +530,8 @@ __all__ = [
     "normalize",
     "not_nan",
     "not_null",
+    "nth_value",
+    "ntile",
     "over",
     "parse_url",
     "partition_days",
@@ -534,6 +541,7 @@ __all__ = [
     "partition_months",
     "partition_years",
     "pearson_correlation",
+    "percent_rank",
     "percentile",
     "pi",
     "pmod",
