@@ -179,6 +179,28 @@ df = df.with_column(
 )
 ```
 
+#### Image inputs (Vision-Language Models)
+
+Passing an instruction-tuned vision-language model routes the request to HuggingFace [`pipeline("image-text-to-text")`](https://huggingface.co/docs/transformers/main/en/main_classes/pipelines#transformers.ImageTextToTextPipeline) automatically. Images can be supplied as `daft.DataType.Image()` columns, `daft.File`s with an `image/*` MIME type, or raw `bytes`:
+
+```python
+import daft
+from daft.functions import prompt, decode_image
+
+df = daft.from_pydict({"image_url": ["https://.../cat.png", "https://.../dog.jpg"]})
+df = df.with_column("image", decode_image(daft.col("image_url").download()))
+
+df = df.with_column(
+    "caption",
+    prompt(
+        [daft.col("image"), "Describe this image in one short sentence."],
+        provider="transformers",
+        model="HuggingFaceTB/SmolVLM-256M-Instruct",
+        max_new_tokens=64,
+    ),
+)
+```
+
 ### Building Prompt Templates with the `format` function
 
 In addition to passing plain strings, you can build dynamic prompt templates using Daft's `format` function. This works similarly to Python's `format`, but works with Daft expressions. You can also define prompt templates with user-defined functions. With `@daft.func` you can pass in expressions or plain python strings for more flexible composition.
