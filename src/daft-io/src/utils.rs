@@ -25,7 +25,7 @@ pub fn parse_object_url(uri: &str) -> super::Result<ObjectPath> {
         source,
     })?;
 
-    let bucket = match parsed.host_str() {
+    let host = match parsed.host_str() {
         Some(s) => Ok(s),
         None => Err(Error::InvalidUrl {
             path: uri.into(),
@@ -33,13 +33,21 @@ pub fn parse_object_url(uri: &str) -> super::Result<ObjectPath> {
         }),
     }?;
 
+    // The authority (e.g. a HDFS name node) may include a port, which is part of
+    // the bucket rather than the key. Preserve it so the URL can be reconstructed.
+    let bucket = match parsed.port() {
+        Some(port) => format!("{host}:{port}"),
+        None => host.to_string(),
+    };
+
     // Use raw `uri` for object key: URI special character escaping might mangle key.
-    let bucket_scheme_prefix_len = parsed[..Position::AfterHost].len();
+    // Split after the authority (including any port) so the port never leaks into the key.
+    let bucket_scheme_prefix_len = parsed[..Position::BeforePath].len();
     let key = uri[bucket_scheme_prefix_len..].trim_start_matches(GLOB_DELIMITER);
 
     Ok(ObjectPath {
         scheme: parsed.scheme().to_string(),
-        bucket: bucket.to_string(),
+        bucket,
         key: key.to_string(),
     })
 }
@@ -171,7 +179,23 @@ pub(crate) fn verify_glob(glob: &str) -> super::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use crate::utils::{group_glob_paths, verify_glob};
+    use crate::utils::{group_glob_paths, parse_object_url, verify_glob};
+
+    #[test]
+    fn test_parse_object_url() {
+        // No port (e.g. S3): host is the bucket, key is the remainder.
+        let parsed = parse_object_url("s3://bucket/path/to/file.parquet").unwrap();
+        assert_eq!(parsed.scheme, "s3");
+        assert_eq!(parsed.bucket, "bucket");
+        assert_eq!(parsed.key, "path/to/file.parquet");
+
+        // With port (e.g. HDFS name node): the port stays with the bucket and must
+        // not leak into the key.
+        let parsed = parse_object_url("hdfs://localhost:9000/tmp/out/file.parquet").unwrap();
+        assert_eq!(parsed.scheme, "hdfs");
+        assert_eq!(parsed.bucket, "localhost:9000");
+        assert_eq!(parsed.key, "tmp/out/file.parquet");
+    }
 
     #[test]
     fn test_verify_glob() {
