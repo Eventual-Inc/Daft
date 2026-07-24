@@ -1123,6 +1123,34 @@ class GooseFSConfig:
         GOOSEFS_ROOT: Root path of the backend.
         """
 
+class HdfsConfig:
+    """I/O configuration for accessing HDFS (Hadoop Distributed File System) via the OpenDAL services-hdfs backend.
+
+    Args:
+        name_node (str, optional): HDFS name node address in ``scheme://host:port`` format, e.g. ``"hdfs://namenode:9000"``. Defaults to None (uses the URL authority).
+        root (str, optional): Root path inside HDFS. All operations happen under this root. Defaults to None ("/").
+
+    Examples:
+        >>> io_config = IOConfig(hdfs=HdfsConfig(name_node="hdfs://namenode:9000"))
+        >>> daft.read_parquet("hdfs://namenode:9000/some-path", io_config=io_config)
+    """
+
+    name_node: str | None
+    root: str | None
+
+    def __init__(
+        self,
+        name_node: str | None = None,
+        root: str | None = None,
+    ): ...
+    def replace(
+        self,
+        name_node: str | None = None,
+        root: str | None = None,
+    ) -> HdfsConfig:
+        """Replaces values if provided, returning a new HdfsConfig."""
+        ...
+
 class IOConfig:
     """Configuration for the native I/O layer, e.g. credentials for accessing cloud storage systems."""
 
@@ -1137,6 +1165,7 @@ class IOConfig:
     gravitino: GravitinoConfig
     cos: CosConfig
     goosefs: GooseFSConfig
+    hdfs: HdfsConfig
     opendal_backends: dict[str, dict[str, str]]
     protocol_aliases: dict[str, str]
 
@@ -1153,6 +1182,7 @@ class IOConfig:
         gravitino: GravitinoConfig | None = None,
         cos: CosConfig | None = None,
         goosefs: GooseFSConfig | None = None,
+        hdfs: HdfsConfig | None = None,
         opendal_backends: dict[str, dict[str, str]] | None = None,
         protocol_aliases: dict[str, str] | None = None,
     ): ...
@@ -1169,6 +1199,7 @@ class IOConfig:
         gravitino: GravitinoConfig | None = None,
         cos: CosConfig | None = None,
         goosefs: GooseFSConfig | None = None,
+        hdfs: HdfsConfig | None = None,
         opendal_backends: dict[str, dict[str, str]] | None = None,
         protocol_aliases: dict[str, str] | None = None,
     ) -> IOConfig:
