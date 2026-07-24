@@ -1319,6 +1319,80 @@ class DataFrame:
         return result_df
 
     @DataframePublicAPI
+    def write_avro(
+        self,
+        root_dir: str | pathlib.Path,
+        compression: str = "null",
+        write_mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
+        write_success_file: bool = False,
+        partition_cols: list[ColumnInputType] | None = None,
+        io_config: IOConfig | None = None,
+    ) -> "DataFrame":
+        """Writes the DataFrame as Avro files, returning a new DataFrame with paths to the files that were written.
+
+        Files will be written to ``<root_dir>/*`` with randomly generated UUIDs as the file names.
+
+        Args:
+            root_dir (str): root file path to write Avro files to.
+            compression (str, optional): compression algorithm. "null" (default) or "deflate". Defaults to "null".
+            write_mode (str, optional): Operation mode of the write. ``append`` will add new data, ``overwrite`` will replace the contents of the root directory with new data. ``overwrite-partitions`` will replace only the contents in the partitions that are being written to. Defaults to "append".
+            write_success_file (bool, optional): Whether to write a ``_SUCCESS`` file upon successful completion. Defaults to False.
+            partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
+            io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
+
+        Returns:
+            DataFrame: The filenames that were written out as strings.
+
+        Note:
+            This call is **blocking** and will execute the DataFrame when called
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
+            >>> df.write_avro("output_dir", write_mode="overwrite")  # doctest: +SKIP
+
+        Tip:
+            See also [`df.write_parquet()`][daft.DataFrame.write_parquet] and [`df.write_csv()`][daft.DataFrame.write_csv]
+            Other formats for writing DataFrames
+        """
+        if write_mode not in ["append", "overwrite", "overwrite-partitions"]:
+            raise ValueError(
+                f"Only support `append`, `overwrite`, or `overwrite-partitions` mode. {write_mode} is unsupported"
+            )
+        if write_mode == "overwrite-partitions" and partition_cols is None:
+            raise ValueError("Partition columns must be specified to use `overwrite-partitions` mode.")
+
+        io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+
+        cols: list[Expression] | None = None
+        if partition_cols is not None:
+            cols = column_inputs_to_expressions(tuple(partition_cols))
+
+        builder = self._builder.write_tabular(
+            root_dir=root_dir,
+            partition_cols=cols,
+            write_mode=WriteMode.from_str(write_mode),
+            write_success_file=write_success_file,
+            file_format=FileFormat.Avro,
+            compression=compression,
+            io_config=io_config,
+        )
+        # Block and write, then retrieve data
+        write_df = DataFrame(builder)
+        write_df.collect()
+        assert write_df._result is not None
+
+        # Populate and return a new disconnected DataFrame
+        # Keep the original logical plan so explain() can still show upstream operators
+        # (e.g. filters/projections before the write), instead of collapsing to an
+        # in-memory source after collect() caches the result.
+        result_df = DataFrame(write_df._get_current_builder())
+        result_df._result_cache = write_df._result_cache
+        result_df._preview = write_df._preview
+        result_df._metadata = write_df._metadata
+        return result_df
+
+    @DataframePublicAPI
     def write_iceberg(
         self,
         table: "pyiceberg.table.Table",

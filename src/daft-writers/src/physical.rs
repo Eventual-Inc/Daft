@@ -8,6 +8,7 @@ use daft_recordbatch::RecordBatch;
 
 use crate::{
     AsyncFileWriter, WriterFactory,
+    avro_writer::create_native_avro_writer,
     csv_writer::{create_native_csv_writer, native_csv_writer_supported},
     json_writer::{create_native_json_writer, native_json_writer_supported},
     parquet_writer::{create_native_parquet_writer, native_parquet_writer_supported},
@@ -53,6 +54,7 @@ impl PhysicalWriterFactory {
             }
             FileFormat::Json => Self::select_json_writer_type(file_schema),
             FileFormat::Csv => Self::select_csv_writer_type(file_schema),
+            FileFormat::Avro => Ok(WriterType::Native),
             _ => Ok(WriterType::Pyarrow), // Default to PyArrow for unsupported formats.
         }
     }
@@ -233,6 +235,10 @@ fn create_native_writer(
             }
             let csv_option = format_option.map(|opt| opt.to_csv()).unwrap_or_default();
             create_native_csv_writer(root_dir, file_idx, partition_values, io_config, csv_option)
+        }
+        FileFormat::Avro => {
+            let compression = compression.unwrap_or("null");
+            create_native_avro_writer(root_dir, file_idx, compression, io_config, partition_values)
         }
         _ => Err(DaftError::ComputeError(
             "Unsupported file format for native write".to_string(),
