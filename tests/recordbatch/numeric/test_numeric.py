@@ -8,7 +8,8 @@ import numpy as np
 import pyarrow as pa
 import pytest
 
-from daft import col, lit
+from daft import DataType, col, lit
+from daft.functions import try_add, try_multiply, try_subtract
 from daft.recordbatch import MicroPartition
 from tests.recordbatch import daft_numeric_types
 
@@ -1060,6 +1061,101 @@ def test_conv_bad_dtype() -> None:
     table = MicroPartition.from_pydict({"a": [1.0, 2.5]})
     with pytest.raises(ValueError, match="Expected input to conv to be string or integer"):
         table.eval_expression_list([conv(col("a"), 10, 16)])
+
+
+def test_try_add() -> None:
+    table = MicroPartition.from_pydict({"a": [2**63 - 1, 1, None, -(2**63)], "b": [1, 2, 3, -1]})
+    result = table.eval_expression_list([try_add(col("a"), col("b")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == [None, 3, None, None]
+
+
+def test_try_subtract() -> None:
+    table = MicroPartition.from_pydict({"a": [-(2**63), 5, None], "b": [1, 2, 3]})
+    result = table.eval_expression_list([try_subtract(col("a"), col("b")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == [None, 3, None]
+
+
+def test_try_subtract_unsigned_underflow() -> None:
+    table = MicroPartition.from_pydict(
+        {"a": pa.array([3, 5], type=pa.uint64()), "b": pa.array([5, 3], type=pa.uint64())}
+    )
+    result = table.eval_expression_list([try_subtract(col("a"), col("b")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == [None, 2]
+
+
+def test_try_multiply() -> None:
+    table = MicroPartition.from_pydict({"a": [2**63 - 1, 4, None], "b": [2, 5, 6]})
+    result = table.eval_expression_list([try_multiply(col("a"), col("b")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == [None, 20, None]
+
+
+def test_try_multiply_uint64_overflow() -> None:
+    table = MicroPartition.from_pydict(
+        {"a": pa.array([2**64 - 1, 10], type=pa.uint64()), "b": pa.array([2, 4], type=pa.uint64())}
+    )
+    result = table.eval_expression_list([try_multiply(col("a"), col("b")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == [None, 40]
+
+
+def test_try_arithmetic_small_ints_promote() -> None:
+    # Int8 inputs are promoted to 64-bit, so 127 + 1 is 128, not an overflow NULL.
+    table = MicroPartition.from_pydict({"a": pa.array([127], type=pa.int8()), "b": pa.array([1], type=pa.int8())})
+    result = table.eval_expression_list([try_add(col("a"), col("b")).alias("result")])
+    assert result.get_column_by_name("result").to_pylist() == [128]
+    assert result.get_column_by_name("result").datatype() == DataType.int64()
+
+
+def test_try_arithmetic_floats_never_null() -> None:
+    table = MicroPartition.from_pydict({"a": [1.7976931348623157e308], "b": [1.7976931348623157e308]})
+    added = table.eval_expression_list([try_add(col("a"), col("b")).alias("result")])
+    assert added.get_column_by_name("result").to_pylist() == [float("inf")]
+    multiplied = table.eval_expression_list([try_multiply(col("a"), col("b")).alias("result")])
+    assert multiplied.get_column_by_name("result").to_pylist() == [float("inf")]
+
+
+def test_try_arithmetic_broadcast() -> None:
+    table = MicroPartition.from_pydict({"a": [2**63 - 1, 1, 2]})
+    result = table.eval_expression_list([try_add(col("a"), lit(1)).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == [None, 2, 3]
+
+
+def test_try_arithmetic_mixed_sign_computes_in_int64() -> None:
+    # Signed + UInt64 has no 64-bit integer supertype; the regular `+` promotes to
+    # Float64, but the try_ functions must stay integer so the overflow check holds.
+    table = MicroPartition.from_pydict(
+        {
+            "a": pa.array([5, 2**63 - 1, -1, 7], type=pa.int64()),
+            "b": pa.array([3, 1, 2**63, 2], type=pa.uint64()),
+        }
+    )
+    result = table.eval_expression_list([try_add(col("a"), col("b")).alias("result")])
+    assert result.get_column_by_name("result").datatype() == DataType.int64()
+    # 5+3 ok; i64::MAX+1 overflows; u64 operand above i64::MAX nulls; 7+2 ok.
+    assert result.get_column_by_name("result").to_pylist() == [8, None, None, 9]
+
+
+def test_try_arithmetic_mixed_sign_u64_on_left() -> None:
+    table = MicroPartition.from_pydict(
+        {
+            "a": pa.array([3, 2**64 - 1], type=pa.uint64()),
+            "b": pa.array([5, 1], type=pa.int64()),
+        }
+    )
+    result = table.eval_expression_list([try_subtract(col("a"), col("b")).alias("result")])
+    assert result.get_column_by_name("result").datatype() == DataType.int64()
+    assert result.get_column_by_name("result").to_pylist() == [-2, None]
+
+
+def test_try_arithmetic_bad_dtype() -> None:
+    table = MicroPartition.from_pydict({"a": ["1", "2"], "b": [1, 2]})
+    with pytest.raises(ValueError, match="Expected inputs to try_add to be numeric"):
+        table.eval_expression_list([try_add(col("a"), col("b"))])
 
 
 def test_hypot() -> None:
