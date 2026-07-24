@@ -1286,6 +1286,7 @@ class PyDataSourceTask:
         path: str,
         schema: PySchema,
         *,
+        parquet_config: ParquetSourceConfig | None = None,
         pushdowns: PyPushdowns | None = None,
         num_rows: int | None = None,
         size_bytes: int | None = None,
