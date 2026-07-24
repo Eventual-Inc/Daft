@@ -707,9 +707,11 @@ def test_udf_succeeds_with_some_actors_schedulable():
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="Tests Flotilla-specific behavior")
-@pytest.mark.timeout(60)
+@pytest.mark.timeout(180)
 def test_actor_udf_with_into_partitions_does_not_deadlock():
-    with execution_config_ctx(actor_udf_ready_timeout=30):
+    # Use the default (120s) actor-ready timeout, so macOS on CI for Ray doesn't
+    # timeout too early.
+    with execution_config_ctx(actor_udf_ready_timeout=120):
         df = daft.from_pydict({"a": [1, 2, 3]})
 
         @udf(return_dtype=DataType.int64(), concurrency=1, num_cpus=1)

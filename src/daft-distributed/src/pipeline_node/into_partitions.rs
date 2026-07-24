@@ -236,6 +236,11 @@ impl IntoPartitionsNode {
         let input_builders: Vec<SwordfishTaskBuilder> = input_stream.collect().await;
         let num_input_tasks = input_builders.len();
 
+        // No inputs, so emit no tasks
+        if input_builders.is_empty() {
+            return Ok(());
+        }
+
         match num_input_tasks.cmp(&self.num_partitions) {
             std::cmp::Ordering::Equal => {
                 if self
