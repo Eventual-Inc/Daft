@@ -431,7 +431,8 @@ impl Literal {
             Self::Float16(val) => write!(buffer, "{}", val),
             Self::Float32(val) => write!(buffer, "{}", val),
             Self::Float64(val) => write!(buffer, "{}", val),
-            Self::Utf8(val) => write!(buffer, "'{}'", val),
+            // Double embedded single quotes (SQL-standard escaping) so the literal parses.
+            Self::Utf8(val) => write!(buffer, "'{}'", val.replace('\'', "''")),
             Self::Date(val) => write!(buffer, "DATE '{}'", display_date32(*val)),
             Self::Timestamp(val, tu, tz) => write!(
                 buffer,
@@ -684,6 +685,23 @@ mod test {
     use common_error::DaftResult;
 
     use super::{FromLiteral, Literal};
+
+    fn display_sql(lit: &Literal) -> String {
+        let mut buf = Vec::new();
+        lit.display_sql(&mut buf).expect("display_sql failed");
+        String::from_utf8(buf).expect("display_sql produced invalid UTF-8")
+    }
+
+    #[test]
+    fn test_display_sql_utf8_escapes_single_quotes() {
+        assert_eq!(display_sql(&Literal::Utf8("hello".into())), "'hello'");
+        // Embedded single quotes must be doubled so the emitted literal parses.
+        assert_eq!(display_sql(&Literal::Utf8("O'Brien".into())), "'O''Brien'");
+        assert_eq!(
+            display_sql(&Literal::Utf8("x' OR '1'='1".into())),
+            "'x'' OR ''1''=''1'"
+        );
+    }
 
     #[test]
     fn test_roundtrip() -> DaftResult<()> {
