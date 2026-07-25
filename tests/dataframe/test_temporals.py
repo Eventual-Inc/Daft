@@ -38,8 +38,14 @@ from daft.functions import (
     timestamp_micros,
     timestamp_millis,
     timestamp_seconds,
+    to_unix_timestamp,
     to_utc_timestamp,
     trunc,
+    unix_micros,
+    unix_millis,
+    unix_seconds,
+    unix_timestamp,
+    weekday,
     weekofyear,
 )
 
@@ -1390,3 +1396,125 @@ def test_convert_timezone_sql() -> None:
     result = daft.sql("SELECT convert_timezone('America/New_York', ts) AS ny FROM df").to_pydict()
     expected = datetime(2021, 1, 1, 7, 0, tzinfo=timezone(timedelta(hours=-5)))
     assert result["ny"] == [expected]
+
+
+# --- Unix extractors + weekday ---
+
+
+def test_unix_seconds() -> None:
+    df = daft.from_pydict({"d": [date(1970, 1, 1), date(2021, 1, 1)]})
+    df = df.with_column("s", unix_seconds(col("d")))
+    assert df.schema()["s"].dtype == DataType.int64()
+    assert df.to_pydict()["s"] == [0, 1609459200]
+
+
+def test_unix_millis() -> None:
+    df = daft.from_pydict({"d": [date(1970, 1, 1), date(2021, 1, 1)]})
+    df = df.with_column("ms", unix_millis(col("d")))
+    assert df.to_pydict()["ms"] == [0, 1609459200000]
+
+
+def test_unix_micros() -> None:
+    df = daft.from_pydict({"d": [date(1970, 1, 1), date(2021, 1, 1)]})
+    df = df.with_column("us", unix_micros(col("d")))
+    assert df.to_pydict()["us"] == [0, 1609459200000000]
+
+
+@pytest.mark.parametrize(
+    "ts,expected_s",
+    [
+        (datetime(2021, 1, 1, 0, 0, 0), 1609459200),  # midnight matches the Date case
+        (datetime(2021, 1, 1, 12, 30, 45), 1609504245),
+        (datetime(1970, 1, 1, 0, 0, 1), 1),
+    ],
+)
+def test_unix_seconds_timestamp_input(ts, expected_s) -> None:
+    # Timestamp inputs (not just Date) should be supported across all three resolutions.
+    df = daft.from_pydict({"ts": [ts]})
+    result = df.select(
+        unix_seconds(col("ts")).alias("s"),
+        unix_millis(col("ts")).alias("ms"),
+        unix_micros(col("ts")).alias("us"),
+    ).to_pydict()
+    assert result["s"] == [expected_s]
+    assert result["ms"] == [expected_s * 1_000]
+    assert result["us"] == [expected_s * 1_000_000]
+
+
+def test_unix_timestamp_alias() -> None:
+    df = daft.from_pydict({"d": [date(2021, 1, 1)]})
+    df = df.with_column("ut", unix_timestamp(col("d")))
+    df = df.with_column("tut", to_unix_timestamp(col("d")))
+    result = df.to_pydict()
+    assert result["ut"] == [1609459200]
+    assert result["tut"] == [1609459200]
+
+
+def test_unix_extractors_null_propagation() -> None:
+    df = daft.from_pydict({"d": [date(2021, 1, 1), None]})
+    df = df.with_column("s", unix_seconds(col("d")))
+    df = df.with_column("ms", unix_millis(col("d")))
+    df = df.with_column("us", unix_micros(col("d")))
+    result = df.to_pydict()
+    assert result["s"] == [1609459200, None]
+    assert result["ms"] == [1609459200000, None]
+    assert result["us"] == [1609459200000000, None]
+
+
+@pytest.mark.parametrize(
+    "d,expected",
+    [
+        (date(2021, 1, 4), 0),  # Mon
+        (date(2021, 1, 5), 1),  # Tue
+        (date(2021, 1, 6), 2),  # Wed
+        (date(2021, 1, 7), 3),  # Thu
+        (date(2021, 1, 8), 4),  # Fri
+        (date(2021, 1, 9), 5),  # Sat
+        (date(2021, 1, 10), 6),  # Sun
+    ],
+)
+def test_weekday_numbering(d, expected) -> None:
+    # Spark's weekday: Mon=0, Sun=6.
+    df = daft.from_pydict({"d": [d]})
+    df = df.with_column("w", weekday(col("d")))
+    assert df.to_pydict()["w"] == [expected]
+
+
+def test_weekday_null_propagation() -> None:
+    df = daft.from_pydict({"d": [date(2021, 1, 4), None]})
+    df = df.with_column("w", weekday(col("d")))
+    assert df.to_pydict()["w"] == [0, None]
+
+
+def test_unix_extractors_sql() -> None:
+    df = daft.from_pydict({"d": [date(2021, 1, 1)]})  # noqa: F841
+    result = daft.sql(
+        "SELECT unix_seconds(d) AS s, unix_millis(d) AS ms, unix_micros(d) AS us, "
+        "unix_timestamp(d) AS ut, to_unix_timestamp(d) AS tut, weekday(d) AS w FROM df"
+    ).to_pydict()
+    assert result["s"] == [1609459200]
+    assert result["ms"] == [1609459200000]
+    assert result["us"] == [1609459200000000]
+    assert result["ut"] == [1609459200]
+    assert result["tut"] == [1609459200]
+    assert result["w"] == [4]  # 2021-01-01 is a Friday
+
+
+def test_unix_extractors_method_form() -> None:
+    # All six new functions also exposed as Expression methods for parity with
+    # the rest of the temporal API (day_of_week, unix_date, to_unix_epoch, ...).
+    df = daft.from_pydict({"d": [date(2021, 1, 1)]})
+    result = df.select(
+        col("d").unix_seconds().alias("s"),
+        col("d").unix_millis().alias("ms"),
+        col("d").unix_micros().alias("us"),
+        col("d").unix_timestamp().alias("ut"),
+        col("d").to_unix_timestamp().alias("tut"),
+        col("d").weekday().alias("w"),
+    ).to_pydict()
+    assert result["s"] == [1609459200]
+    assert result["ms"] == [1609459200000]
+    assert result["us"] == [1609459200000000]
+    assert result["ut"] == [1609459200]
+    assert result["tut"] == [1609459200]
+    assert result["w"] == [4]

@@ -7,7 +7,7 @@ pub mod time;
 mod to_string;
 mod total;
 pub mod truncate;
-mod unix_timestamp;
+pub mod unix_timestamp;
 use common_error::{DaftResult, ensure};
 use current::{CurrentDate, CurrentTimestamp, CurrentTimezone};
 use daft_core::{
