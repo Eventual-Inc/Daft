@@ -550,7 +550,11 @@ pub(crate) enum TaskStatus {
 pub(crate) trait TaskResultHandle: Send + Sync {
     fn task_context(&self) -> TaskContext;
     fn get_result(&mut self) -> impl Future<Output = TaskStatus> + Send + 'static;
-    fn cancel_callback(&mut self);
+    /// Returned future resolves once the cancellation has been acknowledged
+    /// by the underlying worker. Awaited (not fired-and-forgotten) so the
+    /// scheduler can sequence post-cancel teardown — e.g. `LimitNode`
+    /// killing the counter actor — without racing in-flight worker work.
+    fn cancel_callback(&mut self) -> impl Future<Output = ()> + Send + 'static;
 }
 
 pub(crate) struct TaskResultAwaiter<H: TaskResultHandle> {
@@ -570,7 +574,7 @@ impl<H: TaskResultHandle> TaskResultAwaiter<H> {
         tokio::select! {
             biased;
             () = self.cancel_token.cancelled() => {
-                self.handle.cancel_callback();
+                self.handle.cancel_callback().await;
                 TaskStatus::Cancelled
             }
             result = self.handle.get_result() => {
@@ -817,7 +821,7 @@ pub(super) mod tests {
             }
         }
 
-        fn cancel_callback(&mut self) {
+        fn cancel_callback(&mut self) -> impl Future<Output = ()> + Send + 'static {
             let mut cancel_notifier = self
                 .task
                 .cancel_notifier
@@ -826,6 +830,7 @@ pub(super) mod tests {
             if let Some(cancel_notifier) = cancel_notifier.take() {
                 let _ = cancel_notifier.send(());
             }
+            std::future::ready(())
         }
     }
 
