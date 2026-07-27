@@ -68,7 +68,7 @@ class SQLConnection:
     def construct_sql_query(
         self,
         sql: str,
-        projection: "Sequence[str | Expr] | None" = None,
+        projection: Sequence[str | Expr] | None = None,
         predicate: str | None = None,
         limit: int | None = None,
         partition_bounds: tuple[str, str] | None = None,
@@ -180,9 +180,9 @@ class SQLConnection:
 
 
 def _adapt_projection_for_dialect(
-    projection: "Sequence[str | Expr]",
+    projection: Sequence[str | Expr],
     target_dialect: str,
-) -> "Sequence[str | Expr]":
+) -> Sequence[str | Expr]:
     """Apply dialect-specific AST transforms to projection expressions.
 
     Only rewrites ``exp.Expression`` items; raw ``str`` projections
@@ -199,7 +199,7 @@ def _adapt_projection_for_dialect(
     return projection
 
 
-def _rewrite_percentile_to_clickhouse(node: "Expr") -> "Expr":
+def _rewrite_percentile_to_clickhouse(node: Expr) -> Expr:
     """Rewrite ``WithinGroup(PercentileDisc, Order)`` → ``quantileExactLow`` for ClickHouse.
 
     ``quantileExactLow`` is chosen over ``quantileExact`` because it returns
@@ -237,7 +237,7 @@ def _rewrite_percentile_to_clickhouse(node: "Expr") -> "Expr":
     return node
 
 
-def _rewrite_percentile_to_tsql(node: "Expr") -> "Expr":
+def _rewrite_percentile_to_tsql(node: Expr) -> Expr:
     """Wrap ``WithinGroup(PercentileDisc)`` in ``Window`` for TSQL ``OVER ()``.
 
     SQL Server requires ``PERCENTILE_DISC(...) WITHIN GROUP (...) OVER ()``;
