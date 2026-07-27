@@ -190,6 +190,9 @@ def test_batch_size_from_udf_propagated_through_ops_to_scan():
 |       read_timeout_ms: 30000
 |       max_concurrent_requests: 50
 |       max_connections_per_io_thread: 50
+|   HdfsConfig
+|       name_node: None
+|       root: None
 |   HTTPConfig
 |   User agent = daft/0.0.1
 |   Retry initial backoff ms = 1000
