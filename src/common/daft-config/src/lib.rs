@@ -241,6 +241,10 @@ impl DaftExecutionConfig {
         if let Some(val) =
             parse_number_from_env(Self::ENV_DAFT_MIN_CPU_PER_TASK, cfg.min_cpu_per_task)
         {
+            log::warn!(
+                "{} is deprecated as of v0.7.0 and has no effect on distributed scheduling. It will be removed from v0.8.0 onwards.",
+                Self::ENV_DAFT_MIN_CPU_PER_TASK
+            );
             cfg.min_cpu_per_task = val;
         }
 

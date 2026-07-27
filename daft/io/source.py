@@ -4,7 +4,7 @@ import warnings
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
-from daft.daft import PyDataSourceTask, StorageConfig
+from daft.daft import ParquetSourceConfig, PyDataSourceTask, StorageConfig
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
@@ -139,6 +139,7 @@ class DataSourceTask(ABC):
         path: str,
         schema: Schema,
         *,
+        parquet_config: ParquetSourceConfig | None = None,
         pushdowns: Pushdowns | None = None,
         num_rows: int | None = None,
         size_bytes: int | None = None,
@@ -159,6 +160,8 @@ class DataSourceTask(ABC):
         Args:
             path: Path or URI of the Parquet file (e.g., ``"s3://bucket/file.parquet"``).
             schema: Schema to read the file with.
+            parquet_config: Optional Parquet reader configuration. Defaults to
+                :class:`~daft.daft.ParquetSourceConfig` defaults.
             pushdowns: Query pushdowns (filters, column projection, limit). Pass
                 through the pushdowns received by DataSource.get_tasks.
             num_rows: Exact row count, if known. Enables metadata-only optimizations.
@@ -186,6 +189,7 @@ class DataSourceTask(ABC):
         inner = PyDataSourceTask.parquet(
             path=path,
             schema=schema._schema,
+            parquet_config=parquet_config,
             pushdowns=pushdowns._to_pypushdowns() if pushdowns is not None else None,
             num_rows=num_rows,
             size_bytes=size_bytes,
