@@ -213,24 +213,18 @@ class SQLScanOperator(ScanOperator):
                 # Favor percentile_disc over percentile_cont because we want exact values to do <= and >= comparisons.
                 percentiles = [i / num_scan_tasks for i in range(num_scan_tasks + 1)]
 
-                # Use dialect-specific percentile syntax
-                if self.conn.dialect == "clickhouse":
-                    # ClickHouse uses quantileExact(p)(col) syntax for exact percentile computation.
-                    # quantile() uses reservoir sampling and is approximate — quantile(0)/quantile(1)
-                    # are not guaranteed to equal the true min/max, which would cause silent row loss
-                    # at partition boundaries (col >= bound_0 AND col <= bound_last).
-                    projection = [
-                        f"quantileExact({percentile})({self._partition_col}) AS bound_{i}"
-                        for i, percentile in enumerate(percentiles)
-                    ]
-                else:
-                    # Standard SQL: percentile_disc WITHIN GROUP
-                    # Use the OVER clause for SQL Server dialects
-                    over_clause = "OVER ()" if self.conn.dialect in ["mssql", "tsql"] else ""
-                    projection = [
-                        f"percentile_disc({percentile}) WITHIN GROUP (ORDER BY {self._partition_col}) {over_clause} AS bound_{i}"
-                        for i, percentile in enumerate(percentiles)
-                    ]
+                # Build dialect-neutral sqlglot expressions.
+                # Dialect-specific translations (e.g. quantileExactLow for ClickHouse,
+                # OVER() for TSQL) are handled in construct_sql_query via AST transforms.
+                import sqlglot.expressions as exp
+
+                projection = [
+                    exp.WithinGroup(
+                        this=exp.PercentileDisc(this=exp.Literal.number(pct)),
+                        expression=exp.Order(expressions=[exp.Ordered(this=exp.Column(this=self._partition_col))]),
+                    ).as_(f"bound_{i}")
+                    for i, pct in enumerate(percentiles)
+                ]
 
                 percentile_sql = self.conn.construct_sql_query(
                     self.sql,
@@ -246,7 +240,9 @@ class SQLScanOperator(ScanOperator):
                     raise RuntimeError(f"Expected {num_scan_tasks + 1} percentiles, but got {pa_table.num_columns}.")
 
                 pydict = RecordBatch.from_arrow_table(pa_table).to_pydict()
-                assert pydict.keys() == {f"bound_{i}" for i in range(num_scan_tasks + 1)}
+                expected_keys = {f"bound_{i}" for i in range(num_scan_tasks + 1)}
+                if pydict.keys() != expected_keys:
+                    raise RuntimeError(f"Expected columns {expected_keys}, but got {set(pydict.keys())}.")
                 return [pydict[f"bound_{i}"][0] for i in range(num_scan_tasks + 1)]
 
             except Exception as e:
