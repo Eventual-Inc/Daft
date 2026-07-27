@@ -374,15 +374,11 @@ pub fn delta_scan<T: AsRef<str>>(
         };
 
         let delta_lake_scan = PyModule::import(py, "daft.io.delta_lake.delta_lake_scan")?;
-        let delta_lake_scan_operator =
-            delta_lake_scan.getattr(pyo3::intern!(py, "DeltaLakeScanOperator"))?;
-        let delta_lake_operator = delta_lake_scan_operator
-            .call1((glob_path.as_ref(), storage_config))?
-            .into_pyobject(py)
-            .unwrap()
-            .into();
-        let scan_operator_handle =
-            ScanOperatorHandle::from_python_scan_operator(delta_lake_operator, py)?;
+        let delta_lake_data_source =
+            delta_lake_scan.getattr(pyo3::intern!(py, "DeltaLakeDataSource"))?;
+        let delta_lake_source =
+            delta_lake_data_source.call1((glob_path.as_ref(), storage_config))?;
+        let scan_operator_handle = ScanOperatorHandle::from_data_source(delta_lake_source);
         LogicalPlanBuilder::table_scan(scan_operator_handle.into(), None)
     })
 }

@@ -53,7 +53,8 @@ def read_huggingface(repo: str, io_config: IOConfig | None = None) -> DataFrame:
         return _fallback_to_datasets_library(repo, e)
     except DaftCoreException as e:
         # Check if this is a 400 error (parquet files not yet available)
-        if "Status(400" in str(e):
+        e_msg = str(e)
+        if "Status(400" in e_msg or "400 Bad Request" in e_msg:
             # Fall back to using the datasets library
             return _fallback_to_datasets_library(repo, e)
         else:

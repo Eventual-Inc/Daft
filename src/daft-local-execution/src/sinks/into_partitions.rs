@@ -5,14 +5,14 @@ use common_metrics::ops::NodeType;
 use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartition;
 use daft_partition_refs::FlightPartitionRef;
-use daft_shuffles::{
-    server::flight_server::ShuffleFlightServer,
-    shuffle_cache::{InProgressShuffleCache, partition_ref_id},
-};
+use daft_shuffles::shuffle_cache::{InProgressShuffleCache, partition_ref_id};
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkOutput, BlockingSinkSinkResult,
+use super::{
+    blocking_sink::{
+        BlockingSink, BlockingSinkFinalizeResult, BlockingSinkOutput, BlockingSinkSinkResult,
+    },
+    shuffle_backend::{FlightShuffleContext, LocalShuffleBackend},
 };
 use crate::{
     ExecutionTaskSpawner,
@@ -55,26 +55,35 @@ impl RayIntoPartitionsState {
 }
 
 pub(crate) struct FlightIntoPartitionsState {
-    shared: Arc<FlightShared>,
+    shared: Arc<FlightShuffleContext>,
     caches: Vec<InProgressShuffleCache>,
     rotation_offset: usize,
 }
 
 impl FlightIntoPartitionsState {
     fn try_new(
-        shared: Arc<FlightShared>,
+        shared: Arc<FlightShuffleContext>,
+        schema: SchemaRef,
         input_id: InputId,
         num_partitions: usize,
     ) -> DaftResult<Self> {
+        // Divide a global 2000 MiB budget evenly across the output partitions,
+        // clamped to [8 MiB, 128 MiB] per cache so we spill at roughly the same
+        // rate regardless of N.
+        const TARGET_TOTAL_IN_MEMORY_SIZE_BYTES: usize = 1024 * 1024 * 2000;
+        let target_in_memory_size_per_partition = (TARGET_TOTAL_IN_MEMORY_SIZE_BYTES
+            / num_partitions.max(1))
+        .clamp(1024 * 1024 * 8, 1024 * 1024 * 128);
+
         let mut caches = Vec::with_capacity(num_partitions);
         for partition_idx in 0..num_partitions {
             let partition_ref_id = partition_ref_id(input_id, partition_idx);
             let cache = InProgressShuffleCache::try_new(
                 partition_ref_id,
-                shared.schema.clone(),
+                schema.clone(),
                 &shared.shuffle_dirs,
                 shared.shuffle_id,
-                shared.target_in_memory_size_per_partition,
+                target_in_memory_size_per_partition,
                 shared.compression.as_deref(),
             )?;
             caches.push(cache);
@@ -156,76 +165,19 @@ impl IntoPartitionsState {
     }
 }
 
-/// Shared Flight config for all states produced by one IntoPartitionsSink.
-struct FlightShared {
-    shuffle_id: u64,
-    shuffle_dirs: Vec<String>,
-    compression: Option<String>,
-    local_server: Arc<ShuffleFlightServer>,
-    shuffle_address: String,
-    target_in_memory_size_per_partition: usize,
-    schema: SchemaRef,
-}
-
-// Mirrors the pattern in `sinks/gather.rs::GatherBackend` and
-// `sinks/repartition.rs::RepartitionBackend` — a runtime enum that picks
-// between the Ray path and the Flight path and carries Flight's runtime handles.
-#[derive(Clone)]
-enum IntoPartitionsBackend {
-    Ray { schema: SchemaRef },
-    Flight(Arc<FlightShared>),
-}
-
-impl IntoPartitionsBackend {
-    fn name(&self) -> &'static str {
-        match self {
-            Self::Ray { .. } => "Ray",
-            Self::Flight(_) => "Flight",
-        }
-    }
-}
-
 pub struct IntoPartitionsSink {
     num_partitions: usize,
-    backend: IntoPartitionsBackend,
+    schema: SchemaRef,
+    backend: LocalShuffleBackend,
 }
 
 impl IntoPartitionsSink {
-    pub fn new_ray(num_partitions: usize, schema: SchemaRef) -> Self {
+    pub fn new(num_partitions: usize, schema: SchemaRef, backend: LocalShuffleBackend) -> Self {
         Self {
             num_partitions,
-            backend: IntoPartitionsBackend::Ray { schema },
+            schema,
+            backend,
         }
-    }
-
-    pub fn try_new_flight(
-        num_partitions: usize,
-        schema: SchemaRef,
-        shuffle_id: u64,
-        shuffle_dirs: Vec<String>,
-        compression: Option<String>,
-        local_server: Arc<ShuffleFlightServer>,
-        shuffle_address: String,
-    ) -> DaftResult<Self> {
-        // Mirror `RepartitionSink::try_new_flight`: divide a global 2000 MiB budget
-        // evenly across the output partitions, clamped to [8 MiB, 128 MiB] per
-        // cache so we spill at roughly the same rate regardless of N.
-        const TARGET_TOTAL_IN_MEMORY_SIZE_BYTES: usize = 1024 * 1024 * 2000;
-        let target_in_memory_size_per_partition = (TARGET_TOTAL_IN_MEMORY_SIZE_BYTES
-            / num_partitions.max(1))
-        .clamp(1024 * 1024 * 8, 1024 * 1024 * 128);
-        Ok(Self {
-            num_partitions,
-            backend: IntoPartitionsBackend::Flight(Arc::new(FlightShared {
-                shuffle_id,
-                shuffle_dirs,
-                compression,
-                local_server,
-                shuffle_address,
-                target_in_memory_size_per_partition,
-                schema,
-            })),
-        })
     }
 }
 
@@ -259,12 +211,13 @@ impl BlockingSink for IntoPartitionsSink {
     ) -> BlockingSinkFinalizeResult {
         let backend = self.backend.clone();
         let num_partitions = self.num_partitions;
+        let schema = self.schema.clone();
 
         spawner
             .spawn(
                 async move {
                     match backend {
-                        IntoPartitionsBackend::Ray { schema } => {
+                        LocalShuffleBackend::Ray => {
                             let ray_states = states
                                 .into_iter()
                                 .map(|s| match s {
@@ -279,7 +232,7 @@ impl BlockingSink for IntoPartitionsSink {
                             )?;
                             Ok(BlockingSinkOutput::Partitions(outputs))
                         }
-                        IntoPartitionsBackend::Flight(_) => {
+                        LocalShuffleBackend::Flight(_) => {
                             debug_assert_eq!(
                                 states.len(),
                                 1,
@@ -321,13 +274,16 @@ impl BlockingSink for IntoPartitionsSink {
 
     fn make_state(&self, input_id: InputId) -> DaftResult<Self::State> {
         match &self.backend {
-            IntoPartitionsBackend::Ray { .. } => {
-                Ok(IntoPartitionsState::Ray(RayIntoPartitionsState {
-                    partitions: Vec::new(),
-                }))
-            }
-            IntoPartitionsBackend::Flight(shared) => Ok(IntoPartitionsState::Flight(
-                FlightIntoPartitionsState::try_new(shared.clone(), input_id, self.num_partitions)?,
+            LocalShuffleBackend::Ray => Ok(IntoPartitionsState::Ray(RayIntoPartitionsState {
+                partitions: Vec::new(),
+            })),
+            LocalShuffleBackend::Flight(shared) => Ok(IntoPartitionsState::Flight(
+                FlightIntoPartitionsState::try_new(
+                    shared.clone(),
+                    self.schema.clone(),
+                    input_id,
+                    self.num_partitions,
+                )?,
             )),
         }
     }
