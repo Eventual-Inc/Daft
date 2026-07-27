@@ -324,6 +324,12 @@ See also [Files](files.md) for detailed usage.
 
 See also [Text Files](text.md) for detailed usage.
 
+### Blob
+
+| Function                         | Description                                                      |
+|----------------------------------|------------------------------------------------------------------|
+| [`read_blob`][daft.io.read_blob] | Read files as raw bytes, with one row per file, into a DataFrame |
+
 ### WARC
 
 | Function                         | Description                                              |
