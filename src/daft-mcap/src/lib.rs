@@ -7,7 +7,7 @@ use std::{
 use bytes::Bytes;
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::{BinaryArray, IntoSeries, Series, UInt32Array, UInt64Array, Utf8Array};
-use daft_io::{CountingReader, GetRange, GetResult, IOClient, IOStatsRef};
+use daft_io::{CountingReader, GetRange, GetResult, IOClient, IOStatsRef, SourceType, parse_url};
 use daft_recordbatch::RecordBatch;
 use futures::StreamExt;
 use mcap::{
@@ -27,6 +27,9 @@ pub mod python;
 mod tests;
 
 const MAX_RECORD_LENGTH: usize = 1024 * 1024 * 1024;
+// For tiny remote objects, one complete read is cheaper than separate magic,
+// footer, summary, and chunk range requests.
+const SMALL_REMOTE_FILE_THRESHOLD: usize = 64 * 1024;
 
 fn mcap_error(error: impl std::fmt::Display) -> DaftError {
     DaftError::ComputeError(format!("Failed to read MCAP messages: {error}"))
@@ -136,6 +139,17 @@ async fn read_summary(
 type AsyncInput = Box<dyn AsyncRead + Send + Unpin>;
 type LinearReader = mcap::tokio::LinearReader<AsyncInput>;
 
+fn linear_reader(input: AsyncInput) -> LinearReader {
+    let options = mcap::tokio::LinearReaderOptions::default()
+        .with_prevalidate_chunk_crcs(true)
+        .with_record_length_limit(MAX_RECORD_LENGTH);
+    LinearReader::new_with_options(input, &options)
+}
+
+fn open_buffered_linear_reader(bytes: Bytes) -> LinearReader {
+    linear_reader(Box::new(std::io::Cursor::new(bytes)))
+}
+
 async fn open_linear_reader(
     uri: &str,
     io_client: &Arc<IOClient>,
@@ -166,10 +180,7 @@ async fn open_linear_reader(
             stream.map(|result| result.map_err(std::io::Error::from)),
         )),
     };
-    let options = mcap::tokio::LinearReaderOptions::default()
-        .with_prevalidate_chunk_crcs(true)
-        .with_record_length_limit(MAX_RECORD_LENGTH);
-    Ok(LinearReader::new_with_options(input, &options))
+    Ok(linear_reader(input))
 }
 
 #[derive(Clone, Debug)]
@@ -305,17 +316,6 @@ impl NativeMcapReader {
             ));
         }
         let uri = uri.into();
-        let file_size = io_client
-            .single_url_get_size(uri.clone(), Some(io_stats.clone()))
-            .await?;
-        if file_size < mcap::MAGIC.len() {
-            return Err(mcap_error("file is shorter than MCAP magic"));
-        }
-        let magic = fetch_exact_range(&uri, 0, mcap::MAGIC.len(), &io_client, &io_stats).await?;
-        if magic.as_ref() != mcap::MAGIC {
-            return Err(mcap_error("bad leading magic"));
-        }
-
         let topics = options
             .topics
             .map(|topics| topics.into_iter().collect::<BTreeSet<_>>());
@@ -324,50 +324,93 @@ impl NativeMcapReader {
                 .start_time
                 .zip(options.end_time)
                 .is_some_and(|(start, end)| start >= end);
+        let unfiltered =
+            topics.is_none() && options.start_time.is_none() && options.end_time.is_none();
 
         let mut channels = BTreeMap::new();
-        let (mode, indexed) = if empty {
-            (ReaderMode::Empty, false)
+        let (mode, indexed) = if unfiltered {
+            (
+                ReaderMode::Linear {
+                    reader: open_linear_reader(&uri, &io_client, &io_stats).await?,
+                    record_buffer: Vec::new(),
+                },
+                false,
+            )
         } else {
-            let summary = read_summary(&uri, file_size, &io_client, &io_stats).await?;
-            if let Some(summary) = &summary {
-                channels.extend(
-                    summary
-                        .channels
-                        .iter()
-                        .map(|(id, channel)| (*id, channel.topic.clone())),
-                );
+            let file_size = io_client
+                .single_url_get_size(uri.clone(), Some(io_stats.clone()))
+                .await?;
+            if file_size < mcap::MAGIC.len() {
+                return Err(mcap_error("file is shorter than MCAP magic"));
             }
-
-            if let Some(summary) = summary
-                .filter(|summary| !summary.chunk_indexes.is_empty() && !summary.channels.is_empty())
-            {
-                let mut reader_options = IndexedReaderOptions::new().with_order(ReadOrder::LogTime);
-                if let Some(start_time) = options.start_time {
-                    reader_options = reader_options.log_time_on_or_after(start_time);
-                }
-                if let Some(end_time) = options.end_time {
-                    reader_options = reader_options.log_time_before(end_time);
-                }
-                if let Some(topics) = &topics {
-                    reader_options = reader_options.include_topics(topics.iter().cloned());
-                }
-                reader_options = reader_options.with_record_length_limit(MAX_RECORD_LENGTH);
-                (
-                    ReaderMode::Indexed(
-                        IndexedReader::new_with_options(&summary, reader_options)
-                            .map_err(mcap_error)?,
-                    ),
-                    true,
-                )
+            let is_small_remote = file_size <= SMALL_REMOTE_FILE_THRESHOLD
+                && !matches!(parse_url(&uri)?.0, SourceType::File);
+            let buffered = if is_small_remote && !empty {
+                Some(fetch_exact_range(&uri, 0, file_size, &io_client, &io_stats).await?)
             } else {
+                let magic =
+                    fetch_exact_range(&uri, 0, mcap::MAGIC.len(), &io_client, &io_stats).await?;
+                if magic.as_ref() != mcap::MAGIC {
+                    return Err(mcap_error("bad leading magic"));
+                }
+                None
+            };
+
+            if let Some(bytes) = buffered {
+                if !bytes.starts_with(mcap::MAGIC) {
+                    return Err(mcap_error("bad leading magic"));
+                }
                 (
                     ReaderMode::Linear {
-                        reader: open_linear_reader(&uri, &io_client, &io_stats).await?,
+                        reader: open_buffered_linear_reader(bytes),
                         record_buffer: Vec::new(),
                     },
                     false,
                 )
+            } else if empty {
+                (ReaderMode::Empty, false)
+            } else {
+                let summary = read_summary(&uri, file_size, &io_client, &io_stats).await?;
+                if let Some(summary) = &summary {
+                    channels.extend(
+                        summary
+                            .channels
+                            .iter()
+                            .map(|(id, channel)| (*id, channel.topic.clone())),
+                    );
+                }
+
+                if let Some(summary) = summary.filter(|summary| {
+                    !summary.chunk_indexes.is_empty() && !summary.channels.is_empty()
+                }) {
+                    let mut reader_options =
+                        IndexedReaderOptions::new().with_order(ReadOrder::LogTime);
+                    if let Some(start_time) = options.start_time {
+                        reader_options = reader_options.log_time_on_or_after(start_time);
+                    }
+                    if let Some(end_time) = options.end_time {
+                        reader_options = reader_options.log_time_before(end_time);
+                    }
+                    if let Some(topics) = &topics {
+                        reader_options = reader_options.include_topics(topics.iter().cloned());
+                    }
+                    reader_options = reader_options.with_record_length_limit(MAX_RECORD_LENGTH);
+                    (
+                        ReaderMode::Indexed(
+                            IndexedReader::new_with_options(&summary, reader_options)
+                                .map_err(mcap_error)?,
+                        ),
+                        true,
+                    )
+                } else {
+                    (
+                        ReaderMode::Linear {
+                            reader: open_linear_reader(&uri, &io_client, &io_stats).await?,
+                            record_buffer: Vec::new(),
+                        },
+                        false,
+                    )
+                }
             }
         };
 

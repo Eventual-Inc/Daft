@@ -93,6 +93,19 @@ async fn collect_rows(reader: &mut NativeMcapReader) -> DaftResult<Vec<(String, 
 }
 
 #[tokio::test]
+async fn unfiltered_reader_streams_file_once() -> DaftResult<()> {
+    let file = write_mcap(true, None, 20, 32);
+    let file_size = file.as_file().metadata().unwrap().len() as usize;
+    let (mut reader, io_stats) = make_reader(&file, McapReadOptions::default()).await?;
+
+    assert!(!reader.indexed());
+    assert_eq!(collect_rows(&mut reader).await?.len(), 20);
+    drop(reader);
+    assert_eq!(io_stats.load_bytes_read(), file_size);
+    Ok(())
+}
+
+#[tokio::test]
 async fn indexed_reader_filters_topics_and_half_open_time_range() -> DaftResult<()> {
     let file = write_mcap(true, None, 20, 32);
     let options = McapReadOptions {
@@ -159,7 +172,12 @@ async fn unindexed_reader_falls_back_to_linear_stream() -> DaftResult<()> {
 #[tokio::test]
 async fn indexed_reader_supports_lz4() -> DaftResult<()> {
     let file = write_mcap(true, Some(Compression::Lz4), 10, 1024);
-    let (mut reader, _) = make_reader(&file, McapReadOptions::default()).await?;
+    let options = McapReadOptions {
+        topics: Some(vec!["/camera".to_string(), "/imu".to_string()]),
+        ..Default::default()
+    };
+    let (mut reader, _) = make_reader(&file, options).await?;
+    assert!(reader.indexed());
     assert_eq!(collect_rows(&mut reader).await?.len(), 10);
     Ok(())
 }
@@ -167,7 +185,12 @@ async fn indexed_reader_supports_lz4() -> DaftResult<()> {
 #[tokio::test]
 async fn indexed_reader_supports_zstd() -> DaftResult<()> {
     let file = write_mcap(true, Some(Compression::Zstd), 10, 1024);
-    let (mut reader, _) = make_reader(&file, McapReadOptions::default()).await?;
+    let options = McapReadOptions {
+        topics: Some(vec!["/camera".to_string(), "/imu".to_string()]),
+        ..Default::default()
+    };
+    let (mut reader, _) = make_reader(&file, options).await?;
+    assert!(reader.indexed());
     assert_eq!(collect_rows(&mut reader).await?.len(), 10);
     Ok(())
 }
@@ -176,11 +199,12 @@ async fn indexed_reader_supports_zstd() -> DaftResult<()> {
 async fn invalid_magic_is_rejected() -> DaftResult<()> {
     let file = NamedTempFile::new().unwrap();
     std::fs::write(file.path(), b"not an mcap file").unwrap();
-    let result = make_reader(&file, McapReadOptions::default()).await;
+    let (mut reader, _) = make_reader(&file, McapReadOptions::default()).await?;
+    let result = reader.next_batch().await;
     assert!(
         result
             .err()
-            .is_some_and(|error| error.to_string().contains("bad leading magic"))
+            .is_some_and(|error| error.to_string().to_lowercase().contains("magic"))
     );
     Ok(())
 }
