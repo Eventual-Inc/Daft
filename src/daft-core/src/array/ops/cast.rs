@@ -33,8 +33,8 @@ use crate::{
         },
     },
     file::{
-        DaftMediaType, MediaTypeAudio, MediaTypeHdf5, MediaTypeImage, MediaTypeUnknown,
-        MediaTypeVideo,
+        DaftMediaType, MediaTypeAudio, MediaTypeHdf5, MediaTypeImage, MediaTypeMcap,
+        MediaTypeUnknown, MediaTypeVideo,
     },
     prelude::ExtensionArray,
     series::{IntoSeries, Series},
@@ -651,14 +651,20 @@ where
                 | (Video, Video)
                 | (Audio, Audio)
                 | (Image, Image)
-                | (Hdf5, Hdf5) => Ok(self.clone().into_series()),
-                (Unknown, Video) | (Unknown, Audio) | (Unknown, Image) | (Unknown, Hdf5) => {
+                | (Hdf5, Hdf5)
+                | (Mcap, Mcap) => Ok(self.clone().into_series()),
+                (Unknown, Video)
+                | (Unknown, Audio)
+                | (Unknown, Image)
+                | (Unknown, Hdf5)
+                | (Unknown, Mcap) => {
                     Ok(self.clone().change_type::<MediaTypeUnknown>().into_series())
                 }
                 (Video, Unknown) => Ok(self.clone().change_type::<MediaTypeVideo>().into_series()),
                 (Audio, Unknown) => Ok(self.clone().change_type::<MediaTypeAudio>().into_series()),
                 (Image, Unknown) => Ok(self.clone().change_type::<MediaTypeImage>().into_series()),
                 (Hdf5, Unknown) => Ok(self.clone().change_type::<MediaTypeHdf5>().into_series()),
+                (Mcap, Unknown) => Ok(self.clone().change_type::<MediaTypeMcap>().into_series()),
                 _ => Err(DaftError::TypeError("invalid cast".to_string())),
             },
             DataType::Null => {
@@ -1822,6 +1828,11 @@ impl StructArray {
                     )
                     .into_series()),
                     MediaType::Hdf5 => Ok(FileArray::<MediaTypeHdf5>::new(
+                        Field::new(self.name(), dtype.clone()),
+                        casted_struct_array,
+                    )
+                    .into_series()),
+                    MediaType::Mcap => Ok(FileArray::<MediaTypeMcap>::new(
                         Field::new(self.name(), dtype.clone()),
                         casted_struct_array,
                     )

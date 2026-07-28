@@ -161,7 +161,7 @@ from daft.runners import get_or_create_runner, get_or_infer_runner_type, set_run
 from daft.sql import sql, sql_expr
 from daft.viz import register_viz_hook
 from daft.window import Window
-from daft.file import File, VideoFile, AudioFile, ImageFile, Hdf5File, open_file
+from daft.file import File, VideoFile, AudioFile, ImageFile, Hdf5File, McapFile, open_file
 
 range = _range  # type: ignore[no-redef,unused-ignore]
 
@@ -201,6 +201,7 @@ __all__ = [
     "ImageMode",
     "ImageProperty",
     "KeyFilteringSettings",
+    "McapFile",
     "MediaType",
     "ResourceRequest",
     "Schema",

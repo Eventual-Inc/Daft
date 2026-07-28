@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from daft.file.audio import AudioFile
     from daft.file.hdf5 import Hdf5File
     from daft.file.image import ImageFile
+    from daft.file.mcap import McapFile
     from daft.file.video import VideoFile
     from daft.io import IOConfig
 
@@ -185,6 +186,8 @@ class File:
         except FileNotFoundError:
             if self.path.lower().endswith((".h5", ".hdf5")):
                 return "application/vnd.hdfgroup.hdf5"
+            if self.path.lower().endswith(".mcap"):
+                return "application/x-mcap"
             maybe_mime_type, _ = mimetypes.guess_type(self.path)
             return maybe_mime_type if maybe_mime_type else "application/octet-stream"
 
@@ -237,6 +240,14 @@ class File:
     def is_hdf5(self) -> bool:
         mimetype = self.mime_type()
         return mimetype == "application/vnd.hdfgroup.hdf5"
+
+    def is_mcap(self) -> bool:
+        """Whether the file has an MCAP magic signature."""
+        try:
+            with self.open(buffer_size=BUFFER_SNIFF) as file:
+                return file.read(8) == b"\x89MCAP0\r\n"
+        except FileNotFoundError:
+            return self.path.lower().endswith(".mcap")
 
     def as_video(self) -> VideoFile:
         """Convert to VideoFile if this file contains video data."""
@@ -304,4 +315,15 @@ class File:
         cls = Hdf5File.__new__(Hdf5File)
         cls._inner = self._inner
 
+        return cls
+
+    def as_mcap(self) -> McapFile:
+        """Convert to ``McapFile`` if this file is an MCAP container."""
+        from daft.file.mcap import McapFile
+
+        if not self.is_mcap():
+            raise ValueError(f"File {self} is not an MCAP file")
+
+        cls = McapFile.__new__(McapFile)
+        cls._inner = self._inner
         return cls

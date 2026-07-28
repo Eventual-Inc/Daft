@@ -18,7 +18,7 @@ from daft import DataType as dt
 from daft import Series
 from daft.daft import ImageMode
 from daft.datatype import MediaType, TimeUnit
-from daft.file import File, Hdf5File, VideoFile
+from daft.file import File, Hdf5File, McapFile, VideoFile
 
 try:  # pragma: no cover - optional dependency
     import tensorflow  # type: ignore[import-not-found]
@@ -149,6 +149,7 @@ class PydanticWithNamedTuple(BaseModel):
         pytest.param(File, dt.file(MediaType.unknown()), id="daft_file"),
         pytest.param(VideoFile, dt.file(MediaType.video()), id="daft_video_file"),
         pytest.param(Hdf5File, dt.file(MediaType.hdf5()), id="daft_hdf5_file"),
+        pytest.param(McapFile, dt.file(MediaType.mcap()), id="daft_mcap_file"),
         pytest.param(object, dt.python(), id="object_python"),
         # Pydantic models
         pytest.param(
@@ -320,6 +321,7 @@ def test_infer_from_jaxtyping(dtype_class, expected_dtype, shape_spec, expected_
         (Series.from_pylist([1, 2, 3]), dt.list(dt.int64())),
         (File("hello.txt"), dt.file(MediaType.unknown())),
         (VideoFile("hello.mp4"), dt.file(MediaType.video())),
+        (McapFile("hello.mcap"), dt.file(MediaType.mcap())),
         (object(), dt.python()),
         # Nested lists
         ([[1, 2], [3, 4]], dt.list(dt.list(dt.int64()))),

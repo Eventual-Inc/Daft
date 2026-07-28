@@ -77,6 +77,7 @@ The `daft.File` type is subclassed by
 - [`daft.ImageFile`](../api/datatypes/file_types.md)
 - [`daft.VideoFile`](../api/datatypes/file_types.md)
 - [`daft.Hdf5File`](../api/datatypes/file_types.md)
+- [`daft.McapFile`](../api/datatypes/file_types.md)
 
 Each of these subclasses provide a [pythonic file-like interface](https://docs.python.org/3/library/functions.html#open) with random access capabilities. You can also pass in a custom buffer size to the `open` method to control the amount of data read into memory at once.
 

@@ -119,6 +119,7 @@ from .file_ import (
     audio_file,
     image_file,
     hdf5_file,
+    mcap_file,
     guess_mime_type,
 )
 
@@ -510,6 +511,7 @@ __all__ = [
     "map_get",
     "map_keys",
     "max",
+    "mcap_file",
     "mean",
     "median",
     "microsecond",

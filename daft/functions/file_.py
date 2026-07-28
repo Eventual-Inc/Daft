@@ -95,6 +95,22 @@ def hdf5_file(url: Expression, verify: bool = False, io_config: IOConfig | None 
     return url._eval_expressions("hdf5_file", verify=verify, io_config=io_config)
 
 
+def mcap_file(url: Expression, verify: bool = False, io_config: IOConfig | None = None) -> Expression:
+    """Converts a string or generic File expression to a ``daft.McapFile`` reference.
+
+    Args:
+        url: String or File expression containing the file location.
+        verify: If true, read and validate the MCAP magic signature.
+        io_config: Optional credentials and storage configuration for string
+            inputs. File inputs retain the configuration already embedded in
+            their file reference.
+
+    Returns:
+        A ``File[Mcap]`` expression.
+    """
+    return url._eval_expressions("mcap_file", verify=verify, io_config=io_config)
+
+
 def file_path(file: Expression) -> Expression:
     """Returns the path (URL) of the file as a string.
 

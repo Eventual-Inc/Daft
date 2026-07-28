@@ -184,6 +184,7 @@ pub mod pylib {
         functions_registry.add_fn(daft_file::AudioFile);
         functions_registry.add_fn(daft_file::ImageFile);
         functions_registry.add_fn(daft_file::Hdf5File);
+        functions_registry.add_fn(daft_file::McapFile);
         functions_registry.add_fn(daft_file::GuessMimeType);
         functions_registry
             .add_fn(daft_functions::monotonically_increasing_id::MonotonicallyIncreasingId);

@@ -19,3 +19,7 @@ The `File` DataType provides first-class support for handling file data across l
 ::: daft.file.Hdf5File
     options:
         filters: ["!^_"]
+
+::: daft.file.McapFile
+    options:
+        filters: ["!^_"]
