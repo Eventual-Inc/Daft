@@ -830,8 +830,9 @@ def test_compare_timestamps_no_tz_date():
 def test_compare_timestamps_one_tz():
     tz1 = Series.from_pylist([datetime(2022, 1, 1)])
     tz2 = Series.from_pylist([datetime(2022, 1, 1, tzinfo=pytz.utc)])
-    with pytest.raises(ValueError, match="Cannot perform comparison on types"):
-        assert (tz1 == tz2).to_pylist() == [True]
+    # Comparison between timezone-naive and timezone-aware timestamps is now supported.
+    # The naive value is localized (not converted) to the target timezone.
+    assert (tz1 == tz2).to_pylist() == [True]
 
 
 def test_compare_timestamps_and_int():
