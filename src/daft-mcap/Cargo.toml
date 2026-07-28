@@ -1,0 +1,33 @@
+[dependencies]
+bytes = {workspace = true}
+common-error = {path = "../common/error", default-features = false}
+common-runtime = {path = "../common/runtime", default-features = false, optional = true}
+daft-core = {path = "../daft-core", default-features = false}
+daft-io = {path = "../daft-io", default-features = false}
+daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
+futures = {workspace = true}
+mcap = {workspace = true}
+pyo3 = {workspace = true, optional = true}
+tokio = {workspace = true}
+tokio-util = {workspace = true}
+
+[dev-dependencies]
+tempfile = "3.23.0"
+
+[features]
+python = [
+  "dep:common-runtime",
+  "dep:pyo3",
+  "common-error/python",
+  "daft-core/python",
+  "daft-io/python",
+  "daft-recordbatch/python"
+]
+
+[lints]
+workspace = true
+
+[package]
+edition = {workspace = true}
+name = "daft-mcap"
+version = {workspace = true}

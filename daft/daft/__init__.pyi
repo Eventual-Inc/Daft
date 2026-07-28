@@ -2025,6 +2025,20 @@ class OperatorMetrics:
         attributes: dict[str, str] | None = None,
     ) -> None: ...
 
+class PyMcapReader:
+    def __init__(
+        self,
+        uri: str,
+        io_config: IOConfig | None = None,
+        batch_size: int = 1000,
+        start_time: int | None = None,
+        end_time: int | None = None,
+        topics: list[str] | None = None,
+    ): ...
+    @property
+    def indexed(self) -> bool: ...
+    def next_batch(self) -> PyRecordBatch | None: ...
+
 class PyRecordBatch:
     def schema(self) -> PySchema: ...
     def eval_expression_list(self, exprs: list[PyExpr]) -> PyRecordBatch: ...

@@ -45,6 +45,7 @@ daft-json = {path = "src/daft-json", default-features = false}
 daft-local-execution = {path = "src/daft-local-execution", default-features = false}
 daft-local-plan = {path = "src/daft-local-plan", default-features = false}
 daft-logical-plan = {path = "src/daft-logical-plan", default-features = false}
+daft-mcap = {path = "src/daft-mcap", default-features = false}
 daft-micropartition = {path = "src/daft-micropartition", default-features = false}
 daft-minhash = {path = "src/daft-minhash", default-features = false}
 daft-parquet = {path = "src/daft-parquet", default-features = false}
@@ -100,6 +101,7 @@ python = [
   "daft-local-execution/python",
   "daft-local-plan/python",
   "daft-logical-plan/python",
+  "daft-mcap/python",
   "daft-micropartition/python",
   "daft-parquet/python",
   "daft-partition-refs/python",
@@ -225,6 +227,7 @@ members = [
   "src/daft-local-execution",
   "src/daft-local-plan",
   "src/daft-logical-plan",
+  "src/daft-mcap",
   "src/daft-micropartition",
   "src/daft-parquet",
   "src/daft-partition-refs",
@@ -305,6 +308,7 @@ daft-hash = {path = "src/daft-hash"}
 daft-io = {path = "src/daft-io"}
 daft-local-execution = {path = "src/daft-local-execution"}
 daft-logical-plan = {path = "src/daft-logical-plan"}
+daft-mcap = {path = "src/daft-mcap"}
 daft-micropartition = {path = "src/daft-micropartition"}
 daft-runners = {path = "src/daft-runners"}
 daft-recordbatch = {path = "src/daft-recordbatch"}
@@ -327,6 +331,7 @@ jaq-core = "2.2.1"
 jaq-json = {version = "1.1.3", features = ["serde_json"]}
 jaq-std = "2.1.2"
 libloading = "0.9"
+mcap = {version = "0.25.0", default-features = false, features = ["lz4", "tokio", "zstd"]}
 mur3 = "0.1.0"
 ndarray = "0.17"
 num-derive = "0.4.2"
