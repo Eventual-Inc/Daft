@@ -2,14 +2,6 @@
 
 [MCAP](https://mcap.dev/) is an open-source container file format for multimodal log data, commonly used in robotics and autonomous systems. Daft can read MCAP files using [`daft.read_mcap()`][daft.io.read_mcap].
 
-## Installing Dependencies
-
-MCAP support requires the `mcap` package:
-
-```bash
-pip install mcap
-```
-
 ## Basic Usage
 
 === "Local File"
@@ -57,11 +49,12 @@ The `read_mcap` function returns a DataFrame with the following schema:
 
 | Column | Type | Description |
 |--------|------|-------------|
+| `source_path` | `string` | Path of the MCAP file containing the message |
 | `topic` | `string` | The topic name the message was published on |
-| `log_time` | `int64` | Timestamp when the message was logged (nanoseconds) |
-| `publish_time` | `int64` | Timestamp when the message was published (nanoseconds) |
-| `sequence` | `int32` | Sequence number of the message |
-| `data` | `string` | Message data as a string |
+| `log_time` | `uint64` | Timestamp when the message was logged (nanoseconds) |
+| `publish_time` | `uint64` | Timestamp when the message was published (nanoseconds) |
+| `sequence` | `uint32` | Sequence number of the message |
+| `data` | `binary` | Raw message payload |
 
 ## Filtering Options
 

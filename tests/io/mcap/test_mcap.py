@@ -3,9 +3,10 @@ from __future__ import annotations
 import os
 import threading
 from functools import partial
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
+from mcap.writer import CompressionType, IndexType
 from mcap.writer import Writer as MCAPWriter
 from mcap_ros2.writer import Writer
 
@@ -152,6 +153,8 @@ def test_mcap_read(mcap_dataset_path):
     assert len(pdf) == 100
     assert "topic" in pdf.columns
     assert "data" in pdf.columns
+    assert pdf["source_path"].unique().tolist() == [str(mcap_dataset_path)]
+    assert all(isinstance(value, bytes) for value in pdf["data"])
     assert pdf["publish_time"].between(0, 9900).all()
 
 
@@ -173,7 +176,7 @@ def test_mcap_read_huggingface():
     pdf = df.to_pandas()
 
     assert len(pdf) == 10
-    assert set(pdf.columns) == {"topic", "log_time", "publish_time", "sequence", "data"}
+    assert set(pdf.columns) == {"source_path", "topic", "log_time", "publish_time", "sequence", "data"}
     assert (pdf["topic"] == "mouse").all()
     assert pdf["log_time"].is_monotonic_increasing
 
@@ -189,13 +192,123 @@ def test_mcap_read_s3(data_from_s3):
 
     assert len(pdf) == 100
     assert pdf["sequence"].nunique() == 100
-    assert pdf["data"].str.startswith("Chatter #").all()
+    assert all(isinstance(value, bytes) for value in pdf["data"])
 
 
 @pytest.mark.parametrize("raw_bytes_mcap_dataset_path", ["raw_bytes_mcap_dataset_path"], indirect=True)
 def test_mcap_show_raw_bytes_does_not_crash(raw_bytes_mcap_dataset_path):
     df = daft.read_mcap(raw_bytes_mcap_dataset_path, batch_size=256)
     df.show(10)
+
+
+@pytest.mark.parametrize("compression", [CompressionType.NONE, CompressionType.LZ4, CompressionType.ZSTD])
+def test_mcap_native_reader_compression(tmp_path, compression):
+    path = tmp_path / f"{compression.name.lower()}.mcap"
+    with path.open("wb") as output:
+        writer = MCAPWriter(output, compression=compression)
+        writer.start()
+        schema_id = writer.register_schema(name="", encoding="", data=b"")
+        channel_id = writer.register_channel(topic="/state", message_encoding="", schema_id=schema_id)
+        writer.add_message(channel_id, log_time=1, publish_time=2, sequence=3, data=b"raw-payload")
+        writer.finish()
+
+    assert daft.read_mcap(path).select("data").to_pydict() == {"data": [b"raw-payload"]}
+
+
+def test_mcap_native_reader_unindexed_fallback(tmp_path):
+    path = tmp_path / "unindexed.mcap"
+    with path.open("wb") as output:
+        writer = MCAPWriter(output, index_types=IndexType.NONE)
+        writer.start()
+        schema_id = writer.register_schema(name="", encoding="", data=b"")
+        channel_id = writer.register_channel(topic="/state", message_encoding="", schema_id=schema_id)
+        for sequence in range(3):
+            writer.add_message(
+                channel_id,
+                log_time=sequence,
+                publish_time=sequence,
+                sequence=sequence,
+                data=bytes([sequence]),
+            )
+        writer.finish()
+
+    assert daft.read_mcap(path).select("sequence", "data").to_pydict() == {
+        "sequence": [0, 1, 2],
+        "data": [b"\x00", b"\x01", b"\x02"],
+    }
+    assert daft.read_mcap(path, topics=["/state"], start_time=1, end_time=3).select("sequence").to_pydict() == {
+        "sequence": [1, 2]
+    }
+
+
+def test_mcap_explicit_time_filter_uses_remote_ranges(tmp_path):
+    path = tmp_path / "chunked.mcap"
+    with path.open("wb") as output:
+        writer = MCAPWriter(output, chunk_size=64 * 1024, compression=CompressionType.NONE)
+        writer.start()
+        schema_id = writer.register_schema(name="", encoding="", data=b"")
+        channel_id = writer.register_channel(topic="/camera", message_encoding="", schema_id=schema_id)
+        payload = b"x" * (60 * 1024)
+        for sequence in range(32):
+            writer.add_message(
+                channel_id=channel_id,
+                log_time=sequence,
+                publish_time=sequence,
+                sequence=sequence,
+                data=payload,
+            )
+        writer.finish()
+    contents = path.read_bytes()
+
+    class CountingRangeHandler(BaseHTTPRequestHandler):
+        bytes_served = 0
+
+        def log_message(self, format, *args):
+            pass
+
+        def do_HEAD(self):
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(contents)))
+            self.send_header("Accept-Ranges", "bytes")
+            self.end_headers()
+
+        def do_GET(self):
+            header = self.headers.get("Range")
+            if header is None:
+                start, end, status = 0, len(contents) - 1, 200
+            else:
+                start_text, end_text = header.removeprefix("bytes=").split("-", 1)
+                start = int(start_text)
+                end = min(int(end_text) if end_text else len(contents) - 1, len(contents) - 1)
+                status = 206
+            body = contents[start : end + 1]
+            type(self).bytes_served += len(body)
+            self.send_response(status)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Accept-Ranges", "bytes")
+            if status == 206:
+                self.send_header("Content-Range", f"bytes {start}-{end}/{len(contents)}")
+            self.end_headers()
+            self.wfile.write(body)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), CountingRangeHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/chunked.mcap"
+        result = daft.read_mcap(url, start_time=16, end_time=17, topics=["/camera"]).select("log_time").to_pydict()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert result == {"log_time": [16]}
+    assert CountingRangeHandler.bytes_served * 5 < len(contents)
+
+
+def test_mcap_batch_size_must_be_positive(raw_bytes_mcap_dataset_path):
+    with pytest.raises(ValueError, match="batch_size must be positive"):
+        daft.read_mcap(raw_bytes_mcap_dataset_path, batch_size=0)
 
 
 def test_mcap_per_file_keyframe_scanner(tmp_path_factory):

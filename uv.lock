@@ -1509,7 +1509,6 @@ all = [
     { name = "h5py" },
     { name = "httpx" },
     { name = "huggingface-hub" },
-    { name = "mcap" },
     { name = "mypy-boto3-glue" },
     { name = "numpy" },
     { name = "openai" },
@@ -1569,9 +1568,6 @@ iceberg = [
 ]
 lance = [
     { name = "daft-lance" },
-]
-mcap = [
-    { name = "mcap" },
 ]
 numpy = [
     { name = "numpy" },
@@ -1730,7 +1726,6 @@ requires-dist = [
     { name = "httpx", marker = "extra == 'unity'", specifier = "<=0.28.1" },
     { name = "huggingface-hub", marker = "extra == 'huggingface'", specifier = "<1.17.0" },
     { name = "librosa", marker = "extra == 'audio'", specifier = ">=0.11.0,<0.12.0" },
-    { name = "mcap", marker = "extra == 'mcap'", specifier = ">=1.1.0,<2.0.0" },
     { name = "mypy-boto3-glue", marker = "extra == 'aws'" },
     { name = "numpy", marker = "extra == 'google'", specifier = "<2.4.0" },
     { name = "numpy", marker = "extra == 'hdf5'", specifier = "<2.4.0" },
