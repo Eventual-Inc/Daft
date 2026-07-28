@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import pyarrow as pa
 import pytest
 
@@ -39,7 +41,7 @@ def test_read_blob_glob(tmp_path):
     result = df.to_pydict()
     assert len(result["path"]) == 3
     for path, size, content in zip(result["path"], result["size"], result["content"]):
-        name = path.split("/")[-1]
+        name = os.path.basename(path)
         assert content == contents[name]
         assert size == len(contents[name])
 
@@ -52,7 +54,7 @@ def test_read_blob_multiple_paths(tmp_path):
 
     df = daft.read_blob([str(file_a), str(file_b)]).sort("path")
     result = df.to_pydict()
-    assert [p.split("/")[-1] for p in result["path"]] == ["a.bin", "b.bin"]
+    assert [os.path.basename(p) for p in result["path"]] == ["a.bin", "b.bin"]
     assert result["size"] == [3, 4]
     assert result["content"] == [b"aaa", b"bbbb"]
 
