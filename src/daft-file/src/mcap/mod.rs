@@ -3,13 +3,15 @@ pub mod functions;
 #[cfg(feature = "python")]
 mod python;
 
-use std::io::{Read, Seek, SeekFrom};
+use std::{
+    collections::HashMap,
+    io::{Read, Seek, SeekFrom},
+};
 
 use common_error::{DaftError, DaftResult};
 use mcap::{
-    MAGIC, Summary,
-    records::Record,
-    sans_io::{SummaryReadEvent, SummaryReader, SummaryReaderOptions},
+    MAGIC, Schema,
+    records::{self, Record},
 };
 #[cfg(feature = "python")]
 pub(crate) use python::register_modules as register_python_modules;
@@ -17,6 +19,8 @@ pub(crate) use python::register_modules as register_python_modules;
 use crate::DaftFile;
 
 const MAX_METADATA_RECORD_SIZE: usize = 256 * 1024 * 1024;
+const RECORD_HEADER_SIZE: u64 = 9;
+const FOOTER_RECORD_SIZE: u64 = RECORD_HEADER_SIZE + 20;
 pub const BUFFER_SIZE_MCAP_METADATA: usize = 1024 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -164,18 +168,18 @@ pub fn has_magic(file: &mut DaftFile) -> DaftResult<bool> {
     }
 }
 
-fn read_record_at(
+fn read_record_with_size_at(
     file: &mut DaftFile,
     file_size: u64,
     position: u64,
     expected_length: Option<u64>,
-) -> DaftResult<Record<'static>> {
+) -> DaftResult<(Record<'static>, u64)> {
     let remaining = file_size.checked_sub(position).ok_or_else(|| {
         mcap_error(format!(
             "record position {position} exceeds file size {file_size}"
         ))
     })?;
-    if remaining < 9 {
+    if remaining < RECORD_HEADER_SIZE {
         return Err(mcap_error(format!(
             "record at byte {position} does not contain a complete record header"
         )));
@@ -183,7 +187,7 @@ fn read_record_at(
 
     file.seek(SeekFrom::Start(position)).map_err(mcap_error)?;
 
-    let mut record_header = [0_u8; 9];
+    let mut record_header = [0_u8; RECORD_HEADER_SIZE as usize];
     file.read_exact(&mut record_header).map_err(mcap_error)?;
     let opcode = record_header[0];
     let body_size = u64::from_le_bytes(
@@ -192,7 +196,7 @@ fn read_record_at(
             .expect("record header always contains an eight-byte size"),
     );
     let record_size = body_size
-        .checked_add(9)
+        .checked_add(RECORD_HEADER_SIZE)
         .ok_or_else(|| mcap_error(format!("record at byte {position} is too large")))?;
     if record_size > remaining {
         return Err(mcap_error(format!(
@@ -218,9 +222,21 @@ fn read_record_at(
 
     let mut body = vec![0_u8; body_size];
     file.read_exact(&mut body).map_err(mcap_error)?;
-    Ok(mcap::parse_record(opcode, &body)
-        .map_err(mcap_error)?
-        .into_owned())
+    Ok((
+        mcap::parse_record(opcode, &body)
+            .map_err(mcap_error)?
+            .into_owned(),
+        record_size,
+    ))
+}
+
+fn read_record_at(
+    file: &mut DaftFile,
+    file_size: u64,
+    position: u64,
+    expected_length: Option<u64>,
+) -> DaftResult<Record<'static>> {
+    read_record_with_size_at(file, file_size, position, expected_length).map(|(record, _)| record)
 }
 
 fn read_header(file: &mut DaftFile, file_size: u64) -> DaftResult<HeaderMetadata> {
@@ -240,36 +256,120 @@ fn read_header(file: &mut DaftFile, file_size: u64) -> DaftResult<HeaderMetadata
     }
 }
 
-fn read_summary_with_size(file: &mut DaftFile, file_size: u64) -> DaftResult<Option<Summary>> {
-    let mut reader = SummaryReader::new_with_options(
-        SummaryReaderOptions::default()
-            .with_file_size(file_size)
-            .with_record_length_limit(MAX_METADATA_RECORD_SIZE),
-    );
-
-    while let Some(event) = reader.next_event() {
-        match event.map_err(mcap_error)? {
-            SummaryReadEvent::ReadRequest(size) => {
-                let bytes_read = file.read(reader.insert(size)).map_err(mcap_error)?;
-                reader.notify_read(bytes_read);
-            }
-            SummaryReadEvent::SeekRequest(position) => {
-                let position = file.seek(position).map_err(mcap_error)?;
-                reader.notify_seeked(position);
-            }
-        }
-    }
-
-    Ok(reader.finish())
+struct ParsedSummary {
+    stats: Option<records::Statistics>,
+    channels: HashMap<u16, records::Channel>,
+    schemas: HashMap<u16, Schema<'static>>,
+    chunk_indexes: Vec<records::ChunkIndex>,
+    attachment_indexes: Vec<records::AttachmentIndex>,
+    metadata_indexes: Vec<records::MetadataIndex>,
 }
 
-/// Read the optional MCAP summary using bounded seeks and reads.
-pub fn read_summary(file: &mut DaftFile) -> DaftResult<Option<Summary>> {
-    let file_size: u64 = file
-        .size()?
-        .try_into()
-        .map_err(|_| mcap_error("file size does not fit in u64"))?;
-    read_summary_with_size(file, file_size)
+fn read_summary_with_size(
+    file: &mut DaftFile,
+    file_size: u64,
+) -> DaftResult<Option<ParsedSummary>> {
+    let footer_position = file_size
+        .checked_sub(FOOTER_RECORD_SIZE + MAGIC.len() as u64)
+        .ok_or_else(|| mcap_error("file is too small to contain an MCAP footer"))?;
+
+    file.seek(SeekFrom::Start(footer_position + FOOTER_RECORD_SIZE))
+        .map_err(mcap_error)?;
+    let mut trailing_magic = [0_u8; MAGIC.len()];
+    file.read_exact(&mut trailing_magic).map_err(mcap_error)?;
+    if trailing_magic != MAGIC {
+        return Err(mcap_error("bad trailing magic"));
+    }
+
+    let footer = match read_record_at(file, file_size, footer_position, Some(FOOTER_RECORD_SIZE))? {
+        Record::Footer(footer) => footer,
+        other => {
+            return Err(mcap_error(format!(
+                "expected a footer record, found opcode {:#04x}",
+                other.opcode()
+            )));
+        }
+    };
+    if footer.summary_start == 0 {
+        return Ok(None);
+    }
+
+    let summary_end = if footer.summary_offset_start == 0 {
+        footer_position
+    } else {
+        footer.summary_offset_start
+    };
+    if footer.summary_start > summary_end || summary_end > footer_position {
+        return Err(mcap_error(format!(
+            "invalid summary range {}..{summary_end} for footer at byte {footer_position}",
+            footer.summary_start
+        )));
+    }
+
+    let mut summary = ParsedSummary {
+        stats: None,
+        channels: HashMap::new(),
+        schemas: HashMap::new(),
+        chunk_indexes: Vec::new(),
+        attachment_indexes: Vec::new(),
+        metadata_indexes: Vec::new(),
+    };
+    let mut position = footer.summary_start;
+    while position < summary_end {
+        let (record, record_size) = read_record_with_size_at(file, file_size, position, None)?;
+        let next_position = position
+            .checked_add(record_size)
+            .ok_or_else(|| mcap_error(format!("record at byte {position} is too large")))?;
+        if next_position > summary_end {
+            return Err(mcap_error(format!(
+                "summary record at byte {position} extends past the summary boundary at byte {summary_end}"
+            )));
+        }
+
+        match record {
+            Record::AttachmentIndex(index) => summary.attachment_indexes.push(index),
+            Record::MetadataIndex(index) => summary.metadata_indexes.push(index),
+            Record::Statistics(statistics) => summary.stats = Some(statistics),
+            Record::Schema { header, data } => {
+                if header.id == 0 {
+                    return Err(mcap_error("schema records cannot use ID 0"));
+                }
+                let schema = Schema {
+                    id: header.id,
+                    name: header.name,
+                    encoding: header.encoding,
+                    data,
+                };
+                if let Some(existing) = summary.schemas.get(&schema.id) {
+                    if existing != &schema {
+                        return Err(mcap_error(format!(
+                            "conflicting schema records use ID {}",
+                            schema.id
+                        )));
+                    }
+                } else {
+                    summary.schemas.insert(schema.id, schema);
+                }
+            }
+            Record::Channel(channel) => {
+                if let Some(existing) = summary.channels.get(&channel.id) {
+                    if existing != &channel {
+                        return Err(mcap_error(format!(
+                            "conflicting channel records use ID {}",
+                            channel.id
+                        )));
+                    }
+                } else {
+                    summary.channels.insert(channel.id, channel);
+                }
+            }
+            Record::ChunkIndex(index) => summary.chunk_indexes.push(index),
+            _ => {}
+        }
+        position = next_position;
+    }
+
+    Ok(Some(summary))
 }
 
 pub fn read_metadata(file: &mut DaftFile) -> DaftResult<McapMetadata> {
@@ -334,8 +434,11 @@ pub fn read_metadata_with_options(
             id: channel.id,
             topic: channel.topic.clone(),
             message_encoding: channel.message_encoding.clone(),
-            schema_id: channel.schema.as_ref().map(|schema| schema.id),
-            schema_name: channel.schema.as_ref().map(|schema| schema.name.clone()),
+            schema_id: (channel.schema_id != 0).then_some(channel.schema_id),
+            schema_name: summary
+                .schemas
+                .get(&channel.schema_id)
+                .map(|schema| schema.name.clone()),
             message_count: summary
                 .stats
                 .as_ref()
@@ -568,6 +671,23 @@ mod tests {
         assert!(metadata.metadata.is_empty());
         assert!(metadata.has_chunk_indexes);
         assert_eq!(metadata.statistics.unwrap().metadata_count, 1);
+    }
+
+    #[test]
+    fn preserves_schema_id_when_summary_omits_schemas() {
+        let bytes = sample_mcap(
+            WriteOptions::default()
+                .repeat_channels(true)
+                .repeat_schemas(false),
+            true,
+        );
+        let mut file = DaftFile::from_bytes(MediaType::Mcap, bytes);
+
+        let metadata = read_metadata(&mut file).unwrap();
+
+        assert!(metadata.schemas.is_empty());
+        assert_eq!(metadata.channels[0].schema_id, Some(1));
+        assert_eq!(metadata.channels[0].schema_name, None);
     }
 
     #[test]
