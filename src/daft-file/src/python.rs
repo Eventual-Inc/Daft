@@ -9,10 +9,12 @@ use std::{
 
 use common_error::DaftError;
 use daft_core::file::FileReference;
+use daft_schema::media_type::MediaType;
 use pyo3::{
     exceptions::{PyIOError, PyRuntimeError, PyValueError},
     prelude::*,
 };
+use tracing::instrument;
 
 use crate::file::{DaftFile, FileCursor};
 
@@ -145,23 +147,33 @@ impl PyDaftFile {
             "File not opened inside a context manager. use `with file.open() as f:`",
         ))
     }
-}
 
-#[pymethods]
-impl PyDaftFile {
-    #[staticmethod]
-    #[pyo3(signature=(f, buffer_size=None))]
-    fn _from_file_reference(
-        py: Python<'_>,
-        f: PyFileReference,
-        buffer_size: Option<usize>,
-    ) -> PyResult<Self> {
-        let file_ref = f.inner.as_ref().clone();
-        py.detach(move || Ok(DaftFile::load_blocking(file_ref, false, buffer_size)?.into()))
+    #[instrument(skip_all, name = "File::read")]
+    fn read_file(&mut self, py: Python<'_>, size: isize) -> PyResult<Vec<u8>> {
+        self.read_impl(py, size)
     }
 
-    #[pyo3(signature=(size=-1))]
-    fn read(&mut self, py: Python<'_>, size: isize) -> PyResult<Vec<u8>> {
+    #[instrument(skip_all, name = "VideoFile::read")]
+    fn read_video(&mut self, py: Python<'_>, size: isize) -> PyResult<Vec<u8>> {
+        self.read_impl(py, size)
+    }
+
+    #[instrument(skip_all, name = "AudioFile::read")]
+    fn read_audio(&mut self, py: Python<'_>, size: isize) -> PyResult<Vec<u8>> {
+        self.read_impl(py, size)
+    }
+
+    #[instrument(skip_all, name = "ImageFile::read")]
+    fn read_image(&mut self, py: Python<'_>, size: isize) -> PyResult<Vec<u8>> {
+        self.read_impl(py, size)
+    }
+
+    #[instrument(skip_all, name = "Hdf5File::read")]
+    fn read_hdf5(&mut self, py: Python<'_>, size: isize) -> PyResult<Vec<u8>> {
+        self.read_impl(py, size)
+    }
+
+    fn read_impl(&mut self, py: Python<'_>, size: isize) -> PyResult<Vec<u8>> {
         self.check_context()?;
         let mut cursor = self
             .inner
@@ -210,6 +222,31 @@ impl PyDaftFile {
                 self.inner.cursor = Some(cursor_back);
                 Err(e)
             }
+        }
+    }
+}
+
+#[pymethods]
+impl PyDaftFile {
+    #[staticmethod]
+    #[pyo3(signature=(f, buffer_size=None))]
+    fn _from_file_reference(
+        py: Python<'_>,
+        f: PyFileReference,
+        buffer_size: Option<usize>,
+    ) -> PyResult<Self> {
+        let file_ref = f.inner.as_ref().clone();
+        py.detach(move || Ok(DaftFile::load_blocking(file_ref, false, buffer_size)?.into()))
+    }
+
+    #[pyo3(signature=(size=-1))]
+    fn read(&mut self, py: Python<'_>, size: isize) -> PyResult<Vec<u8>> {
+        match self.inner.media_type {
+            MediaType::Unknown => self.read_file(py, size),
+            MediaType::Video => self.read_video(py, size),
+            MediaType::Audio => self.read_audio(py, size),
+            MediaType::Image => self.read_image(py, size),
+            MediaType::Hdf5 => self.read_hdf5(py, size),
         }
     }
 
