@@ -414,16 +414,6 @@ const MCAP_MAGIC: &[u8] = b"\x89MCAP0\r\n";
 pub(crate) const MCAP_MIME: &str = "application/x-mcap";
 const MIME_SNIFF_BYTES: usize = 4 * 1024 + HDF5_MAGIC.len();
 
-pub(crate) fn has_mcap_magic(file: &mut DaftFile) -> DaftResult<bool> {
-    file.seek(SeekFrom::Start(0))?;
-    let mut magic = [0_u8; MCAP_MAGIC.len()];
-    match file.read_exact(&mut magic) {
-        Ok(()) => Ok(magic == MCAP_MAGIC),
-        Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => Ok(false),
-        Err(error) => Err(error.into()),
-    }
-}
-
 fn guess_mimetype_from_url(url: &str) -> Option<String> {
     let url = Url::parse(url).ok()?;
     let path = url.path();

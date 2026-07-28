@@ -2985,4 +2985,10 @@ class PyMediaType:
     @staticmethod
     def mcap() -> PyMediaType: ...
 
+def _read_mcap_metadata(
+    file: PyFileReference,
+    include_schema_data: bool = True,
+    include_metadata_records: bool = True,
+    include_chunk_indexes: bool = True,
+) -> dict[str, Any]: ...
 def guess_mimetype_from_content(bytes: bytes) -> str | None: ...

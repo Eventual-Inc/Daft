@@ -14,7 +14,8 @@ use daft_schema::media_type::MediaType;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    file::{BUFFER_SIZE_SNIFF, DaftFile, HDF5_MIME, has_mcap_magic},
+    file::{BUFFER_SIZE_SNIFF, DaftFile, HDF5_MIME},
+    mcap::has_magic as has_mcap_magic,
     meta::file_exists,
 };
 

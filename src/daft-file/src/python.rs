@@ -21,8 +21,14 @@ type SeekResult = Result<(u64, FileCursor), (PyErr, FileCursor)>;
 
 #[pyclass(from_py_object)]
 #[derive(Clone)]
-struct PyFileReference {
+pub(crate) struct PyFileReference {
     inner: Arc<FileReference>,
+}
+
+impl PyFileReference {
+    pub(crate) fn file_reference(&self) -> FileReference {
+        self.inner.as_ref().clone()
+    }
 }
 
 #[pymethods]
@@ -33,7 +39,7 @@ impl PyFileReference {
         Ok(Self { inner: Arc::new(f) })
     }
 
-    pub fn __enter__(&self, py: Python<'_>) -> PyResult<PyDaftFile> {
+    fn __enter__(&self, py: Python<'_>) -> PyResult<PyDaftFile> {
         let file_ref = self.inner.as_ref().clone();
         py.detach(move || Ok(DaftFile::load_blocking(file_ref, true, None)?.into()))
     }
@@ -336,6 +342,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyDaftFile>()?;
     parent.add_class::<PyFileReference>()?;
     parent.add_function(wrap_pyfunction!(guess_mimetype_from_content, parent)?)?;
+    crate::mcap::register_python_modules(parent)?;
 
     Ok(())
 }

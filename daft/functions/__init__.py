@@ -110,6 +110,7 @@ from .hdf5 import (
     hdf5_keys,
     hdf5_metadata,
 )
+from .mcap import mcap_message_count, mcap_time_range, mcap_topics
 from .file_ import (
     file,
     file_path,
@@ -512,6 +513,9 @@ __all__ = [
     "map_keys",
     "max",
     "mcap_file",
+    "mcap_message_count",
+    "mcap_time_range",
+    "mcap_topics",
     "mean",
     "median",
     "microsecond",

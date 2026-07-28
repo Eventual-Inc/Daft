@@ -191,6 +191,65 @@ df.show(5)
 (Showing first 5 rows)
 ```
 
+## Inspecting MCAP metadata
+
+`daft.McapFile` reads the MCAP header and optional footer/summary indexes through
+Daft's native range-readable file interface. On backends that support range
+requests, remote recordings do not need to be copied to a temporary file or
+downloaded in full just to discover their topics, time bounds, schemas, message
+counts, chunk indexes, or metadata records.
+
+```python
+import daft
+
+recording = daft.McapFile("s3://robot-logs/episode.mcap")
+print(recording.topics())
+print(recording.message_count())
+print(recording.time_range())
+```
+
+The same operations are available as lazy expressions. The inexpensive planning
+helpers share one summary read when used together:
+
+```python
+from daft.functions import mcap_file
+
+files = (
+    daft.from_glob_path("s3://robot-logs/**/*.mcap")
+    .with_column("mcap", mcap_file(daft.col("path")))
+    .with_columns(
+        {
+            "topics": daft.col("mcap").mcap_topics(),
+            "message_count": daft.col("mcap").mcap_message_count(),
+            "time_range": daft.col("mcap").mcap_time_range(),
+        }
+    )
+)
+```
+
+For uncommon catalog fields, call `McapFile.metadata()` from a Python UDF and
+project only the values your application needs:
+
+```python
+@daft.func
+def schema_names(recording: daft.McapFile) -> list[str]:
+    return [schema["name"] for schema in recording.metadata()["schemas"]]
+
+files = files.with_column("schema_names", schema_names(daft.col("mcap")))
+```
+
+`metadata()` includes schema bytes, chunk indexes, attachments, and indexed
+metadata records. The range reads and MCAP parsing remain native; Python only
+selects the application-specific result.
+
+MCAP summaries are optional. `has_summary` reports whether one exists.
+`has_chunk_indexes` and `has_message_indexes` report the two index levels used
+for read and count pushdown; `indexed` is shorthand for `has_chunk_indexes`.
+An unindexed summary may still contain schemas, channels, and statistics. Daft
+does not fall back to a full data scan when summary metadata is absent.
+`McapFile` does not decode or scan messages; use `daft.read_mcap` when you need
+message rows.
+
 ## Byte-Range Reads
 
 When working with files that pack multiple records into a single blob (e.g. Paimon blob files), you can specify `offset` and `length` to read only a specific byte range instead of the entire file. Both parameters must be provided together.
