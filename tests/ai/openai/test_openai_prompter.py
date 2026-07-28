@@ -490,7 +490,7 @@ def test_openai_request_does_not_receive_udf_options(use_chat_completions, struc
             message = Mock()
             if structured:
                 message.parsed = SimpleResponse(answer="Yes", confidence=0.95)
-                request = mock_client.chat.completions.parse
+                request = mock_client.beta.chat.completions.parse
             else:
                 message.content = "Yes"
                 request = mock_client.chat.completions.create
