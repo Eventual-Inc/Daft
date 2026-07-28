@@ -30,6 +30,13 @@ const MAX_RECORD_LENGTH: usize = 1024 * 1024 * 1024;
 // For tiny remote objects, one complete read is cheaper than separate magic,
 // footer, summary, and chunk range requests.
 const SMALL_REMOTE_FILE_THRESHOLD: usize = 64 * 1024;
+// Remote MCAP chunks are commonly adjacent, while each object-store range can
+// carry substantial fixed latency. Read ahead from the first requested chunk
+// so subsequent parser requests can reuse the same body without materializing
+// more than a bounded amount of unrelated data.
+const INDEXED_READ_AHEAD_MULTIPLIER: usize = 8;
+const MAX_INDEXED_READ_AHEAD_BYTES: usize = 8 * 1024 * 1024;
+const SUMMARY_READ_AHEAD_BYTES: usize = 8 * 1024 * 1024;
 
 fn mcap_error(error: impl std::fmt::Display) -> DaftError {
     DaftError::ComputeError(format!("Failed to read MCAP messages: {error}"))
@@ -103,6 +110,7 @@ async fn fetch_exact_range(
 async fn read_summary(
     uri: &str,
     file_size: usize,
+    is_remote: bool,
     io_client: &Arc<IOClient>,
     io_stats: &IOStatsRef,
 ) -> DaftResult<Option<mcap::Summary>> {
@@ -114,6 +122,7 @@ async fn read_summary(
             .with_record_length_limit(MAX_RECORD_LENGTH),
     );
     let mut position = 0_u64;
+    let mut read_buffer: Option<BufferedRange> = None;
 
     while let Some(event) = reader.next_event() {
         match event.map_err(mcap_error)? {
@@ -124,7 +133,32 @@ async fn read_summary(
             SummaryReadEvent::ReadRequest(requested) => {
                 let remaining = file_size_u64.saturating_sub(position);
                 let available = requested.min(usize::try_from(remaining).unwrap_or(usize::MAX));
-                let bytes = fetch_range(uri, position, available, io_client, io_stats).await?;
+                let bytes = if available == 0 {
+                    Bytes::new()
+                } else if !is_remote {
+                    fetch_range(uri, position, available, io_client, io_stats).await?
+                } else if let Some(bytes) = read_buffer
+                    .as_ref()
+                    .and_then(|buffer| buffer.slice(position, available))
+                {
+                    bytes
+                } else {
+                    let read_length = available
+                        .max(SUMMARY_READ_AHEAD_BYTES)
+                        .min(usize::try_from(remaining).unwrap_or(usize::MAX));
+                    let buffer = BufferedRange {
+                        start: position,
+                        bytes: fetch_exact_range(uri, position, read_length, io_client, io_stats)
+                            .await?,
+                    };
+                    let bytes = buffer.slice(position, available).ok_or_else(|| {
+                        DaftError::InternalError(
+                            "MCAP summary read-ahead did not contain requested bytes".to_string(),
+                        )
+                    })?;
+                    read_buffer = Some(buffer);
+                    bytes
+                };
                 let read = bytes.len().min(requested);
                 reader.insert(requested)[..read].copy_from_slice(&bytes[..read]);
                 reader.notify_read(read);
@@ -148,6 +182,27 @@ fn linear_reader(input: AsyncInput) -> LinearReader {
 
 fn open_buffered_linear_reader(bytes: Bytes) -> LinearReader {
     linear_reader(Box::new(std::io::Cursor::new(bytes)))
+}
+
+struct BufferedRange {
+    start: u64,
+    bytes: Bytes,
+}
+
+impl BufferedRange {
+    fn slice(&self, start: u64, length: usize) -> Option<Bytes> {
+        let relative_start = usize::try_from(start.checked_sub(self.start)?).ok()?;
+        let relative_end = relative_start.checked_add(length)?;
+        (relative_end <= self.bytes.len()).then(|| self.bytes.slice(relative_start..relative_end))
+    }
+}
+
+fn indexed_read_length(requested: usize, available: usize) -> usize {
+    requested
+        .saturating_mul(INDEXED_READ_AHEAD_MULTIPLIER)
+        .min(MAX_INDEXED_READ_AHEAD_BYTES)
+        .max(requested)
+        .min(available)
 }
 
 async fn open_linear_reader(
@@ -301,6 +356,8 @@ pub struct NativeMcapReader {
     batch_size: usize,
     finished: bool,
     indexed: bool,
+    indexed_remote_file_size: Option<usize>,
+    indexed_read_buffer: Option<BufferedRange>,
 }
 
 impl NativeMcapReader {
@@ -326,15 +383,17 @@ impl NativeMcapReader {
                 .is_some_and(|(start, end)| start >= end);
         let unfiltered =
             topics.is_none() && options.start_time.is_none() && options.end_time.is_none();
+        let is_remote = !matches!(parse_url(&uri)?.0, SourceType::File);
 
         let mut channels = BTreeMap::new();
-        let (mode, indexed) = if unfiltered {
+        let (mode, indexed, indexed_remote_file_size) = if unfiltered {
             (
                 ReaderMode::Linear {
                     reader: open_linear_reader(&uri, &io_client, &io_stats).await?,
                     record_buffer: Vec::new(),
                 },
                 false,
+                None,
             )
         } else {
             let file_size = io_client
@@ -343,8 +402,7 @@ impl NativeMcapReader {
             if file_size < mcap::MAGIC.len() {
                 return Err(mcap_error("file is shorter than MCAP magic"));
             }
-            let is_small_remote = file_size <= SMALL_REMOTE_FILE_THRESHOLD
-                && !matches!(parse_url(&uri)?.0, SourceType::File);
+            let is_small_remote = file_size <= SMALL_REMOTE_FILE_THRESHOLD && is_remote;
             let buffered = if is_small_remote && !empty {
                 Some(fetch_exact_range(&uri, 0, file_size, &io_client, &io_stats).await?)
             } else {
@@ -366,11 +424,13 @@ impl NativeMcapReader {
                         record_buffer: Vec::new(),
                     },
                     false,
+                    None,
                 )
             } else if empty {
-                (ReaderMode::Empty, false)
+                (ReaderMode::Empty, false, None)
             } else {
-                let summary = read_summary(&uri, file_size, &io_client, &io_stats).await?;
+                let summary =
+                    read_summary(&uri, file_size, is_remote, &io_client, &io_stats).await?;
                 if let Some(summary) = &summary {
                     channels.extend(
                         summary
@@ -401,6 +461,7 @@ impl NativeMcapReader {
                                 .map_err(mcap_error)?,
                         ),
                         true,
+                        is_remote.then_some(file_size),
                     )
                 } else {
                     (
@@ -409,6 +470,7 @@ impl NativeMcapReader {
                             record_buffer: Vec::new(),
                         },
                         false,
+                        None,
                     )
                 }
             }
@@ -426,6 +488,8 @@ impl NativeMcapReader {
             batch_size: options.batch_size,
             finished: false,
             indexed,
+            indexed_remote_file_size,
+            indexed_read_buffer: None,
         })
     }
 
@@ -443,6 +507,53 @@ impl NativeMcapReader {
         self.topics
             .as_ref()
             .is_none_or(|topics| topics.contains(topic))
+    }
+
+    async fn fetch_indexed_chunk(&mut self, offset: u64, length: usize) -> DaftResult<Bytes> {
+        if let Some(bytes) = self
+            .indexed_read_buffer
+            .as_ref()
+            .and_then(|buffer| buffer.slice(offset, length))
+        {
+            return Ok(bytes);
+        }
+
+        let Some(file_size) = self.indexed_remote_file_size else {
+            return fetch_exact_range(&self.uri, offset, length, &self.io_client, &self.io_stats)
+                .await;
+        };
+        let start = usize::try_from(offset)
+            .map_err(|_| mcap_error("range offset does not fit in usize"))?;
+        let available = file_size.checked_sub(start).ok_or_else(|| {
+            mcap_error(format!(
+                "chunk offset {offset} exceeds file size {file_size}"
+            ))
+        })?;
+        if length > available {
+            return Err(mcap_error(format!(
+                "unexpected EOF reading range at {offset}: requested {length} bytes, only {available} available"
+            )));
+        }
+
+        let read_length = indexed_read_length(length, available);
+        let buffer = BufferedRange {
+            start: offset,
+            bytes: fetch_exact_range(
+                &self.uri,
+                offset,
+                read_length,
+                &self.io_client,
+                &self.io_stats,
+            )
+            .await?,
+        };
+        let bytes = buffer.slice(offset, length).ok_or_else(|| {
+            DaftError::InternalError(
+                "indexed MCAP read-ahead did not contain requested chunk".to_string(),
+            )
+        })?;
+        self.indexed_read_buffer = Some(buffer);
+        Ok(bytes)
     }
 
     fn next_indexed_action(&mut self) -> DaftResult<IndexedAction> {
@@ -499,14 +610,7 @@ impl NativeMcapReader {
             if matches!(self.mode, ReaderMode::Indexed(_)) {
                 match self.next_indexed_action()? {
                     IndexedAction::ReadChunk { offset, length } => {
-                        let bytes = fetch_exact_range(
-                            &self.uri,
-                            offset,
-                            length,
-                            &self.io_client,
-                            &self.io_stats,
-                        )
-                        .await?;
+                        let bytes = self.fetch_indexed_chunk(offset, length).await?;
                         let ReaderMode::Indexed(reader) = &mut self.mode else {
                             unreachable!("reader mode changed while fetching MCAP chunk")
                         };

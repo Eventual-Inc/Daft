@@ -278,7 +278,7 @@ def test_mcap_native_reader_unindexed_fallback(tmp_path):
     }
 
 
-def test_mcap_explicit_time_filter_uses_remote_ranges(tmp_path):
+def test_mcap_explicit_time_filter_coalesces_remote_ranges(tmp_path):
     path = tmp_path / "chunked.mcap"
     with path.open("wb") as output:
         writer = MCAPWriter(output, chunk_size=64 * 1024, compression=CompressionType.NONE)
@@ -286,7 +286,7 @@ def test_mcap_explicit_time_filter_uses_remote_ranges(tmp_path):
         schema_id = writer.register_schema(name="", encoding="", data=b"")
         channel_id = writer.register_channel(topic="/camera", message_encoding="", schema_id=schema_id)
         payload = b"x" * (60 * 1024)
-        for sequence in range(32):
+        for sequence in range(64):
             writer.add_message(
                 channel_id=channel_id,
                 log_time=sequence,
@@ -302,14 +302,15 @@ def test_mcap_explicit_time_filter_uses_remote_ranges(tmp_path):
     thread.start()
     try:
         url = f"http://127.0.0.1:{server.server_port}/chunked.mcap"
-        result = daft.read_mcap(url, start_time=16, end_time=17, topics=["/camera"]).select("log_time").to_pydict()
+        result = daft.read_mcap(url, start_time=32, end_time=37, topics=["/camera"]).select("log_time").to_pydict()
     finally:
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
 
-    assert result == {"log_time": [16]}
-    assert CountingRangeHandler.bytes_served * 5 < len(contents)
+    assert result == {"log_time": [32, 33, 34, 35, 36]}
+    assert CountingRangeHandler.bytes_served * 2 < len(contents)
+    assert CountingRangeHandler.get_requests <= 6
 
 
 def test_mcap_small_remote_filter_uses_one_body_request(tmp_path):

@@ -5,7 +5,7 @@ use daft_io::{IOConfig, IOStatsContext, get_io_client};
 use mcap::{Channel, Compression, Message, WriteOptions};
 use tempfile::NamedTempFile;
 
-use crate::{McapReadOptions, NativeMcapReader};
+use crate::{BufferedRange, McapReadOptions, NativeMcapReader, indexed_read_length};
 
 fn write_mcap(
     indexed: bool,
@@ -90,6 +90,30 @@ async fn collect_rows(reader: &mut NativeMcapReader) -> DaftResult<Vec<(String, 
         }
     }
     Ok(rows)
+}
+
+#[test]
+fn indexed_read_ahead_is_bounded_and_sliceable() {
+    assert_eq!(
+        indexed_read_length(1024 * 1024, usize::MAX),
+        8 * 1024 * 1024
+    );
+    assert_eq!(
+        indexed_read_length(16 * 1024 * 1024, usize::MAX),
+        16 * 1024 * 1024
+    );
+    assert_eq!(
+        indexed_read_length(1024 * 1024, 3 * 1024 * 1024),
+        3 * 1024 * 1024
+    );
+
+    let buffer = BufferedRange {
+        start: 100,
+        bytes: bytes::Bytes::from_static(b"abcdefgh"),
+    };
+    assert_eq!(buffer.slice(102, 3).as_deref(), Some(&b"cde"[..]));
+    assert!(buffer.slice(99, 1).is_none());
+    assert!(buffer.slice(107, 2).is_none());
 }
 
 #[tokio::test]
