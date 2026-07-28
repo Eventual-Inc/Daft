@@ -98,7 +98,7 @@ The [`HdfsConfig`][daft.io.HdfsConfig] object supports the following options:
 
     - If no `name_node` is set in the config, the URL authority (`hdfs://host:port/...`) is used as the name node.
     - If `name_node` is set explicitly, it takes precedence over the URL authority: connections always go to the configured address, and a mismatching URL authority is silently ignored rather than reported as an error.
-    - The URL must always include a host: a URL without an authority such as `hdfs:///path` is rejected.
+    - Without a configured `name_node`, the URL must include a host. With an explicit `name_node`, authority-free URLs such as `hdfs:///path` work for reads, but writes currently still require the URL to include a host.
 
 ## Supported Operations
 
