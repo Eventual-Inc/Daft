@@ -27,6 +27,43 @@ class QuietHTTPRequestHandler(SimpleHTTPRequestHandler):
         pass
 
 
+def _make_counting_range_handler(contents: bytes):
+    class CountingRangeHandler(BaseHTTPRequestHandler):
+        bytes_served = 0
+        get_requests = 0
+
+        def log_message(self, format, *args):
+            pass
+
+        def do_HEAD(self):
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(contents)))
+            self.send_header("Accept-Ranges", "bytes")
+            self.end_headers()
+
+        def do_GET(self):
+            header = self.headers.get("Range")
+            if header is None:
+                start, end, status = 0, len(contents) - 1, 200
+            else:
+                start_text, end_text = header.removeprefix("bytes=").split("-", 1)
+                start = int(start_text)
+                end = min(int(end_text) if end_text else len(contents) - 1, len(contents) - 1)
+                status = 206
+            body = contents[start : end + 1]
+            type(self).bytes_served += len(body)
+            type(self).get_requests += 1
+            self.send_response(status)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Accept-Ranges", "bytes")
+            if status == 206:
+                self.send_header("Content-Range", f"bytes {start}-{end}/{len(contents)}")
+            self.end_headers()
+            self.wfile.write(body)
+
+    return CountingRangeHandler
+
+
 def _get_s3_io_config() -> IOConfig:
     return IOConfig(
         s3=S3Config(
@@ -259,38 +296,7 @@ def test_mcap_explicit_time_filter_uses_remote_ranges(tmp_path):
             )
         writer.finish()
     contents = path.read_bytes()
-
-    class CountingRangeHandler(BaseHTTPRequestHandler):
-        bytes_served = 0
-
-        def log_message(self, format, *args):
-            pass
-
-        def do_HEAD(self):
-            self.send_response(200)
-            self.send_header("Content-Length", str(len(contents)))
-            self.send_header("Accept-Ranges", "bytes")
-            self.end_headers()
-
-        def do_GET(self):
-            header = self.headers.get("Range")
-            if header is None:
-                start, end, status = 0, len(contents) - 1, 200
-            else:
-                start_text, end_text = header.removeprefix("bytes=").split("-", 1)
-                start = int(start_text)
-                end = min(int(end_text) if end_text else len(contents) - 1, len(contents) - 1)
-                status = 206
-            body = contents[start : end + 1]
-            type(self).bytes_served += len(body)
-            self.send_response(status)
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Accept-Ranges", "bytes")
-            if status == 206:
-                self.send_header("Content-Range", f"bytes {start}-{end}/{len(contents)}")
-            self.end_headers()
-            self.wfile.write(body)
-
+    CountingRangeHandler = _make_counting_range_handler(contents)
     server = ThreadingHTTPServer(("127.0.0.1", 0), CountingRangeHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -304,6 +310,42 @@ def test_mcap_explicit_time_filter_uses_remote_ranges(tmp_path):
 
     assert result == {"log_time": [16]}
     assert CountingRangeHandler.bytes_served * 5 < len(contents)
+
+
+def test_mcap_small_remote_filter_uses_one_body_request(tmp_path):
+    path = tmp_path / "small.mcap"
+    with path.open("wb") as output:
+        writer = MCAPWriter(output, compression=CompressionType.NONE)
+        writer.start()
+        schema_id = writer.register_schema(name="", encoding="", data=b"")
+        channel_id = writer.register_channel(topic="/state", message_encoding="", schema_id=schema_id)
+        for sequence in range(3):
+            writer.add_message(
+                channel_id,
+                log_time=sequence,
+                publish_time=sequence,
+                sequence=sequence,
+                data=bytes([sequence]),
+            )
+        writer.finish()
+    contents = path.read_bytes()
+    assert len(contents) < 64 * 1024
+
+    CountingRangeHandler = _make_counting_range_handler(contents)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), CountingRangeHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/small.mcap"
+        result = daft.read_mcap(url, topics=["/state"]).select("sequence").to_pydict()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert result == {"sequence": [0, 1, 2]}
+    assert CountingRangeHandler.get_requests == 1
+    assert CountingRangeHandler.bytes_served == len(contents)
 
 
 def test_mcap_batch_size_must_be_positive(raw_bytes_mcap_dataset_path):
