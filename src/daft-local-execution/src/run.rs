@@ -219,31 +219,55 @@ impl PyNativeExecutor {
         context: Option<HashMap<String, String>>,
         maintain_order: bool,
     ) -> PyResult<Bound<'py, pyo3::PyAny>> {
-        let daft_ctx: &DaftContext = daft_ctx.into();
-        let plan = local_physical_plan.plan.clone();
-        let exec_cfg = daft_ctx.execution_config();
-        let subscribers = daft_ctx.subscribers();
-        let (fingerprint, enqueue_future) = {
-            self.executor.lock_py_attached(py).unwrap().run(
-                &plan,
-                exec_cfg,
-                subscribers,
-                context,
-                inputs,
-                input_id,
-                maintain_order,
-            )?
-        };
+        self.run_with_retention(
+            py,
+            local_physical_plan,
+            daft_ctx,
+            input_id,
+            inputs,
+            context,
+            maintain_order,
+            false,
+        )
+    }
 
-        let executor = self.executor.clone();
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (local_physical_plan, daft_ctx, input_id, inputs, context=None, maintain_order=true))]
+    pub fn run_retained<'py>(
+        &self,
+        py: Python<'py>,
+        local_physical_plan: &daft_local_plan::PyLocalPhysicalPlan,
+        daft_ctx: &PyDaftContext,
+        input_id: InputId,
+        inputs: HashMap<SourceId, Input>,
+        context: Option<HashMap<String, String>>,
+        maintain_order: bool,
+    ) -> PyResult<Bound<'py, pyo3::PyAny>> {
+        self.run_with_retention(
+            py,
+            local_physical_plan,
+            daft_ctx,
+            input_id,
+            inputs,
+            context,
+            maintain_order,
+            true,
+        )
+    }
+
+    pub fn close_plan<'py>(
+        &self,
+        py: Python<'py>,
+        fingerprint: u64,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let close_future = self
+            .executor
+            .lock_py_attached(py)
+            .unwrap()
+            .close_plan(fingerprint)?;
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let result = enqueue_future.await?;
-            Ok(PyResultReceiver {
-                result: Arc::new(tokio::sync::Mutex::new(Some(result))),
-                fingerprint,
-                input_id,
-                executor,
-            })
+            close_future.await?;
+            Ok(())
         })
     }
 
@@ -283,6 +307,50 @@ impl PyNativeExecutor {
             cfg.config,
             options,
         ))
+    }
+}
+
+#[cfg(feature = "python")]
+impl PyNativeExecutor {
+    #[allow(clippy::too_many_arguments)]
+    fn run_with_retention<'py>(
+        &self,
+        py: Python<'py>,
+        local_physical_plan: &daft_local_plan::PyLocalPhysicalPlan,
+        daft_ctx: &PyDaftContext,
+        input_id: InputId,
+        inputs: HashMap<SourceId, Input>,
+        context: Option<HashMap<String, String>>,
+        maintain_order: bool,
+        retain_plan: bool,
+    ) -> PyResult<Bound<'py, pyo3::PyAny>> {
+        let daft_ctx: &DaftContext = daft_ctx.into();
+        let plan = local_physical_plan.plan.clone();
+        let exec_cfg = daft_ctx.execution_config();
+        let subscribers = daft_ctx.subscribers();
+        let (fingerprint, enqueue_future) = {
+            self.executor.lock_py_attached(py).unwrap().run(
+                &plan,
+                exec_cfg,
+                subscribers,
+                context,
+                inputs,
+                input_id,
+                maintain_order,
+            )?
+        };
+
+        let executor = self.executor.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let result = enqueue_future.await?;
+            Ok(PyResultReceiver {
+                result: Arc::new(tokio::sync::Mutex::new(Some(result))),
+                fingerprint,
+                input_id,
+                executor,
+                retain_plan,
+            })
+        })
     }
 }
 
@@ -575,6 +643,24 @@ impl NativeExecutor {
         fingerprint: u64,
         input_id: InputId,
     ) -> DaftResult<BoxFuture<'static, DaftResult<ExecutionStats>>> {
+        self.try_finish_input(fingerprint, input_id, false)
+    }
+
+    /// Finish one retained input round without removing a healthy idle plan.
+    pub fn try_finish_retained(
+        &mut self,
+        fingerprint: u64,
+        input_id: InputId,
+    ) -> DaftResult<BoxFuture<'static, DaftResult<ExecutionStats>>> {
+        self.try_finish_input(fingerprint, input_id, true)
+    }
+
+    fn try_finish_input(
+        &mut self,
+        fingerprint: u64,
+        input_id: InputId,
+        retain_plan: bool,
+    ) -> DaftResult<BoxFuture<'static, DaftResult<ExecutionStats>>> {
         let Some(plan_state) = self.plans.get_mut(&fingerprint) else {
             // Plan already removed (pipeline died and another input_id cleaned it up).
             // Return empty stats; the actual error was already surfaced by the first caller.
@@ -584,7 +670,8 @@ impl NativeExecutor {
 
         plan_state.active_input_ids.remove(&input_id);
         let pipeline_dead = plan_state.enqueue_input_sender.is_closed();
-        let should_remove = plan_state.active_input_ids.is_empty() || pipeline_dead;
+        let should_remove =
+            pipeline_dead || (!retain_plan && plan_state.active_input_ids.is_empty());
 
         if should_remove {
             let plan_state = self.plans.remove(&fingerprint).unwrap();
@@ -621,6 +708,29 @@ impl NativeExecutor {
             }
             .boxed())
         }
+    }
+
+    /// Close an idle retained plan and wait for its pipeline task to stop.
+    pub fn close_plan(
+        &mut self,
+        fingerprint: u64,
+    ) -> DaftResult<BoxFuture<'static, DaftResult<()>>> {
+        let Some(plan_state) = self.plans.get(&fingerprint) else {
+            return Ok(async move { Ok(()) }.boxed());
+        };
+        if !plan_state.active_input_ids.is_empty() {
+            return Err(common_error::DaftError::ValueError(format!(
+                "Cannot close plan {fingerprint} while input rounds are active"
+            )));
+        }
+
+        let plan_state = self.plans.remove(&fingerprint).unwrap();
+        Ok(async move {
+            drop(plan_state.enqueue_input_sender);
+            plan_state.task_handle.await??;
+            Ok(())
+        }
+        .boxed())
     }
 
     pub fn cancel_plan(&mut self, fingerprint: u64) {
@@ -711,6 +821,7 @@ pub struct PyResultReceiver {
     fingerprint: u64,
     input_id: InputId,
     executor: Arc<Mutex<NativeExecutor>>,
+    retain_plan: bool,
 }
 
 #[cfg(feature = "python")]
@@ -754,6 +865,7 @@ impl PyResultReceiver {
         let executor = self.executor.clone();
         let fingerprint = self.fingerprint;
         let input_id = self.input_id;
+        let retain_plan = self.retain_plan;
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             // Take the result to drop the receiver
             let mut result = result.lock().await;
@@ -763,7 +875,14 @@ impl PyResultReceiver {
             drop(result);
 
             // Delegate to NativeExecutor::try_finish
-            let finish_future = executor.lock().unwrap().try_finish(fingerprint, input_id)?;
+            let finish_future = if retain_plan {
+                executor
+                    .lock()
+                    .unwrap()
+                    .try_finish_retained(fingerprint, input_id)?
+            } else {
+                executor.lock().unwrap().try_finish(fingerprint, input_id)?
+            };
             let stats = finish_future.await?;
             Ok(PyExecutionStats::from(stats))
         })
