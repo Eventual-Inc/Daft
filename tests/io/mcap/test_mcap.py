@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import os
+import pickle
 import threading
 from functools import partial
 from http.server import BaseHTTPRequestHandler, SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -11,9 +13,12 @@ from mcap.writer import Writer as MCAPWriter
 from mcap_ros2.writer import Writer
 
 import daft
+from daft.daft import McapSourceConfig
 from daft.filesystem import _resolve_paths_and_filesystem
 from daft.io import IOConfig, S3Config
-from daft.io.mcap._mcap import list_files
+from daft.io._mcap import MCAPSource, list_files
+from daft.io.pushdowns import Pushdowns
+from daft.io.source import _RustDataSourceTask
 
 HAS_S3 = bool(
     os.environ.get("AWS_ACCESS_KEY_ID")
@@ -354,6 +359,58 @@ def test_mcap_batch_size_must_be_positive(raw_bytes_mcap_dataset_path):
         daft.read_mcap(raw_bytes_mcap_dataset_path, batch_size=0)
 
 
+def test_mcap_source_emits_native_task_with_file_size(raw_bytes_mcap_dataset_path):
+    source = MCAPSource(raw_bytes_mcap_dataset_path)
+
+    async def get_first_task():
+        return await anext(source.get_tasks(Pushdowns.empty()))
+
+    task = asyncio.run(get_first_task())
+    assert isinstance(task, _RustDataSourceTask)
+    assert task.schema == source.schema
+    assert source._files[0].size_bytes == raw_bytes_mcap_dataset_path.stat().st_size
+
+
+def test_mcap_source_config_pickle_round_trip():
+    config = McapSourceConfig(
+        batch_size=64,
+        start_time=10,
+        end_time=20,
+        topics=["/camera", "/imu"],
+    )
+    restored = pickle.loads(pickle.dumps(config))
+
+    assert restored.batch_size == 64
+    assert restored.start_time == 10
+    assert restored.end_time == 20
+    assert restored.topics == ["/camera", "/imu"]
+
+
+def test_mcap_residual_filter_projection_limit_and_repeated_collection(raw_bytes_mcap_dataset_path):
+    df = daft.read_mcap(raw_bytes_mcap_dataset_path, batch_size=3)
+    query = (
+        df.where((daft.col("topic") == "/robot0/sensor/camera0/compressed") & (daft.col("sequence") >= 1995))
+        .select("sequence")
+        .limit(3)
+    )
+
+    expected = {"sequence": [1995, 1996, 1997]}
+    assert query.to_pydict() == expected
+    assert query.to_pydict() == expected
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"topics": []},
+        {"start_time": 10, "end_time": 10},
+        {"start_time": 11, "end_time": 10},
+    ],
+)
+def test_mcap_empty_native_constraints(raw_bytes_mcap_dataset_path, kwargs):
+    assert len(daft.read_mcap(raw_bytes_mcap_dataset_path, **kwargs).collect()) == 0
+
+
 def test_mcap_per_file_keyframe_scanner(tmp_path_factory):
     tmp_dir = tmp_path_factory.mktemp("mcap")
     dir_path = tmp_dir / "multi"
@@ -379,6 +436,12 @@ def test_mcap_per_file_keyframe_scanner(tmp_path_factory):
                     data=b"\x00\x00\x00\x01\x67",
                 )
             writer.finish()
+
+    source = MCAPSource(dir_path)
+    assert {file.path: file.size_bytes for file in source._files} == {
+        str(file0): file0.stat().st_size,
+        str(file1): file1.stat().st_size,
+    }
 
     def scan_for_keyframes(mcap_path: str) -> dict[str, int]:
         if mcap_path.endswith("a.mcap"):

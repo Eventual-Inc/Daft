@@ -4,7 +4,7 @@ import warnings
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
-from daft.daft import ParquetSourceConfig, PyDataSourceTask, StorageConfig
+from daft.daft import McapSourceConfig, ParquetSourceConfig, PyDataSourceTask, StorageConfig
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
@@ -190,6 +190,39 @@ class DataSourceTask(ABC):
             path=path,
             schema=schema._schema,
             parquet_config=parquet_config,
+            pushdowns=pushdowns._to_pypushdowns() if pushdowns is not None else None,
+            num_rows=num_rows,
+            size_bytes=size_bytes,
+            partition_values=partition_values._recordbatch if partition_values is not None else None,
+            stats=stats._recordbatch if stats is not None else None,
+            storage_config=storage_config,
+        )
+
+        return _RustDataSourceTask(inner)
+
+    @staticmethod
+    def mcap(
+        path: str,
+        schema: Schema,
+        *,
+        mcap_config: McapSourceConfig | None = None,
+        pushdowns: Pushdowns | None = None,
+        num_rows: int | None = None,
+        size_bytes: int | None = None,
+        partition_values: RecordBatch | None = None,
+        stats: RecordBatch | None = None,
+        storage_config: StorageConfig | None = None,
+    ) -> DataSourceTask:
+        """Create a task that reads an MCAP file using the native reader.
+
+        This factory is intended for Python ``DataSource`` planners. It packages
+        the file and query configuration into a serializable native scan task;
+        the MCAP reader itself runs in Rust on the worker.
+        """
+        inner = PyDataSourceTask.mcap(
+            path=path,
+            schema=schema._schema,
+            mcap_config=mcap_config,
             pushdowns=pushdowns._to_pypushdowns() if pushdowns is not None else None,
             num_rows=num_rows,
             size_bytes=size_bytes,

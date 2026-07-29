@@ -7,9 +7,10 @@ use std::{
 use bytes::Bytes;
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::{BinaryArray, IntoSeries, Series, UInt32Array, UInt64Array, Utf8Array};
+use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr};
 use daft_io::{CountingReader, GetRange, GetResult, IOClient, IOStatsRef, SourceType, parse_url};
 use daft_recordbatch::RecordBatch;
-use futures::StreamExt;
+use futures::{StreamExt, stream::BoxStream};
 use mcap::{
     records::{MessageHeader, Record},
     sans_io::{
@@ -19,9 +20,6 @@ use mcap::{
 };
 use tokio::io::AsyncRead;
 use tokio_util::io::StreamReader;
-
-#[cfg(feature = "python")]
-pub mod python;
 
 #[cfg(test)]
 mod tests;
@@ -244,6 +242,13 @@ pub struct McapReadOptions {
     pub start_time: Option<u64>,
     pub end_time: Option<u64>,
     pub topics: Option<Vec<String>>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct McapConvertOptions {
+    pub predicate: Option<ExprRef>,
+    pub include_columns: Option<Vec<String>>,
+    pub limit: Option<usize>,
 }
 
 impl Default for McapReadOptions {
@@ -689,4 +694,68 @@ impl NativeMcapReader {
             Ok(Some(builder.finish()?))
         }
     }
+}
+
+/// Stream MCAP messages as record batches using native format pruning followed
+/// by ordinary Daft query operations.
+///
+/// Topic/time constraints are applied while decoding. Residual predicates run
+/// before projection so filters can reference columns that are not requested
+/// in the output. The final batch is truncated when needed to honor the limit
+/// exactly.
+pub async fn stream_mcap(
+    uri: &str,
+    io_client: Arc<IOClient>,
+    io_stats: IOStatsRef,
+    read_options: McapReadOptions,
+    convert_options: McapConvertOptions,
+) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
+    let reader = NativeMcapReader::new(uri, io_client, io_stats, read_options).await?;
+    let stream = futures::stream::try_unfold(
+        (
+            reader,
+            convert_options.predicate,
+            convert_options.include_columns,
+            convert_options.limit,
+        ),
+        |(mut reader, predicate, include_columns, mut remaining_rows)| async move {
+            if remaining_rows == Some(0) {
+                return Ok(None);
+            }
+
+            loop {
+                let Some(mut batch) = reader.next_batch().await? else {
+                    return Ok(None);
+                };
+
+                if let Some(predicate) = &predicate {
+                    let predicate = BoundExpr::try_new(predicate.clone(), &batch.schema)?;
+                    batch = batch.filter(&[predicate])?;
+                }
+                if batch.is_empty() {
+                    continue;
+                }
+
+                if let Some(include_columns) = &include_columns {
+                    let include_column_indices = include_columns
+                        .iter()
+                        .map(|name| batch.schema.get_index(name))
+                        .collect::<DaftResult<Vec<_>>>()?;
+                    batch = batch.get_columns(&include_column_indices);
+                }
+
+                if let Some(rows_left) = remaining_rows {
+                    let rows_to_emit = rows_left.min(batch.len());
+                    batch = batch.head(rows_to_emit)?;
+                    remaining_rows = Some(rows_left - rows_to_emit);
+                }
+
+                return Ok(Some((
+                    batch,
+                    (reader, predicate, include_columns, remaining_rows),
+                )));
+            }
+        },
+    );
+    Ok(Box::pin(stream))
 }
