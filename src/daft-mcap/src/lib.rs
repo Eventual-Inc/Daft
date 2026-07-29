@@ -1,38 +1,36 @@
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    io::SeekFrom,
-    sync::Arc,
-};
+//! Native MCAP scan support.
+//!
+//! This crate turns one MCAP file into a stream of Daft record batches:
+//!
+//! - [`stream_mcap`] is the scan entry point. It applies topic/time
+//!   constraints while decoding, then residual predicates, projection, and
+//!   an exact limit.
+//! - [`read`] holds [`NativeMcapReader`]: indexed chunk traversal with a
+//!   linear fallback.
+//!
+//! Peak memory scales with chunk size and batch payload size, not total file
+//! size; a writer module may join `read` later.
+
+use std::{io::SeekFrom, sync::Arc};
 
 use bytes::Bytes;
 use common_error::{DaftError, DaftResult};
-use daft_core::prelude::{BinaryArray, IntoSeries, Series, UInt32Array, UInt64Array, Utf8Array};
 use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr};
-use daft_io::{CountingReader, GetRange, GetResult, IOClient, IOStatsRef, SourceType, parse_url};
+use daft_io::{GetRange, GetResult, IOClient, IOStatsRef};
 use daft_recordbatch::RecordBatch;
 use futures::{StreamExt, stream::BoxStream};
-use mcap::{
-    records::{MessageHeader, Record},
-    sans_io::{
-        IndexedReadEvent, IndexedReader, IndexedReaderOptions, SummaryReadEvent, SummaryReader,
-        SummaryReaderOptions, indexed_reader::ReadOrder,
-    },
-};
-use tokio::io::AsyncRead;
-use tokio_util::io::StreamReader;
+use mcap::sans_io::{SummaryReadEvent, SummaryReader, SummaryReaderOptions};
 
+mod read;
 #[cfg(test)]
-mod tests;
+mod test_utils;
 
-const MAX_RECORD_LENGTH: usize = 1024 * 1024 * 1024;
-// Read small remote files in one request.
-const SMALL_REMOTE_FILE_THRESHOLD: usize = 64 * 1024;
-// Coalesce nearby indexed reads without unbounded overfetch.
-const INDEXED_READ_AHEAD_MULTIPLIER: usize = 8;
-const MAX_INDEXED_READ_AHEAD_BYTES: usize = 8 * 1024 * 1024;
+pub use read::NativeMcapReader;
+
+pub(crate) const MAX_RECORD_LENGTH: usize = 1024 * 1024 * 1024;
 const SUMMARY_READ_AHEAD_BYTES: usize = 8 * 1024 * 1024;
 
-fn mcap_error(error: impl std::fmt::Display) -> DaftError {
+pub(crate) fn mcap_error(error: impl std::fmt::Display) -> DaftError {
     DaftError::ComputeError(format!("Failed to read MCAP messages: {error}"))
 }
 
@@ -84,7 +82,7 @@ async fn fetch_range(
     Ok(bytes)
 }
 
-async fn fetch_exact_range(
+pub(crate) async fn fetch_exact_range(
     uri: &str,
     start: u64,
     length: usize,
@@ -101,7 +99,21 @@ async fn fetch_exact_range(
     Ok(bytes)
 }
 
-async fn read_summary(
+pub(crate) struct BufferedRange {
+    pub(crate) start: u64,
+    pub(crate) bytes: Bytes,
+}
+
+impl BufferedRange {
+    pub(crate) fn slice(&self, start: u64, length: usize) -> Option<Bytes> {
+        let relative_start = usize::try_from(start.checked_sub(self.start)?).ok()?;
+        let relative_end = relative_start.checked_add(length)?;
+        (relative_end <= self.bytes.len()).then(|| self.bytes.slice(relative_start..relative_end))
+    }
+}
+
+/// Reads the optional summary section from the end of an MCAP file.
+pub(crate) async fn read_summary(
     uri: &str,
     file_size: usize,
     is_remote: bool,
@@ -164,87 +176,12 @@ async fn read_summary(
     Ok(reader.finish())
 }
 
-type AsyncInput = Box<dyn AsyncRead + Send + Unpin>;
-type LinearReader = mcap::tokio::LinearReader<AsyncInput>;
-
-fn linear_reader(input: AsyncInput) -> LinearReader {
-    let options = mcap::tokio::LinearReaderOptions::default()
-        .with_prevalidate_chunk_crcs(true)
-        .with_record_length_limit(MAX_RECORD_LENGTH);
-    LinearReader::new_with_options(input, &options)
-}
-
-fn open_buffered_linear_reader(bytes: Bytes) -> LinearReader {
-    linear_reader(Box::new(std::io::Cursor::new(bytes)))
-}
-
-struct BufferedRange {
-    start: u64,
-    bytes: Bytes,
-}
-
-impl BufferedRange {
-    fn slice(&self, start: u64, length: usize) -> Option<Bytes> {
-        let relative_start = usize::try_from(start.checked_sub(self.start)?).ok()?;
-        let relative_end = relative_start.checked_add(length)?;
-        (relative_end <= self.bytes.len()).then(|| self.bytes.slice(relative_start..relative_end))
-    }
-}
-
-fn indexed_read_length(requested: usize, available: usize) -> usize {
-    requested
-        .saturating_mul(INDEXED_READ_AHEAD_MULTIPLIER)
-        .min(MAX_INDEXED_READ_AHEAD_BYTES)
-        .max(requested)
-        .min(available)
-}
-
-async fn open_linear_reader(
-    uri: &str,
-    io_client: &Arc<IOClient>,
-    io_stats: &IOStatsRef,
-) -> DaftResult<LinearReader> {
-    let result = io_client
-        .single_url_get(uri.to_string(), None, Some(io_stats.clone()))
-        .await?;
-    let input: AsyncInput = match result {
-        GetResult::File(file) => {
-            if file.range.is_some() {
-                return Err(DaftError::InternalError(
-                    "full MCAP read unexpectedly returned a ranged local file".to_string(),
-                ));
-            }
-            let source = tokio::fs::File::open(&file.path).await.map_err(|error| {
-                DaftError::External(
-                    std::io::Error::new(
-                        error.kind(),
-                        format!("failed to open {}: {error}", file.path.display()),
-                    )
-                    .into(),
-                )
-            })?;
-            Box::new(CountingReader::new(source, Some(io_stats.clone())))
-        }
-        GetResult::Stream(stream, ..) => Box::new(StreamReader::new(
-            stream.map(|result| result.map_err(std::io::Error::from)),
-        )),
-    };
-    Ok(linear_reader(input))
-}
-
 #[derive(Clone, Debug)]
 pub struct McapReadOptions {
     pub batch_size: usize,
     pub start_time: Option<u64>,
     pub end_time: Option<u64>,
     pub topics: Option<Vec<String>>,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct McapConvertOptions {
-    pub predicate: Option<ExprRef>,
-    pub include_columns: Option<Vec<String>>,
-    pub limit: Option<usize>,
 }
 
 impl Default for McapReadOptions {
@@ -258,438 +195,11 @@ impl Default for McapReadOptions {
     }
 }
 
-struct OwnedMessage {
-    topic: String,
-    header: MessageHeader,
-    data: Vec<u8>,
-}
-
-struct McapBatchBuilder {
-    source_paths: Vec<String>,
-    topics: Vec<String>,
-    log_times: Vec<u64>,
-    publish_times: Vec<u64>,
-    sequences: Vec<u32>,
-    data: Vec<Vec<u8>>,
-}
-
-impl McapBatchBuilder {
-    fn new(capacity: usize) -> Self {
-        Self {
-            source_paths: Vec::with_capacity(capacity),
-            topics: Vec::with_capacity(capacity),
-            log_times: Vec::with_capacity(capacity),
-            publish_times: Vec::with_capacity(capacity),
-            sequences: Vec::with_capacity(capacity),
-            data: Vec::with_capacity(capacity),
-        }
-    }
-
-    fn len(&self) -> usize {
-        self.topics.len()
-    }
-
-    fn push(&mut self, source_path: &str, message: OwnedMessage) {
-        self.source_paths.push(source_path.to_string());
-        self.topics.push(message.topic);
-        self.log_times.push(message.header.log_time);
-        self.publish_times.push(message.header.publish_time);
-        self.sequences.push(message.header.sequence);
-        self.data.push(message.data);
-    }
-
-    fn finish(self) -> DaftResult<RecordBatch> {
-        let columns: Vec<Series> = vec![
-            Utf8Array::from_values("source_path", self.source_paths).into_series(),
-            Utf8Array::from_values("topic", self.topics).into_series(),
-            UInt64Array::from_vec("log_time", self.log_times).into_series(),
-            UInt64Array::from_vec("publish_time", self.publish_times).into_series(),
-            UInt32Array::from_vec("sequence", self.sequences).into_series(),
-            BinaryArray::from_values("data", self.data).into_series(),
-        ];
-        RecordBatch::from_nonempty_columns(columns)
-    }
-}
-
-enum ReaderMode {
-    Indexed(IndexedReader),
-    Linear {
-        reader: LinearReader,
-        record_buffer: Vec<u8>,
-    },
-    Empty,
-}
-
-enum IndexedAction {
-    ReadChunk {
-        offset: u64,
-        length: usize,
-    },
-    Message {
-        header: MessageHeader,
-        data: Vec<u8>,
-    },
-    End,
-}
-
-enum LinearAction {
-    Channel {
-        id: u16,
-        topic: String,
-    },
-    Message {
-        header: MessageHeader,
-        data: Vec<u8>,
-    },
-    Ignore,
-    End,
-}
-
-pub struct NativeMcapReader {
-    uri: String,
-    io_client: Arc<IOClient>,
-    io_stats: IOStatsRef,
-    mode: ReaderMode,
-    channels: BTreeMap<u16, String>,
-    topics: Option<BTreeSet<String>>,
-    start_time: Option<u64>,
-    end_time: Option<u64>,
-    batch_size: usize,
-    finished: bool,
-    indexed: bool,
-    indexed_remote_file_size: Option<usize>,
-    indexed_read_buffer: Option<BufferedRange>,
-}
-
-impl NativeMcapReader {
-    pub async fn new(
-        uri: impl Into<String>,
-        io_client: Arc<IOClient>,
-        io_stats: IOStatsRef,
-        options: McapReadOptions,
-    ) -> DaftResult<Self> {
-        if options.batch_size == 0 {
-            return Err(DaftError::ValueError(
-                "MCAP batch_size must be positive".to_string(),
-            ));
-        }
-        let uri = uri.into();
-        let topics = options
-            .topics
-            .map(|topics| topics.into_iter().collect::<BTreeSet<_>>());
-        let empty = topics.as_ref().is_some_and(BTreeSet::is_empty)
-            || options
-                .start_time
-                .zip(options.end_time)
-                .is_some_and(|(start, end)| start >= end);
-        let unfiltered =
-            topics.is_none() && options.start_time.is_none() && options.end_time.is_none();
-        let is_remote = !matches!(parse_url(&uri)?.0, SourceType::File);
-
-        let mut channels = BTreeMap::new();
-        let (mode, indexed, indexed_remote_file_size) = if unfiltered {
-            (
-                ReaderMode::Linear {
-                    reader: open_linear_reader(&uri, &io_client, &io_stats).await?,
-                    record_buffer: Vec::new(),
-                },
-                false,
-                None,
-            )
-        } else {
-            let file_size = io_client
-                .single_url_get_size(uri.clone(), Some(io_stats.clone()))
-                .await?;
-            if file_size < mcap::MAGIC.len() {
-                return Err(mcap_error("file is shorter than MCAP magic"));
-            }
-            let is_small_remote = file_size <= SMALL_REMOTE_FILE_THRESHOLD && is_remote;
-            let buffered = if is_small_remote && !empty {
-                Some(fetch_exact_range(&uri, 0, file_size, &io_client, &io_stats).await?)
-            } else {
-                let magic =
-                    fetch_exact_range(&uri, 0, mcap::MAGIC.len(), &io_client, &io_stats).await?;
-                if magic.as_ref() != mcap::MAGIC {
-                    return Err(mcap_error("bad leading magic"));
-                }
-                None
-            };
-
-            if let Some(bytes) = buffered {
-                if !bytes.starts_with(mcap::MAGIC) {
-                    return Err(mcap_error("bad leading magic"));
-                }
-                (
-                    ReaderMode::Linear {
-                        reader: open_buffered_linear_reader(bytes),
-                        record_buffer: Vec::new(),
-                    },
-                    false,
-                    None,
-                )
-            } else if empty {
-                (ReaderMode::Empty, false, None)
-            } else {
-                let summary =
-                    read_summary(&uri, file_size, is_remote, &io_client, &io_stats).await?;
-                if let Some(summary) = &summary {
-                    channels.extend(
-                        summary
-                            .channels
-                            .iter()
-                            .map(|(id, channel)| (*id, channel.topic.clone())),
-                    );
-                }
-
-                if let Some(summary) = summary.filter(|summary| {
-                    !summary.chunk_indexes.is_empty() && !summary.channels.is_empty()
-                }) {
-                    let mut reader_options =
-                        IndexedReaderOptions::new().with_order(ReadOrder::LogTime);
-                    if let Some(start_time) = options.start_time {
-                        reader_options = reader_options.log_time_on_or_after(start_time);
-                    }
-                    if let Some(end_time) = options.end_time {
-                        reader_options = reader_options.log_time_before(end_time);
-                    }
-                    if let Some(topics) = &topics {
-                        reader_options = reader_options.include_topics(topics.iter().cloned());
-                    }
-                    reader_options = reader_options.with_record_length_limit(MAX_RECORD_LENGTH);
-                    (
-                        ReaderMode::Indexed(
-                            IndexedReader::new_with_options(&summary, reader_options)
-                                .map_err(mcap_error)?,
-                        ),
-                        true,
-                        is_remote.then_some(file_size),
-                    )
-                } else {
-                    (
-                        ReaderMode::Linear {
-                            reader: open_linear_reader(&uri, &io_client, &io_stats).await?,
-                            record_buffer: Vec::new(),
-                        },
-                        false,
-                        None,
-                    )
-                }
-            }
-        };
-
-        Ok(Self {
-            uri,
-            io_client,
-            io_stats,
-            mode,
-            channels,
-            topics,
-            start_time: options.start_time,
-            end_time: options.end_time,
-            batch_size: options.batch_size,
-            finished: false,
-            indexed,
-            indexed_remote_file_size,
-            indexed_read_buffer: None,
-        })
-    }
-
-    pub fn indexed(&self) -> bool {
-        self.indexed
-    }
-
-    fn message_matches(&self, topic: &str, header: MessageHeader) -> bool {
-        if self.start_time.is_some_and(|start| header.log_time < start) {
-            return false;
-        }
-        if self.end_time.is_some_and(|end| header.log_time >= end) {
-            return false;
-        }
-        self.topics
-            .as_ref()
-            .is_none_or(|topics| topics.contains(topic))
-    }
-
-    async fn fetch_indexed_chunk(&mut self, offset: u64, length: usize) -> DaftResult<Bytes> {
-        if let Some(bytes) = self
-            .indexed_read_buffer
-            .as_ref()
-            .and_then(|buffer| buffer.slice(offset, length))
-        {
-            return Ok(bytes);
-        }
-
-        let Some(file_size) = self.indexed_remote_file_size else {
-            return fetch_exact_range(&self.uri, offset, length, &self.io_client, &self.io_stats)
-                .await;
-        };
-        let start = usize::try_from(offset)
-            .map_err(|_| mcap_error("range offset does not fit in usize"))?;
-        let available = file_size.checked_sub(start).ok_or_else(|| {
-            mcap_error(format!(
-                "chunk offset {offset} exceeds file size {file_size}"
-            ))
-        })?;
-        if length > available {
-            return Err(mcap_error(format!(
-                "unexpected EOF reading range at {offset}: requested {length} bytes, only {available} available"
-            )));
-        }
-
-        let read_length = indexed_read_length(length, available);
-        let buffer = BufferedRange {
-            start: offset,
-            bytes: fetch_exact_range(
-                &self.uri,
-                offset,
-                read_length,
-                &self.io_client,
-                &self.io_stats,
-            )
-            .await?,
-        };
-        let bytes = buffer.slice(offset, length).ok_or_else(|| {
-            DaftError::InternalError(
-                "indexed MCAP read-ahead did not contain requested chunk".to_string(),
-            )
-        })?;
-        self.indexed_read_buffer = Some(buffer);
-        Ok(bytes)
-    }
-
-    fn next_indexed_action(&mut self) -> DaftResult<IndexedAction> {
-        let ReaderMode::Indexed(reader) = &mut self.mode else {
-            return Err(DaftError::InternalError(
-                "indexed action requested from non-indexed MCAP reader".to_string(),
-            ));
-        };
-        let Some(event) = reader.next_event() else {
-            return Ok(IndexedAction::End);
-        };
-        match event.map_err(mcap_error)? {
-            IndexedReadEvent::ReadChunkRequest { offset, length } => {
-                Ok(IndexedAction::ReadChunk { offset, length })
-            }
-            IndexedReadEvent::Message { header, data } => Ok(IndexedAction::Message {
-                header,
-                data: data.to_vec(),
-            }),
-        }
-    }
-
-    async fn next_linear_action(&mut self) -> DaftResult<LinearAction> {
-        let ReaderMode::Linear {
-            reader,
-            record_buffer,
-        } = &mut self.mode
-        else {
-            return Err(DaftError::InternalError(
-                "linear action requested from non-linear MCAP reader".to_string(),
-            ));
-        };
-        let Some(opcode) = reader.next_record(record_buffer).await else {
-            return Ok(LinearAction::End);
-        };
-        match mcap::parse_record(opcode.map_err(mcap_error)?, record_buffer).map_err(mcap_error)? {
-            Record::Channel(channel) => Ok(LinearAction::Channel {
-                id: channel.id,
-                topic: channel.topic,
-            }),
-            Record::Message { header, data } => Ok(LinearAction::Message {
-                header,
-                data: data.into_owned(),
-            }),
-            _ => Ok(LinearAction::Ignore),
-        }
-    }
-
-    async fn next_message(&mut self) -> DaftResult<Option<OwnedMessage>> {
-        loop {
-            if matches!(self.mode, ReaderMode::Empty) {
-                return Ok(None);
-            }
-            if matches!(self.mode, ReaderMode::Indexed(_)) {
-                match self.next_indexed_action()? {
-                    IndexedAction::ReadChunk { offset, length } => {
-                        let bytes = self.fetch_indexed_chunk(offset, length).await?;
-                        let ReaderMode::Indexed(reader) = &mut self.mode else {
-                            unreachable!("reader mode changed while fetching MCAP chunk")
-                        };
-                        reader
-                            .insert_chunk_record_data(offset, &bytes)
-                            .map_err(mcap_error)?;
-                    }
-                    IndexedAction::Message { header, data } => {
-                        let topic = self
-                            .channels
-                            .get(&header.channel_id)
-                            .ok_or_else(|| {
-                                mcap_error(format!(
-                                    "message references unknown channel {}",
-                                    header.channel_id
-                                ))
-                            })?
-                            .clone();
-                        if self.message_matches(&topic, header) {
-                            return Ok(Some(OwnedMessage {
-                                topic,
-                                header,
-                                data,
-                            }));
-                        }
-                    }
-                    IndexedAction::End => return Ok(None),
-                }
-                continue;
-            }
-
-            match self.next_linear_action().await? {
-                LinearAction::Channel { id, topic } => {
-                    self.channels.insert(id, topic);
-                }
-                LinearAction::Message { header, data } => {
-                    let topic = self
-                        .channels
-                        .get(&header.channel_id)
-                        .ok_or_else(|| {
-                            mcap_error(format!(
-                                "message references unknown channel {}",
-                                header.channel_id
-                            ))
-                        })?
-                        .clone();
-                    if self.message_matches(&topic, header) {
-                        return Ok(Some(OwnedMessage {
-                            topic,
-                            header,
-                            data,
-                        }));
-                    }
-                }
-                LinearAction::Ignore => {}
-                LinearAction::End => return Ok(None),
-            }
-        }
-    }
-
-    pub async fn next_batch(&mut self) -> DaftResult<Option<RecordBatch>> {
-        if self.finished {
-            return Ok(None);
-        }
-        let mut builder = McapBatchBuilder::new(self.batch_size);
-        while builder.len() < self.batch_size {
-            let Some(message) = self.next_message().await? else {
-                self.finished = true;
-                break;
-            };
-            builder.push(&self.uri, message);
-        }
-        if builder.len() == 0 {
-            Ok(None)
-        } else {
-            Ok(Some(builder.finish()?))
-        }
-    }
+#[derive(Clone, Debug, Default)]
+pub struct McapConvertOptions {
+    pub predicate: Option<ExprRef>,
+    pub include_columns: Option<Vec<String>>,
+    pub limit: Option<usize>,
 }
 
 fn reader_batch_stream(
@@ -796,4 +306,94 @@ pub async fn stream_mcap(
         },
     );
     Ok(Box::pin(stream))
+}
+
+#[cfg(test)]
+mod tests {
+    use common_error::DaftResult;
+    use daft_dsl::{lit, resolved_col};
+    use tempfile::NamedTempFile;
+
+    use super::{BufferedRange, McapConvertOptions, McapReadOptions};
+    use crate::test_utils::{collect_stream, write_mcap};
+
+    #[test]
+    fn buffered_range_slices_within_bounds() {
+        let buffer = BufferedRange {
+            start: 100,
+            bytes: bytes::Bytes::from_static(b"abcdefgh"),
+        };
+        assert_eq!(buffer.slice(102, 3).as_deref(), Some(&b"cde"[..]));
+        assert!(buffer.slice(99, 1).is_none());
+        assert!(buffer.slice(107, 2).is_none());
+    }
+
+    #[tokio::test]
+    async fn stream_filters_before_projection_and_applies_exact_limit() -> DaftResult<()> {
+        let file = write_mcap(true, None, 20, 8);
+        let batches = collect_stream(
+            &file,
+            McapReadOptions {
+                batch_size: 4,
+                ..Default::default()
+            },
+            McapConvertOptions {
+                predicate: Some(resolved_col("sequence").gt(lit(5_u32))),
+                include_columns: Some(vec!["topic".to_string()]),
+                limit: Some(3),
+            },
+        )
+        .await?;
+
+        assert_eq!(batches.iter().map(|batch| batch.len()).sum::<usize>(), 3);
+        assert!(batches.iter().all(|batch| batch.num_columns() == 1));
+        let topics = batches
+            .iter()
+            .flat_map(|batch| {
+                batch
+                    .get_column(0)
+                    .utf8()
+                    .unwrap()
+                    .into_iter()
+                    .map(|value| value.unwrap().to_string())
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(topics, vec!["/camera", "/imu", "/camera"]);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn stream_without_limit_preserves_all_rows() -> DaftResult<()> {
+        let file = write_mcap(true, None, 20, 8);
+        let batches = collect_stream(
+            &file,
+            McapReadOptions {
+                batch_size: 4,
+                ..Default::default()
+            },
+            McapConvertOptions::default(),
+        )
+        .await?;
+
+        assert_eq!(batches.len(), 5);
+        assert_eq!(batches.iter().map(|batch| batch.len()).sum::<usize>(), 20);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn prefetched_stream_propagates_reader_errors() -> DaftResult<()> {
+        let file = NamedTempFile::new().unwrap();
+        std::fs::write(file.path(), b"not an mcap file").unwrap();
+        let error = collect_stream(
+            &file,
+            McapReadOptions::default(),
+            McapConvertOptions::default(),
+        )
+        .await
+        .expect_err("invalid MCAP should fail");
+
+        assert!(error.to_string().to_lowercase().contains("magic"));
+        Ok(())
+    }
 }
