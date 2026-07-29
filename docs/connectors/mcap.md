@@ -87,6 +87,24 @@ df = daft.read_mcap(
 df.show()
 ```
 
+### Predicate Pushdown
+
+Filters on `topic` and `log_time` are pushed into the reader, where they prune
+chunks through the file's summary index, so queries like this read only the
+relevant byte ranges from storage:
+
+```python
+df = daft.read_mcap("/path/to/recording.mcap").where(
+    (col("topic") == "/camera/image")
+    & (col("log_time") >= 1609459200000000000)
+    & (col("log_time") < 1609545600000000000)
+)
+```
+
+Pushed filters combine with any explicit `topics`/`start_time`/`end_time`
+arguments, and the full predicate is still applied to decoded batches, so
+results are identical either way.
+
 ### Ordering
 
 Indexed MCAP files (files with a summary and chunk indexes, the common case)
