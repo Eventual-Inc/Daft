@@ -21,6 +21,7 @@ use daft_recordbatch::RecordBatch;
 use futures::{StreamExt, stream::BoxStream};
 use mcap::sans_io::{SummaryReadEvent, SummaryReader, SummaryReaderOptions};
 
+mod pushdown;
 mod read;
 #[cfg(test)]
 mod test_utils;
@@ -276,9 +277,10 @@ fn reader_batch_stream(
 
 /// Stream MCAP messages as record batches.
 ///
-/// Topic/time constraints are applied while decoding. Residual predicates run
-/// before projection so filters can reference unprojected columns. The final
-/// batch is truncated to honor the limit exactly.
+/// Topic/time constraints — explicit ones and any recovered from the
+/// predicate — are applied while decoding. Residual predicates run before
+/// projection so filters can reference unprojected columns. The final batch
+/// is truncated to honor the limit exactly.
 pub async fn stream_mcap(
     uri: &str,
     io_client: Arc<IOClient>,
@@ -286,6 +288,8 @@ pub async fn stream_mcap(
     read_options: McapReadOptions,
     convert_options: McapConvertOptions,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
+    let read_options =
+        pushdown::apply_predicate_pushdown(read_options, convert_options.predicate.as_ref());
     let reader = NativeMcapReader::new(uri, io_client, io_stats, read_options).await?;
     let batches = reader_batch_stream(reader, convert_options.limit.is_none());
     let stream = futures::stream::try_unfold(
@@ -407,6 +411,95 @@ mod tests {
 
         assert_eq!(batches.len(), 5);
         assert_eq!(batches.iter().map(|batch| batch.len()).sum::<usize>(), 20);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn stream_pushes_predicate_constraints_into_index() -> DaftResult<()> {
+        use std::sync::Arc;
+
+        // 16 messages x 64 KiB: an index-pruned read of one message must
+        // fetch well under half the file even with no explicit constraints.
+        let file = write_mcap(true, None, 16, 64 * 1024);
+        let file_size = file.as_file().metadata().unwrap().len() as usize;
+        let predicate = resolved_col("topic")
+            .eq(lit("/camera"))
+            .and(resolved_col("log_time").gt_eq(lit(8_u64)))
+            .and(resolved_col("log_time").lt(lit(9_u64)));
+
+        let io_client = daft_io::get_io_client(true, Arc::new(daft_io::IOConfig::default()))?;
+        let io_stats = daft_io::IOStatsContext::new("daft-mcap pushdown test");
+        let uri = file.path().to_string_lossy().into_owned();
+        let batches: Vec<_> = futures::TryStreamExt::try_collect(
+            crate::stream_mcap(
+                &uri,
+                io_client,
+                io_stats.clone(),
+                McapReadOptions::default(),
+                McapConvertOptions {
+                    predicate: Some(predicate),
+                    include_columns: None,
+                    limit: None,
+                },
+            )
+            .await?,
+        )
+        .await?;
+
+        assert_eq!(batches.iter().map(|batch| batch.len()).sum::<usize>(), 1);
+        assert!(
+            io_stats.load_bytes_read() < file_size / 2,
+            "predicate-pruned read fetched {} of {file_size} bytes",
+            io_stats.load_bytes_read()
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn stream_predicate_matches_explicit_kwargs() -> DaftResult<()> {
+        fn log_times(batches: &[daft_recordbatch::RecordBatch]) -> Vec<u64> {
+            batches
+                .iter()
+                .flat_map(|batch| {
+                    let times = batch.get_column(2).u64().unwrap();
+                    (0..batch.len())
+                        .map(|index| times.get(index).unwrap())
+                        .collect::<Vec<_>>()
+                })
+                .collect()
+        }
+
+        let file = write_mcap(true, None, 40, 32);
+        let via_kwargs = collect_stream(
+            &file,
+            McapReadOptions {
+                start_time: Some(4),
+                end_time: Some(20),
+                topics: Some(vec!["/camera".to_string()]),
+                ..Default::default()
+            },
+            McapConvertOptions::default(),
+        )
+        .await?;
+        let via_predicate = collect_stream(
+            &file,
+            McapReadOptions::default(),
+            McapConvertOptions {
+                predicate: Some(
+                    resolved_col("topic")
+                        .eq(lit("/camera"))
+                        .and(resolved_col("log_time").gt_eq(lit(4_u64)))
+                        .and(resolved_col("log_time").lt(lit(20_u64))),
+                ),
+                include_columns: None,
+                limit: None,
+            },
+        )
+        .await?;
+
+        let expected = log_times(&via_kwargs);
+        assert!(!expected.is_empty());
+        assert_eq!(log_times(&via_predicate), expected);
         Ok(())
     }
 

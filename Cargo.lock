@@ -3353,6 +3353,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "bytes",
  "common-error",
+ "daft-algebra",
  "daft-core",
  "daft-dsl",
  "daft-io",
