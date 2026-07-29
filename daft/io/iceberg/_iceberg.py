@@ -211,6 +211,8 @@ def read_iceberg_changes(
     start_timestamp_ms: int | None = None,
     end_timestamp_ms: int | None = None,
     io_config: IOConfig | None = None,
+    compute_updates: bool = False,
+    identifier_columns: list[str] | None = None,
 ) -> DataFrame:
     """Create a changelog (CDC) DataFrame from a copy-on-write (COW) Iceberg table over a snapshot range.
 
@@ -221,12 +223,13 @@ def read_iceberg_changes(
     every changelog data file to be strictly schema-compatible with it at every nesting level.
 
     Every row in the returned DataFrame carries three additional columns: ``_change_type``
-    (``"INSERT"`` or ``"DELETE"``), ``_change_ordinal`` (int64, scan-relative -- not a stable
-    cross-scan identifier), and ``_commit_snapshot_id`` (int64, the Iceberg snapshot id that
-    produced the change). Carryover rows -- COW file-rewrite noise where a row's content didn't
-    actually change but still appears as a (DELETE, INSERT) pair because the whole file was
-    rewritten -- are unconditionally removed before the DataFrame is returned; this cannot be
-    disabled, matching Iceberg's own ``create_changelog_view`` procedure.
+    (``"INSERT"``, ``"DELETE"``, or -- when ``compute_updates=True`` -- ``"UPDATE_BEFORE"``/
+    ``"UPDATE_AFTER"``), ``_change_ordinal`` (int64, scan-relative -- not a stable cross-scan
+    identifier), and ``_commit_snapshot_id`` (int64, the Iceberg snapshot id that produced the
+    change). Carryover rows -- COW file-rewrite noise where a row's content didn't actually
+    change but still appears as a (DELETE, INSERT) pair because the whole file was rewritten --
+    are unconditionally removed before the DataFrame is returned; this cannot be disabled,
+    matching Iceberg's own ``create_changelog_view`` procedure.
 
     Args:
         table (str, os.PathLike, or pyiceberg.table.Table): Same as :func:`read_iceberg`.
@@ -242,6 +245,25 @@ def read_iceberg_changes(
             snapshot current at or before it, then used as the inclusive end boundary. Cannot be
             combined with ``end_snapshot_id``.
         io_config (IOConfig, optional): Same as :func:`read_iceberg`.
+        compute_updates (bool): If True, re-mark matched DELETE+INSERT pairs (by
+            ``identifier_columns``) as ``UPDATE_BEFORE``/``UPDATE_AFTER`` instead of leaving them
+            as independent ``DELETE``/``INSERT`` events. Pairing is cross-ordinal: an identifier
+            deleted in one commit and re-inserted in a later one (with no intervening event for
+            that identifier) is paired as a single update, matching Iceberg's
+            ``ComputeUpdateIterator`` semantics. This only proves the identifier's event sequence
+            paired up -- it does not prove any non-identifier column actually changed; some
+            writers can split a single logical update into separate DELETE and APPEND commits,
+            which would be paired here even though the row's content never changed. Cardinality
+            and consistency validation (at most one DELETE and one INSERT per identifier per
+            commit) only runs when the resulting ``_change_type`` column is actually consumed --
+            if you ``select()`` it away before collecting, validation does not run, but every
+            other column's value is unaffected either way. Defaults to False.
+        identifier_columns (list[str], optional): Column names that uniquely identify a logical
+            row, used to pair DELETE+INSERT events when ``compute_updates=True``. Defaults to the
+            table's schema-declared identifier fields (as of ``end_snapshot_id``) when omitted;
+            raises ``ValueError`` if explicitly passed as an empty list, or if the table declares
+            no identifier fields and none are given. Ignored (and must not be passed) unless
+            ``compute_updates=True``.
 
     Returns:
         DataFrame: A DataFrame with the table's schema plus ``_change_type``, ``_change_ordinal``,
@@ -252,13 +274,26 @@ def read_iceberg_changes(
 
     Examples:
         >>> df = daft.io.iceberg.read_iceberg_changes(table, start_snapshot_id=100, end_snapshot_id=105)
+        >>> df = daft.io.iceberg.read_iceberg_changes(table, compute_updates=True, identifier_columns=["id"])
     """
     from pyiceberg.table import StaticTable
 
+    from daft.io.iceberg._changelog_planning import resolve_changelog_range
     from daft.io.iceberg.iceberg_changes_scan import IcebergChangesScanOperator
 
     if isinstance(table, (str, os.PathLike)):
         table = StaticTable.from_metadata(metadata_location=os.fspath(table))
+
+    if not compute_updates and identifier_columns is not None:
+        raise ValueError("identifier_columns may only be passed when compute_updates=True.")
+
+    # Resolved once, here, at DataFrame-construction time (metadata-only, no I/O) and passed explicitly to every consumer
+    # below, rather than each independently re-deriving it or reaching into the operator's
+    # internals: the operator itself, and (when compute_updates=True) the identifier
+    # resolver, both read `.baseline_schema` off this one shared object.
+    resolved_range = resolve_changelog_range(
+        table, start_snapshot_id, end_snapshot_id, start_timestamp_ms, end_timestamp_ms
+    )
 
     io_config = (
         _convert_iceberg_file_io_properties_to_io_config(table.io.properties, table.location())
@@ -272,10 +307,7 @@ def read_iceberg_changes(
 
     scan_operator = IcebergChangesScanOperator(
         table,
-        start_snapshot_id=start_snapshot_id,
-        end_snapshot_id=end_snapshot_id,
-        start_timestamp_ms=start_timestamp_ms,
-        end_timestamp_ms=end_timestamp_ms,
+        resolved_range=resolved_range,
         storage_config=storage_config,
     )
 
@@ -285,4 +317,12 @@ def read_iceberg_changes(
 
     from daft.io.iceberg._changelog_postprocess import remove_carryovers
 
-    return remove_carryovers(df)
+    df = remove_carryovers(df)
+
+    if compute_updates:
+        from daft.io.iceberg._changelog_pairing import pair_updates, resolve_identifier_columns
+
+        resolved_identifier_columns = resolve_identifier_columns(identifier_columns, resolved_range.baseline_schema)
+        df = pair_updates(df, resolved_identifier_columns)
+
+    return df

@@ -24,7 +24,6 @@ from daft.io.iceberg._changelog_planning import (
     compute_snapshot_ordinals,
     ordered_changelog_snapshots,
     plan_changelog_file_tasks,
-    resolve_snapshot_range,
 )
 from daft.io.iceberg._changelog_schema import validate_single_schema_table, validate_task_file_schemas
 from daft.io.iceberg._metadata import convert_iceberg_schema
@@ -39,6 +38,8 @@ if TYPE_CHECKING:
 
     from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import Table
+
+    from daft.io.iceberg._changelog_planning import ResolvedChangelogRange
 
 logger = logging.getLogger(__name__)
 
@@ -116,24 +117,24 @@ class IcebergChangesScanOperator(ScanOperator):
         self,
         iceberg_table: Table,
         *,
-        start_snapshot_id: int | None,
-        end_snapshot_id: int | None,
-        start_timestamp_ms: int | None,
-        end_timestamp_ms: int | None,
+        resolved_range: ResolvedChangelogRange,
         storage_config: StorageConfig,
     ) -> None:
         super().__init__()
         self._iceberg_table = iceberg_table
-        self._start_snapshot_id = start_snapshot_id
-        self._end_snapshot_id = end_snapshot_id
-        self._start_timestamp_ms = start_timestamp_ms
-        self._end_timestamp_ms = end_timestamp_ms
+        # Produced once, at DataFrame-construction time, by the caller. This operator never re-derives the
+        # snapshot range or baseline schema itself, it only consumes this one shared object.
+        self._resolved_range = resolved_range
         self._storage_config = storage_config
 
-        # Cheap, metadata-only work: safe to do eagerly, no I/O beyond what loading the
-        # Table object already required.
-        baseline_iceberg_schema = validate_single_schema_table(iceberg_table)
-        self._baseline_iceberg_schema = baseline_iceberg_schema
+        # Front-gate kept independent of baseline resolution itself: schema evolution
+        # (multiple schemas per table) isn't supported yet, so this still rejects any table
+        # whose metadata contains more than one schema. Which schema is actually used as
+        # baseline always comes from `self._resolved_range.baseline_schema`, resolved via
+        # `end_snapshot.schema_id`, not from this call's return value.
+        validate_single_schema_table(iceberg_table)
+
+        baseline_iceberg_schema = resolved_range.baseline_schema
         self._format_version = iceberg_table.metadata.format_version
 
         _check_no_reserved_data_schema_collision(baseline_iceberg_schema)
@@ -212,13 +213,9 @@ class IcebergChangesScanOperator(ScanOperator):
             if self._cached_tasks is not None:
                 return self._cached_tasks
 
-            from_id, to_id = resolve_snapshot_range(
-                self._iceberg_table,
-                self._start_snapshot_id,
-                self._end_snapshot_id,
-                self._start_timestamp_ms,
-                self._end_timestamp_ms,
-            )
+            # Reuse the range resolved at construction time instead of resolving it again.
+            from_id = self._resolved_range.from_snapshot_id
+            to_id = self._resolved_range.to_snapshot_id
             snapshots = ordered_changelog_snapshots(self._iceberg_table, from_id, to_id)
             ordinals = compute_snapshot_ordinals(snapshots)
             tasks = list(plan_changelog_file_tasks(self._iceberg_table, snapshots, ordinals))
@@ -235,7 +232,7 @@ class IcebergChangesScanOperator(ScanOperator):
             # None (UNPLANNED) so a retry re-plans from scratch rather than reusing a
             # partial/failed result.
             validate_task_file_schemas(
-                self._baseline_iceberg_schema,
+                self._resolved_range.baseline_schema,
                 self._format_version,
                 self._storage_config,
                 tasks,
@@ -255,7 +252,7 @@ class IcebergChangesScanOperator(ScanOperator):
         whether they're "partition columns" in the traditional sense.
         """
         spec = self._iceberg_table.specs()[task.spec_id]
-        partition_fields = iceberg_partition_spec_to_fields(self._baseline_iceberg_schema, spec)
+        partition_fields = iceberg_partition_spec_to_fields(self._resolved_range.baseline_schema, spec)
         partition_record = task.data_file.partition
 
         arrays: dict[str, daft.Series] = {}

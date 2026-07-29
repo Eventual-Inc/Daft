@@ -275,6 +275,128 @@ def test_multi_partition_carryover_matches_single_partition_result():
     ]
 
 
+# --- Internal column naming must not collide with user data columns ---
+
+
+def test_fresh_internal_names_avoids_collisions():
+    """Unit test for the name generator itself: returned names must never be in `existing`.
+
+    Covers no collision (first choice used directly), a first-choice collision (falls back
+    to the `_1` suffix), and a first-choice-and-`_1` collision (falls back to `_2`).
+    """
+    from daft.io.iceberg._changelog_postprocess import _fresh_internal_names
+
+    basenames = ("occurrence", "n_insert", "n_delete")
+
+    names = _fresh_internal_names(set(), prefix="carryover", basenames=basenames)
+    assert set(names.values()) == {
+        "__daft_carryover_occurrence",
+        "__daft_carryover_n_insert",
+        "__daft_carryover_n_delete",
+    }
+
+    first_choice_taken = {
+        "__daft_carryover_occurrence",
+        "__daft_carryover_n_insert",
+        "__daft_carryover_n_delete",
+    }
+    names = _fresh_internal_names(first_choice_taken, prefix="carryover", basenames=basenames)
+    assert not (set(names.values()) & first_choice_taken)
+    assert set(names.values()) == {
+        "__daft_carryover_occurrence_1",
+        "__daft_carryover_n_insert_1",
+        "__daft_carryover_n_delete_1",
+    }
+
+    first_and_second_taken = first_choice_taken | {
+        "__daft_carryover_occurrence_1",
+        "__daft_carryover_n_insert_1",
+        "__daft_carryover_n_delete_1",
+    }
+    names = _fresh_internal_names(first_and_second_taken, prefix="carryover", basenames=basenames)
+    assert not (set(names.values()) & first_and_second_taken)
+
+
+def test_business_columns_named_like_first_choice_internal_names_are_preserved():
+    """A user column literally named like the generator's *first-choice* candidate must survive.
+
+    `remove_carryovers` used to `.with_column()` plain names like `_carryover_occurrence`
+    and then `.exclude()` them -- if a user's table happened to have a column with that
+    exact name, its original values would be silently overwritten and then deleted. This
+    test uses the actual first-choice candidate names the *current* generator produces
+    (`__daft_carryover_occurrence` etc.), not the pre-fix literal names, so it genuinely
+    forces `_fresh_internal_names` to fall back to its `_1`-suffixed second choice and
+    verifies that fallback path end to end -- a test using unrelated business names
+    wouldn't exercise this collision branch at all, regardless of implementation.
+    """
+    df = daft.from_pydict(
+        {
+            "id": [1, 1, 2],
+            "__daft_carryover_occurrence": ["biz_a", "biz_a", "biz_c"],
+            "__daft_carryover_n_insert": [10, 10, 30],
+            "__daft_carryover_n_delete": [40, 40, 60],
+            "_change_type": ["INSERT", "DELETE", "INSERT"],
+            "_change_ordinal": [0, 0, 0],
+            "_commit_snapshot_id": [100, 100, 100],
+        }
+    )
+    result = _sorted_rows(remove_carryovers(df))
+    # id=1's INSERT/DELETE pair is byte-identical on every data column (including the three
+    # business columns above, which are just regular data columns as far as
+    # remove_carryovers is concerned) plus _change_ordinal and _commit_snapshot_id, so it's
+    # genuine carryover noise and cancels; only id=2's standalone INSERT survives, and its
+    # business column values -- and the output schema's column names -- must be untouched.
+    assert result == [
+        {
+            "id": 2,
+            "__daft_carryover_occurrence": "biz_c",
+            "__daft_carryover_n_insert": 30,
+            "__daft_carryover_n_delete": 60,
+            "_change_type": "INSERT",
+            "_change_ordinal": 0,
+            "_commit_snapshot_id": 100,
+        }
+    ]
+
+
+def test_business_columns_occupying_first_and_second_choice_names_force_third_round():
+    """Business columns squatting on *both* the first- and `_1`-suffixed candidate names.
+
+    Forces `_fresh_internal_names` past its first retry into a second one (`_2`), and
+    verifies all six business columns -- not just three -- keep their original values and
+    remain in the output schema.
+    """
+    df = daft.from_pydict(
+        {
+            "id": [1, 1, 2],
+            "__daft_carryover_occurrence": ["r0_a", "r0_a", "r0_c"],
+            "__daft_carryover_n_insert": [10, 10, 30],
+            "__daft_carryover_n_delete": [40, 40, 60],
+            "__daft_carryover_occurrence_1": ["r1_a", "r1_a", "r1_c"],
+            "__daft_carryover_n_insert_1": [11, 11, 31],
+            "__daft_carryover_n_delete_1": [41, 41, 61],
+            "_change_type": ["INSERT", "DELETE", "INSERT"],
+            "_change_ordinal": [0, 0, 0],
+            "_commit_snapshot_id": [100, 100, 100],
+        }
+    )
+    result = _sorted_rows(remove_carryovers(df))
+    assert result == [
+        {
+            "id": 2,
+            "__daft_carryover_occurrence": "r0_c",
+            "__daft_carryover_n_insert": 30,
+            "__daft_carryover_n_delete": 60,
+            "__daft_carryover_occurrence_1": "r1_c",
+            "__daft_carryover_n_insert_1": 31,
+            "__daft_carryover_n_delete_1": 61,
+            "_change_type": "INSERT",
+            "_change_ordinal": 0,
+            "_commit_snapshot_id": 100,
+        }
+    ]
+
+
 # --- Optimizer boundary: filter must not cross the carryover window ---
 
 

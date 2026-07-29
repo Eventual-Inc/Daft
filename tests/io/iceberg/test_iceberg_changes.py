@@ -347,3 +347,124 @@ def test_add_files_imported_data_file_appears_in_changelog(local_catalog, tmp_pa
     df = daft.io.iceberg.read_iceberg_changes(table)
     rows = df.to_pylist()
     assert [(r["id"], r["data"], r["_change_type"]) for r in rows] == [(9, "z", "INSERT")]
+
+
+# --- compute_updates end-to-end ---
+
+
+@pytest.fixture(scope="function")
+def identified_table(local_catalog):
+    """A table with `id` declared as an identifier field, for compute_updates tests."""
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=LongType(), required=True),
+        NestedField(field_id=2, name="data", field_type=StringType(), required=False),
+        identifier_field_ids=[1],
+    )
+    pa_schema = pa.schema([("id", pa.int64(), False), ("data", pa.string())])
+    table = local_catalog.create_table("default.identified", schema=schema)
+    table.append(pa.table({"id": [1, 2, 3], "data": ["a", "b", "c"]}, schema=pa_schema))
+    table.refresh()
+    return table
+
+
+def test_real_cow_update_pairs_into_update_before_after(identified_table):
+    """A genuine content change, written as a separate DELETE commit + APPEND commit.
+
+    This is a realistic PyIceberg write pattern: no single-commit
+    update API is used here, mirroring how PyIceberg actually splits an update into two
+    snapshots. id=1 already exists from the fixture's initial
+    batch, so its full event history across the whole range is INSERT (fixture) -> DELETE
+    -> INSERT (the update): the leading INSERT is unrelated to the pair and stays as-is,
+    only the DELETE+re-INSERT pair gets relabeled.
+    """
+    identified_table.delete("id = 1")
+    identified_table.append(pa.table({"id": [1], "data": ["a_updated"]}, schema=identified_table.schema().as_arrow()))
+    identified_table.refresh()
+
+    df = daft.io.iceberg.read_iceberg_changes(identified_table, compute_updates=True)
+    rows = sorted(df.to_pylist(), key=lambda r: (r["id"], r["_change_ordinal"]))
+
+    id1_rows = [r for r in rows if r["id"] == 1]
+    assert [(r["data"], r["_change_type"]) for r in id1_rows] == [
+        ("a", "INSERT"),
+        ("a", "UPDATE_BEFORE"),
+        ("a_updated", "UPDATE_AFTER"),
+    ]
+    # id=2/3 were never touched -- still plain INSERTs from the first snapshot.
+    untouched = {(r["id"], r["data"], r["_change_type"]) for r in rows if r["id"] != 1}
+    assert untouched == {(2, "b", "INSERT"), (3, "c", "INSERT")}
+
+
+def test_identifier_columns_defaults_to_schema_declared_identifier(identified_table):
+    """Omitting identifier_columns must resolve to the schema's declared identifier field."""
+    identified_table.delete("id = 2")
+    identified_table.append(pa.table({"id": [2], "data": ["b_updated"]}, schema=identified_table.schema().as_arrow()))
+    identified_table.refresh()
+
+    # No identifier_columns passed -- must default to ["id"] from the schema.
+    df = daft.io.iceberg.read_iceberg_changes(identified_table, compute_updates=True)
+    id2_rows = sorted((r["data"], r["_change_type"], r["_change_ordinal"]) for r in df.to_pylist() if r["id"] == 2)
+    id2_rows_by_ordinal = [(data, change_type) for data, change_type, _ in sorted(id2_rows, key=lambda t: t[2])]
+    assert id2_rows_by_ordinal == [("b", "INSERT"), ("b", "UPDATE_BEFORE"), ("b_updated", "UPDATE_AFTER")]
+
+
+def test_explicit_identifier_columns_used_over_default(identified_table):
+    identified_table.delete("id = 3")
+    identified_table.append(pa.table({"id": [3], "data": ["c_updated"]}, schema=identified_table.schema().as_arrow()))
+    identified_table.refresh()
+
+    df = daft.io.iceberg.read_iceberg_changes(identified_table, compute_updates=True, identifier_columns=["id"])
+    id3_rows = sorted((r["_change_ordinal"], r["data"], r["_change_type"]) for r in df.to_pylist() if r["id"] == 3)
+    assert [(data, change_type) for _, data, change_type in id3_rows] == [
+        ("c", "INSERT"),
+        ("c", "UPDATE_BEFORE"),
+        ("c_updated", "UPDATE_AFTER"),
+    ]
+
+
+def test_split_commit_unchanged_row_still_pairs_as_update(identified_table):
+    """Known limitation: a delete+re-append of *identical* content still pairs.
+
+    compute_updates matches identifier event sequences; it does not prove non-identifier
+    columns actually changed. A writer that splits one logical (no-op) write into a
+    separate DELETE commit and APPEND commit produces exactly this shape, and
+    `compute_updates` cannot distinguish it from a real update.
+    """
+    identified_table.delete("id = 1")
+    identified_table.append(pa.table({"id": [1], "data": ["a"]}, schema=identified_table.schema().as_arrow()))
+    identified_table.refresh()
+
+    df = daft.io.iceberg.read_iceberg_changes(identified_table, compute_updates=True)
+    id1_rows = sorted((r["_change_ordinal"], r["_change_type"]) for r in df.to_pylist() if r["id"] == 1)
+    assert [change_type for _, change_type in id1_rows] == ["INSERT", "UPDATE_BEFORE", "UPDATE_AFTER"]
+    # All three events share the same content ("a") -- the point being demonstrated is
+    # that the DELETE+re-INSERT pair (ordinals 1 and 2) still gets relabeled as an update
+    # despite zero actual content change, not that the content differs.
+    assert {r["data"] for r in df.to_pylist() if r["id"] == 1} == {"a"}
+
+
+def test_identifier_columns_without_compute_updates_raises(identified_table):
+    with pytest.raises(ValueError, match="only be passed when compute_updates=True"):
+        daft.io.iceberg.read_iceberg_changes(identified_table, identifier_columns=["id"])
+
+
+def test_invalid_identifier_columns_raises_at_construction_time(identified_table):
+    """identifier_columns validation happens before any DataFrame is returned.
+
+    No `.collect()`/`.to_pylist()` call in this test -- the error must surface directly
+    from `read_iceberg_changes()` itself.
+    """
+    with pytest.raises(ValueError, match="does not exist"):
+        daft.io.iceberg.read_iceberg_changes(identified_table, compute_updates=True, identifier_columns=["nonexistent"])
+
+
+def test_invalid_end_snapshot_id_raises_at_construction_time(identified_table):
+    """An unknown end_snapshot_id must fail from read_iceberg_changes() itself.
+
+    Range resolution (including this validation) is metadata-only and happens at
+    DataFrame-construction time, so there is no `.collect()`/`.to_pylist()` call in
+    this test, unlike the pre-refactor behavior where this only failed once planning ran
+    inside the first `to_scan_tasks()`.
+    """
+    with pytest.raises(ValueError, match="was not found in this table's snapshot history"):
+        daft.io.iceberg.read_iceberg_changes(identified_table, end_snapshot_id=999999999)

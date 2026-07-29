@@ -15,6 +15,7 @@ from pyiceberg.types import LongType, NestedField, StringType
 
 from daft.daft import IOConfig, StorageConfig
 from daft.io.iceberg import _changelog_schema
+from daft.io.iceberg._changelog_planning import resolve_changelog_range
 from daft.io.iceberg.iceberg_changes_scan import IcebergChangesScanOperator
 
 
@@ -60,12 +61,10 @@ def picklable_cow_history_table(cow_history_table):
 
 
 def _make_operator(table) -> IcebergChangesScanOperator:
+    resolved_range = resolve_changelog_range(table, None, None, None, None)
     return IcebergChangesScanOperator(
         table,
-        start_snapshot_id=None,
-        end_snapshot_id=None,
-        start_timestamp_ms=None,
-        end_timestamp_ms=None,
+        resolved_range=resolved_range,
         storage_config=StorageConfig(True, IOConfig()),
     )
 

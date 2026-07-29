@@ -14,6 +14,31 @@ if TYPE_CHECKING:
 
 _METADATA_COLUMNS = ("_change_type", "_change_ordinal", "_commit_snapshot_id")
 
+_CARRYOVER_INTERNAL_BASENAMES = ("occurrence", "n_insert", "n_delete")
+
+
+def _fresh_internal_names(existing: set[str], *, prefix: str, basenames: tuple[str, ...]) -> dict[str, str]:
+    """Generate internal column names guaranteed not to collide with `existing`.
+
+    A user's Iceberg table is under no obligation to avoid names like `occurrence` or
+    `n_insert` -- only the three public `_METADATA_COLUMNS` are reserved. Using plain
+    literal names for a post-processing function's internal working columns would silently
+    overwrite a same-named user column and then `.exclude()` it away, permanently losing
+    its original values. Deterministic (not UUID-based) so tests can assert on the exact
+    generated names; the while loop only iterates in the (extremely unlikely) case where an
+    entire candidate round collides. `prefix` distinguishes independent callers (e.g.
+    `remove_carryovers` vs. a future `net_changes`) sharing this one generic helper, so two
+    callers never generate the same candidate name for different purposes.
+    """
+    suffix = ""
+    attempt = 0
+    while True:
+        candidates = {base: f"__daft_{prefix}_{base}{suffix}" for base in basenames}
+        if not (set(candidates.values()) & existing):
+            return candidates
+        attempt += 1
+        suffix = f"_{attempt}"
+
 
 def remove_carryovers(df: DataFrame) -> DataFrame:
     """Cancel out same-commit DELETE+INSERT pairs of otherwise-identical rows.
@@ -34,6 +59,7 @@ def remove_carryovers(df: DataFrame) -> DataFrame:
     """
     data_columns = [c for c in df.column_names if c not in _METADATA_COLUMNS]
     group_key = [*data_columns, "_change_ordinal", "_commit_snapshot_id"]
+    names = _fresh_internal_names(set(df.column_names), prefix="carryover", basenames=_CARRYOVER_INTERNAL_BASENAMES)
 
     # Rows within one (group_key, _change_type) partition are, by construction,
     # byte-identical on every column that matters (all data columns plus the metadata
@@ -47,12 +73,12 @@ def remove_carryovers(df: DataFrame) -> DataFrame:
     n_insert = (col("_change_type") == lit("INSERT")).cast(DataType.int64()).sum().over(count_window)
     n_delete = (col("_change_type") == lit("DELETE")).cast(DataType.int64()).sum().over(count_window)
 
-    marked = df.with_column("_carryover_occurrence", occurrence_index).with_columns(
-        {"_carryover_n_insert": n_insert, "_carryover_n_delete": n_delete}
+    marked = df.with_column(names["occurrence"], occurrence_index).with_columns(
+        {names["n_insert"]: n_insert, names["n_delete"]: n_delete}
     )
 
-    keep = ((col("_change_type") == lit("INSERT")) & (col("_carryover_occurrence") > col("_carryover_n_delete"))) | (
-        (col("_change_type") == lit("DELETE")) & (col("_carryover_occurrence") > col("_carryover_n_insert"))
+    keep = ((col("_change_type") == lit("INSERT")) & (col(names["occurrence"]) > col(names["n_delete"]))) | (
+        (col("_change_type") == lit("DELETE")) & (col(names["occurrence"]) > col(names["n_insert"]))
     )
 
-    return marked.where(keep).exclude("_carryover_occurrence", "_carryover_n_insert", "_carryover_n_delete")
+    return marked.where(keep).exclude(names["occurrence"], names["n_insert"], names["n_delete"])

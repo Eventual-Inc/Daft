@@ -16,10 +16,12 @@ from pyiceberg.types import LongType, NestedField, StringType
 from daft.io.iceberg._changelog_planning import (
     ChangelogFileTask,
     _require_int_timestamp_ms,
+    _resolve_baseline_schema,
     _snapshot_has_delete_manifest,
     compute_snapshot_ordinals,
     ordered_changelog_snapshots,
     plan_changelog_file_tasks,
+    resolve_changelog_range,
     resolve_snapshot_range,
 )
 
@@ -297,3 +299,92 @@ def test_ordered_changelog_snapshots_replace_endpoint_is_skipped(cow_history_tab
 
     result = ordered_changelog_snapshots(cow_history_table, None, to_id)
     assert [s.snapshot_id for s in result] == [real_append.snapshot_id]
+
+
+# --- ResolvedChangelogRange / resolve_changelog_range ---
+
+
+def test_resolve_changelog_range_is_metadata_only_and_resolves_baseline(cow_history_table):
+    """End-to-end (real table): a normal call resolves both the range and the baseline schema."""
+    to_id = cow_history_table.snapshots()[-1].snapshot_id
+    resolved = resolve_changelog_range(cow_history_table, None, None, None, None)
+    assert resolved.to_snapshot_id == to_id
+    assert resolved.from_snapshot_id is None
+    assert resolved.end_snapshot.snapshot_id == to_id
+    assert resolved.baseline_schema.schema_id == resolved.end_snapshot.schema_id
+
+
+def test_resolve_changelog_range_invalid_end_snapshot_id_raises_without_any_io(cow_history_table):
+    """A nonexistent end_snapshot_id must fail from this metadata-only call itself.
+
+    No planning/footer I/O has happened by this point because range resolution occurs at
+    construction time.
+    """
+    with pytest.raises(ValueError, match="was not found in this table's snapshot history"):
+        resolve_changelog_range(cow_history_table, None, 999999999, None, None)
+
+
+def test_resolve_changelog_range_historical_end_snapshot_uses_its_own_schema_not_current(local_catalog):
+    """A historical end_snapshot_id's baseline must reflect *that* snapshot's schema_id.
+
+    Constructs a table that evolves its schema after the historical snapshot -- something
+    `IcebergChangesScanOperator`'s own front gate (still enforcing single-schema-per-table)
+    would reject end to end, but `resolve_changelog_range` itself is a standalone function
+    and must resolve the *historical* baseline correctly regardless, proving the resolution
+    mechanism itself is snapshot-scoped and not just "whatever validate_single_schema_table
+    happens to return today."
+    """
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=LongType(), required=False),
+    )
+    table = local_catalog.create_table("default.historical_baseline", schema=schema)
+    table.append(pa.table({"id": [1, 2, 3]}))
+    table.refresh()
+    historical_snapshot_id = table.current_snapshot().snapshot_id
+    historical_schema_id = table.current_snapshot().schema_id
+
+    with table.update_schema() as update:
+        update.add_column("extra", LongType())
+    table.refresh()
+    table.append(pa.table({"id": [4], "extra": [100]}))
+    table.refresh()
+
+    resolved = resolve_changelog_range(table, None, historical_snapshot_id, None, None)
+    assert resolved.baseline_schema.schema_id == historical_schema_id
+    assert "extra" not in {f.name for f in resolved.baseline_schema.fields}
+
+
+def test_resolve_baseline_schema_uses_schema_id_when_present():
+    fake_schema = SimpleNamespace(schema_id=7)
+    fake_metadata = SimpleNamespace(schema_by_id=lambda schema_id: fake_schema if schema_id == 7 else None, schemas=[])
+    fake_table = SimpleNamespace(metadata=fake_metadata)
+    fake_snapshot = SimpleNamespace(snapshot_id=1, schema_id=7)
+
+    assert _resolve_baseline_schema(fake_table, fake_snapshot) is fake_schema
+
+
+def test_resolve_baseline_schema_schema_id_present_but_missing_raises():
+    fake_metadata = SimpleNamespace(schema_by_id=lambda schema_id: None, schemas=[])
+    fake_table = SimpleNamespace(metadata=fake_metadata)
+    fake_snapshot = SimpleNamespace(snapshot_id=1, schema_id=999)
+
+    with pytest.raises(ValueError, match="no schema with that id exists"):
+        _resolve_baseline_schema(fake_table, fake_snapshot)
+
+
+def test_resolve_baseline_schema_none_schema_id_falls_back_to_unique_schema():
+    fake_schema = SimpleNamespace(schema_id=0)
+    fake_metadata = SimpleNamespace(schemas=[fake_schema])
+    fake_table = SimpleNamespace(metadata=fake_metadata)
+    fake_snapshot = SimpleNamespace(snapshot_id=1, schema_id=None)
+
+    assert _resolve_baseline_schema(fake_table, fake_snapshot) is fake_schema
+
+
+def test_resolve_baseline_schema_none_schema_id_multiple_schemas_fails_closed():
+    fake_metadata = SimpleNamespace(schemas=[SimpleNamespace(schema_id=0), SimpleNamespace(schema_id=1)])
+    fake_table = SimpleNamespace(metadata=fake_metadata)
+    fake_snapshot = SimpleNamespace(snapshot_id=1, schema_id=None)
+
+    with pytest.raises(NotImplementedError, match="cannot reliably determine which schema"):
+        _resolve_baseline_schema(fake_table, fake_snapshot)

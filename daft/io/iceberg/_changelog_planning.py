@@ -13,10 +13,92 @@ if TYPE_CHECKING:
 
     from pyiceberg.io import FileIO
     from pyiceberg.manifest import DataFile
+    from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import Table
     from pyiceberg.table.snapshots import Snapshot
 
 ChangeType = Literal["INSERT", "DELETE"]
+
+
+@dataclass(frozen=True)
+class ResolvedChangelogRange:
+    """Metadata-only resolution of a changelog scan's snapshot range and baseline schema.
+
+    Produced once, at DataFrame-construction time, by `resolve_changelog_range` -- the
+    single entry point for "what baseline schema does this scan use". Every consumer (the operator itself, the
+    `compute_updates` identifier resolver, and the schema gate) reads
+    `.baseline_schema` off this one object rather than each independently re-deriving it
+    (e.g. by calling `table.schema()`, which reflects the table's *current* schema and can
+    diverge from what a historical `end_snapshot_id` actually used).
+    """
+
+    from_snapshot_id: int | None
+    to_snapshot_id: int
+    end_snapshot: Snapshot
+    baseline_schema: IcebergSchema
+
+
+def _resolve_baseline_schema(table: Table, end_snapshot: Snapshot) -> IcebergSchema:
+    """Resolve the schema `end_snapshot` was committed under.
+
+    `Snapshot.schema_id` is an optional field in the Iceberg spec and can genuinely be
+    `None` (e.g. snapshots produced by older writers). The fallback below only ever
+    decides *which schema object to use as baseline* -- it never affects whether a given
+    data file still gets a full, unconditional footer-based schema reconciliation; that
+    happens unconditionally downstream regardless of how the baseline itself was resolved.
+    """
+    if end_snapshot.schema_id is not None:
+        baseline = table.metadata.schema_by_id(end_snapshot.schema_id)
+        if baseline is None:
+            raise ValueError(
+                f"end snapshot (id={end_snapshot.snapshot_id}) declares "
+                f"schema_id={end_snapshot.schema_id}, but no schema with that id exists in this "
+                "table's metadata; the table's schema history may be corrupted or incompletely "
+                "loaded."
+            )
+        return baseline
+
+    if len(table.metadata.schemas) == 1:
+        return table.metadata.schemas[0]
+
+    raise NotImplementedError(
+        f"end snapshot (id={end_snapshot.snapshot_id}) does not declare a schema_id, and this "
+        f"table's metadata contains {len(table.metadata.schemas)} schemas; "
+        "daft.read_iceberg_changes() cannot reliably determine which schema this snapshot was "
+        "written under. This is only supported when the table's metadata contains exactly one "
+        "schema."
+    )
+
+
+def resolve_changelog_range(
+    table: Table,
+    start_snapshot_id: int | None,
+    end_snapshot_id: int | None,
+    start_timestamp_ms: int | None,
+    end_timestamp_ms: int | None,
+) -> ResolvedChangelogRange:
+    """Resolve the snapshot range and baseline schema -- metadata-only, no I/O.
+
+    Safe to call eagerly at DataFrame-construction time: `resolve_snapshot_range` and
+    `_resolve_baseline_schema` only ever touch `table.metadata`/`table.current_snapshot()`/
+    `table.snapshot_by_id()`, structures already loaded in memory once `table` itself was
+    constructed. The I/O-triggering steps (`ordered_changelog_snapshots`,
+    `plan_changelog_file_tasks`, the footer schema gate) remain deferred to the first
+    `to_scan_tasks()` call.
+    """
+    from_id, to_id = resolve_snapshot_range(
+        table, start_snapshot_id, end_snapshot_id, start_timestamp_ms, end_timestamp_ms
+    )
+    end_snapshot = table.snapshot_by_id(to_id)
+    assert end_snapshot is not None, "resolve_snapshot_range guarantees to_id exists in the table's snapshot history"
+
+    baseline_schema = _resolve_baseline_schema(table, end_snapshot)
+    return ResolvedChangelogRange(
+        from_snapshot_id=from_id,
+        to_snapshot_id=to_id,
+        end_snapshot=end_snapshot,
+        baseline_schema=baseline_schema,
+    )
 
 
 @dataclass(frozen=True)
