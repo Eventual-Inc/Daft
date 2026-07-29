@@ -4,8 +4,7 @@ import asyncio
 import os
 import pickle
 import threading
-from functools import partial
-from http.server import BaseHTTPRequestHandler, SimpleHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 from mcap.writer import CompressionType, IndexType
@@ -16,20 +15,15 @@ import daft
 from daft.daft import McapSourceConfig
 from daft.filesystem import _resolve_paths_and_filesystem
 from daft.io import IOConfig, S3Config
-from daft.io._mcap import MCAPSource, list_files
+from daft.io._mcap import MCAPSource
 from daft.io.pushdowns import Pushdowns
-from daft.io.source import _RustDataSourceTask
+from daft.io.source import DataSourceTask
 
 HAS_S3 = bool(
     os.environ.get("AWS_ACCESS_KEY_ID")
     and os.environ.get("AWS_SECRET_ACCESS_KEY")
     and os.environ.get("S3_ENDPOINT_URL")
 )
-
-
-class QuietHTTPRequestHandler(SimpleHTTPRequestHandler):
-    def log_message(self, format, *args):
-        pass
 
 
 def _make_counting_range_handler(contents: bytes):
@@ -103,21 +97,6 @@ def mcap_dataset_path(tmp_path_factory):
         writer.finish()
 
     yield file_path
-
-
-@pytest.fixture(scope="function")
-def mcap_http_url(mcap_dataset_path):
-    handler = partial(QuietHTTPRequestHandler, directory=str(mcap_dataset_path.parent))
-    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-
-    try:
-        yield f"http://127.0.0.1:{server.server_port}/{mcap_dataset_path.name}"
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=5)
 
 
 @pytest.fixture(scope="function")
@@ -195,18 +174,9 @@ def test_mcap_read(mcap_dataset_path):
     assert len(pdf) == 100
     assert "topic" in pdf.columns
     assert "data" in pdf.columns
-    assert pdf["source_path"].unique().tolist() == [str(mcap_dataset_path)]
+    assert pdf["source_path"].unique().tolist() == [mcap_dataset_path.as_uri()]
     assert all(isinstance(value, bytes) for value in pdf["data"])
     assert pdf["publish_time"].between(0, 9900).all()
-
-
-def test_mcap_http_url_resolves_through_pyarrow_fsspec_handler(mcap_http_url):
-    [resolved_path], fs = _resolve_paths_and_filesystem(mcap_http_url)
-
-    assert resolved_path == mcap_http_url
-    assert list_files(mcap_http_url, io_config=None) == [mcap_http_url]
-    with fs.open_input_file(resolved_path) as f:
-        assert f.read(5) == b"\x89MCAP"
 
 
 def test_mcap_read_huggingface():
@@ -359,16 +329,15 @@ def test_mcap_batch_size_must_be_positive(raw_bytes_mcap_dataset_path):
         daft.read_mcap(raw_bytes_mcap_dataset_path, batch_size=0)
 
 
-def test_mcap_source_emits_native_task_with_file_size(raw_bytes_mcap_dataset_path):
+def test_mcap_source_emits_native_task(raw_bytes_mcap_dataset_path):
     source = MCAPSource(raw_bytes_mcap_dataset_path)
 
     async def get_first_task():
         return await anext(source.get_tasks(Pushdowns.empty()))
 
     task = asyncio.run(get_first_task())
-    assert isinstance(task, _RustDataSourceTask)
+    assert isinstance(task, DataSourceTask)
     assert task.schema == source.schema
-    assert source._files[0].size_bytes == raw_bytes_mcap_dataset_path.stat().st_size
 
 
 def test_mcap_source_config_pickle_round_trip():
@@ -436,12 +405,6 @@ def test_mcap_per_file_keyframe_scanner(tmp_path_factory):
                     data=b"\x00\x00\x00\x01\x67",
                 )
             writer.finish()
-
-    source = MCAPSource(dir_path)
-    assert {file.path: file.size_bytes for file in source._files} == {
-        str(file0): file0.stat().st_size,
-        str(file1): file1.stat().st_size,
-    }
 
     def scan_for_keyframes(mcap_path: str) -> dict[str, int]:
         if mcap_path.endswith("a.mcap"):

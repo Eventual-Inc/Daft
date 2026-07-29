@@ -25,13 +25,9 @@ use tokio_util::io::StreamReader;
 mod tests;
 
 const MAX_RECORD_LENGTH: usize = 1024 * 1024 * 1024;
-// For tiny remote objects, one complete read is cheaper than separate magic,
-// footer, summary, and chunk range requests.
+// Read small remote files in one request.
 const SMALL_REMOTE_FILE_THRESHOLD: usize = 64 * 1024;
-// Remote MCAP chunks are commonly adjacent, while each object-store range can
-// carry substantial fixed latency. Read ahead from the first requested chunk
-// so subsequent parser requests can reuse the same body without materializing
-// more than a bounded amount of unrelated data.
+// Coalesce nearby indexed reads without unbounded overfetch.
 const INDEXED_READ_AHEAD_MULTIPLIER: usize = 8;
 const MAX_INDEXED_READ_AHEAD_BYTES: usize = 8 * 1024 * 1024;
 const SUMMARY_READ_AHEAD_BYTES: usize = 8 * 1024 * 1024;
@@ -710,9 +706,7 @@ fn reader_batch_stream(
         ));
     }
 
-    // Keep decoding independent from downstream schema conformance and
-    // operators. Capacity one lets the reader work on the next batch while
-    // one completed batch is consumed, without allowing an unbounded queue.
+    // Buffer one batch to overlap decoding while preserving backpressure.
     let (sender, receiver) = tokio::sync::mpsc::channel(1);
     let runtime = tokio::runtime::Handle::current();
     let producer: tokio::task::JoinHandle<DaftResult<()>> =
@@ -741,13 +735,11 @@ fn reader_batch_stream(
     ))
 }
 
-/// Stream MCAP messages as record batches using native format pruning followed
-/// by ordinary Daft query operations.
+/// Stream MCAP messages as record batches.
 ///
 /// Topic/time constraints are applied while decoding. Residual predicates run
-/// before projection so filters can reference columns that are not requested
-/// in the output. The final batch is truncated when needed to honor the limit
-/// exactly.
+/// before projection so filters can reference unprojected columns. The final
+/// batch is truncated to honor the limit exactly.
 pub async fn stream_mcap(
     uri: &str,
     io_client: Arc<IOClient>,
@@ -756,9 +748,6 @@ pub async fn stream_mcap(
     convert_options: McapConvertOptions,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let reader = NativeMcapReader::new(uri, io_client, io_stats, read_options).await?;
-    // A limited scan should stop the reader immediately once its output is
-    // satisfied. Other scans benefit from overlapping decoding with
-    // downstream batch processing.
     let batches = reader_batch_stream(reader, convert_options.limit.is_none());
     let stream = futures::stream::try_unfold(
         (
