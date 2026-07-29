@@ -96,6 +96,11 @@ df = daft.read_mcap(
 
 ## Advanced: Topic Start Time Resolver
 
+!!! warning "Deprecated"
+    `topic_start_time_resolver` is deprecated and will be removed in a future
+    release. Use explicit `topics` and `start_time` values for MCAP scans.
+    Dedicated support for custom video decoding will be added separately.
+
 For advanced use cases, you can provide a callable that computes per-file, per-topic start times. This is useful for resuming reads from specific positions:
 
 ```python
