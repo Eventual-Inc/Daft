@@ -18,6 +18,7 @@ from daft.daft import PyRecordBatch as _PyRecordBatch
 from daft.daft import read_csv as _read_csv
 from daft.daft import read_json as _read_json
 from daft.daft import read_parquet as _read_parquet
+from daft.daft import read_parquet_arrow_schema as _read_parquet_arrow_schema
 from daft.daft import read_parquet_into_pyarrow as _read_parquet_into_pyarrow
 from daft.daft import read_parquet_into_pyarrow_bulk as _read_parquet_into_pyarrow_bulk
 from daft.daft import read_parquet_statistics as _read_parquet_statistics
@@ -594,6 +595,34 @@ def read_parquet_into_pyarrow(
     else:
         # If data contains no columns, we return an empty table with the appropriate size using `Table.drop`
         return pa.table({"dummy_column": pa.array([None] * num_rows_read)}).drop(["dummy_column"])
+
+
+def read_parquet_arrow_schema(
+    path: str,
+    io_config: IOConfig | None = None,
+    multithreaded_io: bool | None = None,
+    coerce_int96_timestamp_unit: TimeUnit | None = None,
+) -> pa.Schema:
+    """Read a Parquet file's footer schema as a raw PyArrow schema.
+
+    Unlike `Schema.from_parquet` (which returns a `daft.Schema`), this does not downcast
+    through Daft's own type system: every field's Arrow metadata is preserved at every
+    nesting level (struct children, list elements, map keys/values), which Daft's own
+    `DataType.list`/`DataType.map` cannot represent (they have no room for per-field
+    metadata on their child type). This is what makes it possible to verify Iceberg's
+    `PARQUET:field_id` on nested fields, not just top-level ones.
+
+    Still a pure footer read: no row-group data pages are fetched.
+    """
+    if coerce_int96_timestamp_unit is None:
+        coerce_int96_timestamp_unit = TimeUnit.ns()
+    fields, metadata = _read_parquet_arrow_schema(
+        uri=path,
+        io_config=io_config,
+        multithreaded_io=multithreaded_io,
+        coerce_int96_timestamp_unit=coerce_int96_timestamp_unit._timeunit,
+    )
+    return pa.schema(fields, metadata=metadata)
 
 
 def read_parquet_into_pyarrow_bulk(
