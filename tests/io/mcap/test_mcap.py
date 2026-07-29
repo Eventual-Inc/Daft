@@ -413,10 +413,11 @@ def test_mcap_per_file_keyframe_scanner(tmp_path_factory):
             return {topic1: 1000}
         return {}
 
-    df = daft.read_mcap(
-        str(dir_path),
-        topic_start_time_resolver=scan_for_keyframes,
-    ).collect()
+    with pytest.warns(DeprecationWarning, match="topic_start_time_resolver"):
+        df = daft.read_mcap(
+            str(dir_path),
+            topic_start_time_resolver=scan_for_keyframes,
+        ).collect()
 
     pdf = df.to_pandas()
     assert pdf[pdf["topic"] == topic0]["log_time"].min() >= 500
