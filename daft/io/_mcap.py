@@ -2,15 +2,12 @@ from __future__ import annotations
 
 import pathlib
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from daft import context, runners
 from daft.api_annotations import PublicAPI
 from daft.daft import IOConfig, McapSourceConfig, StorageConfig, io_glob
 from daft.datatype import DataType
-from daft.dependencies import pafs
-from daft.filesystem import _resolve_paths_and_filesystem, canonicalize_protocol, get_protocol_from_path
 from daft.io.source import DataSource, DataSourceTask
 from daft.logical.schema import Schema
 
@@ -23,111 +20,6 @@ if TYPE_CHECKING:
 
 TopicToStartTime = dict[str, int]
 TopicStartTimeResolver = Callable[[str], TopicToStartTime]
-
-
-@dataclass(frozen=True)
-class _McapFile:
-    path: str
-    size_bytes: int | None
-
-
-def _known_size(size: int | None) -> int | None:
-    return size if size is not None and size >= 0 else None
-
-
-def normalize_storage_path(
-    path: str,
-    io_config: IOConfig | None = None,
-    source_protocol: str | None = None,
-) -> str:
-    """Add the configured storage protocol to protocol-less remote paths."""
-    protocol = get_protocol_from_path(path)
-    if protocol != "file":
-        return path
-
-    # Filesystem discovery strips object-store schemes from FileInfo paths.
-    # Carry the protocol from the user's input so a local path is never
-    # mistaken for S3 merely because every default IOConfig has an s3 field.
-    if source_protocol is not None:
-        if source_protocol == "file":
-            return path
-        return f"{source_protocol}://{path.lstrip('/')}"
-
-    # Compatibility fallback for direct callers of this helper.
-    if io_config:
-        if io_config.s3:
-            return f"s3://{path.lstrip('/')}"
-        if io_config.azure:
-            return f"abfs://{path.lstrip('/')}"
-        if io_config.gcs:
-            return f"gs://{path.lstrip('/')}"
-
-    return path
-
-
-def _list_files_with_metadata(
-    root_dir: str | pathlib.Path,
-    io_config: IOConfig | None,
-    resolved_path: str | None = None,
-    fs: pafs.FileSystem | None = None,
-) -> list[_McapFile]:
-    if isinstance(root_dir, pathlib.Path):
-        root_dir = str(root_dir)
-
-    # TODO: Remove this special case once all discovery uses the native IO
-    # layer. It preserves the existing Hugging Face path behavior.
-    if get_protocol_from_path(root_dir) == "hf":
-        glob_path = root_dir if "*" in root_dir else root_dir.rstrip("/")
-        if not glob_path.endswith(".mcap"):
-            glob_path = f"{glob_path}/**/*.mcap" if "**" not in glob_path else glob_path
-        files = io_glob(glob_path, io_config=io_config)
-        return [
-            _McapFile(path=file["path"], size_bytes=_known_size(file.get("size")))
-            for file in files
-            if file["type"] == "File"
-        ]
-
-    if resolved_path is None or fs is None:
-        [resolved_path], fs = _resolve_paths_and_filesystem(root_dir, io_config=io_config)
-
-    try:
-        file_info = fs.get_file_info(resolved_path)
-        if file_info.type == pafs.FileType.File:
-            return [_McapFile(path=resolved_path, size_bytes=_known_size(file_info.size))]
-    except FileNotFoundError:
-        return []
-
-    selector = pafs.FileSelector(resolved_path, recursive=True)
-    try:
-        file_infos = fs.get_file_info(selector)
-    except NotADirectoryError:
-        return [_McapFile(path=resolved_path, size_bytes=None)]
-    except FileNotFoundError:
-        return []
-
-    return [
-        _McapFile(path=file_info.path, size_bytes=_known_size(file_info.size))
-        for file_info in file_infos
-        if file_info.type == pafs.FileType.File
-    ]
-
-
-def list_files(
-    root_dir: str | pathlib.Path,
-    io_config: IOConfig | None,
-    resolved_path: str | None = None,
-    fs: pafs.FileSystem | None = None,
-) -> list[str]:
-    """List paths using the historical MCAP discovery semantics."""
-    return [
-        file.path
-        for file in _list_files_with_metadata(
-            root_dir,
-            io_config,
-            resolved_path=resolved_path,
-            fs=fs,
-        )
-    ]
 
 
 class MCAPSource(DataSource):
@@ -150,20 +42,9 @@ class MCAPSource(DataSource):
         self._topics = topics
         self._batch_size = batch_size
         self._topic_start_time_resolver = topic_start_time_resolver
+        self._file_path = str(file_path)
         self._io_config = io_config
         self._storage_config = storage_config or StorageConfig(True, io_config)
-        source_protocol = canonicalize_protocol(get_protocol_from_path(str(file_path)))
-        self._files = [
-            _McapFile(
-                path=normalize_storage_path(file.path, io_config, source_protocol),
-                size_bytes=file.size_bytes,
-            )
-            for file in _list_files_with_metadata(file_path, io_config)
-        ]
-
-        if not self._files:
-            raise FileNotFoundError(f"Path not found: {file_path}")
-
         self._schema = self._infer_schema()
 
     @property
@@ -175,8 +56,7 @@ class MCAPSource(DataSource):
         return self._schema
 
     def display_name(self) -> str:
-        paths = [file.path for file in self._files]
-        return f"MCAPSource({paths}, start_time={self._start_time}, end_time={self._end_time}, topics={self._topics})"
+        return f"MCAPSource({self._file_path}, start_time={self._start_time}, end_time={self._end_time}, topics={self._topics})"
 
     def multiline_display(self) -> list[str]:
         return [
@@ -199,14 +79,15 @@ class MCAPSource(DataSource):
 
     def _task(
         self,
-        file: _McapFile,
+        file_path: str,
+        file_size: int | None,
         pushdowns: Pushdowns,
         *,
         start_time: int | None,
         topics: list[str] | None,
     ) -> DataSourceTask:
         return DataSourceTask.mcap(
-            path=file.path,
+            path=file_path,
             schema=self._schema,
             mcap_config=McapSourceConfig(
                 batch_size=self._batch_size,
@@ -215,22 +96,33 @@ class MCAPSource(DataSource):
                 topics=topics,
             ),
             pushdowns=pushdowns,
-            size_bytes=file.size_bytes,
+            size_bytes=file_size,
             storage_config=self._storage_config,
         )
 
     async def get_tasks(self, pushdowns: Pushdowns) -> AsyncIterator[DataSourceTask]:
-        for file in self._files:
+        file_infos = [
+            file_info
+            for file_info in io_glob(self._file_path, io_config=self._io_config)
+            if file_info["type"] == "File"
+        ]
+        if not file_infos:
+            raise FileNotFoundError(f"No files found at {self._file_path}")
+
+        for file_info in file_infos:
+            file_path = file_info["path"]
+            file_size = file_info["size"]
             keyframes: dict[str, int] | None = None
             if self._topic_start_time_resolver is not None:
                 try:
-                    keyframes = self._topic_start_time_resolver(file.path)
-                except Exception:
+                    keyframes = self._topic_start_time_resolver(file_path)
+                except Exception:  # noqa: BLE001
                     keyframes = None
 
             if not keyframes:
                 yield self._task(
-                    file,
+                    file_path,
+                    file_size,
                     pushdowns,
                     start_time=self._start_time,
                     topics=self._topics,
@@ -247,7 +139,8 @@ class MCAPSource(DataSource):
                     continue
 
                 yield self._task(
-                    file,
+                    file_path,
+                    file_size,
                     pushdowns,
                     start_time=start_time,
                     topics=[topic],

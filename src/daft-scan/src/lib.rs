@@ -648,9 +648,7 @@ impl ScanTask {
                                     1.0
                                 }
                             }
-                            // MCAP chunks may be compressed internally even when the
-                            // filename has no compression suffix.
-                            FileFormatConfig::Mcap(_) => 2.0,
+                            FileFormatConfig::Mcap(_) => 1.0,
                         },
                         #[cfg(feature = "python")]
                         SourceConfig::Database(_) | SourceConfig::PythonFunction { .. } => 1.0,

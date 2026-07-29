@@ -213,12 +213,7 @@ class DataSourceTask(ABC):
         stats: RecordBatch | None = None,
         storage_config: StorageConfig | None = None,
     ) -> DataSourceTask:
-        """Create a task that reads an MCAP file using the native reader.
-
-        This factory is intended for Python ``DataSource`` planners. It packages
-        the file and query configuration into a serializable native scan task;
-        the MCAP reader itself runs in Rust on the worker.
-        """
+        """Create a task that reads an MCAP file using the native reader."""
         inner = PyDataSourceTask.mcap(
             path=path,
             schema=schema._schema,
