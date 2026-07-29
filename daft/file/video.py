@@ -139,17 +139,34 @@ class VideoFile(File):
             VideoFrameData dicts with keys: frame_index, frame_time, frame_time_base,
             frame_pts, frame_dts, frame_duration, is_key_frame, data (PIL Image).
         """
-        tracing_span = _PyFileTracingSpan.video_frames() if _FILE_TRACING_ENABLED else nullcontext()
-        with tracing_span:
-            yield from self._frames(
-                start_time=start_time,
-                end_time=end_time,
-                width=width,
-                height=height,
-                is_key_frame=is_key_frame,
-                sample_interval_seconds=sample_interval_seconds,
-                buffer_size=buffer_size,
-            )
+        frames = self._frames(
+            start_time=start_time,
+            end_time=end_time,
+            width=width,
+            height=height,
+            is_key_frame=is_key_frame,
+            sample_interval_seconds=sample_interval_seconds,
+            buffer_size=buffer_size,
+        )
+        if not _FILE_TRACING_ENABLED:
+            yield from frames
+            return
+
+        try:
+            while True:
+                try:
+                    # A generator must not retain an entered tracing span while it
+                    # is suspended in caller code. Enter a short-lived span only
+                    # while advancing the underlying iterator.
+                    with _PyFileTracingSpan.video_frames():
+                        frame = next(frames)
+                except StopIteration:
+                    return
+                yield frame
+        finally:
+            close = getattr(frames, "close", None)
+            if close is not None:
+                close()
 
     def _frames(
         self,
@@ -171,8 +188,7 @@ class VideoFile(File):
             raise ValueError("sample_interval_seconds must be positive if provided")
 
         with ExitStack() as stack:
-            tracing_span = _PyFileTracingSpan.video_open() if _FILE_TRACING_ENABLED else nullcontext()
-            with tracing_span:
+            with _PyFileTracingSpan.video_open() if _FILE_TRACING_ENABLED else nullcontext():
                 f = stack.enter_context(self.open(buffer_size=buffer_size))
                 container = stack.enter_context(av.open(f))
 
@@ -189,8 +205,7 @@ class VideoFile(File):
             # Seek to start time
             if start_time > 0 and video.time_base:
                 seek_timestamp = int(start_time / float(video.time_base))
-                tracing_span = _PyFileTracingSpan.video_seek() if _FILE_TRACING_ENABLED else nullcontext()
-                with tracing_span:
+                with _PyFileTracingSpan.video_seek() if _FILE_TRACING_ENABLED else nullcontext():
                     container.seek(seek_timestamp, stream=video)
 
             time_base = float(video.time_base) if video.time_base else None
