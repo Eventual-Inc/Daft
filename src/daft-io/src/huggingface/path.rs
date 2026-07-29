@@ -154,16 +154,7 @@ impl FromStr for HFPathParts {
             let (username, uri) = uri.split_once('/')?;
             // {reponame} @ {revision} / {path from root}
             // ^--------^   !>
-            let (repository, uri) = if let Some((repo, uri)) = uri.split_once('/') {
-                (repo, uri)
-            } else {
-                return Some(Self {
-                    repo_type,
-                    repository: format!("{username}/{uri}"),
-                    revision: "main".to_string(),
-                    path: String::new(),
-                });
-            };
+            let (repository, uri) = uri.split_once('/').unwrap_or((uri, ""));
 
             // {revision} / {path from root}
             // ^--------^   !>
@@ -211,13 +202,24 @@ impl FromStr for HFPathParts {
 
 impl std::fmt::Display for HFPathParts {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "hf://{REPO_TYPE}/{REPOSITORY}/{PATH}",
-            REPO_TYPE = self.repo_type,
-            REPOSITORY = self.repository,
-            PATH = self.path
-        )
+        if self.repo_type == HFRepoType::Buckets || self.revision == "main" {
+            write!(
+                f,
+                "hf://{REPO_TYPE}/{REPOSITORY}/{PATH}",
+                REPO_TYPE = self.repo_type,
+                REPOSITORY = self.repository,
+                PATH = self.path
+            )
+        } else {
+            write!(
+                f,
+                "hf://{REPO_TYPE}/{REPOSITORY}@{REVISION}/{PATH}",
+                REPO_TYPE = self.repo_type,
+                REPOSITORY = self.repository,
+                REVISION = self.revision,
+                PATH = self.path
+            )
+        }
     }
 }
 
@@ -332,6 +334,39 @@ mod tests {
         };
 
         assert_eq!(parts, expected);
+        assert_eq!(parts.to_string(), uri);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_hf_repo_root_with_revision() -> DaftResult<()> {
+        for repo_type in ["models", "datasets", "spaces"] {
+            let uri = format!("hf://{repo_type}/user/repo@dev");
+            let parts = uri.parse::<HFPathParts>().unwrap();
+            assert_eq!(parts.repository, "user/repo");
+            assert_eq!(parts.revision, "dev");
+            assert_eq!(parts.path, "");
+            assert_eq!(parts.to_string(), format!("{uri}/"));
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_display_canonicalizes_repo_type_aliases() -> DaftResult<()> {
+        for (alias, canonical) in [
+            ("model", "models"),
+            ("dataset", "datasets"),
+            ("space", "spaces"),
+        ] {
+            let uri = format!("hf://{alias}/user/repo@dev/*.json");
+            let parts = uri.parse::<HFPathParts>().unwrap();
+            assert_eq!(
+                parts.to_string(),
+                format!("hf://{canonical}/user/repo@dev/*.json")
+            );
+        }
 
         Ok(())
     }

@@ -484,8 +484,8 @@ impl ObjectSource for HFSource {
 
         let path = glob_path.parse::<HFPath>()?;
         let glob_path = match &path {
-            HFPath::Hf(parts) if parts.repo_type == HFRepoType::Buckets => parts.to_string(),
-            _ => glob_path.to_string(),
+            HFPath::Hf(parts) => parts.to_string(),
+            HFPath::Http(_) => glob_path.to_string(),
         };
 
         // Ensure fanout_limit is None because HTTP ObjectSource does not support prefix listing
@@ -506,11 +506,9 @@ impl ObjectSource for HFSource {
                 // hf://datasets/user/repo
                 // but not
                 // hf://datasets/user/repo/file.parquet
-                // Buckets are plain object storage with no parquet-conversion API, so they
-                // always go through regular globbing.
-                if file_format == Some(FileFormat::Parquet)
-                    && parts.repo_type != HFRepoType::Buckets
-                {
+                // The conversion API is dataset-only and does not accept a revision, so
+                // models, spaces, buckets, and pinned datasets use regular tree globbing.
+                if should_use_parquet_api(&parts, file_format) {
                     let res =
                         try_parquet_api(parts, limit, io_stats.clone(), &self.http_source.client)
                             .await;
@@ -633,6 +631,12 @@ impl ObjectSource for HFSource {
     }
 }
 
+fn should_use_parquet_api(parts: &HFPathParts, file_format: Option<FileFormat>) -> bool {
+    file_format == Some(FileFormat::Parquet)
+        && parts.repo_type == HFRepoType::Datasets
+        && parts.revision == "main"
+}
+
 async fn try_parquet_api(
     hf_glob_path: HFPathParts,
     limit: Option<usize>,
@@ -710,7 +714,43 @@ mod tests {
     use common_io_config::{HTTPConfig, HuggingFaceConfig};
     use futures::TryStreamExt;
 
-    use crate::{huggingface::HFSource, object_io::ObjectSource};
+    use crate::{
+        FileFormat,
+        huggingface::{
+            HFSource,
+            path::{HFPathParts, HFRepoType},
+        },
+        object_io::ObjectSource,
+    };
+
+    #[test]
+    fn test_parquet_api_only_supports_main_dataset_revision() {
+        let mut parts = HFPathParts {
+            repo_type: HFRepoType::Datasets,
+            repository: "user/repo".to_string(),
+            revision: "main".to_string(),
+            path: String::new(),
+        };
+        assert!(super::should_use_parquet_api(
+            &parts,
+            Some(FileFormat::Parquet)
+        ));
+
+        parts.revision = "revision".to_string();
+        assert!(!super::should_use_parquet_api(
+            &parts,
+            Some(FileFormat::Parquet)
+        ));
+
+        parts.revision = "main".to_string();
+        for repo_type in [HFRepoType::Models, HFRepoType::Spaces, HFRepoType::Buckets] {
+            parts.repo_type = repo_type;
+            assert!(!super::should_use_parquet_api(
+                &parts,
+                Some(FileFormat::Parquet)
+            ));
+        }
+    }
 
     #[test]
     fn test_parse_link_header_next() {
