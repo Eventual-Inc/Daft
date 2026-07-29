@@ -23,7 +23,8 @@ use tokio::io::AsyncRead;
 use tokio_util::io::StreamReader;
 
 use crate::{
-    BufferedRange, MAX_RECORD_LENGTH, McapReadOptions, fetch_exact_range, mcap_error, read_summary,
+    BufferedRange, MAX_RECORD_LENGTH, McapReadOptions, fetch_exact_range, mcap_error,
+    parse_summary_from_bytes, read_summary,
 };
 
 // Read small remote files in one request.
@@ -211,98 +212,93 @@ impl NativeMcapReader {
                 .start_time
                 .zip(options.end_time)
                 .is_some_and(|(start, end)| start >= end);
-        let unfiltered =
-            topics.is_none() && options.start_time.is_none() && options.end_time.is_none();
-        let is_remote = !matches!(parse_url(&uri)?.0, SourceType::File);
 
         let mut channels = BTreeMap::new();
-        let (mode, indexed, indexed_remote_file_size) = if unfiltered {
-            (
-                ReaderMode::Linear {
-                    reader: open_linear_reader(&uri, &io_client, &io_stats).await?,
-                    record_buffer: Vec::new(),
-                },
-                false,
-                None,
-            )
+        let (mode, indexed, indexed_remote_file_size, indexed_read_buffer) = if empty {
+            // Provably-empty constraints never touch storage.
+            (ReaderMode::Empty, false, None, None)
         } else {
+            let is_remote = !matches!(parse_url(&uri)?.0, SourceType::File);
             let file_size = io_client
                 .single_url_get_size(uri.clone(), Some(io_stats.clone()))
                 .await?;
             if file_size < mcap::MAGIC.len() {
                 return Err(mcap_error("file is shorter than MCAP magic"));
             }
-            let is_small_remote = file_size <= SMALL_REMOTE_FILE_THRESHOLD && is_remote;
-            let buffered = if is_small_remote && !empty {
+
+            // Small remote files: one request buys the whole file; the summary
+            // and any chunk reads are then served from the buffer.
+            let buffer = if is_remote && file_size <= SMALL_REMOTE_FILE_THRESHOLD {
                 Some(fetch_exact_range(&uri, 0, file_size, &io_client, &io_stats).await?)
             } else {
-                let magic =
-                    fetch_exact_range(&uri, 0, mcap::MAGIC.len(), &io_client, &io_stats).await?;
-                if magic.as_ref() != mcap::MAGIC {
-                    return Err(mcap_error("bad leading magic"));
-                }
                 None
             };
-
-            if let Some(bytes) = buffered {
-                if !bytes.starts_with(mcap::MAGIC) {
-                    return Err(mcap_error("bad leading magic"));
+            let magic = match &buffer {
+                Some(bytes) => bytes.slice(0..mcap::MAGIC.len()),
+                None => {
+                    fetch_exact_range(&uri, 0, mcap::MAGIC.len(), &io_client, &io_stats).await?
                 }
+            };
+            if magic.as_ref() != mcap::MAGIC {
+                return Err(mcap_error("bad leading magic"));
+            }
+
+            let summary = match &buffer {
+                Some(bytes) => parse_summary_from_bytes(bytes)?,
+                None => read_summary(&uri, file_size, is_remote, &io_client, &io_stats).await?,
+            };
+            if let Some(summary) = &summary {
+                channels.extend(
+                    summary
+                        .channels
+                        .iter()
+                        .map(|(id, channel)| (*id, channel.topic.clone())),
+                );
+            }
+
+            let usable = summary.filter(|summary| {
+                !summary.chunk_indexes.is_empty() && !summary.channels.is_empty()
+            });
+            if let Some(summary) = usable {
+                // Indexed traversal is the primary path: chunk indexes prune
+                // I/O and ReadOrder::LogTime yields per-file log-time order.
+                let mut reader_options = IndexedReaderOptions::new().with_order(ReadOrder::LogTime);
+                if let Some(start_time) = options.start_time {
+                    reader_options = reader_options.log_time_on_or_after(start_time);
+                }
+                if let Some(end_time) = options.end_time {
+                    reader_options = reader_options.log_time_before(end_time);
+                }
+                if let Some(topics) = &topics {
+                    reader_options = reader_options.include_topics(topics.iter().cloned());
+                }
+                reader_options = reader_options.with_record_length_limit(MAX_RECORD_LENGTH);
+                let read_buffer = buffer.map(|bytes| BufferedRange { start: 0, bytes });
+                let remote_file_size = (is_remote && read_buffer.is_none()).then_some(file_size);
+                (
+                    ReaderMode::Indexed(
+                        IndexedReader::new_with_options(&summary, reader_options)
+                            .map_err(mcap_error)?,
+                    ),
+                    true,
+                    remote_file_size,
+                    read_buffer,
+                )
+            } else {
+                // Unindexed fallback: stream records in file order.
+                let reader = match buffer {
+                    Some(bytes) => open_buffered_linear_reader(bytes),
+                    None => open_linear_reader(&uri, &io_client, &io_stats).await?,
+                };
                 (
                     ReaderMode::Linear {
-                        reader: open_buffered_linear_reader(bytes),
+                        reader,
                         record_buffer: Vec::new(),
                     },
                     false,
                     None,
+                    None,
                 )
-            } else if empty {
-                (ReaderMode::Empty, false, None)
-            } else {
-                let summary =
-                    read_summary(&uri, file_size, is_remote, &io_client, &io_stats).await?;
-                if let Some(summary) = &summary {
-                    channels.extend(
-                        summary
-                            .channels
-                            .iter()
-                            .map(|(id, channel)| (*id, channel.topic.clone())),
-                    );
-                }
-
-                if let Some(summary) = summary.filter(|summary| {
-                    !summary.chunk_indexes.is_empty() && !summary.channels.is_empty()
-                }) {
-                    let mut reader_options =
-                        IndexedReaderOptions::new().with_order(ReadOrder::LogTime);
-                    if let Some(start_time) = options.start_time {
-                        reader_options = reader_options.log_time_on_or_after(start_time);
-                    }
-                    if let Some(end_time) = options.end_time {
-                        reader_options = reader_options.log_time_before(end_time);
-                    }
-                    if let Some(topics) = &topics {
-                        reader_options = reader_options.include_topics(topics.iter().cloned());
-                    }
-                    reader_options = reader_options.with_record_length_limit(MAX_RECORD_LENGTH);
-                    (
-                        ReaderMode::Indexed(
-                            IndexedReader::new_with_options(&summary, reader_options)
-                                .map_err(mcap_error)?,
-                        ),
-                        true,
-                        is_remote.then_some(file_size),
-                    )
-                } else {
-                    (
-                        ReaderMode::Linear {
-                            reader: open_linear_reader(&uri, &io_client, &io_stats).await?,
-                            record_buffer: Vec::new(),
-                        },
-                        false,
-                        None,
-                    )
-                }
             }
         };
 
@@ -319,7 +315,7 @@ impl NativeMcapReader {
             finished: false,
             indexed,
             indexed_remote_file_size,
-            indexed_read_buffer: None,
+            indexed_read_buffer,
         })
     }
 
@@ -530,7 +526,7 @@ mod tests {
     use super::indexed_read_length;
     use crate::{
         McapReadOptions,
-        test_utils::{collect_rows, make_reader, write_mcap},
+        test_utils::{collect_rows, make_reader, write_mcap, write_mcap_out_of_order},
     };
 
     #[test]
@@ -550,15 +546,62 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unfiltered_reader_streams_file_once() -> DaftResult<()> {
-        let file = write_mcap(true, None, 20, 32);
+    async fn unfiltered_unindexed_reader_streams_file_once() -> DaftResult<()> {
+        let file = write_mcap(false, None, 20, 32);
         let file_size = file.as_file().metadata().unwrap().len() as usize;
         let (mut reader, io_stats) = make_reader(&file, McapReadOptions::default()).await?;
 
         assert!(!reader.indexed());
         assert_eq!(collect_rows(&mut reader).await?.len(), 20);
         drop(reader);
-        assert_eq!(io_stats.load_bytes_read(), file_size);
+        // One magic probe and one summary probe, then a single linear pass.
+        let bytes_read = io_stats.load_bytes_read();
+        assert!(
+            bytes_read >= file_size && bytes_read < 2 * file_size,
+            "unindexed unfiltered read fetched {bytes_read} of {file_size} bytes"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn unfiltered_indexed_read_returns_log_time_order() -> DaftResult<()> {
+        let file = write_mcap_out_of_order(10);
+        // Fixture precondition: chunks must be physically out of log-time order.
+        let contents = bytes::Bytes::from(std::fs::read(file.path()).unwrap());
+        let summary = crate::parse_summary_from_bytes(&contents)?.expect("fixture has a summary");
+        assert!(
+            summary
+                .chunk_indexes
+                .windows(2)
+                .any(|pair| pair[0].message_start_time > pair[1].message_start_time),
+            "fixture chunks are not out of log-time order"
+        );
+
+        let (mut reader, _) = make_reader(&file, McapReadOptions::default()).await?;
+        assert!(reader.indexed());
+        let times = collect_rows(&mut reader)
+            .await?
+            .iter()
+            .map(|(_, time, _)| *time)
+            .collect::<Vec<_>>();
+        assert_eq!(times.len(), 20);
+        assert_eq!(times.first(), Some(&0));
+        let mut sorted = times.clone();
+        sorted.sort_unstable();
+        assert_eq!(times, sorted);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn empty_constraints_skip_io() -> DaftResult<()> {
+        let file = write_mcap(true, None, 4, 8);
+        let options = McapReadOptions {
+            topics: Some(vec![]),
+            ..Default::default()
+        };
+        let (mut reader, io_stats) = make_reader(&file, options).await?;
+        assert!(reader.next_batch().await?.is_none());
+        assert_eq!(io_stats.load_bytes_read(), 0);
         Ok(())
     }
 
@@ -653,11 +696,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn invalid_magic_is_rejected() -> DaftResult<()> {
+    async fn invalid_magic_is_rejected_at_open() -> DaftResult<()> {
         let file = NamedTempFile::new().unwrap();
         std::fs::write(file.path(), b"not an mcap file").unwrap();
-        let (mut reader, _) = make_reader(&file, McapReadOptions::default()).await?;
-        let result = reader.next_batch().await;
+        let result = make_reader(&file, McapReadOptions::default()).await;
         assert!(
             result
                 .err()
