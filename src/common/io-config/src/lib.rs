@@ -24,7 +24,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 pub use crate::{
     azure::AzureConfig,
-    config::IOConfig,
+    config::{IOConfig, IoBackendKind},
     cos::CosConfig,
     gcs::GCSConfig,
     goosefs::GooseFSConfig,

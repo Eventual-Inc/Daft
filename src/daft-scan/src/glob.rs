@@ -631,7 +631,12 @@ impl ScanOperator for GlobScanOperator {
             format!("Glob paths = [{}]", condensed_glob_paths),
         ];
         lines.extend(self.file_format_config.multiline_display());
-        lines.extend(self.storage_config.multiline_display());
+        let backends =
+            common_io_config::IoBackendKind::from_uris(self.glob_paths.iter().map(|s| s.as_str()));
+        lines.extend(
+            self.storage_config
+                .multiline_display_with_backends(backends.as_deref()),
+        );
 
         lines
     }
