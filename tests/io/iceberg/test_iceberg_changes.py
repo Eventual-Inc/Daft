@@ -119,6 +119,51 @@ def test_read_iceberg_changes_does_not_eagerly_trigger_io(cow_history_table, mon
     assert called is True
 
 
+def test_version_gate_blocks_construction_before_any_io(cow_history_table, monkeypatch):
+    """An unsupported PyIceberg version must be rejected by the public read_iceberg_changes() entry point itself.
+
+    This must happen before range resolution or footer I/O ever run, not just when calling
+    require_pyiceberg_version_for_changelog() in isolation.
+    """
+
+    def _must_not_be_called(*args, **kwargs):
+        raise AssertionError("must not be called before the version gate raises")
+
+    monkeypatch.setattr("daft.io.iceberg._changelog_planning.resolve_changelog_range", _must_not_be_called)
+    monkeypatch.setattr("daft.io.iceberg._changelog_schema._read_footer_arrow_schema", _must_not_be_called)
+    monkeypatch.setattr(pyiceberg, "__version__", "0.9.0")
+
+    with pytest.raises(NotImplementedError, match=r"requires pyiceberg>=0\.11\.0"):
+        daft.io.iceberg.read_iceberg_changes(cow_history_table)
+
+
+def test_version_gate_blocks_schema_evolution_table_too(local_catalog, monkeypatch):
+    """The version gate is not conditional on whether the table has schema evolution history."""
+    schema = Schema(NestedField(field_id=1, name="id", field_type=LongType(), required=False))
+    table = local_catalog.create_table("default.version_gate_evolution", schema=schema)
+    table.append(pa.table({"id": [1]}))
+    with table.update_schema() as update:
+        update.add_column("data", StringType())
+    table.refresh()
+
+    def _must_not_be_called(*args, **kwargs):
+        raise AssertionError("must not be called before the version gate raises")
+
+    monkeypatch.setattr("daft.io.iceberg._changelog_planning.resolve_changelog_range", _must_not_be_called)
+    monkeypatch.setattr("daft.io.iceberg._changelog_schema._read_footer_arrow_schema", _must_not_be_called)
+    monkeypatch.setattr(pyiceberg, "__version__", "0.9.0")
+
+    with pytest.raises(NotImplementedError, match=r"requires pyiceberg>=0\.11\.0"):
+        daft.io.iceberg.read_iceberg_changes(table)
+
+
+def test_version_gate_does_not_affect_regular_read_iceberg(cow_history_table, monkeypatch):
+    """daft.read_iceberg() (non-CDC) never calls into the changelog version gate."""
+    monkeypatch.setattr(pyiceberg, "__version__", "0.9.0")
+    rows = daft.read_iceberg(cow_history_table).to_pylist()
+    assert len(rows) > 0
+
+
 def test_mor_range_is_rejected(cow_history_table, monkeypatch):
     # pyiceberg 0.11.1 can't produce a real MOR delete manifest (see
     # test_iceberg_changelog_planning.py's equivalent test for why); patch the guard

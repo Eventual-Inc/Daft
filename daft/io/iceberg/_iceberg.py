@@ -219,9 +219,16 @@ def read_iceberg_changes(
 
     Only pure copy-on-write snapshot ranges are supported: if any snapshot in the range has a
     delete manifest (position/equality deletes) in its currently effective manifest list, a
-    ``NotImplementedError`` is raised rather than an incorrect result. This first release also
-    only supports tables whose metadata currently contains exactly one schema, and requires
-    every changelog data file to be strictly schema-compatible with it at every nesting level.
+    ``NotImplementedError`` is raised rather than an incorrect result. Tables with schema
+    evolution history (added/renamed/type-promoted columns, including nested fields inside
+    structs/lists/maps) are supported; each changelog data file's Parquet footer is verified
+    against the schema declared by the resolved end snapshot. Requires
+    ``pyiceberg>=0.11.0`` (raises ``NotImplementedError`` immediately, before any I/O, if the
+    installed version is older); :func:`read_iceberg` (non-CDC) is unaffected and continues to
+    support older PyIceberg versions. A baseline field with a declared Iceberg
+    ``initial_default`` that's missing from an older data file is rejected rather than
+    silently filled with ``None`` -- default-value materialization for historical files is not
+    yet implemented.
 
     Every row in the returned DataFrame carries three additional columns: ``_change_type``
     (``"INSERT"``, ``"DELETE"``, or -- when ``compute_updates=True`` -- ``"UPDATE_BEFORE"``/
@@ -291,7 +298,14 @@ def read_iceberg_changes(
     from pyiceberg.table import StaticTable
 
     from daft.io.iceberg._changelog_planning import resolve_changelog_range
+    from daft.io.iceberg._changelog_schema import require_pyiceberg_version_for_changelog
     from daft.io.iceberg.iceberg_changes_scan import IcebergChangesScanOperator
+
+    # Checked first, before any argument validation or I/O: an unsupported PyIceberg
+    # version must fail immediately, not partway through range resolution or planning.
+    # Applies regardless of how many schemas
+    # the table has had -- the single-schema gate depends on the same PyIceberg signatures.
+    require_pyiceberg_version_for_changelog()
 
     if isinstance(table, (str, os.PathLike)):
         table = StaticTable.from_metadata(metadata_location=os.fspath(table))

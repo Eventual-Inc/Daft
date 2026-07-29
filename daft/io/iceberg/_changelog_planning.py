@@ -64,7 +64,7 @@ def _resolve_baseline_schema(table: Table, end_snapshot: Snapshot) -> IcebergSch
     raise NotImplementedError(
         f"end snapshot (id={end_snapshot.snapshot_id}) does not declare a schema_id, and this "
         f"table's metadata contains {len(table.metadata.schemas)} schemas; "
-        "daft.read_iceberg_changes() cannot reliably determine which schema this snapshot was "
+        "daft.io.iceberg.read_iceberg_changes() cannot reliably determine which schema this snapshot was "
         "written under. This is only supported when the table's metadata contains exactly one "
         "schema."
     )

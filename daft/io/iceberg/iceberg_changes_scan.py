@@ -25,7 +25,7 @@ from daft.io.iceberg._changelog_planning import (
     ordered_changelog_snapshots,
     plan_changelog_file_tasks,
 )
-from daft.io.iceberg._changelog_schema import validate_single_schema_table, validate_task_file_schemas
+from daft.io.iceberg._changelog_schema import validate_task_file_schemas
 from daft.io.iceberg._metadata import convert_iceberg_schema
 from daft.io.iceberg.iceberg_scan import iceberg_partition_spec_to_fields
 from daft.io.iceberg.schema_field_id_mapping_visitor import SchemaFieldIdMappingVisitor
@@ -127,13 +127,10 @@ class IcebergChangesScanOperator(ScanOperator):
         self._resolved_range = resolved_range
         self._storage_config = storage_config
 
-        # Front-gate kept independent of baseline resolution itself: schema evolution
-        # (multiple schemas per table) isn't supported yet, so this still rejects any table
-        # whose metadata contains more than one schema. Which schema is actually used as
-        # baseline always comes from `self._resolved_range.baseline_schema`, resolved via
-        # `end_snapshot.schema_id`, not from this call's return value.
-        validate_single_schema_table(iceberg_table)
-
+        # Tables with schema evolution history are supported, so there is no
+        # "reject if more than one schema" front-gate here. Which schema is used as baseline comes from
+        # `self._resolved_range.baseline_schema`, resolved via `end_snapshot.schema_id`
+        # and is independent of how many schemas the table's metadata currently lists.
         baseline_iceberg_schema = resolved_range.baseline_schema
         self._format_version = iceberg_table.metadata.format_version
 
