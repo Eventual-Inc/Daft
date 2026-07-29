@@ -286,3 +286,37 @@ async fn stream_filters_before_projection_and_applies_exact_limit() -> DaftResul
     assert_eq!(topics, vec!["/camera", "/imu", "/camera"]);
     Ok(())
 }
+
+#[tokio::test]
+async fn stream_without_limit_preserves_all_rows() -> DaftResult<()> {
+    let file = write_mcap(true, None, 20, 8);
+    let batches = collect_stream(
+        &file,
+        McapReadOptions {
+            batch_size: 4,
+            ..Default::default()
+        },
+        McapConvertOptions::default(),
+    )
+    .await?;
+
+    assert_eq!(batches.len(), 5);
+    assert_eq!(batches.iter().map(|batch| batch.len()).sum::<usize>(), 20);
+    Ok(())
+}
+
+#[tokio::test]
+async fn prefetched_stream_propagates_reader_errors() -> DaftResult<()> {
+    let file = NamedTempFile::new().unwrap();
+    std::fs::write(file.path(), b"not an mcap file").unwrap();
+    let error = collect_stream(
+        &file,
+        McapReadOptions::default(),
+        McapConvertOptions::default(),
+    )
+    .await
+    .expect_err("invalid MCAP should fail");
+
+    assert!(error.to_string().to_lowercase().contains("magic"));
+    Ok(())
+}

@@ -696,6 +696,51 @@ impl NativeMcapReader {
     }
 }
 
+fn reader_batch_stream(
+    mut reader: NativeMcapReader,
+    prefetch: bool,
+) -> BoxStream<'static, DaftResult<RecordBatch>> {
+    if !prefetch {
+        return Box::pin(futures::stream::try_unfold(
+            reader,
+            |mut reader| async move {
+                let batch = reader.next_batch().await?;
+                Ok(batch.map(|batch| (batch, reader)))
+            },
+        ));
+    }
+
+    // Keep decoding independent from downstream schema conformance and
+    // operators. Capacity one lets the reader work on the next batch while
+    // one completed batch is consumed, without allowing an unbounded queue.
+    let (sender, receiver) = tokio::sync::mpsc::channel(1);
+    let runtime = tokio::runtime::Handle::current();
+    let producer: tokio::task::JoinHandle<DaftResult<()>> =
+        tokio::task::spawn_blocking(move || {
+            runtime.block_on(async move {
+                while let Some(batch) = reader.next_batch().await? {
+                    if sender.send(batch).await.is_err() {
+                        break;
+                    }
+                }
+                Ok(())
+            })
+        });
+
+    Box::pin(futures::stream::try_unfold(
+        (receiver, Some(producer)),
+        |(mut receiver, mut producer)| async move {
+            if let Some(batch) = receiver.recv().await {
+                return Ok(Some((batch, (receiver, producer))));
+            }
+            if let Some(producer) = producer.take() {
+                producer.await??;
+            }
+            Ok(None)
+        },
+    ))
+}
+
 /// Stream MCAP messages as record batches using native format pruning followed
 /// by ordinary Daft query operations.
 ///
@@ -711,20 +756,24 @@ pub async fn stream_mcap(
     convert_options: McapConvertOptions,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let reader = NativeMcapReader::new(uri, io_client, io_stats, read_options).await?;
+    // A limited scan should stop the reader immediately once its output is
+    // satisfied. Other scans benefit from overlapping decoding with
+    // downstream batch processing.
+    let batches = reader_batch_stream(reader, convert_options.limit.is_none());
     let stream = futures::stream::try_unfold(
         (
-            reader,
+            batches,
             convert_options.predicate,
             convert_options.include_columns,
             convert_options.limit,
         ),
-        |(mut reader, predicate, include_columns, mut remaining_rows)| async move {
+        |(mut batches, predicate, include_columns, mut remaining_rows)| async move {
             if remaining_rows == Some(0) {
                 return Ok(None);
             }
 
             loop {
-                let Some(mut batch) = reader.next_batch().await? else {
+                let Some(mut batch) = batches.next().await.transpose()? else {
                     return Ok(None);
                 };
 
@@ -752,7 +801,7 @@ pub async fn stream_mcap(
 
                 return Ok(Some((
                     batch,
-                    (reader, predicate, include_columns, remaining_rows),
+                    (batches, predicate, include_columns, remaining_rows),
                 )));
             }
         },
