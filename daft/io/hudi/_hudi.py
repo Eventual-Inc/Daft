@@ -47,16 +47,16 @@ def read_hudi(
         >>> df = daft.read_hudi("s3://bucket/path/to/hudi_table/", io_config=io_config)
         >>> df.show()
     """
-    from daft.io.hudi.hudi_scan import HudiScanOperator
+    from daft.io.hudi.hudi_scan import HudiDataSource
 
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
     multithreaded_io = runners.get_or_create_runner().name != "ray"
     storage_config = StorageConfig(multithreaded_io, io_config)
 
-    hudi_operator = HudiScanOperator(table_uri, storage_config=storage_config)
+    hudi_source = HudiDataSource(table_uri, storage_config=storage_config)
 
-    handle = ScanOperatorHandle.from_python_scan_operator(hudi_operator)
+    handle = ScanOperatorHandle.from_data_source(hudi_source)
     builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
     builder = attach_checkpoint(builder, checkpoint)
     return DataFrame(builder)
