@@ -2876,22 +2876,44 @@ class DataFrame:
                 columns not present in this DataFrame.
 
         Examples:
+            Columns are cast to the target dtype, and columns absent from the target
+            schema are dropped:
+
             >>> import daft
             >>> from daft import DataType, Schema
             >>> df = daft.from_pydict({"a": [1, 2, 3], "b": ["x", "y", "z"]})
             >>> target = Schema.from_pydict({"a": DataType.float64()})
             >>> df.cast_to_schema(target).show()
-            ╭──────────╮
-            │ a        │
-            │ ---      │
-            │ Float64  │
-            ╞══════════╡
-            │ 1        │
-            ├╌╌╌╌╌╌╌╌╌╌┤
-            │ 2        │
-            ├╌╌╌╌╌╌╌╌╌╌┤
-            │ 3        │
-            ╰──────────╯
+            ╭─────────╮
+            │ a       │
+            │ ---     │
+            │ Float64 │
+            ╞═════════╡
+            │ 1       │
+            ├╌╌╌╌╌╌╌╌╌┤
+            │ 2       │
+            ├╌╌╌╌╌╌╌╌╌┤
+            │ 3       │
+            ╰─────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
+            Use ``missing="null"`` to fill columns that the DataFrame does not have:
+
+            >>> df = daft.from_pydict({"a": [1, 2, 3]})
+            >>> target = Schema.from_pydict({"a": DataType.int64(), "b": DataType.string()})
+            >>> df.cast_to_schema(target, missing="null").show()
+            ╭───────┬────────╮
+            │ a     ┆ b      │
+            │ ---   ┆ ---    │
+            │ Int64 ┆ String │
+            ╞═══════╪════════╡
+            │ 1     ┆ None   │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 2     ┆ None   │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 3     ┆ None   │
+            ╰───────┴────────╯
             <BLANKLINE>
             (Showing first 3 of 3 rows)
         """
@@ -2905,9 +2927,7 @@ class DataFrame:
         if missing == "raise":
             absent = [f.name for f in schema if f.name not in current_names]
             if absent:
-                raise ValueError(
-                    f"Target schema contains columns not present in this DataFrame: {absent}"
-                )
+                raise ValueError(f"Target schema contains columns not present in this DataFrame: {absent}")
 
         expressions: list[Expression] = []
         for field in schema:
