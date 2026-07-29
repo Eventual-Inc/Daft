@@ -2856,6 +2856,70 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
+    def cast_to_schema(self, schema: "Schema", *, missing: Literal["raise", "null"] = "raise") -> "DataFrame":
+        """Casts this DataFrame to match the provided schema.
+
+        Each column in the target schema is cast to the specified dtype. The resulting
+        DataFrame contains only the columns in the target schema, in that order.
+
+        Args:
+            schema (Schema): Target schema to cast the DataFrame to.
+            missing: How to handle columns in the target schema that are absent from
+                this DataFrame. ``"raise"`` (default) raises a ``ValueError``;
+                ``"null"`` fills them with null values of the target dtype.
+
+        Returns:
+            DataFrame: A new DataFrame whose schema matches the target schema.
+
+        Raises:
+            ValueError: If *missing* is ``"raise"`` and the target schema contains
+                columns not present in this DataFrame.
+
+        Examples:
+            >>> import daft
+            >>> from daft import DataType, Schema
+            >>> df = daft.from_pydict({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+            >>> target = Schema.from_pydict({"a": DataType.float64()})
+            >>> df.cast_to_schema(target).show()
+            ╭──────────╮
+            │ a        │
+            │ ---      │
+            │ Float64  │
+            ╞══════════╡
+            │ 1        │
+            ├╌╌╌╌╌╌╌╌╌╌┤
+            │ 2        │
+            ├╌╌╌╌╌╌╌╌╌╌┤
+            │ 3        │
+            ╰──────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+        """
+        from daft.schema import Schema as _Schema
+
+        if not isinstance(schema, _Schema):
+            raise TypeError(f"Expected a Daft Schema, got {type(schema)}")
+
+        current_names = set(self.column_names)
+
+        if missing == "raise":
+            absent = [f.name for f in schema if f.name not in current_names]
+            if absent:
+                raise ValueError(
+                    f"Target schema contains columns not present in this DataFrame: {absent}"
+                )
+
+        expressions: list[Expression] = []
+        for field in schema:
+            if field.name in current_names:
+                expressions.append(col(field.name).cast(field.dtype))
+            else:
+                expressions.append(lit(None).cast(field.dtype).alias(field.name))
+
+        builder = self._builder.select(expressions)
+        return DataFrame(builder)
+
+    @DataframePublicAPI
     def describe(self) -> "DataFrame":
         """Returns the Schema of the DataFrame, which provides information about each column, as a new DataFrame.
 
