@@ -25,8 +25,8 @@ pub mod source;
 #[cfg(feature = "python")]
 pub use file_format_config::DatabaseSourceConfig;
 pub use file_format_config::{
-    CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig, TextSourceConfig,
-    WarcSourceConfig,
+    CsvSourceConfig, FileFormatConfig, JsonSourceConfig, McapSourceConfig, ParquetSourceConfig,
+    TextSourceConfig, WarcSourceConfig,
 };
 pub mod clustering;
 pub mod glob;
@@ -648,6 +648,9 @@ impl ScanTask {
                                     1.0
                                 }
                             }
+                            // MCAP chunks may be compressed internally even when the
+                            // filename has no compression suffix.
+                            FileFormatConfig::Mcap(_) => 2.0,
                         },
                         #[cfg(feature = "python")]
                         SourceConfig::Database(_) | SourceConfig::PythonFunction { .. } => 1.0,

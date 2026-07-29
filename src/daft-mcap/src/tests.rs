@@ -1,11 +1,16 @@
 use std::{borrow::Cow, collections::BTreeMap, fs::File, io::BufWriter, sync::Arc};
 
 use common_error::DaftResult;
+use daft_dsl::{lit, resolved_col};
 use daft_io::{IOConfig, IOStatsContext, get_io_client};
+use futures::TryStreamExt;
 use mcap::{Channel, Compression, Message, WriteOptions};
 use tempfile::NamedTempFile;
 
-use crate::{BufferedRange, McapReadOptions, NativeMcapReader, indexed_read_length};
+use crate::{
+    BufferedRange, McapConvertOptions, McapReadOptions, NativeMcapReader, indexed_read_length,
+    stream_mcap,
+};
 
 fn write_mcap(
     indexed: bool,
@@ -90,6 +95,20 @@ async fn collect_rows(reader: &mut NativeMcapReader) -> DaftResult<Vec<(String, 
         }
     }
     Ok(rows)
+}
+
+async fn collect_stream(
+    file: &NamedTempFile,
+    read_options: McapReadOptions,
+    convert_options: McapConvertOptions,
+) -> DaftResult<Vec<daft_recordbatch::RecordBatch>> {
+    let io_client = get_io_client(true, Arc::new(IOConfig::default()))?;
+    let io_stats = IOStatsContext::new("daft-mcap stream unit test");
+    let uri = file.path().to_string_lossy().into_owned();
+    stream_mcap(&uri, io_client, io_stats, read_options, convert_options)
+        .await?
+        .try_collect()
+        .await
 }
 
 #[test]
@@ -230,5 +249,40 @@ async fn invalid_magic_is_rejected() -> DaftResult<()> {
             .err()
             .is_some_and(|error| error.to_string().to_lowercase().contains("magic"))
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn stream_filters_before_projection_and_applies_exact_limit() -> DaftResult<()> {
+    let file = write_mcap(true, None, 20, 8);
+    let batches = collect_stream(
+        &file,
+        McapReadOptions {
+            batch_size: 4,
+            ..Default::default()
+        },
+        McapConvertOptions {
+            predicate: Some(resolved_col("sequence").gt(lit(5_u32))),
+            include_columns: Some(vec!["topic".to_string()]),
+            limit: Some(3),
+        },
+    )
+    .await?;
+
+    assert_eq!(batches.iter().map(|batch| batch.len()).sum::<usize>(), 3);
+    assert!(batches.iter().all(|batch| batch.num_columns() == 1));
+    let topics = batches
+        .iter()
+        .flat_map(|batch| {
+            batch
+                .get_column(0)
+                .utf8()
+                .unwrap()
+                .into_iter()
+                .map(|value| value.unwrap().to_string())
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(topics, vec!["/camera", "/imu", "/camera"]);
     Ok(())
 }

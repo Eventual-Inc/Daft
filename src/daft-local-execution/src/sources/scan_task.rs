@@ -260,6 +260,7 @@ impl Source for ScanTaskSource {
                     FileFormatConfig::Json(_) => "Read JSON".into(),
                     FileFormatConfig::Warc(_) => "Read WARC".into(),
                     FileFormatConfig::Text(_) => "Read Text".into(),
+                    FileFormatConfig::Mcap(_) => "Read MCAP".into(),
                 },
                 #[cfg(feature = "python")]
                 SourceConfig::Database(_) => "Read Database".into(),
@@ -638,4 +639,29 @@ async fn stream_scan_task(
         );
         Ok(mp)
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use daft_core::prelude::Schema;
+    use daft_scan::McapSourceConfig;
+
+    use super::*;
+
+    #[test]
+    fn mcap_scan_task_source_has_format_specific_name() {
+        let (_sender, receiver) = create_unbounded_channel::<(InputId, Vec<ScanTaskRef>)>();
+        let source = ScanTaskSource::new(
+            receiver,
+            Some(Arc::new(SourceConfig::File(FileFormatConfig::Mcap(
+                McapSourceConfig::default(),
+            )))),
+            Pushdowns::default(),
+            Arc::new(Schema::empty()),
+            &DaftExecutionConfig::default(),
+            None,
+        );
+
+        assert_eq!(source.name(), "Read MCAP");
+    }
 }
