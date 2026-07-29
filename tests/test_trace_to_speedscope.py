@@ -8,22 +8,55 @@ import pytest
 from tools.trace_to_speedscope import SPEEDSCOPE_SCHEMA, TraceConversionError, convert_file, convert_records, main
 
 
-def span_event(timestamp: str, message: str, name: str, ancestors: list[str] | None = None) -> dict:
+def span_event(
+    timestamp: str,
+    message: str,
+    name: str,
+    ancestors: list[str] | None = None,
+    *,
+    include_current_span: bool = False,
+) -> dict:
+    spans = [*ancestors] if ancestors is not None else []
+    if include_current_span:
+        spans.append(name)
     return {
         "timestamp": timestamp,
         "fields": {"message": message},
         "span": {"name": name},
-        "spans": [{"name": ancestor} for ancestor in ancestors or []],
+        "spans": [{"name": ancestor} for ancestor in spans],
     }
 
 
-def test_convert_nested_span_events():
+@pytest.mark.parametrize("include_current_span", [False, True])
+def test_convert_nested_span_events(include_current_span: bool):
     records = [
         {"timestamp": "2026-01-01T00:00:00Z", "fields": {"message": "ordinary log"}},
-        span_event("2026-01-01T00:00:01.000000Z", "new", "VideoFile::frames"),
-        span_event("2026-01-01T00:00:01.000250Z", "new", "VideoFile::read", ["VideoFile::frames"]),
-        span_event("2026-01-01T00:00:01.000750Z", "close", "VideoFile::read", ["VideoFile::frames"]),
-        span_event("2026-01-01T00:00:01.001000Z", "close", "VideoFile::frames"),
+        span_event(
+            "2026-01-01T00:00:01.000000Z",
+            "new",
+            "VideoFile::frames",
+            include_current_span=include_current_span,
+        ),
+        span_event(
+            "2026-01-01T00:00:01.000250Z",
+            "new",
+            "VideoFile::read",
+            ["VideoFile::frames"],
+            include_current_span=include_current_span,
+        ),
+        span_event(
+            "2026-01-01T00:00:01.000750Z",
+            "close",
+            "VideoFile::read",
+            ["VideoFile::frames"],
+            include_current_span=include_current_span,
+        ),
+        span_event(
+            "2026-01-01T00:00:01.001000Z",
+            "close",
+            "VideoFile::frames",
+            include_current_span=include_current_span,
+        ),
     ]
 
     output = convert_records(records, "video trace")

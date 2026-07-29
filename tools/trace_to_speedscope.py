@@ -109,6 +109,8 @@ def convert_records(records: list[dict[str, Any]], profile_name: str) -> dict[st
             start = timestamp
 
         if message == "new":
+            if ancestors != stack and ancestors == [*stack, name]:
+                ancestors.pop()
             if ancestors != stack:
                 raise TraceConversionError(
                     f"Span event {span_event_number} opens {name!r} beneath {ancestors!r}, "
@@ -117,6 +119,9 @@ def convert_records(records: list[dict[str, Any]], profile_name: str) -> dict[st
             stack.append(name)
             event_type = "O"
         else:
+            expected_ancestors = stack[:-1]
+            if ancestors != expected_ancestors and ancestors == [*expected_ancestors, name]:
+                ancestors.pop()
             if not stack or stack[-1] != name or ancestors != stack[:-1]:
                 raise TraceConversionError(
                     f"Span event {span_event_number} closes {name!r} beneath {ancestors!r}, "
