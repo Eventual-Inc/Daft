@@ -116,7 +116,7 @@ class MCAPSource(DataSource):
             if self._topic_start_time_resolver is not None:
                 try:
                     keyframes = self._topic_start_time_resolver(file_path)
-                except Exception:  # noqa: BLE001
+                except Exception:
                     keyframes = None
 
             if not keyframes:
