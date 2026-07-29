@@ -213,6 +213,7 @@ def read_iceberg_changes(
     io_config: IOConfig | None = None,
     compute_updates: bool = False,
     identifier_columns: list[str] | None = None,
+    net_changes: bool = False,
 ) -> DataFrame:
     """Create a changelog (CDC) DataFrame from a copy-on-write (COW) Iceberg table over a snapshot range.
 
@@ -228,8 +229,9 @@ def read_iceberg_changes(
     identifier), and ``_commit_snapshot_id`` (int64, the Iceberg snapshot id that produced the
     change). Carryover rows -- COW file-rewrite noise where a row's content didn't actually
     change but still appears as a (DELETE, INSERT) pair because the whole file was rewritten --
-    are unconditionally removed before the DataFrame is returned; this cannot be disabled,
-    matching Iceberg's own ``create_changelog_view`` procedure.
+    are removed before the DataFrame is returned. This cannot be disabled, matching Iceberg's own
+    ``create_changelog_view`` procedure -- except when ``net_changes=True``, which replaces this
+    per-commit carryover removal with net cancellation across the entire scanned range instead.
 
     Args:
         table (str, os.PathLike, or pyiceberg.table.Table): Same as :func:`read_iceberg`.
@@ -263,7 +265,16 @@ def read_iceberg_changes(
             table's schema-declared identifier fields (as of ``end_snapshot_id``) when omitted;
             raises ``ValueError`` if explicitly passed as an empty list, or if the table declares
             no identifier fields and none are given. Ignored (and must not be passed) unless
-            ``compute_updates=True``.
+            ``compute_updates=True``; also may not be passed when ``net_changes=True``.
+        net_changes (bool): If True, net-cancel changes across the *entire* scanned range
+            instead of only within each commit, replacing (not layering on top of) the
+            unconditional carryover removal -- matching Iceberg's own procedure, which runs one
+            or the other, never both. A row that nets to zero across the range (e.g. inserted
+            then later deleted, with no other net change) produces no output at all; a row whose
+            net count is nonzero is replayed that many times using its *first* occurrence's
+            metadata. Mutually exclusive with ``compute_updates``; ``identifier_columns`` may not
+            be passed together with this (net cancellation matches on every non-metadata column,
+            not an identifier). Defaults to False.
 
     Returns:
         DataFrame: A DataFrame with the table's schema plus ``_change_type``, ``_change_ordinal``,
@@ -275,6 +286,7 @@ def read_iceberg_changes(
     Examples:
         >>> df = daft.io.iceberg.read_iceberg_changes(table, start_snapshot_id=100, end_snapshot_id=105)
         >>> df = daft.io.iceberg.read_iceberg_changes(table, compute_updates=True, identifier_columns=["id"])
+        >>> df = daft.io.iceberg.read_iceberg_changes(table, net_changes=True)
     """
     from pyiceberg.table import StaticTable
 
@@ -284,7 +296,11 @@ def read_iceberg_changes(
     if isinstance(table, (str, os.PathLike)):
         table = StaticTable.from_metadata(metadata_location=os.fspath(table))
 
-    if not compute_updates and identifier_columns is not None:
+    if compute_updates and net_changes:
+        raise ValueError("compute_updates and net_changes may not both be True.")
+    if net_changes and identifier_columns is not None:
+        raise ValueError("identifier_columns may not be passed when net_changes=True.")
+    if not compute_updates and not net_changes and identifier_columns is not None:
         raise ValueError("identifier_columns may only be passed when compute_updates=True.")
 
     # Resolved once, here, at DataFrame-construction time (metadata-only, no I/O) and passed explicitly to every consumer
@@ -315,14 +331,21 @@ def read_iceberg_changes(
     builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
     df = DataFrame(builder)
 
-    from daft.io.iceberg._changelog_postprocess import remove_carryovers
+    if net_changes:
+        # Replaces (never layers on top of) carryover removal -- same-commit carryover
+        # noise is naturally absorbed by net_changes' own running-total reset.
+        from daft.io.iceberg._changelog_net_changes import net_changes as apply_net_changes
 
-    df = remove_carryovers(df)
+        df = apply_net_changes(df)
+    else:
+        from daft.io.iceberg._changelog_postprocess import remove_carryovers
 
-    if compute_updates:
-        from daft.io.iceberg._changelog_pairing import pair_updates, resolve_identifier_columns
+        df = remove_carryovers(df)
 
-        resolved_identifier_columns = resolve_identifier_columns(identifier_columns, resolved_range.baseline_schema)
-        df = pair_updates(df, resolved_identifier_columns)
+        if compute_updates:
+            from daft.io.iceberg._changelog_pairing import pair_updates, resolve_identifier_columns
+
+            resolved_identifier_columns = resolve_identifier_columns(identifier_columns, resolved_range.baseline_schema)
+            df = pair_updates(df, resolved_identifier_columns)
 
     return df

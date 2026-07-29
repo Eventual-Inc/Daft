@@ -468,3 +468,51 @@ def test_invalid_end_snapshot_id_raises_at_construction_time(identified_table):
     """
     with pytest.raises(ValueError, match="was not found in this table's snapshot history"):
         daft.io.iceberg.read_iceberg_changes(identified_table, end_snapshot_id=999999999)
+
+
+# --- net_changes end-to-end ---
+
+
+def test_net_changes_cancels_insert_then_delete_within_range(cow_history_table):
+    """A row inserted and later genuinely deleted within the range must produce no output.
+
+    id=1 is INSERTed in S1 then genuinely deleted (not carried over) by S3's COW rewrite --
+    net_changes cancels it across the whole range (net count 0), unlike the default
+    remove_carryovers mode (tested elsewhere in this file), which only cancels *same-commit*
+    noise and leaves id=1's deletion as a standalone DELETE row.
+    """
+    s1, s2, s3 = (s.snapshot_id for s in cow_history_table.snapshots())
+
+    df = daft.io.iceberg.read_iceberg_changes(cow_history_table, net_changes=True)
+    rows = sorted(df.to_pylist(), key=lambda r: r["id"])
+
+    assert {r["id"] for r in rows} == {2, 3, 4, 5}  # id=1 fully cancelled, not present at all
+    for r in rows:
+        assert r["_change_type"] == "INSERT"
+    by_id = {r["id"]: r for r in rows}
+    # id=2/3: COW-rewrite carryover triggers the same-ordinal reset, so they
+    # survive with S3's own ordinal/commit, not S1's.
+    assert by_id[2]["data"] == "b" and by_id[2]["_commit_snapshot_id"] == s3
+    assert by_id[3]["data"] == "c" and by_id[3]["_commit_snapshot_id"] == s3
+    # id=4/5: never touched again after S2 -- untouched plain INSERTs.
+    assert by_id[4]["data"] == "d" and by_id[4]["_commit_snapshot_id"] == s2
+    assert by_id[5]["data"] == "e" and by_id[5]["_commit_snapshot_id"] == s2
+    assert s1 not in {r["_commit_snapshot_id"] for r in rows}
+
+
+def test_net_changes_and_compute_updates_mutually_exclusive(cow_history_table):
+    with pytest.raises(ValueError, match="may not both be True"):
+        daft.io.iceberg.read_iceberg_changes(cow_history_table, net_changes=True, compute_updates=True)
+
+
+def test_net_changes_rejects_explicit_identifier_columns(cow_history_table):
+    with pytest.raises(ValueError, match="may not be passed when net_changes=True"):
+        daft.io.iceberg.read_iceberg_changes(cow_history_table, net_changes=True, identifier_columns=["id"])
+
+
+def test_net_changes_empty_range_returns_empty_changelog(cow_history_table):
+    s1 = cow_history_table.snapshots()[0].snapshot_id
+    df = daft.io.iceberg.read_iceberg_changes(
+        cow_history_table, start_snapshot_id=s1, end_snapshot_id=s1, net_changes=True
+    )
+    assert df.to_pylist() == []
