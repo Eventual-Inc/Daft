@@ -2869,11 +2869,19 @@ class DataFrame:
                 ``"null"`` fills them with null values of the target dtype.
 
         Returns:
-            DataFrame: A new DataFrame whose schema matches the target schema.
+            DataFrame: A new DataFrame whose column names and dtypes match the
+                target schema.
 
         Raises:
             ValueError: If *missing* is ``"raise"`` and the target schema contains
                 columns not present in this DataFrame.
+
+        Note:
+            Per-field metadata on the target schema is not applied to the result.
+            Daft's ``cast`` and ``alias`` expressions construct fresh fields without
+            metadata, so a target built via
+            [`Schema.from_pyarrow_schema`][daft.schema.Schema.from_pyarrow_schema]
+            will match on names and dtypes but not on field metadata.
 
         Examples:
             Columns are cast to the target dtype, and columns absent from the target
@@ -2917,9 +2925,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 3 of 3 rows)
         """
-        from daft.schema import Schema as _Schema
-
-        if not isinstance(schema, _Schema):
+        if not isinstance(schema, Schema):
             raise TypeError(f"Expected a Daft Schema, got {type(schema)}")
 
         current_names = set(self.column_names)

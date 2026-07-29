@@ -122,6 +122,34 @@ def test_cast_to_schema_nested_types() -> None:
     assert result.to_pydict() == {"a": [[1.0, 2.0], [3.0], []]}
 
 
+def test_cast_to_schema_matches_names_and_dtypes_of_pyarrow_derived_schema() -> None:
+    pa = pytest.importorskip("pyarrow")
+    target = Schema.from_pyarrow_schema(pa.schema([pa.field("a", pa.int64(), metadata={b"k": b"v"})]))
+    df = daft.from_pydict({"a": [1, 2, 3]})
+
+    result = df.cast_to_schema(target)
+
+    assert result.column_names == ["a"]
+    assert result.schema()["a"].dtype == DataType.int64()
+
+
+def test_cast_to_schema_does_not_preserve_field_metadata() -> None:
+    """Documents a known limitation: `cast`/`alias` build fields without metadata.
+
+    Daft's Schema equality ignores field metadata, so this must be asserted on the
+    PyArrow round-trip. Fixing this requires propagating metadata through Cast/Alias
+    field resolution in Rust, which is out of scope here.
+    """
+    pa = pytest.importorskip("pyarrow")
+    target = Schema.from_pyarrow_schema(pa.schema([pa.field("a", pa.int64(), metadata={b"k": b"v"})]))
+    df = daft.from_pydict({"a": [1, 2, 3]})
+
+    result = df.cast_to_schema(target)
+
+    assert target.to_pyarrow_schema().field("a").metadata == {b"k": b"v"}
+    assert result.schema().to_pyarrow_schema().field("a").metadata is None
+
+
 def test_cast_to_schema_rejects_non_schema() -> None:
     df = daft.from_pydict({"a": [1, 2, 3]})
 
