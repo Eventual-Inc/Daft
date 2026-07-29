@@ -176,6 +176,35 @@ pub(crate) async fn read_summary(
     Ok(reader.finish())
 }
 
+/// Parses the optional summary section from a fully buffered MCAP file.
+pub(crate) fn parse_summary_from_bytes(bytes: &Bytes) -> DaftResult<Option<mcap::Summary>> {
+    let file_size = bytes.len() as u64;
+    let mut reader = SummaryReader::new_with_options(
+        SummaryReaderOptions::default()
+            .with_file_size(file_size)
+            .with_record_length_limit(MAX_RECORD_LENGTH),
+    );
+    let mut position = 0_u64;
+    while let Some(event) = reader.next_event() {
+        match event.map_err(mcap_error)? {
+            SummaryReadEvent::SeekRequest(request) => {
+                position = seek_position(request, position, file_size)?;
+                reader.notify_seeked(position);
+            }
+            SummaryReadEvent::ReadRequest(requested) => {
+                let start = usize::try_from(position)
+                    .map_err(|_| mcap_error("summary position does not fit in usize"))?;
+                let available = bytes.len().saturating_sub(start).min(requested);
+                reader.insert(requested)[..available]
+                    .copy_from_slice(&bytes[start..start + available]);
+                reader.notify_read(available);
+                position = position.saturating_add(available as u64);
+            }
+        }
+    }
+    Ok(reader.finish())
+}
+
 #[derive(Clone, Debug)]
 pub struct McapReadOptions {
     pub batch_size: usize,
@@ -315,7 +344,7 @@ mod tests {
     use tempfile::NamedTempFile;
 
     use super::{BufferedRange, McapConvertOptions, McapReadOptions};
-    use crate::test_utils::{collect_stream, write_mcap};
+    use crate::test_utils::{collect_stream, write_corrupt_chunk_mcap, write_mcap};
 
     #[test]
     fn buffered_range_slices_within_bounds() {
@@ -383,6 +412,23 @@ mod tests {
 
     #[tokio::test]
     async fn prefetched_stream_propagates_reader_errors() -> DaftResult<()> {
+        // A corrupt chunk fails mid-stream, after the reader opens cleanly,
+        // so the error must travel through the prefetch channel.
+        let file = write_corrupt_chunk_mcap();
+        let error = collect_stream(
+            &file,
+            McapReadOptions::default(),
+            McapConvertOptions::default(),
+        )
+        .await
+        .expect_err("corrupt MCAP chunk should fail");
+
+        assert!(error.to_string().contains("Failed to read MCAP messages"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn stream_surfaces_open_errors() -> DaftResult<()> {
         let file = NamedTempFile::new().unwrap();
         std::fs::write(file.path(), b"not an mcap file").unwrap();
         let error = collect_stream(
