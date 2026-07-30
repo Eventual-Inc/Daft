@@ -9,11 +9,12 @@ exceeds the recompute cost, so CSE is skipped.
 
 from __future__ import annotations
 
-from daft import col
 import pytest
 
+from daft import col
 
 # --- CSE should NOT apply (subplans without expensive ops) ---
+
 
 def test_cse_self_concat(make_df, capsys):
     """Repeated concat of a plain scan: no expensive ops → no CSE."""
@@ -54,9 +55,12 @@ def test_cse_empty_concat(make_df, capsys):
 
 # --- CSE SHOULD apply (subplans with expensive ops + Aggregate/Sort) ---
 
+
 def test_cse_with_join_concat(make_df, capsys):
-    """Concat of a join result: join is expensive but no Aggregate/Sort →
-    CSE should NOT fire (clone cost of join output may exceed recompute)."""
+    """Concat of a join result: join is expensive but has no Aggregate/Sort.
+
+    CSE should NOT fire (clone cost of join output may exceed recompute).
+    """
     df1 = make_df({"a": [1, 2, 3], "b": ["x", "y", "z"]})
     df2 = make_df({"a": [1, 2, 3], "c": [10, 20, 30]})
     joined = df1.join(df2, on="a")
@@ -78,6 +82,7 @@ def test_cse_with_aggregate_concat(make_df, capsys):
 
 
 # --- Self-join: pre-existing deadlock ---
+
 
 @pytest.mark.xfail(reason="CSE + HashJoin interaction causes deadlock — see issue #2423")
 def test_cse_self_join(make_df, capsys):

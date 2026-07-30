@@ -326,9 +326,10 @@ def test_explain_when_join_with_download():
 
 
 def test_explain_shows_common_subplan_in_optimized_plan():
-    """Verify that CSE wraps duplicate subplans in CommonSubplan nodes visible in df.explain()."""
-    df = daft.from_pydict({"a": [1, 2, 3], "b": ["x", "y", "z"]})
-    union_df = df.concat(df)
+    """Verify that CSE wraps duplicate expensive subplans in CommonSubplan nodes visible in df.explain()."""
+    df = daft.from_pydict({"a": [1, 1, 2], "b": [10, 20, 30]})
+    agg = df.groupby("a").agg(col("b").sum().alias("total"))
+    union_df = agg.concat(agg)
 
     text = explain_to_text(union_df)
     # Extract the Optimized Logical Plan section

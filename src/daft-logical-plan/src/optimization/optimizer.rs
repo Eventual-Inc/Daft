@@ -999,11 +999,7 @@ mod tests {
             vec![agg_expr.clone()],
             vec![],
         )?;
-        let agg2 = Aggregate::try_new(
-            Arc::new(LogicalPlan::Join(join2)),
-            vec![agg_expr],
-            vec![],
-        )?;
+        let agg2 = Aggregate::try_new(Arc::new(LogicalPlan::Join(join2)), vec![agg_expr], vec![])?;
 
         let union = Union::try_new(
             Arc::new(LogicalPlan::Aggregate(agg1)),
@@ -1231,11 +1227,7 @@ mod tests {
             vec![agg_expr.clone()],
             vec![],
         )?;
-        let agg2 = Aggregate::try_new(
-            Arc::new(LogicalPlan::Join(join2)),
-            vec![agg_expr],
-            vec![],
-        )?;
+        let agg2 = Aggregate::try_new(Arc::new(LogicalPlan::Join(join2)), vec![agg_expr], vec![])?;
 
         let union = Union::try_new(
             Arc::new(LogicalPlan::Aggregate(agg1)),

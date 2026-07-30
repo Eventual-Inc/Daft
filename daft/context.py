@@ -192,7 +192,8 @@ def set_planning_config(
     with ctx._lock:
         old_daft_planning_config = ctx._ctx._daft_planning_config if config is None else config
         new_daft_planning_config = old_daft_planning_config.with_config_values(
-            default_io_config=default_io_config, enable_strict_filter_pushdown=enable_strict_filter_pushdown,
+            default_io_config=default_io_config,
+            enable_strict_filter_pushdown=enable_strict_filter_pushdown,
             enable_cse=enable_cse,
         )
 

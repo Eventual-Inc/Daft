@@ -185,7 +185,7 @@ fn subplan_has_expensive_ops(plan: &LogicalPlan) -> bool {
         LogicalPlan::Source(_) => false,
         _ => {
             for child in plan.children() {
-                if subplan_has_expensive_ops(&child) {
+                if subplan_has_expensive_ops(child) {
                     return true;
                 }
             }
@@ -233,7 +233,7 @@ fn subplan_contains_aggregate_or_sort(plan: &LogicalPlan) -> bool {
         LogicalPlan::Source(_) => false,
         _ => {
             for child in plan.children() {
-                if subplan_contains_aggregate_or_sort(&child) {
+                if subplan_contains_aggregate_or_sort(child) {
                     return true;
                 }
             }

@@ -368,16 +368,11 @@ impl PipelineNode for CseCacheReadNode {
                 // which would deadlock when the join needs to build its
                 // hash table from one side before processing the other.
                 let mut buffer = Vec::new();
-                loop {
-                    match rx.recv().await {
-                        Some(msg) => {
-                            let is_flush = matches!(msg, PipelineMessage::Flush(_));
-                            buffer.push(msg);
-                            if is_flush {
-                                break;
-                            }
-                        }
-                        None => break,
+                while let Some(msg) = rx.recv().await {
+                    let is_flush = matches!(msg, PipelineMessage::Flush(_));
+                    buffer.push(msg);
+                    if is_flush {
+                        break;
                     }
                 }
 
@@ -460,7 +455,7 @@ mod tests {
         let mut rx = cache.register_reader().await;
 
         use daft_micropartition::MicroPartition;
-        let mp1 = MicroPartition::empty(Some(Arc::new(daft_schema::schema::Schema::empty())));
+        let mp1 = MicroPartition::empty(None);
         let msg1 = PipelineMessage::Morsel {
             input_id: 0,
             partition: mp1,
@@ -470,6 +465,9 @@ mod tests {
 
         assert!(rx.recv().await.is_some()); // Morsel
         assert!(rx.recv().await.is_some()); // Flush
+        // Drop the cache so the registered sender is released and the
+        // channel closes; otherwise recv() would wait forever.
+        drop(cache);
         assert!(rx.recv().await.is_none()); // closed
     }
 
