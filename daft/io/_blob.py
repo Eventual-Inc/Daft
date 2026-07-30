@@ -8,6 +8,7 @@ from daft.context import get_context
 from daft.daft import IOConfig
 from daft.dataframe import DataFrame
 from daft.expressions import col
+from daft.functions.url import download
 from daft.io.file_path import from_glob_path
 
 
@@ -59,8 +60,6 @@ def read_blob(
         >>> io_config = IOConfig(s3=S3Config(region="us-west-2", anonymous=True))
         >>> df = daft.read_blob("s3://path/to/files-*.jpeg", io_config=io_config)  # doctest: +SKIP
     """
-    from daft.functions import download
-
     if isinstance(path, list) and len(path) == 0:
         raise ValueError("Cannot read DataFrame from empty list of blob filepaths")
 
