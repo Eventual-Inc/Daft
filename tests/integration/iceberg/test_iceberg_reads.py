@@ -293,7 +293,7 @@ class TestIcebergCountPushdown:
         _ = capsys.readouterr()
         df.explain(True)
         actual = capsys.readouterr()
-        assert "daft.io.iceberg.iceberg_scan:_iceberg_count_result_function" in actual.out
+        assert "Aggregation pushdown = count(" in actual.out
 
         daft_count = df.collect().to_pydict()["count"][0]
 
@@ -322,7 +322,7 @@ class TestIcebergCountPushdown:
         _ = capsys.readouterr()
         df.explain(True)
         actual = capsys.readouterr()
-        assert "daft.io.iceberg.iceberg_scan:_iceberg_count_result_function" not in actual.out
+        assert "Aggregation pushdown" not in actual.out
 
         daft_count = df.collect().to_pydict()["count"][0]
 
@@ -344,7 +344,7 @@ class TestIcebergCountPushdown:
         _ = capsys.readouterr()
         df.explain(True)
         actual = capsys.readouterr()
-        assert "daft.io.iceberg.iceberg_scan:_iceberg_count_result_function" not in actual.out
+        assert "Aggregation pushdown" not in actual.out
 
         daft_count = df.collect().to_pydict()["count"][0]
 
@@ -367,7 +367,7 @@ class TestIcebergCountPushdown:
         _ = capsys.readouterr()
         df.explain(True)
         actual = capsys.readouterr()
-        assert "daft.io.iceberg.iceberg_scan:_iceberg_count_result_function" in actual.out
+        assert "Aggregation pushdown = count(" in actual.out
 
         daft_count = df.collect().to_pydict()["count"][0]
 
@@ -389,7 +389,7 @@ class TestIcebergCountPushdown:
         _ = capsys.readouterr()
         df.explain(True)
         actual = capsys.readouterr()
-        assert "daft.io.iceberg.iceberg_scan:_iceberg_count_result_function" not in actual.out
+        assert "Aggregation pushdown" not in actual.out
 
         # Count after limit should be at most the limit value
         assert daft_count <= 5
@@ -413,7 +413,7 @@ class TestIcebergCountPushdown:
                     _ = capsys.readouterr()
                     df.explain(True)
                     actual = capsys.readouterr()
-                    assert "daft.io.iceberg.iceberg_scan:_iceberg_count_result_function" not in actual.out
+                    assert "Aggregation pushdown" not in actual.out
 
                     daft_count = df.collect().to_pydict()["count"][0]
 
