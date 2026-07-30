@@ -4,10 +4,11 @@ use std::{borrow::Cow, collections::BTreeMap, fs::File, io::BufWriter, sync::Arc
 
 use common_error::DaftResult;
 use daft_io::{IOConfig, IOStatsContext, get_io_client};
+use futures::TryStreamExt;
 use mcap::{Channel, Compression, Message, WriteOptions};
 use tempfile::NamedTempFile;
 
-use crate::{McapReadOptions, NativeMcapReader};
+use crate::{McapConvertOptions, McapReadOptions, NativeMcapReader, stream_mcap};
 
 pub(crate) fn write_mcap(
     indexed: bool,
@@ -94,4 +95,18 @@ pub(crate) async fn collect_rows(
         }
     }
     Ok(rows)
+}
+
+pub(crate) async fn collect_stream(
+    file: &NamedTempFile,
+    read_options: McapReadOptions,
+    convert_options: McapConvertOptions,
+) -> DaftResult<Vec<daft_recordbatch::RecordBatch>> {
+    let io_client = get_io_client(true, Arc::new(IOConfig::default()))?;
+    let io_stats = IOStatsContext::new("daft-mcap stream unit test");
+    let uri = file.path().to_string_lossy().into_owned();
+    stream_mcap(&uri, io_client, io_stats, read_options, convert_options)
+        .await?
+        .try_collect()
+        .await
 }

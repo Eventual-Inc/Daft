@@ -1,17 +1,24 @@
-//! Native MCAP reader core.
+//! Native MCAP scan support.
 //!
-//! [`NativeMcapReader`] decodes one MCAP file into Daft record batches using
-//! indexed chunk traversal when a usable summary is present and a linear
-//! fallback otherwise.
+//! This crate turns one MCAP file into a stream of Daft record batches:
+//!
+//! - [`stream_mcap`] is the scan entry point. It applies topic/time
+//!   constraints while decoding, then residual predicates, projection, and
+//!   an exact limit.
+//! - [`read`] holds [`NativeMcapReader`]: indexed chunk traversal with a
+//!   linear fallback.
 //!
 //! Peak memory scales with chunk size and batch payload size, not total file
-//! size.
+//! size; a writer module may join `read` later.
 
 use std::{io::SeekFrom, sync::Arc};
 
 use bytes::Bytes;
 use common_error::{DaftError, DaftResult};
+use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr};
 use daft_io::{GetRange, GetResult, IOClient, IOStatsRef};
+use daft_recordbatch::RecordBatch;
+use futures::{StreamExt, stream::BoxStream};
 use mcap::sans_io::{SummaryReadEvent, SummaryReader, SummaryReaderOptions};
 
 mod read;
@@ -188,9 +195,127 @@ impl Default for McapReadOptions {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct McapConvertOptions {
+    pub predicate: Option<ExprRef>,
+    pub include_columns: Option<Vec<String>>,
+    pub limit: Option<usize>,
+}
+
+fn reader_batch_stream(
+    mut reader: NativeMcapReader,
+    prefetch: bool,
+) -> BoxStream<'static, DaftResult<RecordBatch>> {
+    if !prefetch {
+        return Box::pin(futures::stream::try_unfold(
+            reader,
+            |mut reader| async move {
+                let batch = reader.next_batch().await?;
+                Ok(batch.map(|batch| (batch, reader)))
+            },
+        ));
+    }
+
+    // Buffer one batch to overlap decoding while preserving backpressure.
+    let (sender, receiver) = tokio::sync::mpsc::channel(1);
+    let runtime = tokio::runtime::Handle::current();
+    let producer: tokio::task::JoinHandle<DaftResult<()>> =
+        tokio::task::spawn_blocking(move || {
+            runtime.block_on(async move {
+                while let Some(batch) = reader.next_batch().await? {
+                    if sender.send(batch).await.is_err() {
+                        break;
+                    }
+                }
+                Ok(())
+            })
+        });
+
+    Box::pin(futures::stream::try_unfold(
+        (receiver, Some(producer)),
+        |(mut receiver, mut producer)| async move {
+            if let Some(batch) = receiver.recv().await {
+                return Ok(Some((batch, (receiver, producer))));
+            }
+            if let Some(producer) = producer.take() {
+                producer.await??;
+            }
+            Ok(None)
+        },
+    ))
+}
+
+/// Stream MCAP messages as record batches.
+///
+/// Topic/time constraints are applied while decoding. Residual predicates run
+/// before projection so filters can reference unprojected columns. The final
+/// batch is truncated to honor the limit exactly.
+pub async fn stream_mcap(
+    uri: &str,
+    io_client: Arc<IOClient>,
+    io_stats: IOStatsRef,
+    read_options: McapReadOptions,
+    convert_options: McapConvertOptions,
+) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
+    let reader = NativeMcapReader::new(uri, io_client, io_stats, read_options).await?;
+    let batches = reader_batch_stream(reader, convert_options.limit.is_none());
+    let stream = futures::stream::try_unfold(
+        (
+            batches,
+            convert_options.predicate,
+            convert_options.include_columns,
+            convert_options.limit,
+        ),
+        |(mut batches, predicate, include_columns, mut remaining_rows)| async move {
+            if remaining_rows == Some(0) {
+                return Ok(None);
+            }
+
+            loop {
+                let Some(mut batch) = batches.next().await.transpose()? else {
+                    return Ok(None);
+                };
+
+                if let Some(predicate) = &predicate {
+                    let predicate = BoundExpr::try_new(predicate.clone(), &batch.schema)?;
+                    batch = batch.filter(&[predicate])?;
+                }
+                if batch.is_empty() {
+                    continue;
+                }
+
+                if let Some(include_columns) = &include_columns {
+                    let include_column_indices = include_columns
+                        .iter()
+                        .map(|name| batch.schema.get_index(name))
+                        .collect::<DaftResult<Vec<_>>>()?;
+                    batch = batch.get_columns(&include_column_indices);
+                }
+
+                if let Some(rows_left) = remaining_rows {
+                    let rows_to_emit = rows_left.min(batch.len());
+                    batch = batch.head(rows_to_emit)?;
+                    remaining_rows = Some(rows_left - rows_to_emit);
+                }
+
+                return Ok(Some((
+                    batch,
+                    (batches, predicate, include_columns, remaining_rows),
+                )));
+            }
+        },
+    );
+    Ok(Box::pin(stream))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::BufferedRange;
+    use common_error::DaftResult;
+    use daft_dsl::{lit, resolved_col};
+    use tempfile::NamedTempFile;
+
+    use super::{BufferedRange, McapConvertOptions, McapReadOptions};
+    use crate::test_utils::{collect_stream, write_mcap};
 
     #[test]
     fn buffered_range_slices_within_bounds() {
@@ -201,5 +326,74 @@ mod tests {
         assert_eq!(buffer.slice(102, 3).as_deref(), Some(&b"cde"[..]));
         assert!(buffer.slice(99, 1).is_none());
         assert!(buffer.slice(107, 2).is_none());
+    }
+
+    #[tokio::test]
+    async fn stream_filters_before_projection_and_applies_exact_limit() -> DaftResult<()> {
+        let file = write_mcap(true, None, 20, 8);
+        let batches = collect_stream(
+            &file,
+            McapReadOptions {
+                batch_size: 4,
+                ..Default::default()
+            },
+            McapConvertOptions {
+                predicate: Some(resolved_col("sequence").gt(lit(5_u32))),
+                include_columns: Some(vec!["topic".to_string()]),
+                limit: Some(3),
+            },
+        )
+        .await?;
+
+        assert_eq!(batches.iter().map(|batch| batch.len()).sum::<usize>(), 3);
+        assert!(batches.iter().all(|batch| batch.num_columns() == 1));
+        let topics = batches
+            .iter()
+            .flat_map(|batch| {
+                batch
+                    .get_column(0)
+                    .utf8()
+                    .unwrap()
+                    .into_iter()
+                    .map(|value| value.unwrap().to_string())
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(topics, vec!["/camera", "/imu", "/camera"]);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn stream_without_limit_preserves_all_rows() -> DaftResult<()> {
+        let file = write_mcap(true, None, 20, 8);
+        let batches = collect_stream(
+            &file,
+            McapReadOptions {
+                batch_size: 4,
+                ..Default::default()
+            },
+            McapConvertOptions::default(),
+        )
+        .await?;
+
+        assert_eq!(batches.len(), 5);
+        assert_eq!(batches.iter().map(|batch| batch.len()).sum::<usize>(), 20);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn prefetched_stream_propagates_reader_errors() -> DaftResult<()> {
+        let file = NamedTempFile::new().unwrap();
+        std::fs::write(file.path(), b"not an mcap file").unwrap();
+        let error = collect_stream(
+            &file,
+            McapReadOptions::default(),
+            McapConvertOptions::default(),
+        )
+        .await
+        .expect_err("invalid MCAP should fail");
+
+        assert!(error.to_string().to_lowercase().contains("magic"));
+        Ok(())
     }
 }
