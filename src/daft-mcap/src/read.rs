@@ -192,6 +192,17 @@ pub struct NativeMcapReader {
 }
 
 impl NativeMcapReader {
+    #[tracing::instrument(
+        skip_all,
+        name = "NativeMcapReader::new",
+        fields(
+            batch_size = options.batch_size,
+            topic_filter_count = options.topics.as_ref().map_or(0, Vec::len),
+            has_start_time = options.start_time.is_some(),
+            has_end_time = options.end_time.is_some(),
+        ),
+        err
+    )]
     pub async fn new(
         uri: impl Into<String>,
         io_client: Arc<IOClient>,
