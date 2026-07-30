@@ -1,6 +1,6 @@
-# Motion trimming demo - dead frames in lerobot/droid_1.0.1
+# Motion Trimming for Physical AI
 
-Robot episodes open with the operator setting up and end after the task is done - dead frames that cost decode time, VLM tokens, and training steps. This demo finds them **without decoding video**: the robot's own joint positions live in parquet next to the mp4, and a still arm is a columnar scan away.
+This example uses [daft-physical-ai](https://github.com/Eventual-Inc/daft-physical-ai), a Daft extension for physical AI data pipelines. Robot episodes open with the operator setting up and end after the task is done - dead frames that cost decode time, VLM tokens, and training steps. The example finds them **without decoding video**: the robot's own joint positions live in parquet next to the mp4, and a still arm is a columnar scan away.
 
 Two outputs, for two kinds of consumer: a per-frame `is_active` flag (for training that samples frames - drops interior pauses too) and one contiguous trim window per episode (for anything that decodes a video slice).
 
@@ -116,7 +116,7 @@ plt.tight_layout()
 plt.show()
 ```
 
-![motion energy and kept window](demo_energy.png)
+![motion energy and kept window](../img/motion-trimming-energy.png)
 
 ## What it saves
 
