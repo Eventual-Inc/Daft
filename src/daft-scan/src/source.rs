@@ -146,7 +146,8 @@ pub trait DataSourceTask: Send + Sync + Debug {
 
 /// A [`DataSourceTask`] backed by a native [`ScanTask`].
 ///
-/// Created by [`DataSourceTask::parquet()`] (and future factory methods).
+/// Created by native file-task factories such as `DataSourceTask.parquet()`
+/// and `DataSourceTask.mcap()`.
 /// The [`ScanOperator`] bridge extracts the inner [`ScanTask`] via
 /// [`as_scan_task()`](DataSourceTask::as_scan_task) so it flows through
 /// the existing execution path without calling [`read()`](DataSourceTask::read).

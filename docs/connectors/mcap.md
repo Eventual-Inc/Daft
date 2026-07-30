@@ -2,14 +2,6 @@
 
 [MCAP](https://mcap.dev/) is an open-source container file format for multimodal log data, commonly used in robotics and autonomous systems. Daft can read MCAP files using [`daft.read_mcap()`][daft.io.read_mcap].
 
-## Installing Dependencies
-
-MCAP support requires the `mcap` package:
-
-```bash
-pip install mcap
-```
-
 ## Basic Usage
 
 === "Local File"
@@ -57,11 +49,12 @@ The `read_mcap` function returns a DataFrame with the following schema:
 
 | Column | Type | Description |
 |--------|------|-------------|
+| `source_path` | `string` | Path of the MCAP file containing the message |
 | `topic` | `string` | The topic name the message was published on |
-| `log_time` | `int64` | Timestamp when the message was logged (nanoseconds) |
-| `publish_time` | `int64` | Timestamp when the message was published (nanoseconds) |
-| `sequence` | `int32` | Sequence number of the message |
-| `data` | `string` | Message data as a string |
+| `log_time` | `uint64` | Timestamp when the message was logged (nanoseconds) |
+| `publish_time` | `uint64` | Timestamp when the message was published (nanoseconds) |
+| `sequence` | `uint32` | Sequence number of the message |
+| `data` | `binary` | Raw message payload |
 
 ## Filtering Options
 
@@ -77,6 +70,10 @@ df = daft.read_mcap(
 )
 df.show()
 ```
+
+!!! warning "Unsigned timestamp migration"
+
+    As shown in the [output schema](#output-schema), MCAP timestamps now use the format's native `uint64` type instead of `int64`. `start_time`, `end_time`, and times returned by `topic_start_time_resolver` must therefore be between `0` and `2**64 - 1`. Negative time values accepted by earlier Daft versions now raise `OverflowError`.
 
 ### Topic Filtering
 
@@ -102,6 +99,11 @@ df = daft.read_mcap(
 ```
 
 ## Advanced: Topic Start Time Resolver
+
+!!! warning "Deprecated"
+    `topic_start_time_resolver` is deprecated and will be removed in a future
+    release. Use explicit `topics` and `start_time` values for MCAP scans.
+    Dedicated support for custom video decoding will be added separately.
 
 For advanced use cases, you can provide a callable that computes per-file, per-topic start times. This is useful for resuming reads from specific positions:
 
