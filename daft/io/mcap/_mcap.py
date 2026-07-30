@@ -106,18 +106,26 @@ def read_mcap(
 
     Args:
         path: mcap file path
-        start_time: Start time to filter messages (same unit as MCAP message.log_time, typically nanoseconds).
-        end_time: End time to filter messages (same unit as MCAP message.log_time, typically nanoseconds).
+        start_time: Non-negative start time to filter messages
+            (same unit as MCAP message.log_time, typically nanoseconds).
+        end_time: Non-negative end time to filter messages
+            (same unit as MCAP message.log_time, typically nanoseconds).
         topics: List of topics to filter messages.
         batch_size: Number of messages to read in each batch.
         topic_start_time_resolver: Optional callable to compute per-file, per-topic start times.
             The callable is invoked once per MCAP file with the resolved file path and must return
             a mapping where:
             - key: topic name (str)
-            - value: start time (int, same unit as MCAP message.log_time)
+            - value: non-negative start time (int, same unit as MCAP message.log_time)
 
             will create one scan task per (file, topic) and set the task's start_time to:
             max(start_time, topic_start_time_resolver(file)[topic]).
+
+    Warning:
+        MCAP timestamps use the format's native unsigned 64-bit representation. ``start_time``,
+        ``end_time``, and times returned by ``topic_start_time_resolver`` must be between 0 and
+        ``2**64 - 1``. Negative time values accepted by earlier Daft versions now raise
+        ``OverflowError`` because the output schema uses ``uint64`` timestamps instead of ``int64``.
 
     Returns:
         DataFrame: DataFrame with the schema converted from the specified MCAP file.

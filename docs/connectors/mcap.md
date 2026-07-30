@@ -71,6 +71,10 @@ df = daft.read_mcap(
 df.show()
 ```
 
+!!! warning "Unsigned timestamp migration"
+
+    As shown in the [output schema](#output-schema), MCAP timestamps now use the format's native `uint64` type instead of `int64`. `start_time`, `end_time`, and times returned by `topic_start_time_resolver` must therefore be between `0` and `2**64 - 1`. Negative time values accepted by earlier Daft versions now raise `OverflowError`.
+
 ### Topic Filtering
 
 Read only specific topics:
