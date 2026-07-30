@@ -114,6 +114,12 @@ impl BufferedRange {
 }
 
 /// Reads the optional summary section from the end of an MCAP file.
+#[tracing::instrument(
+    skip_all,
+    name = "McapReader::read_summary",
+    fields(file_size = file_size, is_remote = is_remote),
+    err
+)]
 pub(crate) async fn read_summary(
     uri: &str,
     file_size: usize,
