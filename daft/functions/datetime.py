@@ -1655,6 +1655,66 @@ def timestamp_micros(expr: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("timestamp_micros", expr)
 
 
+def unix_seconds(expr: Expression) -> Expression:
+    """Returns the number of seconds since the Unix epoch (1970-01-01 00:00:00 UTC) for a timestamp.
+
+    Args:
+        expr: A Timestamp expression.
+
+    Returns:
+        Expression: an Int64 expression with seconds since epoch.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import timestamp_seconds, unix_seconds
+        >>> df = daft.from_pydict({"s": [0, 1609459200]})
+        >>> df = df.with_column("out", unix_seconds(timestamp_seconds(df["s"])))
+        >>> df.schema()["out"].dtype == daft.DataType.int64()
+        True
+    """
+    return Expression._call_builtin_scalar_fn("unix_seconds", expr)
+
+
+def unix_millis(expr: Expression) -> Expression:
+    """Returns the number of milliseconds since the Unix epoch (1970-01-01 00:00:00 UTC) for a timestamp.
+
+    Args:
+        expr: A Timestamp expression.
+
+    Returns:
+        Expression: an Int64 expression with milliseconds since epoch.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import timestamp_seconds, unix_millis
+        >>> df = daft.from_pydict({"s": [0, 1609459200]})
+        >>> df = df.with_column("out", unix_millis(timestamp_seconds(df["s"])))
+        >>> df.schema()["out"].dtype == daft.DataType.int64()
+        True
+    """
+    return Expression._call_builtin_scalar_fn("unix_millis", expr)
+
+
+def unix_micros(expr: Expression) -> Expression:
+    """Returns the number of microseconds since the Unix epoch (1970-01-01 00:00:00 UTC) for a timestamp.
+
+    Args:
+        expr: A Timestamp expression.
+
+    Returns:
+        Expression: an Int64 expression with microseconds since epoch.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import timestamp_seconds, unix_micros
+        >>> df = daft.from_pydict({"s": [0, 1609459200]})
+        >>> df = df.with_column("out", unix_micros(timestamp_seconds(df["s"])))
+        >>> df.schema()["out"].dtype == daft.DataType.int64()
+        True
+    """
+    return Expression._call_builtin_scalar_fn("unix_micros", expr)
+
+
 def from_unixtime(expr: Expression, format: str | None = None) -> Expression:
     """Converts a Unix timestamp (seconds) to a formatted string.
 

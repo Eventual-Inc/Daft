@@ -208,3 +208,57 @@ impl ScalarUDF for FromUnixtime {
         Ok(Field::new(field.name, DataType::Utf8))
     }
 }
+
+// --- UnixSeconds / UnixMillis / UnixMicros ---
+
+macro_rules! impl_unix_epoch_fn {
+    ($name:ident, $fn_name:literal, $time_unit:ident) => {
+        #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+        pub struct $name;
+
+        #[typetag::serde]
+        impl ScalarUDF for $name {
+            fn name(&self) -> &'static str {
+                $fn_name
+            }
+
+            fn call(
+                &self,
+                inputs: FunctionArgs<Series>,
+                _ctx: &daft_dsl::functions::scalar::EvalContext,
+            ) -> DaftResult<Series> {
+                let UnaryArg { input } = inputs.try_into()?;
+                let DataType::Timestamp(_, tz) = input.data_type().clone() else {
+                    return Err(common_error::DaftError::TypeError(format!(
+                        "Expected timestamp input to {}, got {}",
+                        $fn_name,
+                        input.data_type()
+                    )));
+                };
+                input
+                    .cast(&DataType::Timestamp(TimeUnit::$time_unit, tz))?
+                    .cast(&DataType::Int64)
+            }
+
+            fn get_return_field(
+                &self,
+                inputs: FunctionArgs<ExprRef>,
+                schema: &Schema,
+            ) -> DaftResult<Field> {
+                let UnaryArg { input } = inputs.try_into()?;
+                let field = input.to_field(schema)?;
+                ensure!(
+                    matches!(field.dtype, DataType::Timestamp(..)),
+                    TypeError: "Expected timestamp input to {}, got {}",
+                    $fn_name,
+                    field.dtype
+                );
+                Ok(Field::new(field.name, DataType::Int64))
+            }
+        }
+    };
+}
+
+impl_unix_epoch_fn!(UnixSeconds, "unix_seconds", Seconds);
+impl_unix_epoch_fn!(UnixMillis, "unix_millis", Milliseconds);
+impl_unix_epoch_fn!(UnixMicros, "unix_micros", Microseconds);
