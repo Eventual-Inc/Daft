@@ -188,10 +188,10 @@ impl S3Config {
         if self.num_tries != defaults.num_tries {
             res.push(format!("Max retries = {}", self.num_tries));
         }
-        if self.retry_mode != defaults.retry_mode {
-            if let Some(retry_mode) = &self.retry_mode {
-                res.push(format!("Retry mode = {retry_mode}"));
-            }
+        if self.retry_mode != defaults.retry_mode
+            && let Some(retry_mode) = &self.retry_mode
+        {
+            res.push(format!("Retry mode = {retry_mode}"));
         }
         if self.anonymous != defaults.anonymous {
             res.push(format!("Anonymous = {}", self.anonymous));

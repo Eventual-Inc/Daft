@@ -68,9 +68,12 @@ impl IoBackendKind {
         }
     }
 
-    /// Infer backends from a list of paths/URIs. Returns `None` when no remote
-    /// scheme is present (local paths), meaning all non-default backends should
-    /// be considered for display.
+    /// Infer backends from a list of paths/URIs.
+    ///
+    /// Returns `None` (show all non-default backends) when:
+    /// - no remote scheme is present (local paths), or
+    /// - any URI has a scheme we don't recognize (protocol aliases / OpenDAL
+    ///   custom schemes), so we don't accidentally hide active config.
     #[must_use]
     pub fn from_uris<'a, I>(uris: I) -> Option<Vec<Self>>
     where
@@ -81,10 +84,16 @@ impl IoBackendKind {
         for uri in uris {
             if let Some((scheme, _)) = uri.split_once("://") {
                 saw_scheme = true;
-                if let Some(backend) = Self::from_scheme(&scheme.to_ascii_lowercase()) {
-                    if !backends.contains(&backend) {
-                        backends.push(backend);
-                    }
+                let scheme = scheme.to_ascii_lowercase();
+                // `file://` is local — skip it for filtering purposes.
+                if scheme == "file" {
+                    continue;
+                }
+                match Self::from_scheme(&scheme) {
+                    Some(backend) if !backends.contains(&backend) => backends.push(backend),
+                    Some(_) => {}
+                    // Unrecognized scheme (alias / OpenDAL): don't filter.
+                    None => return None,
                 }
             }
         }
@@ -259,5 +268,11 @@ mod tests {
         );
         assert_eq!(IoBackendKind::from_uris(["local.parquet"]), None);
         assert_eq!(IoBackendKind::from_uris(["file:///tmp/x.parquet"]), None);
+        // Unrecognized / alias schemes must not filter (show all non-defaults).
+        assert_eq!(
+            IoBackendKind::from_uris(["my-s3://bucket/path", "gs://other/path"]),
+            None
+        );
+        assert_eq!(IoBackendKind::from_uris(["oss://bucket/path"]), None);
     }
 }
