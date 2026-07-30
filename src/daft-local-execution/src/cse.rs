@@ -24,16 +24,16 @@
 //!
 //! Unlike the previous buffer-then-replay design:
 //! - Zero pipeline stall: readers consume as the writer produces.
-//! - No late-subscriber message loss: each reader gets a dedicated
-//!   unbounded channel that the writer populates from the start.
+//! - No late-subscriber message loss: every reader registers its channel at
+//!   pipeline-construction time (in [`CseCacheReadNode::new`]), strictly
+//!   before any writer task can start fanning out.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use common_display::tree::TreeDisplay;
 use common_metrics::ops::{NodeCategory, NodeInfo, NodeType};
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
-use tokio::sync::Mutex;
 
 use crate::{
     ExecutionRuntimeContext,
@@ -45,9 +45,10 @@ use crate::{
 // ---------------------------------------------------------------------------
 
 /// Fan-out cache: the writer sends each message to every registered reader
-/// through an unbounded mpsc channel.  Readers register their own sender and
-/// consume from the corresponding receiver independently — no late-subscriber
-/// loss and no pipeline stall.
+/// through an unbounded mpsc channel.  Readers register their own sender at
+/// pipeline-construction time — before any writer task runs — so no message
+/// can be published ahead of a registration (no late-subscriber loss) and
+/// there is no pipeline stall.
 pub(crate) struct CseSharedCache {
     txs: Mutex<Vec<tokio::sync::mpsc::UnboundedSender<PipelineMessage>>>,
     cse_id: usize,
@@ -67,20 +68,20 @@ impl CseSharedCache {
 
     /// Send a message to all registered readers.  Returns immediately;
     /// unbounded channels never block the sender.
-    pub async fn fan_out(&self, msg: PipelineMessage) {
-        let txs = self.txs.lock().await;
+    pub fn fan_out(&self, msg: PipelineMessage) {
+        let txs = self.txs.lock().unwrap();
         for tx in txs.iter() {
             let _ = tx.send(msg.clone());
         }
     }
 
     /// Register a reader and return its receiver.  The writer will fan out
-    /// all messages to this channel.
-    pub async fn register_reader(
-        self: &Arc<Self>,
-    ) -> tokio::sync::mpsc::UnboundedReceiver<PipelineMessage> {
+    /// all messages to this channel.  Must be called before the writer task
+    /// starts (i.e. at pipeline-construction time) so that no message is
+    /// published before the registration.
+    pub fn register_reader(&self) -> tokio::sync::mpsc::UnboundedReceiver<PipelineMessage> {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-        self.txs.lock().await.push(tx);
+        self.txs.lock().unwrap().push(tx);
         rx
     }
 }
@@ -212,7 +213,7 @@ impl PipelineNode for CseCacheWriteNode {
                     match msg {
                         Some(msg @ PipelineMessage::Morsel { .. })
                         | Some(msg @ PipelineMessage::Flush(_)) => {
-                            shared.fan_out(msg.clone()).await;
+                            shared.fan_out(msg.clone());
                             if dest_tx.send(msg).await.is_err() {
                                 break;
                             }
@@ -252,13 +253,15 @@ impl PipelineNode for CseCacheWriteNode {
 // CseCacheReadNode
 // ---------------------------------------------------------------------------
 
-/// Source-like pipeline node that registers itself with the shared cache and
-/// consumes messages from its dedicated unbounded mpsc channel.
+/// Source-like pipeline node that consumes messages from its dedicated
+/// unbounded mpsc channel.
 ///
-/// On [`start`](PipelineNode::start) it registers a sender and forwards each
-/// received message downstream — no waiting for the full subplan to complete.
+/// The channel is registered with the shared cache at construction time —
+/// strictly before any [`CseCacheWriteNode`] task can run — so a writer that
+/// finishes early can never publish past an unregistered reader.
 pub(crate) struct CseCacheReadNode {
     shared: Arc<CseSharedCache>,
+    rx: Option<tokio::sync::mpsc::UnboundedReceiver<PipelineMessage>>,
     node_info: Arc<NodeInfo>,
     plan_stats: StatsState,
 }
@@ -273,8 +276,12 @@ impl CseCacheReadNode {
     ) -> Self {
         let name: Arc<str> = "CseCacheRead".into();
         let info = ctx.next_node_info(name, NodeType::CseCacheRead, NodeCategory::Source, context);
+        // Register with the cache now, while the pipeline tree is still being
+        // built and no writer task is running yet.
+        let rx = shared.register_reader();
         Self {
             shared,
+            rx: Some(rx),
             node_info: Arc::new(info),
             plan_stats,
         }
@@ -352,7 +359,11 @@ impl PipelineNode for CseCacheReadNode {
     ) -> crate::Result<crate::channel::Receiver<PipelineMessage>> {
         let node_id = self.node_id();
         let name = self.name();
-        let shared = self.shared.clone();
+        let mut this = self;
+        let mut rx = this
+            .rx
+            .take()
+            .expect("CseCacheReadNode can only be started once");
 
         let (dest_tx, dest_rx) = crate::channel::create_channel(1);
         let stats_manager = runtime_handle.stats_manager();
@@ -361,7 +372,6 @@ impl PipelineNode for CseCacheReadNode {
             async move {
                 stats_manager.activate_node(node_id);
 
-                let mut rx = shared.register_reader().await;
                 // Collect all messages first, then forward downstream.
                 // This avoids interleaving CseCacheRead data with concurrent
                 // CseCacheWrite data into the same downstream HashJoin —
@@ -415,7 +425,7 @@ mod tests {
     #[tokio::test]
     async fn test_register_and_receive() {
         let cache = CseSharedCache::new(1);
-        let mut rx = cache.register_reader().await;
+        let mut rx = cache.register_reader();
 
         use daft_micropartition::MicroPartition;
         let mp = MicroPartition::empty(None);
@@ -423,7 +433,7 @@ mod tests {
             input_id: 0,
             partition: mp,
         };
-        cache.fan_out(msg.clone()).await;
+        cache.fan_out(msg.clone());
 
         let received = rx.recv().await.unwrap();
         assert!(matches!(received, PipelineMessage::Morsel { .. }));
@@ -432,17 +442,15 @@ mod tests {
     #[tokio::test]
     async fn test_multiple_readers() {
         let cache = CseSharedCache::new(1);
-        let mut rx1 = cache.register_reader().await;
-        let mut rx2 = cache.register_reader().await;
+        let mut rx1 = cache.register_reader();
+        let mut rx2 = cache.register_reader();
 
         use daft_micropartition::MicroPartition;
         let mp = MicroPartition::empty(None);
-        cache
-            .fan_out(PipelineMessage::Morsel {
-                input_id: 0,
-                partition: mp,
-            })
-            .await;
+        cache.fan_out(PipelineMessage::Morsel {
+            input_id: 0,
+            partition: mp,
+        });
 
         assert!(rx1.recv().await.is_some());
         assert!(rx2.recv().await.is_some());
@@ -452,7 +460,7 @@ mod tests {
     async fn test_reader_registered_before_write_receives_all() {
         let cache = CseSharedCache::new(1);
         // Reader registers BEFORE writer sends anything
-        let mut rx = cache.register_reader().await;
+        let mut rx = cache.register_reader();
 
         use daft_micropartition::MicroPartition;
         let mp1 = MicroPartition::empty(None);
@@ -460,8 +468,8 @@ mod tests {
             input_id: 0,
             partition: mp1,
         };
-        cache.fan_out(msg1).await;
-        cache.fan_out(PipelineMessage::Flush(0)).await;
+        cache.fan_out(msg1);
+        cache.fan_out(PipelineMessage::Flush(0));
 
         assert!(rx.recv().await.is_some()); // Morsel
         assert!(rx.recv().await.is_some()); // Flush
