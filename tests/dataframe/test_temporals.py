@@ -1015,6 +1015,25 @@ def test_unix_seconds_roundtrip_timestamp_seconds() -> None:
     assert result == {"s": [0, 1609459200, -86400]}
 
 
+def test_unix_seconds_negative_fractional_floors() -> None:
+    # Pre-epoch values with sub-second precision must floor (Spark floorDiv
+    # semantics): -1.5s -> -2, not truncate toward zero to -1.
+    df = daft.from_pydict({"us": [-1500000, -1, 0, 1500000]})
+    df = df.select(unix_seconds(timestamp_micros(col("us"))).alias("s"))
+    result = df.to_pydict()
+
+    assert result == {"s": [-2, -1, 0, 1]}
+
+
+def test_unix_millis_negative_fractional_floors() -> None:
+    # -1.5ms in microseconds must floor to -2ms.
+    df = daft.from_pydict({"us": [-1500, -1, 0, 1500]})
+    df = df.select(unix_millis(timestamp_micros(col("us"))).alias("ms"))
+    result = df.to_pydict()
+
+    assert result == {"ms": [-2, -1, 0, 1]}
+
+
 def test_unix_epoch_functions_sql() -> None:
     df = daft.from_pydict({"ts": [datetime(2021, 1, 1)]})  # noqa: F841
     sql = "SELECT unix_seconds(ts) as s, unix_millis(ts) as ms, unix_micros(ts) as us FROM df"
