@@ -219,13 +219,13 @@ algebraic operator is called a *scan*.
 Daft's [`daft.read_iceberg`][daft.read_iceberg] method creates a DataFrame from the given PyIceberg
 table. It produces rows by traversing the table's metadata tree to locate all
 the data files for the given snapshot which is handled by our
-`IcebergScanOperator`.
+`IcebergDataSource`.
 
-Daft's `IcebergScanOperator` initializes itself by fetching the latest schema,
+Daft's `IcebergDataSource` initializes itself by fetching the latest schema,
 or the schema of the given snapshot, along with setting up the partition key
-metadata. The scan operator's primary method, `to_scan_tasks`, accepts pushdowns
-(projections, predicates, partition filters) and returns an iterator of
-`ScanTasks`. Each `ScanTask` object holds a data file, optional delete files,
+metadata. The data source's primary method, `get_tasks`, accepts pushdowns
+(projections, predicates, partition filters) and yields an iterator of
+tasks. Each task holds a data file, optional delete files,
 and the associated pushdowns. Finally, we read each data file's parquet to
 produce a stream of record batches which later operators consume and transform.
 

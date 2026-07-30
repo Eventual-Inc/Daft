@@ -1324,6 +1324,7 @@ class PyDataSourceTask:
         partition_values: PyRecordBatch | None = None,
         stats: PyRecordBatch | None = None,
         storage_config: StorageConfig | None = None,
+        iceberg_delete_files: list[str] | None = None,
     ) -> PyDataSourceTask: ...
     @staticmethod
     def mcap(

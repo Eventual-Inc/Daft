@@ -53,6 +53,7 @@ pub struct PyDataSourceWrapper {
     schema: SchemaRef,
     partition_fields: Vec<PartitionField>,
     clustering_keys: Option<ClusteringKeys>,
+    supports_count_pushdown: bool,
 }
 
 impl PyDataSourceWrapper {
@@ -98,12 +99,21 @@ impl PyDataSourceWrapper {
             .and_then(|keys| keys.extract::<PyClusteringKeys>().ok())
             .map(ClusteringKeys::from);
 
+        // A source may opt into count pushdown via `supports_count_pushdown()`. Any
+        // failure degrades gracefully to false so the optimizer stays conservative,
+        // mirroring the `get_clustering_keys` handling above.
+        let supports_count_pushdown: bool = source
+            .call_method0(intern!(source.py(), "supports_count_pushdown"))
+            .and_then(|v| v.extract())
+            .unwrap_or(false);
+
         Self {
             source: source.unbind(),
             name,
             schema,
             partition_fields,
             clustering_keys,
+            supports_count_pushdown,
         }
     }
 
@@ -273,6 +283,10 @@ impl ScanOperator for PyDataSourceWrapper {
 
     fn can_absorb_shard(&self) -> bool {
         false
+    }
+
+    fn supports_count_pushdown(&self) -> bool {
+        self.supports_count_pushdown
     }
 
     fn multiline_display(&self) -> Vec<String> {

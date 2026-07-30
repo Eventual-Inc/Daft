@@ -76,6 +76,16 @@ class DataSource(ABC):
         """
         return None
 
+    def supports_count_pushdown(self) -> bool:
+        """Returns true if this source can absorb a count aggregation pushdown.
+
+        When true, the optimizer may replace a full scan + count with a single
+        task whose pushdowns carry the count aggregation; get_tasks is
+        then responsible for producing the count result (e.g. from catalog
+        metadata) instead of scanning data files.
+        """
+        return False
+
     @abstractmethod
     async def get_tasks(self, pushdowns: Pushdowns) -> AsyncIterator[DataSourceTask]:
         """Yields tasks as they are discovered. Called during execution, not planning."""
@@ -146,6 +156,7 @@ class DataSourceTask(ABC):
         partition_values: RecordBatch | None = None,
         stats: RecordBatch | None = None,
         storage_config: StorageConfig | None = None,
+        iceberg_delete_files: list[str] | None = None,
     ) -> DataSourceTask:
         """Create a task that reads a Parquet file using the native reader.
 
@@ -170,6 +181,9 @@ class DataSourceTask(ABC):
             stats: Column statistics as a RecordBatch for predicate pushdown evaluation.
             storage_config: Optional StorageConfig for IO credentials/settings.
                 Defaults to ``StorageConfig(multithreaded_io=True)``.
+            iceberg_delete_files: Optional list of Iceberg positional delete file paths
+                to apply to this file, per the Iceberg spec
+                (https://iceberg.apache.org/spec/#position-delete-files).
 
         Example:
             class MyCatalogSource(DataSource):
@@ -196,6 +210,7 @@ class DataSourceTask(ABC):
             partition_values=partition_values._recordbatch if partition_values is not None else None,
             stats=stats._recordbatch if stats is not None else None,
             storage_config=storage_config,
+            iceberg_delete_files=iceberg_delete_files,
         )
 
         return _RustDataSourceTask(inner)

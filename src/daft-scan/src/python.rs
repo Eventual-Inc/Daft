@@ -71,6 +71,7 @@ impl PyDataSourceTask {
         partition_values: Option<PyRecordBatch>,
         stats: Option<PyRecordBatch>,
         storage_config: Option<StorageConfig>,
+        iceberg_delete_files: Option<Vec<String>>,
     ) -> PyResult<Self> {
         let storage_config = storage_config.unwrap_or_default().into();
 
@@ -102,7 +103,7 @@ impl PyDataSourceTask {
             kind: ScanSourceKind::File {
                 path,
                 chunk_spec: None,
-                iceberg_delete_files: None,
+                iceberg_delete_files,
                 parquet_metadata: None,
             },
         };
@@ -146,6 +147,7 @@ impl PyDataSourceTask {
         partition_values = None,
         stats = None,
         storage_config = None,
+        iceberg_delete_files = None,
     ))]
     fn parquet(
         path: String,
@@ -157,6 +159,7 @@ impl PyDataSourceTask {
         partition_values: Option<PyRecordBatch>,
         stats: Option<PyRecordBatch>,
         storage_config: Option<StorageConfig>,
+        iceberg_delete_files: Option<Vec<String>>,
     ) -> PyResult<Self> {
         Self::new_file_task(
             path,
@@ -168,6 +171,7 @@ impl PyDataSourceTask {
             partition_values,
             stats,
             storage_config,
+            iceberg_delete_files,
         )
     }
 
@@ -207,6 +211,7 @@ impl PyDataSourceTask {
             partition_values,
             stats,
             storage_config,
+            None,
         )
     }
 }
