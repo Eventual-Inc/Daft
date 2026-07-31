@@ -525,8 +525,35 @@ impl SQLPlanner<'_> {
         };
 
         if func.over.is_some() {
-            let window_spec = Arc::new(self.parse_window_spec(func.over.as_ref().unwrap())?);
+            let window_spec = self.parse_window_spec(func.over.as_ref().unwrap())?;
             let window_fn = fn_match.to_expr(&args, self)?;
+
+            // SQL standard: when ORDER BY is present and the user did not write
+            // an explicit ROWS/RANGE frame, the default frame is
+            // `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`. Daft requires
+            // an explicit frame for first_value/last_value/nth_value, so inject
+            // the standard default here to keep ANSI-SQL queries working without
+            // forcing users to repeat ROWS/RANGE clauses.
+            let window_spec = if window_spec.frame.is_none()
+                && matches!(
+                    &*window_fn,
+                    Expr::WindowFunction(
+                        WindowExpr::FirstValue(_, _)
+                            | WindowExpr::LastValue(_, _)
+                            | WindowExpr::NthValue(_, _, _)
+                    )
+                ) {
+                let mut spec = window_spec;
+                spec.frame = Some(WindowFrame {
+                    start: WindowBoundary::UnboundedPreceding,
+                    end: WindowBoundary::Offset(0), // CURRENT ROW
+                });
+                spec
+            } else {
+                window_spec
+            };
+            let window_spec = Arc::new(window_spec);
+
             Ok(match &*window_fn {
                 Expr::Agg(agg_expr) => {
                     Expr::Over(WindowExpr::Agg(agg_expr.clone()), window_spec).arced()
