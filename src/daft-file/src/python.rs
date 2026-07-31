@@ -14,12 +14,77 @@ use pyo3::{
     exceptions::{PyIOError, PyRuntimeError, PyValueError},
     prelude::*,
 };
-use tracing::instrument;
+use tracing::{Span, instrument};
 
 use crate::file::{DaftFile, FileCursor};
 
 type ReadResult = Result<(Vec<u8>, usize, bool, FileCursor), (PyErr, FileCursor)>;
 type SeekResult = Result<(u64, FileCursor), (PyErr, FileCursor)>;
+
+#[pyclass(name = "_PyFileTracingSpan", unsendable)]
+struct PyFileTracingSpan {
+    span: Option<Span>,
+    entered: Option<tracing::span::EnteredSpan>,
+}
+
+impl PyFileTracingSpan {
+    fn new(span: Span) -> Self {
+        Self {
+            span: Some(span),
+            entered: None,
+        }
+    }
+}
+
+#[pymethods]
+impl PyFileTracingSpan {
+    #[staticmethod]
+    fn is_enabled() -> bool {
+        tracing::enabled!(tracing::Level::INFO)
+    }
+
+    #[staticmethod]
+    fn video_frames() -> Self {
+        Self::new(tracing::info_span!("VideoFile::frames"))
+    }
+
+    #[staticmethod]
+    fn video_open() -> Self {
+        Self::new(tracing::info_span!("VideoFile::open"))
+    }
+
+    #[staticmethod]
+    fn video_seek() -> Self {
+        Self::new(tracing::info_span!("VideoFile::seek"))
+    }
+
+    #[staticmethod]
+    fn video_decode() -> Self {
+        Self::new(tracing::info_span!("VideoFile::decode"))
+    }
+
+    #[staticmethod]
+    fn video_to_image() -> Self {
+        Self::new(tracing::info_span!("VideoFile::to_image"))
+    }
+
+    fn __enter__(&mut self) -> PyResult<()> {
+        let span = self.span.take().ok_or_else(|| {
+            PyRuntimeError::new_err("Tracing span cannot be entered more than once")
+        })?;
+        self.entered = Some(span.entered());
+        Ok(())
+    }
+
+    fn __exit__(
+        &mut self,
+        _exc_type: Option<Py<PyAny>>,
+        _exc_value: Option<Py<PyAny>>,
+        _traceback: Option<Py<PyAny>>,
+    ) {
+        self.entered.take();
+    }
+}
 
 #[pyclass(from_py_object)]
 #[derive(Clone)]
@@ -372,6 +437,7 @@ fn guess_mimetype_from_content(mut bytes: Vec<u8>) -> PyResult<Option<String>> {
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyDaftFile>()?;
     parent.add_class::<PyFileReference>()?;
+    parent.add_class::<PyFileTracingSpan>()?;
     parent.add_function(wrap_pyfunction!(guess_mimetype_from_content, parent)?)?;
 
     Ok(())
