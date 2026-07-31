@@ -1,6 +1,6 @@
 use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
+    collections::{HashMap, HashSet},
+    sync::{Arc, Mutex, MutexGuard},
     time::{Duration, Instant},
 };
 
@@ -10,6 +10,10 @@ use pyo3::prelude::*;
 
 use super::{task::RayTaskResultHandle, worker::RaySwordfishWorker};
 use crate::scheduling::{
+    downscale::{
+        DEFAULT_REAPER_INTERVAL_SECONDS, DownscalePolicy, REAPER_INTERVAL_SECONDS_ENV,
+        WorkerStatus, plan_reap,
+    },
     scheduler::WorkerSnapshot,
     task::{SwordfishTask, TaskContext, TaskResourceRequest},
     worker::{Worker, WorkerId, WorkerManager},
@@ -23,6 +27,10 @@ const RAY_AUTOSCALER_UPDATE_INTERVAL_ENV: &str = "AUTOSCALER_UPDATE_INTERVAL_S";
 
 struct RayWorkerManagerState {
     ray_workers: HashMap<WorkerId, RaySwordfishWorker>,
+    // Workers marked by the reaper as draining: still alive (and counted toward the
+    // min-survivor floor) but hidden from `worker_snapshots()` so the scheduler stops
+    // assigning new work to them. Released on a later reaper tick if still idle.
+    draining_workers: HashSet<WorkerId>,
     last_refresh: Option<Instant>,
     max_resources_requested: ResourceRequest,
     pending_release_blacklist: HashMap<WorkerId, Instant>,
@@ -89,22 +97,94 @@ pub(crate) struct RayWorkerManager {
 
 impl RayWorkerManager {
     pub fn new(worker_startup_timeout: usize) -> Self {
-        Self {
-            state: Arc::new(Mutex::new(RayWorkerManagerState {
-                ray_workers: HashMap::new(),
-                last_refresh: None,
-                max_resources_requested: ResourceRequest::default(),
-                pending_release_blacklist: HashMap::new(),
-                last_autoscale_request_time: None,
-                autoscale_interval_secs: Duration::from_secs(
-                    std::env::var(RAY_AUTOSCALER_UPDATE_INTERVAL_ENV)
+        let state = Arc::new(Mutex::new(RayWorkerManagerState {
+            ray_workers: HashMap::new(),
+            draining_workers: HashSet::new(),
+            last_refresh: None,
+            max_resources_requested: ResourceRequest::default(),
+            pending_release_blacklist: HashMap::new(),
+            last_autoscale_request_time: None,
+            autoscale_interval_secs: Duration::from_secs(
+                std::env::var(RAY_AUTOSCALER_UPDATE_INTERVAL_ENV)
+                    .ok()
+                    .and_then(|val| val.parse::<u64>().ok())
+                    .unwrap_or(DEFAULT_AUTOSCALE_INTERVAL_SECS),
+            ),
+            worker_startup_timeout,
+        }));
+
+        // Background reaper: the single authority for retiring idle workers. The scheduler
+        // no longer retires workers at all, which avoids two actors racing over the same
+        // pool. This detached thread runs on its own timer, independent of query
+        // boundaries, so genuinely idle workers past the min-survivor floor are drained
+        // whether they went idle mid-query, between queries, or after the final query of a
+        // session — cases the per-query scheduler loop could never all cover. Workers idle
+        // for less than the threshold stay warm for the next query. It is a no-op unless
+        // downscaling is enabled, and it holds a Weak handle so it self-terminates once the
+        // manager is dropped.
+        //
+        // Retirement is two-phase (drain, then release on a later tick) so a worker is
+        // only ever killed after it has been hidden from scheduler snapshots for at least
+        // one full reaper interval — see `scheduling::downscale` for the race analysis.
+        let reaper_state = Arc::downgrade(&state);
+        let spawn_result = std::thread::Builder::new()
+            .name("daft-idle-reaper".to_string())
+            .spawn(move || {
+                loop {
+                    // Re-read every tick, matching how the downscale policy env vars are
+                    // re-read per tick, so the cadence can be tuned at runtime.
+                    let interval = std::env::var(REAPER_INTERVAL_SECONDS_ENV)
                         .ok()
-                        .and_then(|val| val.parse::<u64>().ok())
-                        .unwrap_or(DEFAULT_AUTOSCALE_INTERVAL_SECS),
-                ),
-                worker_startup_timeout,
-            })),
+                        .and_then(|v| v.parse::<u64>().ok())
+                        .unwrap_or(DEFAULT_REAPER_INTERVAL_SECONDS)
+                        .max(1);
+                    std::thread::sleep(Duration::from_secs(interval));
+                    let Some(state) = reaper_state.upgrade() else {
+                        break;
+                    };
+                    // The reaper is a detached thread with no supervisor: a stray panic
+                    // (including lock poisoning from another thread) must not silently
+                    // kill retirement for the rest of the session.
+                    let tick_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+                        || Self::reap_idle_workers(&state),
+                    ));
+                    match tick_result {
+                        Ok(Ok(_)) => {}
+                        Ok(Err(e)) => {
+                            tracing::warn!(
+                                target: "ray_worker_manager",
+                                error = %e,
+                                "Background idle reaper tick failed"
+                            );
+                        }
+                        Err(_) => {
+                            tracing::error!(
+                                target: "ray_worker_manager",
+                                "Background idle reaper tick panicked; continuing"
+                            );
+                        }
+                    }
+                }
+            });
+        if let Err(e) = spawn_result {
+            tracing::error!(
+                target: "ray_worker_manager",
+                error = %e,
+                "Failed to spawn idle reaper thread; idle workers will not be retired"
+            );
         }
+
+        Self { state }
+    }
+
+    /// Lock the shared state, recovering from poisoning. Used on the reaper path so a
+    /// panic elsewhere cannot permanently disable retirement.
+    fn lock_state(
+        state_arc: &Arc<Mutex<RayWorkerManagerState>>,
+    ) -> MutexGuard<'_, RayWorkerManagerState> {
+        state_arc
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 }
 
@@ -149,9 +229,12 @@ impl WorkerManager for RayWorkerManager {
         // Refresh workers if needed (internally rate-limited)
         state.refresh_workers()?;
 
+        // Draining workers are deliberately hidden from the scheduler so no new tasks
+        // are assigned to them while the reaper decides whether to release them.
         Ok(state
             .ray_workers
             .values()
+            .filter(|w| !state.draining_workers.contains(w.id()))
             .map(WorkerSnapshot::from)
             .collect::<Vec<_>>())
     }
@@ -172,6 +255,7 @@ impl WorkerManager for RayWorkerManager {
             .lock()
             .expect("Failed to lock RayWorkerManagerState");
         state.ray_workers.remove(&worker_id);
+        state.draining_workers.remove(&worker_id);
     }
 
     fn shutdown(&self) -> DaftResult<()> {
@@ -319,8 +403,11 @@ impl WorkerManager for RayWorkerManager {
         })?;
 
         // Scaling up should immediately allow workers on recently retired nodes to be re-created,
-        // and force a refresh so we can observe newly provisioned nodes quickly.
+        // and force a refresh so we can observe newly provisioned nodes quickly. Demand is
+        // rising, so also put any draining workers back in service immediately instead of
+        // letting the reaper release capacity we are about to need.
         state.pending_release_blacklist.clear();
+        state.draining_workers.clear();
         state.last_refresh = None;
 
         // 6. Record this request as the new high-water mark so the next cycle will
@@ -332,79 +419,72 @@ impl WorkerManager for RayWorkerManager {
         Ok(())
     }
 
-    fn retire_idle_workers(
-        &self,
-        skip_due_to_pending_scale_up: bool,
-        force_all_when_cluster_idle: bool,
-    ) -> DaftResult<usize> {
-        // 1. Read downscale configuration from the environment. The worker manager owns
-        //    every gating decision so the scheduler can stay backend-agnostic.
-        //
-        //    - `DAFT_AUTOSCALING_DOWNSCALE_ENABLED`: Enables the downscaling feature.
-        //      "1" or "true" (case-insensitive) enables it. Defaults to false.
-        //    - `DAFT_AUTOSCALING_MIN_SURVIVOR_WORKERS`: Minimum number of workers to keep
-        //      running even if they are idle. Prevents brief idle periods from collapsing
-        //      the cluster to zero. Defaults to 1.
-        let downscale_enabled = std::env::var("DAFT_AUTOSCALING_DOWNSCALE_ENABLED")
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false);
-        if !downscale_enabled {
-            return Ok(0);
-        }
-
-        let min_survivor_workers: usize = std::env::var("DAFT_AUTOSCALING_MIN_SURVIVOR_WORKERS")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(1);
-
-        // 2. Final-shutdown sweep clears any lingering autoscaling demand even when no
-        //    workers end up retired this cycle.
-        if force_all_when_cluster_idle {
-            Python::attach(|py| -> DaftResult<()> {
-                let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
-                flotilla_module.call_method0(pyo3::intern!(py, "clear_autoscaling_requests"))?;
-                Ok(())
-            })?;
-        }
-
-        // 3. During an active scale-up, skip downscale so we don't undo demand we just
-        //    sent to Ray's autoscaler.
-        if skip_due_to_pending_scale_up && !force_all_when_cluster_idle {
-            return Ok(0);
-        }
-
-        // 4. Determine how many workers we are allowed to retire while honoring the
-        //    `min_survivor_workers` floor. The shutdown path bypasses the floor.
-        let allowed_to_retire = {
-            let state = self
+    fn clear_autoscale_demand(&self) -> DaftResult<()> {
+        // Tell Ray's autoscaler to stop provisioning capacity for a job that has
+        // finished. This is demand-clearing only — it does not retire any workers.
+        // Draining the idle warm pool is owned by the background reaper so retirement
+        // has a single authority (see #5683).
+        {
+            let mut state = self
                 .state
                 .lock()
                 .expect("Failed to lock RayWorkerManagerState");
-            let num_workers = state.ray_workers.len();
-            if force_all_when_cluster_idle {
-                num_workers
-            } else {
-                num_workers.saturating_sub(min_survivor_workers)
+            // If this job never sent a scale-up request, there is no demand of ours in
+            // Ray's autoscaler to clear. Skipping the call avoids touching Python on the
+            // default (non-autoscaling) path and avoids clobbering the cluster-wide
+            // `request_resources` slot that another job may be using.
+            if state.last_autoscale_request_time.is_none() {
+                return Ok(());
             }
-        };
-        if allowed_to_retire == 0 {
-            return Ok(0);
+            state.max_resources_requested = ResourceRequest::default();
+            // Also reset the scale-up guard: with no outstanding demand there is nothing
+            // for the reaper's guard to protect, so idle workers can drain on schedule.
+            state.last_autoscale_request_time = None;
         }
 
-        let idle_secs_threshold: Option<u64> = if force_all_when_cluster_idle {
-            None
-        } else {
-            Some(
-                std::env::var("DAFT_AUTOSCALING_DOWNSCALE_IDLE_SECONDS")
-                    .ok()
-                    .and_then(|v| v.parse::<u64>().ok())
-                    .unwrap_or(60),
-            )
-        };
+        Python::attach(|py| -> DaftResult<()> {
+            let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
+            flotilla_module.call_method0(pyo3::intern!(py, "clear_autoscaling_requests"))?;
+            Ok(())
+        })?;
+        Ok(())
+    }
+}
 
-        let now = Instant::now();
+impl RayWorkerManager {
+    /// Core idle-retirement routine, run exclusively by the background reaper thread.
+    /// This is the single retirement authority: the scheduler never retires workers, so
+    /// there is no second actor racing over the same pool.
+    ///
+    /// All policy decisions (enable flag, min-survivor floor, idle threshold, scale-up
+    /// guard, two-phase draining) live in `scheduling::downscale::plan_reap`, computed
+    /// from a single consistent snapshot of the state taken under one lock so the guard,
+    /// floor, and candidate selection cannot diverge. This function only gathers inputs
+    /// and applies the plan.
+    fn reap_idle_workers(state_arc: &Arc<Mutex<RayWorkerManagerState>>) -> DaftResult<usize> {
+        // Read the downscale policy from the environment on every tick. The worker
+        // manager owns every gating decision so the scheduler can stay backend-agnostic.
+        let policy = DownscalePolicy::from_env();
 
-        // Determine the Ray head node id so we can avoid retiring its worker.
+        // Cheap early-outs under the lock before touching Python: when downscaling is
+        // disabled the reaper must be a pure no-op (aside from restoring any workers
+        // left draining if the flag was flipped off mid-drain), and an empty or
+        // at-the-floor pool with nothing draining needs no head-node lookup.
+        {
+            let mut state = Self::lock_state(state_arc);
+            if !policy.enabled {
+                state.draining_workers.clear();
+                return Ok(0);
+            }
+            if state.draining_workers.is_empty()
+                && state.ray_workers.len() <= policy.min_survivor_workers
+            {
+                return Ok(0);
+            }
+        }
+
+        // Determine the Ray head node id so we can avoid retiring its worker. Done
+        // outside the state lock: never hold the lock across Python/GIL calls.
         let head_node_id: Option<String> = Python::attach(|py| {
             let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
             let head_id_obj =
@@ -413,48 +493,46 @@ impl WorkerManager for RayWorkerManager {
             DaftResult::Ok(head_id)
         })?;
 
-        let (workers_to_release, survivors_after, blacklisted_after) = {
-            let mut state = self
-                .state
-                .lock()
-                .expect("Failed to lock RayWorkerManagerState");
+        // Single critical section: snapshot worker statuses, compute the plan, and apply
+        // all state transitions atomically with respect to the scheduler's dispatch path.
+        let (workers_to_release, drained, survivors_after, blacklisted_after) = {
+            let mut state = Self::lock_state(state_arc);
 
-            let mut candidates: Vec<(WorkerId, Duration)> = state
+            // Scale-up guard, derived from our own state. If a scale-up request went to
+            // Ray within the last autoscaler cycle, Ray may still be provisioning nodes
+            // for it — the plan suppresses retirement (and cancels in-progress drains)
+            // rather than undoing demand we just signaled. Note this is deliberately
+            // *stronger* than the old scheduler-supplied same-tick flag: retirement is
+            // paused for a full autoscaler cycle after every scale-up request.
+            let scale_up_in_flight = state
+                .last_autoscale_request_time
+                .is_some_and(|last_time| last_time.elapsed() < state.autoscale_interval_secs);
+
+            let now = Instant::now();
+            let statuses: Vec<WorkerStatus> = state
                 .ray_workers
-                .iter()
-                .filter_map(|(wid, w)| {
-                    // Skip the head node entirely from retirement consideration.
-                    if let Some(ref head_id) = head_node_id
-                        && wid.as_ref() == head_id
-                    {
-                        return None;
-                    }
-
-                    if w.is_idle() {
-                        let idle_for = w.idle_duration(now);
-                        if let Some(threshold) = idle_secs_threshold {
-                            if idle_for.as_secs() >= threshold {
-                                Some((wid.clone(), idle_for))
-                            } else {
-                                None
-                            }
-                        } else {
-                            Some((wid.clone(), idle_for))
-                        }
-                    } else {
-                        None
-                    }
+                .values()
+                .map(|w| WorkerStatus {
+                    worker_id: w.id().clone(),
+                    is_head_node: head_node_id.as_deref() == Some(w.id().as_ref()),
+                    idle_for: w.is_idle().then(|| w.idle_duration(now)),
+                    draining: state.draining_workers.contains(w.id()),
                 })
                 .collect();
 
-            candidates.sort_by_key(|(_, d)| std::cmp::Reverse(d.as_secs()));
+            let plan = plan_reap(&policy, scale_up_in_flight, &statuses);
 
-            let selected: Vec<(WorkerId, Duration)> =
-                candidates.into_iter().take(allowed_to_retire).collect();
+            for wid in &plan.undrain {
+                state.draining_workers.remove(wid);
+            }
+            for wid in &plan.drain {
+                state.draining_workers.insert(wid.clone());
+            }
 
-            let mut workers_to_release = Vec::with_capacity(selected.len());
-            for (wid, _idle_for) in selected {
-                if let Some(worker) = state.ray_workers.remove(&wid) {
+            let mut workers_to_release = Vec::with_capacity(plan.release.len());
+            for wid in &plan.release {
+                if let Some(worker) = state.ray_workers.remove(wid) {
+                    state.draining_workers.remove(wid);
                     state
                         .pending_release_blacklist
                         .insert(wid.clone(), Instant::now());
@@ -462,14 +540,29 @@ impl WorkerManager for RayWorkerManager {
                 }
             }
 
-            let survivors_after = state.ray_workers.len();
-            let blacklisted_after = state.pending_release_blacklist.len();
+            // Only reset the autoscale high-water mark and force a worker refresh when
+            // we actually retired something; a no-op tick must not perturb shared
+            // autoscaling state.
+            if !workers_to_release.is_empty() {
+                state.max_resources_requested = ResourceRequest::default();
+                state.last_refresh = None;
+            }
 
-            state.max_resources_requested = ResourceRequest::default();
-            state.last_refresh = None;
-
-            (workers_to_release, survivors_after, blacklisted_after)
+            (
+                workers_to_release,
+                plan.drain.len(),
+                state.ray_workers.len(),
+                state.pending_release_blacklist.len(),
+            )
         };
+
+        if drained > 0 {
+            tracing::info!(
+                target: "ray_worker_manager",
+                drained,
+                "Downscale: marked idle workers as draining (hidden from scheduler)"
+            );
+        }
 
         if workers_to_release.is_empty() {
             return Ok(0);

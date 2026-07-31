@@ -51,27 +51,19 @@ pub(crate) trait WorkerManager: Send + Sync {
     }
     #[allow(dead_code)]
     fn shutdown(&self) -> DaftResult<()>;
-    /// Optionally retire idle workers to allow the backend to scale in.
+    /// Clear any outstanding autoscaling (scale-up) demand previously sent to the
+    /// backend's autoscaler. The scheduler calls this (best-effort) whenever a job
+    /// finishes — successfully or with an error — so the autoscaler stops provisioning
+    /// capacity for work that no longer exists.
     ///
-    /// The worker manager owns the entire downscale policy: enable flag, idle thresholds,
-    /// minimum-survivor floor, head-node protection, blacklist TTLs, etc. The scheduler
-    /// only hands it per-tick context that it has visibility into:
-    ///
-    /// * `skip_due_to_pending_scale_up`: set when the scheduler just sent a scale-up
-    ///   request in the same tick. The worker manager is expected to skip retirement so
-    ///   it does not undo demand it just signaled to the autoscaler.
-    /// * `force_all_when_cluster_idle`: set on job shutdown to bypass idle-time thresholds
-    ///   so any remaining idle workers can be released.
-    ///
-    /// Returns the number of workers that were retired. The default implementation is a
-    /// no-op for backends that do not support worker retirement.
-    #[allow(unused_variables)]
-    fn retire_idle_workers(
-        &self,
-        skip_due_to_pending_scale_up: bool,
-        force_all_when_cluster_idle: bool,
-    ) -> DaftResult<usize> {
-        Ok(0)
+    /// Idle-worker *retirement* is intentionally NOT triggered here. Retirement is
+    /// owned solely by the worker manager's own background reaper, which lives across
+    /// query boundaries and is the single retirement authority (see RayWorkerManager).
+    /// Keeping the scheduler out of the retirement decision avoids two independent
+    /// actors racing over the same worker pool. The default implementation is a no-op
+    /// for backends without an autoscaler.
+    fn clear_autoscale_demand(&self) -> DaftResult<()> {
+        Ok(())
     }
 }
 
@@ -89,28 +81,27 @@ pub(crate) mod tests {
     #[derive(Clone)]
     pub struct MockWorkerManager {
         workers: Arc<Mutex<HashMap<WorkerId, MockWorker>>>,
-        retire_call_count: Arc<AtomicUsize>,
-        last_retire_args: Arc<Mutex<Option<(bool, bool)>>>,
+        clear_demand_call_count: Arc<AtomicUsize>,
+        fail_worker_snapshots: Arc<AtomicBool>,
     }
 
     impl MockWorkerManager {
         pub fn new(workers: HashMap<WorkerId, MockWorker>) -> Self {
             Self {
                 workers: Arc::new(Mutex::new(workers)),
-                retire_call_count: Arc::new(AtomicUsize::new(0)),
-                last_retire_args: Arc::new(Mutex::new(None)),
+                clear_demand_call_count: Arc::new(AtomicUsize::new(0)),
+                fail_worker_snapshots: Arc::new(AtomicBool::new(false)),
             }
         }
 
-        pub fn retire_call_count(&self) -> usize {
-            self.retire_call_count.load(Ordering::SeqCst)
+        pub fn clear_demand_call_count(&self) -> usize {
+            self.clear_demand_call_count.load(Ordering::SeqCst)
         }
 
-        pub fn last_retire_args(&self) -> Option<(bool, bool)> {
-            *self
-                .last_retire_args
-                .lock()
-                .expect("Failed to lock last_retire_args")
+        /// Make subsequent `worker_snapshots` calls fail, to exercise the scheduler's
+        /// error-exit path.
+        pub fn set_fail_worker_snapshots(&self, fail: bool) {
+            self.fail_worker_snapshots.store(fail, Ordering::SeqCst);
         }
     }
 
@@ -158,6 +149,11 @@ pub(crate) mod tests {
         }
 
         fn worker_snapshots(&self) -> DaftResult<Vec<WorkerSnapshot>> {
+            if self.fail_worker_snapshots.load(Ordering::SeqCst) {
+                return Err(common_error::DaftError::InternalError(
+                    "injected worker_snapshots failure".to_string(),
+                ));
+            }
             Ok(self
                 .workers
                 .lock()
@@ -192,19 +188,10 @@ pub(crate) mod tests {
             Ok(())
         }
 
-        fn retire_idle_workers(
-            &self,
-            skip_due_to_pending_scale_up: bool,
-            force_all_when_cluster_idle: bool,
-        ) -> DaftResult<usize> {
+        fn clear_autoscale_demand(&self) -> DaftResult<()> {
             // Mock implementation: distributed Ray autoscaler is not exercised in unit tests.
-            self.retire_call_count.fetch_add(1, Ordering::SeqCst);
-            *self
-                .last_retire_args
-                .lock()
-                .expect("Failed to lock last_retire_args") =
-                Some((skip_due_to_pending_scale_up, force_all_when_cluster_idle));
-            Ok(0)
+            self.clear_demand_call_count.fetch_add(1, Ordering::SeqCst);
+            Ok(())
         }
     }
 
