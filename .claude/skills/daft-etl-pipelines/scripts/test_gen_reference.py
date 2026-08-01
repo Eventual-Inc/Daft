@@ -154,3 +154,58 @@ def test_index_has_no_duplicate_symbol_column():
     # io/toplevel dedup means every index row is unique on (name, namespace).
     keyed = [tuple(p.strip() for p in l.split("|")[:2]) for l in data_lines]
     assert len(keyed) == len(set(keyed))
+
+
+REF_DIR = Path(__file__).resolve().parent.parent / "references"
+
+
+def test_output_on_disk_matches_generator():
+    # Spec test 4 (determinism) + proves references/ is committed in sync.
+    files = gen.render_all(REPO_ROOT)
+    assert gen.check(REF_DIR, files) == []
+
+
+def test_index_has_no_unresolved_section():
+    # Spec test 2.
+    assert "## Unresolved" not in (REF_DIR / "INDEX.md").read_text()
+
+
+def test_every_index_anchor_resolves():
+    # Spec test 3: each file#anchor points to a real heading.
+    index = (REF_DIR / "INDEX.md").read_text()
+    headings = {}
+    for f in REF_DIR.glob("*.md"):
+        if f.name == "INDEX.md":
+            continue
+        headings[f.name] = {
+            line[3:].strip().lower()
+            for line in f.read_text().splitlines()
+            if line.startswith("## ")
+        }
+    for line in index.splitlines():
+        if " | " not in line or line.startswith("`"):
+            continue
+        target = line.split("|")[-1].strip()
+        fname, _, anch = target.partition("#")
+        assert fname in headings, f"missing file {fname}"
+        assert anch in headings[fname], f"dangling anchor {target}"
+
+
+def test_no_repr_leakage():
+    # Spec test 5.
+    for f in REF_DIR.glob("*.md"):
+        text = f.read_text()
+        assert "<ast." not in text
+        assert "object at 0x" not in text
+
+
+def test_coverage_counts():
+    # Spec test 1, over on-disk files.
+    index = (REF_DIR / "INDEX.md").read_text()
+    rows = [l for l in index.splitlines() if " | " in l and not l.startswith("`")]
+    # 871 records minus the 23 io names collapsed into toplevel = 848 rows.
+    assert len(rows) == 848
+    df = (REF_DIR / "dataframe.md").read_text().count("\n## ")
+    ex = (REF_DIR / "expressions.md").read_text().count("\n## ")
+    assert df == 98
+    assert ex == 247
