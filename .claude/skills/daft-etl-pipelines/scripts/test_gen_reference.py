@@ -128,3 +128,29 @@ def test_render_index_line_format():
     parts = [p.strip() for p in line.split("|")]
     assert parts[1] == "daft.functions"
     assert parts[-1] == "functions-str.md#regexp_replace"
+
+
+def test_render_all_produces_sixteen_files():
+    files = gen.render_all(REPO_ROOT)
+    expected = {
+        "INDEX.md", "toplevel.md", "dataframe.md", "expressions.md", "io.md",
+        "functions-str.md", "functions-datetime.md", "functions-numeric.md",
+        "functions-spatial.md", "functions-list.md", "functions-agg.md",
+        "functions-window.md", "functions-misc.md", "functions-media.md",
+        "functions-ai.md", "functions-etc.md",
+    }
+    assert set(files) == expected
+
+
+def test_render_all_is_deterministic():
+    assert gen.render_all(REPO_ROOT) == gen.render_all(REPO_ROOT)
+
+
+def test_index_has_no_duplicate_symbol_column():
+    files = gen.render_all(REPO_ROOT)
+    body = files["INDEX.md"]
+    data_lines = [l for l in body.splitlines() if " | " in l and not l.startswith("`")]
+    names = [l.split("|")[0].strip() for l in data_lines]
+    # io/toplevel dedup means every index row is unique on (name, namespace).
+    keyed = [tuple(p.strip() for p in l.split("|")[:2]) for l in data_lines]
+    assert len(keyed) == len(set(keyed))

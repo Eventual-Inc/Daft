@@ -383,3 +383,76 @@ def render_index(syms: list[Symbol], unresolved: list[str]) -> str:
     if unresolved:
         out += ["", "## Unresolved", ""] + [f"- {n}" for n in sorted(unresolved)]
     return "\n".join(out).rstrip() + "\n"
+
+
+import argparse
+import sys
+
+ALL_FILES = [
+    "INDEX.md", "toplevel.md", "dataframe.md", "expressions.md", "io.md",
+    "functions-str.md", "functions-datetime.md", "functions-numeric.md",
+    "functions-spatial.md", "functions-list.md", "functions-agg.md",
+    "functions-window.md", "functions-misc.md", "functions-media.md",
+    "functions-ai.md", "functions-etc.md",
+]
+
+
+def render_all(repo_root: Path) -> dict[str, str]:
+    symbols, unresolved = resolve_public_api(repo_root)
+    toplevel_names = {s.name for s in symbols if s.namespace == "daft"}
+    buckets: dict[str, list[Symbol]] = {f: [] for f in ALL_FILES if f != "INDEX.md"}
+    for s in symbols:
+        if s.namespace == "daft.io" and s.name in toplevel_names:
+            continue  # rendered in toplevel.md
+        buckets[assign_file(s)].append(s)
+    files = {"INDEX.md": render_index(symbols, unresolved)}
+    for fname, syms in buckets.items():
+        files[fname] = render_reference(fname, syms)
+    return files
+
+
+def write_files(out_dir: Path, files: dict[str, str]) -> None:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for fname, text in files.items():
+        (out_dir / fname).write_text(text)
+
+
+def check(out_dir: Path, files: dict[str, str]) -> list[str]:
+    drifted = []
+    for fname, text in files.items():
+        path = out_dir / fname
+        if not path.exists() or path.read_text() != text:
+            drifted.append(fname)
+    return drifted
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description="Generate the Daft skill reference.")
+    parser.add_argument("--check", action="store_true",
+                        help="Verify references/ is in sync; non-zero exit on drift.")
+    args = parser.parse_args(argv)
+
+    out_dir = Path(__file__).resolve().parent.parent / "references"
+    files = render_all(REPO_ROOT)
+    _, unresolved = resolve_public_api(REPO_ROOT)
+
+    if args.check:
+        drifted = check(out_dir, files)
+        if drifted:
+            print("DRIFT in:", ", ".join(sorted(drifted)), file=sys.stderr)
+            return 1
+        print("references/ in sync (16 files).")
+        return 0
+
+    write_files(out_dir, files)
+    for fname in ALL_FILES:
+        n = files[fname].count("\n## ") if fname != "INDEX.md" else \
+            len([l for l in files[fname].splitlines() if " | " in l and not l.startswith("`")])
+        print(f"  wrote references/{fname:<26} {n}")
+    if unresolved:
+        print("  UNRESOLVED:", ", ".join(sorted(unresolved)), file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
