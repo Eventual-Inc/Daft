@@ -95,6 +95,13 @@ Legend: **P** = Python, **S** = SQL.
 | `st_buffer` | `st_buffer(geom, distance)` | ✅ | ✅ | Planar buffer by `distance`. |
 | `st_makevalid` | `st_makevalid(geom)` | ✅ | ✅ | Repairs invalid polygonal geometries → valid MultiPolygon; non-polygonal types pass through. |
 
+### Collection expansion
+
+| Function | Signature (Python) | P | S | Description |
+|---|---|:-:|:-:|---|
+| `st_dump` | `st_dump(geom)` | ✅ | ✅ | Decomposes a geometry into `List[Struct{path, geom}]`. Atomic geometries yield one row with empty path; collection/multi members get 1-based paths. |
+| `st_dumprings` | `st_dumprings(geom)` | ✅ | ✅ | Polygon-only ring expansion into `List[Struct{path, geom}]`. `path` is `[0]` for exterior and `[1..n]` for holes; `geom` is a single-ring Polygon. |
+
 ### Constructors
 
 | Function | Signature (Python) | P | S | Description |

@@ -138,6 +138,39 @@ def st_centroid(geom: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("st_centroid", geom)
 
 
+def st_dump(geom: Expression) -> Expression:
+    """Return a list of dumped members with PostGIS-style path metadata.
+
+    Each output element is a struct ``{path, geom}``, where ``path`` is a list of
+    integer indexes describing the component location and ``geom`` is the component
+    geometry. Atomic geometries return a singleton element with an empty path.
+    Multi-geometries and geometry collections use 1-based path indexing.
+
+    Args:
+        geom: A column of type ``DataType.geometry()`` or ``DataType.binary()`` (WKB).
+
+    Returns:
+        ``List[Struct{path: List[Int64], geom: Geometry}]`` column.
+    """
+    return Expression._call_builtin_scalar_fn("st_dump", geom)
+
+
+def st_dumprings(geom: Expression) -> Expression:
+    """Return polygon rings with PostGIS-style path metadata.
+
+    Each output element is a struct ``{path, geom}``, where ``geom`` is a single-ring
+    Polygon and ``path`` is ``[0]`` for the exterior ring, then ``[1..n]``
+    for interior rings. This function is polygon-only; non-polygonal inputs return null.
+
+    Args:
+        geom: A column of type ``DataType.geometry()`` or ``DataType.binary()`` (WKB).
+
+    Returns:
+        ``List[Struct{path: List[Int64], geom: Geometry}]`` column.
+    """
+    return Expression._call_builtin_scalar_fn("st_dumprings", geom)
+
+
 # ── Binary geometry predicates ─────────────────────────────────────────────
 
 
