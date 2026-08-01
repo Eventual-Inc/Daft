@@ -60,3 +60,34 @@ def test_resolves_all_functions():
     kinds = {s.kind for s in symbols if s.namespace == "daft.functions"}
     assert kinds == {"def"}
     assert "regexp_replace" in fns
+
+
+def _sym(name, namespace):
+    symbols, _ = gen.resolve_public_api(REPO_ROOT)
+    return next(s for s in symbols if s.name == name and s.namespace == namespace)
+
+
+def test_extract_signature_strips_self_and_quotes():
+    sig = gen.extract_signature(_sym("join", "DataFrame"))
+    assert sig.startswith("(other")
+    assert "self" not in sig
+    assert sig.rstrip().endswith("-> DataFrame")  # forward-ref quotes removed
+
+
+def test_extract_signature_uses_init_for_classes():
+    sig = gen.extract_signature(_sym("S3Config", "daft.io"))
+    assert sig.startswith("(region_name")
+    assert "self" not in sig
+
+
+def test_extract_docstring_drops_examples():
+    doc = gen.extract_docstring(_sym("regexp_replace", "daft.functions"))
+    assert "Args:" in doc
+    assert "Examples:" not in doc
+    assert "Example:" not in doc
+
+
+def test_first_sentence_is_one_line():
+    fs = gen.first_sentence(gen.extract_docstring(_sym("regexp_replace", "daft.functions")))
+    assert "\n" not in fs
+    assert fs.endswith(".") or fs != ""

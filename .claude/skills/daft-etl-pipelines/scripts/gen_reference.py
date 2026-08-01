@@ -237,3 +237,60 @@ def resolve_public_api(repo_root: Path) -> tuple[list[Symbol], list[str]]:
             seen.add(key)
             deduped.append(s)
     return deduped, unresolved
+
+
+_EXAMPLE_MARKERS = ("Examples:", "Example:")
+
+
+def _def_node_for_signature(sym: Symbol):
+    if not sym.is_class:
+        return sym.node
+    for b in sym.node.body:  # class: use __init__
+        if isinstance(b, (ast.FunctionDef, ast.AsyncFunctionDef)) and b.name == "__init__":
+            return b
+    return None
+
+
+def extract_signature(sym: Symbol) -> str:
+    if sym.kind != "def":  # submodule / module-level object has no signature
+        return ""
+    node = _def_node_for_signature(sym)
+    if node is None:
+        return "()"
+    args = ast.unparse(node.args)
+    # Strip a leading self / cls parameter.
+    args = re.sub(r"^\s*(self|cls)\s*(,\s*)?", "", args)
+    ret = ""
+    if getattr(node, "returns", None) is not None:
+        ret_s = ast.unparse(node.returns).strip()
+        if len(ret_s) >= 2 and ret_s[0] in "'\"" and ret_s[-1] == ret_s[0]:
+            ret_s = ret_s[1:-1]
+        ret = f" -> {ret_s}"
+    return f"({args}){ret}"
+
+
+def extract_docstring(sym: Symbol) -> str:
+    if sym.kind == "submodule":  # node is None; use the module docstring
+        mod = _parse(REPO_ROOT / sym.source_module)
+        doc = (ast.get_docstring(mod) if mod else "") or ""
+    elif isinstance(sym.node, DEF_NODES):  # def/class only
+        doc = ast.get_docstring(sym.node) or ""
+    else:  # kind == "object": an Assign node has no docstring
+        doc = ""
+    if not doc:
+        return ""
+    cut = len(doc)
+    for marker in _EXAMPLE_MARKERS:
+        # Match the marker as a section header (start of a line, optionally indented).
+        m = re.search(rf"^\s*{re.escape(marker)}\s*$", doc, re.M)
+        if m:
+            cut = min(cut, m.start())
+    return doc[:cut].rstrip()
+
+
+def first_sentence(doc: str) -> str:
+    if not doc:
+        return ""
+    flat = " ".join(doc.split())
+    m = re.match(r"(.+?\.)(\s|$)", flat)
+    return m.group(1) if m else flat
