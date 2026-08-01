@@ -23,6 +23,7 @@ pub mod st_dwithin;
 pub mod st_envelope;
 pub mod st_equals;
 pub mod st_geohash;
+pub mod st_geohash_cells;
 pub mod st_geohash_covers;
 pub mod st_geojson;
 pub mod st_geometrytype;
@@ -74,6 +75,7 @@ pub use st_dwithin::StDwithin;
 pub use st_envelope::StEnvelope;
 pub use st_equals::StEquals;
 pub use st_geohash::{geohash_covers_geometry, StGeohash};
+pub use st_geohash_cells::{StGeohashCells, geohash_covers_geometry_strict, st_geohash_cells};
 pub use st_geohash_covers::StGeohashCovers;
 pub use st_geojson::{StGeoJsonFromGeom, StGeomFromGeoJson};
 pub use st_geometrytype::StGeometryType;
@@ -126,6 +128,7 @@ impl FunctionModule for SpatialFunctions {
         parent.add_fn(StDifference);
         parent.add_fn(StSymDifference);
         parent.add_fn(StGeohash { precision: 5 });
+        parent.add_fn(StGeohashCells { precision: 6 });
         parent.add_fn(StGeohashCovers {
             precision: 5,
             covering_cells: String::new(),

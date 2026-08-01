@@ -2788,6 +2788,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-functions",
+ "daft-geo",
  "daft-io",
  "daft-local-execution",
  "daft-local-plan",
