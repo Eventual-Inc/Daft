@@ -91,3 +91,40 @@ def test_first_sentence_is_one_line():
     fs = gen.first_sentence(gen.extract_docstring(_sym("regexp_replace", "daft.functions")))
     assert "\n" not in fs
     assert fs.endswith(".") or fs != ""
+
+
+def test_assign_file_buckets():
+    assert gen.assign_file(_sym("join", "DataFrame")) == "dataframe.md"
+    assert gen.assign_file(_sym("list_sort", "Expression")) == "expressions.md"
+    assert gen.assign_file(_sym("regexp_replace", "daft.functions")) == "functions-str.md"
+    assert gen.assign_file(_sym("embed_text", "daft.functions")) == "functions-ai.md"
+    assert gen.assign_file(_sym("read_parquet", "daft")) == "toplevel.md"
+    assert gen.assign_file(_sym("S3Config", "daft.io")) == "io.md"
+
+
+def test_functions_buckets_sum_to_356():
+    symbols, _ = gen.resolve_public_api(REPO_ROOT)
+    counts = {}
+    for s in symbols:
+        if s.namespace == "daft.functions":
+            counts[gen.assign_file(s)] = counts.get(gen.assign_file(s), 0) + 1
+    assert sum(counts.values()) == 356
+    assert counts["functions-str.md"] == 59
+    assert counts["functions-ai.md"] == 5
+
+
+def test_render_reference_has_anchor_headings():
+    symbols, _ = gen.resolve_public_api(REPO_ROOT)
+    strs = [s for s in symbols if gen.assign_file(s) == "functions-str.md"]
+    body = gen.render_reference("functions-str.md", strs)
+    assert "## regexp_replace" in body
+    assert "```python" in body
+
+
+def test_render_index_line_format():
+    symbols, unresolved = gen.resolve_public_api(REPO_ROOT)
+    idx = gen.render_index(symbols, unresolved)
+    line = next(l for l in idx.splitlines() if l.startswith("regexp_replace |"))
+    parts = [p.strip() for p in line.split("|")]
+    assert parts[1] == "daft.functions"
+    assert parts[-1] == "functions-str.md#regexp_replace"

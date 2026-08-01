@@ -294,3 +294,92 @@ def first_sentence(doc: str) -> str:
     flat = " ".join(doc.split())
     m = re.match(r"(.+?\.)(\s|$)", flat)
     return m.group(1) if m else flat
+
+
+FUNCTIONS_FILE_BY_MODULE = {
+    "str.py": "functions-str.md",
+    "datetime.py": "functions-datetime.md",
+    "numeric.py": "functions-numeric.md",
+    "spatial.py": "functions-spatial.md",
+    "spatial_index.py": "functions-spatial.md",
+    "list.py": "functions-list.md",
+    "agg.py": "functions-agg.md",
+    "window.py": "functions-window.md",
+    "misc.py": "functions-misc.md",
+    "image.py": "functions-media.md",
+    "image_file_.py": "functions-media.md",
+    "video.py": "functions-media.md",
+    "audio.py": "functions-media.md",
+    "url.py": "functions-media.md",
+    "file_.py": "functions-media.md",
+    "hdf5.py": "functions-media.md",
+    "__init__.py": "functions-ai.md",  # daft/functions/ai/__init__.py
+    "binary.py": "functions-etc.md",
+    "bitwise.py": "functions-etc.md",
+    "columnar.py": "functions-etc.md",
+    "struct.py": "functions-etc.md",
+    "distance.py": "functions-etc.md",
+    "similarity.py": "functions-etc.md",
+    "partition.py": "functions-etc.md",
+    "llm.py": "functions-etc.md",
+    "process.py": "functions-etc.md",
+}
+
+
+def assign_file(sym: Symbol, toplevel_names: set[str] | None = None) -> str:
+    if sym.namespace == "DataFrame":
+        return "dataframe.md"
+    if sym.namespace == "Expression":
+        return "expressions.md"
+    if sym.namespace == "daft":
+        return "toplevel.md"
+    if sym.namespace == "daft.io":
+        return "io.md"  # dedup against toplevel happens in render_all
+    if sym.namespace == "daft.functions":
+        return FUNCTIONS_FILE_BY_MODULE[Path(sym.source_module).name]
+    raise ValueError(f"unknown namespace {sym.namespace}")
+
+
+def anchor(name: str) -> str:
+    return name.lower()
+
+
+_KIND_NOTE = {"submodule": "_(submodule)_", "object": "_(exported object)_"}
+
+
+def render_reference(filename: str, syms: list[Symbol]) -> str:
+    title = filename.replace(".md", "").replace("-", " ")
+    lines = [f"# {title}", ""]
+    for s in sorted(syms, key=lambda s: s.name.lower()):
+        lines.append(f"## {s.name}")
+        lines.append("")
+        sig = extract_signature(s)
+        if sig:  # kind == "def"
+            lines += ["```python", f"{s.name}{sig}", "```", ""]
+        elif s.kind in _KIND_NOTE:
+            lines += [_KIND_NOTE[s.kind], ""]
+        doc = extract_docstring(s)
+        lines.append(doc if doc else "_(no docstring)_")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def render_index(syms: list[Symbol], unresolved: list[str]) -> str:
+    toplevel_names = {s.name for s in syms if s.namespace == "daft"}
+    rows = []
+    for s in syms:
+        if s.namespace == "daft.io" and s.name in toplevel_names:
+            continue  # deduped into toplevel.md
+        fname = assign_file(s)
+        sig = extract_signature(s) or f"({s.kind})"  # placeholder for non-def
+        desc = first_sentence(extract_docstring(s)).replace("|", "/")
+        rows.append(
+            f"{s.name} | {s.namespace} | {sig} | {desc} | {fname}#{anchor(s.name)}"
+        )
+    rows.sort(key=lambda r: r.lower())
+    out = ["# Daft API index", "",
+           "`name | namespace | signature | summary | file#anchor`", ""]
+    out += rows
+    if unresolved:
+        out += ["", "## Unresolved", ""] + [f"- {n}" for n in sorted(unresolved)]
+    return "\n".join(out).rstrip() + "\n"
