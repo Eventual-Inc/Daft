@@ -20,7 +20,7 @@ jobs:
         - url: https://www.eventual.ai
     steps:
     - name: Check ${{ matrix.site.url }}
-      uses: lycheeverse/lychee-action@v2.8.0
+      uses: lycheeverse/lychee-action@v2.9.0
       id: lychee
       with:
         args: >-
@@ -76,7 +76,7 @@ jobs:
       if: ${{ env.SLACK_WEBHOOK_URL }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-      uses: slackapi/slack-github-action@v3.0.3
+      uses: slackapi/slack-github-action@v4.0.0
       with:
         payload: |
           {
