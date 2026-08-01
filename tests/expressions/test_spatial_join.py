@@ -102,6 +102,39 @@ def test_spatial_join_matches_oracle(predicate_name):
     assert list(zip(got["pid"], got["qid"])) == list(zip(oracle["pid"], oracle["qid"]))
 
 
+def test_spatial_join_contains_boundary_point_semantics():
+    """DE-9IM boundary semantics through the join's accelerated path:
+    `st_contains` is interior-only (a point ON the polygon boundary does NOT
+    match), while `st_covers` includes the boundary. Pins the index-direct
+    point-in-polygon evaluation to the same semantics as the expression
+    kernel."""
+    from daft.functions import st_contains, st_covers
+
+    pts = daft.from_pydict(
+        {"pid": [1, 2, 3], "x": [1.0, 0.0, 5.0], "y": [1.0, 1.0, 5.0]}
+    ).select(daft.col("pid"), st_point(daft.col("x"), daft.col("y")).alias("pg"))
+    # pid 1 = interior, pid 2 = on the boundary edge x=0, pid 3 = outside
+    polys = daft.from_pydict({"qid": [10], "wkt": ["POLYGON((0 0,2 0,2 2,0 2,0 0))"]}).select(
+        daft.col("qid"), st_geomfromtext(daft.col("wkt")).alias("qg")
+    )
+
+    contains = (
+        pts.join(polys, on=st_contains(polys["qg"], pts["pg"]))
+        .select("pid")
+        .sort("pid")
+        .to_pydict()
+    )
+    assert contains["pid"] == [1], "st_contains must exclude the boundary point"
+
+    covers = (
+        pts.join(polys, on=st_covers(polys["qg"], pts["pg"]))
+        .select("pid")
+        .sort("pid")
+        .to_pydict()
+    )
+    assert covers["pid"] == [1, 2], "st_covers must include the boundary point"
+
+
 # ── Partitioned-path test (equi-key + spatial predicate) ──────────────────────
 
 
