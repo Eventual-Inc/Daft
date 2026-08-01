@@ -233,6 +233,33 @@ impl RTreeIndex {
             _ => RecordBatch::concat(&pieces),
         }
     }
+
+    /// [`Self::gather`] restricted to `cols` (build-table column indices):
+    /// each table is narrowed BEFORE the take, so unselected columns —
+    /// notably large geometry payloads — are never gathered per pair.
+    fn gather_cols(&self, sorted_globals: &[u64], cols: &[usize]) -> DaftResult<RecordBatch> {
+        let mut pieces: Vec<RecordBatch> = Vec::new();
+        let mut i = 0;
+        while i < sorted_globals.len() {
+            let (t, _) = self.resolve(sorted_globals[i]);
+            let start_off = self.offsets[t];
+            let end_off = self.offsets[t + 1];
+            let mut locals: Vec<u64> = Vec::new();
+            while i < sorted_globals.len() && sorted_globals[i] < end_off {
+                locals.push(sorted_globals[i] - start_off);
+                i += 1;
+            }
+            let idx = UInt64Array::from_vec("", locals);
+            pieces.push(self.tables[t].get_columns(cols).take(&idx)?);
+        }
+        match pieces.len() {
+            0 => Ok(RecordBatch::empty(Some(
+                self.tables[0].get_columns(cols).schema.clone(),
+            ))),
+            1 => Ok(pieces.pop().unwrap()),
+            _ => RecordBatch::concat(&pieces),
+        }
+    }
 }
 
 struct RTreeState {
@@ -717,13 +744,23 @@ pub struct NestedLoopJoinOperator {
     /// schema): evaluated on the direct-verified survivors. `None` when the
     /// filter IS the spatial node — no expression evaluation at all then.
     remainder: Option<BoundExpr>,
+    /// The schema this operator EMITS (projected when `output_projection` is
+    /// set; otherwise the full join output schema).
+    emit_schema: SchemaRef,
+    /// When set: indices into the full output schema to emit. In the
+    /// direct-verification path the pair gather materializes ONLY these
+    /// columns — heavy payloads (polygon WKB) are never copied per pair.
+    output_projection: Option<Vec<usize>>,
 }
 
 impl NestedLoopJoinOperator {
     /// `build_n_cols` = column count of the build-side physical plan schema.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         filter: BoundExpr,
         output_schema: SchemaRef,
+        emit_schema: SchemaRef,
+        output_projection: Option<Vec<usize>>,
         build_side: JoinSide,
         build_n_cols: usize,
         partition_key: Option<(usize, usize)>,
@@ -758,6 +795,8 @@ impl NestedLoopJoinOperator {
             dwithin_distance,
             direct_pred,
             remainder,
+            emit_schema,
+            output_projection,
         }
     }
 }
@@ -861,17 +900,19 @@ impl JoinOperator for NestedLoopJoinOperator {
         };
 
         if input.is_empty() || build_is_empty {
-            let empty = MicroPartition::empty(Some(self.output_schema.clone()));
+            let empty = MicroPartition::empty(Some(self.emit_schema.clone()));
             return Ok((state, ProbeOutput::NeedMoreInput(Some(empty)))).into();
         }
 
         if state.stream_idx >= input.record_batches().len() {
             state.stream_idx = 0;
-            let empty = MicroPartition::empty(Some(self.output_schema.clone()));
+            let empty = MicroPartition::empty(Some(self.emit_schema.clone()));
             return Ok((state, ProbeOutput::NeedMoreInput(Some(empty)))).into();
         }
 
         let output_schema = self.output_schema.clone();
+        let emit_schema = self.emit_schema.clone();
+        let projection = self.output_projection.clone();
         let filter = self.filter.clone();
         let build_side = self.build_side;
         let pad = self.dwithin_distance.unwrap_or(0.0);
@@ -954,11 +995,15 @@ impl JoinOperator for NestedLoopJoinOperator {
                             }
                         }
 
+                        if let Some(proj) = &projection {
+                            result_batches =
+                                result_batches.iter().map(|b| b.get_columns(proj)).collect();
+                        }
                         if result_batches.is_empty() {
-                            MicroPartition::empty(Some(output_schema))
+                            MicroPartition::empty(Some(emit_schema))
                         } else {
                             MicroPartition::new_loaded(
-                                output_schema,
+                                emit_schema,
                                 Arc::new(result_batches),
                                 None,
                             )
@@ -1028,50 +1073,101 @@ impl JoinOperator for NestedLoopJoinOperator {
                                 };
 
                             if pairs.is_empty() {
-                                MicroPartition::empty(Some(output_schema))
+                                MicroPartition::empty(Some(emit_schema))
                             } else {
-                                // Gather each side ONCE in pair order, assemble the
-                                // output-schema batch, then mask with what's left —
-                                // no candidate tile + second gather of passing rows.
                                 let build_globals: Vec<u64> =
                                     pairs.iter().map(|&(_, bi)| bi).collect();
                                 let probe_idxs: Vec<u64> =
                                     pairs.iter().map(|&(pi, _)| pi).collect();
-                                let build_rows = index.gather(&build_globals)?;
-                                let probe_rows =
-                                    probe_tbl.take(&UInt64Array::from_vec("", probe_idxs))?;
-
-                                let (left_tbl, right_tbl) = match build_side {
-                                    JoinSide::Left => (build_rows, probe_rows),
-                                    JoinSide::Right => (probe_rows, build_rows),
-                                };
-                                let mut columns: Vec<daft_core::series::Series> = (0
-                                    ..left_tbl.num_columns())
-                                    .map(|i| left_tbl.get_column(i).clone())
-                                    .collect();
-                                columns.extend(
-                                    (0..right_tbl.num_columns())
-                                        .map(|i| right_tbl.get_column(i).clone()),
-                                );
                                 let n_pairs = pairs.len();
-                                let cand_batch = RecordBatch::new_with_size(
-                                    output_schema.clone(),
-                                    columns,
-                                    n_pairs,
-                                )?;
 
-                                let out = match mask_pred {
-                                    Some(pred) => {
-                                        let mask = cand_batch.eval_expression(pred)?;
-                                        cand_batch.mask_filter(&mask)?
+                                let out = if let (Some(proj), None) = (&projection, mask_pred) {
+                                    // Fused column-select with nothing left to
+                                    // expression-evaluate: gather ONLY the
+                                    // projected columns per pair. Heavy payload
+                                    // columns (polygon WKB) are never copied.
+                                    let build_n = index.tables[0].num_columns();
+                                    let probe_n = output_schema.len() - build_n;
+                                    let mut build_sel: Vec<usize> = vec![];
+                                    let mut probe_sel: Vec<usize> = vec![];
+                                    // (from_build, position within its side's gather)
+                                    let mut order: Vec<(bool, usize)> = vec![];
+                                    for &i in proj {
+                                        let (is_build, local) = match build_side {
+                                            JoinSide::Left if i < build_n => (true, i),
+                                            JoinSide::Left => (false, i - build_n),
+                                            JoinSide::Right if i < probe_n => (false, i),
+                                            JoinSide::Right => (true, i - probe_n),
+                                        };
+                                        if is_build {
+                                            order.push((true, build_sel.len()));
+                                            build_sel.push(local);
+                                        } else {
+                                            order.push((false, probe_sel.len()));
+                                            probe_sel.push(local);
+                                        }
                                     }
-                                    None => cand_batch,
+                                    let build_rows =
+                                        index.gather_cols(&build_globals, &build_sel)?;
+                                    let probe_rows = probe_tbl
+                                        .get_columns(&probe_sel)
+                                        .take(&UInt64Array::from_vec("", probe_idxs))?;
+                                    let columns: Vec<daft_core::series::Series> = order
+                                        .iter()
+                                        .map(|&(is_build, pos)| {
+                                            if is_build {
+                                                build_rows.get_column(pos).clone()
+                                            } else {
+                                                probe_rows.get_column(pos).clone()
+                                            }
+                                        })
+                                        .collect();
+                                    RecordBatch::new_with_size(
+                                        emit_schema.clone(),
+                                        columns,
+                                        n_pairs,
+                                    )?
+                                } else {
+                                    // Gather each side ONCE in pair order, assemble
+                                    // the full-schema batch, mask with what's left,
+                                    // then apply any fused projection.
+                                    let build_rows = index.gather(&build_globals)?;
+                                    let probe_rows = probe_tbl
+                                        .take(&UInt64Array::from_vec("", probe_idxs))?;
+                                    let (left_tbl, right_tbl) = match build_side {
+                                        JoinSide::Left => (build_rows, probe_rows),
+                                        JoinSide::Right => (probe_rows, build_rows),
+                                    };
+                                    let mut columns: Vec<daft_core::series::Series> = (0
+                                        ..left_tbl.num_columns())
+                                        .map(|i| left_tbl.get_column(i).clone())
+                                        .collect();
+                                    columns.extend(
+                                        (0..right_tbl.num_columns())
+                                            .map(|i| right_tbl.get_column(i).clone()),
+                                    );
+                                    let cand_batch = RecordBatch::new_with_size(
+                                        output_schema.clone(),
+                                        columns,
+                                        n_pairs,
+                                    )?;
+                                    let full = match mask_pred {
+                                        Some(pred) => {
+                                            let mask = cand_batch.eval_expression(pred)?;
+                                            cand_batch.mask_filter(&mask)?
+                                        }
+                                        None => cand_batch,
+                                    };
+                                    match &projection {
+                                        Some(proj) => full.get_columns(proj),
+                                        None => full,
+                                    }
                                 };
                                 if out.is_empty() {
-                                    MicroPartition::empty(Some(output_schema))
+                                    MicroPartition::empty(Some(emit_schema))
                                 } else {
                                     MicroPartition::new_loaded(
-                                        output_schema,
+                                        emit_schema,
                                         Arc::new(vec![out]),
                                         None,
                                     )
@@ -1092,11 +1188,15 @@ impl JoinOperator for NestedLoopJoinOperator {
                                     result_batches.push(out);
                                 }
                             }
+                            if let Some(proj) = &projection {
+                                result_batches =
+                                    result_batches.iter().map(|b| b.get_columns(proj)).collect();
+                            }
                             if result_batches.is_empty() {
-                                MicroPartition::empty(Some(output_schema))
+                                MicroPartition::empty(Some(emit_schema.clone()))
                             } else {
                                 MicroPartition::new_loaded(
-                                    output_schema,
+                                    emit_schema.clone(),
                                     Arc::new(result_batches),
                                     None,
                                 )

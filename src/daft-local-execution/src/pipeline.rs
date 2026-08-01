@@ -1340,6 +1340,8 @@ fn physical_plan_to_pipeline(
             build_side,
             partition_key,
             schema,
+            full_schema,
+            output_projection,
             stats_state,
             context,
         }) => {
@@ -1356,8 +1358,15 @@ fn physical_plan_to_pipeline(
 
             // Convert partition_key from plan-level [usize; 2] to operator-level Option<(usize,usize)>.
             let pk = partition_key.map(|[bk, pk]| (bk, pk));
-            let nested_loop_op =
-                NestedLoopJoinOperator::new(filter.clone(), schema.clone(), *build_side, build_child.schema().len(), pk);
+            let nested_loop_op = NestedLoopJoinOperator::new(
+                filter.clone(),
+                full_schema.clone(),
+                schema.clone(),
+                output_projection.clone(),
+                *build_side,
+                build_child.schema().len(),
+                pk,
+            );
 
             JoinNode::new(
                 Arc::new(nested_loop_op),

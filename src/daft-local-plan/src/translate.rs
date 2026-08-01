@@ -353,6 +353,43 @@ fn translate_helper(
 
             let projection = BoundExpr::bind_all(&project.projection, input_plan.schema())?;
 
+            // Fuse a plain column-select into a spatial NestedLoopJoin below
+            // it: the join then materializes ONLY the selected columns per
+            // matched pair. This is what keeps heavy payload columns (e.g.
+            // multi-KB polygon WKB) out of the pair gather when downstream
+            // only wants ids — the filter itself stays bound to the full
+            // join schema.
+            if let LocalPhysicalPlan::NestedLoopJoin(nlj) = input_plan.as_ref() {
+                if nlj.output_projection.is_none() {
+                    let col_indices: Option<Vec<usize>> = projection
+                        .iter()
+                        .map(|e| match e.inner().as_ref() {
+                            daft_dsl::Expr::Column(daft_dsl::expr::Column::Bound(bc)) => {
+                                Some(bc.index)
+                            }
+                            _ => None,
+                        })
+                        .collect();
+                    if let Some(indices) = col_indices {
+                        return Ok((
+                            LocalPhysicalPlan::nested_loop_join_projected(
+                                nlj.left.clone(),
+                                nlj.right.clone(),
+                                nlj.filter.clone(),
+                                nlj.build_side,
+                                nlj.partition_key,
+                                nlj.full_schema.clone(),
+                                indices,
+                                project.projected_schema.clone(),
+                                nlj.stats_state.clone(),
+                                nlj.context.clone(),
+                            ),
+                            inputs,
+                        ));
+                    }
+                }
+            }
+
             Ok((
                 LocalPhysicalPlan::project(
                     input_plan,

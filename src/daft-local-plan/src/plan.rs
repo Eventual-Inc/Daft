@@ -928,6 +928,7 @@ impl LocalPhysicalPlan {
         stats_state: StatsState,
         context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
+        let full_schema = schema.clone();
         Self::NestedLoopJoin(NestedLoopJoin {
             left,
             right,
@@ -935,6 +936,41 @@ impl LocalPhysicalPlan {
             build_side,
             partition_key,
             schema,
+            full_schema,
+            output_projection: None,
+            stats_state,
+            context,
+        })
+        .arced()
+    }
+
+    /// Like [`Self::nested_loop_join`] but emitting only `projection`
+    /// (indices into the FULL join output schema). The filter stays bound to
+    /// `full_schema`; only the projected columns are materialized per matched
+    /// pair — the point of fusing a column-select into the join is that heavy
+    /// payload columns (polygon WKB) are never gathered per pair at all.
+    #[allow(clippy::too_many_arguments)]
+    pub fn nested_loop_join_projected(
+        left: LocalPhysicalPlanRef,
+        right: LocalPhysicalPlanRef,
+        filter: BoundExpr,
+        build_side: JoinSide,
+        partition_key: Option<[usize; 2]>,
+        full_schema: SchemaRef,
+        projection: Vec<usize>,
+        projected_schema: SchemaRef,
+        stats_state: StatsState,
+        context: LocalNodeContext,
+    ) -> LocalPhysicalPlanRef {
+        Self::NestedLoopJoin(NestedLoopJoin {
+            left,
+            right,
+            filter,
+            build_side,
+            partition_key,
+            schema: projected_schema,
+            full_schema,
+            output_projection: Some(projection),
             stats_state,
             context,
         })
@@ -2318,7 +2354,13 @@ pub struct NestedLoopJoin {
     /// When set, the NLJ groups the build side by key and probes only the matching group,
     /// keeping memory proportional to the largest single partition rather than the full table.
     pub partition_key: Option<[usize; 2]>,
+    /// The EMITTED schema (projected when `output_projection` is set).
     pub schema: SchemaRef,
+    /// The full join output schema the filter is bound against.
+    pub full_schema: SchemaRef,
+    /// When set: indices into `full_schema` to emit — only these columns are
+    /// materialized per matched pair.
+    pub output_projection: Option<Vec<usize>>,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
 }
