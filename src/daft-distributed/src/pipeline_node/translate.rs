@@ -32,7 +32,7 @@ use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, concat::ConcatNode, distinct::DistinctNode,
         explode::ExplodeNode, filter::FilterNode, glob_scan_source::GlobScanSourceNode,
-        in_memory_source::InMemorySourceNode, into_batches::IntoBatchesNode,
+        in_memory_source::InMemorySourceNode, into_batches::IntoBatchesNode, join::BroadcastSpatialJoinNode,
         into_partitions::IntoPartitionsNode, limit::LimitNode,
         monotonically_increasing_id::MonotonicallyIncreasingIdNode, pivot::PivotNode,
         project::ProjectNode, random_shuffle::RandomShuffleNode, sample::SampleNode,
@@ -76,6 +76,7 @@ const SPATIAL_PREDICATES: &[&str] = &[
     "st_overlaps",
     "st_crosses",
     "st_equals",
+    "st_dwithin",
 ];
 
 /// Check whether `expr` contains at least one spatial predicate call.
@@ -281,8 +282,117 @@ impl LogicalPlanToPipelineNodeTranslator {
             &left_stats,
             &right_stats,
         )?;
-
         Ok(Some(spatial_node))
+    }
+
+    /// Build a `BroadcastSpatialJoinNode` for a PURE spatial join — an inner
+    /// join whose ON predicate is spatial with NO equality conjuncts, so there
+    /// is no key to hash-partition by. The smaller side (by approx stats) is
+    /// broadcast to every task and becomes the local NLJ's build side; every
+    /// task therefore sees the complete build side and no matches can be lost
+    /// across partitions.
+    ///
+    /// Errors when neither side fits under
+    /// `broadcast_join_size_bytes_threshold` — a pure spatial join with two
+    /// large sides needs either a partition key (e.g. a geohash cell) or
+    /// bucketed execution, and silently falling back to a cross-join would
+    /// OOM at exactly the scales where it matters.
+    fn build_broadcast_spatial_join_node(
+        &mut self,
+        join: &ops::Join,
+        combined_predicate: daft_dsl::ExprRef,
+    ) -> DaftResult<DistributedPipelineNode> {
+        let left_node = self.translate_subtree(&join.left)?;
+        let right_node = self.translate_subtree(&join.right)?;
+
+        let join_schema = join.output_schema.clone();
+        let spatial_filter = rebind_predicate(combined_predicate, &join_schema)?;
+
+        // Broadcast-side selection: PREFER the spatial function's arg0 side
+        // (the container geometry — e.g. polygons in st_contains(poly, pt)):
+        // it is the natural R-tree build side and typically the one carrying
+        // precomputed `rtree_*` bbox columns. Fall back to the other side
+        // when the preferred one doesn't fit under the threshold, and error
+        // when neither does.
+        let left_bytes = join.left.materialized_stats().approx_stats.size_bytes;
+        let right_bytes = join.right.materialized_stats().approx_stats.size_bytes;
+        let threshold = self
+            .plan_config
+            .config
+            .broadcast_join_size_bytes_threshold;
+
+        let left_schema_len = join.left.schema().len();
+        let preferred = (|| {
+            fn spatial_arg0_idx(expr: &daft_dsl::ExprRef) -> Option<usize> {
+                match expr.as_ref() {
+                    Expr::ScalarFn(daft_dsl::functions::scalar::ScalarFn::Builtin(sf))
+                        if SPATIAL_PREDICATES.contains(&sf.func.name()) =>
+                    {
+                        let arg0 = sf.inputs.required(0).ok()?;
+                        if let Expr::Column(Column::Bound(bc)) = arg0.as_ref() {
+                            Some(bc.index)
+                        } else {
+                            None
+                        }
+                    }
+                    Expr::BinaryOp { left, right, .. } => {
+                        spatial_arg0_idx(left).or_else(|| spatial_arg0_idx(right))
+                    }
+                    Expr::Not(inner) => spatial_arg0_idx(inner),
+                    _ => None,
+                }
+            }
+            // Bound indices in `spatial_filter` are positions in [left | right].
+            if let Some(idx) = spatial_arg0_idx(spatial_filter.inner()) {
+                if idx < left_schema_len {
+                    JoinSide::Left
+                } else {
+                    JoinSide::Right
+                }
+            } else if left_bytes <= right_bytes {
+                JoinSide::Left
+            } else {
+                JoinSide::Right
+            }
+        })();
+        let (preferred_bytes, other_bytes, other) = match preferred {
+            JoinSide::Left => (left_bytes, right_bytes, JoinSide::Right),
+            JoinSide::Right => (right_bytes, left_bytes, JoinSide::Left),
+        };
+        let build_side = if preferred_bytes <= threshold {
+            preferred
+        } else if other_bytes <= threshold {
+            other
+        } else {
+            return Err(common_error::DaftError::not_implemented(format!(
+                "A spatial join without a usable equality partition key on the distributed runner \
+                 requires one side small enough to broadcast: left ~{left_bytes} bytes, right \
+                 ~{right_bytes} bytes, broadcast_join_size_bytes_threshold = {threshold}. Options: \
+                 raise the threshold via \
+                 daft.set_execution_config(broadcast_join_size_bytes_threshold=...), add an \
+                 equality partition key (e.g. a geohash cell) to the ON clause, or bucket the \
+                 larger side and join per bucket."
+            )));
+        };
+        let (broadcaster, receiver) = match build_side {
+            JoinSide::Left => (left_node, right_node),
+            JoinSide::Right => (right_node, left_node),
+        };
+
+        let node_id = self.get_next_pipeline_node_id();
+        Ok(DistributedPipelineNode::new(
+            Arc::new(BroadcastSpatialJoinNode::new(
+                node_id,
+                &self.plan_config,
+                spatial_filter,
+                build_side,
+                broadcaster,
+                receiver,
+                join_schema,
+                &self.meter,
+            )),
+            &self.meter,
+        ))
     }
 
     pub fn get_next_pipeline_node_id(&mut self) -> NodeID {
@@ -432,9 +542,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 let (remaining, left_eq_keys, right_eq_keys, _null_equals_nulls) =
                     join.on.split_eq_preds();
 
-                if !left_eq_keys.is_empty()
-                    && remaining.inner().is_some_and(is_spatial_predicate)
-                {
+                if remaining.inner().is_some_and(is_spatial_predicate) {
                     // No separate WHERE filter here — the full ON predicate (equi
                     // conjuncts AND spatial residual) already IS the complete
                     // semantics the local NLJ must enforce.
@@ -445,12 +553,34 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                         .clone();
                     let combined_predicate = strip_join_side_cols(full_on)?;
 
-                    if let Some(spatial_node) = self.build_spatial_hash_join_node(
-                        join,
-                        combined_predicate,
-                        &left_eq_keys,
-                        &right_eq_keys,
-                    )? {
+                    let spatial_node = if left_eq_keys.is_empty() {
+                        // PURE spatial join — no key to hash-partition by.
+                        // Broadcast the small side instead (errors clearly when
+                        // neither side fits under the broadcast threshold).
+                        Some(self.build_broadcast_spatial_join_node(join, combined_predicate)?)
+                    } else {
+                        match self.build_spatial_hash_join_node(
+                            join,
+                            combined_predicate.clone(),
+                            &left_eq_keys,
+                            &right_eq_keys,
+                        )? {
+                            Some(node) => Some(node),
+                            // The hash-partitioned path declined (equi-key
+                            // dtype mismatch across sides: hashing raw values
+                            // could split equal logical keys into different
+                            // partitions). Broadcasting needs no partitioning
+                            // at all, and the NLJ filter carries the FULL ON
+                            // predicate including the equality conjuncts — so
+                            // it is a sound fallback, and better than the
+                            // generic non-equality-join error.
+                            None => Some(
+                                self.build_broadcast_spatial_join_node(join, combined_predicate)?,
+                            ),
+                        }
+                    };
+
+                    if let Some(spatial_node) = spatial_node {
                         self.curr_node.push(spatial_node);
                         // Mark this Join node so that f_up is a no-op for it.
                         let ptr = Arc::as_ptr(node) as *const LogicalPlan;

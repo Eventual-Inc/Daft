@@ -489,6 +489,87 @@ def test_distributed_spatial_join_combined_on_predicate():
     assert all(pid == qid for pid, qid in zip(got["pid"], got["qid"]))
 
 
+@pytest.mark.skipif(
+    os.environ.get("DAFT_RUNNER") != "ray",
+    reason="BroadcastSpatialJoinNode only exists in the distributed (Ray) pipeline",
+)
+def test_distributed_pure_spatial_join_broadcasts_small_side():
+    """A PURE spatial `on=` predicate — no equi key at all — must work on the
+    distributed runner by broadcasting the small side and running the R-tree
+    NLJ against it per task. Before this existed, the shape fell into the
+    generic join translator's `todo!()` for non-equality joins."""
+    pts = daft.from_pydict(
+        {"pid": [1, 2, 3, 4], "x": [1.0, 9.0, 1.5, 50.0], "y": [1.0, 9.0, 1.5, 50.0]}
+    ).select("pid", st_point(daft.col("x"), daft.col("y")).alias("pg"))
+    polys = daft.from_pydict(
+        {
+            "qid": [10, 20],
+            "wkt": [
+                "POLYGON((0 0,2 0,2 2,0 2,0 0))",
+                "POLYGON((8 8,10 8,10 10,8 10,8 8))",
+            ],
+        }
+    ).select("qid", st_geomfromtext(daft.col("wkt")).alias("qg"))
+
+    from daft.functions import st_contains
+
+    got = (
+        pts.join(polys, on=st_contains(polys["qg"], pts["pg"]))
+        .select("pid", "qid")
+        .sort(["pid", "qid"])
+        .to_pydict()
+    )
+    assert list(zip(got["pid"], got["qid"])) == [(1, 10), (2, 20), (3, 10)]
+
+
+@pytest.mark.skipif(
+    os.environ.get("DAFT_RUNNER") != "ray",
+    reason="BroadcastSpatialJoinNode only exists in the distributed (Ray) pipeline",
+)
+def test_distributed_pure_spatial_join_small_side_on_left():
+    """Same, with the SMALL (broadcast/build) side as the LEFT input and the
+    probe geometry as arg0 — both the side-selection and the argument-order
+    handling must hold."""
+    from daft.functions import st_within
+
+    polys = daft.from_pydict({"qid": [10], "wkt": ["POLYGON((0 0,2 0,2 2,0 2,0 0))"]}).select(
+        "qid", st_geomfromtext(daft.col("wkt")).alias("qg")
+    )
+    pts = daft.from_pydict(
+        {"pid": [1, 2], "x": [1.0, 9.0], "y": [1.0, 9.0]}
+    ).select("pid", st_point(daft.col("x"), daft.col("y")).alias("pg"))
+
+    got = (
+        polys.join(pts, on=st_within(pts["pg"], polys["qg"]))
+        .select("pid", "qid")
+        .sort("pid")
+        .to_pydict()
+    )
+    assert list(zip(got["pid"], got["qid"])) == [(1, 10)]
+
+
+@pytest.mark.skipif(
+    os.environ.get("DAFT_RUNNER") != "ray",
+    reason="BroadcastSpatialJoinNode only exists in the distributed (Ray) pipeline",
+)
+def test_distributed_pure_spatial_join_too_large_gives_clear_error():
+    """When NEITHER side fits under the broadcast threshold, the planner must
+    fail with an actionable message (bucket / partition key / threshold), not
+    the generic non-equality-join `todo!()` panic."""
+    from daft.functions import st_contains
+
+    pts = daft.from_pydict({"pid": [1], "x": [1.0], "y": [1.0]}).select(
+        "pid", st_point(daft.col("x"), daft.col("y")).alias("pg")
+    )
+    polys = daft.from_pydict({"qid": [10], "wkt": ["POLYGON((0 0,2 0,2 2,0 2,0 0))"]}).select(
+        "qid", st_geomfromtext(daft.col("wkt")).alias("qg")
+    )
+
+    with daft.execution_config_ctx(broadcast_join_size_bytes_threshold=1):
+        with pytest.raises(Exception, match="broadcast"):
+            pts.join(polys, on=st_contains(polys["qg"], pts["pg"])).collect()
+
+
 # ── R-tree acceleration must not be applied to unsound predicates ─────────────
 
 

@@ -10,7 +10,7 @@ use super::{
         CollocatedJoin, DetectMonotonicId, DropIntoBatches, DropRepartition, EliminateCrossJoin, EliminateOffsets,
         EliminateSubqueryAliasRule, EnrichWithStats, ExtractWindowFunction, FilterNullJoinKey,
         GeohashPruning, LiftProjectFromAgg, MaterializeScans, OptimizerRule, PushDownAggregation,
-    SpatialPartitionPruning,
+    SpatialBboxPruning, SpatialPartitionPruning,
         PushDownAntiSemiJoin, PushDownFilter, PushDownJoinPredicate, PushDownLimit,
         PushDownProjection, PushDownShard, ReorderJoins, RewriteCheckpointSource,
         RewriteCountDistinct, RewriteOffset, ShardScans, SimplifyExpressionsRule,
@@ -142,12 +142,14 @@ impl OptimizerBuilder {
                 vec![Box::new(SimplifyExpressionsRule::new())],
                 RuleExecutionStrategy::FixedPoint(None),
             ),
-            // --- Geohash pruning ---
-            // Rewrite spatial predicates (st_intersects, st_contains, st_within) to also
-            // filter on `{col}_geohash` when such a column exists in the schema.
-            // Run once, early in the pipeline so PushDownFilter can push the geohash predicate down.
+            // --- Geohash + bbox pruning ---
+            // Rewrite spatial predicates (st_intersects, st_contains, st_within, ...) to also
+            // filter on `{col}_geohash` (GeohashPruning) and on precomputed `rtree_*` bbox
+            // Float64 columns (SpatialBboxPruning) when such columns exist in the schema.
+            // Run once, early in the pipeline so PushDownFilter can push the added
+            // predicates down into scans where parquet min/max stats prune row groups.
             RuleBatch::new(
-                vec![Box::new(GeohashPruning)],
+                vec![Box::new(GeohashPruning), Box::new(SpatialBboxPruning)],
                 RuleExecutionStrategy::Once,
             ),
             // --- Filter out null join keys ---
