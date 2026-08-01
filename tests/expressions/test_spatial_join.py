@@ -644,6 +644,45 @@ def test_distributed_grid_spatial_join_poly_poly_exactly_once():
     assert list(zip(got["lid"], got["rid"])) == [(1, 10)], "pair must appear EXACTLY once"
 
 
+@pytest.mark.skipif(
+    os.environ.get("DAFT_RUNNER") != "ray",
+    reason="grid spatial join only exists in the distributed (Ray) pipeline",
+)
+def test_distributed_grid_spatial_join_adaptive_mixed_scale():
+    """One build polygon is ~2 DEGREES wide (a region-scale geometry: >60k gh6
+    cells, far past the fixed-precision covering cap) alongside a normal
+    building-scale polygon. The adaptive grid must coarsen the big row's cells
+    instead of erroring, keep the small row fine, and still produce exact,
+    exactly-once pairs for points in BOTH — including a point in the big
+    polygon but outside the small one's cells entirely."""
+    from daft.functions import st_contains
+
+    polys = daft.from_pydict(
+        {"qid": [10, 20], "wkt": [
+            "POLYGON((0 0,2 0,2 2,0 2,0 0))",          # ~2° region-scale
+            "POLYGON((0.5 0.5,0.502 0.5,0.502 0.502,0.5 0.502,0.5 0.5))",  # ~200 m
+        ]}
+    ).select("qid", st_geomfromtext(daft.col("wkt")).alias("qg"))
+    pts = daft.from_pydict(
+        {
+            "pid": [1, 2, 3, 4],
+            "x": [0.501, 1.9, 0.1, 5.0],
+            "y": [0.501, 1.9, 1.5, 5.0],
+        }
+    ).select("pid", st_point(daft.col("x"), daft.col("y")).alias("pg"))
+
+    with daft.execution_config_ctx(broadcast_join_size_bytes_threshold=1):
+        got = (
+            pts.join(polys, on=st_contains(polys["qg"], pts["pg"]))
+            .select("pid", "qid")
+            .sort(["pid", "qid"])
+            .to_pydict()
+        )
+    # pid1 inside BOTH (exactly once each); pid2/pid3 only in the big one;
+    # pid4 outside everything.
+    assert list(zip(got["pid"], got["qid"])) == [(1, 10), (1, 20), (2, 10), (3, 10)]
+
+
 # ── R-tree acceleration must not be applied to unsound predicates ─────────────
 
 

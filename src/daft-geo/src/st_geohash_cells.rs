@@ -66,10 +66,55 @@ pub fn geohash_covers_geometry_strict(g: &Geometry, precision: usize) -> DaftRes
     Ok(cells.into_iter().collect())
 }
 
+/// Adaptive covering: the FINEST precision in `[min_p, max_p]` whose covering
+/// stays within `target_cells`, walking coarser as needed. Errors only when
+/// even `min_p` exceeds the global cap — the escape hatch that lets one
+/// dataset mix building-scale and region-scale geometries without either a
+/// cap error or a uniform-coarse explosion.
+pub fn geohash_cells_adaptive(
+    g: &Geometry,
+    min_p: usize,
+    max_p: usize,
+    target_cells: usize,
+) -> DaftResult<Vec<String>> {
+    for p in (min_p..=max_p).rev() {
+        // The strict covering errors past the GLOBAL cap; treat that as
+        // "too fine, keep coarsening" unless we're already at min_p.
+        match geohash_covers_geometry_strict(g, p) {
+            Ok(cells) if cells.len() <= target_cells => return Ok(cells),
+            Ok(_) | Err(_) if p > min_p => continue,
+            Ok(cells) => return Ok(cells), // min_p: accept even over target
+            Err(e) => return Err(e),       // min_p and over the global cap
+        }
+    }
+    unreachable!("loop always returns at min_p")
+}
+
+/// Ladder covering: the union of coverings at EVERY precision in
+/// `[min_p, max_p]`. The probe side of an adaptive grid join emits this so it
+/// can meet build rows at whatever precision each chose; for a point it is
+/// exactly the geohash prefixes of its finest cell.
+pub fn geohash_cells_ladder(g: &Geometry, min_p: usize, max_p: usize) -> DaftResult<Vec<String>> {
+    let mut out = Vec::new();
+    for p in min_p..=max_p {
+        out.extend(geohash_covers_geometry_strict(g, p)?);
+    }
+    Ok(out)
+}
+
 /// Evaluate the covering per row of a Geometry/Binary series → List[Utf8].
 /// Null or unparseable geometry rows produce NULL lists (which
 /// `explode(ignore_empty_and_null)` drops — such rows can never match).
 pub(crate) fn eval_geohash_cells(series: &Series, precision: usize) -> DaftResult<Series> {
+    eval_cells_with(series, "st_geohash_cells", |g| geohash_covers_geometry_strict(g, precision))
+}
+
+/// Shared List[Utf8] series construction over a per-geometry covering fn.
+fn eval_cells_with(
+    series: &Series,
+    out_name: &str,
+    cells_of: impl Fn(&Geometry) -> DaftResult<Vec<String>>,
+) -> DaftResult<Series> {
     use arrow_buffer::{NullBuffer, OffsetBuffer, ScalarBuffer};
     use daft_core::prelude::ListArray;
 
@@ -82,7 +127,7 @@ pub(crate) fn eval_geohash_cells(series: &Series, precision: usize) -> DaftResul
     for opt in binary.into_iter() {
         match opt.and_then(|b| parse_wkb(b).ok()) {
             Some(g) => {
-                flat.extend(geohash_covers_geometry_strict(&g, precision)?);
+                flat.extend(cells_of(&g)?);
                 validity.push(true);
             }
             None => validity.push(false),
@@ -94,7 +139,7 @@ pub(crate) fn eval_geohash_cells(series: &Series, precision: usize) -> DaftResul
     let offsets = OffsetBuffer::new(ScalarBuffer::from(offsets));
     let nulls = NullBuffer::from_iter(validity);
     Ok(ListArray::new(
-        Field::new("st_geohash_cells", DataType::List(Box::new(DataType::Utf8))),
+        Field::new(out_name, DataType::List(Box::new(DataType::Utf8))),
         child,
         offsets,
         Some(nulls),
@@ -147,6 +192,116 @@ impl ScalarUDF for StGeohashCells {
 #[must_use]
 pub fn st_geohash_cells(geom: ExprRef, precision: u8) -> ExprRef {
     ScalarFn::builtin(StGeohashCells { precision }, vec![geom]).into()
+}
+
+/// Adaptive per-row covering (see [`geohash_cells_adaptive`]).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct StGeohashCellsAdaptive {
+    pub min_precision: u8,
+    pub max_precision: u8,
+    pub target_cells: u16,
+}
+
+#[typetag::serde]
+impl ScalarUDF for StGeohashCellsAdaptive {
+    fn name(&self) -> &'static str {
+        "st_geohash_cells_adaptive"
+    }
+
+    fn call(
+        &self,
+        inputs: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
+        eval_cells_with(inputs.required(0)?, self.name(), |g| {
+            geohash_cells_adaptive(
+                g,
+                self.min_precision as usize,
+                self.max_precision as usize,
+                self.target_cells as usize,
+            )
+        })
+    }
+
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
+        validate_geometry_field(&inputs, schema, 0, "geom", self.name())?;
+        Ok(Field::new(self.name(), DataType::List(Box::new(DataType::Utf8))))
+    }
+
+    fn docstring(&self) -> &'static str {
+        "Bounding-box geohash covering at a per-row adaptive precision: the finest precision in range whose covering fits the target cell count."
+    }
+}
+
+#[must_use]
+pub fn st_geohash_cells_adaptive(
+    geom: ExprRef,
+    min_precision: u8,
+    max_precision: u8,
+    target_cells: u16,
+) -> ExprRef {
+    ScalarFn::builtin(
+        StGeohashCellsAdaptive {
+            min_precision,
+            max_precision,
+            target_cells,
+        },
+        vec![geom],
+    )
+    .into()
+}
+
+/// Multi-precision ladder covering (see [`geohash_cells_ladder`]).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct StGeohashCellsLadder {
+    pub min_precision: u8,
+    pub max_precision: u8,
+}
+
+#[typetag::serde]
+impl ScalarUDF for StGeohashCellsLadder {
+    fn name(&self) -> &'static str {
+        "st_geohash_cells_ladder"
+    }
+
+    fn call(
+        &self,
+        inputs: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
+        eval_cells_with(inputs.required(0)?, self.name(), |g| {
+            geohash_cells_ladder(g, self.min_precision as usize, self.max_precision as usize)
+        })
+    }
+
+    fn get_return_field(
+        &self,
+        inputs: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<Field> {
+        validate_geometry_field(&inputs, schema, 0, "geom", self.name())?;
+        Ok(Field::new(self.name(), DataType::List(Box::new(DataType::Utf8))))
+    }
+
+    fn docstring(&self) -> &'static str {
+        "Union of bounding-box geohash coverings at every precision in range — for a point, the geohash prefixes of its finest cell."
+    }
+}
+
+#[must_use]
+pub fn st_geohash_cells_ladder(geom: ExprRef, min_precision: u8, max_precision: u8) -> ExprRef {
+    ScalarFn::builtin(
+        StGeohashCellsLadder {
+            min_precision,
+            max_precision,
+        },
+        vec![geom],
+    )
+    .into()
 }
 
 #[cfg(test)]
@@ -204,6 +359,52 @@ mod tests {
             err.to_string().contains("cells"),
             "error should mention the cell cap: {err}"
         );
+    }
+
+    /// Adaptive covering: small geometries get the finest precision, big ones
+    /// walk coarser until the per-row target is met — never a cap error for
+    /// anything under continental scale.
+    #[test]
+    fn adaptive_picks_precision_by_size() {
+        // ~10 m box → finest precision (6), same cells as the strict covering.
+        let small = rect(151.2000, -33.9000, 151.2001, -33.9001);
+        let cells = geohash_cells_adaptive(&small, 4, 6, 64).unwrap();
+        assert!(!cells.is_empty());
+        assert!(cells.iter().all(|c| c.len() == 6), "small geom stays at gh6: {cells:?}");
+
+        // ~0.18° (~17 km) box → over 64 cells at gh6, fits at gh5.
+        let monster = rect(151.0, -34.0, 151.18, -33.82);
+        assert!(geohash_covers_geometry_strict(&monster, 6).unwrap().len() > 64);
+        let cells = geohash_cells_adaptive(&monster, 4, 6, 64).unwrap();
+        assert!(cells.iter().all(|c| c.len() == 5), "17km geom coarsens to gh5: got lengths {:?}", cells.iter().map(|c| c.len()).collect::<Vec<_>>());
+        assert!(cells.len() <= 64);
+
+        // ~2° (~180 km) box → would ERROR at fixed gh6 (66k cells > cap),
+        // adaptive lands at gh4.
+        let huge = rect(150.0, -34.0, 152.0, -32.0);
+        assert!(geohash_covers_geometry_strict(&huge, 6).is_err());
+        let cells = geohash_cells_adaptive(&huge, 4, 6, 64).unwrap();
+        assert!(cells.iter().all(|c| c.len() == 4));
+        // At min_p the covering is accepted even over target (documented) —
+        // only the GLOBAL cap can still error.
+        assert!(!cells.is_empty());
+    }
+
+    /// The ladder covering is the union of coverings at every precision in
+    /// range — for a point that is exactly its cell's geohash PREFIXES.
+    #[test]
+    fn ladder_emits_prefixes_for_points() {
+        let p = Geometry::Point(Point::new(151.2, -33.9));
+        let mut cells = geohash_cells_ladder(&p, 4, 6).unwrap();
+        cells.sort_by_key(|c| c.len());
+        assert_eq!(cells.len(), 3);
+        let fine = cells[2].clone();
+        assert_eq!(cells[0], fine[..4].to_string());
+        assert_eq!(cells[1], fine[..5].to_string());
+        // Cross-check against per-precision strict coverings.
+        for (i, prec) in (4..=6).enumerate() {
+            assert_eq!(vec![cells[i].clone()], geohash_covers_geometry_strict(&p, prec).unwrap());
+        }
     }
 
     /// Series-level UDF: List[Utf8] output, one list per row, null geometry

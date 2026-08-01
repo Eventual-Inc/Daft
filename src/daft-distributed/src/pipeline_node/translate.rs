@@ -350,9 +350,16 @@ impl LogicalPlanToPipelineNodeTranslator {
             "st_contains", "st_intersects", "st_within", "st_covers",
             "st_covered_by", "st_touches", "st_overlaps", "st_crosses", "st_equals",
         ];
-        /// gh6 cells are ~1.2 km × 0.6 km at the equator — building-scale
-        /// geometries cover a handful of cells.
-        const GRID_PRECISION: u8 = 6;
+        /// Adaptive precision ladder. The container (arg0) side picks, PER
+        /// ROW, the finest precision in [MIN, MAX] whose bbox covering stays
+        /// within TARGET cells — building-scale rows stay at gh6 (~1.2 km ×
+        /// 0.6 km cells), region-scale rows coarsen instead of erroring. The
+        /// other side emits its covering at EVERY ladder precision (for a
+        /// point: the geohash prefixes of its gh6 cell) so it meets build
+        /// rows at whatever precision each chose.
+        const GRID_MIN_PRECISION: u8 = 4;
+        const GRID_MAX_PRECISION: u8 = 6;
+        const GRID_TARGET_CELLS: u16 = 64;
         const CELL_L: &str = "__grid_cell_l";
         const CELL_R: &str = "__grid_cell_r";
         const MINX_L: &str = "__grid_min_x_l";
@@ -364,8 +371,9 @@ impl LogicalPlanToPipelineNodeTranslator {
             return Ok(None);
         };
 
-        // Find the spatial call and its per-side geometry COLUMN names.
-        fn find_geoms(expr: &daft_dsl::ExprRef) -> Option<(String, String)> {
+        // Find the spatial call, its per-side geometry COLUMN names, and
+        // which join side arg0 (the container geometry) lives on.
+        fn find_geoms(expr: &daft_dsl::ExprRef) -> Option<(String, String, JoinSide)> {
             match expr.as_ref() {
                 Expr::ScalarFn(daft_dsl::functions::scalar::ScalarFn::Builtin(sf))
                     if GRID_SUPPORTED_PREDICATES.contains(&sf.name()) =>
@@ -379,8 +387,8 @@ impl LogicalPlanToPipelineNodeTranslator {
                     let (n0, s0) = side_col(sf.inputs.required(0).ok()?)?;
                     let (n1, s1) = side_col(sf.inputs.required(1).ok()?)?;
                     match (s0, s1) {
-                        (JoinSide::Left, JoinSide::Right) => Some((n0, n1)),
-                        (JoinSide::Right, JoinSide::Left) => Some((n1, n0)),
+                        (JoinSide::Left, JoinSide::Right) => Some((n0, n1, JoinSide::Left)),
+                        (JoinSide::Right, JoinSide::Left) => Some((n1, n0, JoinSide::Right)),
                         _ => None,
                     }
                 }
@@ -392,32 +400,62 @@ impl LogicalPlanToPipelineNodeTranslator {
                 _ => None,
             }
         }
-        let Some((left_geom, right_geom)) = find_geoms(on_expr) else {
+        let Some((left_geom, right_geom, arg0_side)) = find_geoms(on_expr) else {
             return Ok(None);
         };
 
         // Augment a side: covering cells + bbox min corner, then explode.
         // `ignore_empty_and_null = true` drops rows with null/invalid
         // geometry — they can never satisfy the spatial predicate.
+        // The container (arg0) side uses the ADAPTIVE covering; the other
+        // side the LADDER covering.
         let augment = |plan: LogicalPlanRef,
                        geom: &str,
+                       adaptive: bool,
                        cell: &str,
                        minx: &str,
                        miny: &str|
          -> DaftResult<LogicalPlanRef> {
             let bbox = daft_geo::st_bbox::st_bbox(unresolved_col(geom));
+            let cells = if adaptive {
+                daft_geo::st_geohash_cells_adaptive(
+                    unresolved_col(geom),
+                    GRID_MIN_PRECISION,
+                    GRID_MAX_PRECISION,
+                    GRID_TARGET_CELLS,
+                )
+            } else {
+                daft_geo::st_geohash_cells_ladder(
+                    unresolved_col(geom),
+                    GRID_MIN_PRECISION,
+                    GRID_MAX_PRECISION,
+                )
+            };
             let b = LogicalPlanBuilder::from(plan)
                 .with_columns(vec![
-                    daft_geo::st_geohash_cells(unresolved_col(geom), GRID_PRECISION)
-                        .alias(cell),
+                    cells.alias(cell),
                     daft_dsl::functions::struct_::get(bbox.clone(), "min_x").alias(minx),
                     daft_dsl::functions::struct_::get(bbox, "min_y").alias(miny),
                 ])?
                 .explode(vec![unresolved_col(cell)], true, None)?;
             Ok(b.plan)
         };
-        let left_aug = augment(join.left.clone(), &left_geom, CELL_L, MINX_L, MINY_L)?;
-        let right_aug = augment(join.right.clone(), &right_geom, CELL_R, MINX_R, MINY_R)?;
+        let left_aug = augment(
+            join.left.clone(),
+            &left_geom,
+            arg0_side == JoinSide::Left,
+            CELL_L,
+            MINX_L,
+            MINY_L,
+        )?;
+        let right_aug = augment(
+            join.right.clone(),
+            &right_geom,
+            arg0_side == JoinSide::Right,
+            CELL_R,
+            MINX_R,
+            MINY_R,
+        )?;
 
         // New ON: original spatial predicate AND cell equality AND the
         // reference-cell dedup conjunct.
@@ -436,17 +474,27 @@ impl LogicalPlanToPipelineNodeTranslator {
             .clone()
             .gt_eq(rminy.clone())
             .if_else(lminy, rminy);
-        let ref_cell: daft_dsl::ExprRef = daft_dsl::functions::BuiltinScalarFn::new(
+        // Reference-cell dedup at the PAIR's precision: the adaptive side's
+        // cell length IS the precision the pair met at, and geohash cells are
+        // prefixes of their finer refinements — so compare the reference
+        // point's finest-precision geohash TRUNCATED to that length. (The
+        // equality conjunct makes lcell == rcell for matched pairs, so
+        // comparing against the left cell is fully general.)
+        let ref_cell_fine: daft_dsl::ExprRef = daft_dsl::functions::BuiltinScalarFn::new(
             daft_geo::StGeohash {
-                precision: GRID_PRECISION,
+                precision: GRID_MAX_PRECISION,
             },
             vec![daft_geo::st_point::st_point(gx, gy)],
         )
         .into();
+        let ref_cell_at_pair_precision = daft_functions_utf8::left(
+            ref_cell_fine,
+            daft_functions_utf8::utf8_length_bytes(lcell()),
+        );
         let new_on = on_expr
             .clone()
             .and(lcell().eq(rcell))
-            .and(ref_cell.eq(lcell()));
+            .and(ref_cell_at_pair_precision.eq(lcell()));
 
         let joined = LogicalPlanBuilder::from(left_aug).join(
             right_aug,

@@ -75,7 +75,7 @@ pub use st_dwithin::StDwithin;
 pub use st_envelope::StEnvelope;
 pub use st_equals::StEquals;
 pub use st_geohash::{geohash_covers_geometry, StGeohash};
-pub use st_geohash_cells::{StGeohashCells, geohash_covers_geometry_strict, st_geohash_cells};
+pub use st_geohash_cells::{StGeohashCells, StGeohashCellsAdaptive, StGeohashCellsLadder, geohash_cells_adaptive, geohash_cells_ladder, geohash_covers_geometry_strict, st_geohash_cells, st_geohash_cells_adaptive, st_geohash_cells_ladder};
 pub use st_geohash_covers::StGeohashCovers;
 pub use st_geojson::{StGeoJsonFromGeom, StGeomFromGeoJson};
 pub use st_geometrytype::StGeometryType;
