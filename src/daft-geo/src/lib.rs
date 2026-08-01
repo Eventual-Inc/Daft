@@ -3,7 +3,7 @@ use daft_dsl::functions::FunctionModule;
 pub mod great_circle_distance;
 pub mod h3_index;
 pub mod mbr;
-pub(crate) mod relate;
+pub mod relate;
 pub mod st_area;
 pub mod st_astext;
 pub mod st_bbox;
@@ -45,8 +45,16 @@ pub mod st_within;
 pub mod st_xy;
 pub mod utils;
 
+// Re-exported for consumers (e.g. the spatial join's index-direct verification
+// in daft-local-execution) that hold parsed `geo::Geometry` values and evaluate
+// predicates without going through Series-level expression evaluation.
+pub use geo;
+
 pub use great_circle_distance::GreatCircleDistance;
-pub use mbr::{mbrs_intersect, wkb_to_mbr, Mbr};
+pub use mbr::{Mbr, mbrs_intersect, wkb_to_mbr};
+pub use relate::{RelatePred, relate_pred};
+pub use st_distance::geom_distance;
+pub use utils::{get_geometry_binary, parse_wkb};
 pub use st_area::StArea;
 pub use st_astext::StAsText;
 pub use st_bbox::StBbox;
@@ -86,7 +94,6 @@ pub use st_touches::StTouches;
 pub use st_union::StUnion;
 pub use st_within::StWithin;
 pub use st_xy::{StX, StY};
-pub use utils::get_geometry_binary;
 
 pub struct SpatialFunctions;
 

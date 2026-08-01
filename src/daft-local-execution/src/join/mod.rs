@@ -10,6 +10,7 @@ pub mod join_operator;
 pub mod left_right_join;
 pub mod nested_loop_join;
 pub mod outer_join;
+pub mod packed_rtree;
 pub mod probe;
 pub mod sort_merge_join;
 pub mod stats;
