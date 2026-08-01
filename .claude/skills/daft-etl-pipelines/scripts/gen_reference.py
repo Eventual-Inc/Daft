@@ -137,9 +137,12 @@ def _submodule_file(module_path: Path, name: str) -> Path | None:
 def _locate(name: str, module_path: Path, depth: int = 0):
     """Resolve `name` starting at `module_path`. Returns (kind, node, source_path).
 
-    Order: a def/class here; a submodule here; a module-level assignment here
-    (bare-Name RHS is followed to the underlying def); otherwise follow the
-    import chain recursively. Returns (None, None, None) when nothing matches."""
+    Order: a def/class here; an import of `name` from elsewhere (followed
+    recursively — a name-import points at a different file and wins over the
+    submodule probe below, while a module-import points at this same file and
+    falls through); a submodule here; a module-level assignment here
+    (bare-Name RHS is followed to the underlying def); otherwise nothing
+    matches. Returns (None, None, None) when nothing matches."""
     if depth > MAX_HOPS:
         return None, None, None
     module = _parse(module_path)
@@ -149,6 +152,10 @@ def _locate(name: str, module_path: Path, depth: int = 0):
     node = _find_def(module, name)
     if node is not None:
         return "def", node, module_path
+
+    target = _import_map(module_path).get(name)
+    if target is not None and target != module_path:
+        return _locate(name, target, depth + 1)
 
     sub = _submodule_file(module_path, name)
     if sub is not None:
@@ -161,10 +168,6 @@ def _locate(name: str, module_path: Path, depth: int = 0):
             if n is not None:
                 return k, n, src
         return "object", assign_node, module_path
-
-    target = _import_map(module_path).get(name)
-    if target is not None and target != module_path:
-        return _locate(name, target, depth + 1)
 
     return None, None, None
 
@@ -292,7 +295,9 @@ def first_sentence(doc: str) -> str:
     if not doc:
         return ""
     flat = " ".join(doc.split())
-    m = re.match(r"(.+?\.)(\s|$)", flat)
+    # Don't treat the period in a common abbreviation (e.g./i.e./etc.) as a
+    # sentence end: reject a candidate `.` whose preceding 3 chars spell one.
+    m = re.match(r"(.+?(?<!e\.g)(?<!i\.e)(?<!etc)\.)(\s|$)", flat)
     return m.group(1) if m else flat
 
 

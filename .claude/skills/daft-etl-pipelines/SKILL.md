@@ -22,6 +22,9 @@ grep -i 'regex\|replace' .claude/skills/daft-etl-pipelines/references/INDEX.md
 
 Each index row is `name | namespace | signature | summary | file#anchor`. Open
 the pointed-to reference file only when you need the full docstring.
+Signatures may themselves contain ` | ` (e.g. union types like `int | None`),
+so when parsing a row, only the first column (`name`) and last column
+(`file#anchor`) are reliable split points.
 
 **If a function, `DataFrame`/`Expression` method, or `daft.*` entry point is not
 in `INDEX.md`, it does not exist in this version of Daft — do not invent it.**

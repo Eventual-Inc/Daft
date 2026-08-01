@@ -93,6 +93,69 @@ def test_first_sentence_is_one_line():
     assert fs.endswith(".") or fs != ""
 
 
+def test_first_sentence_does_not_clip_at_abbreviation():
+    # Regression: IOConfig's docstring is "Configuration for the native I/O
+    # layer, e.g. credentials for accessing cloud storage systems." — the
+    # naive "first period ends the sentence" rule clipped this to "...e.g."
+    # Find IOConfig via the Rust stub directly (it's not in an __all__ list
+    # resolved by resolve_public_api's namespaces alone for this doc check;
+    # go through the actual symbol used in INDEX.md/toplevel.md instead).
+    symbols, _ = gen.resolve_public_api(REPO_ROOT)
+    io_config = next(s for s in symbols if s.name == "IOConfig" and s.namespace == "daft")
+    doc = gen.extract_docstring(io_config)
+    fs = gen.first_sentence(doc)
+    assert fs == (
+        "Configuration for the native I/O layer, e.g. credentials for "
+        "accessing cloud storage systems."
+    )
+    assert not fs.endswith("e.g.")
+
+    # Ordinary sentences still split on the real terminal period.
+    assert gen.first_sentence("Short doc, i.e. a thing. Next sentence.") == "Short doc, i.e. a thing."
+    assert gen.first_sentence("Normal sentence. Second one.") == "Normal sentence."
+
+
+def test_name_imported_callables_resolve_as_defs_not_submodules():
+    # Regression for the resolution-ordering bug in _locate: a name-import of
+    # a symbol from a subpackage (e.g. `from daft.sql import sql, sql_expr`,
+    # `from daft.udf import udf, udaf, ...`) must win over the sibling-module
+    # probe, since the imported name shadows any coincidentally-named sibling
+    # package/module (daft/sql/, daft/udf/). Import-map resolution must run
+    # BEFORE the submodule probe in _locate, and recursively at every hop.
+    for name in ("sql", "udf", "udaf"):
+        sym = _sym(name, "daft")
+        assert sym.kind == "def", f"{name} resolved as {sym.kind}, expected def"
+        assert gen.extract_signature(sym) != "", f"{name} has no signature"
+
+    # The genuine module-import submodules (`from daft import io`, etc., which
+    # map back to daft/__init__.py itself and so correctly fall through to
+    # the submodule probe) must stay kind="submodule". Enumerated from the
+    # actual resolved daft namespace (not assumed): {context, datasets,
+    # functions, io, metrics, runners} — 6 names, not 7 ("session" resolves
+    # to a real `def session(...)` in daft/session.py, not a submodule).
+    symbols, _ = gen.resolve_public_api(REPO_ROOT)
+    daft_submodules = {s.name for s in symbols if s.namespace == "daft" and s.kind == "submodule"}
+    assert daft_submodules == {"context", "datasets", "functions", "io", "metrics", "runners"}
+
+    # Unchanged behaviors: bare alias still followed to a def; decorator
+    # instance assign still an object.
+    assert _sym("range", "daft").kind == "def"
+    assert _sym("func", "daft").kind == "object"
+
+    # Totals unchanged by the reorder.
+    by_ns = {}
+    for s in symbols:
+        by_ns.setdefault(s.namespace, set()).add(s.name)
+    assert len(by_ns["daft"]) == 133
+    assert len(by_ns["daft.functions"]) == 356
+    assert len(by_ns["daft.io"]) == 37
+    assert len(by_ns["DataFrame"]) == 98
+    assert len(by_ns["Expression"]) == 247
+    assert len({(s.namespace, s.name) for s in symbols}) == 871
+    _, unresolved = gen.resolve_public_api(REPO_ROOT)
+    assert unresolved == []
+
+
 def test_assign_file_buckets():
     assert gen.assign_file(_sym("join", "DataFrame")) == "dataframe.md"
     assert gen.assign_file(_sym("list_sort", "Expression")) == "expressions.md"

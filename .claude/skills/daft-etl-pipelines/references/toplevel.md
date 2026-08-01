@@ -1632,9 +1632,11 @@ Session holds a connection's state and orchestrates execution of DataFrame and S
 
 ## session
 
-_(submodule)_
+```python
+session() -> Session
+```
 
-_(no docstring)_
+Creates a default daft session to be used with a context manager.
 
 ## set_catalog
 
@@ -1797,9 +1799,24 @@ Sets the global context's current session.
 
 ## sql
 
-_(submodule)_
+```python
+sql(sql: str, register_globals: bool=True, **bindings: DataFrame) -> DataFrame
+```
 
-_(no docstring)_
+Run a SQL query, returning the results as a DataFrame.
+
+Args:
+    sql (str): SQL query to execute
+    register_globals (bool, optional): Whether to incorporate global
+        variables into the supplied catalog, in which case a copy of the
+        catalog will be made and the original not modified. Defaults to True.
+    **bindings: (DataFrame): Additional DataFrame bindings (CTEs) to use for this query.
+
+Returns:
+    DataFrame: Dataframe containing the results of the query
+
+Warning:
+    This features is early in development and will likely experience API changes.
 
 ## sql_expr
 
@@ -1836,15 +1853,86 @@ _(no docstring)_
 
 ## udaf
 
-_(submodule)_
+```python
+udaf(: type | None=None, *, return_dtype: DataTypeLike, state: DataTypeLike | dict[str, DataTypeLike]) -> type | Callable[[type], type]
+```
 
-_(no docstring)_
+Decorator to create a user-defined aggregate function (UDAF) from a class.
+
+The execution pipeline follows three stages:
+
+.. code-block:: text
+
+    Aggregation:   aggregate(inputs)  -> partial state
+    Combination:   combine(states)    -> merged state   (associative & commutative)
+    Finalization:  finalize(state)    -> final output
+
+The class must define exactly three methods:
+
+- ``aggregate(*inputs)``: Consume all rows of the input columns for one
+  group and produce the initial partial state.  Receives one :class:`Series`
+  per input column.  Returns either a single scalar (single-state mode) or
+  a ``dict[str, scalar]`` (multi-state mode).
+
+- ``combine(states)``: Merge multiple partial states into one.  Must be
+  **associative and commutative** — the framework does not guarantee the
+  order in which partial states arrive.  In single-state mode receives a
+  :class:`Series` of scalars; in multi-state mode receives a
+  ``dict[str, Series]``.
+
+- ``finalize(state)``: Produce the final output value from the fully-merged
+  state.  Called exactly once per group.  In single-state mode receives a
+  single Python scalar; in multi-state mode receives a
+  ``dict[str, scalar]``.
+
+State is typed: the ``state`` parameter declares one data type per state
+component. The framework carries state between stages using these types,
+which lets Arrow and the query planner reason about intermediate results.
+
+Args:
+    return_dtype: The output data type of the aggregate function.
+    state: The intermediate state type(s). Either a single DataType for
+        simple accumulators, or a dict of ``{name: DataType}`` for
+        multi-field state.
 
 ## udf
 
-_(submodule)_
+```python
+udf(*, return_dtype: DataTypeLike, num_cpus: float | None=None, num_gpus: float | None=None, memory_bytes: int | None=None, ray_options: dict[str, Any] | None=None, batch_size: int | None=None, concurrency: int | None=None, use_process: bool | None=None) -> Callable[[UserDefinedPyFuncLike], UDF]
+```
 
-_(no docstring)_
+(DEPRECATED) `@udf` Decorator to convert a Python function/class into a `UDF`.
+
+UDFs allow users to run arbitrary Python code on the outputs of Expressions.
+
+Args:
+    return_dtype (DataType): Returned type of the UDF
+    num_cpus: Number of CPUs to allocate each running instance of your UDF. Note that this is purely used for placement (e.g. if your
+        machine has 8 CPUs and you specify num_cpus=4, then Daft can run at most 2 instances of your UDF at a time). The default `None`
+        indicates that Daft is free to allocate as many instances of the UDF as it wants to.
+    num_gpus: Number of GPUs to allocate each running instance of your UDF. This is used for placement and also for allocating
+        the appropriate GPU to each UDF using `CUDA_VISIBLE_DEVICES`.
+    memory_bytes: Amount of memory to allocate each running instance of your UDF in bytes. If your UDF is experiencing out-of-memory errors,
+        this parameter can help hint Daft that each UDF requires a certain amount of heap memory for execution.
+    ray_options: Extra Ray options, e.g. {"label_selector": {...}}. see more https://docs.ray.io/en/latest/ray-core/api/doc/ray.actor.ActorClass.options.html#ray.actor.ActorClass.options
+    batch_size: Enables batching of the input into batches of at most this size. Results between batches are concatenated.
+    concurrency: Spin up `N` number of persistent replicas of the UDF to process all partitions. Defaults to `None` which will spin up one
+        UDF per partition. This is especially useful for expensive initializations that need to be amortized across partitions such as
+        loading model weights for model batch inference.
+    use_process: Run the UDF on a separate process.
+        This is useful for UDFs that run a lot of Python-only code, since it avoids GIL overhead.
+        This is not necessary for UDFs that run C-extension code, like NumPy or PyTorch.
+        Defaults to `None` where Daft will automatically choose based on runtime performance.
+        Note: Users should generally never set this flag manually.
+
+Returns:
+    Callable[[UserDefinedPyFuncLike], UDF]: UDF decorator - converts a user-provided Python function as a UDF that can be called on Expressions
+
+Note:
+    In most cases, UDFs will be slower than a native kernel/expression because of the required Rust and Python overheads. If
+    your computation can be expressed using Daft expressions, you should do so instead of writing a UDF. If your UDF expresses a
+    common use-case that isn't already covered by Daft, you should file a ticket or contribute this functionality back to Daft
+    as a kernel!
 
 ## UnionMode
 
