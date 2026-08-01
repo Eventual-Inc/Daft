@@ -201,6 +201,43 @@ Returns:
     Float64 column. Planar by default; WGS84 geodesic meters when use_spheroid=True
     (point inputs only; other geometry pairs return NaN in geodesic mode).
 
+## st_dump
+
+```python
+st_dump(geom: Expression) -> Expression
+```
+
+Return a list of dumped members with PostGIS-style path metadata.
+
+Each output element is a struct ``{path, geom}``, where ``path`` is a list of
+integer indexes describing the component location and ``geom`` is the component
+geometry. Atomic geometries return a singleton element with an empty path.
+Multi-geometries and geometry collections use 1-based path indexing.
+
+Args:
+    geom: A column of type ``DataType.geometry()`` or ``DataType.binary()`` (WKB).
+
+Returns:
+    ``List[Struct{path: List[Int64], geom: Geometry}]`` column.
+
+## st_dumprings
+
+```python
+st_dumprings(geom: Expression) -> Expression
+```
+
+Return polygon rings with PostGIS-style path metadata.
+
+Each output element is a struct ``{path, geom}``, where ``geom`` is a single-ring
+Polygon and ``path`` is ``[0]`` for the exterior ring, then ``[1..n]``
+for interior rings. This function is polygon-only; non-polygonal inputs return null.
+
+Args:
+    geom: A column of type ``DataType.geometry()`` or ``DataType.binary()`` (WKB).
+
+Returns:
+    ``List[Struct{path: List[Int64], geom: Geometry}]`` column.
+
 ## st_dwithin
 
 ```python

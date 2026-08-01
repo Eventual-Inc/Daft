@@ -22,13 +22,13 @@ def test_resolves_full_public_api():
 
     # The three __all__ lists resolved fully (io=37: private _range excluded).
     assert len(by_ns["daft"]) == 133
-    assert len(by_ns["daft.functions"]) == 356
+    assert len(by_ns["daft.functions"]) == 358
     assert len(by_ns["daft.io"]) == 37
 
     # Total (namespace, name) records — each list keeps its own namespace, so
     # the 23 names shared by daft and daft.io are two records here (collapsed
-    # only at render time). 133 + 356 + 37 + 98 + 247 = 871.
-    assert len({(s.namespace, s.name) for s in symbols}) == 871
+    # only at render time). 133 + 358 + 37 + 98 + 247 = 873.
+    assert len({(s.namespace, s.name) for s in symbols}) == 873
 
     # The ai subpackage resolved.
     assert "embed_text" in by_ns["daft.functions"]
@@ -147,11 +147,11 @@ def test_name_imported_callables_resolve_as_defs_not_submodules():
     for s in symbols:
         by_ns.setdefault(s.namespace, set()).add(s.name)
     assert len(by_ns["daft"]) == 133
-    assert len(by_ns["daft.functions"]) == 356
+    assert len(by_ns["daft.functions"]) == 358
     assert len(by_ns["daft.io"]) == 37
     assert len(by_ns["DataFrame"]) == 98
     assert len(by_ns["Expression"]) == 247
-    assert len({(s.namespace, s.name) for s in symbols}) == 871
+    assert len({(s.namespace, s.name) for s in symbols}) == 873
     _, unresolved = gen.resolve_public_api(REPO_ROOT)
     assert unresolved == []
 
@@ -165,13 +165,13 @@ def test_assign_file_buckets():
     assert gen.assign_file(_sym("S3Config", "daft.io")) == "io.md"
 
 
-def test_functions_buckets_sum_to_356():
+def test_functions_buckets_sum_to_358():
     symbols, _ = gen.resolve_public_api(REPO_ROOT)
     counts = {}
     for s in symbols:
         if s.namespace == "daft.functions":
             counts[gen.assign_file(s)] = counts.get(gen.assign_file(s), 0) + 1
-    assert sum(counts.values()) == 356
+    assert sum(counts.values()) == 358
     assert counts["functions-str.md"] == 59
     assert counts["functions-ai.md"] == 5
 
@@ -266,8 +266,8 @@ def test_coverage_counts():
     # Spec test 1, over on-disk files.
     index = (REF_DIR / "INDEX.md").read_text()
     rows = [l for l in index.splitlines() if " | " in l and not l.startswith("`")]
-    # 871 records minus the 23 io names collapsed into toplevel = 848 rows.
-    assert len(rows) == 848
+    # 873 records minus the 23 io names collapsed into toplevel = 850 rows.
+    assert len(rows) == 850
     df = (REF_DIR / "dataframe.md").read_text().count("\n## ")
     ex = (REF_DIR / "expressions.md").read_text().count("\n## ")
     assert df == 98

@@ -664,6 +664,8 @@ st_crosses | daft.functions | (geom_a: Expression, geom_b: Expression) -> Expres
 st_difference | daft.functions | (geom_a: Expression, geom_b: Expression) -> Expression | Return the part of geometry A that does not intersect geometry B. | functions-spatial.md#st_difference
 st_disjoint | daft.functions | (geom_a: Expression, geom_b: Expression) -> Expression | Return true where A and B share no points. | functions-spatial.md#st_disjoint
 st_distance | daft.functions | (geom_a: Expression, geom_b: Expression, use_spheroid: bool=False) -> Expression | Return the minimum distance between two geometries. | functions-spatial.md#st_distance
+st_dump | daft.functions | (geom: Expression) -> Expression | Return a list of dumped members with PostGIS-style path metadata. | functions-spatial.md#st_dump
+st_dumprings | daft.functions | (geom: Expression) -> Expression | Return polygon rings with PostGIS-style path metadata. | functions-spatial.md#st_dumprings
 st_dwithin | daft.functions | (geom_a: Expression, geom_b: Expression, distance: float) -> Expression | Returns true if the planar distance between two geometries is <= ``distance`` (coordinate units). | functions-spatial.md#st_dwithin
 st_envelope | daft.functions | (geom: Expression) -> Expression | Return the minimum bounding rectangle of a geometry as a Polygon. | functions-spatial.md#st_envelope
 st_equals | daft.functions | (geom_a: Expression, geom_b: Expression) -> Expression | Return true where A and B are topologically equal. | functions-spatial.md#st_equals
