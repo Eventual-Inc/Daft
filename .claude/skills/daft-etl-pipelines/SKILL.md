@@ -6,8 +6,9 @@ description: "Write Python ETL pipelines with the Daft API. Invoke when building
 # Daft ETL Pipelines
 
 Write correct Daft pipelines without guessing at the API. The `references/`
-directory contains every public Daft symbol; this file teaches the transform
-stage and routes you to that reference.
+directory indexes every `DataFrame` method, every `Expression` method, and the
+`daft` / `daft.functions` / `daft.io` namespaces; this file teaches the
+transform stage and routes you to that reference.
 
 ## 1. Lookup protocol — never guess a symbol
 
@@ -22,8 +23,14 @@ grep -i 'regex\|replace' .claude/skills/daft-etl-pipelines/references/INDEX.md
 Each index row is `name | namespace | signature | summary | file#anchor`. Open
 the pointed-to reference file only when you need the full docstring.
 
-**If a symbol is not in `INDEX.md`, it does not exist in this version of Daft.
-Do not invent it.**
+**If a function, `DataFrame`/`Expression` method, or `daft.*` entry point is not
+in `INDEX.md`, it does not exist in this version of Daft — do not invent it.**
+
+The index covers those namespaces only. Other public classes — `Window`,
+`Schema`, `DataType`, `Session` — are real (each has an entry in
+`references/toplevel.md`), but their *methods* are not individually indexed; use
+the class's own docstring or the examples in this file for those (for example the
+`Window().partition_by(...).order_by(...)` pattern in §5).
 
 ## 2. Two call styles
 
