@@ -290,21 +290,28 @@ def test_sample_size_empty_dataframe_zero_size() -> None:
     assert len(df) == 0
 
 
-def test_sample_size_unequal_partitions(tmp_path) -> None:
+@pytest.mark.parametrize("with_replacement,size", [(False, 11), (True, 111)])
+def test_sample_size_unequal_partitions(tmp_path, with_replacement: bool, size: int) -> None:
     partition_sizes = [0, 1, 17, 82]
     start = 0
     for idx, partition_size in enumerate(partition_sizes):
         values = list(range(start, start + partition_size))
-        papq.write_table(pa.table({"x": values}), tmp_path / f"part-{idx}.parquet")
+        table = pa.table({"x": pa.array(values, type=pa.int64())})
+        papq.write_table(table, tmp_path / f"part-{idx}.parquet")
         start += partition_size
 
     df = daft.read_parquet(str(tmp_path / "part-*.parquet"))
-    sampled = df.sample(size=11, with_replacement=False, seed=123).collect()
+    sampled = df.sample(size=size, with_replacement=with_replacement, seed=123).collect()
+    repeated = df.sample(size=size, with_replacement=with_replacement, seed=123).collect()
     values = sampled.to_pydict()["x"]
 
-    assert len(values) == 11
-    assert len(set(values)) == 11
+    assert len(values) == size
+    assert sampled.to_pydict() == repeated.to_pydict()
     assert set(values).issubset(set(range(sum(partition_sizes))))
+    if with_replacement:
+        assert len(set(values)) < size
+    else:
+        assert len(set(values)) == size
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
