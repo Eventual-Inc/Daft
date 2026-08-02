@@ -272,7 +272,14 @@ fn translate_helper(
                     _ => None,
                 };
                 if let Some(join) = maybe_join {
-                    if join.join_type == JoinType::Inner {
+                    // Column-merging using-joins (`on="key"` with the same
+                    // name on both sides) shrink the join output schema; the
+                    // NLJ emits the full left+right concatenation, so the
+                    // rewrite would produce an arity mismatch that wedges the
+                    // pipeline. Fall back to hash-join + post-filter there.
+                    let merges_columns = join.output_schema.len()
+                        != join.left.schema().len() + join.right.schema().len();
+                    if join.join_type == JoinType::Inner && !merges_columns {
                         let (left_plan, mut left_inputs) =
                             translate_helper(&join.left, source_counter, psets)?;
                         let (right_plan, right_inputs) =
@@ -285,14 +292,35 @@ fn translate_helper(
                         if let Some(on_expr) = join.on.inner() {
                             predicate = predicate.and(strip_join_side_cols(on_expr.clone())?);
                         }
-                        return build_spatial_nested_loop_join(
+                        let (nlj, inputs) = build_spatial_nested_loop_join(
                             join,
                             predicate,
                             left_plan,
                             right_plan,
                             left_inputs,
                             filter.stats_state.clone(),
-                        );
+                        )?;
+                        // If a Project sits between the Filter and the Join
+                        // (inserted by the optimizer, e.g. join-column dedup
+                        // for `on="key"` joins), it must be RE-APPLIED on top
+                        // of the NLJ: downstream nodes bind against the
+                        // Project's schema, and emitting the raw join schema
+                        // instead wedges the pipeline. Mirrors the ProjectNode
+                        // wrap in the distributed translator's shape-1.
+                        let plan = if let LogicalPlan::Project(p) = filter.input.as_ref() {
+                            let projection =
+                                BoundExpr::bind_all(&p.projection, nlj.schema())?;
+                            LocalPhysicalPlan::project(
+                                nlj,
+                                projection,
+                                p.projected_schema.clone(),
+                                p.stats_state.clone(),
+                                LocalNodeContext::default(),
+                            )
+                        } else {
+                            nlj
+                        };
+                        return Ok((plan, inputs));
                     }
                 }
             }

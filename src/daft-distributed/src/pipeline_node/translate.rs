@@ -356,7 +356,9 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
 
                     // Only rewrite when the join has equi-keys and no remaining
                     // non-equi predicates (those would need separate handling).
-                    if remaining.is_empty() && !left_eq_keys.is_empty() {
+                    let merges_columns = join.output_schema.len()
+                        != join.left.schema().len() + join.right.schema().len();
+                    if remaining.is_empty() && !left_eq_keys.is_empty() && !merges_columns {
                         // The local NLJ filter is the only place join semantics are
                         // enforced: hash-partitioning co-locates equal keys but does
                         // NOT prevent different keys from sharing a partition. Carry
