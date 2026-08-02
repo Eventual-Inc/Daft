@@ -142,6 +142,14 @@ impl std::fmt::Debug for LocalPhysicalPlan {
 impl LocalPhysicalPlan {
     #[must_use]
     pub fn name(&self) -> &'static str {
+        // Truthful display for the spatial join: report the R-tree-
+        // accelerated form only when the operator will actually take it
+        // (same conditions as extract_from_expr in daft-local-execution).
+        if let Self::NestedLoopJoin(nlj) = self {
+            if nlj_filter_is_rtree_accelerated(nlj) {
+                return "NLJ (Rtree)";
+            }
+        }
         // uses strum::IntoStaticStr
         self.into()
     }
@@ -2337,6 +2345,49 @@ pub struct CrossJoin {
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
+}
+
+/// True when the NLJ filter contains a spatial predicate over two bound
+/// geometry columns straddling the build/probe sides — the exact conditions
+/// under which the operator builds an R-tree (mirrors `extract_from_expr`
+/// in daft-local-execution, including the st_dwithin literal-distance rule).
+fn nlj_filter_is_rtree_accelerated(nlj: &NestedLoopJoin) -> bool {
+    let build_n = nlj.right.schema().len();
+    let total = nlj.full_schema.len();
+    fn walk(e: &daft_dsl::ExprRef, build_side: JoinSide, total: usize, build_n: usize) -> bool {
+        use daft_dsl::{Expr, expr::Column};
+        match e.as_ref() {
+            Expr::ScalarFn(daft_dsl::functions::scalar::ScalarFn::Builtin(sf))
+                if ["st_intersects", "st_contains", "st_within", "st_covers",
+                    "st_covered_by", "st_touches", "st_overlaps",
+                    "st_crosses", "st_equals", "st_dwithin"]
+                    .contains(&sf.name()) =>
+            {
+                let idx = |i: usize| match sf.inputs.required(i).ok().map(|a| a.as_ref().clone()) {
+                    Some(Expr::Column(Column::Bound(bc))) => Some(bc.index),
+                    _ => None,
+                };
+                let (Some(i0), Some(i1)) = (idx(0), idx(1)) else { return false };
+                if sf.name() == "st_dwithin" {
+                    let ok = sf.inputs.required(2).ok()
+                        .and_then(|d| d.as_literal())
+                        .and_then(|l| l.as_f64().or_else(|| l.as_i64().map(|v| v as f64)))
+                        .is_some_and(|v| v.is_finite() && v >= 0.0);
+                    if !ok { return false; }
+                }
+                let probe_n = total - build_n;
+                match build_side {
+                    JoinSide::Left => (i0 < build_n) != (i1 < build_n),
+                    JoinSide::Right => (i0 < probe_n) != (i1 < probe_n),
+                }
+            }
+            Expr::BinaryOp { op: daft_core::prelude::Operator::And, left, right } => {
+                walk(left, build_side, total, build_n) || walk(right, build_side, total, build_n)
+            }
+            _ => false,
+        }
+    }
+    walk(nlj.filter.inner(), nlj.build_side, total, build_n)
 }
 
 #[derive(Serialize, Deserialize)]
