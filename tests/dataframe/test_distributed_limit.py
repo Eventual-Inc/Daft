@@ -9,11 +9,13 @@ path is otherwise uncovered.
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 ray = pytest.importorskip("ray")
 
-from daft.execution.ray_distributed_limit import _LimitCounterImpl
+from daft.execution.ray_distributed_limit import LimitCounterActor, LimitCounterHandle, _LimitCounterImpl
 from tests.conftest import get_tests_daft_runner_name
 
 
@@ -121,6 +123,40 @@ def test_is_done_transitions():
     assert not actor.is_done()
     actor.claim("t1", 5)
     assert actor.is_done()
+
+
+def test_handle_claim_and_start_task_tolerate_killed_actor():
+    """A straggler task racing the actor's teardown must not raise.
+
+    `teardown()` only fires once the limit loop has already decided every
+    contributor is accounted for; `ray.cancel()` on an in-flight
+    SwordfishTask is best-effort and does not stop the remote worker, so a
+    cancelled-but-still-running task can call `claim`/`start_task` after the
+    actor is gone. That must look like "nothing left to give", not an error.
+    """
+    if not ray.is_initialized():
+        ray.init()
+
+    actor_ref = LimitCounterActor.remote(limit=10, offset=0)
+    ray.get(actor_ref.__ray_ready__.remote())
+    handle = LimitCounterHandle(actor_ref)
+    handle.teardown()
+
+    import time
+
+    for _ in range(100):
+        try:
+            ray.get(actor_ref.__ray_ready__.remote(), timeout=0.1)
+        except Exception:
+            break
+        time.sleep(0.05)
+
+    async def run():
+        await handle.start_task("straggler")
+        return await handle.claim("straggler", 5)
+
+    result = asyncio.run(run())
+    assert result == (0, 0, True)
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
