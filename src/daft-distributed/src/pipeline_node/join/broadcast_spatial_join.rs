@@ -182,6 +182,7 @@ impl PipelineNodeImpl for BroadcastSpatialJoinNode {
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         vec![
             "BroadcastSpatialJoin".to_string(),
+            "Local join: NLJ (Rtree)".to_string(),
             format!("Spatial filter: {}", self.spatial_filter),
             format!("Broadcast (build) side: {}", self.build_side),
         ]
@@ -191,6 +192,10 @@ impl PipelineNodeImpl for BroadcastSpatialJoinNode {
         self: Arc<Self>,
         plan_context: &mut PlanExecutionContext,
     ) -> TaskBuilderStream {
+        tracing::info!(
+            "BroadcastSpatialJoin: per-task local join is NLJ (Rtree) — spatial filter: {}",
+            self.spatial_filter
+        );
         let broadcaster_input = self.broadcaster.clone().produce_tasks(plan_context);
         let receiver_input = self.receiver.clone().produce_tasks(plan_context);
 
