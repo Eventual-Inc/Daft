@@ -74,10 +74,19 @@ class LimitCounterHandle:
         self.actor = actor_ref
 
     async def start_task(self, input_id: str) -> None:
-        await self.actor.start_task.remote(input_id)
+        try:
+            await self.actor.start_task.remote(input_id)
+        except ray.exceptions.RayActorError:
+            # The actor is only ever killed by `teardown()`, once the limit loop has
+            # already decided every contributor is accounted for. A straggler task
+            # that's still starting up at that point has nothing left to claim.
+            pass
 
     async def claim(self, input_id: str, num_rows: int) -> tuple[int, int, bool]:
-        return await self.actor.claim.remote(input_id, num_rows)
+        try:
+            return await self.actor.claim.remote(input_id, num_rows)
+        except ray.exceptions.RayActorError:
+            return (0, 0, True)
 
     async def await_limit_completion(self) -> list[str]:
         return await self.actor.await_limit_completion.remote()

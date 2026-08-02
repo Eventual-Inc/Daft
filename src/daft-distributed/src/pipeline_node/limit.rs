@@ -195,6 +195,12 @@ impl LimitNode {
         }
 
         parent_cancel.cancel();
+        // The early-stop branch of `limit_loop_done` can exit while non-contributor
+        // tasks are still mid-flight (e.g. awaiting `actor.claim.remote(..)` on a
+        // Ray worker). Wait for the cancellation to actually land on each of them
+        // before killing the shared actor, otherwise their in-flight claim calls
+        // race the kill and surface as a spurious PipelineExecutionError.
+        while running_tasks.join_next().await.is_some() {}
         teardown_limit_counter_actor(&actor);
         Ok(())
     }

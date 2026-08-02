@@ -287,11 +287,11 @@ impl From<Error> for DaftError {
     fn from(err: Error) -> Self {
         match err {
             Error::PipelineCreationError { source, plan_name } => {
-                log::error!("Error creating pipeline from {}", plan_name);
+                log::error!("Error creating pipeline from {}: {}", plan_name, source);
                 source
             }
             Error::PipelineExecutionError { source, node_name } => {
-                log::error!("Error when running pipeline node {}", node_name);
+                log::error!("Error when running pipeline node {}: {}", node_name, source);
                 source
             }
             Error::ValueError { message } => Self::ValueError(message),
