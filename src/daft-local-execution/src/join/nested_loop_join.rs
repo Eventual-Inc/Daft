@@ -1216,11 +1216,20 @@ impl JoinOperator for NestedLoopJoinOperator {
                                 result_batches.push(out);
                             }
                         }
+                        // A fused projection MUST be applied here too: this
+                        // path runs precisely when the filter is NOT
+                        // accelerable (OR/NOT-composed spatial, literal geom
+                        // args), and emitting the full schema against the
+                        // projected plan schema is silent wrong-schema output.
+                        if let Some(proj) = &projection {
+                            result_batches =
+                                result_batches.iter().map(|b| b.get_columns(proj)).collect();
+                        }
                         if result_batches.is_empty() {
-                            MicroPartition::empty(Some(output_schema))
+                            MicroPartition::empty(Some(emit_schema))
                         } else {
                             MicroPartition::new_loaded(
-                                output_schema,
+                                emit_schema,
                                 Arc::new(result_batches),
                                 None,
                             )

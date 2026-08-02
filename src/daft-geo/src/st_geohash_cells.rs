@@ -50,16 +50,25 @@ pub fn geohash_covers_geometry_strict(g: &Geometry, precision: usize) -> DaftRes
         },
         precision,
     ) else {
-        // Coordinates outside the geohash domain can never be matched by a
-        // cell-partitioned join anyway.
-        return Ok(vec![]);
+        // Out-of-domain coordinates (|lon|>180 / |lat|>90 — typically a
+        // projected CRS like EPSG:3857) CAN still match spatially, so a
+        // silent empty covering would drop true join matches. Fail loudly.
+        return Err(DaftError::ValueError(format!(
+            "st_geohash_cells: geometry bounding box ({}, {})..({}, {}) is outside the \
+             geohash lon/lat domain — the cell-partitioned spatial join requires WGS84 \
+             lon/lat coordinates; reproject the data or use a broadcastable side",
+            bbox.min().x, bbox.min().y, bbox.max().x, bbox.max().y
+        )));
     };
 
     let mut cells = std::collections::HashSet::new();
     if collect_covering_cells(&mut cells, &start_hash, &bbox, precision) {
         return Err(DaftError::ValueError(format!(
             "st_geohash_cells: geometry bounding box covers more than {MAX_COVERING_CELLS} \
-             geohash cells at precision {precision}; use a coarser precision for such large \
+             geohash cells at precision {precision}. In a grid spatial join this means one \
+             geometry is too large for the covering; options: raise \
+             broadcast_join_size_bytes_threshold so the join broadcasts instead, add an \
+             equality partition key to the ON clause, or pre-filter/simplify region-scale \
              geometries"
         )));
     }

@@ -312,8 +312,8 @@ impl LogicalPlanToPipelineNodeTranslator {
             "A spatial join without a usable equality partition key on the distributed runner \
              requires one side small enough to broadcast (left ~{left_bytes} bytes, right \
              ~{right_bytes} bytes, broadcast_join_size_bytes_threshold = {threshold}), and this \
-             predicate is not supported by the grid rewrite (st_dwithin and non-column geometry \
-             arguments are not yet supported). Options: raise the threshold via \
+             predicate is not supported by the grid rewrite (st_dwithin, st_disjoint, \
+             OR/NOT-composed predicates, and non-column geometry arguments are not supported). Options: raise the threshold via \
              daft.set_execution_config(broadcast_join_size_bytes_threshold=...), add an equality \
              partition key (e.g. a geohash cell) to the ON clause, or bucket the larger side and \
              join per bucket."

@@ -683,6 +683,57 @@ def test_distributed_grid_spatial_join_adaptive_mixed_scale():
     assert list(zip(got["pid"], got["qid"])) == [(1, 10), (1, 20), (2, 10), (3, 10)]
 
 
+@pytest.mark.timeout(60)
+def test_using_join_with_spatial_where_does_not_hang():
+    """Regression: a column-merging using-join (same key name both sides) under
+    a spatial WHERE previously wedged .collect() forever on both runners — the
+    NLJ emitted the full left+right column concatenation against the merged
+    (shrunken) join schema, and the worker's arity error was swallowed. The
+    translators now skip the NLJ rewrite for that shape."""
+    from daft.functions import st_contains
+    from daft import lit
+
+    pts = daft.from_pydict({"eid": [1, 2, 3], "wkt": ["POINT(0.5 0.5)", "POINT(5 5)", "POINT(1.5 1.5)"]}).select(
+        "eid", st_geomfromtext(daft.col("wkt")).alias("pg")
+    ).with_column("_jk", lit(1))
+    polys = daft.from_pydict({"qid": [10, 11], "wkt": [
+        "POLYGON((0 0,0 1,1 1,1 0,0 0))", "POLYGON((1 1,1 2,2 2,2 1,1 1))",
+    ]}).select("qid", st_geomfromtext(daft.col("wkt")).alias("qg")).with_column("_jk", lit(1))
+
+    got = (
+        pts.join(polys, on="_jk")
+        .where(st_contains(daft.col("qg"), daft.col("pg")))
+        .select("eid", "qid")
+        .sort(["eid", "qid"])
+        .to_pydict()
+    )
+    assert list(zip(got["eid"], got["qid"])) == [(1, 10), (3, 11)]
+
+
+def test_fused_projection_applies_on_non_accelerated_filter():
+    """Regression: a plain column select fused into the NLJ must be applied on
+    EVERY operator path. The naive fallback (filter not R-tree-accelerable,
+    e.g. OR-composed spatial ON) previously emitted the full join schema while
+    the plan declared the projected one — silent wrong-schema output that
+    by-name readers masked."""
+    left = daft.from_pydict({"lid": [1, 2], "x": [1.0, 9.0], "y": [1.0, 9.0]}).select(
+        "lid", st_point(daft.col("x"), daft.col("y")).alias("lg")
+    )
+    right = daft.from_pydict({"rid": [10, 11], "wkt": [
+        "POLYGON((0 0,2 0,2 2,0 2,0 0))", "POLYGON((8 8,10 8,10 10,8 10,8 8))",
+    ]}).select("rid", st_geomfromtext(daft.col("wkt")).alias("rg"))
+
+    out = (
+        left.join(right, on=st_intersects(left["lg"], right["rg"]) | ((left["lid"] + 9) == right["rid"]))
+        .select("lid", "rid")
+        .collect()
+    )
+    assert out.column_names == ["lid", "rid"]
+    tbl = out.to_pydict()
+    assert set(tbl.keys()) == {"lid", "rid"}
+    assert sorted(zip(tbl["lid"], tbl["rid"])) == [(1, 10), (2, 11)]
+
+
 # ── R-tree acceleration must not be applied to unsound predicates ─────────────
 
 

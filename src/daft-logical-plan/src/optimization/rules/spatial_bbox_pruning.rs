@@ -83,6 +83,24 @@ impl SpatialBboxPruning {
             return Ok(Transformed::no(plan));
         };
 
+        // The rtree_* columns describe ONE geometry column's bbox, but the
+        // canonical names carry no provenance. With more than one geometry
+        // column in scope (e.g. post-join schemas), a predicate on the OTHER
+        // geometry would be pruned against the wrong bbox and silently drop
+        // true matches — refuse the rewrite entirely in that case.
+        let n_geom_cols = schema
+            .into_iter()
+            .filter(|f| {
+                matches!(
+                    f.dtype,
+                    daft_schema::dtype::DataType::Geometry | daft_schema::dtype::DataType::Binary
+                )
+            })
+            .count();
+        if n_geom_cols > 1 {
+            return Ok(Transformed::no(plan));
+        }
+
         // Only TOP-LEVEL conjuncts are sound to augment: under OR / NOT the
         // spatial predicate's truth doesn't constrain the row's bbox.
         let conjuncts = split_conjunction(&filter.predicate);
