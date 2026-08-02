@@ -143,6 +143,37 @@ df = df.with_column("area", st_area(df["geom"]))
 df.with_column("dist", st_distance(df["geom"], df["geom"], use_spheroid=True))
 ```
 
+### WKT to geometry with `rtree_*` bbox columns
+
+Use [`st_geomfromtext`](api/functions/st_geomfromtext.md) to parse the WKT string column into
+a `Geometry` column, then call `with_spatial_bbox()` to materialize the canonical bounding-box
+columns the spatial-join operator recognizes as a precomputed R-tree index:
+
+```python
+import daft
+from daft.functions import st_geomfromtext
+
+df = daft.from_pydict(
+  {
+    "id": [1, 2],
+    "wkt": [
+      "POLYGON ((0 0, 4 0, 4 4, 0 4, 0 0))",
+      "POINT (1 1)",
+    ],
+  }
+)
+
+df = df.with_column("geom", st_geomfromtext(df["wkt"]))
+df = df.with_spatial_bbox("geom")
+
+df.select("id", "geom", "rtree_min_x", "rtree_min_y", "rtree_max_x", "rtree_max_y")
+```
+
+This produces four `Float64` columns named `rtree_min_x`, `rtree_min_y`, `rtree_max_x`, and
+`rtree_max_y`. They persist through Parquet and Delta writes and are used automatically on the
+build side of a spatial join. If you only need the bounding box values without the canonical
+`rtree_*` names, use `st_bbox(geom)` directly.
+
 ### SQL
 
 ```sql
