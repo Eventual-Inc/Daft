@@ -191,8 +191,13 @@ fn bbox_preds_for_spatial_fn(
 
     let form = match (name, col_is_arg0) {
         ("st_intersects", _) | ("st_dwithin", _) => BboxForm::Intersect,
-        ("st_contains", true) | ("st_within", false) => BboxForm::ColContainsQuery,
-        ("st_contains", false) | ("st_within", true) => BboxForm::ColWithinQuery,
+        // covers/contains: the container's bbox contains the containee's.
+        ("st_contains" | "st_covers", true) | ("st_within" | "st_covered_by", false) => {
+            BboxForm::ColContainsQuery
+        }
+        ("st_contains" | "st_covers", false) | ("st_within" | "st_covered_by", true) => {
+            BboxForm::ColWithinQuery
+        }
         _ => return None,
     };
 
@@ -396,6 +401,17 @@ mod tests {
         assert!(has_cmp(&pred, "rtree_max_x", Operator::LtEq, 30.0));
         assert!(has_cmp(&pred, "rtree_min_y", Operator::GtEq, 20.0));
         assert!(has_cmp(&pred, "rtree_max_y", Operator::LtEq, 40.0));
+    }
+
+    /// st_covers has the same bbox implication as st_contains (boundary
+    /// inclusion doesn't change the bbox containment).
+    #[test]
+    fn covers_col_query_adds_containment_form() {
+        let spatial = daft_geo::st_covers::st_covers(resolved_col("geom"), query_wkb_lit());
+        let (transformed, pred) = apply(geo_source(), spatial);
+        assert!(transformed);
+        assert!(has_cmp(&pred, "rtree_min_x", Operator::LtEq, 10.0));
+        assert!(has_cmp(&pred, "rtree_max_x", Operator::GtEq, 30.0));
     }
 
     /// st_within(col, Q) is the mirror of st_contains(Q, col).

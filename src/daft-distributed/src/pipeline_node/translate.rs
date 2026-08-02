@@ -65,19 +65,9 @@ pub(crate) fn logical_plan_to_pipeline_node(
 
 /// Spatial function names whose presence in a Filter predicate above a Join triggers
 /// the NLJ R-tree rewrite instead of hash-join + post-filter.
-const SPATIAL_PREDICATES: &[&str] = &[
-    "st_contains",
-    "st_intersects",
-    "st_within",
-    "st_covers",
-    "st_covered_by",
-    "st_disjoint",
-    "st_touches",
-    "st_overlaps",
-    "st_crosses",
-    "st_equals",
-    "st_dwithin",
-];
+// Single source of truth: `daft_dsl::join` (the operator's acceleration list
+// in daft-local-execution intentionally differs — no st_disjoint).
+const SPATIAL_PREDICATES: &[&str] = daft_dsl::join::SPATIAL_JOIN_PREDICATES;
 
 /// Check whether `expr` contains at least one spatial predicate call.
 fn is_spatial_predicate(expr: &daft_dsl::ExprRef) -> bool {
@@ -225,31 +215,12 @@ impl LogicalPlanToPipelineNodeTranslator {
         // R-tree.
         let left_schema_len = join.left.schema().len();
         let build_on_left: bool = (|| {
-            fn spatial_arg0_idx(expr: &daft_dsl::ExprRef) -> Option<usize> {
-                match expr.as_ref() {
-                    Expr::ScalarFn(daft_dsl::functions::scalar::ScalarFn::Builtin(sf))
-                        if SPATIAL_PREDICATES.contains(&sf.func.name()) =>
-                    {
-                        let arg0 = sf.inputs.required(0).ok()?;
-                        if let Expr::Column(Column::Bound(bc)) = arg0.as_ref() {
-                            Some(bc.index)
-                        } else {
-                            None
-                        }
-                    }
-                    Expr::BinaryOp { left, right, .. } => {
-                        spatial_arg0_idx(left).or_else(|| spatial_arg0_idx(right))
-                    }
-                    Expr::Not(inner) => spatial_arg0_idx(inner),
-                    _ => None,
-                }
-            }
             // `spatial_filter` has already been rebound to `join_schema`, so its
             // Bound-column indices are positions in the concatenated [left | right]
             // join output — valid for both call sites (Filter predicate combined with
             // equi keys, and the JoinSide-stripped bare-Join residual combined with
             // equi keys).
-            if let Some(idx) = spatial_arg0_idx(spatial_filter.inner()) {
+            if let Some(idx) = daft_dsl::join::spatial_join_arg0_bound_index(spatial_filter.inner()) {
                 idx < left_schema_len
             } else {
                 // Fallback: build on the side with fewer estimated rows.
@@ -561,27 +532,8 @@ impl LogicalPlanToPipelineNodeTranslator {
 
         let left_schema_len = join.left.schema().len();
         let preferred = (|| {
-            fn spatial_arg0_idx(expr: &daft_dsl::ExprRef) -> Option<usize> {
-                match expr.as_ref() {
-                    Expr::ScalarFn(daft_dsl::functions::scalar::ScalarFn::Builtin(sf))
-                        if SPATIAL_PREDICATES.contains(&sf.func.name()) =>
-                    {
-                        let arg0 = sf.inputs.required(0).ok()?;
-                        if let Expr::Column(Column::Bound(bc)) = arg0.as_ref() {
-                            Some(bc.index)
-                        } else {
-                            None
-                        }
-                    }
-                    Expr::BinaryOp { left, right, .. } => {
-                        spatial_arg0_idx(left).or_else(|| spatial_arg0_idx(right))
-                    }
-                    Expr::Not(inner) => spatial_arg0_idx(inner),
-                    _ => None,
-                }
-            }
             // Bound indices in `spatial_filter` are positions in [left | right].
-            if let Some(idx) = spatial_arg0_idx(spatial_filter.inner()) {
+            if let Some(idx) = daft_dsl::join::spatial_join_arg0_bound_index(spatial_filter.inner()) {
                 if idx < left_schema_len {
                     JoinSide::Left
                 } else {
@@ -691,10 +643,18 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 // to find the inner Join.
                 let inner_join: Option<&ops::Join> = match filter.input.as_ref() {
                     LogicalPlan::Join(j) if j.join_type == JoinType::Inner => Some(j),
-                    LogicalPlan::Project(p) => match p.input.as_ref() {
-                        LogicalPlan::Join(j) if j.join_type == JoinType::Inner => Some(j),
-                        _ => None,
-                    },
+                    // Only look through PLAIN column projections (see the
+                    // native translator's identical guard).
+                    LogicalPlan::Project(p)
+                        if p.projection.iter().all(|e| {
+                            matches!(e.as_ref(), Expr::Column(_))
+                        }) =>
+                    {
+                        match p.input.as_ref() {
+                            LogicalPlan::Join(j) if j.join_type == JoinType::Inner => Some(j),
+                            _ => None,
+                        }
+                    }
                     _ => None,
                 };
 

@@ -21,20 +21,9 @@ use daft_scan::{ScanState, ScanTaskRef};
 use super::plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef, SamplingMethod};
 use crate::{Input, SourceId, SourceIdCounter};
 
-/// Spatial predicate function names that trigger NestedLoopJoin instead of a cross-join + filter.
-const SPATIAL_PREDICATES: &[&str] = &[
-    "st_contains",
-    "st_intersects",
-    "st_within",
-    "st_covers",
-    "st_covered_by",
-    "st_disjoint",
-    "st_touches",
-    "st_overlaps",
-    "st_crosses",
-    "st_equals",
-    "st_dwithin",
-];
+/// Spatial predicate function names that trigger NestedLoopJoin instead of a
+/// cross-join + filter. Single source of truth: `daft_dsl::join`.
+const SPATIAL_PREDICATES: &[&str] = daft_dsl::join::SPATIAL_JOIN_PREDICATES;
 
 fn is_spatial_predicate(expr: &ExprRef) -> bool {
     let mut found = false;
@@ -86,29 +75,10 @@ fn build_spatial_nested_loop_join(
 
     let left_schema_len = join.left.schema().len();
     let build_on_left: bool = (|| -> bool {
-        fn spatial_arg0_idx(expr: &ExprRef) -> Option<usize> {
-            match expr.as_ref() {
-                Expr::ScalarFn(daft_dsl::functions::scalar::ScalarFn::Builtin(sf))
-                    if SPATIAL_PREDICATES.contains(&sf.func.name()) =>
-                {
-                    let arg0 = sf.inputs.required(0).ok()?;
-                    if let Expr::Column(Column::Bound(bc)) = arg0.as_ref() {
-                        Some(bc.index)
-                    } else {
-                        None
-                    }
-                }
-                Expr::BinaryOp { left, right, .. } => {
-                    spatial_arg0_idx(left).or_else(|| spatial_arg0_idx(right))
-                }
-                Expr::Not(inner) => spatial_arg0_idx(inner),
-                _ => None,
-            }
-        }
         // `filter_expr` has been rebound to `join.output_schema`, so its Column::Bound
         // indices are positions in the concatenated [left | right] join output — for BOTH
         // call sites (Filter predicate, and the JoinSide-stripped Join residual).
-        if let Some(idx) = spatial_arg0_idx(filter_expr.inner()) {
+        if let Some(idx) = daft_dsl::join::spatial_join_arg0_bound_index(filter_expr.inner()) {
             idx < left_schema_len
         } else {
             let left_stats = join.left.materialized_stats();
@@ -263,10 +233,16 @@ fn translate_helper(
                     // The optimizer inserts a Project between Filter and Join to drop
                     // extra key columns; look through exactly one Project level.
                     LogicalPlan::Project(proj) => {
-                        if let LogicalPlan::Join(join) = proj.input.as_ref() {
-                            Some(join)
-                        } else {
-                            None
+                        // Only look through PLAIN column projections: a
+                        // computed/aliased projection could introduce a name
+                        // that shadows a join-output column, and the filter
+                        // is rebound by NAME against the join schema.
+                        let plain = proj.projection.iter().all(|e| {
+                            matches!(e.as_ref(), Expr::Column(_))
+                        });
+                        match proj.input.as_ref() {
+                            LogicalPlan::Join(join) if plain => Some(join),
+                            _ => None,
                         }
                     }
                     _ => None,
