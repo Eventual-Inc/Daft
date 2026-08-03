@@ -374,15 +374,11 @@ pub fn delta_scan<T: AsRef<str>>(
         };
 
         let delta_lake_scan = PyModule::import(py, "daft.io.delta_lake.delta_lake_scan")?;
-        let delta_lake_scan_operator =
-            delta_lake_scan.getattr(pyo3::intern!(py, "DeltaLakeScanOperator"))?;
-        let delta_lake_operator = delta_lake_scan_operator
-            .call1((glob_path.as_ref(), storage_config))?
-            .into_pyobject(py)
-            .unwrap()
-            .into();
-        let scan_operator_handle =
-            ScanOperatorHandle::from_python_scan_operator(delta_lake_operator, py)?;
+        let delta_lake_data_source =
+            delta_lake_scan.getattr(pyo3::intern!(py, "DeltaLakeDataSource"))?;
+        let delta_lake_source =
+            delta_lake_data_source.call1((glob_path.as_ref(), storage_config))?;
+        let scan_operator_handle = ScanOperatorHandle::from_data_source(delta_lake_source);
         LogicalPlanBuilder::table_scan(scan_operator_handle.into(), None)
     })
 }
@@ -396,7 +392,7 @@ pub fn delta_scan<T: IntoGlobPath>(
     panic!("Delta Lake scan requires the 'python' feature to be enabled.")
 }
 
-/// Creates a logical scan operator from a Python IcebergScanOperator.
+/// Creates a logical scan operator from a Python IcebergDataSource.
 #[cfg(feature = "python")]
 pub fn iceberg_scan<T: AsRef<str>>(
     metadata_location: T,
@@ -406,8 +402,7 @@ pub fn iceberg_scan<T: AsRef<str>>(
     io_config: Option<IOConfig>,
     ignore_corrupt_files: bool,
 ) -> DaftResult<LogicalPlanBuilder> {
-    use pyo3::IntoPyObjectExt;
-    let scan_operator = Python::attach(|py| -> DaftResult<ScanOperatorHandle> {
+    Python::attach(|py| {
         let iceberg_table_module = PyModule::import(py, "pyiceberg.table")?;
         let iceberg_static_table = iceberg_table_module.getattr("StaticTable")?;
         let iceberg_table =
@@ -427,21 +422,16 @@ pub fn iceberg_scan<T: AsRef<str>>(
         let storage_config =
             StorageConfig::new_internal(true, resolved_io_config.map(|c| c.config));
         let iceberg_scan_module = PyModule::import(py, "daft.io.iceberg.iceberg_scan")?;
-        let iceberg_scan_class = iceberg_scan_module.getattr("IcebergScanOperator")?;
-        let iceberg_scan = iceberg_scan_class
-            .call1((
-                iceberg_table,
-                snapshot_id,
-                storage_config,
-                ignore_corrupt_files,
-            ))?
-            .into_py_any(py)?;
-        Ok(ScanOperatorHandle::from_python_scan_operator(
-            iceberg_scan,
-            py,
-        )?)
-    })?;
-    LogicalPlanBuilder::table_scan(scan_operator.into(), None)
+        let iceberg_data_source = iceberg_scan_module.getattr("IcebergDataSource")?;
+        let iceberg_source = iceberg_data_source.call1((
+            iceberg_table,
+            snapshot_id,
+            storage_config,
+            ignore_corrupt_files,
+        ))?;
+        let scan_operator_handle = ScanOperatorHandle::from_data_source(iceberg_source);
+        LogicalPlanBuilder::table_scan(scan_operator_handle.into(), None)
+    })
 }
 
 #[cfg(not(feature = "python"))]

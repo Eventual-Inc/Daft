@@ -9,10 +9,18 @@ import requests
 
 from daft.catalog import Identifier, NotFoundError, Schema
 from daft.catalog.__gravitino._catalog import GravitinoCatalog as CatalogWrapper
-from daft.catalog.__gravitino._catalog import GravitinoIcebergTable, GravitinoParquetTable, GravitinoPostgresTable
+from daft.catalog.__gravitino._catalog import (
+    GravitinoIcebergTable,
+    GravitinoParquetTable,
+    GravitinoPostgresTable,
+    _is_rest_iceberg_table,
+    _open_iceberg_table,
+    _open_iceberg_table_via_rest,
+)
 from daft.catalog.__gravitino._catalog import GravitinoTable as TableWrapper
-from daft.catalog.__gravitino._client import GravitinoCatalogInfo, GravitinoClient
+from daft.catalog.__gravitino._client import GravitinoCatalogInfo, GravitinoClient, GravitinoTableNotFoundError
 from daft.catalog.__gravitino._client import GravitinoTable as InnerTable
+from daft.io import IOConfig, S3Config
 
 
 def test_gravitino_client_init():
@@ -194,7 +202,7 @@ def test_load_nonexistent_table(mock_request):
 
     client = GravitinoClient("http://localhost:8090", "test_metalake", username="admin")
 
-    with pytest.raises(Exception, match="Table .* not found"):
+    with pytest.raises(GravitinoTableNotFoundError, match="Table .* not found"):
         client.load_table("catalog1.schema1.nonexistent_table")
 
 
@@ -273,7 +281,7 @@ class TestGravitinoCatalog:
 
     def test_get_table_not_found(self, gravitino_catalog, mock_inner_catalog):
         """Test _get_table raises NotFoundError when table not found."""
-        mock_inner_catalog.load_table.side_effect = Exception("Table not found in catalog")
+        mock_inner_catalog.load_table.side_effect = GravitinoTableNotFoundError("Table not found in catalog")
 
         with pytest.raises(NotFoundError, match="Table .* not found"):
             gravitino_catalog._get_table(Identifier.from_str("catalog.schema.nonexistent"))
@@ -381,7 +389,7 @@ class TestGravitinoCatalog:
 
     def test_has_table_not_exists(self, gravitino_catalog, mock_inner_catalog):
         """Test _has_table returns False when table doesn't exist."""
-        mock_inner_catalog.load_table.side_effect = Exception("Table not found")
+        mock_inner_catalog.load_table.side_effect = GravitinoTableNotFoundError("Table not found")
 
         result = gravitino_catalog._has_table(Identifier.from_str("catalog.schema.nonexistent"))
 
@@ -629,6 +637,84 @@ class TestGravitinoTable:
             mock_read.return_value = Mock()
             table.read()
             mock_read.assert_called_once()
+
+    @pytest.mark.parametrize(
+        ("properties", "expected"),
+        [
+            ({"catalog-backend": "rest", "uri": "http://localhost:8181"}, True),
+            ({"catalog-backend": "REST", "uri": "http://localhost:8181"}, True),
+            ({"catalog-backend": "rest"}, False),
+            ({"catalog-backend": "hadoop", "uri": "http://localhost:8181"}, False),
+        ],
+    )
+    def test_is_rest_iceberg_table(self, properties, expected):
+        table_info = Mock()
+        table_info.properties = properties
+
+        assert _is_rest_iceberg_table(table_info) is expected
+
+    def test_open_iceberg_table_uses_rest_catalog(self, mock_inner_table):
+        mock_inner_table.table_info.properties = {"catalog-backend": "rest", "uri": "http://localhost:8181"}
+
+        with (
+            patch("daft.catalog.__gravitino._catalog._open_iceberg_table_via_rest") as mock_rest,
+            patch("daft.catalog.__gravitino._catalog._open_iceberg_table_via_hadoop") as mock_hadoop,
+        ):
+            result = _open_iceberg_table(mock_inner_table.table_info, mock_inner_table.io_config)
+
+        assert result is mock_rest.return_value
+        mock_rest.assert_called_once_with(mock_inner_table.table_info, mock_inner_table.io_config)
+        mock_hadoop.assert_not_called()
+
+    def test_open_iceberg_table_uses_hadoop_catalog(self, mock_inner_table):
+        mock_inner_table.table_info.properties = {"catalog-backend": "hadoop"}
+
+        with (
+            patch("daft.catalog.__gravitino._catalog._open_iceberg_table_via_rest") as mock_rest,
+            patch("daft.catalog.__gravitino._catalog._open_iceberg_table_via_hadoop") as mock_hadoop,
+        ):
+            result = _open_iceberg_table(mock_inner_table.table_info, mock_inner_table.io_config)
+
+        assert result is mock_hadoop.return_value
+        mock_rest.assert_not_called()
+        mock_hadoop.assert_called_once_with(mock_inner_table.table_info.storage_location, mock_inner_table.io_config)
+
+    def test_open_iceberg_table_via_rest_loads_schema_table(self, mock_inner_table):
+        mock_inner_table.table_info.catalog = "catalog1"
+        mock_inner_table.table_info.schema = "schema1"
+        mock_inner_table.table_info.properties = {
+            "catalog-backend": "rest",
+            "uri": "http://localhost:8181",
+            "warehouse": "",
+        }
+        io_config = IOConfig(
+            s3=S3Config(
+                key_id="test-key",
+                access_key="test-secret",
+                endpoint_url="http://localhost:9000",
+                session_token="test-token",
+                region_name="us-west-2",
+            )
+        )
+
+        with patch("pyiceberg.catalog.load_catalog") as mock_load_catalog:
+            result = _open_iceberg_table_via_rest(mock_inner_table.table_info, io_config)
+
+        assert result is mock_load_catalog.return_value.load_table.return_value
+        mock_load_catalog.assert_called_once_with(
+            "catalog1",
+            **{
+                "catalog-backend": "rest",
+                "uri": "http://localhost:8181",
+                "type": "rest",
+                "s3.access-key-id": "test-key",
+                "s3.secret-access-key": "test-secret",
+                "s3.endpoint": "http://localhost:9000",
+                "s3.session-token": "test-token",
+                "s3.region": "us-west-2",
+            },
+        )
+        mock_load_catalog.return_value.load_table.assert_called_once_with("schema1.test_table")
 
     def test_append_with_invalid_option(self, gravitino_table):
         """Test append with invalid option raises error."""

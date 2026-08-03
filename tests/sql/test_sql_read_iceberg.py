@@ -147,7 +147,7 @@ def test_sql_read_iceberg_uses_default_io_config(tmp_path, monkeypatch):
 
     Without an explicit io_config, the context ``default_io_config`` must reach the scan's
     StorageConfig (previously the SQL path used an empty default, ignoring it). We capture the
-    StorageConfig handed to the scan operator, since io_config is not surfaced in the plan text.
+    StorageConfig handed to the data source, since io_config is not surfaced in the plan text.
     """
     catalog = SqlCatalog(
         "default",
@@ -162,13 +162,13 @@ def test_sql_read_iceberg_uses_default_io_config(tmp_path, monkeypatch):
         metadata_location = _metadata_path(table.metadata_location)
 
         captured: dict = {}
-        original_init = iceberg_scan.IcebergScanOperator.__init__
+        original_init = iceberg_scan.IcebergDataSource.__init__
 
         def capturing_init(self, iceberg_table, snapshot_id, storage_config, ignore_corrupt_files=False):
             captured["storage_config"] = storage_config
             return original_init(self, iceberg_table, snapshot_id, storage_config, ignore_corrupt_files)
 
-        monkeypatch.setattr(iceberg_scan.IcebergScanOperator, "__init__", capturing_init)
+        monkeypatch.setattr(iceberg_scan.IcebergDataSource, "__init__", capturing_init)
 
         default = IOConfig(s3=S3Config(region_name="us-west-2"))
         old = daft.context.get_context().daft_planning_config.default_io_config

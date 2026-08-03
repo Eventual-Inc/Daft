@@ -180,7 +180,7 @@ def read_iceberg(
     """
     from pyiceberg.table import StaticTable
 
-    from daft.io.iceberg.iceberg_scan import IcebergScanOperator
+    from daft.io.iceberg.iceberg_scan import IcebergDataSource
 
     # support for read_iceberg('path/to/metadata.json')
     if isinstance(table, (str, os.PathLike)):
@@ -193,11 +193,11 @@ def read_iceberg(
     multithreaded_io = runners.get_or_create_runner().name != "ray"
     storage_config = StorageConfig(multithreaded_io, io_config)
 
-    iceberg_operator = IcebergScanOperator(
+    iceberg_source = IcebergDataSource(
         table, snapshot_id=snapshot_id, storage_config=storage_config, ignore_corrupt_files=ignore_corrupt_files
     )
 
-    handle = ScanOperatorHandle.from_python_scan_operator(iceberg_operator)
+    handle = ScanOperatorHandle.from_data_source(iceberg_source)
     builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
     builder = attach_checkpoint(builder, checkpoint)
     return DataFrame(builder)
