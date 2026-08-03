@@ -411,9 +411,6 @@ pub fn iceberg_scan<T: AsRef<str>>(
         let snapshot_id = iceberg_helper_module
             .getattr("resolve_snapshot_id")?
             .call1((&iceberg_table, snapshot_id, branch, tag))?;
-        // Resolve the IOConfig with the same precedence as the Python `read_iceberg` API:
-        // explicit arg > table FileIO properties > context `default_io_config`. Without this,
-        // the SQL path would ignore both the table's embedded credentials and the global default.
         let py_io_config = io_config.map(common_io_config::python::IOConfig::from);
         let resolved_io_config: Option<common_io_config::python::IOConfig> = iceberg_helper_module
             .getattr("resolve_iceberg_io_config")?
