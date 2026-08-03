@@ -99,18 +99,12 @@ pub(crate) fn try_coerce_list<T: SQLLiteral>(expr: ExprRef) -> Result<Vec<T>, Pl
     }
 }
 
-/// Drive an async schema-inference future to completion from synchronous SQL planning.
+/// Drive an async future to completion from synchronous SQL planning.
 ///
 /// Runs `future` on the shared IO runtime, blocking the calling (planner) thread until it
-/// resolves. Crucially, when the `python` feature is enabled this RELEASES the GIL for the
-/// duration of the blocking wait.
-///
-/// SQL planning is reached from `sql_exec` while the GIL is held, and the driven future may
-/// emit `log::warn!` (e.g. the `ignore_corrupt_files` corrupt-file skip path in
-/// `daft-scan`), which pyo3-log can only forward to Python's `logging` by re-acquiring the
-/// GIL. If we block here without releasing it, the planner thread waits on the future while
-/// the future waits on the GIL — a guaranteed deadlock. Releasing the GIL mirrors the
-/// DataFrame scan path in `daft-scan/src/python.rs` (`ScanOperatorHandle::glob_scan`).
+/// resolves. When the `python` feature is enabled the GIL is released for the duration of the
+/// wait: planning is entered with the GIL held, so anything the future needs the GIL for (e.g.
+/// pyo3-log forwarding a `log` record to Python) would otherwise deadlock.
 pub(crate) fn block_on_io_runtime<F>(future: F) -> DaftResult<F::Output>
 where
     F: Future + Send + 'static,
