@@ -409,7 +409,6 @@ pub fn iceberg_scan<T: AsRef<str>>(
     io_config: Option<IOConfig>,
     ignore_corrupt_files: bool,
 ) -> DaftResult<LogicalPlanBuilder> {
-    let storage_config: StorageConfig = io_config.unwrap_or_default().into();
     Python::attach(|py| {
         let iceberg_table_module = PyModule::import(py, "pyiceberg.table")?;
         let iceberg_static_table = iceberg_table_module.getattr("StaticTable")?;
@@ -419,6 +418,13 @@ pub fn iceberg_scan<T: AsRef<str>>(
         let snapshot_id = iceberg_helper_module
             .getattr("resolve_snapshot_id")?
             .call1((&iceberg_table, snapshot_id, branch, tag))?;
+        let py_io_config = io_config.map(common_io_config::python::IOConfig::from);
+        let resolved_io_config: Option<common_io_config::python::IOConfig> = iceberg_helper_module
+            .getattr("resolve_iceberg_io_config")?
+            .call1((&iceberg_table, py_io_config))?
+            .extract()?;
+        let storage_config =
+            StorageConfig::new_internal(true, resolved_io_config.map(|c| c.config));
         let iceberg_scan_module = PyModule::import(py, "daft.io.iceberg.iceberg_scan")?;
         let iceberg_data_source = iceberg_scan_module.getattr("IcebergDataSource")?;
         let iceberg_source = iceberg_data_source.call1((
