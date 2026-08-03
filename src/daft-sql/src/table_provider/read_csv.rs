@@ -103,12 +103,8 @@ impl SQLTableFunction for ReadCsvFunction {
         )?;
 
         let runtime = common_runtime::get_io_runtime(true);
-        // Release the GIL while blocking on async schema inference. SQL planning is reached
-        // from `sql_exec` with the GIL held; with `ignore_corrupt_files` enabled the driven
-        // future may emit `log::warn!` for a skipped corrupt file (see `daft-scan` glob
-        // schema inference), which pyo3-log can only forward to Python by re-acquiring the
-        // GIL — deadlocking if we hold it here. Mirrors the DataFrame scan path in
-        // `daft-scan/src/python.rs`. (Same fix as PR #7133 for `read_parquet`.)
+        // Release the GIL while blocking on schema inference: the driven future can log, and
+        // pyo3-log needs the GIL to forward that to Python.
         #[cfg(feature = "python")]
         let result = pyo3::Python::attach(|py| {
             py.detach(|| runtime.block_within_async_context(builder.finish()))

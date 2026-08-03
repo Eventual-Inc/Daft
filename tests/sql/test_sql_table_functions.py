@@ -231,8 +231,7 @@ def test_sql_read_csv_ignore_corrupt_files(tmp_path):
         daft.sql(f"SELECT * FROM read_csv('{dir_path}')").collect()
 
     # With ignore_corrupt_files => true the corrupt file is skipped and the good
-    # rows are returned. This also exercises the schema-inference glob fallback and
-    # the GIL release added alongside read_parquet (PR #7133).
+    # rows are returned.
     df = daft.sql(f"SELECT * FROM read_csv('{dir_path}', ignore_corrupt_files => true)").collect()
     assert sorted(df.to_pydict()["a"]) == [1, 2, 3, 4, 5, 6]
 
