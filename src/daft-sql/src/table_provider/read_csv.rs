@@ -44,6 +44,7 @@ impl TryFrom<SQLFunctionArguments> for CsvScanBuilder {
         let buffer_size = args.try_get_named("buffer_size")?;
         let file_path_column = args.try_get_named("file_path_column")?;
         let hive_partitioning = args.try_get_named("hive_partitioning")?.unwrap_or(false);
+        let ignore_corrupt_files = args.try_get_named("ignore_corrupt_files")?.unwrap_or(false);
         let schema = args
             .try_get_named("schema")?
             .map(try_parse_schema)
@@ -67,6 +68,7 @@ impl TryFrom<SQLFunctionArguments> for CsvScanBuilder {
             allow_variable_columns,
             buffer_size,
             chunk_size,
+            ignore_corrupt_files,
         })
     }
 }
@@ -95,6 +97,7 @@ impl SQLTableFunction for ReadCsvFunction {
                 "hive_partitioning",
                 "buffer_size",
                 "chunk_size",
+                "ignore_corrupt_files",
             ],
             1, // 1 positional argument (path)
         )?;
