@@ -25,6 +25,7 @@ pub struct ParquetScanBuilder {
     pub schema: Option<SchemaRef>,
     pub file_path_column: Option<String>,
     pub hive_partitioning: bool,
+    pub ignore_corrupt_files: bool,
 }
 
 impl ParquetScanBuilder {
@@ -47,6 +48,7 @@ impl ParquetScanBuilder {
             io_config: None,
             file_path_column: None,
             hive_partitioning: false,
+            ignore_corrupt_files: false,
         }
     }
     pub fn infer_schema(mut self, infer_schema: bool) -> Self {
@@ -95,13 +97,18 @@ impl ParquetScanBuilder {
         self
     }
 
+    pub fn ignore_corrupt_files(mut self, ignore_corrupt_files: bool) -> Self {
+        self.ignore_corrupt_files = ignore_corrupt_files;
+        self
+    }
+
     pub async fn finish(self) -> DaftResult<LogicalPlanBuilder> {
         let cfg = ParquetSourceConfig {
             coerce_int96_timestamp_unit: self.coerce_int96_timestamp_unit,
             field_id_mapping: self.field_id_mapping,
             row_groups: self.row_groups,
             chunk_size: self.chunk_size,
-            ignore_corrupt_files: false,
+            ignore_corrupt_files: self.ignore_corrupt_files,
         };
 
         let operator = Arc::new(
