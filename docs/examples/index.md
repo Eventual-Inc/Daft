@@ -10,6 +10,10 @@
 
     Read LIBERO episodes with Daft's LeRobot reader and score each one with a reward model - per-frame task progress plus success probability - then filter low-quality episodes with a Daft query.
 
+- [Motion Trimming for Physical AI](motion-trimming-physical-ai.md)
+
+    Read DROID episodes with Daft's LeRobot reader, score per-frame motion from the robot's own joint positions - no video decode - and reduce it to one trim window per episode.
+
 - [HDF5 File Usage Notebook](https://github.com/Eventual-Inc/Daft/blob/main/examples/hdf5_file_usage.ipynb)
 
     Inspect HDF5 files, visit dataset hierarchies, and read selected datasets into DataFrames.

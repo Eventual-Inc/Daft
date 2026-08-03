@@ -2866,6 +2866,7 @@ dependencies = [
  "mime_guess",
  "pyo3",
  "serde",
+ "tracing",
  "typetag",
  "url",
 ]

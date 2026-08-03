@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+from contextlib import ExitStack, nullcontext
 from typing import TYPE_CHECKING
 
+from daft.daft import _PyFileTracingSpan
 from daft.datatype import MediaType
 from daft.dependencies import av, pil_image
 from daft.file import File
 from daft.file.file import BUFFER_COPY, BUFFER_METADATA
 from daft.file.typing import VideoFrameData, VideoMetadata
+
+_FILE_TRACING_ENABLED = _PyFileTracingSpan.is_enabled()
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -135,6 +139,45 @@ class VideoFile(File):
             VideoFrameData dicts with keys: frame_index, frame_time, frame_time_base,
             frame_pts, frame_dts, frame_duration, is_key_frame, data (PIL Image).
         """
+        frames = self._frames(
+            start_time=start_time,
+            end_time=end_time,
+            width=width,
+            height=height,
+            is_key_frame=is_key_frame,
+            sample_interval_seconds=sample_interval_seconds,
+            buffer_size=buffer_size,
+        )
+        if not _FILE_TRACING_ENABLED:
+            yield from frames
+            return
+
+        try:
+            while True:
+                try:
+                    # A generator must not retain an entered tracing span while it
+                    # is suspended in caller code. Enter a short-lived span only
+                    # while advancing the underlying iterator.
+                    with _PyFileTracingSpan.video_frames():
+                        frame = next(frames)
+                except StopIteration:
+                    return
+                yield frame
+        finally:
+            close = getattr(frames, "close", None)
+            if close is not None:
+                close()
+
+    def _frames(
+        self,
+        start_time: float,
+        end_time: float | None,
+        width: int | None,
+        height: int | None,
+        is_key_frame: bool | None,
+        sample_interval_seconds: float | None,
+        buffer_size: int,
+    ) -> Iterator[VideoFrameData]:
         if not pil_image.module_available():
             raise ImportError(
                 "The 'pillow' module is required for frame decoding. Install it with `pip install daft[video]`."
@@ -143,7 +186,12 @@ class VideoFile(File):
             raise ValueError("Both width and height must be specified together for resizing.")
         if sample_interval_seconds is not None and sample_interval_seconds <= 0:
             raise ValueError("sample_interval_seconds must be positive if provided")
-        with self.open(buffer_size=buffer_size) as f, av.open(f) as container:
+
+        with ExitStack() as stack:
+            with _PyFileTracingSpan.video_open() if _FILE_TRACING_ENABLED else nullcontext():
+                f = stack.enter_context(self.open(buffer_size=buffer_size))
+                container = stack.enter_context(av.open(f))
+
             video = next(
                 (stream for stream in container.streams if stream.type == "video"),
                 None,
@@ -157,7 +205,8 @@ class VideoFile(File):
             # Seek to start time
             if start_time > 0 and video.time_base:
                 seek_timestamp = int(start_time / float(video.time_base))
-                container.seek(seek_timestamp, stream=video)
+                with _PyFileTracingSpan.video_seek() if _FILE_TRACING_ENABLED else nullcontext():
+                    container.seek(seek_timestamp, stream=video)
 
             time_base = float(video.time_base) if video.time_base else None
             fps = float(video.average_rate) if video.average_rate else None
@@ -172,7 +221,17 @@ class VideoFile(File):
             epsilon: float = 1e-9 if sample_interval_seconds is None else max(1e-9, sample_interval_seconds * 1e-6)
 
             frame_index: int = 0
-            for frame in container.decode(video):
+            decoded_frames = iter(container.decode(video))
+            while True:
+                try:
+                    if _FILE_TRACING_ENABLED:
+                        with _PyFileTracingSpan.video_decode():
+                            frame = next(decoded_frames)
+                    else:
+                        frame = next(decoded_frames)
+                except StopIteration:
+                    break
+
                 # Skip frames before start_time (seek may land earlier)
                 if frame.time is not None and frame.time < start_time:
                     frame_index += 1
@@ -210,6 +269,12 @@ class VideoFile(File):
                 if frame.pts is not None and time_base is not None and fps is not None:
                     current_frame_index = int(round((frame.pts - start_pts) * time_base * fps))
 
+                if _FILE_TRACING_ENABLED:
+                    with _PyFileTracingSpan.video_to_image():
+                        image = output_frame.to_image()
+                else:
+                    image = output_frame.to_image()
+
                 yield VideoFrameData(
                     frame_index=current_frame_index,
                     frame_time=frame.time,
@@ -218,7 +283,7 @@ class VideoFile(File):
                     frame_dts=frame.dts,
                     frame_duration=frame.duration,
                     is_key_frame=frame.key_frame,
-                    data=output_frame.to_image(),
+                    data=image,
                 )
 
                 frame_index += 1

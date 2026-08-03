@@ -78,22 +78,26 @@ impl PyDataSourceTask {
         path,
         schema,
         *,
+        parquet_config = None,
         pushdowns = None,
         num_rows = None,
         size_bytes = None,
         partition_values = None,
         stats = None,
         storage_config = None,
+        iceberg_delete_files = None,
     ))]
     fn parquet(
         path: String,
         schema: PySchema,
+        parquet_config: Option<ParquetSourceConfig>,
         pushdowns: Option<pylib_scan_info::PyPushdowns>,
         num_rows: Option<i64>,
         size_bytes: Option<u64>,
         partition_values: Option<PyRecordBatch>,
         stats: Option<PyRecordBatch>,
         storage_config: Option<StorageConfig>,
+        iceberg_delete_files: Option<Vec<String>>,
     ) -> PyResult<Self> {
         let storage_config = storage_config.unwrap_or_default().into();
 
@@ -125,7 +129,7 @@ impl PyDataSourceTask {
             kind: ScanSourceKind::File {
                 path,
                 chunk_spec: None,
-                iceberg_delete_files: None,
+                iceberg_delete_files,
                 parquet_metadata: None,
             },
         };
@@ -133,7 +137,7 @@ impl PyDataSourceTask {
         let scan_task = Arc::new(ScanTask::new(
             vec![source],
             Arc::new(SourceConfig::File(FileFormatConfig::Parquet(
-                ParquetSourceConfig::default(),
+                parquet_config.unwrap_or_default(),
             ))),
             schema.schema,
             storage_config,

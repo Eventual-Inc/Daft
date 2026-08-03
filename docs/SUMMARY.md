@@ -103,6 +103,7 @@
     * [Examples](examples/index.md)
     * [Hand Tracking for Physical AI](examples/hand-tracking-physical-ai.md)
     * [Reward Scoring for Physical AI](examples/reward-scoring-physical-ai.md)
+    * [Motion Trimming for Physical AI](examples/motion-trimming-physical-ai.md)
     * [Multimodal Structured Outputs: Evaluating Image Understanding](examples/mm_structured_outputs.md)
     * [Voice AI Analytics with Faster-Whisper and embed_text](examples/voice-ai-analytics.md)
     * [Web Text Deduplication](examples/minhash-dedupe.md)

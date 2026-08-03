@@ -181,6 +181,47 @@ def test_frames_standalone(sample_video_path):
     assert first["data"].size == (192, 144)
 
 
+def test_frames_exits_tracing_span_before_yield(sample_video_path, monkeypatch):
+    """Caller work between frames must not inherit the VideoFile::frames span."""
+    import daft.file.video as video_module
+
+    events: list[str] = []
+
+    class FakeTracingSpan:
+        def __enter__(self):
+            events.append("enter")
+
+        def __exit__(self, _exc_type, _exc_value, _traceback):
+            events.append("exit")
+
+    class FakeFileTracing:
+        @staticmethod
+        def video_frames():
+            return FakeTracingSpan()
+
+    def fake_frames(*_args, **_kwargs):
+        try:
+            yield {"frame_index": 0}
+            yield {"frame_index": 1}
+        finally:
+            events.append("inner_close")
+
+    monkeypatch.setattr(video_module, "_FILE_TRACING_ENABLED", True)
+    monkeypatch.setattr(video_module, "_PyFileTracingSpan", FakeFileTracing)
+    monkeypatch.setattr(video_module.VideoFile, "_frames", fake_frames)
+
+    frames = daft.VideoFile(sample_video_path).frames()
+    assert next(frames)["frame_index"] == 0
+    assert events == ["enter", "exit"]
+
+    events.append("caller")
+    assert next(frames)["frame_index"] == 1
+    assert events == ["enter", "exit", "caller", "enter", "exit"]
+
+    frames.close()
+    assert events == ["enter", "exit", "caller", "enter", "exit", "inner_close"]
+
+
 def test_frames_with_resize(sample_video_path):
     """VideoFile.frames() resizes frames when width/height are given."""
     file = daft.VideoFile(sample_video_path)
