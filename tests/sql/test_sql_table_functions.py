@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import pyarrow as pa
 import pyarrow.parquet as papq
 import pytest
@@ -130,6 +132,26 @@ def test_sql_read_parquet_file_options(tmp_path):
     )
     expect = daft.read_parquet(glob_path, file_path_column="filepath", hive_partitioning=True)
     assert actual.to_pydict() == expect.to_pydict()
+
+
+def test_sql_read_parquet_ignore_corrupt_files(tmp_path):
+    good_path = tmp_path / "good.parquet"
+    bad_path = tmp_path / "bad.parquet"
+    papq.write_table(pa.table({"x": [1, 2]}), good_path)
+    bad_path.write_bytes(b"PAR1" + b"\x00" * 20 + b"PAR1")
+
+    with pytest.raises(Exception):
+        daft.sql(f"SELECT * FROM read_parquet('{tmp_path.as_posix()}')").collect()
+
+    df = daft.sql(f"SELECT * FROM read_parquet('{tmp_path.as_posix()}', ignore_corrupt_files => true)").collect()
+
+    assert df.to_pydict() == {"x": [1, 2]}
+    skipped = df.skipped_corrupt_files
+    assert len(skipped) == 1
+    path, reason, partial = skipped[0]
+    assert os.path.basename(path) == "bad.parquet"
+    assert reason
+    assert not partial
 
 
 def test_sql_read_csv(sample_csv_path):

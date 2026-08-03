@@ -102,15 +102,7 @@ impl SQLTableFunction for ReadCsvFunction {
             1, // 1 positional argument (path)
         )?;
 
-        let runtime = common_runtime::get_io_runtime(true);
-        // Release the GIL while blocking on schema inference: the driven future can log, and
-        // pyo3-log needs the GIL to forward that to Python.
-        #[cfg(feature = "python")]
-        let result = pyo3::Python::attach(|py| {
-            py.detach(|| runtime.block_within_async_context(builder.finish()))
-        })??;
-        #[cfg(not(feature = "python"))]
-        let result = runtime.block_within_async_context(builder.finish())??;
+        let result = super::block_on_io_runtime(builder.finish())??;
         Ok(result)
     }
 }

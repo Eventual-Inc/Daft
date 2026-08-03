@@ -23,7 +23,8 @@ requested timestamp. Output is **byte-identical** to the old per-row decode.
 frame decoding for n = 1..10 rows of a remote test dataset (`pepijn223/egodex-test`),
 run once per reader revision (merge-base vs this branch) - the original grows linearly
 to ~34s; the batched version stays flat at ~4s (all 10 frames share one shard → one
-open).
+open). All benchmarks in this directory were run on the same machine, an Apple
+M4 Max (36 GB).
 
 ![original vs batched](charts/chart_old_vs_new.png)
 
@@ -42,8 +43,22 @@ comparison. See [real_datasets.md](real_datasets.md).
 
 ![original vs batched on public datasets](charts/chart_real_datasets.png)
 
+### Downstream workload: hand tracking
+
+[`hand_tracking.py`](hand_tracking.py) times the
+[daft-physical-ai demo](https://github.com/Eventual-Inc/daft-physical-ai/blob/main/examples/demo.py)
+workload end to end: decode 12 remote frames of `pepijn223/egodex-test` and run
+MediaPipe hand tracking as a Daft UDF. [`run_hand_tracking.sh`](run_hand_tracking.sh)
+runs it once per reader revision (the original pinned to the parent of the #7184
+merge commit) and checks the detected hands match. Measured 2026-07-14 on an
+Apple M4 Max (36 GB, macOS 15.6), remote reads over `hf://`:
+**44.8s → 9.8s**, identical detections.
+
+![original vs batched on the hand-tracking workload](charts/chart_hand_tracking.png)
+
 ## Running
 
 ```bash
 python sweep.py --label batched      # rows 1..10 sweep + chart
+./run_hand_tracking.sh               # hand-tracking workload A/B + chart
 ```

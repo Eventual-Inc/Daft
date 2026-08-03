@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use arrow::buffer::{NullBuffer, OffsetBuffer};
 use common_error::{DaftError, DaftResult};
 use common_image::CowImage;
 use indexmap::IndexMap;
@@ -262,7 +263,16 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                         .transpose()
                 })
                 .collect::<DaftResult<Vec<_>>>()?;
-            ListArray::from_series("literal", data)?.into_series()
+            if data.iter().all(Option::is_none) {
+                let offsets = OffsetBuffer::from_lengths((0..data.len()).map(|_| 0));
+                let nulls = NullBuffer::from_iter((0..data.len()).map(|_| false));
+                let flat_child =
+                    Series::empty("literal", &child_dtype.to_physical()).cast(child_dtype)?;
+
+                ListArray::new(field, flat_child, offsets, Some(nulls)).into_series()
+            } else {
+                ListArray::from_series("literal", data)?.into_series()
+            }
         }
         DataType::Struct(ref fields) => {
             let values = values.collect::<Vec<_>>();
