@@ -36,6 +36,17 @@ pub(crate) enum BlockingSinkOutput {
     Partitions(Vec<MicroPartition>),
     FlightPartitionRefs(Vec<FlightPartitionRef>),
 }
+
+fn flight_partition_totals(partition_refs: &[FlightPartitionRef]) -> (u64, u64) {
+    partition_refs
+        .iter()
+        .fold((0, 0), |(rows, bytes), partition_ref| {
+            (
+                rows + partition_ref.num_rows as u64,
+                bytes + partition_ref.size_bytes as u64,
+            )
+        })
+}
 pub(crate) type BlockingSinkFinalizeResult = OperatorOutput<DaftResult<BlockingSinkOutput>>;
 
 pub(crate) trait BlockingSink: Send + Sync {
@@ -277,16 +288,11 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                     }
                 }
                 BlockingSinkOutput::FlightPartitionRefs(partition_refs) => {
+                    let (rows, bytes) = flight_partition_totals(&partition_refs);
+                    per_input.runtime_stats.add_rows_out(rows);
+                    per_input.runtime_stats.add_bytes_out(bytes);
+                    per_input.runtime_stats.add_shuffle_write_bytes(bytes);
                     for partition_ref in partition_refs {
-                        per_input
-                            .runtime_stats
-                            .add_rows_out(partition_ref.num_rows as u64);
-                        per_input
-                            .runtime_stats
-                            .add_bytes_out(partition_ref.size_bytes as u64);
-                        per_input
-                            .runtime_stats
-                            .add_spilled_bytes(partition_ref.size_bytes as u64);
                         let _ = output_tx
                             .send(PipelineMessage::FlightPartitionRef {
                                 input_id,
@@ -591,5 +597,32 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
     }
     fn node_info(&self) -> Arc<NodeInfo> {
         self.node_info.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn flight_partition_totals_sum_rows_and_logical_bytes() {
+        let refs = vec![
+            FlightPartitionRef {
+                shuffle_id: 1,
+                server_address: "server".into(),
+                partition_ref_id: 1,
+                num_rows: 10,
+                size_bytes: 100,
+            },
+            FlightPartitionRef {
+                shuffle_id: 1,
+                server_address: "server".into(),
+                partition_ref_id: 2,
+                num_rows: 20,
+                size_bytes: 250,
+            },
+        ];
+
+        assert_eq!(flight_partition_totals(&refs), (30, 350));
     }
 }

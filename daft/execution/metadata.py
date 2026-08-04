@@ -87,6 +87,8 @@ def _metric_duration_us(stats: Metrics) -> float | None:
         return None
     value = float(metric["value"])
     unit = metric["unit"]
+    if unit is None:
+        return None
     if unit in ("us", "µs"):
         return value
     if unit == "ms":
@@ -120,9 +122,11 @@ def _profile_warnings(
         if node.node_type in shuffle_types and shuffle_bytes >= _LARGE_SHUFFLE_BYTES:
             warnings_out.append(f"Large shuffle in {node.name}: {_format_bytes(shuffle_bytes)} of logical I/O.")
 
-    spilled_bytes = telemetry.get("spilled_bytes")
-    if spilled_bytes:
-        warnings_out.append(f"Flight shuffle spilled {_format_bytes(spilled_bytes)} to disk.")
+    shuffle_write_bytes = telemetry.get("shuffle_write_bytes")
+    if shuffle_write_bytes is not None and shuffle_write_bytes >= _LARGE_SHUFFLE_BYTES:
+        warnings_out.append(
+            f"Large Flight shuffle: {_format_bytes(shuffle_write_bytes)} of logical data written to the shuffle store."
+        )
 
     partition_stats = telemetry.get("partition_stats", {})
     for node in nodes:
@@ -151,6 +155,33 @@ def _profile_warnings(
         if state.get("projection_requested") and not state.get("projection_applied"):
             warnings_out.append(f"Projection pushdown was not applied for {node.name}.")
     return warnings_out
+
+
+def _is_profile_source(node: PlanNode, known_sources: set[int]) -> bool:
+    node_id = int(node["id"])
+    node_type = str(node.get("type", "")).lower()
+    category = str(node.get("category", "")).lower()
+    return node_id in known_sources or category == "source" or node_type in {"globscan", "inmemoryscan", "scantask"}
+
+
+def _infer_requested_pushdowns(plan: PlanNode, pushdowns: dict[int, dict[str, Any]]) -> None:
+    """Mark pushdowns requested directly above a physical source."""
+    known_sources = set(pushdowns)
+
+    def visit(node: PlanNode) -> None:
+        node_type = str(node.get("type", "")).lower()
+        children = node.get("children") or []
+        requested = "filter_requested" if node_type == "filter" else None
+        if node_type == "project":
+            requested = "projection_requested"
+        if requested is not None:
+            for child in children:
+                if _is_profile_source(child, known_sources):
+                    pushdowns.setdefault(int(child["id"]), {})[requested] = True
+        for child in children:
+            visit(child)
+
+    visit(plan)
 
 
 def _traverse_plan(plan: PlanNode, metrics: dict[int, Metrics]) -> tuple[list[str], dict[int, int]]:
@@ -242,32 +273,8 @@ class ExecutionMetadata:
     def _profile_telemetry(self) -> dict[str, Any]:
         telemetry = getattr(self._py, "profile_telemetry", None)
         result = {} if telemetry is None else dict(telemetry)
-        pushdowns = {key: dict(value) for key, value in result.get("scan_pushdowns", {}).items()}
-        known_sources = {int(node_id) for node_id in pushdowns}
-
-        def visit(node: PlanNode) -> set[int]:
-            node_id = int(node["id"])
-            node_type = str(node.get("type", "")).lower()
-            category = str(node.get("category", "")).lower()
-            children = node.get("children") or []
-            source_ids = (
-                {node_id}
-                if node_id in known_sources
-                or category == "source"
-                or node_type in {"globscan", "inmemoryscan", "scantask"}
-                else set()
-            )
-            for child in children:
-                source_ids.update(visit(child))
-            if node_type == "filter":
-                for source_id in source_ids:
-                    pushdowns.setdefault(source_id, {})["filter_requested"] = True
-            elif node_type == "project":
-                for source_id in source_ids:
-                    pushdowns.setdefault(source_id, {})["projection_requested"] = True
-            return source_ids
-
-        visit(self.query_plan)
+        pushdowns = {int(key): dict(value) for key, value in result.get("scan_pushdowns", {}).items()}
+        _infer_requested_pushdowns(self.query_plan, pushdowns)
         result["scan_pushdowns"] = pushdowns
         return result
 

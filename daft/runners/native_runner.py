@@ -126,14 +126,12 @@ class NativeRunner(Runner[MicroPartition]):
         heartbeat.start()
 
         try:
-            metadata = yield from self._optimize_and_execute(builder, query_id)
-            metadata._wall_time_us = (time.perf_counter_ns() - profile_started_ns) / 1_000
-            return metadata
+            return (yield from self._optimize_and_execute(builder, query_id, profile_started_ns))
         finally:
             heartbeat.stop()
 
     def _optimize_and_execute(
-        self, builder: LogicalPlanBuilder, query_id: str
+        self, builder: LogicalPlanBuilder, query_id: str, profile_started_ns: int
     ) -> Generator[LocalMaterializedResult, None, ExecutionMetadata]:
         ctx = get_context()
 
@@ -179,7 +177,12 @@ class NativeRunner(Runner[MicroPartition]):
             query_result = PyQueryResult(QueryEndState.Finished, "Query finished")
             ctx._notify_query_end(query_id, query_result)
             physical_plan_json, execution_stats = e.value
-            return ExecutionMetadata._from_runner_output(execution_stats, query_id, physical_plan_json)
+            return ExecutionMetadata._from_runner_output(
+                execution_stats,
+                query_id,
+                physical_plan_json,
+                wall_time_us=(time.perf_counter_ns() - profile_started_ns) / 1_000,
+            )
         except KeyboardInterrupt as e:
             query_result = PyQueryResult(QueryEndState.Canceled, "Query canceled by the user.")
             ctx._notify_query_end(query_id, query_result)

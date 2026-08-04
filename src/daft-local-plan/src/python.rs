@@ -150,7 +150,7 @@ impl PyExecutionStats {
         let telemetry = &self.inner.profile_telemetry;
         let result = PyDict::new(py);
         result.set_item("peak_process_rss_bytes", telemetry.peak_process_rss_bytes)?;
-        result.set_item("spilled_bytes", telemetry.spilled_bytes)?;
+        result.set_item("shuffle_write_bytes", telemetry.shuffle_write_bytes)?;
 
         let partitions = PyDict::new(py);
         for (node_id, stats) in &telemetry.partition_stats {

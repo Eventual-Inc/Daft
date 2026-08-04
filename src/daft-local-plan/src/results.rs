@@ -32,6 +32,14 @@ impl ProfilePartitionStats {
         self.total_bytes += bytes;
         self.max_bytes = self.max_bytes.max(bytes);
     }
+
+    pub fn merge(&mut self, other: &Self) {
+        self.count += other.count;
+        self.total_rows += other.total_rows;
+        self.max_rows = self.max_rows.max(other.max_rows);
+        self.total_bytes += other.total_bytes;
+        self.max_bytes = self.max_bytes.max(other.max_bytes);
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, bincode::Encode, bincode::Decode)]
@@ -54,9 +62,35 @@ impl ScanPushdownStats {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, bincode::Encode, bincode::Decode)]
 pub struct ProfileTelemetry {
     pub peak_process_rss_bytes: Option<u64>,
-    pub spilled_bytes: Option<u64>,
+    pub shuffle_write_bytes: Option<u64>,
     pub partition_stats: HashMap<usize, ProfilePartitionStats>,
     pub scan_pushdowns: HashMap<usize, ScanPushdownStats>,
+}
+
+impl ProfileTelemetry {
+    pub fn merge(&mut self, other: &Self) {
+        self.peak_process_rss_bytes =
+            match (self.peak_process_rss_bytes, other.peak_process_rss_bytes) {
+                (Some(left), Some(right)) => Some(left.max(right)),
+                (left, right) => left.or(right),
+            };
+        self.shuffle_write_bytes = match (self.shuffle_write_bytes, other.shuffle_write_bytes) {
+            (Some(left), Some(right)) => Some(left + right),
+            (left, right) => left.or(right),
+        };
+        for (node_id, stats) in &other.partition_stats {
+            self.partition_stats
+                .entry(*node_id)
+                .or_default()
+                .merge(stats);
+        }
+        for (node_id, pushdown) in &other.scan_pushdowns {
+            self.scan_pushdowns
+                .entry(*node_id)
+                .and_modify(|current| current.merge(pushdown))
+                .or_insert_with(|| pushdown.clone());
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -241,7 +275,7 @@ mod tests {
     fn profile_telemetry_roundtrips_in_v2_wire_format() {
         let mut telemetry = ProfileTelemetry {
             peak_process_rss_bytes: Some(1234),
-            spilled_bytes: Some(5678),
+            shuffle_write_bytes: Some(5678),
             ..Default::default()
         };
         telemetry
@@ -254,7 +288,7 @@ mod tests {
         let decoded = ExecutionStats::decode(&stats.encode());
 
         assert_eq!(decoded.profile_telemetry.peak_process_rss_bytes, Some(1234));
-        assert_eq!(decoded.profile_telemetry.spilled_bytes, Some(5678));
+        assert_eq!(decoded.profile_telemetry.shuffle_write_bytes, Some(5678));
         assert_eq!(decoded.profile_telemetry.partition_stats[&7].max_rows, 100);
     }
 
@@ -269,5 +303,51 @@ mod tests {
 
         assert_eq!(decoded.profile_telemetry.peak_process_rss_bytes, None);
         assert!(decoded.profile_telemetry.partition_stats.is_empty());
+    }
+
+    #[test]
+    fn profile_telemetry_merge_preserves_aggregation_semantics() {
+        let mut left = ProfileTelemetry {
+            peak_process_rss_bytes: Some(100),
+            shuffle_write_bytes: Some(10),
+            ..Default::default()
+        };
+        left.partition_stats.entry(7).or_default().record(10, 20);
+        left.scan_pushdowns.insert(
+            7,
+            ScanPushdownStats {
+                filter_requested: true,
+                filter_applied: true,
+                projection_requested: false,
+                projection_applied: true,
+            },
+        );
+        let mut right = ProfileTelemetry {
+            peak_process_rss_bytes: Some(80),
+            shuffle_write_bytes: Some(15),
+            ..Default::default()
+        };
+        right.partition_stats.entry(7).or_default().record(30, 40);
+        right.scan_pushdowns.insert(
+            7,
+            ScanPushdownStats {
+                filter_requested: false,
+                filter_applied: false,
+                projection_requested: true,
+                projection_applied: true,
+            },
+        );
+
+        left.merge(&right);
+
+        assert_eq!(left.peak_process_rss_bytes, Some(100));
+        assert_eq!(left.shuffle_write_bytes, Some(25));
+        assert_eq!(left.partition_stats[&7].count, 2);
+        assert_eq!(left.partition_stats[&7].total_rows, 40);
+        assert_eq!(left.partition_stats[&7].max_rows, 30);
+        assert!(left.scan_pushdowns[&7].filter_requested);
+        assert!(!left.scan_pushdowns[&7].filter_applied);
+        assert!(left.scan_pushdowns[&7].projection_requested);
+        assert!(left.scan_pushdowns[&7].projection_applied);
     }
 }

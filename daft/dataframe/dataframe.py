@@ -420,6 +420,8 @@ class DataFrame:
 
         The profile reports wall time, operator CPU time, source rows and bytes,
         sampled peak process memory, slowest operators, and actionable warnings.
+        Peak process memory is available only when ``DAFT_PROCESS_MONITOR_ENABLED``
+        is enabled and the process monitor samples during execution.
         This method does not execute the DataFrame; call :meth:`collect` first.
 
         Args:

@@ -36,9 +36,9 @@ pub trait RuntimeStats: Send + Sync + std::any::Any {
     /// to the operator's own scale.
     fn increment_num_tasks(&self);
 
-    /// Record logical bytes written to Flight shuffle spill files.
-    fn add_spilled_bytes(&self, _bytes: u64) {}
-    fn spilled_bytes(&self) -> u64 {
+    /// Record logical bytes written to the Flight shuffle store.
+    fn add_shuffle_write_bytes(&self, _bytes: u64) {}
+    fn shuffle_write_bytes(&self) -> u64 {
         0
     }
 
@@ -56,7 +56,7 @@ pub struct DefaultRuntimeStats {
     bytes_in: Counter,
     bytes_out: Counter,
     num_tasks: Counter,
-    spilled_bytes: AtomicU64,
+    shuffle_write_bytes: AtomicU64,
     node_kv: Vec<KeyValue>,
 }
 
@@ -70,7 +70,7 @@ impl RuntimeStats for DefaultRuntimeStats {
             bytes_in: meter.bytes_in_metric(),
             bytes_out: meter.bytes_out_metric(),
             num_tasks: meter.num_tasks_metric(),
-            spilled_bytes: AtomicU64::new(0),
+            shuffle_write_bytes: AtomicU64::new(0),
             node_kv,
         }
     }
@@ -110,11 +110,11 @@ impl RuntimeStats for DefaultRuntimeStats {
         self.num_tasks.add(1, self.node_kv.as_slice());
     }
 
-    fn add_spilled_bytes(&self, bytes: u64) {
-        self.spilled_bytes.fetch_add(bytes, Ordering::Relaxed);
+    fn add_shuffle_write_bytes(&self, bytes: u64) {
+        self.shuffle_write_bytes.fetch_add(bytes, Ordering::Relaxed);
     }
 
-    fn spilled_bytes(&self) -> u64 {
-        self.spilled_bytes.load(Ordering::Relaxed)
+    fn shuffle_write_bytes(&self) -> u64 {
+        self.shuffle_write_bytes.load(Ordering::Relaxed)
     }
 }
