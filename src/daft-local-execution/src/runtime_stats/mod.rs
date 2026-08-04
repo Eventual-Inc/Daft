@@ -36,6 +36,12 @@ pub use values::{DefaultRuntimeStats, RuntimeStats};
 
 use crate::pipeline::PipelineNode;
 
+/// Per-node runtime stats, keyed first by node so that aggregating a single
+/// node's stats only touches that node's inputs. A flat `(NodeID, InputId)`
+/// map forces a full scan per node, which is O(nodes x inputs) on every 200ms
+/// tick and dominates the executor on wide plans (tens of thousands of nodes).
+type InputStatsMap = HashMap<NodeID, HashMap<InputId, Arc<dyn RuntimeStats>>>;
+
 /// Message type for the stats manager channel.
 #[allow(dead_code)]
 pub enum StatsManagerMessage {
@@ -202,7 +208,7 @@ impl RuntimeStatsManager {
     #[allow(clippy::too_many_arguments)]
     fn handle_message(
         msg: StatsManagerMessage,
-        input_stats: &mut HashMap<(NodeID, InputId), Arc<dyn RuntimeStats>>,
+        input_stats: &mut InputStatsMap,
         active_nodes: &mut HashSet<NodeID>,
         query_id: &QueryID,
         query_plan: &serde_json::Value,
@@ -243,13 +249,16 @@ impl RuntimeStatsManager {
                 }
             }
             StatsManagerMessage::RegisterRuntimeStats(node_id, input_id, stats) => {
-                input_stats.insert((node_id, input_id), stats);
+                input_stats
+                    .entry(node_id)
+                    .or_default()
+                    .insert(input_id, stats);
             }
             StatsManagerMessage::TakeInputSnapshot(input_id, respond_tx) => {
                 let mut result = Vec::new();
-                for (&(node_id, iid), stats) in input_stats.iter() {
-                    if iid == input_id
-                        && let Some(node_info) = node_info_map.get(&node_id)
+                for (node_id, by_input) in input_stats.iter() {
+                    if let Some(stats) = by_input.get(&input_id)
+                        && let Some(node_info) = node_info_map.get(node_id)
                     {
                         result.push((node_info.clone(), stats.flush()));
                     }
@@ -265,7 +274,7 @@ impl RuntimeStatsManager {
     fn flush_and_finalize_node(
         query_id: &QueryID,
         node_id: NodeID,
-        input_stats: &HashMap<(NodeID, InputId), Arc<dyn RuntimeStats>>,
+        input_stats: &InputStatsMap,
         progress_bar: Option<&dyn ProgressBar>,
         subscribers: &[Arc<dyn Subscriber>],
         err_context: &'static str,
@@ -399,8 +408,8 @@ impl RuntimeStatsManager {
         let event_loop = async move {
             let mut interval = interval(throttle_interval);
             let mut active_nodes = HashSet::with_capacity(node_info_map.len());
-            // Per-input_id stats: (node_id, input_id) -> RuntimeStats
-            let mut input_stats: HashMap<(NodeID, InputId), Arc<dyn RuntimeStats>> = HashMap::new();
+            // Per-node, per-input_id stats: node_id -> input_id -> RuntimeStats
+            let mut input_stats: InputStatsMap = HashMap::new();
             // Reuse container for ticks
             let mut snapshot_container = Vec::with_capacity(node_info_map.len());
             let mut last_task_stats_emit: Option<Instant> = None;
@@ -461,8 +470,11 @@ impl RuntimeStatsManager {
                         // during which channel sends silently queue but are never read.)
                         let mut snapshots_by_input: HashMap<InputId, Vec<(Arc<NodeInfo>, StatSnapshot)>> =
                             HashMap::new();
-                        for ((node_id, input_id), stats) in &input_stats {
-                            if let Some(node_info) = node_info_map.get(node_id) {
+                        for (node_id, by_input) in &input_stats {
+                            let Some(node_info) = node_info_map.get(node_id) else {
+                                continue;
+                            };
+                            for (input_id, stats) in by_input {
                                 snapshots_by_input
                                     .entry(*input_id)
                                     .or_default()
@@ -597,7 +609,7 @@ fn dispatch_event(subscribers: &[Arc<dyn Subscriber>], event: &Event, err_contex
 /// and saturating the dashboard's POST queue on multi-CPU workers.
 fn emit_per_task_stats_updates(
     query_id: &QueryID,
-    input_stats: &HashMap<(NodeID, InputId), Arc<dyn RuntimeStats>>,
+    input_stats: &InputStatsMap,
     node_info_map: &HashMap<NodeID, Arc<NodeInfo>>,
     subscribers: &[Arc<dyn Subscriber>],
 ) {
@@ -612,16 +624,18 @@ fn emit_per_task_stats_updates(
     // logic stays in lockstep with `on_task_end` in the dashboard subscriber.
     let mut by_input: HashMap<InputId, common_metrics::task_io::TaskExternalIo> = HashMap::new();
     let default_node_info = NodeInfo::default();
-    for (&(node_id, input_id), stats) in input_stats {
-        let snapshot = stats.snapshot();
+    for (node_id, by_input_stats) in input_stats {
         let node_info = node_info_map
-            .get(&node_id)
+            .get(node_id)
             .map(Arc::as_ref)
             .unwrap_or(&default_node_info);
-        by_input
-            .entry(input_id)
-            .or_default()
-            .accumulate(node_info, &snapshot);
+        for (&input_id, stats) in by_input_stats {
+            let snapshot = stats.snapshot();
+            by_input
+                .entry(input_id)
+                .or_default()
+                .accumulate(node_info, &snapshot);
+        }
     }
     let by_input: HashMap<InputId, TaskStatsSnapshot> = by_input
         .into_iter()
@@ -652,19 +666,17 @@ fn emit_per_task_stats_updates(
 }
 
 /// Aggregate stats for a given node_id across all input_ids.
-fn aggregate_node_stats(
-    input_stats: &HashMap<(NodeID, InputId), Arc<dyn RuntimeStats>>,
-    node_id: NodeID,
-) -> Option<StatSnapshot> {
+///
+/// Only touches the inputs belonging to `node_id`, so aggregating every active
+/// node costs O(total inputs) per tick rather than O(nodes x inputs).
+fn aggregate_node_stats(input_stats: &InputStatsMap, node_id: NodeID) -> Option<StatSnapshot> {
     let mut aggregated: Option<StatSnapshot> = None;
-    for ((nid, _), stats) in input_stats {
-        if *nid == node_id {
-            let snapshot = stats.snapshot();
-            aggregated = Some(match aggregated {
-                Some(acc) => acc.merge(&snapshot),
-                None => snapshot,
-            });
-        }
+    for stats in input_stats.get(&node_id)?.values() {
+        let snapshot = stats.snapshot();
+        aggregated = Some(match aggregated {
+            Some(acc) => acc.merge(&snapshot),
+            None => snapshot,
+        });
     }
     aggregated
 }
