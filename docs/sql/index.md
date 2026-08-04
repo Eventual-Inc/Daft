@@ -121,8 +121,9 @@ A list of paths is written as a SQL array:
 
 These mirror the corresponding Python reader arguments — see
 [`read_parquet`][daft.read_parquet], [`read_csv`][daft.read_csv],
-[`read_json`][daft.read_json], and [`read_iceberg`][daft.read_iceberg] for what each one
-does, and [Generic File Source Options](../connectors/generic-file-source-options.md)
+[`read_json`][daft.read_json], [`read_iceberg`][daft.read_iceberg], and
+[`read_deltalake`][daft.read_deltalake] for what each one does, and
+[Generic File Source Options](../connectors/generic-file-source-options.md)
 for `ignore_corrupt_files` in depth.
 
 A `schema` is given as a struct literal mapping column names to type names:
