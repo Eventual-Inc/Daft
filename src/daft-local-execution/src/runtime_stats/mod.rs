@@ -36,10 +36,11 @@ pub use values::{DefaultRuntimeStats, RuntimeStats};
 
 use crate::pipeline::PipelineNode;
 
-/// Per-node runtime stats, keyed first by node so that aggregating a single
-/// node's stats only touches that node's inputs. A flat `(NodeID, InputId)`
-/// map forces a full scan per node, which is O(nodes x inputs) on every 200ms
-/// tick and dominates the executor on wide plans (tens of thousands of nodes).
+/// Per-node runtime stats: NodeID -> InputId -> RuntimeStats
+/// Better than (NodeID, InputId) since we can narrow down the search space
+/// for aggregations.
+// TODO: Consider switching to (InputId, NodeID) instead
+// We need to check what the InputId is in the case of Swordfish though.
 type InputStatsMap = HashMap<NodeID, HashMap<InputId, Arc<dyn RuntimeStats>>>;
 
 /// Message type for the stats manager channel.
@@ -666,9 +667,6 @@ fn emit_per_task_stats_updates(
 }
 
 /// Aggregate stats for a given node_id across all input_ids.
-///
-/// Only touches the inputs belonging to `node_id`, so aggregating every active
-/// node costs O(total inputs) per tick rather than O(nodes x inputs).
 fn aggregate_node_stats(input_stats: &InputStatsMap, node_id: NodeID) -> Option<StatSnapshot> {
     let mut aggregated: Option<StatSnapshot> = None;
     for stats in input_stats.get(&node_id)?.values() {
