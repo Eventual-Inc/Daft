@@ -22,7 +22,8 @@ use date_arithmetic::{AddMonths, DateAdd, DateDiff, DateSub, MonthsBetween};
 use date_construction::{MakeDate, MakeTimestamp, MakeTimestampLtz};
 use date_navigation::{LastDay, NextDay};
 use epoch_conversions::{
-    DateFromUnixDate, FromUnixtime, TimestampMicros, TimestampMillis, TimestampSeconds,
+    DateFromUnixDate, FromUnixtime, TimestampMicros, TimestampMillis, TimestampSeconds, UnixMicros,
+    UnixMillis, UnixSeconds,
 };
 use serde::{Deserialize, Serialize};
 use time::{ConvertTimeZone, FromUtcTimestamp, ReplaceTimeZone, Time, ToUtcTimestamp};
@@ -137,6 +138,9 @@ impl FunctionModule for TemporalFunctions {
         parent.add_fn(TimestampSeconds);
         parent.add_fn(TimestampMillis);
         parent.add_fn(TimestampMicros);
+        parent.add_fn(UnixSeconds);
+        parent.add_fn(UnixMillis);
+        parent.add_fn(UnixMicros);
         parent.add_fn(FromUnixtime);
         parent.add_fn(MakeDate);
         parent.add_fn(MakeTimestamp);

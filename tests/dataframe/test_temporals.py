@@ -40,6 +40,9 @@ from daft.functions import (
     timestamp_seconds,
     to_utc_timestamp,
     trunc,
+    unix_micros,
+    unix_millis,
+    unix_seconds,
     weekofyear,
 )
 
@@ -964,6 +967,85 @@ def test_timestamp_micros() -> None:
     result = df.to_pydict()
     assert result["ts"][0] == datetime(1970, 1, 1)
     assert result["ts"][1] == datetime(2021, 1, 1)
+
+
+def test_unix_seconds() -> None:
+    df = daft.from_pydict({"ts": [datetime(1970, 1, 1), datetime(2021, 1, 1), None]})
+    df = df.select(unix_seconds(col("ts")).alias("s"))
+    assert df.schema()["s"].dtype == DataType.int64()
+    result = df.to_pydict()
+
+    assert result == {"s": [0, 1609459200, None]}
+
+
+def test_unix_millis() -> None:
+    df = daft.from_pydict({"ts": [datetime(1970, 1, 1), datetime(2021, 1, 1), None]})
+    df = df.select(unix_millis(col("ts")).alias("ms"))
+    assert df.schema()["ms"].dtype == DataType.int64()
+    result = df.to_pydict()
+
+    assert result == {"ms": [0, 1609459200000, None]}
+
+
+def test_unix_micros() -> None:
+    df = daft.from_pydict({"ts": [datetime(1970, 1, 1), datetime(2021, 1, 1), None]})
+    df = df.select(unix_micros(col("ts")).alias("us"))
+    assert df.schema()["us"].dtype == DataType.int64()
+    result = df.to_pydict()
+
+    assert result == {"us": [0, 1609459200000000, None]}
+
+
+def test_unix_seconds_timezone_aware() -> None:
+    # 2021-01-01 00:00:00 UTC expressed in US/Eastern; epoch seconds must be unchanged.
+    est = pytz.timezone("US/Eastern")
+    ts = datetime(2021, 1, 1, tzinfo=timezone.utc).astimezone(est)
+    df = daft.from_pydict({"ts": [ts]})
+    df = df.select(unix_seconds(col("ts")).alias("s"))
+    result = df.to_pydict()
+
+    assert result == {"s": [1609459200]}
+
+
+def test_unix_seconds_roundtrip_timestamp_seconds() -> None:
+    df = daft.from_pydict({"s": [0, 1609459200, -86400]})
+    df = df.select(unix_seconds(timestamp_seconds(col("s"))).alias("s"))
+    result = df.to_pydict()
+
+    assert result == {"s": [0, 1609459200, -86400]}
+
+
+def test_unix_seconds_negative_fractional_floors() -> None:
+    # Pre-epoch values with sub-second precision must floor (Spark floorDiv
+    # semantics): -1.5s -> -2, not truncate toward zero to -1.
+    df = daft.from_pydict({"us": [-1500000, -1, 0, 1500000]})
+    df = df.select(unix_seconds(timestamp_micros(col("us"))).alias("s"))
+    result = df.to_pydict()
+
+    assert result == {"s": [-2, -1, 0, 1]}
+
+
+def test_unix_millis_negative_fractional_floors() -> None:
+    # -1.5ms in microseconds must floor to -2ms.
+    df = daft.from_pydict({"us": [-1500, -1, 0, 1500]})
+    df = df.select(unix_millis(timestamp_micros(col("us"))).alias("ms"))
+    result = df.to_pydict()
+
+    assert result == {"ms": [-2, -1, 0, 1]}
+
+
+def test_unix_epoch_functions_sql() -> None:
+    df = daft.from_pydict({"ts": [datetime(2021, 1, 1)]})  # noqa: F841
+    sql = "SELECT unix_seconds(ts) as s, unix_millis(ts) as ms, unix_micros(ts) as us FROM df"
+    result = daft.sql(sql).to_pydict()
+
+    assert result == {"s": [1609459200], "ms": [1609459200000], "us": [1609459200000000]}
+
+
+def test_unix_seconds_invalid_input() -> None:
+    df = daft.from_pydict({"x": [1, 2]})
+    with pytest.raises(Exception, match="Expected timestamp input"):
+        df.select(unix_seconds(col("x"))).collect()
 
 
 def test_from_unixtime() -> None:

@@ -1,4 +1,7 @@
-use daft_core::datatypes::TimeUnit;
+use daft_core::{
+    datatypes::TimeUnit,
+    prelude::{Int64Array, IntoSeries},
+};
 use daft_dsl::functions::{UnaryArg, prelude::*};
 
 // --- DateFromUnixDate ---
@@ -208,3 +211,77 @@ impl ScalarUDF for FromUnixtime {
         Ok(Field::new(field.name, DataType::Utf8))
     }
 }
+
+// --- UnixSeconds / UnixMillis / UnixMicros ---
+
+macro_rules! impl_unix_epoch_fn {
+    ($name:ident, $fn_name:literal, $time_unit:ident) => {
+        #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+        pub struct $name;
+
+        #[typetag::serde]
+        impl ScalarUDF for $name {
+            fn name(&self) -> &'static str {
+                $fn_name
+            }
+
+            fn call(
+                &self,
+                inputs: FunctionArgs<Series>,
+                _ctx: &daft_dsl::functions::scalar::EvalContext,
+            ) -> DaftResult<Series> {
+                let UnaryArg { input } = inputs.try_into()?;
+                let DataType::Timestamp(input_unit, _) = input.data_type().clone() else {
+                    return Err(common_error::DaftError::TypeError(format!(
+                        "Expected timestamp input to {}, got {}",
+                        $fn_name,
+                        input.data_type()
+                    )));
+                };
+                // Timestamps are physically stored as i64 epoch values in `input_unit`
+                // (already UTC-based for timezone-aware inputs). Convert between units
+                // with floor semantics to match Spark's floorDiv behavior for pre-epoch
+                // values, rather than the truncate-toward-zero semantics of a unit cast.
+                let physical = input.cast(&DataType::Int64)?;
+                let src = input_unit.to_scale_factor();
+                let dst = TimeUnit::$time_unit.to_scale_factor();
+                if src >= dst {
+                    // Floor division: subtract the non-negative remainder first, then
+                    // divide exactly. (`Series::floor_div` truncates toward zero for
+                    // integer types, which would round pre-epoch values the wrong way.)
+                    let factor =
+                        Int64Array::from_values("factor", std::iter::once(src / dst)).into_series();
+                    let rem = (&physical % &factor)?;
+                    let rem = (&rem + &factor)?;
+                    let rem = (&rem % &factor)?;
+                    let adjusted = (&physical - &rem)?;
+                    adjusted.floor_div(&factor)
+                } else {
+                    let factor =
+                        Int64Array::from_values("factor", std::iter::once(dst / src)).into_series();
+                    &physical * &factor
+                }
+            }
+
+            fn get_return_field(
+                &self,
+                inputs: FunctionArgs<ExprRef>,
+                schema: &Schema,
+            ) -> DaftResult<Field> {
+                let UnaryArg { input } = inputs.try_into()?;
+                let field = input.to_field(schema)?;
+                ensure!(
+                    matches!(field.dtype, DataType::Timestamp(..)),
+                    TypeError: "Expected timestamp input to {}, got {}",
+                    $fn_name,
+                    field.dtype
+                );
+                Ok(Field::new(field.name, DataType::Int64))
+            }
+        }
+    };
+}
+
+impl_unix_epoch_fn!(UnixSeconds, "unix_seconds", Seconds);
+impl_unix_epoch_fn!(UnixMillis, "unix_millis", Milliseconds);
+impl_unix_epoch_fn!(UnixMicros, "unix_micros", Microseconds);
