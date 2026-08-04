@@ -36,9 +36,11 @@ impl OpenDALSource {
         scheme: &str,
         config: &BTreeMap<String, String>,
     ) -> super::Result<Arc<dyn ObjectSource>> {
-        // Ensure all compiled-in OpenDAL services are registered in the global
-        // OperatorRegistry. This is a no-op after the first call.
-        opendal::init_default_registry();
+        // Register compiled-in OpenDAL services and install the process-wide
+        // HTTP transport. OpenDAL 0.58+ splits HTTP into a separate transport
+        // that must be installed before cloud services can make requests.
+        // Safe to call repeatedly (registry init and transport install are once).
+        opendal::install_default();
 
         let operator =
             Operator::via_iter(scheme, config.clone()).map_err(|e: opendal::Error| {
