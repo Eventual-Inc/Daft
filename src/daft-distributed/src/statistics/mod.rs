@@ -7,7 +7,10 @@ use std::{
 };
 
 use common_error::DaftResult;
-use common_metrics::{Meter, QueryID, ops::NodeInfo};
+use common_metrics::{
+    BYTES_OUT_KEY, BYTES_READ_KEY, Meter, QueryID, ROWS_OUT_KEY, Stat, ops::NodeInfo,
+    snapshot::StatSnapshotImpl,
+};
 use common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_context::{
     get_context,
@@ -16,7 +19,7 @@ use daft_context::{
         events::{OperatorEndEvent, OperatorMeta, OperatorStartEvent},
     },
 };
-use daft_local_plan::ExecutionStats;
+use daft_local_plan::{ExecutionStats, ProfileTelemetry};
 pub use stats::RuntimeStats;
 
 use crate::{
@@ -130,6 +133,64 @@ pub struct StatisticsManager {
     /// exercise the global event bus.
     query_id: QueryID,
     skipped_corrupt_files: Mutex<Vec<(String, String, bool)>>,
+    profile_telemetry: Mutex<ProfileTelemetry>,
+}
+
+fn remap_task_profile_telemetry(stats: &ExecutionStats) -> ProfileTelemetry {
+    let mut remapped = ProfileTelemetry {
+        peak_process_rss_bytes: stats.profile_telemetry.peak_process_rss_bytes,
+        shuffle_write_bytes: stats.profile_telemetry.shuffle_write_bytes,
+        ..Default::default()
+    };
+    let mut task_partitions: HashMap<usize, (u64, u64)> = HashMap::new();
+    let use_worker_partitions = !stats.profile_telemetry.partition_stats.is_empty();
+
+    for (node_info, snapshot) in &stats.nodes {
+        let Some(origin_id) = node_info.node_origin_id else {
+            continue;
+        };
+        if let Some(pushdown) = stats.profile_telemetry.scan_pushdowns.get(&node_info.id) {
+            remapped
+                .scan_pushdowns
+                .entry(origin_id)
+                .and_modify(|current| current.merge(pushdown))
+                .or_insert_with(|| pushdown.clone());
+        }
+
+        let values = task_partitions.entry(origin_id).or_default();
+        if use_worker_partitions {
+            if let Some(partition) = stats.profile_telemetry.partition_stats.get(&node_info.id) {
+                if node_info.is_task_root {
+                    values.0 += partition.total_rows;
+                }
+                if node_info.is_task_root || node_info.is_task_leaf {
+                    values.1 = values.1.max(partition.total_bytes);
+                }
+            }
+        } else {
+            for (name, stat) in snapshot.to_stats().iter() {
+                match (name, stat) {
+                    (ROWS_OUT_KEY, Stat::Count(value)) if node_info.is_task_root => {
+                        values.0 += *value
+                    }
+                    (BYTES_OUT_KEY | BYTES_READ_KEY, Stat::Bytes(value))
+                        if node_info.is_task_root || node_info.is_task_leaf =>
+                    {
+                        values.1 = values.1.max(*value)
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    for (node_id, (rows, bytes)) in task_partitions {
+        remapped
+            .partition_stats
+            .entry(node_id)
+            .or_default()
+            .record(rows, bytes);
+    }
+    remapped
 }
 
 impl StatisticsManager {
@@ -170,6 +231,7 @@ impl StatisticsManager {
             subscribers: Mutex::new(subscribers),
             query_id,
             skipped_corrupt_files: Mutex::new(vec![]),
+            profile_telemetry: Mutex::new(ProfileTelemetry::default()),
         }))
     }
 
@@ -180,6 +242,13 @@ impl StatisticsManager {
             && let Ok(mut v) = self.skipped_corrupt_files.lock()
         {
             v.extend(stats.skipped_corrupt_files.iter().cloned());
+        }
+
+        if let TaskEvent::Completed { ref stats, .. } = event {
+            let task_telemetry = remap_task_profile_telemetry(stats);
+            if let Ok(mut telemetry) = self.profile_telemetry.lock() {
+                telemetry.merge(&task_telemetry);
+            }
         }
 
         // First, drive per-node lifecycle (Start/End) events. We do this
@@ -298,6 +367,106 @@ impl StatisticsManager {
             .lock()
             .map(|v| v.clone())
             .unwrap_or_default();
-        ExecutionStats::new("".into(), nodes).with_skipped_corrupt_files(skipped_corrupt_files)
+        let profile_telemetry = self
+            .profile_telemetry
+            .lock()
+            .map(|telemetry| telemetry.clone())
+            .unwrap_or_default();
+        ExecutionStats::new("".into(), nodes)
+            .with_skipped_corrupt_files(skipped_corrupt_files)
+            .with_profile_telemetry(profile_telemetry)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use common_metrics::{StatSnapshot, snapshot::DefaultSnapshot};
+    use daft_local_plan::{ProfilePartitionStats, ScanPushdownStats};
+
+    use super::*;
+
+    fn task_node(id: usize, origin_id: usize, is_root: bool, is_leaf: bool) -> Arc<NodeInfo> {
+        Arc::new(NodeInfo {
+            id,
+            node_origin_id: Some(origin_id),
+            is_task_root: is_root,
+            is_task_leaf: is_leaf,
+            ..Default::default()
+        })
+    }
+
+    fn snapshot(rows_out: u64, bytes_out: u64) -> StatSnapshot {
+        StatSnapshot::Default(DefaultSnapshot {
+            cpu_us: 0,
+            rows_in: 0,
+            rows_out,
+            bytes_in: 0,
+            bytes_out,
+            num_tasks: 0,
+        })
+    }
+
+    #[test]
+    fn task_telemetry_remaps_worker_partitions_and_pushdowns() {
+        let root = task_node(1, 10, true, false);
+        let leaf = task_node(2, 10, false, true);
+        let mut telemetry = ProfileTelemetry {
+            peak_process_rss_bytes: Some(123),
+            shuffle_write_bytes: Some(456),
+            ..Default::default()
+        };
+        telemetry.partition_stats.insert(
+            1,
+            ProfilePartitionStats {
+                count: 1,
+                total_rows: 50,
+                max_rows: 50,
+                total_bytes: 100,
+                max_bytes: 100,
+            },
+        );
+        telemetry.partition_stats.insert(
+            2,
+            ProfilePartitionStats {
+                count: 1,
+                total_rows: 70,
+                max_rows: 70,
+                total_bytes: 200,
+                max_bytes: 200,
+            },
+        );
+        telemetry.scan_pushdowns.insert(
+            2,
+            ScanPushdownStats {
+                filter_applied: true,
+                projection_applied: false,
+                ..Default::default()
+            },
+        );
+        let stats = ExecutionStats::new(
+            "query".into(),
+            vec![(root, snapshot(999, 999)), (leaf, snapshot(999, 999))],
+        )
+        .with_profile_telemetry(telemetry);
+
+        let remapped = remap_task_profile_telemetry(&stats);
+
+        assert_eq!(remapped.peak_process_rss_bytes, Some(123));
+        assert_eq!(remapped.shuffle_write_bytes, Some(456));
+        assert_eq!(remapped.partition_stats[&10].count, 1);
+        assert_eq!(remapped.partition_stats[&10].total_rows, 50);
+        assert_eq!(remapped.partition_stats[&10].total_bytes, 200);
+        assert!(remapped.scan_pushdowns[&10].filter_applied);
+    }
+
+    #[test]
+    fn task_telemetry_falls_back_to_node_snapshots() {
+        let root = task_node(1, 10, true, false);
+        let stats = ExecutionStats::new("query".into(), vec![(root, snapshot(25, 75))]);
+
+        let remapped = remap_task_profile_telemetry(&stats);
+
+        assert_eq!(remapped.partition_stats[&10].total_rows, 25);
+        assert_eq!(remapped.partition_stats[&10].total_bytes, 75);
     }
 }
