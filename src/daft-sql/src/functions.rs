@@ -335,9 +335,15 @@ impl SQLLiteral for usize {
     where
         Self: Sized,
     {
-        expr.as_literal()
-            .and_then(|lit| lit.as_i64().map(|v| v as Self))
-            .ok_or_else(|| PlannerError::invalid_operation("Expected an integer literal"))
+        let value = expr
+            .as_literal()
+            .and_then(daft_core::lit::Literal::as_i64)
+            .ok_or_else(|| PlannerError::invalid_operation("Expected an integer literal"))?;
+        Self::try_from(value).map_err(|_| {
+            PlannerError::invalid_operation(format!(
+                "Expected a non-negative integer literal, got {value}"
+            ))
+        })
     }
 }
 
