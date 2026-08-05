@@ -2,24 +2,16 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeType};
-use daft_local_plan::RepartitionWriteBackend;
-use daft_logical_plan::partitioning::RepartitionSpec;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
+use daft_logical_plan::{partitioning::RepartitionSpec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
-use futures::TryStreamExt;
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
-        TaskBuilderStream,
-        shuffles::{
-            backends::{
-                DistributedShuffleBackend, ShuffleBackend, ShuffleBackendReadSpec,
-                ShuffleBackendWriteConfig,
-            },
-            partition_groups::{
-                flight_server_cache_mapping_from_outputs, ray_partition_groups_from_outputs,
-            },
-        },
+        ClusteringStrategy, DistributedPipelineNode, NodeID, PipelineNodeConfig,
+        PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
+        clustering::clustering_from_repartition_spec,
+        shuffles::backends::{DistributedShuffleBackend, ShuffleBackend},
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -34,6 +26,7 @@ pub(crate) struct RepartitionNode {
     context: PipelineNodeContext,
     repartition_spec: RepartitionSpec,
     shuffle_backend: ShuffleBackend,
+    num_partitions: usize,
     child: DistributedPipelineNode,
 }
 
@@ -49,7 +42,7 @@ impl RepartitionNode {
         num_partitions: usize,
         backend: DistributedShuffleBackend,
         child: DistributedPipelineNode,
-    ) -> Self {
+    ) -> DaftResult<Self> {
         let context = PipelineNodeContext::new(
             plan_config.query_idx,
             plan_config.query_id.clone(),
@@ -58,21 +51,27 @@ impl RepartitionNode {
             NodeType::Repartition,
             NodeCategory::BlockingSink,
         );
+        // The logical->pipeline boundary for repartition clustering: bind the (possibly
+        // resolved-by-name) repartition keys against the input schema once.
+        let clustering_spec = clustering_from_repartition_spec(
+            &repartition_spec,
+            child.config().clustering_spec.num_partitions(),
+            &child.config().schema,
+        )?;
         let config = PipelineNodeConfig::new(
             schema.clone(),
             plan_config.config.clone(),
-            repartition_spec
-                .to_clustering_spec(child.config().clustering_spec.num_partitions())
-                .into(),
+            ClusteringStrategy::Explicit(clustering_spec),
         );
 
-        Self {
+        Ok(Self {
             config,
             context: context.clone(),
             repartition_spec,
-            shuffle_backend: ShuffleBackend::new(&context, schema, num_partitions, backend),
+            shuffle_backend: ShuffleBackend::new(&context, schema, backend),
+            num_partitions,
             child,
-        }
+        })
     }
 
     async fn execution_loop(
@@ -82,29 +81,14 @@ impl RepartitionNode {
         result_tx: Sender<SwordfishTaskBuilder>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
-        let outputs = local_shuffle_write_node
-            .task_outputs(
-                scheduler_handle.clone(),
-                self.context.query_idx,
-                task_id_counter,
-            )
-            .try_collect::<Vec<_>>()
-            .await?;
-
-        let read_spec = match self.shuffle_backend.backend() {
-            DistributedShuffleBackend::Ray => ShuffleBackendReadSpec::Ray {
-                partition_groups: ray_partition_groups_from_outputs(
-                    outputs,
-                    self.shuffle_backend.num_partitions(),
-                )?,
-            },
-            DistributedShuffleBackend::Flight(_) => ShuffleBackendReadSpec::Flight {
-                server_cache_mapping: flight_server_cache_mapping_from_outputs(outputs)?,
-            },
-        };
+        let outputs = local_shuffle_write_node.materialize(
+            scheduler_handle.clone(),
+            self.context.query_idx,
+            task_id_counter,
+        );
 
         self.shuffle_backend
-            .emit_read_tasks(read_spec, self.as_ref(), result_tx)
+            .emit_read_tasks_from_stream(outputs, self.num_partitions, self.as_ref(), result_tx)
             .await
     }
 }
@@ -129,23 +113,24 @@ impl PipelineNodeImpl for RepartitionNode {
         let input_node = self.child.clone().produce_tasks(plan_context);
         let self_arc = self.clone();
         self.shuffle_backend.register_cleanup(plan_context);
+
+        let schema = self.shuffle_backend.schema().clone();
+        let node_id = self.shuffle_backend.node_id();
+        let local_shuffle_backend = self.shuffle_backend.local_shuffle_backend();
+        let num_partitions = self.num_partitions;
+        let repartition_spec = self.repartition_spec.clone();
         let local_shuffle_write_node =
-            self.shuffle_backend
-                .build_write_stage(ShuffleBackendWriteConfig {
-                    input_node,
-                    producer: self.clone(),
-                    backend: match self.shuffle_backend.backend() {
-                        DistributedShuffleBackend::Ray => RepartitionWriteBackend::Ray,
-                        DistributedShuffleBackend::Flight(backend) => {
-                            RepartitionWriteBackend::Flight {
-                                shuffle_id: backend.shuffle_id,
-                                shuffle_dirs: backend.shuffle_dirs.clone(),
-                                compression: backend.compression.clone(),
-                            }
-                        }
-                    },
-                    repartition_spec: self.repartition_spec.clone(),
-                });
+            input_node.pipeline_instruction(self.clone(), move |input| {
+                LocalPhysicalPlan::repartition_write(
+                    input,
+                    num_partitions,
+                    schema.clone(),
+                    local_shuffle_backend.clone(),
+                    repartition_spec.clone(),
+                    StatsState::NotMaterialized,
+                    LocalNodeContext::new(Some(node_id as usize)),
+                )
+            });
 
         let (result_tx, result_rx) = create_channel(1);
 

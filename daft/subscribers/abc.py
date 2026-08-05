@@ -18,7 +18,6 @@ from daft.subscribers.events import (
     QueryFinished,
     QueryHeartbeat,
     QueryStarted,
-    ResultProduced,
     Stats,
 )
 
@@ -74,10 +73,6 @@ class Subscriber(ABC):
         self.on_execution_finished(event)
 
     @on_event.register
-    def _(self, event: ResultProduced) -> None:
-        self.on_result_produced(event)
-
-    @on_event.register
     def _(self, event: ProcessStats) -> None:
         self.on_process_stats(event)
 
@@ -131,10 +126,6 @@ class Subscriber(ABC):
 
     def on_execution_finished(self, event: ExecutionFinished) -> None:
         """Called when a query has finished executing."""
-        pass
-
-    def on_result_produced(self, event: ResultProduced) -> None:
-        """Called when a query emits result rows."""
         pass
 
     def on_query_start(self, query_id: str, metadata: PyQueryMetadata) -> None:

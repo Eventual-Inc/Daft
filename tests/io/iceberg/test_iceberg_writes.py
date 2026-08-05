@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import datetime
 import decimal
+from pathlib import Path
 from unittest.mock import patch
+from urllib.parse import unquote, urlparse
 
 import pyarrow as pa
 import pyarrow.fs as pafs
@@ -14,7 +16,6 @@ from daft.io import IOConfig
 from tests.conftest import get_tests_daft_runner_name
 
 pyiceberg = pytest.importorskip("pyiceberg")
-
 
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
@@ -42,8 +43,11 @@ from pyiceberg.types import (
     StructType,
     TimestampType,
 )
+from pyiceberg.types import NestedField as _NestedField
 
 import daft
+from daft.io.writer import IcebergWriter
+from daft.recordbatch.micropartition import MicroPartition
 
 
 @pytest.fixture(scope="function", params=[False, True], ids=["no_mock", "with_mock"])
@@ -74,6 +78,25 @@ def local_catalog(tmpdir):
     catalog.create_namespace("default")
     yield catalog
     catalog.engine.dispose()
+
+
+def test_read_iceberg_accepts_pathlike_metadata(local_catalog, patch_scan_task_file_path_scheme):
+    table = local_catalog.create_table(
+        "default.pathlike_metadata",
+        Schema(NestedField(field_id=1, name="x", type=LongType())),
+    )
+
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    df.write_iceberg(table)
+    table.refresh()
+
+    parsed = urlparse(table.metadata_location)
+    assert parsed.scheme == "file"
+
+    metadata_path = Path(unquote(parsed.path))
+    read_back = daft.read_iceberg(metadata_path)
+
+    assert df.to_arrow() == read_back.to_arrow().sort_by("x")
 
 
 @pytest.fixture(
@@ -290,6 +313,25 @@ def test_read_after_write_with_empty_partition(local_catalog):
     assert as_dict["rows"] == [1, 1, 1]
     read_back = daft.read_iceberg(table)
     assert as_arrow == read_back.to_arrow()
+
+
+def test_iceberg_writer_empty_micropartition(tmp_path):
+    iceberg_schema = Schema(_NestedField(field_id=1, name="x", field_type=LongType(), required=False))
+    empty = MicroPartition.from_arrow(pa.table({"x": pa.array([], type=pa.int64())}))
+    writer = IcebergWriter(
+        root_dir=str(tmp_path),
+        file_idx=0,
+        schema=iceberg_schema,
+        properties={},
+        partition_spec_id=UNPARTITIONED_PARTITION_SPEC.spec_id,
+    )
+    bytes_written = writer.write(empty)
+    assert bytes_written == 0
+    # Must not IndexError on metadata_collector[0] when no file was opened.
+    result = writer.close()
+    assert len(result) == 0
+    assert "data_file" in result.schema().column_names()
+    assert not (tmp_path / writer.file_name).exists()
 
 
 @pytest.fixture

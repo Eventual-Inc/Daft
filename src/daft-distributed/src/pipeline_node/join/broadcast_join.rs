@@ -20,8 +20,9 @@ use opentelemetry::KeyValue;
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
-        PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream, metrics::key_values_from_context,
+        ClusteringStrategy, DistributedPipelineNode, MaterializedOutput, NodeID,
+        PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
+        metrics::key_values_from_context,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -40,6 +41,7 @@ pub struct BroadcastJoinStats {
     build_bytes_inserted: Counter,
     probe_bytes_in: Counter,
     probe_bytes_out: Counter,
+    num_tasks: Counter,
     node_kv: Vec<KeyValue>,
 }
 
@@ -77,6 +79,7 @@ impl BroadcastJoinStats {
                 None,
                 Some(Cow::Borrowed(UNIT_BYTES)),
             ),
+            num_tasks: meter.num_tasks_metric(),
             node_kv: key_values_from_context(context),
         }
     }
@@ -118,7 +121,12 @@ impl RuntimeStats for BroadcastJoinStats {
             build_bytes_inserted: self.build_bytes_inserted.load(Ordering::SeqCst),
             probe_bytes_in: self.probe_bytes_in.load(Ordering::SeqCst),
             probe_bytes_out: self.probe_bytes_out.load(Ordering::SeqCst),
+            num_tasks: self.num_tasks.load(Ordering::SeqCst),
         })
+    }
+
+    fn increment_num_tasks(&self) {
+        self.num_tasks.add(1, self.node_kv.as_slice());
     }
 }
 
@@ -170,7 +178,7 @@ impl BroadcastJoinNode {
         let config = PipelineNodeConfig::new(
             output_schema,
             plan_config.config.clone(),
-            receiver.config().clustering_spec.clone(),
+            ClusteringStrategy::Passthrough { child: &receiver },
         );
         let broadcaster_schema = broadcaster.config().schema.clone();
         let runtime_stats = Arc::new(BroadcastJoinStats::new(meter, &context));

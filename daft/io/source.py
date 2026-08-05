@@ -4,12 +4,13 @@ import warnings
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
-from daft.daft import PyDataSourceTask, StorageConfig
+from daft.daft import ParquetSourceConfig, PyDataSourceTask, StorageConfig
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
 
     from daft.dataframe import DataFrame
+    from daft.io.clustering import ClusteringKeys
     from daft.io.partitioning import PartitionField
     from daft.io.pushdowns import Pushdowns
     from daft.recordbatch import RecordBatch
@@ -51,6 +52,39 @@ class DataSource(ABC):
     def get_partition_fields(self) -> list[PartitionField]:
         """Returns the partitioning fields for this data source."""
         return []
+
+    def get_clustering_keys(self) -> ClusteringKeys | None:
+        """Declares how this source's output is distributed at execution time.
+
+        Returning ``None`` (the default) means the source makes no clustering guarantee, so
+        downstream operators will shuffle as usual. Override this to return
+        :class:`~daft.io.clustering.ClusteringKeys` when the source can make one of the
+        following guarantees:
+
+        - :meth:`~daft.io.clustering.ClusteringKeys.hash` — when the source knows its output
+          is already hash-partitioned — e.g. when each ``DataSourceTask`` corresponds to exactly
+          one ``(producer, hour)`` group - allows the optimizer to skip hash shuffles
+        - :meth:`~daft.io.clustering.ClusteringKeys.range` — when each task covers a
+          non-overlapping range of values for the declared keys. Pass ``descending=True`` if
+          partition order is high-to-low. Allows the optimizer to skip range shuffles.
+
+        Note that this is distinct from :meth:`get_partition_fields`, which describes on-disk
+        storage layout for per-row value injection, not execution-time clustering.
+
+        Warning:
+            This API is early in its development and is subject to change.
+        """
+        return None
+
+    def supports_count_pushdown(self) -> bool:
+        """Returns true if this source can absorb a count aggregation pushdown.
+
+        When true, the optimizer may replace a full scan + count with a single
+        task whose pushdowns carry the count aggregation; get_tasks is
+        then responsible for producing the count result (e.g. from catalog
+        metadata) instead of scanning data files.
+        """
+        return False
 
     @abstractmethod
     async def get_tasks(self, pushdowns: Pushdowns) -> AsyncIterator[DataSourceTask]:
@@ -115,12 +149,14 @@ class DataSourceTask(ABC):
         path: str,
         schema: Schema,
         *,
+        parquet_config: ParquetSourceConfig | None = None,
         pushdowns: Pushdowns | None = None,
         num_rows: int | None = None,
         size_bytes: int | None = None,
         partition_values: RecordBatch | None = None,
         stats: RecordBatch | None = None,
         storage_config: StorageConfig | None = None,
+        iceberg_delete_files: list[str] | None = None,
     ) -> DataSourceTask:
         """Create a task that reads a Parquet file using the native reader.
 
@@ -135,6 +171,8 @@ class DataSourceTask(ABC):
         Args:
             path: Path or URI of the Parquet file (e.g., ``"s3://bucket/file.parquet"``).
             schema: Schema to read the file with.
+            parquet_config: Optional Parquet reader configuration. Defaults to
+                :class:`~daft.daft.ParquetSourceConfig` defaults.
             pushdowns: Query pushdowns (filters, column projection, limit). Pass
                 through the pushdowns received by DataSource.get_tasks.
             num_rows: Exact row count, if known. Enables metadata-only optimizations.
@@ -143,6 +181,9 @@ class DataSourceTask(ABC):
             stats: Column statistics as a RecordBatch for predicate pushdown evaluation.
             storage_config: Optional StorageConfig for IO credentials/settings.
                 Defaults to ``StorageConfig(multithreaded_io=True)``.
+            iceberg_delete_files: Optional list of Iceberg positional delete file paths
+                to apply to this file, per the Iceberg spec
+                (https://iceberg.apache.org/spec/#position-delete-files).
 
         Example:
             class MyCatalogSource(DataSource):
@@ -162,12 +203,14 @@ class DataSourceTask(ABC):
         inner = PyDataSourceTask.parquet(
             path=path,
             schema=schema._schema,
+            parquet_config=parquet_config,
             pushdowns=pushdowns._to_pypushdowns() if pushdowns is not None else None,
             num_rows=num_rows,
             size_bytes=size_bytes,
             partition_values=partition_values._recordbatch if partition_values is not None else None,
             stats=stats._recordbatch if stats is not None else None,
             storage_config=storage_config,
+            iceberg_delete_files=iceberg_delete_files,
         )
 
         return _RustDataSourceTask(inner)

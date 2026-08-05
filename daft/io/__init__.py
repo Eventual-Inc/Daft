@@ -6,7 +6,9 @@ from daft.daft import (
     AzureConfig,
     CosConfig,
     GCSConfig,
+    GooseFSConfig,
     GravitinoConfig,
+    HdfsConfig,
     IOConfig,
     HTTPConfig,
     S3Config,
@@ -36,7 +38,7 @@ from daft.io.sink import DataSink
 from daft.io.source import DataSource, DataSourceTask
 from daft.io.av import read_video_frames
 
-# Lance is lazy-loaded because lance_namespace pulls in ~450ms of pydantic models.
+# Lance is lazy-loaded to keep `import daft` fast.
 if TYPE_CHECKING:
     from daft.io.lance._lance import read_lance
 
@@ -56,8 +58,10 @@ __all__ = [
     "DataSource",
     "DataSourceTask",
     "GCSConfig",
+    "GooseFSConfig",
     "GravitinoConfig",
     "HTTPConfig",
+    "HdfsConfig",
     "HuggingFaceConfig",
     "IOConfig",
     "S3Config",

@@ -2,19 +2,19 @@ import Image from "next/image";
 import { Fish } from "lucide-react";
 import FishCake from "@/public/fish-cake-filled.svg";
 
-export function AnimatedFish() {
+export function AnimatedFish({ animated = true }: { animated?: boolean }) {
   return (
-    <div className="fish-container">
-      <Fish size={20} strokeWidth={2} className="fish-swim" />
+    <div className={animated ? "fish-container" : ""}>
+      <Fish size={20} strokeWidth={2} className={animated ? "fish-swim" : ""} />
     </div>
   );
 }
 
-export const Naruto = () => (
+export const Naruto = ({ animated = true }: { animated?: boolean }) => (
   <Image
     src={FishCake}
     alt="Fish Cake"
-    className="animate-[spin_5s_linear_none]"
+    className={animated ? "animate-[spin_5s_linear_none]" : ""}
     height={20}
     width={20}
   />

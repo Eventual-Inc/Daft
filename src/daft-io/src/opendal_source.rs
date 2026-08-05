@@ -3,7 +3,7 @@ use std::{any::Any, collections::BTreeMap, sync::Arc};
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::stream::BoxStream;
-use opendal::{EntryMode, Operator, Scheme};
+use opendal::{EntryMode, Operator};
 use snafu::ResultExt;
 
 use crate::{
@@ -22,32 +22,26 @@ pub(crate) struct OpenDALSource {
 
 impl OpenDALSource {
     /// List the OpenDAL service schemes that are compiled into this build.
-    fn available_schemes() -> &'static [&'static str] {
-        &["oss", "cos", "obs", "memory", "fs", "github"]
+    fn available_schemes() -> Vec<&'static str> {
+        #[cfg_attr(not(feature = "hdfs"), allow(unused_mut))]
+        let mut schemes = vec![
+            "oss", "cos", "obs", "tos", "goosefs", "memory", "fs", "github",
+        ];
+        #[cfg(feature = "hdfs")]
+        schemes.push("hdfs");
+        schemes
     }
 
     pub async fn get_client(
         scheme: &str,
         config: &BTreeMap<String, String>,
     ) -> super::Result<Arc<dyn ObjectSource>> {
-        let parsed_scheme: Scheme =
-            scheme
-                .parse()
-                .map_err(|e: opendal::Error| super::Error::UnableToCreateClient {
-                    store: super::SourceType::OpenDAL {
-                        scheme: scheme.to_string(),
-                    },
-                    source: format!(
-                        "Unknown scheme '{}'. Available OpenDAL schemes: [{}]. Error: {}",
-                        scheme,
-                        Self::available_schemes().join(", "),
-                        e
-                    )
-                    .into(),
-                })?;
+        // Ensure all compiled-in OpenDAL services are registered in the global
+        // OperatorRegistry. This is a no-op after the first call.
+        opendal::init_default_registry();
 
         let operator =
-            Operator::via_iter(parsed_scheme, config.clone()).map_err(|e: opendal::Error| {
+            Operator::via_iter(scheme, config.clone()).map_err(|e: opendal::Error| {
                 super::Error::UnableToCreateClient {
                     store: super::SourceType::OpenDAL {
                         scheme: scheme.to_string(),
@@ -55,8 +49,9 @@ impl OpenDALSource {
                     source: format!(
                         "Failed to create OpenDAL operator for '{}'. \
                          You may need to configure it via IOConfig(opendal_backends={{\"{}\": {{...}}}}). \
+                         Available OpenDAL schemes: [{}]. \
                          Error: {}",
-                        scheme, scheme, e
+                        scheme, scheme, Self::available_schemes().join(", "), e
                     )
                     .into(),
                 }
@@ -223,7 +218,7 @@ impl ObjectSource for OpenDALSource {
 
         use futures::StreamExt;
         let mapped_stream = byte_stream.map(move |result| {
-            result.map_err(|e| super::Error::Generic {
+            result.map_err(|e: std::io::Error| super::Error::Generic {
                 store: super::SourceType::OpenDAL {
                     scheme: scheme.clone(),
                 },
@@ -256,6 +251,11 @@ impl ObjectSource for OpenDALSource {
             .stat(&path)
             .await
             .map_err(|e| opendal_err_to_daft_err(e, uri, &self.scheme))?;
+        if meta.is_dir() {
+            return Err(super::Error::NotAFile {
+                path: uri.to_string(),
+            });
+        }
         Ok(meta.content_length() as usize)
     }
 
@@ -304,10 +304,12 @@ impl ObjectSource for OpenDALSource {
             .await
             .map_err(|e| opendal_err_to_daft_err(e, path, &self.scheme))?;
 
-        // Reconstruct the URL prefix for file paths
+        // Reconstruct the URL prefix for file paths.
+        // Use authority (host:port) rather than host_str so schemes like HDFS
+        // (hdfs://host:port) generate correct URLs.
         let parsed = url::Url::parse(path).context(super::InvalidUrlSnafu { path })?;
-        let base_url = if let Some(host) = parsed.host_str() {
-            format!("{}://{}", parsed.scheme(), host)
+        let base_url = if !parsed.authority().is_empty() {
+            format!("{}://{}", parsed.scheme(), parsed.authority())
         } else {
             format!("{}://", parsed.scheme())
         };

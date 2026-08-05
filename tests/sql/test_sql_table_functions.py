@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import os
+
+import pyarrow as pa
+import pyarrow.parquet as papq
 import pytest
 
 import daft
@@ -94,6 +98,12 @@ def test_sql_read_parquet():
     assert_eq(actual, expect)
 
 
+def test_sql_read_parquet_named_path():
+    actual = daft.sql("SELECT * FROM read_parquet(path => 'tests/assets/parquet-data/mvp.parquet')")
+    expect = daft.read_parquet("tests/assets/parquet-data/mvp.parquet")
+    assert actual.to_pydict() == expect.to_pydict()
+
+
 def test_sql_read_parquet_path():
     actual = daft.sql("SELECT * FROM 'tests/assets/parquet-data/mvp.parquet'")
     expect = daft.read_parquet("tests/assets/parquet-data/mvp.parquet")
@@ -108,6 +118,40 @@ def test_sql_read_parquet_paths():
     actual = daft.sql(f"SELECT * FROM read_parquet({to_sql_array(paths)})")
     expect = daft.read_parquet(paths)
     assert_eq(actual, expect)
+
+
+def test_sql_read_parquet_file_options(tmp_path):
+    table_dir = tmp_path / "country=us"
+    table_dir.mkdir()
+    file_path = table_dir / "data.parquet"
+    papq.write_table(pa.table({"x": [1, 2]}), file_path)
+
+    glob_path = f"{tmp_path.as_posix()}/**"
+    actual = daft.sql(
+        f"SELECT * FROM read_parquet('{glob_path}', file_path_column => 'filepath', hive_partitioning => true)"
+    )
+    expect = daft.read_parquet(glob_path, file_path_column="filepath", hive_partitioning=True)
+    assert actual.to_pydict() == expect.to_pydict()
+
+
+def test_sql_read_parquet_ignore_corrupt_files(tmp_path):
+    good_path = tmp_path / "good.parquet"
+    bad_path = tmp_path / "bad.parquet"
+    papq.write_table(pa.table({"x": [1, 2]}), good_path)
+    bad_path.write_bytes(b"PAR1" + b"\x00" * 20 + b"PAR1")
+
+    with pytest.raises(Exception):
+        daft.sql(f"SELECT * FROM read_parquet('{tmp_path.as_posix()}')").collect()
+
+    df = daft.sql(f"SELECT * FROM read_parquet('{tmp_path.as_posix()}', ignore_corrupt_files => true)").collect()
+
+    assert df.to_pydict() == {"x": [1, 2]}
+    skipped = df.skipped_corrupt_files
+    assert len(skipped) == 1
+    path, reason, partial = skipped[0]
+    assert os.path.basename(path) == "bad.parquet"
+    assert reason
+    assert not partial
 
 
 def test_sql_read_csv(sample_csv_path):
@@ -188,3 +232,33 @@ def test_sql_read_path_no_alias(sample_csv_path):
     # don't allow using paths as table names
     with pytest.raises(Exception, match="Table not found"):
         daft.sql(f""" SELECT "{sample_csv_path}".* FROM '{sample_csv_path}' """)
+
+
+def _write_corrupt_csv(path):
+    # Binary garbage that is not valid UTF-8, so the CSV reader treats it as corrupt.
+    path.write_bytes(b"\x00\x01\x02\x03\xff\xfe\xfd")
+
+
+def test_sql_read_csv_ignore_corrupt_files(tmp_path):
+    good1 = tmp_path / "good1.csv"
+    good2 = tmp_path / "good2.csv"
+    good1.write_text("a\n1\n2\n3\n")
+    good2.write_text("a\n4\n5\n6\n")
+    _write_corrupt_csv(tmp_path / "zzz_bad.csv")
+
+    dir_path = tmp_path.as_posix()
+
+    # Without ignore_corrupt_files the corrupt file surfaces as an error.
+    with pytest.raises(Exception):
+        daft.sql(f"SELECT * FROM read_csv('{dir_path}')").collect()
+
+    # With ignore_corrupt_files => true the corrupt file is skipped and the good
+    # rows are returned.
+    df = daft.sql(f"SELECT * FROM read_csv('{dir_path}', ignore_corrupt_files => true)").collect()
+    assert sorted(df.to_pydict()["a"]) == [1, 2, 3, 4, 5, 6]
+
+    skipped = df.skipped_corrupt_files
+    assert len(skipped) == 1
+    path, reason, _partial = skipped[0]
+    assert path.endswith("zzz_bad.csv")
+    assert reason

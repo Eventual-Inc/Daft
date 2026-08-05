@@ -94,6 +94,23 @@ See the [`DataFrame.write_huggingface`][daft.DataFrame.write_huggingface] API pa
 
 See the [`HuggingFaceConfig`][daft.io.HuggingFaceConfig] API page for more information about each argument.
 
+### Xet-Accelerated Reads
+
+When [`HuggingFaceConfig.use_xet`][daft.io.HuggingFaceConfig] is enabled (the default), Daft probes whether a file is stored on Hugging Face's [Xet](https://huggingface.co/docs/hub/xet/index) backend and downloads via the Xet protocol when possible. Non-Xet files (small git blobs, etc.) continue to use the standard HTTP resolve path.
+
+To disable Xet reads and always use HTTP:
+
+=== "🐍 Python"
+
+    ```python
+    from daft.io import IOConfig, HuggingFaceConfig
+
+    io_config = IOConfig(hf=HuggingFaceConfig(use_xet=False))
+    df = daft.read_parquet("hf://datasets/username/dataset_name", io_config=io_config)
+    ```
+
+You can also set the `HF_HUB_DISABLE_XET=1` environment variable to force HTTP-only reads.
+
 
 ## Authentication
 

@@ -1,9 +1,9 @@
 use std::{cmp::max, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
-use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr, is_partition_compatible};
+use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr, is_exact_partition_match};
 use daft_logical_plan::{
-    ClusteringSpec, JoinStrategy, JoinType,
+    JoinStrategy, JoinType,
     ops::Join,
     partitioning::{HashRepartitionConfig, RepartitionSpec},
     stats::ApproxStats,
@@ -74,20 +74,19 @@ impl LogicalPlanToPipelineNodeTranslator {
         null_equals_nulls: Vec<bool>,
         join_type: JoinType,
         output_schema: SchemaRef,
+        left_size_bytes: usize,
+        right_size_bytes: usize,
     ) -> DaftResult<DistributedPipelineNode> {
-        let left_spec = left.config().clustering_spec.as_ref();
-        let right_spec = right.config().clustering_spec.as_ref();
+        let left_spec = &left.config().clustering_spec;
+        let right_spec = &right.config().clustering_spec;
 
-        let is_left_hash_partitioned = matches!(left_spec, ClusteringSpec::Hash(..))
-            && is_partition_compatible(
-                &left_spec.partition_by(),
-                left_on.iter().map(|e| e.inner()),
-            );
-        let is_right_hash_partitioned = matches!(right_spec, ClusteringSpec::Hash(..))
-            && is_partition_compatible(
-                &right_spec.partition_by(),
-                right_on.iter().map(|e| e.inner()),
-            );
+        // A hash join needs both sides partitioned by *exactly* the join keys so matching keys
+        // collide in the same partition; the one-sided coverage relation is unsound here. Both the
+        // clustering keys and the join keys are bound, so compare them directly.
+        let is_left_hash_partitioned =
+            left_spec.is_hash() && is_exact_partition_match(left_spec.partition_by(), &left_on);
+        let is_right_hash_partitioned =
+            right_spec.is_hash() && is_exact_partition_match(right_spec.partition_by(), &right_on);
         let num_left_partitions = left_spec.num_partitions();
         let num_right_partitions = right_spec.num_partitions();
 
@@ -124,6 +123,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                 )),
                 left.config().schema.clone(),
                 left,
+                left_size_bytes,
             )?
         } else {
             left
@@ -139,6 +139,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                 )),
                 right.config().schema.clone(),
                 right,
+                right_size_bytes,
             )?
         } else {
             right
@@ -323,6 +324,8 @@ impl LogicalPlanToPipelineNodeTranslator {
                 null_equals_nulls,
                 join.join_type,
                 join.output_schema.clone(),
+                left_stats.size_bytes,
+                right_stats.size_bytes,
             ),
             JoinStrategy::SortMerge => self.gen_sort_merge_join_node(
                 left_node,

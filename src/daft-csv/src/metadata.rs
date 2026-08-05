@@ -218,7 +218,8 @@ where
             reader
                 .headers()
                 .await
-                .map_err(|e| common_error::DaftError::External(e.into()))?
+                .map_err(|e| crate::Error::CSVError { source: e })
+                .map_err(common_error::DaftError::from)?
                 .iter()
                 .map(std::string::ToString::to_string)
                 .collect(),
@@ -229,7 +230,8 @@ where
         if !reader
             .read_byte_record(&mut record)
             .await
-            .map_err(|e| common_error::DaftError::External(e.into()))?
+            .map_err(|e| crate::Error::CSVError { source: e })
+            .map_err(common_error::DaftError::from)?
         {
             return Ok((vec![], Default::default()));
         }
@@ -267,7 +269,8 @@ where
         if !reader
             .read_byte_record(&mut record)
             .await
-            .map_err(|e| common_error::DaftError::External(e.into()))?
+            .map_err(|e| crate::Error::CSVError { source: e })
+            .map_err(common_error::DaftError::from)?
         {
             break;
         }
@@ -576,7 +579,7 @@ mod tests {
         let err = read_csv_schema(file.as_ref(), None, None, io_client, None).await;
         assert!(err.is_err());
         let err = err.unwrap_err();
-        assert!(matches!(err, DaftError::External(_)), "{}", err);
+        assert!(matches!(err, DaftError::CorruptFile(_)), "{}", err);
         assert!(
             err.to_string()
                 .contains("found record with 4 fields, but the previous record has 5 fields"),
@@ -608,7 +611,7 @@ mod tests {
         .await;
         assert!(err.is_err());
         let err = err.unwrap_err();
-        assert!(matches!(err, DaftError::External(_)), "{}", err);
+        assert!(matches!(err, DaftError::CorruptFile(_)), "{}", err);
         assert!(
             err.to_string()
                 .contains("found record with 5 fields, but the previous record has 4 fields"),

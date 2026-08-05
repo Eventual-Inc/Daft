@@ -57,6 +57,7 @@ fn is_one(s: &Expr) -> bool {
         | Expr::Literal(Literal::UInt64(1))
         | Expr::Literal(Literal::Float32(1.))
         | Expr::Literal(Literal::Float64(1.)) => true,
+        Expr::Literal(Literal::Float16(v)) => *v == half::f16::ONE,
 
         Expr::Literal(Literal::Decimal(v, _p, s)) => {
             *s >= 0 && POWS_OF_TEN.get(*s as usize).is_some_and(|pow| v == pow)
@@ -77,6 +78,7 @@ fn is_zero(s: &Expr) -> bool {
         | Expr::Literal(Literal::UInt64(0))
         | Expr::Literal(Literal::Float32(0.))
         | Expr::Literal(Literal::Float64(0.)) => true,
+        Expr::Literal(Literal::Float16(v)) => *v == half::f16::ZERO,
         Expr::Literal(Literal::Decimal(v, _p, _s)) if *v == 0 => true,
         _ => false,
     }

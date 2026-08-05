@@ -10,6 +10,7 @@ impl SQLModule for SQLModuleMap {
     fn register(parent: &mut SQLFunctions) {
         parent.add_fn("map_get", MapGet);
         parent.add_fn("map_extract", MapGet);
+        parent.add_fn("map_keys", MapKeys);
     }
 }
 
@@ -49,4 +50,30 @@ mod static_docs {
     * :func:`~daft.sql._sql_funcs.map_get`
     * :func:`~daft.sql._sql_funcs.map_extract`
 ";
+}
+
+pub struct MapKeys;
+
+impl SQLFunction for MapKeys {
+    fn to_expr(
+        &self,
+        inputs: &[sqlparser::ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> crate::error::SQLPlannerResult<daft_dsl::ExprRef> {
+        match inputs {
+            [input] => {
+                let input = planner.plan_function_arg(input)?.into_inner();
+                Ok(daft_dsl::functions::map::map_keys(input))
+            }
+            _ => invalid_operation_err!("Expected 1 input arg"),
+        }
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Returns a list of all keys in the map.".to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input"]
+    }
 }

@@ -126,6 +126,11 @@ impl<'d> serde::Deserialize<'d> for Series {
                         map.next_value::<Vec<Option<u64>>>()?.into_iter(),
                     )
                     .into_series()),
+                    DataType::Float16 => Ok(Float16Array::from_iter(
+                        field,
+                        map.next_value::<Vec<Option<half::f16>>>()?.into_iter(),
+                    )
+                    .into_series()),
                     DataType::Float32 => Ok(Float32Array::from_iter(
                         field,
                         map.next_value::<Vec<Option<f32>>>()?.into_iter(),

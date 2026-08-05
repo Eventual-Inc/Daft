@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import io
 import random
 import struct
@@ -9,7 +10,7 @@ import pytest
 
 import daft
 from daft import DataType as dt
-from daft.functions import file, file_path, file_size
+from daft.functions import file, file_exists, file_path, file_size
 from tests.conftest import get_tests_daft_runner_name
 
 
@@ -141,6 +142,27 @@ def test_to_tempfile_larger_data(tmp_path: Path):
         assert f.read() == data
 
 
+def test_to_tempfile_larger_data_uses_bounded_copy_buffer(tmp_path: Path, monkeypatch):
+    file_module = importlib.import_module("daft.file.file")
+    data = bytes([random.randint(0, 255) for _ in range(2048)])
+    temp_file = tmp_path / "test_file.bin"
+    temp_file.write_bytes(data)
+    copy_lengths: list[int] = []
+    original_copyfileobj = file_module.shutil.copyfileobj
+
+    def track_copyfileobj(fsrc, fdst, length=0):
+        copy_lengths.append(length)
+        return original_copyfileobj(fsrc, fdst, length=length)
+
+    monkeypatch.setattr(file_module.shutil, "copyfileobj", track_copyfileobj)
+
+    file = daft.File(str(temp_file.absolute()))
+    with file.to_tempfile() as f:
+        assert f.read() == data
+
+    assert copy_lengths == [file_module.BUFFER_COPY]
+
+
 def test_to_tempfile_remote():
     file = daft.File("https://raw.githubusercontent.com/Eventual-Inc/Daft/refs/heads/main/README.rst")
 
@@ -167,6 +189,76 @@ def test_filesize_expr(tmp_path: Path):
 
     res = df.select(file_size(file(df["file"]))).to_pydict()["file"][0]
     assert res == 2048
+
+
+def test_file_exists(tmp_path: Path):
+    existing_file = tmp_path / "exists.bin"
+    existing_file.write_bytes(b"data")
+    missing_file = tmp_path / "missing.bin"
+
+    assert daft.File(str(existing_file.absolute())).exists() is True
+    assert daft.File(str(missing_file.absolute())).exists() is False
+
+
+def test_open_missing_file_raises(tmp_path: Path):
+    missing_file = tmp_path / "missing.bin"
+    file = daft.File(str(missing_file.absolute()))
+
+    with pytest.raises(FileNotFoundError, match="does not exist"):
+        file.open()
+
+
+def test_missing_file_mime_type_falls_back_to_extension(tmp_path: Path):
+    assert daft.File(str(tmp_path / "missing.mp4")).mime_type() == "video/mp4"
+    assert daft.File(str(tmp_path / "missing.hdf5")).mime_type() == "application/vnd.hdfgroup.hdf5"
+    assert daft.VideoFile(str(tmp_path / "missing.mp4")).exists() is False
+
+
+def test_to_tempfile_missing_file_raises_from_open(tmp_path: Path):
+    missing_file = tmp_path / "missing.bin"
+    file = daft.File(str(missing_file.absolute()))
+
+    with pytest.raises(FileNotFoundError, match="does not exist"):
+        file.to_tempfile()
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_to_tempfile_uses_open_existence_check(tmp_path: Path, monkeypatch):
+    temp_file = tmp_path / "exists.bin"
+    temp_file.write_bytes(b"data")
+    file = daft.File(str(temp_file.absolute()))
+    original_exists = file.exists
+    calls = 0
+
+    def track_exists():
+        nonlocal calls
+        calls += 1
+        return original_exists()
+
+    monkeypatch.setattr(file, "exists", track_exists)
+
+    with file.to_tempfile() as tmp:
+        assert tmp.read() == b"data"
+
+    assert calls == 1
+
+
+def test_file_exists_expr(tmp_path: Path):
+    existing_file = tmp_path / "exists.bin"
+    existing_file.write_bytes(b"data")
+    missing_file = tmp_path / "missing.bin"
+
+    df = daft.from_pydict(
+        {
+            "file": [
+                str(existing_file.absolute()),
+                str(missing_file.absolute()),
+            ]
+        }
+    )
+
+    result = df.select(file_exists(file(df["file"]))).to_pydict()["file"]
+    assert result == [True, False]
 
 
 @pytest.mark.parametrize(
@@ -311,3 +403,213 @@ def test_file_path_expression_method():
     df = df.with_column("extracted_path", daft.col("file").file_path())
     result = df.to_pydict()
     assert result["extracted_path"] == paths
+
+
+def test_file_position_and_size_properties():
+    f = daft.File("s3://bucket/blob", position=100, size=50)
+    assert f.position == 100
+    assert f._inner.size() == 50
+
+
+def test_file_position_and_size_default_to_none():
+    f = daft.File("s3://bucket/blob")
+    assert f.position is None
+    assert f._inner.size() is None
+
+
+def test_file_offset_and_length_backwards_compat():
+    # `offset`/`length` are deprecated aliases for `position`/`size`, kept for
+    # backwards compatibility. They emit a DeprecationWarning but still work.
+    with pytest.warns(DeprecationWarning):
+        f = daft.File("s3://bucket/blob", offset=100, length=50)
+    with pytest.warns(DeprecationWarning):
+        assert f.offset == 100
+    with pytest.warns(DeprecationWarning):
+        assert f.length == 50
+
+    # New names map to the same underlying values.
+    assert f.position == 100
+    assert f._inner.size() == 50
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_file_byte_range_read(tmp_path: Path):
+    data = b"0123456789abcdef"
+    temp_file = tmp_path / "blob.bin"
+    temp_file.write_bytes(data)
+
+    f = daft.File(str(temp_file.absolute()), position=4, size=6)
+    assert f.size() == 6
+    with f.open() as fh:
+        result = fh.read()
+    assert result == b"456789"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_file_byte_range_open_skips_existence_preflight(tmp_path: Path, monkeypatch):
+    data = b"0123456789abcdef"
+    temp_file = tmp_path / "blob.bin"
+    temp_file.write_bytes(data)
+
+    f = daft.File(str(temp_file.absolute()), position=4, size=6)
+
+    def fail_exists():
+        raise AssertionError("ranged open should not preflight existence")
+
+    monkeypatch.setattr(f, "exists", fail_exists)
+
+    with f.open() as fh:
+        result = fh.read()
+    assert result == b"456789"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_file_byte_range_read_in_udf(tmp_path: Path):
+    data = b"AAABBBCCC"
+    temp_file = tmp_path / "blob.bin"
+    temp_file.write_bytes(data)
+
+    @daft.func
+    def read_bytes(file: daft.File) -> bytes:
+        with file.open() as f:
+            return f.read()
+
+    df = daft.from_pydict({"file": [daft.File(str(temp_file.absolute()), position=3, size=3)]})
+    df = df.select(read_bytes(df["file"]).alias("data"))
+    assert df.to_pydict()["data"] == [b"BBB"]
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_file_partial_range_raises(tmp_path: Path):
+    temp_file = tmp_path / "blob.bin"
+    temp_file.write_bytes(b"some data")
+    path = str(temp_file.absolute())
+
+    f_position_only = daft.File(path, position=10)
+    with pytest.raises(Exception):
+        with f_position_only.open() as fh:
+            fh.read()
+
+    f_size_only = daft.File(path, size=10)
+    with pytest.raises(Exception):
+        with f_size_only.open() as fh:
+            fh.read()
+
+
+# ── buffer_size tests ──
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+@pytest.mark.parametrize("buffer_size", [64, 4096, 65536, None])
+def test_open_with_buffer_size_reads_correctly(tmp_path: Path, buffer_size):
+    data = b"hello world" * 100
+    temp_file = tmp_path / "buf_test.bin"
+    temp_file.write_bytes(data)
+
+    f = daft.File(str(temp_file.absolute()))
+    with f.open(buffer_size=buffer_size) as fh:
+        result = fh.read()
+    assert result == data
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_mime_type_with_small_buffer(tmp_path: Path):
+    content = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
+    temp_file = tmp_path / "img.png"
+    temp_file.write_bytes(content)
+
+    f = daft.File(str(temp_file.absolute()))
+    assert f.mime_type() == "image/png"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_size_with_small_buffer(tmp_path: Path):
+    data = bytes(range(256)) * 4
+    temp_file = tmp_path / "sized.bin"
+    temp_file.write_bytes(data)
+
+    f = daft.File(str(temp_file.absolute()))
+    assert f.size() == 1024
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_read_seek_roundtrip_after_gil_fix(tmp_path: Path):
+    """Basic read/seek still works after py.detach() changes."""
+    data = b"abcdefghij"
+    temp_file = tmp_path / "roundtrip.bin"
+    temp_file.write_bytes(data)
+
+    f = daft.File(str(temp_file.absolute()))
+    with f.open() as fh:
+        assert fh.read(3) == b"abc"
+        assert fh.tell() == 3
+        fh.seek(0)
+        assert fh.tell() == 0
+        assert fh.read() == data
+        fh.seek(5)
+        assert fh.read(3) == b"fgh"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_seek_end_works(tmp_path: Path):
+    """SeekFrom::End calls block_within_async_context — verify it still works."""
+    data = b"0123456789"
+    temp_file = tmp_path / "seek_end.bin"
+    temp_file.write_bytes(data)
+
+    f = daft.File(str(temp_file.absolute()))
+    with f.open() as fh:
+        fh.seek(0, 2)  # seek to end
+        pos = fh.tell()
+        assert pos == len(data)
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_multiple_files_concurrent_read(tmp_path: Path):
+    """Multiple files opened and read from threads — exercises GIL release under concurrency."""
+    import threading
+
+    files = []
+    for i in range(8):
+        p = tmp_path / f"file_{i}.bin"
+        p.write_bytes(bytes(range(256)) * 4)
+        files.append(str(p.absolute()))
+
+    results = {}
+    errors = []
+
+    def read_file(path, idx):
+        try:
+            f = daft.File(path)
+            with f.open() as fh:
+                data = fh.read()
+                results[idx] = len(data)
+        except (OSError, RuntimeError) as e:
+            errors.append((idx, e))
+
+    threads = [threading.Thread(target=read_file, args=(p, i)) for i, p in enumerate(files)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+
+    assert not errors, f"Errors during concurrent read: {errors}"
+    assert len(results) == 8
+    assert all(v == 1024 for v in results.values())
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_read_after_eof_returns_empty(tmp_path: Path):
+    """Reading at EOF should return empty bytes, not error — cursor preserved."""
+    data = b"short"
+    temp_file = tmp_path / "eof.bin"
+    temp_file.write_bytes(data)
+
+    f = daft.File(str(temp_file.absolute()))
+    with f.open() as fh:
+        fh.read()  # read all
+        again = fh.read()  # read at EOF
+        assert again == b""
+        # file should still be usable
+        fh.seek(0)
+        assert fh.read() == data

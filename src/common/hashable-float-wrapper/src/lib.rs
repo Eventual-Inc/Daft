@@ -3,6 +3,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
+use half::f16;
 use serde::{Deserialize, Serialize};
 
 // An float newtype wrapper that implements basic hashability.
@@ -21,6 +22,7 @@ macro_rules! impl_hash_for_float_wrapper {
         }
     };
 }
+impl_hash_for_float_wrapper!(f16, u16);
 impl_hash_for_float_wrapper!(f32, u32);
 impl_hash_for_float_wrapper!(f64, u64);
 
@@ -29,6 +31,7 @@ impl<T: PartialEq> PartialEq for FloatWrapper<T> {
         self.0.eq(&other.0)
     }
 }
+impl Eq for FloatWrapper<f16> {}
 impl Eq for FloatWrapper<f32> {}
 impl Eq for FloatWrapper<f64> {}
 
@@ -52,5 +55,6 @@ macro_rules! impl_ord_for_float_wrapper {
         }
     };
 }
+impl_ord_for_float_wrapper!(f16);
 impl_ord_for_float_wrapper!(f32);
 impl_ord_for_float_wrapper!(f64);

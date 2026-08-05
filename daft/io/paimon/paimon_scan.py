@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 import daft
 from daft.dependencies import pa
 from daft.expressions import ExpressionsProjection
+from daft.io.paimon._predicate_visitor import convert_filters_to_paimon
 from daft.io.partitioning import PartitionField
 from daft.io.source import DataSource, DataSourceTask
 from daft.logical.schema import Schema
@@ -15,10 +16,11 @@ from daft.recordbatch import RecordBatch
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
+    from pypaimon.common.predicate import Predicate
     from pypaimon.read.split import Split
     from pypaimon.table.file_store_table import FileStoreTable
 
-    from daft.daft import StorageConfig
+    from daft.daft import PyExpr, StorageConfig
     from daft.io.pushdowns import Pushdowns
 
 logger = logging.getLogger(__name__)
@@ -92,6 +94,9 @@ class PaimonDataSource(DataSource):
             else {}
         )
 
+        # Filter pushdown state (populated by push_filters, consumed by get_tasks)
+        self._paimon_predicate: Predicate | None = None
+
     @property
     def name(self) -> str:
         table_path = getattr(self._table, "table_path", None)
@@ -105,17 +110,42 @@ class PaimonDataSource(DataSource):
         partition_key_names = set(self._table.partition_keys)
         return [PartitionField.create(f) for f in self._schema if f.name in partition_key_names]
 
+    def push_filters(self, filters: list[PyExpr]) -> tuple[list[PyExpr], list[PyExpr]]:
+        """Push filters down to Paimon scan.
+
+        Converts Daft expressions to Paimon predicates where possible.
+        Returns (pushed_filters, remaining_filters) where:
+        - pushed_filters: filters that were converted to Paimon predicates
+        - remaining_filters: filters that need post-scan evaluation
+        """
+        pushed_filters, remaining_filters, paimon_predicate = convert_filters_to_paimon(self._table, filters)
+
+        self._paimon_predicate = paimon_predicate
+
+        if pushed_filters:
+            logger.debug(
+                "Paimon filter pushdown: %d filters pushed, %d remaining",
+                len(pushed_filters),
+                len(remaining_filters),
+            )
+
+        return pushed_filters, remaining_filters
+
     async def get_tasks(self, pushdowns: Pushdowns) -> AsyncIterator[DataSourceTask]:
         read_builder = self._table.new_read_builder()
 
         if pushdowns.columns is not None:
-            columns = list(pushdowns.columns)
-            partition_keys = self._table.partition_keys
-            projected = list(dict.fromkeys(columns + partition_keys))
-            read_builder = read_builder.with_projection(projected)
+            read_builder = read_builder.with_projection(list(pushdowns.columns))
 
         if pushdowns.limit is not None:
             read_builder = read_builder.with_limit(pushdowns.limit)
+
+        if self._paimon_predicate is not None:
+            read_builder = read_builder.with_filter(self._paimon_predicate)
+            logger.debug(
+                "Applied Paimon filter pushdown predicate: %s",
+                self._paimon_predicate,
+            )
 
         if self._table.partition_keys and pushdowns.partition_filters is None:
             logger.warning(

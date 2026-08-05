@@ -341,6 +341,17 @@ impl SQLLiteral for usize {
     }
 }
 
+impl SQLLiteral for f64 {
+    fn from_expr(expr: &ExprRef) -> Result<Self, PlannerError>
+    where
+        Self: Sized,
+    {
+        expr.as_literal()
+            .and_then(daft_core::lit::Literal::as_f64)
+            .ok_or_else(|| PlannerError::invalid_operation("Expected a float literal"))
+    }
+}
+
 impl SQLLiteral for bool {
     fn from_expr(expr: &ExprRef) -> Result<Self, PlannerError>
     where
@@ -736,21 +747,5 @@ impl SQLPlanner<'_> {
 
             _ => unsupported_sql_err!("Wildcard function args not yet supported"),
         }
-    }
-}
-
-/// A namespace for function argument parsing helpers.
-pub(crate) mod args {
-    use common_io_config::IOConfig;
-
-    use super::SQLFunctionArguments;
-    use crate::{error::PlannerError, modules::config::expr_to_iocfg};
-
-    /// Parses io_config which is used in several SQL functions.
-    pub(crate) fn parse_io_config(args: &SQLFunctionArguments) -> Result<IOConfig, PlannerError> {
-        args.get_named("io_config")
-            .map(expr_to_iocfg)
-            .transpose()
-            .map(|op| op.unwrap_or_default())
     }
 }

@@ -14,7 +14,7 @@ Text embeddings convert text into numerical vectors that capture semantic meanin
 By default, `embed_text` uses the [Sentence Transformers provider](#using-sentence-transformers), which requires the `sentence-transformers` [optional dependency](../install.md).
 
 ```bash
-pip install -U "daft[sentence-transformers]"
+pip install -U "daft[transformers]"
 ```
 
 Once installed, we can run:
@@ -109,15 +109,17 @@ LM Studio runs on `localhost` port `1234` by default, but you can customize the 
 
 ```python
 import daft
-from daft.ai.provider import load_provider
-from daft.functions.ai import embed_text
+from daft.functions import embed_text
 
-provider = load_provider("lm_studio", base_url="http://127.0.0.1:1234/v1")  # This base_url parameter is optional if you're using the defaults for LM Studio. You can modify this as needed.
-model = "text-embedding-nomic-embed-text-v1.5"  # Select a text embedding model that you've loaded into LM Studio.
+# Set up the LM Studio provider (base_url is optional if using LM Studio defaults)
+daft.set_provider("lm_studio", base_url="http://127.0.0.1:1234/v1")
+
+# Select a text embedding model that you've loaded into LM Studio
+model = "text-embedding-nomic-embed-text-v1.5"
 
 (
     daft.read_huggingface("Open-Orca/OpenOrca")
-    .with_column("embedding", embed_text(daft.col("response"), provider=provider, model=model))
+    .with_column("embedding", embed_text(daft.col("response"), provider="lm_studio", model=model))
     .show()
 )
 ```
@@ -156,7 +158,7 @@ nlp_model_name = "en_core_web_sm"
 def chunk_by_sentences(text: str) -> typing.Iterator[str]:
     import spacy
     nlp = spacy.load(nlp_model_name)
-    for sentence in nlp(text):
+    for sentence in nlp(text).sents:
         yield sentence.text
 
 

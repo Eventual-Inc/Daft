@@ -6,6 +6,8 @@ use std::{
 
 use common_error::DaftResult;
 
+use crate::Runtime;
+
 pub type JoinSetId = tokio::task::Id;
 
 #[derive(Debug, Default)]
@@ -30,6 +32,18 @@ impl<T: Send + 'static> JoinSet<T> {
     {
         let handle = self.inner.spawn(task);
         handle.id()
+    }
+
+    /// Like `spawn`, but spawns on a specific Daft `Runtime` (compute / IO).
+    pub fn spawn_on<F>(&mut self, task: F, runtime: &Runtime) -> JoinSetId
+    where
+        F: Future<Output = T>,
+        F: Send + 'static,
+        T: Send,
+        T: 'static,
+    {
+        let h = self.inner.spawn_on(task, runtime.runtime.handle());
+        h.id()
     }
 
     pub async fn join_next(&mut self) -> Option<DaftResult<T>> {
@@ -91,6 +105,19 @@ impl<T: Send + 'static> JoinSet<T> {
     }
 }
 
+impl JoinSet<DaftResult<()>> {
+    /// Awaits every spawned task, returning `Err` on the first panic or task
+    /// error. Holding the set alive (and inside the awaiting future) is what
+    /// preserves abort-on-drop: if the outer future is dropped, the set drops
+    /// and aborts any still-pending tasks.
+    pub async fn join_all(&mut self) -> DaftResult<()> {
+        while let Some(res) = self.join_next().await {
+            res??;
+        }
+        Ok(())
+    }
+}
+
 impl<T: Send + 'static> From<tokio::task::JoinSet<T>> for JoinSet<T> {
     fn from(inner: tokio::task::JoinSet<T>) -> Self {
         Self { inner }
@@ -124,6 +151,12 @@ impl<T: Send + 'static> OrderedJoinSet<T> {
 
     pub fn spawn(&mut self, task: impl Future<Output = T> + Send + 'static) {
         let id = self.join_set.spawn(task);
+        self.order.push_back(id);
+    }
+
+    /// Like `spawn`, but spawns on a specific Daft `Runtime` (compute / IO).
+    pub fn spawn_on(&mut self, task: impl Future<Output = T> + Send + 'static, runtime: &Runtime) {
+        let id = self.join_set.spawn_on(task, runtime);
         self.order.push_back(id);
     }
 
@@ -184,6 +217,16 @@ impl<T: Send + 'static> OrderingAwareJoinSet<T> {
             Self::Ordered(join_set) => join_set.spawn(task),
             Self::Unordered(join_set) => {
                 join_set.spawn(task);
+            }
+        }
+    }
+
+    /// Like `spawn`, but spawns on a specific Daft `Runtime` (compute / IO).
+    pub fn spawn_on(&mut self, task: impl Future<Output = T> + Send + 'static, runtime: &Runtime) {
+        match self {
+            Self::Ordered(join_set) => join_set.spawn_on(task, runtime),
+            Self::Unordered(join_set) => {
+                join_set.spawn_on(task, runtime);
             }
         }
     }

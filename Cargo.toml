@@ -37,6 +37,7 @@ daft-functions-temporal = {path = "src/daft-functions-temporal", default-feature
 daft-functions-tokenize = {path = "src/daft-functions-tokenize", default-features = false}
 daft-functions-uri = {path = "src/daft-functions-uri", default-features = false}
 daft-functions-utf8 = {path = "src/daft-functions-utf8", default-features = false}
+daft-geo = {path = "src/daft-geo", default-features = false}
 daft-hash = {path = "src/daft-hash", default-features = false}
 daft-image = {path = "src/daft-image", default-features = false}
 daft-io = {path = "src/daft-io", default-features = false}
@@ -47,6 +48,7 @@ daft-logical-plan = {path = "src/daft-logical-plan", default-features = false}
 daft-micropartition = {path = "src/daft-micropartition", default-features = false}
 daft-minhash = {path = "src/daft-minhash", default-features = false}
 daft-parquet = {path = "src/daft-parquet", default-features = false}
+daft-partition-refs = {path = "src/daft-partition-refs", default-features = false}
 daft-runners = {path = "src/daft-runners", default-features = false}
 daft-recordbatch = {path = "src/daft-recordbatch", default-features = false}
 daft-scan = {path = "src/daft-scan", default-features = false}
@@ -76,6 +78,8 @@ python = [
   "common-metrics/python",
   "daft-ai/python",
   "daft-catalog/python",
+  "daft-checkpoint/python",
+  "daft-checkpoint/s3",
   "daft-cli/python",
   "daft-context/python",
   "daft-core/python",
@@ -98,6 +102,7 @@ python = [
   "daft-logical-plan/python",
   "daft-micropartition/python",
   "daft-parquet/python",
+  "daft-partition-refs/python",
   "daft-scan/python",
   "daft-sql/python",
   "daft-session/python",
@@ -105,6 +110,7 @@ python = [
   "daft-recordbatch/python",
   "daft-writers/python"
 ]
+hdfs = ["daft-io/hdfs"]
 
 [lib]
 crate-type = ["cdylib"]
@@ -156,6 +162,9 @@ strip = "none"  # dont strip
 [profile.release.package.daft-parquet]
 opt-level = 2
 
+[profile.release.package.opendal-service-oss]
+opt-level = 2
+
 [profile.release-lto]
 codegen-units = 1
 inherits = "release"
@@ -169,13 +178,14 @@ debug = true
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 libc = {workspace = true}
-tikv-jemalloc-ctl = {version = "0.6.0", features = ["stats"]}
-tikv-jemallocator = {version = "0.6.0", features = [
+tikv-jemalloc-ctl = {version = "0.7.0", features = ["stats"]}
+tikv-jemallocator = {version = "0.7.0", features = [
   "disable_initial_exec_tls"
 ]}
 
 [workspace]
 members = [
+  "src/common/checkpoint-config",
   "src/common/daft-config",
   "src/common/display",
   "src/common/error",
@@ -217,6 +227,7 @@ members = [
   "src/daft-logical-plan",
   "src/daft-micropartition",
   "src/daft-parquet",
+  "src/daft-partition-refs",
   "src/daft-runners",
   "src/daft-scan",
   "src/daft-session",
@@ -235,16 +246,17 @@ exclude = [
 ]
 
 [workspace.dependencies]
-arrow = "57.1.0"
-arrow-array = {version = "57.1.0", features = ["chrono-tz"]}
-arrow-buffer = "57.1.0"
-arrow-csv = "57.1.0"
-arrow-data = "57.1.0"
-arrow-flight = "57.1.0"
-arrow-ipc = "57.1.0"
-arrow-json = "57.1.0"
-arrow-row = "57.1.0"
-arrow-schema = "57.1.0"
+arrow = "59.0.0"
+arrow-array = {version = "59.0.0", features = ["chrono-tz"]}
+arrow-buffer = "59.0.0"
+arrow-csv = "59.0.0"
+arrow-data = "59.0.0"
+arrow-flight = "59.0.0"
+arrow-ipc = {version = "59.0.0", features = ["lz4", "zstd"]}
+arrow-json = "59.0.0"
+arrow-row = "59.0.0"
+arrow-schema = "59.0.0"
+arrow-select = "59.0.0"
 approx = "0.5.1"
 arc-swap = "1.7.1"
 async-compat = "0.2.5"
@@ -303,6 +315,7 @@ daft-sql = {path = "src/daft-sql"}
 dashmap = "6.1.0"
 educe = "0.6.0"
 futures = "0.3.30"
+half = {version = "2.7.1", features = ["num-traits", "bytemuck", "serde"]}
 hashbrown = "0.16"
 html-escape = "0.2.13"
 image = {version = "0.25.10", default-features = false}
@@ -319,13 +332,12 @@ ndarray = "0.17"
 num-derive = "0.4.2"
 num-format = "0.4.4"
 num-traits = "0.2"
-numpy = "0.28"
-opendal = {version = "0.55", default-features = false}
+numpy = {version = "0.28", features = ["half"]}
 opentelemetry = {version = "0.31", features = ["trace", "metrics", "logs"]}
 opentelemetry-otlp = {version = "0.31", features = ["grpc-tonic", "logs"]}
 opentelemetry_sdk = {version = "0.31", features = ["logs"]}
 parking_lot = "0.12.5"
-parquet = "57.1.0"
+parquet = "59.0.0"
 path_macro = "1.0.0"
 pretty_assertions = "1.4.1"
 proptest = "1.9.0"
@@ -368,7 +380,7 @@ tracing-subscriber = {version = "0.3.22", default-features = false, features = [
 typetag = "0.2.21"
 rustfft = "6"
 url = "2.4.0"
-uuid = {version = "1.19.0", features = ["v4"]}
+uuid = {version = "1.19.0", features = ["v4", "v7", "serde", "fast-rng"]}
 xxhash-rust = {version = "0.8.15", features = ["const_xxh3", "const_xxh64", "const_xxh32", "xxh64", "xxh3", "xxh32"]}
 libc = {version = "^0.2.150", default-features = false}
 hex = "0.4.3"

@@ -6,8 +6,7 @@ import lance
 import pandas as pd
 import pyarrow as pa
 import pytest
-
-from daft.io.lance import compact_files
+from daft_lance import compact_files
 
 
 def create_dataset_with_fragments(path: Path, fragment_data: list[pd.DataFrame]):

@@ -76,6 +76,7 @@ exp!(
 
 fn exp_impl(s: Series) -> DaftResult<Series> {
     match s.data_type() {
+        DataType::Float16 => exp_impl(s.cast(&DataType::Float32)?),
         DataType::Float32 => Ok(s.f32().unwrap().exp()?.into_series()),
         DataType::Float64 => Ok(s.f64().unwrap().exp()?.into_series()),
         dt if dt.is_integer() => exp_impl(s.cast(&DataType::Float64).unwrap()),
@@ -88,6 +89,7 @@ fn exp_impl(s: Series) -> DaftResult<Series> {
 
 fn expm1_impl(s: Series) -> DaftResult<Series> {
     match s.data_type() {
+        DataType::Float16 => expm1_impl(s.cast(&DataType::Float32)?),
         DataType::Float32 => Ok(s.f32().unwrap().expm1()?.into_series()),
         DataType::Float64 => Ok(s.f64().unwrap().expm1()?.into_series()),
         dt if dt.is_integer() => expm1_impl(s.cast(&DataType::Float64).unwrap()),

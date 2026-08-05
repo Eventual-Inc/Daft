@@ -12,7 +12,7 @@ Artificial Intelligence now natively understands text, images, audio, video, and
 
 - 🌄 [**Images**](images.md)
 
-    Work with visual data and image processing.
+    Work with visual data and image processing. Use `daft.ImageFile` for lazy metadata extraction and filtered decoding.
 
 - 🔉 [**Audio**](audio.md)
 

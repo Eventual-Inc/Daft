@@ -3,7 +3,16 @@ from __future__ import annotations
 import pyarrow as pa
 import pytest
 
-pypaimon = pytest.importorskip("pypaimon")
+try:
+    import pypaimon
+except ImportError:
+    # Skip all tests in this directory if pypaimon is not installed
+    pytest.skip("pypaimon not installed", allow_module_level=True)
+
+# Apply pypaimon patch for complex types before any writes
+from daft.io.paimon.paimon_write import _patch_pypaimon_stats_for_complex_types
+
+_patch_pypaimon_stats_for_complex_types()
 
 
 @pytest.fixture(scope="function")

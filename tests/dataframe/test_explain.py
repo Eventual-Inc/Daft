@@ -37,7 +37,7 @@ def test_explain_with_python_function_datasource(input_df_with_uri):
         |   Source = LanceDBScanOperator({dataset_uri})
         |   Schema: {{id#Int64}}
         |   Scan Tasks: [
-        |   {{daft.io.lance.lance_scan:_lancedb_table_factory_function}}
+        |   {{daft_lance.lance_scan:_lancedb_table_factory_function}}
         |   ]
         """
     assert clean_explain_output(explain_to_text(input_df, only_physical_plan=True)) == clean_explain_output(expected)
@@ -161,6 +161,31 @@ def test_explain_after_write_preserves_upstream_plan(tmp_path, write_fn, kwargs)
     write_df = getattr(daft.from_pydict({"a": [1, 2, 3]}).filter(col("a") > 1), write_fn)(output_path, **kwargs)
     explain_text = explain_to_text(write_df)
     assert "Result is cached and will skip computation" in explain_text
+    assert "However here is the logical plan used to produce this result" in explain_text
+    assert "Filter:" in explain_text
+
+
+def test_explain_after_write_sink_preserves_upstream_plan():
+    from collections.abc import Iterator
+
+    from daft.io.sink import DataSink, WriteResult
+    from daft.recordbatch import MicroPartition
+    from daft.schema import Schema
+
+    class NoopSink(DataSink[None]):
+        def schema(self) -> Schema:
+            return Schema.from_pyarrow_schema(pa.schema({"rows_written": pa.int64()}))
+
+        def write(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteResult[None]]:
+            for mp in micropartitions:
+                yield WriteResult(result=None, bytes_written=0, rows_written=len(mp))
+
+        def finalize(self, write_results: list[WriteResult[None]]) -> MicroPartition:
+            total = sum(r.rows_written for r in write_results)
+            return MicroPartition.from_pydict({"rows_written": pa.array([total], type=pa.int64())})
+
+    write_df = daft.from_pydict({"a": [1, 2, 3]}).filter(col("a") > 1).write_sink(NoopSink())
+    explain_text = explain_to_text(write_df)
     assert "However here is the logical plan used to produce this result" in explain_text
     assert "Filter:" in explain_text
 

@@ -4,7 +4,7 @@ use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::ops::full::FullNull,
     datatypes::{DataType, UInt64Array},
-    kernels::search_sorted::build_partial_compare_with_nulls,
+    kernels::cmp::build_partial_compare_with_nulls,
 };
 
 use crate::RecordBatch;

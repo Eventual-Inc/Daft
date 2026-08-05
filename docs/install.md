@@ -34,14 +34,6 @@ Depending on your use case, you may need to install Daft with additional depende
       </label>
 
       <label class="checkbox-item">
-        <input type="checkbox" id="sentence-transformers" data-extra="sentence-transformers">
-        <span class="checkmark"></span>
-        <div class="checkbox-content">
-          <strong>Sentence Transformers</strong> <code>sentence-transformers</code>
-        </div>
-      </label>
-
-      <label class="checkbox-item">
         <input type="checkbox" id="transformers" data-extra="transformers">
         <span class="checkmark"></span>
         <div class="checkbox-content">
@@ -162,7 +154,7 @@ pip install daft --pre --extra-index-url https://nightly.daft.ai
 ```
 
 !!! warning "Stability"
-Nightly builds may contain unstable or experimental changes. They are not recommended for production use.
+    Nightly builds may contain unstable or experimental changes. They are not recommended for production use.
 
 ## Troubleshooting Legacy CPU Support
 
@@ -173,7 +165,7 @@ pip install -U daft-lts
 ```
 
 !!! warning "Performance Impact"
-The LTS version uses limited CPU instructions and cannot leverage vectorized operations, resulting in slower performance. Only use this if the standard package fails to run.
+    The LTS version uses limited CPU instructions and cannot leverage vectorized operations, resulting in slower performance. Only use this if the standard package fails to run.
 
 <style>
 .daft-install-tool {

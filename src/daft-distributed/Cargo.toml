@@ -1,4 +1,5 @@
 [dependencies]
+common-checkpoint-config = {path = "../common/checkpoint-config", default-features = false}
 common-metrics = {path = "../common/metrics", default-features = false}
 common-daft-config = {path = "../common/daft-config", default-features = false}
 common-display = {path = "../common/display", default-features = false}
@@ -10,7 +11,6 @@ common-py-serde = {path = "../common/py-serde", default-features = false}
 common-resource-request = {path = "../common/resource-request", default-features = false}
 common-runtime = {path = "../common/runtime", default-features = false}
 common-treenode = {path = "../common/treenode", default-features = false}
-daft-checkpoint = {path = "../daft-checkpoint", default-features = false}
 daft-context = {path = "../daft-context", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-functions = {path = "../daft-functions", default-features = false}
@@ -19,6 +19,7 @@ daft-local-plan = {path = "../daft-local-plan", default-features = false}
 daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
 daft-scan = {path = "../daft-scan", default-features = false}
 daft-micropartition = {path = "../daft-micropartition", default-features = false}
+daft-partition-refs = {path = "../daft-partition-refs", default-features = false}
 daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 daft-schema = {path = "../daft-schema", default-features = false}
 futures = {workspace = true}
@@ -44,9 +45,15 @@ python = [
   "common-treenode/python",
   "daft-logical-plan/python",
   "daft-local-plan/python",
+  "daft-partition-refs/python",
   "daft-scan/python",
   "daft-context/python"
 ]
+
+[dev-dependencies]
+arrow = {workspace = true}
+daft-core = {path = "../daft-core", default-features = false}
+daft-local-execution = {path = "../daft-local-execution", default-features = false}
 
 [lints]
 workspace = true

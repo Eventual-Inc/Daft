@@ -79,9 +79,3 @@ class Stats(Event):
 class ProcessStats(Event):
     query_id: str
     stats: dict[str, tuple[StatType, Any]]
-
-
-@dataclass(frozen=True)
-class ResultProduced(Event):
-    query_id: str
-    num_rows: int

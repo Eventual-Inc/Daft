@@ -7,7 +7,8 @@ use std::{
 use common_error::{DaftError, DaftResult};
 use daft_ai::provider::ProviderRef;
 use daft_catalog::{Bindings, CatalogRef, Identifier, LookupMode, TableRef, TableSource, View};
-use daft_ext::abi::{FFI_ScalarFunction, FFI_SessionContext};
+use daft_dsl::functions::AggFnHandle;
+use daft_ext::abi::{FFI_AggregateFunction, FFI_ScalarFunction, FFI_SessionContext};
 use daft_ext_internal::module::ModuleHandle;
 use uuid::Uuid;
 
@@ -42,6 +43,8 @@ struct SessionState {
     tables: Bindings<TableRef>,
     /// Session-scoped functions (Python UDFs and native extension functions).
     functions: Bindings<ScalarFunction>,
+    /// Session-scoped aggregate functions (native extension UDAFs).
+    agg_functions: Bindings<AggFnHandle>,
 }
 
 // TODO: Session should just use a Result not CatalogResult.
@@ -79,6 +82,7 @@ impl Session {
             providers: Bindings::empty(),
             tables: Bindings::empty(),
             functions: Bindings::empty(),
+            agg_functions: Bindings::empty(),
         };
         let state = RwLock::new(state);
         let state = Arc::new(state);
@@ -116,6 +120,16 @@ impl Session {
         self.state_mut()
             .functions
             .bind(name.into(), function.into());
+    }
+
+    /// Attaches an aggregate function to this session. Does NOT err if it already exists.
+    pub fn attach_aggregate_function(&self, name: impl Into<String>, handle: AggFnHandle) {
+        self.state_mut().agg_functions.bind(name.into(), handle);
+    }
+
+    /// Returns an aggregate function by name, or None if not found.
+    pub fn get_aggregate_function(&self, name: &str) -> CatalogResult<Option<AggFnHandle>> {
+        self.state().get_aggregate_function(name)
     }
 
     /// Attaches a provider to this session, err if already exists.
@@ -382,9 +396,75 @@ impl Session {
         Ok(self.state().catalogs.list(pattern))
     }
 
-    /// Lists all tables matching the pattern.
-    pub fn list_tables(&self, pattern: Option<&str>) -> CatalogResult<Vec<String>> {
-        Ok(self.state().tables.list(pattern))
+    /// Lists all namespaces visible to the session, mirroring [`Self::list_tables`]'s resolution:
+    /// - Rule 3: `<catalog>.<rest>` dispatches exclusively to that attached catalog.
+    /// - Otherwise: namespaces in the current catalog (none if no catalog is set).
+    pub fn list_namespaces(&self, pattern: Option<&str>) -> CatalogResult<Vec<Identifier>> {
+        if let Some(p) = pattern
+            && let Some((head, rest)) = p.split_once('.')
+            && self.has_catalog(head)
+        {
+            let inner = (!rest.is_empty()).then_some(rest);
+            return Ok(self
+                .get_catalog(head)?
+                .list_namespaces(inner)?
+                .into_iter()
+                .map(|id| id.qualify([head.to_string()]))
+                .collect());
+        }
+
+        let Some(alias) = self.state().options.curr_catalog.clone() else {
+            return Ok(vec![]);
+        };
+        Ok(self
+            .get_catalog(&alias)?
+            .list_namespaces(pattern)?
+            .into_iter()
+            .map(|id| id.qualify([alias.clone()]))
+            .collect())
+    }
+
+    /// Lists all tables visible to the session, mirroring [`Self::get_table`]'s resolution rules:
+    /// - Rule 0: session-level temp tables.
+    /// - Rules 1+2: current catalog, narrowed to the current namespace when set.
+    /// - Rule 3: `<catalog>.<rest>` dispatches exclusively to that attached catalog.
+    pub fn list_tables(&self, pattern: Option<&str>) -> CatalogResult<Vec<Identifier>> {
+        if let Some(p) = pattern
+            && let Some((head, rest)) = p.split_once('.')
+            && self.has_catalog(head)
+        {
+            let inner = (!rest.is_empty()).then_some(rest);
+            return Ok(self
+                .get_catalog(head)?
+                .list_tables(inner)?
+                .into_iter()
+                .map(|id| id.qualify([head.to_string()]))
+                .collect());
+        }
+
+        let mut out: Vec<Identifier> = self
+            .state()
+            .tables
+            .list(pattern)
+            .into_iter()
+            .map(Identifier::simple)
+            .collect();
+
+        // Qualify with the session alias so identifiers round-trip through `get_table`.
+        let curr_alias = self.state().options.curr_catalog.clone();
+        if let Some(alias) = curr_alias {
+            let catalog = self.get_catalog(&alias)?;
+            let forwarded =
+                forward_pattern_with_namespace(pattern, self.current_namespace()?.as_deref());
+            out.extend(
+                catalog
+                    .list_tables(forwarded.as_deref())?
+                    .into_iter()
+                    .map(|id| id.qualify([alias.clone()])),
+            );
+        }
+
+        Ok(out)
     }
 
     /// Sets the current_catalog.
@@ -437,42 +517,81 @@ impl Session {
     pub fn load_and_init_extension(&self, path: &Path) -> DaftResult<()> {
         let module = daft_ext_internal::module::load_module(path)?;
 
-        // Context passed through the FFI callback's opaque pointer.
         struct InitCtx {
             session: *const Session,
             module: Arc<ModuleHandle>,
+            /// Set by a callback when registering a function/aggregate fails;
+            /// callbacks return non-zero to short-circuit init, and the caller
+            /// surfaces this error in preference to the bare init rc.
+            error: Option<DaftError>,
         }
 
         unsafe extern "C" fn define_function_cb(
             ctx: *mut c_void,
             ffi: FFI_ScalarFunction,
         ) -> c_int {
-            let init_ctx = unsafe { &*(ctx as *const InitCtx) };
+            let init_ctx = unsafe { &mut *ctx.cast::<InitCtx>() };
             let name_ptr = unsafe { (ffi.name)(ffi.ctx) };
             let name = unsafe { CStr::from_ptr(name_ptr) }
                 .to_str()
                 .unwrap_or("unknown")
                 .to_string();
-            let factory = daft_ext_internal::function::into_scalar_function_factory(
+            let factory = match daft_ext_internal::function::into_scalar_function_factory(
                 ffi,
                 init_ctx.module.clone(),
-            );
+            ) {
+                Ok(f) => f,
+                Err(e) => {
+                    init_ctx.error = Some(e);
+                    return 1;
+                }
+            };
             let session = unsafe { &*init_ctx.session };
             session.attach_function(name, factory);
             0
         }
 
-        let init_ctx = InitCtx {
+        unsafe extern "C" fn define_aggregate_function_cb(
+            ctx: *mut c_void,
+            ffi: FFI_AggregateFunction,
+        ) -> c_int {
+            let init_ctx = unsafe { &mut *ctx.cast::<InitCtx>() };
+            let name_ptr = unsafe { (ffi.name)(ffi.ctx) };
+            let name = unsafe { CStr::from_ptr(name_ptr) }
+                .to_str()
+                .unwrap_or("unknown")
+                .to_string();
+            let handle = match daft_ext_internal::aggregate::into_aggregate_fn_handle(
+                ffi,
+                init_ctx.module.clone(),
+            ) {
+                Ok(h) => h,
+                Err(e) => {
+                    init_ctx.error = Some(e);
+                    return 1;
+                }
+            };
+            let session = unsafe { &*init_ctx.session };
+            session.attach_aggregate_function(name, handle);
+            0
+        }
+
+        let mut init_ctx = InitCtx {
             session: std::ptr::from_ref::<Self>(self),
             module: module.clone(),
+            error: None,
         };
 
         let mut ffi_ctx = FFI_SessionContext {
-            ctx: (&raw const init_ctx) as *mut c_void,
+            ctx: (&raw mut init_ctx).cast::<c_void>(),
             define_function: define_function_cb,
+            define_aggregate_function: define_aggregate_function_cb,
         };
 
         let rc = unsafe { (module.ffi_module().init)(&raw mut ffi_ctx) };
+        if let Some(e) = init_ctx.error {
+            return Err(e);
+        }
         if rc != 0 {
             return Err(DaftError::InternalError(format!(
                 "extension init failed with code {rc}"
@@ -531,11 +650,36 @@ impl SessionState {
             }
         }
     }
+
+    pub fn get_aggregate_function(&self, name: &str) -> CatalogResult<Option<AggFnHandle>> {
+        match self.agg_functions.lookup(name, LookupMode::Insensitive) {
+            fns if fns.is_empty() => Ok(None),
+            fns if fns.len() == 1 => Ok(Some(fns[0].clone())),
+            fns => {
+                let names = fns.iter().map(|f| f.name().to_string());
+                ambiguous_identifier_err!("Aggregate function", names)
+            }
+        }
+    }
 }
 
 impl Default for Session {
     fn default() -> Self {
         Self::empty()
+    }
+}
+
+/// Pass `pattern` through, or narrow to `<namespace>.%` when only a namespace is set.
+fn forward_pattern_with_namespace(
+    pattern: Option<&str>,
+    namespace: Option<&[String]>,
+) -> Option<String> {
+    if let Some(p) = pattern {
+        Some(p.to_string())
+    } else {
+        namespace
+            .filter(|ns| !ns.is_empty())
+            .map(|ns| format!("{}.%", ns.join(".")))
     }
 }
 
@@ -562,7 +706,7 @@ mod tests {
             schema.clone(),
             Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo {
                 source_schema: schema,
-                clustering_spec: Arc::new(ClusteringSpec::unknown()),
+                clustering_spec: Arc::new(ClusteringSpec::unknown(0)),
             })),
         ))
         .arced()
@@ -642,5 +786,75 @@ mod tests {
         assert!(sess.get_function(&ident).is_ok());
         sess.detach_function("temp_fn").unwrap();
         assert!(sess.get_function(&ident).is_err());
+    }
+
+    // ── Aggregate function tests ────────────────────────────────────────
+
+    mod agg_tests {
+        use std::sync::Arc;
+
+        use common_error::DaftResult;
+        use daft_core::prelude::*;
+        use daft_dsl::functions::{AggFn, AggFnHandle, State};
+
+        use super::*;
+
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct MockAgg;
+
+        #[typetag::serde(name = "MockAgg")]
+        #[allow(clippy::unnecessary_literal_bound)]
+        impl AggFn for MockAgg {
+            fn name(&self) -> &str {
+                "mock_agg"
+            }
+            fn return_dtype(&self, _: &[DataType]) -> DaftResult<DataType> {
+                Ok(DataType::Int32)
+            }
+            fn state_fields(&self, _: &[Field]) -> DaftResult<Vec<Field>> {
+                Ok(vec![Field::new("acc", DataType::Int32)])
+            }
+            fn call_agg_block(&self, _: Vec<Series>) -> DaftResult<Vec<State>> {
+                unimplemented!()
+            }
+            fn call_agg_combine(&self, _: Vec<Series>) -> DaftResult<Vec<State>> {
+                unimplemented!()
+            }
+            fn call_agg_finalize(&self, _: Vec<State>) -> DaftResult<State> {
+                unimplemented!()
+            }
+        }
+
+        fn mock_agg_handle() -> AggFnHandle {
+            AggFnHandle::new(Arc::new(MockAgg))
+        }
+
+        #[test]
+        fn test_attach_and_get_aggregate_function() {
+            let sess = Session::empty();
+            sess.attach_aggregate_function("mock_agg", mock_agg_handle());
+
+            let result = sess.get_aggregate_function("mock_agg").unwrap();
+            assert!(result.is_some());
+            assert_eq!(result.unwrap().name(), "mock_agg");
+        }
+
+        #[test]
+        fn test_get_aggregate_function_not_found() {
+            let sess = Session::empty();
+            let result = sess.get_aggregate_function("nonexistent").unwrap();
+            assert!(result.is_none());
+        }
+
+        #[test]
+        fn test_aggregate_session_isolation() {
+            let sess_a = Session::empty();
+            let sess_b = Session::empty();
+
+            sess_a.attach_aggregate_function("my_agg", mock_agg_handle());
+
+            assert!(sess_a.get_aggregate_function("my_agg").unwrap().is_some());
+            assert!(sess_b.get_aggregate_function("my_agg").unwrap().is_none());
+        }
     }
 }

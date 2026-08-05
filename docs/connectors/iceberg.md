@@ -39,6 +39,25 @@ After a table is loaded as the `table` object, reading it into a DataFrame is ex
     df = daft.read_iceberg(table)
     ```
 
+Daft can also read a named Iceberg branch or tag. Branch, tag, and snapshot ID
+reads are mutually exclusive.
+
+=== "🐍 Python"
+
+    ```python
+    # Create branch/tag references with PyIceberg
+    table.refresh()
+    snapshot = table.current_snapshot()
+
+    with table.manage_snapshots() as snapshot_manager:
+        snapshot_manager.create_branch(snapshot.snapshot_id, "audit")
+        snapshot_manager.create_tag(snapshot.snapshot_id, "v1")
+
+    # Read the branch or tag with Daft
+    branch_df = daft.read_iceberg(table, branch="audit")
+    tag_df = daft.read_iceberg(table, tag="v1")
+    ```
+
 Any subsequent filter operations on the Daft `df` DataFrame object will be correctly optimized to take advantage of Iceberg features such as hidden partitioning and file-level statistics for efficient reads.
 
 === "🐍 Python"
@@ -74,6 +93,88 @@ This call will then return a DataFrame containing the operations that were perfo
 │ ADD       ┆ 5     ┆ 707       ┆ 2f1a2bb1-3e64-49da-accd-1074e… │
 ╰───────────┴───────┴───────────┴────────────────────────────────╯
 ```
+
+## Checkpointing
+
+Daft supports idempotent writes to Iceberg via the `checkpoint=` parameter on [`df.write_iceberg()`][daft.DataFrame.write_iceberg]. Retries of the same logical commit — after a crash, a transient catalog error, or a deliberate re-invocation — produce the same Iceberg state without duplicate snapshots. See the [Checkpointing user guide](../use-case/checkpointing.md) for concepts; the sections below cover Iceberg-specific behavior.
+
+### Example
+
+The pattern: one `CheckpointStore` paired into both the source (via `CheckpointConfig`) and the sink (via `IdempotentCommit`). The source records which inputs were processed; the sink stamps the resulting Iceberg snapshot with the idempotence key.
+
+=== "🐍 Python"
+
+    ```python
+    import daft
+
+    # One store, paired into both the source and the sink.
+    store = daft.CheckpointStore("s3://my-bucket/ckpt/")
+
+    df = daft.read_parquet(
+        "s3://input/",
+        checkpoint=daft.CheckpointConfig(store, on="file_id"),
+    )
+
+    # Any map-only operations work here: filter, project, UDF, explode, ...
+    df = df.where(df["status"] == "active")
+
+    written = df.write_iceberg(
+        table,
+        checkpoint=daft.IdempotentCommit(store, idempotence_key="job-2026-05-21-001"),
+    )
+    ```
+
+A fresh run produces one new Iceberg snapshot tagged with `daft.idempotence-key=job-2026-05-21-001`. Retries with the same `idempotence_key` recognize the prior commit and exit cleanly — no duplicate snapshot, no reprocessing of inputs already handled.
+
+### Inspecting the Marker
+
+Every idempotent commit tags its Iceberg snapshot summary with `daft.idempotence-key`. To verify which logical commit produced the current state of a table:
+
+=== "🐍 Python"
+
+    ```python
+    # Inspect via pyiceberg's Table API — `table` is the same pyiceberg.table.Table
+    # loaded in the "Reading a Table" section above.
+    summary = table.current_snapshot().summary
+    print(summary.get("daft.idempotence-key"))
+    # → "job-2026-05-21-001"
+    ```
+
+For older commits, walk `table.metadata.snapshots` (order isn't guaranteed — sort by `timestamp_ms` if you need chronological order) and check each snapshot's `summary`.
+
+### Constraints
+
+These are constraints specific to the Iceberg connector. Daft-wide constraints (Ray runner, map-only pipelines, single-writer concurrency, etc.) are in the [user guide's Limitations section](../use-case/checkpointing.md#limitations).
+
+- **`mode='append'` only.** `mode='overwrite'` with `checkpoint=` raises `NotImplementedError`.
+- **Reserved `daft.idempotence-*` property prefix.** Keys in `snapshot_properties` that start with this prefix raise `ValueError` — Daft uses this namespace internally.
+
+### Idempotence-Key Contract
+
+The user picks the `idempotence_key`. Daft uses it as the marker that identifies a logical commit. The key must be stable across retries and unique across distinct logical commits — both halves matter:
+
+- **Same key, different inputs → silent no-op (data loss).** Daft sees the existing marker and skips the commit. The new data is dropped without an error.
+- **Different key on a retry of the same logical commit → duplicate snapshot.** Daft doesn't recognize the prior attempt and lands a second snapshot.
+
+### Recovery
+
+The [user guide's Recovery section](../use-case/checkpointing.md#recovery) walks through the full chronology. The Iceberg-specific steps:
+
+- **Commit-from-store.** When a run crashes after the pipeline finishes but before the snapshot commits, Daft reads the staged file references from the store on rerun and commits them as a single new Iceberg snapshot tagged with `daft.idempotence-key`.
+
+- **Marker recognition.** When a run crashes after the snapshot commits but before the store is marked done — or when the user deliberately re-runs with the same key — Daft walks `table.metadata.snapshots`, finds the marker, marks the store, and exits. No second snapshot. Returned DataFrame is empty.
+
+**Orphan files on crash.** A worker that crashed mid-task may leave parquet files unreferenced by any snapshot. Daft doesn't auto-clean these — use your Iceberg engine's orphan-file cleanup procedures.
+
+### Iceberg-Specific Notes
+
+- **In-memory history walk.** Marker recognition scans `table.metadata.snapshots` directly — fast even on tables with many snapshots, since the metadata is already in memory after refresh.
+
+- **`commit.manifest-merge.enabled` is honored.** If the table is configured for manifest merging, Daft uses `merge_append`; otherwise `fast_append`. Same behavior as a non-checkpoint write.
+
+- **Partitioned tables include a `partitioning` struct column in the result.** Whether `checkpoint=` is set or not — callers don't see schema drift when they toggle the flag.
+
+- **Transient retry on `CommitFailedException`.** Daft retries up to twice on this exception (concurrent-writer conflicts, lock contention). Other exceptions — REST 5xx, network errors, auth — propagate immediately. Wrap the call in your own retry policy if you need broader coverage.
 
 ## Type System
 
@@ -118,13 +219,13 @@ algebraic operator is called a *scan*.
 Daft's [`daft.read_iceberg`][daft.read_iceberg] method creates a DataFrame from the given PyIceberg
 table. It produces rows by traversing the table's metadata tree to locate all
 the data files for the given snapshot which is handled by our
-`IcebergScanOperator`.
+`IcebergDataSource`.
 
-Daft's `IcebergScanOperator` initializes itself by fetching the latest schema,
+Daft's `IcebergDataSource` initializes itself by fetching the latest schema,
 or the schema of the given snapshot, along with setting up the partition key
-metadata. The scan operator's primary method, `to_scan_tasks`, accepts pushdowns
-(projections, predicates, partition filters) and returns an iterator of
-`ScanTasks`. Each `ScanTask` object holds a data file, optional delete files,
+metadata. The data source's primary method, `get_tasks`, accepts pushdowns
+(projections, predicates, partition filters) and yields an iterator of
+tasks. Each task holds a data file, optional delete files,
 and the associated pushdowns. Finally, we read each data file's parquet to
 produce a stream of record batches which later operators consume and transform.
 

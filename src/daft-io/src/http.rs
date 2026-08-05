@@ -151,20 +151,140 @@ pub struct HttpSource {
     pub(crate) client: ClientWithMiddleware,
 }
 
+/// Classify a `reqwest::Error` (returned by `error_for_status` or body
+/// reads) into the typed `super::Error` variants that Daft exposes as
+/// `DaftTransientError` subclasses on the Python side.
+///
+/// We rely exclusively on reqwest's typed predicates (`status()`,
+/// `is_connect()`, `is_timeout()`, ...) rather than inspecting the
+/// `Debug` representation, which is not a stable contract.
+pub(crate) fn classify_reqwest_error(
+    path: String,
+    source: reqwest_middleware::reqwest::Error,
+) -> super::Error {
+    if let Some(status) = source.status() {
+        let code = status.as_u16();
+        if matches!(code, 404 | 410) {
+            return super::Error::NotFound {
+                path,
+                source: source.into(),
+            };
+        }
+        if code == 429 {
+            return super::Error::Throttled {
+                path,
+                source: source.into(),
+            };
+        }
+        if (500..600).contains(&code) {
+            return super::Error::MiscTransient {
+                path,
+                source: source.into(),
+            };
+        }
+    }
+    if source.is_connect() {
+        return super::Error::ConnectTimeout {
+            path,
+            source: source.into(),
+        };
+    }
+    if source.is_timeout() {
+        return super::Error::ReadTimeout {
+            path,
+            source: source.into(),
+        };
+    }
+    if source.is_body() || source.is_decode() {
+        return super::Error::SocketError {
+            path,
+            source: source.into(),
+        };
+    }
+    super::Error::UnableToOpenFile {
+        path,
+        source: source.into(),
+    }
+}
+
+/// Classify a `reqwest_middleware::Error` (returned during `send()`,
+/// before any response was received) into a typed `super::Error`.
+pub(crate) fn classify_middleware_error(
+    path: String,
+    source: reqwest_middleware::Error,
+) -> super::Error {
+    match &source {
+        reqwest_middleware::Error::Reqwest(inner) => {
+            if let Some(status) = inner.status() {
+                let code = status.as_u16();
+                if code == 429 {
+                    return super::Error::Throttled {
+                        path,
+                        source: source.into(),
+                    };
+                }
+                if (500..600).contains(&code) {
+                    return super::Error::MiscTransient {
+                        path,
+                        source: source.into(),
+                    };
+                }
+            }
+            if inner.is_connect() {
+                return super::Error::ConnectTimeout {
+                    path,
+                    source: source.into(),
+                };
+            }
+            if inner.is_timeout() {
+                return super::Error::ReadTimeout {
+                    path,
+                    source: source.into(),
+                };
+            }
+            if inner.is_body() || inner.is_decode() {
+                return super::Error::SocketError {
+                    path,
+                    source: source.into(),
+                };
+            }
+            // Unknown reqwest failures during connection establishment are
+            // still transient from the caller's perspective; surface them
+            // as MiscTransient so that retry logic can pick them up.
+            super::Error::MiscTransient {
+                path,
+                source: source.into(),
+            }
+        }
+        reqwest_middleware::Error::Middleware(_) => super::Error::MiscTransient {
+            path,
+            source: source.into(),
+        },
+    }
+}
+
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
-        use Error::{UnableToDetermineSize, UnableToOpenFile};
+        use Error::{UnableToConnect, UnableToDetermineSize, UnableToOpenFile, UnableToReadBytes};
         match error {
-            UnableToOpenFile { path, source } => match source.status().map(|v| v.as_u16()) {
-                Some(404 | 410) => Self::NotFound {
-                    path,
-                    source: source.into(),
-                },
-                None | Some(_) => Self::UnableToOpenFile {
-                    path,
-                    source: source.into(),
-                },
-            },
+            UnableToOpenFile { path, source } => classify_reqwest_error(path, source),
+            UnableToConnect { path, source } => classify_middleware_error(path, source),
+            UnableToReadBytes { path, source } => {
+                // Stream/body read failures are transient; treat timeouts as
+                // ReadTimeout and everything else as a SocketError so callers
+                // get a DaftTransientError subclass on the Python side.
+                if source.is_timeout() {
+                    Self::ReadTimeout {
+                        path,
+                        source: source.into(),
+                    }
+                } else {
+                    Self::SocketError {
+                        path,
+                        source: source.into(),
+                    }
+                }
+            }
             UnableToDetermineSize { path } => Self::UnableToDetermineSize { path },
             _ => Self::Generic {
                 store: super::SourceType::Http,

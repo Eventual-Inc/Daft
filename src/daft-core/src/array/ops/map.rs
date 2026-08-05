@@ -4,7 +4,7 @@ use itertools::Itertools;
 use crate::{
     array::{ops::DaftCompare, prelude::*},
     datatypes::prelude::*,
-    series::Series,
+    series::{IntoSeries, Series},
 };
 
 fn single_map_get(
@@ -89,5 +89,33 @@ impl MapArray {
         let result: Vec<_> = result.iter().collect();
 
         Series::concat(&result)
+    }
+
+    pub fn map_keys(&self) -> DaftResult<Series> {
+        let DataType::Map { key: key_type, .. } = self.data_type() else {
+            return Err(DaftError::TypeError(format!(
+                "Expected input to be a map type, got {:?}",
+                self.data_type()
+            )));
+        };
+        if self.is_empty() {
+            return Ok(Series::empty("keys", &DataType::List(key_type.clone())));
+        }
+        let result: DaftResult<Vec<_>> = self
+            .physical
+            .iter()
+            .map(|series| match series {
+                Some(s) if !s.is_empty() => {
+                    let keys = {
+                        let struct_array = s.struct_()?;
+                        struct_array.get("key")?
+                    };
+                    let result = keys.rename("keys").cast(key_type.as_ref())?;
+                    Ok(Some(result))
+                }
+                _ => Ok(None),
+            })
+            .try_collect();
+        Ok(ListArray::from_series("keys", result?)?.into_series())
     }
 }

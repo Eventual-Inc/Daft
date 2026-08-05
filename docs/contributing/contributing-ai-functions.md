@@ -19,7 +19,7 @@ descriptor is used to instantiate the model at runtime.
 class TextClassifier(Protocol):
     """Protocol for text classification implementations."""
 
-    def classify_text(self, text: list[str], labels: LabelLike | list[LabelLike]) -> list[Embedding]:
+    def classify_text(self, text: list[str], labels: list[str]) -> list[str]:
         """Classifies a batch of text strings using the given label(s)."""
         ...
 
@@ -47,51 +47,45 @@ class Provider(ABC):
 
 In `daft.functions.ai` you can add the function, and then re-export it in `daft.functions.__init__.py`.
 The implementation is responsible for resolving the provider from the given arguments, then you
-will call the appropriate provider method to get the relevant descriptor
+will call the appropriate provider method to get the relevant descriptor.
 
 ```python
+import daft
+from daft import DataType, Series
+from daft.ai.protocols import TextClassifier, TextClassifierDescriptor
+
 def classify_text(
     text: Expression,
-    labels: LabelLike | list[LabelLike],
+    labels: list[str],
     *,
     provider: str | Provider | None = None,
     model: str | None = None,
 ) -> Expression:
-    from daft.ai._expressions import _TextClassifierExpression
-    from daft.ai.protocols import TextClassifier
-
     # Load a TextClassifierDescriptor from the resolved provider
-    text_classifier = _resolve_provider(provider, "sentence_transformers").get_text_classifier(model, **options)
+    text_classifier = _resolve_provider(provider, "transformers").get_text_classifier(model)
 
-    # Implement the expression here!
+    # Create the stateful class UDF
+    classifier = _TextClassifierExpression(text_classifier, labels)
 
-    # This shows creating a class-based udf which holds state
-    expr_udf = udf(
-        return_dtype=get_type_from_labels(labels),
-        concurrency=1,
-        use_process=False,
-    )
-
-    # We invoke the UDF with a class callable to create an Expression
-    expr = expr_udf(_TextClassifierExpression)   # <-- see step 4!
-    expr = expr.with_init_args(text_classifier)
-
-    # Now pass the input arguments to the expression!
-    return expr(text, labels)
+    # Return the expression
+    return classifier.classify(text)
 
 
+@daft.cls
 class _TextClassifierExpression:
     """Function expression implementation for a TextClassifier protocol."""
 
-    text_classifier: TextClassifier
+    def __init__(self, descriptor: TextClassifierDescriptor, labels: list[str]):
+        # Instantiate from the descriptor in __init__
+        self.text_classifier = descriptor.instantiate()
+        self.labels = labels
 
-    def __init__(self, text_classifier: TextClassifierDescriptor):
-        # !! IMPORTANT: instantiate from the descriptor in __init__ !!
-        self.text_classifier = text_classifier.instantiate()
-
-    def __call__(self, text_series: Series, labels: list[Label]) -> list[Embedding]:
-        text = text_series.to_pylist()
-        return self.text_classifier.classify_text(text, labels) if text else []
+    @daft.method.batch(return_dtype=DataType.string())
+    def classify(self, text: Series) -> list[str]:
+        text_list = text.to_pylist()
+        if not text_list:
+            return []
+        return self.text_classifier.classify_text(text_list, self.labels)
 ```
 
 ## Step 4. Implement the Protocol for some Provider.
@@ -101,7 +95,7 @@ and idea of where you actual logic should live, and the previous steps are to pr
 hook your new expression into the provider/model system.
 
 ```python
-dataclass
+@dataclass
 class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
     model: str  # store some metadata
 
@@ -114,8 +108,8 @@ class OpenAITextEmbedder(TextEmbedder):
     client: OpenAI
     model: str
 
-    # This is a a imple version using the batch API. The full implementation
-    # is uses dynamic batching and has error handling mechanisms.
+    # This is a simple version using the batch API. The full implementation
+    # uses dynamic batching and has error handling mechanisms.
     def embed_text(self, text: list[str]) -> list[Embedding]:
         response = self.client.embeddings.create(
             input=text,

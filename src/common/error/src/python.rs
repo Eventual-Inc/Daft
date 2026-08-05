@@ -1,6 +1,6 @@
 use pyo3::{exceptions::PyFileNotFoundError, import_exception};
 
-use crate::DaftError;
+use crate::{DaftError, format::format_error_for_user};
 
 import_exception!(daft.exceptions, DaftCoreException);
 import_exception!(daft.exceptions, DaftTypeError);
@@ -15,17 +15,20 @@ impl std::convert::From<DaftError> for pyo3::PyErr {
     fn from(err: DaftError) -> Self {
         match err {
             DaftError::PyO3Error(pyerr) => pyerr,
-            DaftError::FileNotFound { path, source } => {
-                PyFileNotFoundError::new_err(format!("File: {path} not found\n{source}"))
+            DaftError::TypeError(msg) => DaftTypeError::new_err(msg),
+            other => {
+                let formatted = format_error_for_user(&other);
+                match other {
+                    DaftError::FileNotFound { .. } => PyFileNotFoundError::new_err(formatted),
+                    DaftError::ConnectTimeout(_) => ConnectTimeoutError::new_err(formatted),
+                    DaftError::ReadTimeout(_) => ReadTimeoutError::new_err(formatted),
+                    DaftError::ByteStreamError(_) => ByteStreamError::new_err(formatted),
+                    DaftError::SocketError(_) => SocketError::new_err(formatted),
+                    DaftError::ThrottledIo(_) => ThrottleError::new_err(formatted),
+                    DaftError::MiscTransient(_) => MiscTransientError::new_err(formatted),
+                    _ => DaftCoreException::new_err(formatted),
+                }
             }
-            DaftError::TypeError(err) => DaftTypeError::new_err(err),
-            DaftError::ConnectTimeout(err) => ConnectTimeoutError::new_err(err.to_string()),
-            DaftError::ReadTimeout(err) => ReadTimeoutError::new_err(err.to_string()),
-            DaftError::ByteStreamError(err) => ByteStreamError::new_err(err.to_string()),
-            DaftError::SocketError(err) => SocketError::new_err(err.to_string()),
-            DaftError::ThrottledIo(err) => ThrottleError::new_err(err.to_string()),
-            DaftError::MiscTransient(err) => MiscTransientError::new_err(err.to_string()),
-            _ => DaftCoreException::new_err(err.to_string()),
         }
     }
 }

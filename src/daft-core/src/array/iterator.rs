@@ -1,6 +1,9 @@
 use std::iter::{FusedIterator, RepeatN, repeat_n};
 
-use arrow::buffer::{BooleanBuffer, NullBuffer};
+use arrow::{
+    buffer::{BooleanBuffer, NullBuffer, ScalarBuffer},
+    datatypes::ArrowNativeType,
+};
 
 use crate::{
     array::{
@@ -81,6 +84,71 @@ impl<'a, T: DaftPrimitiveType> IntoIterator for &'a DataArray<T> {
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
+    }
+}
+
+pub struct PrimitiveOwnedIter<N: ArrowNativeType> {
+    values: ScalarBuffer<N>,
+    nulls: Option<NullBuffer>,
+    index: usize,
+    len: usize,
+}
+
+impl<N: Copy + ArrowNativeType> Iterator for PrimitiveOwnedIter<N> {
+    type Item = Option<N>;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index >= self.len {
+            return None;
+        }
+        let i = self.index;
+        self.index += 1;
+        Some(if self.nulls.as_ref().is_none_or(|n| n.is_valid(i)) {
+            Some(self.values[i])
+        } else {
+            None
+        })
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let rem = self.len - self.index;
+        (rem, Some(rem))
+    }
+}
+
+impl<N: Copy + ArrowNativeType> DoubleEndedIterator for PrimitiveOwnedIter<N> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.index >= self.len {
+            return None;
+        }
+        self.len -= 1;
+        let i = self.len;
+        Some(if self.nulls.as_ref().is_none_or(|n| n.is_valid(i)) {
+            Some(self.values[i])
+        } else {
+            None
+        })
+    }
+}
+
+impl<N: Copy + ArrowNativeType> ExactSizeIterator for PrimitiveOwnedIter<N> {}
+impl<N: Copy + ArrowNativeType> FusedIterator for PrimitiveOwnedIter<N> {}
+
+impl<T: DaftPrimitiveType> IntoIterator for DataArray<T> {
+    type Item = Option<T::Native>;
+    type IntoIter = PrimitiveOwnedIter<T::Native>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        let len = self.len();
+        PrimitiveOwnedIter {
+            values: self.values(),
+            nulls: self.nulls,
+            index: 0,
+            len,
+        }
     }
 }
 

@@ -3,6 +3,7 @@ arrow-schema = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 regex = {workspace = true}
 serde_json = {workspace = true}
+snafu = {workspace = true}
 thiserror = {workspace = true}
 tokio = {workspace = true}
 

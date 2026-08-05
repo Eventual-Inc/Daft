@@ -10,7 +10,7 @@ name = "dvector"
 crate-type = ["cdylib"]
 
 [dependencies]
-daft-ext = {path = "../../src/daft-ext"}
+daft-ext = {path = "../../src/daft-ext", features = ["arrow-57"]}
 arrow-array = {version = "57.1.0", features = ["chrono-tz"]}
 arrow-buffer = "57.1.0"
 arrow-schema = "57.1.0"

@@ -1,7 +1,7 @@
 use pyo3::prelude::*;
 
 pub mod pylib {
-    use std::{collections::BTreeMap, sync::Arc};
+    use std::sync::Arc;
 
     use common_arrow_ffi::ToPyArrow;
     use daft_core::python::{PySchema, PySeries, PyTimeUnit};
@@ -11,8 +11,27 @@ pub mod pylib {
     use pyo3::{PyResult, Python, pyfunction};
 
     use crate::read::{
-        ArrowChunk, ParquetSchemaInferenceOptions, ParquetSchemaInferenceOptionsBuilder,
+        ArrowChunk, ParquetBulkReadOptions, ParquetReadOptions, ParquetSchemaInferenceOptions,
+        PerFileOptions,
     };
+
+    /// Expand a bulk `row_groups` argument into one `PerFileOptions` per uri.
+    fn per_file_from_row_groups(
+        row_groups: Option<&[Option<Vec<i64>>]>,
+        uris_len: usize,
+    ) -> Vec<PerFileOptions> {
+        let Some(rgs) = row_groups else {
+            return Vec::new();
+        };
+        assert_eq!(rgs.len(), uris_len, "row_groups length mismatch");
+        rgs.iter()
+            .map(|r| PerFileOptions {
+                row_groups: r.clone(),
+                ..Default::default()
+            })
+            .collect()
+    }
+
     #[allow(clippy::too_many_arguments)]
     #[pyfunction(signature = (
         uri,
@@ -39,37 +58,35 @@ pub mod pylib {
     ) -> PyResult<PyRecordBatch> {
         py.detach(|| {
             let io_stats = IOStatsContext::new(format!("read_parquet: for uri {uri}"));
-
+            let multithreaded_io = multithreaded_io.unwrap_or(true);
             let io_client = get_io_client(
-                multithreaded_io.unwrap_or(true),
+                multithreaded_io,
                 io_config.unwrap_or_default().config.into(),
             )?;
-            let schema_infer_options = ParquetSchemaInferenceOptions::new(
-                coerce_int96_timestamp_unit.map(|tu| tu.timeunit),
-            );
-
-            let result = crate::read::read_parquet(
-                uri,
+            let opts = ParquetReadOptions {
                 columns,
                 start_offset,
                 num_rows,
                 row_groups,
-                predicate.map(|e| e.expr),
-                io_client,
-                Some(io_stats),
-                multithreaded_io.unwrap_or(true),
-                schema_infer_options,
-                None,
-            )?
-            .into();
-            Ok(result)
+                predicate: predicate.map(|e| e.expr),
+                schema_infer: ParquetSchemaInferenceOptions::new(
+                    coerce_int96_timestamp_unit.map(|tu| tu.timeunit),
+                ),
+                ..Default::default()
+            };
+            let runtime = common_runtime::get_io_runtime(multithreaded_io);
+            let table = runtime.block_on_current_thread(
+                crate::read::read_parquet_into_recordbatch(uri, io_client, Some(io_stats), opts),
+            )?;
+            Ok(table.into())
         })
     }
+
     type PyArrowChunks = Vec<Vec<pyo3::Py<pyo3::PyAny>>>;
     type PyArrowFields = Vec<pyo3::Py<pyo3::PyAny>>;
     type PyArrowParquetType = (
         PyArrowFields,
-        BTreeMap<String, String>,
+        std::collections::BTreeMap<String, String>,
         PyArrowChunks,
         usize,
     );
@@ -92,10 +109,9 @@ pub mod pylib {
             .iter()
             .map(|f| Ok(f.to_pyarrow(py)?.unbind()))
             .collect::<PyResult<Vec<_>>>()?;
-        let metadata = &schema.metadata;
         Ok((
             fields,
-            metadata.clone().into_iter().collect(),
+            schema.metadata.clone().into_iter().collect(),
             converted_arrays,
             num_rows,
         ))
@@ -128,31 +144,34 @@ pub mod pylib {
         file_timeout_ms: Option<i64>,
     ) -> PyResult<PyArrowParquetType> {
         let (schema, all_arrays, num_rows) = py.detach(|| {
+            let multithreaded_io = multithreaded_io.unwrap_or(true);
             let io_client = get_io_client(
-                multithreaded_io.unwrap_or(true),
+                multithreaded_io,
                 io_config.unwrap_or_default().config.into(),
             )?;
-            let schema_infer_options = ParquetSchemaInferenceOptionsBuilder {
-                coerce_int96_timestamp_unit,
-                string_encoding,
-            }
-            .build()?;
-
-            crate::read::read_parquet_into_pyarrow(
-                uri,
+            let opts = ParquetReadOptions {
                 columns,
                 start_offset,
                 num_rows,
                 row_groups,
+                schema_infer: ParquetSchemaInferenceOptions::from_python(
+                    coerce_int96_timestamp_unit,
+                    &string_encoding,
+                )?,
+                ..Default::default()
+            };
+            crate::read::read_parquet_into_pyarrow(
+                uri,
                 io_client,
                 None,
-                multithreaded_io.unwrap_or(true),
-                schema_infer_options,
+                multithreaded_io,
+                opts,
                 file_timeout_ms,
             )
         })?;
         convert_pyarrow_parquet_read_result_into_py(py, schema, all_arrays, num_rows)
     }
+
     #[allow(clippy::too_many_arguments)]
     #[pyfunction(signature = (
         uris,
@@ -181,34 +200,33 @@ pub mod pylib {
     ) -> PyResult<Vec<PyRecordBatch>> {
         py.detach(|| {
             let io_stats = IOStatsContext::new("read_parquet_bulk");
-
+            let multithreaded_io = multithreaded_io.unwrap_or(true);
             let io_client = get_io_client(
-                multithreaded_io.unwrap_or(true),
+                multithreaded_io,
                 io_config.unwrap_or_default().config.into(),
             )?;
-            let schema_infer_options = ParquetSchemaInferenceOptions::new(
-                coerce_int96_timestamp_unit.map(|tu| tu.timeunit),
-            );
-            Ok(crate::read::read_parquet_bulk(
-                uris.iter().map(AsRef::as_ref).collect::<Vec<_>>().as_ref(),
-                columns.as_deref(),
+            let per_file = per_file_from_row_groups(row_groups.as_deref(), uris.len());
+            let opts = ParquetBulkReadOptions {
+                columns,
                 start_offset,
                 num_rows,
-                row_groups,
-                predicate.map(|e| e.expr),
+                predicate: predicate.map(|e| e.expr),
+                schema_infer: ParquetSchemaInferenceOptions::new(
+                    coerce_int96_timestamp_unit.map(|tu| tu.timeunit),
+                ),
+                num_parallel_tasks: num_parallel_tasks.unwrap_or(128) as usize,
+                per_file,
+                ..Default::default()
+            };
+            let uri_refs: Vec<&str> = uris.iter().map(String::as_str).collect();
+            let tables = crate::read::read_parquet_bulk_sync(
+                &uri_refs,
                 io_client,
                 Some(io_stats),
-                num_parallel_tasks.unwrap_or(128) as usize,
-                multithreaded_io.unwrap_or(true),
-                &schema_infer_options,
-                None,
-                None,
-                None,
-                None,
-            )?
-            .into_iter()
-            .map(std::convert::Into::into)
-            .collect())
+                multithreaded_io,
+                opts,
+            )?;
+            Ok(tables.into_iter().map(Into::into).collect())
         })
     }
 
@@ -236,34 +254,39 @@ pub mod pylib {
         multithreaded_io: Option<bool>,
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
     ) -> PyResult<Vec<PyArrowParquetType>> {
-        let parquet_read_results = py.detach(|| {
+        let results = py.detach(|| {
+            let multithreaded_io = multithreaded_io.unwrap_or(true);
             let io_client = get_io_client(
-                multithreaded_io.unwrap_or(true),
+                multithreaded_io,
                 io_config.unwrap_or_default().config.into(),
             )?;
-            let schema_infer_options = ParquetSchemaInferenceOptions::new(
-                coerce_int96_timestamp_unit.map(|tu| tu.timeunit),
-            );
-
-            crate::read::read_parquet_into_pyarrow_bulk(
-                uris.iter().map(AsRef::as_ref).collect::<Vec<_>>().as_ref(),
-                columns.as_deref(),
+            let per_file = per_file_from_row_groups(row_groups.as_deref(), uris.len());
+            let opts = ParquetBulkReadOptions {
+                columns,
                 start_offset,
                 num_rows,
-                row_groups,
+                schema_infer: ParquetSchemaInferenceOptions::new(
+                    coerce_int96_timestamp_unit.map(|tu| tu.timeunit),
+                ),
+                num_parallel_tasks: num_parallel_tasks.unwrap_or(128) as usize,
+                per_file,
+                ..Default::default()
+            };
+            let uri_refs: Vec<&str> = uris.iter().map(String::as_str).collect();
+            crate::read::read_parquet_into_pyarrow_bulk(
+                &uri_refs,
                 io_client,
                 None,
-                num_parallel_tasks.unwrap_or(128) as usize,
-                multithreaded_io.unwrap_or(true),
-                schema_infer_options,
+                multithreaded_io,
+                opts,
             )
         })?;
-        parquet_read_results
+        results
             .into_iter()
-            .map(|(s, all_arrays, num_rows)| {
-                convert_pyarrow_parquet_read_result_into_py(py, s, all_arrays, num_rows)
+            .map(|(s, all_arrays, n)| {
+                convert_pyarrow_parquet_read_result_into_py(py, s, all_arrays, n)
             })
-            .collect::<PyResult<Vec<_>>>()
+            .collect()
     }
 
     #[pyfunction(signature = (
@@ -281,30 +304,22 @@ pub mod pylib {
     ) -> PyResult<PySchema> {
         py.detach(|| {
             let io_stats = IOStatsContext::new(format!("read_parquet_schema: for uri {uri}"));
-
-            let schema_infer_options = ParquetSchemaInferenceOptions::new(
+            let schema_infer = ParquetSchemaInferenceOptions::new(
                 coerce_int96_timestamp_unit.map(|tu| tu.timeunit),
             );
             let io_client = get_io_client(
                 multithreaded_io.unwrap_or(true),
                 io_config.unwrap_or_default().config.into(),
             )?;
-
-            let runtime_handle = common_runtime::get_io_runtime(true);
-
-            let task = async move {
-                crate::read::read_parquet_schema_and_metadata(
+            let runtime = common_runtime::get_io_runtime(true);
+            let (schema, _) =
+                runtime.block_on_current_thread(crate::read::read_parquet_schema_and_metadata(
                     uri,
                     io_client,
                     Some(io_stats),
-                    schema_infer_options,
-                    None, // TODO: allow passing in of field_id_mapping through Python API?
-                )
-                .await
-            };
-
-            let (schema, _) = runtime_handle.block_on_current_thread(task)?;
-
+                    schema_infer,
+                    None,
+                ))?;
             Ok(Arc::new(schema).into())
         })
     }
@@ -318,7 +333,6 @@ pub mod pylib {
     ) -> PyResult<PyRecordBatch> {
         py.detach(|| {
             let io_stats = IOStatsContext::new("read_parquet_statistics");
-
             let io_client = get_io_client(
                 multithreaded_io.unwrap_or(true),
                 io_config.unwrap_or_default().config.into(),

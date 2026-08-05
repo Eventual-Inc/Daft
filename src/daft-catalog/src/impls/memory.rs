@@ -238,18 +238,19 @@ impl Catalog for MemoryCatalog {
     }
 
     fn list_namespaces(&self, pattern: Option<&str>) -> CatalogResult<Vec<Identifier>> {
-        if pattern.is_some() {
-            return Err(CatalogError::unsupported(
-                "MemoryCatalog.list_namespaces does not support specifying a pattern.",
-            ));
-        }
-
         Ok(self
             .tables
             .read()
             .unwrap()
             .keys()
-            .filter_map(|namespace| namespace.as_ref().map(Identifier::simple))
+            .filter_map(|namespace| {
+                let ns = namespace.as_ref()?;
+                if pattern.is_none_or(|pat| match_pattern(ns, pat)) {
+                    Some(Identifier::simple(ns))
+                } else {
+                    None
+                }
+            })
             .collect())
     }
 

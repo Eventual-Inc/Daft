@@ -1,7 +1,3 @@
-/// Arrow vector column abstractions for float and boolean list arrays.
-///
-/// Provides unified views over FixedSizeList, List, and LargeList columns
-/// and map helpers for pairwise distance computations.
 use std::sync::Arc;
 
 use arrow_array::{
@@ -11,82 +7,8 @@ use arrow_array::{
     types::{Float32Type, Float64Type},
 };
 use arrow_buffer::{NullBuffer, OffsetBuffer};
-use arrow_schema::{DataType, Field};
+use arrow_schema::DataType;
 use daft_ext::prelude::{DaftError, DaftResult};
-
-/// Validates that two list-typed args have compatible element types and dimensions.
-pub fn return_field_float(fn_name: &str, args: &[Field]) -> DaftResult<Field> {
-    validate_two_args(fn_name, args)?;
-    let float_types = [DataType::Float32, DataType::Float64];
-    validate_list_element(&args[0], fn_name, &float_types)?;
-    validate_list_element(&args[1], fn_name, &float_types)?;
-    validate_fixed_dims_match(fn_name, &args[0], &args[1])?;
-    Ok(Field::new(fn_name, DataType::Float64, true))
-}
-
-/// Validates boolean list args, returns UInt32 field.
-pub fn return_field_hamming(fn_name: &str, args: &[Field]) -> DaftResult<Field> {
-    validate_two_args(fn_name, args)?;
-    let bool_types = [DataType::Boolean];
-    validate_list_element(&args[0], fn_name, &bool_types)?;
-    validate_list_element(&args[1], fn_name, &bool_types)?;
-    validate_fixed_dims_match(fn_name, &args[0], &args[1])?;
-    Ok(Field::new(fn_name, DataType::UInt32, true))
-}
-
-/// Validates boolean list args, returns Float64 field.
-pub fn return_field_jaccard(fn_name: &str, args: &[Field]) -> DaftResult<Field> {
-    validate_two_args(fn_name, args)?;
-    let bool_types = [DataType::Boolean];
-    validate_list_element(&args[0], fn_name, &bool_types)?;
-    validate_list_element(&args[1], fn_name, &bool_types)?;
-    validate_fixed_dims_match(fn_name, &args[0], &args[1])?;
-    Ok(Field::new(fn_name, DataType::Float64, true))
-}
-
-fn validate_list_element(
-    field: &Field,
-    fn_name: &str,
-    allowed: &[DataType],
-) -> DaftResult<DataType> {
-    match field.data_type() {
-        DataType::FixedSizeList(inner, _) | DataType::List(inner) | DataType::LargeList(inner) => {
-            let elem = inner.data_type().clone();
-            if allowed.contains(&elem) {
-                Ok(elem)
-            } else {
-                Err(DaftError::TypeError(format!(
-                    "{fn_name}: unsupported element type {elem:?}, expected one of {allowed:?}"
-                )))
-            }
-        }
-        other => Err(DaftError::TypeError(format!(
-            "{fn_name}: expected List or FixedSizeList, got {other:?}"
-        ))),
-    }
-}
-
-fn validate_two_args(fn_name: &str, args: &[Field]) -> DaftResult<()> {
-    if args.len() != 2 {
-        return Err(DaftError::TypeError(format!(
-            "{fn_name}: expected 2 arguments, got {}",
-            args.len()
-        )));
-    }
-    Ok(())
-}
-
-fn validate_fixed_dims_match(fn_name: &str, a: &Field, b: &Field) -> DaftResult<()> {
-    if let (DataType::FixedSizeList(_, da), DataType::FixedSizeList(_, db)) =
-        (a.data_type(), b.data_type())
-        && da != db
-    {
-        return Err(DaftError::TypeError(format!(
-            "{fn_name}: dimension mismatch: {da} vs {db}"
-        )));
-    }
-    Ok(())
-}
 
 /// Borrowed or owned f64 slice over float array values.
 enum F64Values<'a> {

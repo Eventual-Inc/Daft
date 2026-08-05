@@ -201,7 +201,7 @@ chunker = ChunkingUDF()
 encoder = EncodingUDF()
 
 (
-    daft.read_parquet("s3://desmond-demo/text-embedding-dataset.parquet")
+    daft.read_parquet("s3://daft-public-data/text-embedding-dataset.parquet")
     .with_column("sentences", chunker(col("text")))
     .explode("sentences")
     .with_column("text", col("sentences")["text"])
@@ -214,7 +214,7 @@ encoder = EncodingUDF()
     )
     .select("id", "url", "language", "source", "text", "embedding")
     .write_turbopuffer(
-        namespace="desmond-scale-experiment6",
+        namespace="text-embeddings-example",
         region="aws-us-west-2",
         id_column="id",
         vector_column="embedding",
@@ -335,7 +335,7 @@ def main():
     encoder = EncodingUDF()
 
     (
-        daft.read_parquet("s3://desmond-demo/text-embedding-dataset.parquet")
+        daft.read_parquet("s3://daft-public-data/text-embedding-dataset.parquet")
         .with_column("sentences", chunker(col("text")))
         .explode("sentences")
         .with_column("text", col("sentences")["text"])
@@ -348,7 +348,7 @@ def main():
         )
         .select("id", "url", "language", "source", "text", "embedding")
         .write_turbopuffer(
-            namespace="desmond-scale-experiment6",
+            namespace="text-embeddings-example",
             region="aws-us-west-2",
             id_column="id",
             vector_column="embedding",

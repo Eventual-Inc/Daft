@@ -1,6 +1,6 @@
 # Running Custom Python Code in Daft
 
-When Daft's built-in functions aren't sufficient for your needs, the `@daft.func` and `@daft.cls` decorators let you run your own Python code over each row of data. Simply decorate a Python function or class, and it becomes usable in Daft DataFrame operations.
+When Daft's built-in functions aren't sufficient for your needs, the `@daft.func` and `@daft.cls` decorators let you run your own Python code over each row of data. For custom aggregations, `@daft.udaf` lets you define aggregate functions with a three-stage pipeline. Simply decorate a Python function or class, and it becomes usable in Daft DataFrame operations.
 
 If you are looking to migrate from Legacy UDFs to Daft's next generation UDF API, please see our [migration guide](migration.md).
 

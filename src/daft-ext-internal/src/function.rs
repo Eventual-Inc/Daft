@@ -1,5 +1,6 @@
 use std::{
     ffi::{CStr, c_char},
+    path::PathBuf,
     sync::Arc,
 };
 
@@ -64,6 +65,7 @@ unsafe impl Sync for Inner {}
 #[derive(Clone)]
 pub struct ScalarFunctionHandle {
     name: &'static str,
+    module_path: Option<PathBuf>,
     inner: Option<Arc<Inner>>,
 }
 
@@ -78,8 +80,10 @@ impl ScalarFunctionHandle {
                 .to_owned()
                 .into_boxed_str(),
         );
+        let module_path = Some(module.path().to_path_buf());
         Self {
             name,
+            module_path,
             inner: Some(Arc::new(Inner { ffi, module })),
         }
     }
@@ -216,21 +220,42 @@ impl ScalarUDF for ScalarFunctionHandle {
 impl Serialize for ScalarFunctionHandle {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut s = serializer.serialize_struct("ScalarFunctionHandle", 1)?;
+        let mut s = serializer.serialize_struct("ScalarFunctionHandle", 2)?;
         s.serialize_field("name", self.name)?;
+        s.serialize_field("module_path", &self.module_path)?;
         s.end()
     }
 }
 
 impl<'de> Deserialize<'de> for ScalarFunctionHandle {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::Error as _;
         #[derive(Deserialize)]
         struct Helper {
             name: String,
+            // Optional for forward-compat with older serialized plans that
+            // predate this field.
+            #[serde(default)]
+            module_path: Option<PathBuf>,
         }
         let h = Helper::deserialize(deserializer)?;
+
+        // If the module is loaded in this process, return the live handle
+        // directly so `inner` is populated and FFI calls work.
+        if let Some(path) = &h.module_path
+            && let Some(existing) =
+                crate::module::lookup_extension_function(path, &h.name).map_err(D::Error::custom)?
+        {
+            return Ok(existing);
+        }
+
+        // Fall back to a handle with `inner: None`. Calls will error with
+        // `extension function 'X' is not loaded`, which is the correct
+        // behavior when the worker hasn't loaded the extension.
+        let name: &'static str = Box::leak(h.name.into_boxed_str());
         Ok(Self {
-            name: Box::leak(h.name.into_boxed_str()),
+            name,
+            module_path: h.module_path,
             inner: None,
         })
     }
@@ -253,12 +278,22 @@ impl ScalarFunctionFactory for ScalarFunctionHandle {
 /// Create a [`ScalarFunctionFactory`] from an `FFI_ScalarFunction` vtable.
 ///
 /// Called by the extension loader when a module invokes `define_function`
-/// during initialization.
+/// during initialization. As a side effect, this also registers the function
+/// in `MODULES` (via [`crate::module::register_extension_function`]) so that
+/// deserialized handles on Ray workers can re-attach their FFI vtable after
+/// loading the same `.so`. Errors if the parent module has not been loaded
+/// via [`crate::module::load_module`] first.
 pub fn into_scalar_function_factory(
     ffi: FFI_ScalarFunction,
     module: Arc<ModuleHandle>,
-) -> Arc<dyn ScalarFunctionFactory> {
-    Arc::new(ScalarFunctionHandle::new(ffi, module))
+) -> DaftResult<Arc<dyn ScalarFunctionFactory>> {
+    let handle = ScalarFunctionHandle::new(ffi, module);
+    let name = handle.name.to_string();
+    // `module_path` is always `Some` for freshly constructed handles.
+    if let Some(path) = &handle.module_path {
+        crate::module::register_extension_function(path, name, handle.clone())?;
+    }
+    Ok(Arc::new(handle))
 }
 
 #[cfg(test)]
@@ -348,7 +383,10 @@ mod tests {
             init: mock_init,
             free_string: mock_free_string,
         };
-        Arc::new(ModuleHandle::new(module))
+        Arc::new(ModuleHandle::new(
+            module,
+            std::path::PathBuf::from("/mock/mock_module"),
+        ))
     }
 
     fn make_mock_handle() -> (FFI_ScalarFunction, Arc<ModuleHandle>) {
@@ -406,9 +444,21 @@ mod tests {
     }
 
     #[test]
-    fn test_serde_roundtrip() {
-        let (ffi, module) = make_mock_handle();
-        let udf = ScalarFunctionHandle::new(ffi, module);
+    fn test_serde_roundtrip_no_module_loaded() {
+        // Use a path that is never registered in any other test so the
+        // registry lookup always misses and `inner` stays `None`.
+        use daft_ext::abi::FFI_Module;
+        let unregistered_module = Arc::new(ModuleHandle::new(
+            FFI_Module {
+                daft_abi_version: daft_ext::abi::DAFT_ABI_VERSION,
+                name: c"mock_module".as_ptr(),
+                init: mock_init,
+                free_string: mock_free_string,
+            },
+            std::path::PathBuf::from("/mock/test_serde_roundtrip_no_module_loaded/mock_module"),
+        ));
+        let (ffi, _module) = make_mock_handle();
+        let udf = ScalarFunctionHandle::new(ffi, unregistered_module);
 
         let json = serde_json::to_string(&udf).unwrap();
         assert!(json.contains("increment"));
@@ -428,10 +478,83 @@ mod tests {
     }
 
     #[test]
+    fn test_serde_roundtrip_with_module_loaded() {
+        // Simulate a worker environment: the plan has been serialized by the
+        // driver and arrives here to be deserialized. The worker process has
+        // already loaded the extension (e.g. via the Ray actor init hook),
+        // which in a real flow populates MODULES. We populate it directly here
+        // with a unique path so the test doesn't interact with other tests.
+        let (ffi, module) = make_mock_handle();
+        let path =
+            std::path::PathBuf::from("/mock/test_serde_roundtrip_with_module_loaded/mock_module");
+        // Override the module's path for this test by constructing a fresh
+        // ModuleHandle with the same FFI_Module but our unique path.
+        let module = Arc::new(ModuleHandle::new(*module.ffi_module(), path.clone()));
+        let live_handle = ScalarFunctionHandle::new(ffi, module);
+        crate::module::insert_test_module(path.clone());
+        crate::module::register_extension_function(
+            &path,
+            "increment".to_string(),
+            live_handle.clone(),
+        )
+        .unwrap();
+
+        // Driver: serialize.
+        let json = serde_json::to_string(&live_handle).unwrap();
+        assert!(json.contains("increment"));
+        assert!(json.contains(path.to_str().unwrap()));
+
+        // Worker: deserialize. Since FUNCTION_REGISTRY has a match,
+        // `inner` should be populated.
+        let deser: ScalarFunctionHandle = serde_json::from_str(&json).unwrap();
+        assert_eq!(ScalarUDF::name(&deser), "increment");
+        assert!(
+            deser.inner.is_some(),
+            "expected inner to be re-attached from MODULES"
+        );
+
+        // And calls should actually work.
+        let arrow_arr: arrow_array::ArrayRef = Arc::new(Int32Array::from(vec![10, 20, 30]));
+        let series = Series::from_arrow(Field::new("x", DataType::Int32), arrow_arr).unwrap();
+        let args = FunctionArgs::new_unnamed(vec![series]);
+        let ctx = EvalContext { row_count: 3 };
+        let result = deser.call(args, &ctx).unwrap();
+
+        let result_int = result
+            .to_arrow()
+            .unwrap()
+            .as_any()
+            .downcast_ref::<Int32Array>()
+            .unwrap()
+            .clone();
+        assert_eq!(result_int.values().as_ref(), &[11, 21, 31]);
+    }
+
+    #[test]
     fn test_factory() {
         let (ffi, module) = make_mock_handle();
-        let factory = into_scalar_function_factory(ffi, module);
+        crate::module::insert_test_module(module.path().to_path_buf());
+        let factory = into_scalar_function_factory(ffi, module).unwrap();
         assert_eq!(factory.name(), "increment");
+    }
+
+    #[test]
+    fn test_factory_errors_when_module_not_loaded() {
+        // Establish the new invariant: registering a function before
+        // load_module has populated MODULES must surface an error rather
+        // than silently dropping the registration.
+        let (ffi, module) = make_mock_handle();
+        let path = std::path::PathBuf::from(
+            "/mock/test_factory_errors_when_module_not_loaded/mock_module",
+        );
+        let module = Arc::new(ModuleHandle::new(*module.ffi_module(), path));
+        match into_scalar_function_factory(ffi, module) {
+            Ok(_) => panic!("expected registration to fail"),
+            Err(e) => assert!(
+                e.to_string().contains("not loaded"),
+                "unexpected error: {e}"
+            ),
+        }
     }
 
     // --- mock that asserts incoming schema carries extension metadata ---
@@ -542,5 +665,20 @@ mod tests {
             METADATA_SEEN.load(Ordering::SeqCst),
             "extension metadata was not preserved in the FFI schema"
         );
+    }
+
+    #[test]
+    fn extension_function_registry_roundtrip() {
+        let (ffi, module) = make_mock_handle();
+        let path = module.path().to_path_buf();
+        let handle = ScalarFunctionHandle::new(ffi, module);
+        crate::module::insert_test_module(path.clone());
+        crate::module::register_extension_function(&path, "increment".to_string(), handle).unwrap();
+
+        let found = crate::module::lookup_extension_function(&path, "increment")
+            .unwrap()
+            .expect("should find registered function");
+        assert_eq!(ScalarUDF::name(&found), "increment");
+        assert!(found.inner.is_some());
     }
 }

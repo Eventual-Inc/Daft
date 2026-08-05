@@ -1,5 +1,7 @@
+mod hll_cardinality;
 mod percentile;
 
+use hll_cardinality::HllCardinalityEvaluator;
 use percentile::PercentileEvaluator;
 use serde::{Deserialize, Serialize};
 
@@ -25,6 +27,7 @@ pub enum SketchExpr {
         percentiles: HashableVecPercentiles,
         force_list_output: bool,
     },
+    HllCardinality,
 }
 
 impl SketchExpr {
@@ -32,6 +35,7 @@ impl SketchExpr {
     pub fn get_evaluator(&self) -> &dyn FunctionEvaluator {
         match self {
             Self::Percentile { .. } => &PercentileEvaluator {},
+            Self::HllCardinality => &HllCardinalityEvaluator {},
         }
     }
 }
@@ -42,6 +46,14 @@ pub fn sketch_percentile(input: ExprRef, percentiles: &[f64], force_list_output:
             percentiles: HashableVecPercentiles(percentiles.to_vec()),
             force_list_output,
         }),
+        inputs: vec![input],
+    }
+    .into()
+}
+
+pub fn hll_cardinality(input: ExprRef) -> ExprRef {
+    Expr::Function {
+        func: super::FunctionExpr::Sketch(SketchExpr::HllCardinality),
         inputs: vec![input],
     }
     .into()

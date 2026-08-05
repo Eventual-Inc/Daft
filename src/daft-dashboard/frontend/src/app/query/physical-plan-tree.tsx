@@ -1,10 +1,13 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { ListChecks, PanelRightOpen } from "lucide-react";
 import { main } from "@/lib/utils";
-import { ExecutingState, OperatorInfo, PhysicalPlanNode } from "./types";
+import { ExecutingState, OperatorInfo, OperatorStatus, PhysicalPlanNode, TaskStore } from "./types";
+import { QueryStatusName } from "@/hooks/use-queries";
 import {
   getStatusIcon,
+  getEffectiveStatus,
   formatStatValue,
   formatDuration,
   statNumericValue,
@@ -17,7 +20,7 @@ import {
 import ProgressTable from "./progress-table";
 import TreeLayout from "./tree-layout";
 import EdgeLabel from "./edge-label";
-import { getHeatmapStyle, FINISHED_STYLE } from "./tree-colors";
+import { getHeatmapStyle, FINISHED_STYLE, FAILED_STYLE, CANCELED_STYLE } from "./tree-colors";
 
 function getCpuSec(operator?: OperatorInfo): number {
   if (!operator) return 0;
@@ -113,16 +116,41 @@ function PhysicalNodeCard({
   node,
   operator,
   intensity,
+  effectiveStatus,
+  isHighlighted,
+  isHovered,
+  queryStatus,
+  onViewTasks,
 }: {
   node: PhysicalPlanNode;
   operator?: OperatorInfo;
   intensity: number;
+  effectiveStatus: OperatorStatus;
+  /** Sticky highlight — typically set by the URL/node filter from the Tasks sidebar. */
+  isHighlighted: boolean;
+  /** Transient hover preview — set when the user hovers a task row in the sidebar. */
+  isHovered: boolean;
+  queryStatus: QueryStatusName;
+  /** If provided, shows a "View Tasks" affordance on the card. Flotilla only. */
+  onViewTasks?: (nodeId: number) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const status = operator?.status ?? "Pending";
+  const isTerminal = queryStatus === "Finished" || queryStatus === "Failed" || queryStatus === "Canceled" || queryStatus === "Dead";
   const wallClock = useWallClockDuration(operator);
   const cardStyle: React.CSSProperties =
-    status === "Finished" ? FINISHED_STYLE : getHeatmapStyle(intensity);
+    effectiveStatus === "Failed"   ? FAILED_STYLE :
+    effectiveStatus === "Finished" ? FINISHED_STYLE :
+    effectiveStatus === "Canceled" ? CANCELED_STYLE :
+    getHeatmapStyle(intensity);
+
+  // Scroll into view only when the *sticky* (click-driven) highlight becomes
+  // active — scrubbing the sidebar via hover shouldn't jump the plan around.
+  const cardRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (isHighlighted && cardRef.current) {
+      cardRef.current.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+    }
+  }, [isHighlighted]);
 
   const rowsIn = operator?.stats[ROWS_IN_STAT_KEY]?.value ?? 0;
   const rowsOut = operator?.stats[ROWS_OUT_STAT_KEY]?.value ?? 0;
@@ -138,23 +166,56 @@ function PhysicalNodeCard({
     : [];
   const hasExpandable = extraStats.length > 0 || cpuTimeStat;
 
+  // Sticky click highlight: magenta outer ring (existing).
+  // Transient hover preview: amber inner glow (lower intensity).
+  // When both apply we layer them: amber inner + magenta outer.
+  const ringShadows: string[] = [];
+  if (isHovered) {
+    ringShadows.push(
+      "inset 0 0 0 2px rgb(245, 158, 11), inset 0 0 12px 0px rgba(245, 158, 11, 0.45)",
+    );
+  }
+  if (isHighlighted) {
+    ringShadows.push(
+      "0 0 0 2px rgb(217, 70, 219), 0 0 18px 2px rgba(217, 70, 219, 0.55)",
+    );
+  }
+  const ringStyle: React.CSSProperties =
+    ringShadows.length > 0 ? { boxShadow: ringShadows.join(", ") } : {};
+
   return (
     <div
+      ref={cardRef}
       className="border-solid rounded-lg px-4 py-2.5 cursor-pointer
         hover:brightness-125 transition-all min-w-[180px] max-w-[320px]"
-      style={cardStyle}
+      style={{ ...cardStyle, ...ringStyle }}
       onClick={() => setExpanded(!expanded)}
     >
       {/* Header: status icon + name */}
       <div className="flex items-center gap-2">
-        {getStatusIcon(status)}
+        {getStatusIcon(effectiveStatus, isTerminal)}
         <span
           className={`${main.className} text-zinc-100 text-sm font-bold tracking-wide truncate`}
         >
           {node.name}
         </span>
+        {onViewTasks && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onViewTasks(node.id);
+            }}
+            className="ml-auto flex items-center gap-1 px-1.5 py-0.5 rounded-md
+              bg-zinc-900/60 border border-zinc-700 text-[10px] text-zinc-300
+              hover:text-white hover:border-fuchsia-600 transition-colors"
+            title="View tasks originating from this node"
+          >
+            <ListChecks size={11} />
+            tasks
+          </button>
+        )}
         {hasExpandable && (
-          <span className="text-zinc-500 text-xs ml-auto">
+          <span className={`text-zinc-500 text-xs ${onViewTasks ? "" : "ml-auto"}`}>
             {expanded ? "▾" : "▸"}
           </span>
         )}
@@ -216,8 +277,24 @@ function PhysicalNodeCard({
 
 export default function PhysicalPlanTree({
   exec_state,
+  highlightedNodeId,
+  hoveredNodeIds,
+  onViewTasks,
+  tasksOpen,
+  onOpenTasks,
+  queryStatus,
 }: {
   exec_state: ExecutingState;
+  /** Sticky highlight — driven by the URL/node filter (click-to-filter). */
+  highlightedNodeId?: number | null;
+  /** Transient hover preview set — driven by sidebar row hovers. */
+  hoveredNodeIds?: ReadonlySet<number> | null;
+  onViewTasks?: (nodeId: number) => void;
+  /** Whether the tasks sidebar is currently open. Flotilla only. */
+  tasksOpen?: boolean;
+  /** If provided, renders a toolbar button that opens the tasks sidebar (unfiltered). */
+  onOpenTasks?: () => void;
+  queryStatus: QueryStatusName;
 }) {
   const [viewMode, setViewMode] = useState<"tree" | "table" | "json">("tree");
 
@@ -232,6 +309,7 @@ export default function PhysicalPlanTree({
   }
 
   const operators = exec_state.exec_info.operators;
+  const taskStore = exec_state.exec_info.task_store;
   const maxCpuSec = Math.max(
     0.001,
     ...Object.values(operators).map(getCpuSec),
@@ -269,9 +347,9 @@ export default function PhysicalPlanTree({
   );
 
   return (
-    <div className="bg-zinc-900 h-full flex flex-col">
+    <div className="h-full flex flex-col">
       {/* View toggle */}
-      <div className="flex items-center gap-2 px-4 pt-3 pb-2 border-b border-zinc-800">
+      <div className="flex items-center gap-2 px-6 pt-3 pb-2 border-b border-zinc-800">
         {plan && (
           <button
             onClick={() => setViewMode("tree")}
@@ -306,6 +384,17 @@ export default function PhysicalPlanTree({
             JSON
           </button>
         )}
+        {onOpenTasks && !tasksOpen && (
+          <button
+            onClick={onOpenTasks}
+            className={`${main.className} ml-auto flex items-center gap-1 text-xs px-3 py-1 rounded-md
+              text-zinc-400 hover:text-zinc-200 transition-colors`}
+            title="Show tasks sidebar"
+          >
+            <PanelRightOpen size={13} />
+            Tasks
+          </button>
+        )}
       </div>
 
       {/* Content */}
@@ -322,11 +411,17 @@ export default function PhysicalPlanTree({
                   node.type,
                   maxCpuSec,
                 );
+                const effectiveStatus = getEffectiveStatus(op, node.id, taskStore, queryStatus);
                 return (
                   <PhysicalNodeCard
                     node={node}
                     operator={op}
                     intensity={intensity}
+                    effectiveStatus={effectiveStatus}
+                    isHighlighted={highlightedNodeId === node.id}
+                    isHovered={hoveredNodeIds?.has(node.id) ?? false}
+                    queryStatus={queryStatus}
+                    onViewTasks={onViewTasks}
                   />
                 );
               }}
@@ -340,7 +435,7 @@ export default function PhysicalPlanTree({
             {JSON.stringify(plan, null, 2)}
           </pre>
         ) : (
-          <ProgressTable exec_state={exec_state} />
+          <ProgressTable exec_state={exec_state} queryStatus={queryStatus} />
         )}
       </div>
     </div>

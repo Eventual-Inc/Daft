@@ -6,14 +6,14 @@ use common_metrics::{
     ops::{NodeCategory, NodeType},
 };
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
-use daft_logical_plan::{partitioning::UnknownClusteringConfig, stats::StatsState};
+use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::{StreamExt, stream::select};
 
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
-        TaskBuilderStream,
+        ClusteringStrategy, DistributedPipelineNode, NodeID, PipelineNodeConfig,
+        PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream, clustering::BoundClusteringSpec,
     },
     plan::{PlanConfig, PlanExecutionContext},
     scheduling::task::SwordfishTaskBuilder,
@@ -51,7 +51,7 @@ impl CrossJoinNode {
         let config = PipelineNodeConfig::new(
             output_schema,
             plan_config.config.clone(),
-            Arc::new(UnknownClusteringConfig::new(num_partitions).into()),
+            ClusteringStrategy::Explicit(BoundClusteringSpec::unknown(num_partitions)),
         );
 
         Self {

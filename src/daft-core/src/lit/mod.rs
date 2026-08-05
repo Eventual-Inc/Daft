@@ -83,6 +83,8 @@ pub enum Literal {
     Duration(i64, TimeUnit),
     /// Interval: relative elapsed time measured in (months, days, nanoseconds)
     Interval(IntervalValue),
+    /// A 16-bit floating point number.
+    Float16(half::f16),
     /// A 32-bit floating point number.
     Float32(f32),
     /// A 64-bit floating point number.
@@ -157,6 +159,7 @@ impl Hash for Literal {
             Self::Interval(n) => {
                 n.hash(state);
             }
+            Self::Float16(n) => FloatWrapper(*n).hash(state),
             Self::Float32(n) => FloatWrapper(*n).hash(state),
             Self::Float64(n) => FloatWrapper(*n).hash(state),
             Self::Decimal(n, precision, scale) => {
@@ -227,6 +230,7 @@ impl Display for Literal {
             Self::Time(val, tu) => write!(f, "{}", display_time64(*val, tu)),
             Self::Timestamp(val, tu, tz) => write!(f, "{}", display_timestamp(*val, tu, tz)),
             Self::Duration(val, tu) => write!(f, "{}", display_duration(*val, tu)),
+            Self::Float16(val) => write!(f, "{val:.1}"),
             Self::Float32(val) => write!(f, "{val:.1}"),
             Self::Float64(val) => write!(f, "{val:.1}"),
             Self::Decimal(val, precision, scale) => {
@@ -320,6 +324,7 @@ impl Literal {
             Self::Time(_, tu) => DataType::Time(*tu),
             Self::Timestamp(_, tu, tz) => DataType::Timestamp(*tu, tz.clone()),
             Self::Duration(_, tu) => DataType::Duration(*tu),
+            Self::Float16(_) => DataType::Float16,
             Self::Float32(_) => DataType::Float32,
             Self::Float64(_) => DataType::Float64,
             Self::Decimal(_, precision, scale) => {
@@ -397,6 +402,7 @@ impl Literal {
                     Ok(self.clone())
                 }
             }
+            Self::Float16(v) => Ok(Self::Float16(-v)),
             Self::Float32(v) => Ok(Self::Float32(-v)),
             Self::Float64(v) => Ok(Self::Float64(-v)),
             Self::Decimal(v, precision, scale) => Ok(Self::Decimal(-v, *precision, *scale)),
@@ -422,6 +428,7 @@ impl Literal {
             Self::UInt32(val) => write!(buffer, "{}", val),
             Self::Int64(val) => write!(buffer, "{}", val),
             Self::UInt64(val) => write!(buffer, "{}", val),
+            Self::Float16(val) => write!(buffer, "{}", val),
             Self::Float32(val) => write!(buffer, "{}", val),
             Self::Float64(val) => write!(buffer, "{}", val),
             Self::Utf8(val) => write!(buffer, "'{}'", val),
@@ -551,6 +558,14 @@ impl Literal {
         .map_err(|e| DaftError::ValueError(format!("Failed to convert literal to usize: {}", e)))
     }
 
+    /// If the literal is `Float16`, return it. Otherwise, return None.
+    pub fn as_f16(&self) -> Option<half::f16> {
+        match self {
+            Self::Float16(f) => Some(*f),
+            _ => None,
+        }
+    }
+
     /// If the literal is `Float32`, return it. Otherwise, return None.
     pub fn as_f32(&self) -> Option<f32> {
         match self {
@@ -613,6 +628,7 @@ impl Literal {
             Self::Time(..) => std::mem::size_of::<i64>(),
             Self::Duration(..) => std::mem::size_of::<i64>(),
             Self::Interval(_) => std::mem::size_of::<IntervalValue>(),
+            Self::Float16(_) => std::mem::size_of::<half::f16>(),
             Self::Float32(_) => std::mem::size_of::<f32>(),
             Self::Float64(_) => std::mem::size_of::<f64>(),
             Self::Decimal(..) => std::mem::size_of::<i128>(),

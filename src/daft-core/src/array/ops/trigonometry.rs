@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use super::DaftAtan2;
 use crate::{
     array::DataArray,
-    datatypes::{DaftFloatType, Float32Array, Float64Array},
+    datatypes::{DaftFloatType, Float16Array, Float32Array, Float64Array},
 };
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -82,7 +82,7 @@ where
 }
 
 macro_rules! impl_atan2_floating_array {
-    ($arr:ident, $T:ident) => {
+    ($arr:ident, $T:ty) => {
         impl DaftAtan2<$T> for $arr {
             type Output = DaftResult<Self>;
 
@@ -101,5 +101,6 @@ macro_rules! impl_atan2_floating_array {
     };
 }
 
+impl_atan2_floating_array!(Float16Array, half::f16);
 impl_atan2_floating_array!(Float32Array, f32);
 impl_atan2_floating_array!(Float64Array, f64);

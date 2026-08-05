@@ -3,7 +3,10 @@ use common_error::DaftResult;
 use daft_logical_plan::sink_info::CsvFormatOption;
 use daft_micropartition::{MicroPartition, python::PyMicroPartition};
 use daft_recordbatch::{RecordBatch, python::PyRecordBatch};
-use pyo3::{Python, types::PyAnyMethods};
+use pyo3::{
+    Python,
+    types::{PyAnyMethods, PyDict},
+};
 
 use crate::{AsyncFileWriter, WriteResult};
 
@@ -20,6 +23,7 @@ impl PyArrowWriter {
         compression: Option<&String>,
         io_config: Option<&daft_io::IOConfig>,
         partition_values: Option<&RecordBatch>,
+        column_compression: Option<&[(String, String)]>,
     ) -> DaftResult<Self> {
         Python::attach(|py| {
             let file_writer_module = py.import(pyo3::intern!(py, "daft.io.writer"))?;
@@ -37,15 +41,32 @@ impl PyArrowWriter {
                 None => None,
             };
 
-            let py_writer = file_writer_class.call1((
-                root_dir,
-                file_idx,
-                partition_values,
-                compression.map(|c| c.as_str()),
-                io_config.map(|cfg| daft_io::python::IOConfig {
-                    config: cfg.clone(),
-                }),
-            ))?;
+            // We need to turn our column compression options back to a python
+            // dict that the pyarrow parquet writer can understand. It MUST be
+            // complete, so we fill in any missing columns with the default.
+            let kwargs = PyDict::new(py);
+            if let Some(entries) = column_compression
+                && !entries.is_empty()
+            {
+                let dict = PyDict::new(py);
+                for (path, codec) in entries {
+                    dict.set_item(path, codec)?;
+                }
+                kwargs.set_item("column_compression", dict)?;
+            }
+
+            let py_writer = file_writer_class.call(
+                (
+                    root_dir,
+                    file_idx,
+                    partition_values,
+                    compression.map(|c| c.as_str()),
+                    io_config.map(|cfg| daft_io::python::IOConfig {
+                        config: cfg.clone(),
+                    }),
+                ),
+                Some(&kwargs),
+            )?;
             Ok(Self {
                 py_writer: py_writer.into(),
                 is_closed: false,

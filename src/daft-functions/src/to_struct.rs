@@ -14,7 +14,7 @@ impl ScalarUDF for ToStructFunction {
     fn call(
         &self,
         inputs: daft_dsl::functions::FunctionArgs<Series>,
-        _ctx: &daft_dsl::functions::scalar::EvalContext,
+        ctx: &daft_dsl::functions::scalar::EvalContext,
     ) -> DaftResult<Series> {
         let inputs = inputs.into_inner();
         if inputs.is_empty() {
@@ -22,6 +22,17 @@ impl ScalarUDF for ToStructFunction {
                 "Cannot call struct with no inputs".to_string(),
             ));
         }
+        let target_len = ctx.row_count;
+        let inputs = inputs
+            .into_iter()
+            .map(|s| {
+                if s.len() == 1 && target_len > 1 {
+                    s.broadcast(target_len)
+                } else {
+                    Ok(s)
+                }
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
         let child_fields: Vec<Field> = inputs.iter().map(|s| s.field().clone()).collect();
         let field = Field::new("struct", DataType::Struct(child_fields));
 

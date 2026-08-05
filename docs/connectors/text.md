@@ -130,7 +130,7 @@ from daft import col
 
 # Read log files and filter for errors
 df = daft.read_text("/var/log/app/*.log", file_path_column="log_file")
-errors = df.where(col("text").str.contains("ERROR"))
+errors = df.where(col("text").contains("ERROR"))
 errors.show()
 ```
 

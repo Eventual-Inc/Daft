@@ -101,3 +101,9 @@ daft.set_execution_config(flight_shuffle_dirs=["/mnt/spill"])
 3. **Increase partitions** to reduce per-partition memory pressure: insert a `df.repartition(n)` before the join.
 
 For more on memory management, see [Managing Memory Usage](memory.md) and [Partitioning and Batching](partitioning.md).
+
+## Join Ordering
+
+When a query joins three or more tables, the optimizer reorders the join graph to minimize the size of intermediate results. By default, Daft uses a brute-force enumerator that handles up to 7 relations.
+
+An experimental DP-ccp enumerator (Moerkotte & Neumann 2006) is available for larger graphs. Setting `DAFT_DEV_ENABLE_DP_CCP_JOIN_ORDERING=1` switches to DP-ccp and raises the limit to 12 relations. On graphs with up to 7 relations, DP-ccp produces the same plans as brute force. On larger graphs, the expanded search space can expose weaknesses in our cost model and lead to suboptimal plans. This limitation will be resolved once statistics and cost estimation improve (tracked in [#6765](https://github.com/Eventual-Inc/Daft/issues/6765)).

@@ -1,5 +1,6 @@
 mod count;
 mod count_distinct;
+mod first_last_value;
 mod mean;
 mod minmax;
 mod sum;
@@ -8,7 +9,8 @@ use common_error::DaftResult;
 use count::CountWindowState;
 use count_distinct::CountDistinctWindowState;
 use daft_core::prelude::*;
-use daft_dsl::{AggExpr, expr::bound_expr::BoundAggExpr};
+use daft_dsl::{AggExpr, WindowExpr, expr::bound_expr::BoundWindowExpr};
+use first_last_value::{FirstValueWindowState, LastValueWindowState};
 use sum::SumWindowState;
 
 use crate::RecordBatch;
@@ -30,36 +32,59 @@ pub trait WindowAggStateOps {
 
 pub fn create_window_agg_state(
     sources: &RecordBatch,
-    agg_expr: &BoundAggExpr,
+    window_expr: &BoundWindowExpr,
     total_length: usize,
 ) -> DaftResult<Option<Box<dyn WindowAggStateOps>>> {
-    match agg_expr.as_ref() {
-        AggExpr::Sum(_) => sum::create_for_type(sources, total_length),
-        AggExpr::Count(_, mode) => {
-            let [source] = sources.columns() else {
-                unreachable!("count should only have one input")
-            };
+    match window_expr.as_ref() {
+        WindowExpr::Agg(agg_expr) => match agg_expr {
+            AggExpr::Sum(_) => sum::create_for_type(sources, total_length),
+            AggExpr::Count(_, mode) => {
+                let [source] = sources.columns() else {
+                    unreachable!("count should only have one input")
+                };
 
-            Ok(Some(Box::new(CountWindowState::new(
+                Ok(Some(Box::new(CountWindowState::new(
+                    source.as_materialized_series(),
+                    total_length,
+                    *mode,
+                ))))
+            }
+            // TODO: Implement once proper behavior regarding NaNs is decided
+            // AggExpr::Min(_) => Ok(Some(Box::new(MinMaxWindowState::new(source, total_length, true)))),
+            // AggExpr::Max(_) => Ok(Some(Box::new(MinMaxWindowState::new(source, total_length, false)))),
+            AggExpr::CountDistinct(_) => {
+                let [source] = sources.columns() else {
+                    unreachable!("count distinct should only have one input")
+                };
+
+                Ok(Some(Box::new(CountDistinctWindowState::new(
+                    source.as_materialized_series(),
+                    total_length,
+                ))))
+            }
+            AggExpr::Mean(_) => mean::create_for_type(sources, total_length),
+            _ => Ok(None),
+        },
+        WindowExpr::FirstValue(_, ignore_nulls) => {
+            let [source] = sources.columns() else {
+                unreachable!("first_value should only have one input")
+            };
+            Ok(Some(Box::new(FirstValueWindowState::new(
                 source.as_materialized_series(),
                 total_length,
-                *mode,
+                *ignore_nulls,
             ))))
         }
-        // TODO: Implement once proper behavior regarding NaNs is decided
-        // AggExpr::Min(_) => Ok(Some(Box::new(MinMaxWindowState::new(source, total_length, true)))),
-        // AggExpr::Max(_) => Ok(Some(Box::new(MinMaxWindowState::new(source, total_length, false)))),
-        AggExpr::CountDistinct(_) => {
+        WindowExpr::LastValue(_, ignore_nulls) => {
             let [source] = sources.columns() else {
-                unreachable!("count distinct should only have one input")
+                unreachable!("last_value should only have one input")
             };
-
-            Ok(Some(Box::new(CountDistinctWindowState::new(
+            Ok(Some(Box::new(LastValueWindowState::new(
                 source.as_materialized_series(),
                 total_length,
+                *ignore_nulls,
             ))))
         }
-        AggExpr::Mean(_) => mean::create_for_type(sources, total_length),
         _ => Ok(None),
     }
 }

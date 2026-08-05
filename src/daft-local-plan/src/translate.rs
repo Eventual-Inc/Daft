@@ -112,6 +112,18 @@ fn translate_helper(
                 inputs,
             ))
         }
+        LogicalPlan::StageCheckpointKeys(stage) => {
+            let (input_plan, inputs) = translate_helper(&stage.input, source_counter, psets)?;
+            Ok((
+                LocalPhysicalPlan::stage_checkpoint_keys(
+                    input_plan,
+                    stage.checkpoint_config.clone(),
+                    stage.stats_state.clone(),
+                    LocalNodeContext::default(),
+                ),
+                inputs,
+            ))
+        }
         LogicalPlan::IntoBatches(into_batches) => {
             let (input_plan, inputs) =
                 translate_helper(&into_batches.input, source_counter, psets)?;
@@ -277,23 +289,20 @@ fn translate_helper(
                     window.aliases.clone(),
                     LocalNodeContext::default(),
                 ),
-                (true, true, true) => {
-                    let aggregations = window_to_agg_exprs(window_functions)?;
-                    LocalPhysicalPlan::window_partition_and_dynamic_frame(
-                        input_plan,
-                        partition_by,
-                        order_by,
-                        window.window_spec.descending.clone(),
-                        window.window_spec.nulls_first.clone(),
-                        window.window_spec.frame.clone().unwrap(),
-                        window.window_spec.min_periods,
-                        window.schema.clone(),
-                        window.stats_state.clone(),
-                        aggregations,
-                        window.aliases.clone(),
-                        LocalNodeContext::default(),
-                    )
-                }
+                (true, true, true) => LocalPhysicalPlan::window_partition_and_dynamic_frame(
+                    input_plan,
+                    partition_by,
+                    order_by,
+                    window.window_spec.descending.clone(),
+                    window.window_spec.nulls_first.clone(),
+                    window.window_spec.frame.clone().unwrap(),
+                    window.window_spec.min_periods,
+                    window.schema.clone(),
+                    window.stats_state.clone(),
+                    window_functions,
+                    window.aliases.clone(),
+                    LocalNodeContext::default(),
+                ),
                 (false, true, false) => LocalPhysicalPlan::window_order_by_only(
                     input_plan,
                     order_by,
@@ -493,10 +502,28 @@ fn translate_helper(
 
             left_inputs.extend(right_inputs);
 
-            let left_by = BoundExpr::bind_all(&asof_join.left_by, left_plan.schema())?;
-            let right_by = BoundExpr::bind_all(&asof_join.right_by, right_plan.schema())?;
-            let left_on = BoundExpr::try_new(asof_join.left_on.clone(), left_plan.schema())?;
-            let right_on = BoundExpr::try_new(asof_join.right_on.clone(), right_plan.schema())?;
+            let (left_by_exprs, right_by_exprs) = normalize_join_keys(
+                asof_join.left_by.clone(),
+                asof_join.right_by.clone(),
+                left_plan.schema().clone(),
+                right_plan.schema().clone(),
+            )?;
+            let left_by = BoundExpr::bind_all(&left_by_exprs, left_plan.schema())?;
+            let right_by = BoundExpr::bind_all(&right_by_exprs, right_plan.schema())?;
+            let (left_on_exprs, right_on_exprs) = normalize_join_keys(
+                vec![asof_join.left_on.clone()],
+                vec![asof_join.right_on.clone()],
+                left_plan.schema().clone(),
+                right_plan.schema().clone(),
+            )?;
+            let left_on = BoundExpr::try_new(
+                left_on_exprs.into_iter().next().unwrap(),
+                left_plan.schema(),
+            )?;
+            let right_on = BoundExpr::try_new(
+                right_on_exprs.into_iter().next().unwrap(),
+                right_plan.schema(),
+            )?;
 
             Ok((
                 LocalPhysicalPlan::asof_join(
@@ -506,6 +533,7 @@ fn translate_helper(
                     right_by,
                     left_on,
                     right_on,
+                    asof_join.strategy,
                     asof_join.output_schema.clone(),
                     asof_join.stats_state.clone(),
                     LocalNodeContext::default(),

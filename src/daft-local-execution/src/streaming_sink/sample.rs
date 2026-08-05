@@ -19,7 +19,11 @@ use super::base::{
     StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeOutput,
     StreamingSinkFinalizeResult, StreamingSinkOutput,
 };
-use crate::{ExecutionTaskSpawner, dynamic_batching::StaticBatchingStrategy, pipeline::NodeName};
+use crate::{
+    ExecutionTaskSpawner,
+    dynamic_batching::StaticBatchingStrategy,
+    pipeline::{InputId, NodeName},
+};
 
 fn build_rng(seed: Option<u64>) -> StdRng {
     match seed {
@@ -356,7 +360,7 @@ impl StreamingSink for SampleSink {
         res
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self, _input_id: InputId) -> DaftResult<Self::State> {
         match &self.params.sampling_method {
             SamplingMethod::Fraction(_) => Ok(SampleState::Fraction(())),
             SamplingMethod::Size(size) => Ok(SampleState::Size(SampleBySizeState::new(

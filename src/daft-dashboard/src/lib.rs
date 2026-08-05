@@ -368,6 +368,7 @@ pub async fn launch_server(
             reaper_ticker.tick().await;
 
             engine::mark_dead_queries(GLOBAL_DASHBOARD_STATE.clone()).await;
+            engine::evict_old_queries(GLOBAL_DASHBOARD_STATE.clone()).await;
         }
     });
 

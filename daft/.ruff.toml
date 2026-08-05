@@ -6,9 +6,19 @@ extend-select = [
   "TID253",  # banned-module-level-imports, derived from flake8-tidy-imports
   "TCH"  # flake8-type-checking
 ]
+# TC001/TC003 (first-party/stdlib annotation-only imports) have ~160 existing
+# violations and are cosmetic; leave for a follow-up. TC002 is the bug-class
+# rule: it catches third-party imports used only in annotations, which forces
+# undeclared/conditional deps to be installed at runtime.
+extend-ignore = ["TC001", "TC003"]
 
 [lint.flake8-tidy-imports]
 # Ban certain modules from being imported at module level, instead requiring
 # that they're imported lazily (e.g., within a function definition,
 # with daft.lazy_import.LazyImport, or with TYPE_CHECKING).
 banned-module-level-imports = ["daft.catalog.__unity._client", "fsspec", "numpy", "pandas", "PIL", "pyarrow", "ray", "xml"]
+
+[lint.flake8-type-checking]
+# Required for TC rules to fire on files with `from __future__ import annotations`.
+# Without this, the typing_extensions/Self class of bug slips through.
+strict = true

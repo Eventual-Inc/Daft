@@ -1,7 +1,9 @@
 [dependencies]
+arrow = {workspace = true}
 arrow-array = {workspace = true}
 arrow-ipc = {workspace = true}
 bincode = {workspace = true}
+common-arrow-ffi = {path = "../common/arrow-ffi", optional = true}
 common-error = {path = "../common/error", default-features = false}
 common-partitioning = {path = "../common/partitioning", default-features = false}
 common-runtime = {path = "../common/runtime", default-features = false}
@@ -18,7 +20,6 @@ daft-warc = {path = "../daft-warc", default-features = false}
 dashmap = {workspace = true}
 futures = {workspace = true}
 pyo3 = {workspace = true, optional = true}
-rayon = {workspace = true}
 snafu = {workspace = true}
 tokio = {workspace = true}
 tracing = {workspace = true}
@@ -26,6 +27,7 @@ tracing = {workspace = true}
 [features]
 python = [
   "dep:pyo3",
+  "dep:common-arrow-ffi",
   "common-error/python",
   "common-partitioning/python",
   "daft-core/python",

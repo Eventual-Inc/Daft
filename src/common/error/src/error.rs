@@ -21,6 +21,14 @@ pub enum DaftError {
     // because this results in infinite nesting of types in `fixed_size_binary_op` in arithmetic.rs.
     #[error("DaftError::ParquetError {0}")]
     ParquetError(String),
+    /// Raised when a file is identified as corrupt or unreadable due to format/integrity
+    /// failures (e.g. bad magic bytes, truncated footer, bad encoding, wrong field counts).
+    /// Used by `is_parquet_corrupt` and `is_csv_corrupt` to identify files that should be
+    /// skipped when `ignore_corrupt_files` is enabled.
+    /// General operation errors (write failures, schema mismatches, etc.) are NOT routed
+    /// here — they use format-specific variants or `External`.
+    #[error("DaftError::CorruptFile {0}")]
+    CorruptFile(String),
     #[error("DaftError::ValueError {0}")]
     ValueError(String),
     #[cfg(feature = "python")]
@@ -28,24 +36,24 @@ pub enum DaftError {
     PyO3Error(#[from] pyo3::PyErr),
     #[error("DaftError::IoError {0}")]
     IoError(#[from] std::io::Error),
-    #[error("DaftError::FileNotFound {path}: {source}")]
+    #[error("DaftError::FileNotFound {path} not found: {source}")]
     FileNotFound { path: String, source: GenericError },
     #[error("DaftError::InternalError {0}")]
     InternalError(String),
     #[error("ConnectTimeout {0}")]
-    ConnectTimeout(GenericError),
+    ConnectTimeout(#[source] GenericError),
     #[error("ReadTimeout {0}")]
-    ReadTimeout(GenericError),
+    ReadTimeout(#[source] GenericError),
     #[error("ByteStreamError {0}")]
-    ByteStreamError(GenericError),
+    ByteStreamError(#[source] GenericError),
     #[error("SocketError {0}")]
-    SocketError(GenericError),
+    SocketError(#[source] GenericError),
     #[error("ThrottledIo {0}")]
-    ThrottledIo(GenericError),
+    ThrottledIo(#[source] GenericError),
     #[error("MiscTransient {0}")]
-    MiscTransient(GenericError),
+    MiscTransient(#[source] GenericError),
     #[error("DaftError::External {0}")]
-    External(GenericError),
+    External(#[source] GenericError),
     #[error("DaftError::SerdeJsonError {0}")]
     SerdeJsonError(#[from] serde_json::Error),
     #[error("DaftError::FmtError {0}")]

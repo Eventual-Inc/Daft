@@ -1,18 +1,11 @@
-use std::sync::Arc;
-
 use common_error::DaftResult;
 use daft_core::{
     array::ops::DaftCompare,
     join::{JoinSide, JoinType},
 };
-use daft_dsl::{
-    Expr,
-    expr::bound_expr::BoundExpr,
-    join::{get_right_cols_to_drop, infer_asof_join_schema, infer_join_schema},
-};
-use daft_recordbatch::{RecordBatch, build_left_to_right_map};
+use daft_dsl::{expr::bound_expr::BoundExpr, join::infer_join_schema};
+use daft_recordbatch::RecordBatch;
 use daft_stats::TruthValue;
-use rayon::prelude::*;
 
 use crate::micropartition::MicroPartition;
 
@@ -122,68 +115,6 @@ impl MicroPartition {
         };
 
         self.join(right, left_on, right_on, how, table_join)
-    }
-
-    pub fn asof_join(
-        &self,
-        right: &Self,
-        left_by: &[BoundExpr],
-        right_by: &[BoundExpr],
-        left_on: &BoundExpr,
-        right_on: &BoundExpr,
-    ) -> DaftResult<Self> {
-        let right_cols_to_drop = get_right_cols_to_drop(right_by, left_on, right_on, |e| {
-            match e.inner().unwrap_alias().0.as_ref() {
-                Expr::Column(_) => Some(e.inner().unwrap_alias().0.name().to_string()),
-                _ => None,
-            }
-        });
-        let join_schema = infer_asof_join_schema(&self.schema, &right.schema, &right_cols_to_drop)?;
-        if self.is_empty() {
-            return Ok(Self::empty(Some(join_schema)));
-        }
-
-        let lt = self.concat_or_get()?;
-        let rt = right.concat_or_get()?;
-
-        let Some(lt) = lt else {
-            return Ok(Self::empty(Some(join_schema)));
-        };
-        let rt = match rt {
-            Some(rt) => rt,
-            None => RecordBatch::empty(Some(right.schema())),
-        };
-
-        if left_by.is_empty() {
-            let joined = RecordBatch::asof_join(&lt, &rt, &right_cols_to_drop, left_on, right_on)?;
-            return Ok(Self::new_loaded(join_schema, Arc::new(vec![joined]), None));
-        }
-
-        let (left_groups, left_keys) = lt.partition_by_value(left_by)?;
-        let (right_groups, right_keys) = rt.partition_by_value(right_by)?;
-
-        let left_to_right = build_left_to_right_map(&left_keys, &right_keys)?;
-
-        let empty_right = RecordBatch::empty(Some(rt.schema));
-        let batches = left_groups
-            .par_iter()
-            .enumerate()
-            .map(|(i, left_group)| {
-                let right_group = match left_to_right[i] {
-                    Some(r_idx) => &right_groups[r_idx],
-                    None => &empty_right,
-                };
-                RecordBatch::asof_join(
-                    left_group,
-                    right_group,
-                    &right_cols_to_drop,
-                    left_on,
-                    right_on,
-                )
-            })
-            .collect::<DaftResult<Vec<_>>>()?;
-
-        Ok(Self::new_loaded(join_schema, Arc::new(batches), None))
     }
 
     pub fn cross_join(&self, right: &Self, outer_loop_side: JoinSide) -> DaftResult<Self> {

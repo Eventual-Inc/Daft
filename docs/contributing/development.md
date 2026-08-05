@@ -34,6 +34,9 @@ To set up your development environment:
 
 ### Note about Developing `daft-dashboard`
 
+!!! note
+    If you just want to *use* the Daft Dashboard (not modify it), see the [Daft Dashboard](../observability/dashboard.md) user guide. The instructions below are only needed for contributing to the dashboard's frontend code.
+
 If you wish to enable, or work on the daft-dashboard functionality, it requires [Node.js](https://nodejs.org/) (LTS) and npm. Install Node.js, then run `npm install` and `npm run build` in the `src/daft-dashboard/frontend` directory.
 
 Next (_make sure Daft is installed_), you can launch the dashboard using the `daft dashboard` command, for example:

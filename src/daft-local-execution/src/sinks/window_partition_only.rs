@@ -129,15 +129,15 @@ impl BlockingSink for WindowPartitionOnlySink {
                         let params = params.clone();
 
                         per_partition_tasks.spawn(async move {
-                            let input_data = RecordBatch::concat(&all_partitions)?;
-
-                            let result = input_data.window_grouped_agg(
+                            let input_data = {
+                                let batches = all_partitions;
+                                RecordBatch::concat(&batches)?
+                            };
+                            input_data.window_grouped_agg(
                                 &params.agg_exprs,
                                 &params.aliases,
                                 &params.partition_by,
-                            )?;
-
-                            Ok(result)
+                            )
                         });
                     }
 

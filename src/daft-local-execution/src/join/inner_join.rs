@@ -24,7 +24,7 @@ pub(crate) fn probe_inner(
             let mut probe_side_idxs = Vec::new();
 
             let join_keys = input_table.eval_expression_list(&params.probe_on)?;
-            let idx_iter = probe_state.probe_indices(&join_keys)?;
+            let idx_iter = probe_state.probe_indices(join_keys)?;
             for (probe_row_idx, inner_iter) in idx_iter.enumerate() {
                 if let Some(inner_iter) = inner_iter {
                     for (build_rb_idx, build_row_idx) in inner_iter {

@@ -12,8 +12,8 @@ pub enum CheckpointError {
     #[snafu(display("Checkpoint {id} not found"))]
     CheckpointNotFound { id: CheckpointId },
 
-    #[snafu(display("Checkpoint {id} is already sealed"))]
-    AlreadySealed { id: CheckpointId },
+    #[snafu(display("Checkpoint {id} is already checkpointed"))]
+    AlreadyCheckpointed { id: CheckpointId },
 
     #[snafu(display("Checkpoint {id} is not yet checkpointed"))]
     NotCheckpointed { id: CheckpointId },

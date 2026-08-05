@@ -28,6 +28,40 @@ pub fn calculate_stats(array: &Float64Array) -> DaftResult<Stats> {
     Ok(stats)
 }
 
+pub fn exact_percentile(values: &Float64Array, percentage: f64) -> DaftResult<Option<f64>> {
+    let mut valid_values: Vec<f64> = values.into_iter().flatten().collect();
+
+    if valid_values.is_empty() {
+        return Ok(None);
+    }
+
+    let rank = percentage * (valid_values.len() - 1) as f64;
+    let lower = rank.floor() as usize;
+    let upper = rank.ceil() as usize;
+
+    let (_, lower_ref, greater_partition) =
+        valid_values.select_nth_unstable_by(lower, f64::total_cmp);
+    let lower_value = *lower_ref;
+
+    if lower == upper {
+        Ok(Some(lower_value))
+    } else {
+        // upper == lower + 1, so upper_value is the min of the greater partition.
+        let upper_value = greater_partition
+            .iter()
+            .copied()
+            .min_by(f64::total_cmp)
+            .unwrap();
+        let weight = rank - lower as f64;
+        let percentile = (upper_value - lower_value).mul_add(weight, lower_value);
+        Ok(Some(percentile))
+    }
+}
+
+pub fn is_valid_percentile_percentage(percentage: f64) -> bool {
+    (0.0..=1.0).contains(&percentage)
+}
+
 pub fn grouped_stats<'a>(
     array: &Float64Array,
     groups: &'a GroupIndices,

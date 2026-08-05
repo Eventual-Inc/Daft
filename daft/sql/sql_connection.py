@@ -24,7 +24,10 @@ class SQLConnection:
         self.url = url
 
     def __repr__(self) -> str:
-        return f"SQLConnection(conn={self.conn})"
+        # Deliberately omit the URL: secrets can appear anywhere in a
+        # connection string (userinfo, query params, driver extras), so
+        # the safest mitigation is to not echo it at all.
+        return f"SQLConnection(dialect={self.dialect!r}, driver={self.driver!r})"
 
     @classmethod
     def from_url(cls, url: str) -> SQLConnection:
@@ -47,7 +50,7 @@ class SQLConnection:
                     )
                 dialect = connection.engine.dialect.name
                 driver = connection.engine.driver
-                url = connection.engine.url.render_as_string()
+                url = connection.engine.url.render_as_string(hide_password=True)
             return cls(conn_factory, driver, dialect, url)
         except Exception as e:
             raise ValueError(f"Unexpected error while calling the connection factory: {e}") from e
@@ -143,7 +146,12 @@ class SQLConnection:
             table = cx.read_sql(conn=self.conn, query=sql, return_type="arrow")
             return table
         except Exception as e:
-            raise RuntimeError(f"Failed to execute sql: {sql} with url: {self.conn}, error: {e}") from e
+            # The connection URL is deliberately omitted from the error message:
+            # secrets can appear anywhere in it (userinfo, query params,
+            # driver-specific extras), so dropping the URL is the only robust
+            # mitigation. The caller knows which connection they passed in,
+            # so the URL is redundant here.
+            raise RuntimeError(f"Failed to execute sql: {sql}, error: {e}") from e
 
     def _execute_sql_query_with_sqlalchemy(self, sql: str, schema: pa.Schema | None = None) -> pa.Table:
         from sqlalchemy import create_engine, text
@@ -162,5 +170,6 @@ class SQLConnection:
             pydict = {column_name: [row[i] for row in rows] for i, column_name in enumerate(result.keys())}
             return pa.Table.from_pydict(pydict, schema=schema)
         except Exception as e:
-            connection_str = self.conn if isinstance(self.conn, str) else self.conn.__name__
-            raise RuntimeError(f"Failed to execute sql: {sql} from connection: {connection_str}, error: {e}") from e
+            # See note in `_execute_sql_query_with_connectorx`: don't echo
+            # back the connection URL.
+            raise RuntimeError(f"Failed to execute sql: {sql}, error: {e}") from e

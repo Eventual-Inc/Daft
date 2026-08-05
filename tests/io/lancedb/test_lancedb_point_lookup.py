@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pyarrow as pa
 import pytest
+from daft_lance.lance_scan import LanceDBScanOperator, _lancedb_table_factory_function
 
 from daft import col
-from daft.io.lance import lance_scan
 
 # Import-or-skip lance once at module level so individual tests don't need to do this
 lance = pytest.importorskip("lance")
@@ -20,7 +20,7 @@ def lance_dataset(tmp_path_factory):
 
 
 def _scan(ds):
-    return lance_scan.LanceDBScanOperator(ds)
+    return LanceDBScanOperator(ds)
 
 
 @pytest.mark.parametrize("idx_type", ["BTREE", "BITMAP", "BLOOMFILTER"])
@@ -88,7 +88,7 @@ def test_scanner_without_fragments(lance_dataset, idx_type):
 
     arrow_filter = Expression._from_pyexpr((col("id") == 2)._expr).to_arrow_expr()
     # Invoke factory with fragment_ids=None to exercise index-driven fragment selection
-    gen = lance_scan._lancedb_table_factory_function(
+    gen = _lancedb_table_factory_function(
         ds.uri,
         getattr(ds, "_lance_open_kwargs", None),
         None,

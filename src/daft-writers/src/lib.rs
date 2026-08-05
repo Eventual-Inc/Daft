@@ -27,6 +27,7 @@ mod sink;
 
 use std::{
     cmp::min,
+    collections::HashSet,
     sync::{Arc, Mutex},
 };
 
@@ -35,17 +36,19 @@ use batch::TargetBatchWriterFactory;
 use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
-use daft_core::prelude::SchemaRef;
-use daft_dsl::expr::bound_expr::BoundExpr;
+use daft_core::prelude::{Schema, SchemaRef};
+use daft_dsl::{Expr, expr::bound_expr::BoundExpr};
 use daft_logical_plan::OutputFileInfo;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
-use file::TargetFileSizeWriterFactory;
+use file::{SingleFileWriterFactory, TargetFileSizeWriterFactory};
 use ipc::IPCWriterFactory;
 #[cfg(feature = "python")]
 pub use lance::make_lance_writer_factory;
 use partition::PartitionedWriterFactory;
 use physical::PhysicalWriterFactory;
+#[cfg(feature = "python")]
+use pyo3::prelude::*;
 #[cfg(feature = "python")]
 pub use sink::make_data_sink_writer_factory;
 
@@ -93,22 +96,55 @@ pub trait WriterFactory: Send + Sync {
     ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Self::Input, Result = Self::Result>>>;
 }
 
+/// Strip plain-column partition refs from `file_schema` (Hive: values live in paths).
+/// Returns the stripped schema and indices of kept columns, or `(file_schema, None)` when
+/// nothing was stripped or stripping would empty the schema.
+fn split_schema_for_partitioned_write(
+    partition_cols: Option<&[BoundExpr]>,
+    file_schema: &SchemaRef,
+) -> (SchemaRef, Option<Arc<[usize]>>) {
+    let strip: HashSet<&str> = partition_cols
+        .unwrap_or(&[])
+        .iter()
+        .filter(|e| matches!(e.inner().as_ref(), Expr::Column(_)))
+        .map(|e| e.inner().name())
+        .collect();
+
+    if strip.is_empty() {
+        return (file_schema.clone(), None);
+    }
+
+    let mut non_partition_column_indices = Vec::with_capacity(file_schema.len());
+    let mut kept_fields = Vec::with_capacity(file_schema.len());
+    for (i, field) in file_schema.fields().iter().enumerate() {
+        if !strip.contains(field.name.as_ref()) {
+            non_partition_column_indices.push(i);
+            kept_fields.push(field.clone());
+        }
+    }
+
+    if kept_fields.is_empty() {
+        return (file_schema.clone(), None);
+    }
+
+    (
+        Arc::new(Schema::new(kept_fields)),
+        Some(Arc::from(non_partition_column_indices)),
+    )
+}
+
 pub fn make_physical_writer_factory(
     file_info: &OutputFileInfo<BoundExpr>,
     file_schema: &SchemaRef,
     cfg: &DaftExecutionConfig,
 ) -> DaftResult<Arc<dyn WriterFactory<Input = MicroPartition, Result = Vec<RecordBatch>>>> {
-    let base_writer_factory = PhysicalWriterFactory::new(
-        file_info.clone(),
-        file_schema.clone(),
-        cfg.native_parquet_writer,
-    )?;
+    let (data_schema, non_partition_column_indices) =
+        split_schema_for_partitioned_write(file_info.partition_cols.as_deref(), file_schema);
+
+    let base_writer_factory =
+        PhysicalWriterFactory::new(file_info.clone(), data_schema, cfg.native_parquet_writer)?;
     match file_info.file_format {
         FileFormat::Parquet => {
-            let file_size_calculator = TargetInMemorySizeBytesCalculator::new(
-                cfg.parquet_target_filesize,
-                cfg.parquet_inflation_factor,
-            );
             let row_group_size_calculator = TargetInMemorySizeBytesCalculator::new(
                 min(
                     cfg.parquet_target_row_group_size,
@@ -120,6 +156,17 @@ pub fn make_physical_writer_factory(
                 Arc::new(base_writer_factory),
                 Arc::new(row_group_size_calculator),
             );
+
+            if file_info.single_file {
+                return Ok(Arc::new(SingleFileWriterFactory::new(Arc::new(
+                    row_group_writer_factory,
+                ))));
+            }
+
+            let file_size_calculator = TargetInMemorySizeBytesCalculator::new(
+                cfg.parquet_target_filesize,
+                cfg.parquet_inflation_factor,
+            );
             let file_writer_factory = TargetFileSizeWriterFactory::new(
                 Arc::new(row_group_writer_factory),
                 Arc::new(file_size_calculator),
@@ -129,6 +176,7 @@ pub fn make_physical_writer_factory(
                 let partitioned_writer_factory = PartitionedWriterFactory::new(
                     Arc::new(file_writer_factory),
                     partition_cols.clone(),
+                    non_partition_column_indices,
                 );
                 Ok(Arc::new(partitioned_writer_factory))
             } else {
@@ -150,6 +198,7 @@ pub fn make_physical_writer_factory(
                 let partitioned_writer_factory = PartitionedWriterFactory::new(
                     Arc::new(file_writer_factory),
                     partition_cols.clone(),
+                    non_partition_column_indices,
                 );
                 Ok(Arc::new(partitioned_writer_factory))
             } else {
@@ -171,6 +220,7 @@ pub fn make_physical_writer_factory(
                 let partitioned_writer_factory = PartitionedWriterFactory::new(
                     Arc::new(file_writer_factory),
                     partition_cols.clone(),
+                    non_partition_column_indices,
                 );
                 Ok(Arc::new(partitioned_writer_factory))
             } else {
@@ -220,15 +270,37 @@ pub fn make_catalog_writer_factory(
 
     let base_writer_factory = CatalogWriterFactory::new(catalog_info.clone());
 
-    let file_size_calculator = TargetInMemorySizeBytesCalculator::new(
-        cfg.parquet_target_filesize,
-        cfg.parquet_inflation_factor,
-    );
-    let row_group_size_calculator = TargetInMemorySizeBytesCalculator::new(
-        min(
-            cfg.parquet_target_row_group_size,
+    // Honor Iceberg-spec table-level write properties:
+    // https://iceberg.apache.org/docs/latest/configuration/#write-properties
+    let (target_file_size, target_row_group_size) = match catalog_info {
+        daft_logical_plan::CatalogType::Iceberg(info) => Python::attach(|py| {
+            let props = info.iceberg_properties.bind(py);
+            let read = |key: &str, default: usize| {
+                props
+                    .get_item(key)
+                    .ok()
+                    .and_then(|v| v.extract::<String>().ok())
+                    .and_then(|s| s.parse::<usize>().ok().filter(|&v| v > 0))
+                    .unwrap_or(default)
+            };
+            (
+                read("write.target-file-size-bytes", cfg.parquet_target_filesize),
+                read(
+                    "write.parquet.row-group-size-bytes",
+                    cfg.parquet_target_row_group_size,
+                ),
+            )
+        }),
+        _ => (
             cfg.parquet_target_filesize,
+            cfg.parquet_target_row_group_size,
         ),
+    };
+
+    let file_size_calculator =
+        TargetInMemorySizeBytesCalculator::new(target_file_size, cfg.parquet_inflation_factor);
+    let row_group_size_calculator = TargetInMemorySizeBytesCalculator::new(
+        min(target_row_group_size, target_file_size),
         cfg.parquet_inflation_factor,
     );
     let row_group_writer_factory = TargetBatchWriterFactory::new(
@@ -241,8 +313,11 @@ pub fn make_catalog_writer_factory(
     );
 
     if let Some(partition_cols) = partition_cols {
-        let partitioned_writer_factory =
-            PartitionedWriterFactory::new(Arc::new(file_writer_factory), partition_cols.clone());
+        let partitioned_writer_factory = PartitionedWriterFactory::new(
+            Arc::new(file_writer_factory),
+            partition_cols.clone(),
+            None,
+        );
         Arc::new(partitioned_writer_factory)
     } else {
         Arc::new(file_writer_factory)

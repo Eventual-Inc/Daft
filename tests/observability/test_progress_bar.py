@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import threading
+
 import pytest
 
 import daft
+from daft.runners.progress_bar import SwordfishProgressBar
 
 
 # Non-regression test for progress bar truncating UTF-8 pipeline names correctly.
@@ -25,3 +28,39 @@ def test_progress_bar_truncates_multibyte_utf8_pipeline_names(col_name):
     df = df.with_column(col_name, daft.col(col_name) + daft.col(col_name))
     result = df.collect()
     assert result.to_pydict()[col_name] == [2.0, 4.0, 6.0]
+
+
+# Non-regression test for fd leaks in Jupyter: writing to stdout from native threads
+# leaks an ipykernel zmq pipe (~2 fds) per write on Python 3.13+, because each call
+# into Python from a native thread can get a fresh thread identity. All tqdm writes
+# must therefore happen on a single long-lived Python thread, never the caller's.
+# See: https://github.com/Eventual-Inc/Daft/issues/7253
+def test_swordfish_progress_bar_writes_from_single_stable_thread():
+    write_threads = set()
+
+    class RecordingTqdm:
+        def __init__(self, *args, **kwargs):
+            write_threads.add(threading.get_ident())
+
+        def set_description_str(self, desc):
+            write_threads.add(threading.get_ident())
+
+        def close(self):
+            write_threads.add(threading.get_ident())
+
+    bar = SwordfishProgressBar()
+    bar.tqdm_mod = RecordingTqdm
+    pb_id = bar.make_new_bar("🗡️ 🐟 test: {elapsed} {desc}")
+
+    # Simulate updates arriving from short-lived foreign threads, each with a
+    # distinct Python thread identity, as happens with native threads on 3.13+.
+    caller_threads = []
+    for i in range(5):
+        t = threading.Thread(target=bar.update_bar, args=(pb_id, f"message {i}"))
+        t.start()
+        t.join()
+        caller_threads.append(t.ident)
+    bar.close()
+
+    assert len(write_threads) == 1
+    assert write_threads.isdisjoint(caller_threads)

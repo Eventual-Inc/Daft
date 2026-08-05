@@ -4,10 +4,11 @@
 from __future__ import annotations
 
 import gc
+import re
 
 import daft
 from daft.dataframe import DataFrame
-from daft.dataframe.preview import PreviewFormat, PreviewFormatter
+from daft.dataframe.preview import PreviewFormat, PreviewFormatter, resolve_show_defaults
 from daft.runners import get_or_create_runner
 
 
@@ -159,6 +160,24 @@ def test_show_with_options():
     )
 
 
+def test_show_with_auto_align():
+    df = daft.from_pydict(
+        {
+            "N": [1, 22],
+            "S": ["a", "bb"],
+        }
+    )
+
+    assert (
+        show(df, format="markdown", align="auto")
+        == """
+| N  | S  |
+|----|----|
+|  1 | a  |
+| 22 | bb |"""[1:]
+    )
+
+
 def test_show_with_wide_columns():
     df = daft.from_pydict(
         {
@@ -200,6 +219,60 @@ def test_show_default_respects_options():
 ╞══════════════════════════════════════════════════════════════╡
 │ this is a really long string that should not be be truncated │
 ╰──────────────────────────────────────────────────────────────╯"""[1:]
+
+
+def test_resolve_show_defaults_from_env(monkeypatch):
+    monkeypatch.setenv("DAFT_SHOW_FORMAT", "markdown")
+    monkeypatch.setenv("DAFT_SHOW_VERBOSE", "true")
+    monkeypatch.setenv("DAFT_SHOW_MAX_WIDTH", "12")
+    monkeypatch.setenv("DAFT_SHOW_ALIGN", "right")
+
+    format, verbose, max_width, align = resolve_show_defaults(None, None, None, None)
+
+    assert format == "markdown"
+    assert verbose is True
+    assert max_width == 12
+    assert align == "right"
+
+
+def test_resolve_show_defaults_respects_explicit_args(monkeypatch):
+    monkeypatch.setenv("DAFT_SHOW_FORMAT", "markdown")
+    monkeypatch.setenv("DAFT_SHOW_VERBOSE", "true")
+    monkeypatch.setenv("DAFT_SHOW_MAX_WIDTH", "12")
+    monkeypatch.setenv("DAFT_SHOW_ALIGN", "right")
+
+    format, verbose, max_width, align = resolve_show_defaults("grid", True, 50, "left")
+
+    assert format == "grid"
+    assert verbose is True
+    assert max_width == 50
+    assert align == "left"
+
+
+def test_resolve_show_defaults_respects_explicit_default_values(monkeypatch):
+    monkeypatch.setenv("DAFT_SHOW_VERBOSE", "true")
+    monkeypatch.setenv("DAFT_SHOW_MAX_WIDTH", "12")
+    monkeypatch.setenv("DAFT_SHOW_ALIGN", "right")
+
+    _, verbose, max_width, align = resolve_show_defaults(None, False, 30, "left")
+
+    assert verbose is False
+    assert max_width == 30
+    assert align == "left"
+
+
+def test_resolve_show_defaults_falls_back_to_left_align(monkeypatch):
+    # With no env vars and no explicit argument, align stays "left" to keep
+    # existing docstring/doctest output stable. Users opt into numeric-right
+    # behavior via DAFT_SHOW_ALIGN=auto or an explicit align="auto" argument.
+    for var in ("DAFT_SHOW_FORMAT", "DAFT_SHOW_VERBOSE", "DAFT_SHOW_MAX_WIDTH", "DAFT_SHOW_ALIGN"):
+        monkeypatch.delenv(var, raising=False)
+
+    _, verbose, max_width, align = resolve_show_defaults(None, None, None, None)
+
+    assert verbose is False
+    assert max_width == 30
+    assert align == "left"
 
 
 def test_show_with_many_columns():
@@ -266,3 +339,33 @@ def test_native_runner_close_does_not_log_missing_event_loop(capsys):
     captured = capsys.readouterr()
     assert "RuntimeError: no running event loop" not in captured.err
     assert "Exception ignored in: <async_generator object NativeExecutor.run.<locals>.stream_results" not in captured.err
+
+
+def test_collect_emits_query_id(monkeypatch, capsys):
+    monkeypatch.setenv("DAFT_SHOW_QUERY_ID", "1")
+    _ = capsys.readouterr()
+    daft.range(0, 1).collect()
+    captured = capsys.readouterr()
+
+    query_id_lines = [line for line in captured.err.splitlines() if line.startswith("Daft Query ID: ")]
+    assert len(query_id_lines) == 1
+    assert re.fullmatch(r"Daft Query ID: [a-z]+-[a-z]+-[0-9a-f]{6}", query_id_lines[0]) is not None
+
+
+def test_collect_does_not_emit_query_id_when_disabled(monkeypatch, capsys):
+    monkeypatch.setenv("DAFT_SHOW_QUERY_ID", "0")
+    _ = capsys.readouterr()
+
+    daft.range(0, 1).collect()
+    captured = capsys.readouterr()
+
+    assert "Daft Query ID:" not in captured.err
+
+
+def test_collect_does_not_emit_query_id_by_default_in_non_interactive_context(capsys):
+    _ = capsys.readouterr()
+
+    daft.range(0, 1).collect()
+    captured = capsys.readouterr()
+
+    assert "Daft Query ID:" not in captured.err
