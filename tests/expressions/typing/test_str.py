@@ -251,3 +251,15 @@ def test_str_normalize(remove_punct, lowercase, nfd_unicode, white_space):
         ),
         resolvable=True,
     )
+
+def test_str_url_encode():
+    s = Series.from_arrow(pa.array(["foo"]))
+    df = DataFrame.from_pydict({"a": s})
+    df = df.with_column("url_encode", col("a").str.url_encode())
+    assert df.schema()["url_encode"].dtype == DataType.string()
+
+def test_str_url_decode():
+    s = Series.from_arrow(pa.array(["foo"]))
+    df = DataFrame.from_pydict({"a": s})
+    df = df.with_column("url_decode", col("a").str.url_decode())
+    assert df.schema()["url_decode"].dtype == DataType.string()

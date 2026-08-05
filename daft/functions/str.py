@@ -612,6 +612,60 @@ def reverse(expr: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("reverse", expr)
 
 
+def url_encode(expr: Expression) -> Expression:
+    """URL-encode a UTF-8 string.
+
+    Returns:
+        Expression: a String expression which is `self` URL-encoded
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import url_encode
+        >>> df = daft.from_pydict({"x": ["hello world", "foo@bar.com"]})
+        >>> df = df.select(url_encode(df["x"]))
+        >>> df.show()
+        ╭───────────────╮
+        │ x             │
+        │ ---           │
+        │ String        │
+        ╞═══════════════╡
+        │ hello%20world │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ foo%40bar.com │
+        ╰───────────────╯
+        <BLANKLINE>
+        (Showing first 2 of 2 rows)
+    """
+    return Expression._call_builtin_scalar_fn("url_encode", expr)
+
+
+def url_decode(expr: Expression) -> Expression:
+    """URL-decode a UTF-8 string.
+
+    Returns:
+        Expression: a String expression which is `self` URL-decoded
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import url_decode
+        >>> df = daft.from_pydict({"x": ["hello%20world", "foo%40bar.com"]})
+        >>> df = df.select(url_decode(df["x"]))
+        >>> df.show()
+        ╭─────────────╮
+        │ x           │
+        │ ---         │
+        │ String      │
+        ╞═════════════╡
+        │ hello world │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ foo@bar.com │
+        ╰─────────────╯
+        <BLANKLINE>
+        (Showing first 2 of 2 rows)
+    """
+    return Expression._call_builtin_scalar_fn("url_decode", expr)
+
+
 def capitalize(expr: Expression) -> Expression:
     """Capitalize a UTF-8 string.
 

@@ -14,6 +14,7 @@ regex = {workspace = true}
 serde = {workspace = true}
 typetag = {workspace = true}
 unicode-normalization = "0.1.25"
+percent-encoding = "2.3.1"
 
 [features]
 python = [
