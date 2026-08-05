@@ -95,10 +95,9 @@
 
       <!-- Check if search is actually enabled - see https://t.ly/DT_0V -->
       {% if search.enabled %}
-        <label class="md-header__button md-icon" for="__search">
-          {% set icon = config.theme.icon.search or "material/magnify" %}
-          {% include ".icons/" ~ icon ~ ".svg" %}
-        </label>
+        <!-- No search toggle button here: DocSearch (js/docsearch.js) replaces
+             the search interface below with its own button + modal, so
+             Material's `for="__search"` toggle would be a dead control. -->
 
         <!-- Search interface -->
         {% include "partials/search.html" %}
