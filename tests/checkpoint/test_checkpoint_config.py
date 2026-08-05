@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 import daft
+from daft.daft import CheckpointFileFormat
 
 
 def test_key_filtering_settings_round_trip():
@@ -86,3 +87,7 @@ def test_checkpoint_config_settings_optional_defaults_to_all_none():
     assert s.keys_load_batch_size is None
     assert s.max_concurrency_per_worker is None
     assert s.filter_batch_size is None
+
+
+def test_checkpoint_file_format_exposes_lance():
+    assert str(CheckpointFileFormat.Lance) == "CheckpointFileFormat.Lance"
