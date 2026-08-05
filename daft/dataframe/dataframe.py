@@ -1649,6 +1649,7 @@ class DataFrame:
                 )
             result = from_pydict(with_operations)
             result._metadata = write_df._metadata
+            result._source_builder = write_df._get_current_builder()
             return result
 
         # ── 1. Check-first: did a previous attempt already land?
@@ -2205,6 +2206,7 @@ class DataFrame:
                 }
             )
             result._metadata = write_df._metadata
+            result._source_builder = write_df._get_current_builder()
             return result
 
         # Defensive retry — parity with iceberg's max_retries = 2. We narrow
