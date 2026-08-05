@@ -220,7 +220,8 @@ impl PushDownLimit {
                     | LogicalPlan::Window(..)
                     | LogicalPlan::Concat(_)
                     | LogicalPlan::VLLMProject(..)
-                    | LogicalPlan::StageCheckpointKeys(..) => Ok(Transformed::no(plan)),
+                    | LogicalPlan::StageCheckpointKeys(..)
+                    | LogicalPlan::CommonSubplan(..) => Ok(Transformed::no(plan)),
                 }
             }
             _ => Ok(Transformed::no(plan)),

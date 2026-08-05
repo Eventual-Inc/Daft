@@ -62,6 +62,10 @@ pub enum NodeType {
     // Specific to distributed only
     BroadcastJoin,
     KeyFilteringJoin,
+
+    // CSE (Common Subplan Elimination)
+    CseCacheWrite,
+    CseCacheRead,
 }
 
 impl Display for NodeType {

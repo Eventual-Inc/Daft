@@ -130,6 +130,8 @@ pub enum LocalPhysicalPlan {
     #[cfg(feature = "python")]
     DistributedLimit(DistributedLimit),
     VLLMProject(VLLMProject),
+    CseCacheWrite(CseCacheWrite),
+    CseCacheRead(CseCacheRead),
 }
 #[cfg(not(debug_assertions))]
 impl std::fmt::Debug for LocalPhysicalPlan {
@@ -195,7 +197,9 @@ impl LocalPhysicalPlan {
                 ..
             })
             | Self::WindowOrderByOnly(WindowOrderByOnly { stats_state, .. })
-            | Self::VLLMProject(VLLMProject { stats_state, .. }) => stats_state,
+            | Self::VLLMProject(VLLMProject { stats_state, .. })
+            | Self::CseCacheWrite(CseCacheWrite { stats_state, .. })
+            | Self::CseCacheRead(CseCacheRead { stats_state, .. }) => stats_state,
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { stats_state, .. })
             | Self::LanceWrite(LanceWrite { stats_state, .. })
@@ -247,7 +251,9 @@ impl LocalPhysicalPlan {
                 context,
                 ..
             })
-            | Self::VLLMProject(VLLMProject { context, .. }) => context,
+            | Self::VLLMProject(VLLMProject { context, .. })
+            | Self::CseCacheWrite(CseCacheWrite { context, .. })
+            | Self::CseCacheRead(CseCacheRead { context, .. }) => context,
             Self::WindowOrderByOnly(WindowOrderByOnly { context, .. }) => context,
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { context, .. })
@@ -299,6 +305,8 @@ impl LocalPhysicalPlan {
             })
             | Self::VLLMProject(VLLMProject { context, .. }) => context,
             Self::WindowOrderByOnly(WindowOrderByOnly { context, .. }) => context,
+            Self::CseCacheWrite(CseCacheWrite { context, .. })
+            | Self::CseCacheRead(CseCacheRead { context, .. }) => context,
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { context, .. })
             | Self::LanceWrite(LanceWrite { context, .. })
@@ -1227,6 +1235,8 @@ impl LocalPhysicalPlan {
             Self::WindowPartitionOnly(WindowPartitionOnly { schema, .. }) => schema,
             Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { schema, .. }) => schema,
             Self::VLLMProject(VLLMProject { schema, .. }) => schema,
+            Self::CseCacheWrite(CseCacheWrite { schema, .. }) => schema,
+            Self::CseCacheRead(CseCacheRead { schema, .. }) => schema,
         }
     }
 
@@ -1264,7 +1274,8 @@ impl LocalPhysicalPlan {
             Self::PhysicalScan(_)
             | Self::GlobScan(_)
             | Self::PlaceholderScan(_)
-            | Self::InMemoryScan(_) => vec![],
+            | Self::InMemoryScan(_)
+            | Self::CseCacheRead(_) => vec![],
             Self::Filter(Filter { input, .. })
             | Self::Limit(Limit { input, .. })
             | Self::IntoBatches(IntoBatches { input, .. })
@@ -1314,6 +1325,7 @@ impl LocalPhysicalPlan {
             Self::TopN(TopN { input, .. }) => vec![input.clone()],
             Self::WindowOrderByOnly(WindowOrderByOnly { input, .. }) => vec![input.clone()],
             Self::VLLMProject(VLLMProject { input, .. }) => vec![input.clone()],
+            Self::CseCacheWrite(CseCacheWrite { input, .. }) => vec![input.clone()],
         }
     }
 
@@ -1843,6 +1855,24 @@ impl LocalPhysicalPlan {
                 Self::GlobScan(_) => {
                     panic!("LocalPhysicalPlan::with_new_children: GlobScan does not have children")
                 }
+                Self::CseCacheWrite(CseCacheWrite {
+                    cse_id,
+                    schema,
+                    stats_state,
+                    context,
+                    ..
+                }) => Self::cse_cache_write(
+                    *cse_id,
+                    new_child.clone(),
+                    schema.clone(),
+                    stats_state.clone(),
+                    context.clone(),
+                ),
+                Self::CseCacheRead(_) => {
+                    panic!(
+                        "LocalPhysicalPlan::with_new_children: CseCacheRead does not have children"
+                    )
+                }
             },
             [new_left, new_right] => match self {
                 Self::HashJoin(HashJoin {
@@ -1929,6 +1959,40 @@ impl LocalPhysicalPlan {
             },
             _ => panic!("LocalPhysicalPlan::with_new_children: Wrong number of children"),
         }
+    }
+
+    pub fn cse_cache_write(
+        cse_id: usize,
+        input: LocalPhysicalPlanRef,
+        schema: SchemaRef,
+        stats_state: StatsState,
+        context: LocalNodeContext,
+    ) -> LocalPhysicalPlanRef {
+        Self::CseCacheWrite(CseCacheWrite {
+            cse_id,
+            input,
+            schema,
+            stats_state,
+            context,
+        })
+        .arced()
+    }
+
+    pub fn cse_cache_read(
+        source_id: SourceId,
+        cse_id: usize,
+        schema: SchemaRef,
+        stats_state: StatsState,
+        context: LocalNodeContext,
+    ) -> LocalPhysicalPlanRef {
+        Self::CseCacheRead(CseCacheRead {
+            source_id,
+            cse_id,
+            schema,
+            stats_state,
+            context,
+        })
+        .arced()
     }
 
     pub fn single_line_display(&self) -> String {
@@ -2584,4 +2648,24 @@ mod task_topology_tests {
         let _retained = plan.clone();
         let _ = plan.mark_task_root();
     }
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct CseCacheWrite {
+    pub cse_id: usize,
+    pub input: LocalPhysicalPlanRef,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+    pub context: LocalNodeContext,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct CseCacheRead {
+    pub source_id: SourceId,
+    pub cse_id: usize,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+    pub context: LocalNodeContext,
 }
