@@ -4,6 +4,8 @@ updates:
   directory: /
   schedule:
     interval: monthly
+  exclude-paths:
+  - "benchmarking/**"
   groups:
     # Python updates are mainly dev-only, so we can group them together.
     all:
