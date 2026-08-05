@@ -746,12 +746,12 @@ df = df.with_column(
     #       We configure the UDF by passing constructor arguments when
     #       we instantiate the class.
     #
-    #       These arguments are applied here   and here
-    #                            ⌄⌄⌄  ⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄
+    #
+    #                    here   and here    are where arguments applied to the UDF
+    #                     ⌄⌄⌄  ⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄
     LoadDirectAndParsePdf(ocr, page_limit)(col("url"), col("pdf_bytes")),
-    #       We're providing the two columns to our UDF
     #                                          ^^^^^^^^^^  ^^^^^^^^^^^^^^^^
-    #                                              here        and here
+    #    We are providing the 2 input columns     here         and here
 ).exclude("pdf_bytes")
 print(df.schema())
 ```
