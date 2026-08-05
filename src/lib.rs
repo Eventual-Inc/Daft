@@ -117,6 +117,7 @@ pub mod pylib {
         common_file_formats::python::register_modules(m)?;
         common_metrics::register_modules(m)?;
         daft_ai::register_modules(m)?;
+        daft_avro::register_modules(m)?;
         daft_catalog::register_modules(m)?;
         daft_checkpoint::register_modules(m)?;
         daft_context::register_modules(m)?;

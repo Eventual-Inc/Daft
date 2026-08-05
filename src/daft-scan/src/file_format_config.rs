@@ -2,6 +2,7 @@ use std::{collections::BTreeMap, hash::Hash, sync::Arc};
 
 use common_file_formats::FileFormat;
 use common_py_serde::impl_bincode_py_state_serialization;
+use daft_avro::AvroSourceConfig;
 use daft_schema::{field::Field, time_unit::TimeUnit};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
@@ -20,6 +21,7 @@ pub enum FileFormatConfig {
     Json(JsonSourceConfig),
     Warc(WarcSourceConfig),
     Text(TextSourceConfig),
+    Avro(AvroSourceConfig),
 }
 #[cfg(not(debug_assertions))]
 impl std::fmt::Debug for FileFormatConfig {
@@ -42,6 +44,7 @@ impl FileFormatConfig {
             Self::Json(_) => "Json".to_string(),
             Self::Warc(_) => "Warc".to_string(),
             Self::Text(_) => "Text".to_string(),
+            Self::Avro(_) => "Avro".to_string(),
         }
     }
 
@@ -53,6 +56,7 @@ impl FileFormatConfig {
             Self::Json(source) => source.multiline_display(),
             Self::Warc(source) => source.multiline_display(),
             Self::Text(source) => source.multiline_display(),
+            Self::Avro(source) => source.multiline_display(),
         }
     }
 }
@@ -65,6 +69,7 @@ impl From<&FileFormatConfig> for FileFormat {
             FileFormatConfig::Json(_) => Self::Json,
             FileFormatConfig::Warc(_) => Self::Warc,
             FileFormatConfig::Text(_) => Self::Text,
+            FileFormatConfig::Avro(_) => Self::Avro,
         }
     }
 }

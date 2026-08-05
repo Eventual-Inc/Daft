@@ -1,0 +1,85 @@
+# ruff: noqa: I002
+# isort: dont-add-import: from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from daft import context
+from daft.api_annotations import PublicAPI
+from daft.daft import (
+    AvroSourceConfig,
+    FileFormatConfig,
+    IOConfig,
+    StorageConfig,
+)
+from daft.dataframe import DataFrame
+from daft.datatype import DataType
+from daft.io._checkpoint import attach_checkpoint
+from daft.io.common import get_tabular_files_scan
+
+if TYPE_CHECKING:
+    from daft.checkpoint import CheckpointConfig
+
+
+@PublicAPI
+def read_avro(
+    path: str | list[str],
+    infer_schema: bool = True,
+    schema: dict[str, DataType] | None = None,
+    io_config: IOConfig | None = None,
+    file_path_column: str | None = None,
+    hive_partitioning: bool = False,
+    checkpoint: "CheckpointConfig | None" = None,
+) -> DataFrame:
+    """Creates a DataFrame from Avro file(s).
+
+    Args:
+        path (str): Path to Avro files (allows for wildcards; supports remote URLs to object stores such as ``s3://`` or ``gs://``)
+        infer_schema (bool): Whether to infer the schema of the Avro files, defaults to True.
+        schema (dict[str, DataType]): A schema that is used as the definitive schema for the Avro files if infer_schema is False, otherwise it is used as a schema hint that is applied after the schema is inferred (overriding the types of inferred columns, and appending any new columns not found during inference).
+        io_config (IOConfig): Config to be used with the native downloader
+        file_path_column: Include the source path(s) as a column with this name. Defaults to None.
+        hive_partitioning: Whether to infer hive_style partitions from file paths and include them as columns in the Dataframe. Defaults to False.
+        checkpoint: Optional :class:`daft.CheckpointConfig` for progress tracking across runs. Bundles the
+            checkpoint store, the source key column (``on=``), and optional anti-join tuning. Rows whose key
+            already exists in the store are skipped on re-run. Requires the Ray runner.
+
+    Returns:
+        DataFrame: parsed DataFrame
+
+    Examples:
+        Read an Avro file from a local path:
+        >>> df = daft.read_avro("/path/to/file.avro")
+        >>> df = daft.read_avro("/path/to/directory")
+        >>> df = daft.read_avro("/path/to/files-*.avro")
+
+        Read an Avro file from a public S3 bucket:
+        >>> from daft.io import S3Config, IOConfig
+        >>> io_config = IOConfig(s3=S3Config(region="us-west-2", anonymous=True))
+        >>> df = daft.read_avro("s3://path/to/files-*.avro", io_config=io_config)
+        >>> df.show()
+    """
+    if isinstance(path, list) and len(path) == 0:
+        raise ValueError("Cannot read DataFrame from empty list of Avro filepaths")
+
+    if not infer_schema and schema is None:
+        raise ValueError(
+            "Cannot read DataFrame with infer_schema=False and schema=None, please provide a schema or set infer_schema=True"
+        )
+
+    io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
+
+    avro_config = AvroSourceConfig()
+    file_format_config = FileFormatConfig.from_avro_config(avro_config)
+    storage_config = StorageConfig(True, io_config)
+
+    builder = get_tabular_files_scan(
+        path=path,
+        infer_schema=infer_schema,
+        schema=schema,
+        file_format_config=file_format_config,
+        storage_config=storage_config,
+        file_path_column=file_path_column,
+        hive_partitioning=hive_partitioning,
+    )
+    builder = attach_checkpoint(builder, checkpoint)
+    return DataFrame(builder)
