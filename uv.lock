@@ -1520,6 +1520,7 @@ all = [
     { name = "psycopg", extra = ["binary"] },
     { name = "pyarrow" },
     { name = "pyiceberg" },
+    { name = "pymysql" },
     { name = "ray", extra = ["client", "data"] },
     { name = "requests" },
     { name = "sentence-transformers" },
@@ -1596,6 +1597,7 @@ ray = [
 ]
 sql = [
     { name = "connectorx" },
+    { name = "pymysql" },
     { name = "sqlalchemy" },
     { name = "sqlglot" },
 ]
@@ -1748,6 +1750,7 @@ requires-dist = [
     { name = "pyarrow", specifier = ">=16.0.0,<25.0.0" },
     { name = "pyarrow", marker = "extra == 'hudi'", specifier = ">=16.0.0,<25.0.0" },
     { name = "pyiceberg", marker = "extra == 'iceberg'", specifier = ">=0.7.0,!=0.9.1,!=0.10.0,<=0.11.1" },
+    { name = "pymysql", marker = "extra == 'sql'", specifier = ">=1.0.0" },
     { name = "ray", extras = ["data", "client"], marker = "extra == 'ray'", specifier = ">=2.11.0,<2.56.0" },
     { name = "requests", marker = "extra == 'gravitino'", specifier = ">=2.28.0,<3.0.0" },
     { name = "sentence-transformers", marker = "extra == 'transformers'", specifier = "<5.6.0" },
