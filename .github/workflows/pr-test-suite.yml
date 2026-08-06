@@ -293,7 +293,7 @@ jobs:
         path: ./report-output
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v3.0.3
+      uses: slackapi/slack-github-action@v4.0.0
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -363,7 +363,7 @@ jobs:
         cache-workspace-crates: "true"
         save-if: ${{ github.ref == 'refs/heads/main' }}
     - uses: ./.github/actions/restore-mtime
-    - uses: actions/setup-node@v6
+    - uses: actions/setup-node@v7
       with:
         node-version: "22"
         cache: "npm"
@@ -454,7 +454,7 @@ jobs:
         DAFT_RUNNER: ray
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v3.0.3
+      uses: slackapi/slack-github-action@v4.0.0
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -555,7 +555,7 @@ jobs:
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v3.0.3
+      uses: slackapi/slack-github-action@v4.0.0
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -678,7 +678,7 @@ jobs:
   #       DAFT_RUNNER: ${{ matrix.daft-runner }}
   #       HF_TOKEN: ${{ secrets.ACTIONS_HF_TOKEN }}
   #   - name: Send Slack notification on failure
-  #     uses: slackapi/slack-github-action@v3.0.3
+  #     uses: slackapi/slack-github-action@v4.0.0
   #     if: ${{ failure() }}
   #     with:
   #       payload: |
@@ -779,7 +779,7 @@ jobs:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v3.0.3
+      uses: slackapi/slack-github-action@v4.0.0
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -1043,7 +1043,7 @@ jobs:
         popd
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v3.0.3
+      uses: slackapi/slack-github-action@v4.0.0
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -1133,7 +1133,7 @@ jobs:
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v3.0.3
+      uses: slackapi/slack-github-action@v4.0.0
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -1210,7 +1210,7 @@ jobs:
   #       DAFT_RUNNER: ${{ matrix.daft-runner }}
   #       OPENAI_API_KEY: ${{ secrets.ACTIONS_OPENAI_API_KEY }}
   #   - name: Send Slack notification on failure
-  #     uses: slackapi/slack-github-action@v3.0.3
+  #     uses: slackapi/slack-github-action@v4.0.0
   #     if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
   #     env:
   #       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -1285,7 +1285,7 @@ jobs:
         DAFT_RUNNER: ray
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v3.0.3
+      uses: slackapi/slack-github-action@v4.0.0
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -1378,14 +1378,14 @@ jobs:
         path: data/tpch-dbgen
         key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('tests/integration/test_tpch.py', 'benchmarking/tpch/**') }}
     - name: Run benchmarks
-      uses: CodSpeedHQ/action@v4
+      uses: CodSpeedHQ/action@v5
       with:
         run: source .venv/bin/activate; pytest tests/benchmarks/test_local_tpch.py tests/benchmarks/test_interactive_reads.py tests/benchmarks/test_json_reads.py tests/benchmarks/test_clickbench.py -m benchmark --codspeed
         mode: "simulation"
       env:
         DAFT_RUNNER: native
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v3.0.3
+      uses: slackapi/slack-github-action@v4.0.0
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -1467,7 +1467,7 @@ jobs:
         name: coverage-reports-rust-tests-${{ runner.os }}
         path: ./report-output
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v3.0.3
+      uses: slackapi/slack-github-action@v4.0.0
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -1627,7 +1627,7 @@ jobs:
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v3.0.3
+      uses: slackapi/slack-github-action@v4.0.0
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -1725,7 +1725,7 @@ jobs:
         python -c 'import daft; from daft import *'
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v3.0.3
+      uses: slackapi/slack-github-action@v4.0.0
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -1799,7 +1799,7 @@ jobs:
         pre-commit run --all-files -v --hook-stage pre-commit --hook-stage manual
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v3.0.3
+      uses: slackapi/slack-github-action@v4.0.0
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
