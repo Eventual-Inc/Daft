@@ -148,6 +148,59 @@ def test_row_wise_udf_override_concurrency():
     assert actual == expected
 
 
+def test_row_wise_async_udf_min_max_concurrency():
+    @daft.func(return_dtype=DataType.int64(), min_concurrency=2, max_concurrency=10)
+    async def my_udf(x):
+        return x
+
+    df = daft.from_pydict({"x": [1, 2, 3]})
+
+    import io
+
+    f = io.StringIO()
+    df.select(my_udf(col("x"))).explain(file=f, show_all=True)
+    explanation = f.getvalue()
+
+    assert "min_concurrency = 2" in explanation
+    assert "concurrency = 10" in explanation
+
+    actual = df.select(my_udf(col("x"))).to_pydict()
+    expected = {"x": [1, 2, 3]}
+    assert actual == expected
+
+
+def test_row_wise_udf_rejects_invalid_min_max_concurrency():
+    with pytest.raises(ValueError, match="min_concurrency for udf must be non-zero"):
+
+        @daft.func(return_dtype=DataType.int64(), min_concurrency=0, max_concurrency=1)
+        async def min_zero(x):
+            return x
+
+    with pytest.raises(ValueError, match="min_concurrency for udf must be non-zero"):
+
+        @daft.func(return_dtype=DataType.int64(), min_concurrency=-1, max_concurrency=1)
+        async def min_negative(x):
+            return x
+
+    with pytest.raises(ValueError, match="max_concurrency for udf must be non-zero"):
+
+        @daft.func(return_dtype=DataType.int64(), min_concurrency=1, max_concurrency=-1)
+        async def max_negative(x):
+            return x
+
+    with pytest.raises(ValueError, match="min_concurrency for udf requires max_concurrency"):
+
+        @daft.func(return_dtype=DataType.int64(), min_concurrency=1)
+        async def min_without_max(x):
+            return x
+
+    with pytest.raises(ValueError, match="min_concurrency for udf must be less than or equal to max_concurrency"):
+
+        @daft.func(return_dtype=DataType.int64(), min_concurrency=4, max_concurrency=2)
+        async def min_greater_than_max(x):
+            return x
+
+
 def test_row_wise_udf_literal_eval():
     @daft.func
     def my_stringify_and_sum(a: int, b: int) -> str:
