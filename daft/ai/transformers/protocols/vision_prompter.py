@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import warnings
 from dataclasses import dataclass, field
 from functools import singledispatchmethod
@@ -13,14 +14,15 @@ from daft.ai.transformers.protocols import model_loading_lock
 from daft.ai.typing import Options, PromptOptions, UDFOptions
 from daft.ai.utils import get_gpu_udf_options, get_torch_device
 from daft.daft import guess_mimetype_from_content
+from daft.dependencies import np, pil_image
 from daft.file import File
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
 
 
-class TransformersPromptOptions(PromptOptions, total=False):
-    """Options for the Transformers prompter.
+class TransformersVisionPromptOptions(PromptOptions, total=False):
+    """Options for the Transformers vision prompter.
 
     Attributes:
         pipeline_kwargs (dict): Forwarded to the ``transformers.pipeline``
@@ -35,10 +37,10 @@ class TransformersPromptOptions(PromptOptions, total=False):
 
 
 @dataclass
-class TransformersPrompterDescriptor(PrompterDescriptor):
+class TransformersVisionPrompterDescriptor(PrompterDescriptor):
     provider_name: str
     model_name: str
-    prompt_options: TransformersPromptOptions = field(default_factory=lambda: TransformersPromptOptions())
+    prompt_options: TransformersVisionPromptOptions = field(default_factory=lambda: TransformersVisionPromptOptions())
     system_message: str | None = None
     return_format: BaseModel | None = None
 
@@ -61,7 +63,7 @@ class TransformersPrompterDescriptor(PrompterDescriptor):
     def instantiate(self) -> Prompter:
         if self.return_format is not None:
             raise NotImplementedError("return_format is not yet supported for the 'transformers' provider.")
-        return TransformersPrompter(
+        return TransformersVisionPrompter(
             provider_name=self.provider_name,
             model_name=self.model_name,
             system_message=self.system_message,
@@ -69,22 +71,20 @@ class TransformersPrompterDescriptor(PrompterDescriptor):
         )
 
 
-class TransformersPrompter(Prompter):
-    """Pipeline based text generation."""
+class TransformersVisionPrompter(Prompter):
+    """Pipeline based image-text-to-text generation."""
 
     def __init__(
         self,
         provider_name: str,
         model_name: str,
         system_message: str | None = None,
-        prompt_options: TransformersPromptOptions | None = None,
+        prompt_options: TransformersVisionPromptOptions | None = None,
     ) -> None:
         self.provider_name = provider_name
         self.model = model_name
         self.system_message = system_message
 
-        # Split options: pipeline_kwargs go to the constructor, UDF-level keys are
-        # consumed by get_udf_options, everything else is forwarded to the call.
         opts: dict[str, Any] = dict(prompt_options or {})
         pipeline_kwargs: dict[str, Any] = opts.pop("pipeline_kwargs", {})
         opts.pop("return_full_text", None)  # always set to False in _sync_prompt
@@ -92,51 +92,64 @@ class TransformersPrompter(Prompter):
             opts.pop(udf_only_key, None)
         self.generation_kwargs: dict[str, Any] = opts
 
-        # device and device_map are mutually exclusive.
         pipeline_init: dict[str, Any] = dict(pipeline_kwargs)
         if "device" not in pipeline_init and "device_map" not in pipeline_init:
             pipeline_init["device"] = get_torch_device()
         with model_loading_lock:
-            self._pipeline = pipeline(task="text-generation", model=model_name, **pipeline_init)
+            self._pipeline = pipeline(task="image-text-to-text", model=model_name, **pipeline_init)
 
-        self._has_chat_template = getattr(self._pipeline.tokenizer, "chat_template", None) is not None
+        # Vision chat template lives on the processor, not the tokenizer.
+        self._has_chat_template = getattr(self._pipeline.processor, "chat_template", None) is not None
         if not self._has_chat_template:
             warnings.warn(
-                f"Model '{model_name}' has no chat template; falling back to plain-text "
-                "concatenation. Use an instruction-tuned model for better results.",
+                f"Model '{model_name}' has no chat template; multimodal prompting requires an "
+                "instruction-tuned vision-language model.",
                 stacklevel=2,
             )
 
     @singledispatchmethod
-    def _process_message(self, msg: Any) -> str:
-        raise NotImplementedError(f"The 'transformers' provider does not support input of type {type(msg).__name__}.")
+    def _process_message(self, msg: Any) -> dict[str, Any]:
+        raise NotImplementedError(
+            f"The 'transformers' vision prompter does not support input of type {type(msg).__name__}."
+        )
 
     @_process_message.register
-    def _(self, msg: str) -> str:
-        return msg
+    def _(self, msg: str) -> dict[str, Any]:
+        return {"type": "text", "text": msg}
 
     @_process_message.register
-    def _(self, msg: File) -> str:
+    def _(self, msg: np.ndarray) -> dict[str, Any]:  # type: ignore[type-arg,unused-ignore]
+        return {"type": "image", "image": pil_image.fromarray(msg)}
+
+    @_process_message.register
+    def _(self, msg: File) -> dict[str, Any]:
         mime_type = msg.mime_type()
-        if not self._is_text_mime_type(mime_type):
-            raise NotImplementedError(
-                f"The 'transformers' provider currently only supports text/* File inputs, got '{mime_type}'."
-            )
-        return self._wrap_filetag(mime_type, self._read_text_content(msg))
+        if mime_type.startswith("image/"):
+            with msg.open() as f:
+                return {"type": "image", "image": pil_image.open(io.BytesIO(f.read()))}
+        if self._is_text_mime_type(mime_type):
+            return {"type": "text", "text": self._wrap_filetag(mime_type, self._read_text_content(msg))}
+        raise NotImplementedError(
+            f"The 'transformers' vision prompter only supports image/* or text/* File inputs, got '{mime_type}'."
+        )
 
     @_process_message.register
-    def _(self, msg: bytes) -> str:
+    def _(self, msg: bytes) -> dict[str, Any]:
         mime_type = guess_mimetype_from_content(msg)
+        if mime_type and mime_type.startswith("image/"):
+            return {"type": "image", "image": pil_image.open(io.BytesIO(msg))}
         if mime_type is None:
             try:
-                return self._wrap_filetag("text/plain", msg.decode("utf-8"))
+                return {"type": "text", "text": self._wrap_filetag("text/plain", msg.decode("utf-8"))}
             except UnicodeDecodeError:
-                raise NotImplementedError("The 'transformers' provider currently only supports text/* bytes inputs.")
-        if not self._is_text_mime_type(mime_type):
-            raise NotImplementedError(
-                f"The 'transformers' provider currently only supports text/* bytes inputs, got '{mime_type}'."
-            )
-        return self._wrap_filetag(mime_type, msg.decode("utf-8", errors="replace"))
+                raise NotImplementedError(
+                    "The 'transformers' vision prompter only supports image/* or text/* bytes inputs."
+                )
+        if self._is_text_mime_type(mime_type):
+            return {"type": "text", "text": self._wrap_filetag(mime_type, msg.decode("utf-8", errors="replace"))}
+        raise NotImplementedError(
+            f"The 'transformers' vision prompter only supports image/* or text/* bytes inputs, got '{mime_type}'."
+        )
 
     @staticmethod
     def _is_text_mime_type(mime_type: str) -> bool:
@@ -155,20 +168,17 @@ class TransformersPrompter(Prompter):
         tag = f"file_{mime_type.split(';')[0].strip().replace('/', '_')}"
         return f"<{tag}>{text}</{tag}>"
 
-    def _build_inputs(self, messages: tuple[Any, ...]) -> list[dict[str, str]] | str:
-        user_content = "\n".join(self._process_message(m) for m in messages)
-        if not self._has_chat_template:
-            return f"{self.system_message}\n\n{user_content}" if self.system_message else user_content
-        chat: list[dict[str, str]] = []
+    def _build_inputs(self, messages: tuple[Any, ...]) -> list[dict[str, Any]]:
+        content = [self._process_message(m) for m in messages]
+        chat: list[dict[str, Any]] = []
         if self.system_message:
-            chat.append({"role": "system", "content": self.system_message})
-        chat.append({"role": "user", "content": user_content})
+            chat.append({"role": "system", "content": [{"type": "text", "text": self.system_message}]})
+        chat.append({"role": "user", "content": content})
         return chat
 
     def _sync_prompt(self, messages: tuple[Any, ...]) -> str:
-        inputs = self._build_inputs(messages)
-        # return_full_text=False strips the prompt from string-mode outputs.
-        outputs = self._pipeline(inputs, return_full_text=False, **self.generation_kwargs)
+        chat = self._build_inputs(messages)
+        outputs = self._pipeline(text=chat, return_full_text=False, **self.generation_kwargs)
         generated = outputs[0]["generated_text"]
         if isinstance(generated, list):
             return generated[-1]["content"]
@@ -176,3 +186,10 @@ class TransformersPrompter(Prompter):
 
     async def prompt(self, messages: tuple[Any, ...]) -> Any:
         return await asyncio.to_thread(self._sync_prompt, messages)
+
+
+if pil_image.module_available():
+
+    @TransformersVisionPrompter._process_message.register(pil_image.Image)  # type: ignore[attr-defined, untyped-decorator]
+    def _(self: TransformersVisionPrompter, msg: Any) -> dict[str, Any]:
+        return {"type": "image", "image": msg}
