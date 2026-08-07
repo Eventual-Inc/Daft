@@ -59,7 +59,7 @@ daft-stats = {path = "src/daft-stats", default-features = false}
 daft-warc = {path = "src/daft-warc", default-features = false}
 daft-writers = {path = "src/daft-writers", default-features = false}
 log = {workspace = true}
-lzma-sys = {version = "*", features = ["static"]}
+liblzma-sys = {version = "*", features = ["static"]}
 pyo3 = {workspace = true, optional = true}
 pyo3-log = {workspace = true, optional = true}
 sysinfo = {workspace = true}
@@ -260,7 +260,7 @@ arrow-select = "59.0.0"
 approx = "0.5.1"
 arc-swap = "1.7.1"
 async-compat = "0.2.5"
-async-compression = {version = "0.4.12", features = [
+async-compression = {version = "0.4.43", features = [
   "tokio",
   "all-algorithms"
 ]}
@@ -312,14 +312,14 @@ daft-scan = {path = "src/daft-scan"}
 daft-schema = {path = "src/daft-schema"}
 daft-session = {path = "src/daft-session"}
 daft-sql = {path = "src/daft-sql"}
-dashmap = "6.1.0"
+dashmap = "6.2"
 educe = "0.6.0"
 futures = "0.3.30"
 half = {version = "2.7.1", features = ["num-traits", "bytemuck", "serde"]}
-hashbrown = "0.16"
+hashbrown = "0.17"
 html-escape = "0.2.13"
 image = {version = "0.25.10", default-features = false}
-indexmap = "2.9.0"
+indexmap = "2.14"
 indicatif = "0.18"
 console = "0.16"
 itertools = "0.14"
