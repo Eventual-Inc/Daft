@@ -52,6 +52,10 @@ impl ScalarUDF for LevenshteinDistance {
         "levenshtein_distance"
     }
 
+    fn aliases(&self) -> &'static [&'static str] {
+        &["levenshtein"]
+    }
+
     fn call(
         &self,
         inputs: FunctionArgs<Series>,
