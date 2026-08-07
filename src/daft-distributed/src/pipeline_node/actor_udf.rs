@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftResult;
 use common_metrics::{
@@ -58,7 +58,7 @@ impl UDFActors {
         let num_actors = udf_properties
             .concurrency
             .expect("ActorUDF should have concurrency specified");
-        let min_actors = udf_properties.min_concurrency.unwrap_or(num_actors);
+        let min_actors = udf_properties.min_concurrency.unwrap_or(NonZeroUsize::MIN);
         let (gpu_request, cpu_request, memory_request) = match &udf_properties.resource_request {
             Some(resource_request) => (
                 resource_request.num_gpus().unwrap_or(0.0),
