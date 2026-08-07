@@ -29,6 +29,7 @@ class _FuncDecorator:
         cpus: float | None = None,
         gpus: float = 0,
         use_process: bool | None = None,
+        min_concurrency: int | None = None,
         max_concurrency: int | None = None,
         max_retries: int | None = None,
         on_error: Literal["raise", "log", "ignore"] | None = None,
@@ -43,6 +44,7 @@ class _FuncDecorator:
         unnest: bool = False,
         gpus: float = 0,
         use_process: bool | None = None,
+        min_concurrency: int | None = None,
         max_concurrency: int | None = None,
         max_retries: int | None = None,
         on_error: Literal["raise", "log", "ignore"] | None = None,
@@ -57,6 +59,7 @@ class _FuncDecorator:
         cpus: float | None = None,
         gpus: float = 0,
         use_process: bool | None = None,
+        min_concurrency: int | None = None,
         max_concurrency: int | None = None,
         max_retries: int | None = None,
         on_error: Literal["raise", "log", "ignore"] | None = None,
@@ -68,6 +71,7 @@ class _FuncDecorator:
             return_dtype: The data type that this function should return or yield. If not specified, it is derived from the function's return type hint.
             unnest: Whether to unnest/flatten out return type fields into columns. Return dtype must be `DataType.struct(..)` when this is set to true.
             use_process: Whether to run each instance of the function in a separate process. If unset, Daft will automatically choose based on runtime performance.
+            min_concurrency: The minimum number of concurrent coroutines for async functions. Only valid with `max_concurrency` for async functions.
             max_concurrency: The maximum number of concurrent coroutines for async functions. Only valid for async functions; raises an error if used with synchronous functions.
 
         Daft function variants:
@@ -241,6 +245,7 @@ class _FuncDecorator:
                 use_process,
                 False,
                 None,
+                min_concurrency=min_concurrency,
                 max_concurrency=max_concurrency,
                 max_retries=max_retries,
                 on_error=on_error,
@@ -257,6 +262,7 @@ class _FuncDecorator:
         cpus: float | None = None,
         gpus: float = 0,
         use_process: bool | None = None,
+        min_concurrency: int | None = None,
         max_concurrency: int | None = None,
         batch_size: int | None = None,
         max_retries: int | None = None,
@@ -269,6 +275,7 @@ class _FuncDecorator:
             return_dtype: The data type that this function should return.
             unnest: Whether to unnest/flatten out return type fields into columns. Return dtype must be `DataType.struct(..)` when this is set to true.
             use_process: Whether to run each instance of the function in a separate process. If unset, Daft will automatically choose based on runtime performance.
+            min_concurrency: The minimum number of concurrent coroutines for async functions. Only valid with `max_concurrency` for async functions.
             max_concurrency: The maximum number of concurrent coroutines for async functions. Only valid for async functions; raises an error if used with synchronous functions.
             batch_size: The max number of rows in each input batch.
 
@@ -344,6 +351,7 @@ class _FuncDecorator:
                 use_process,
                 True,
                 batch_size,
+                min_concurrency=min_concurrency,
                 max_concurrency=max_concurrency,
                 max_retries=max_retries,
                 on_error=on_error,
@@ -362,6 +370,7 @@ def cls(
     cpus: float | None = None,
     gpus: float = 0,
     use_process: bool | None = None,
+    min_concurrency: int | None = None,
     max_concurrency: int | None = None,
     max_retries: int | None = None,
     on_error: Literal["raise", "log", "ignore"] | None = None,
@@ -375,6 +384,7 @@ def cls(
     cpus: float | None = None,
     gpus: float = 0,
     use_process: bool | None = None,
+    min_concurrency: int | None = None,
     max_concurrency: int | None = None,
     max_retries: int | None = None,
     on_error: Literal["raise", "log", "ignore"] | None = None,
@@ -387,6 +397,7 @@ def cls(
     cpus: float | None = None,
     gpus: float = 0,
     use_process: bool | None = None,
+    min_concurrency: int | None = None,
     max_concurrency: int | None = None,
     max_retries: int | None = None,
     on_error: Literal["raise", "log", "ignore"] | None = None,
@@ -401,6 +412,7 @@ def cls(
               Fractional values between 0 and 1.0, such as 0.5, are supported. This can be useful when running multiple small models on the same GPU.
               However, fractional values greater than 1.0, such as 1.5 or 2.5, are not supported.
         use_process: Whether to run each instance of the class in a separate process. If unset, Daft will automatically choose based on runtime performance.
+        min_concurrency: The minimum number of concurrent invocations for autoscaled UDF execution. Must be less than or equal to `max_concurrency`.
         max_concurrency: The maximum number of concurrent invocations. For sync methods, this controls the number of actor pool processes. For async methods, this controls the number of concurrent coroutines.
         name_override: The name to display for the UDF class in the plan and progress bars.
         ray_options: Options to pass to the Ray executor (e.g. {"num_cpus": 1, "num_gpus": 1}).
@@ -478,9 +490,27 @@ def cls(
     if gpus > 1 and not float(gpus).is_integer():
         raise ValueError(f"ResourceRequest num_gpus greater than 1 must be an integer, got {gpus}")
 
+    if min_concurrency is not None and min_concurrency <= 0:
+        raise ValueError("min_concurrency for udf must be non-zero")
+    if max_concurrency is not None and max_concurrency <= 0:
+        raise ValueError("max_concurrency for udf must be non-zero")
+    if min_concurrency is not None and max_concurrency is None:
+        raise ValueError("min_concurrency for udf requires max_concurrency")
+    if min_concurrency is not None and max_concurrency is not None and min_concurrency > max_concurrency:
+        raise ValueError("min_concurrency for udf must be less than or equal to max_concurrency")
+
     def partial_cls(c: type) -> type:
         return wrap_cls(
-            c, cpus, gpus, use_process, max_concurrency, max_retries, on_error, name_override, ray_options=ray_options
+            c,
+            cpus,
+            gpus,
+            use_process,
+            min_concurrency,
+            max_concurrency,
+            max_retries,
+            on_error,
+            name_override,
+            ray_options=ray_options,
         )
 
     return partial_cls if class_ is None else partial_cls(class_)

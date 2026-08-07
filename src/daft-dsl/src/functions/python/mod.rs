@@ -307,6 +307,7 @@ pub struct UDFProperties {
     pub name: String,
     pub resource_request: Option<ResourceRequest>,
     pub batch_size: Option<usize>,
+    pub min_concurrency: Option<NonZeroUsize>,
     pub concurrency: Option<NonZeroUsize>,
     pub use_process: Option<bool>,
     pub max_retries: Option<usize>,
@@ -342,6 +343,7 @@ impl UDFProperties {
                         name: name.as_ref().clone(),
                         resource_request: resource_request.clone(),
                         batch_size: *batch_size,
+                        min_concurrency: None,
                         concurrency: *concurrency,
                         use_process: *use_process,
                         max_retries: None,
@@ -387,6 +389,7 @@ impl UDFProperties {
                         name: row_wise_fn.function_name.to_string(),
                         resource_request: Some(rr),
                         batch_size: None,
+                        min_concurrency: row_wise_fn.min_concurrency,
                         concurrency: row_wise_fn.max_concurrency,
                         use_process: row_wise_fn.use_process,
                         max_retries: row_wise_fn.max_retries,
@@ -432,6 +435,7 @@ impl UDFProperties {
                         name: batch_fn.function_name.to_string(),
                         resource_request: Some(rr),
                         batch_size: batch_fn.batch_size,
+                        min_concurrency: batch_fn.min_concurrency,
                         concurrency: batch_fn.max_concurrency,
                         use_process: batch_fn.use_process,
                         max_retries: batch_fn.max_retries,
@@ -472,6 +476,10 @@ impl UDFProperties {
 
         if let Some(batch_size) = &self.batch_size {
             properties.push(format!("batch_size = {}", batch_size));
+        }
+
+        if let Some(min_concurrency) = &self.min_concurrency {
+            properties.push(format!("min_concurrency = {}", min_concurrency));
         }
 
         if let Some(concurrency) = &self.concurrency {
