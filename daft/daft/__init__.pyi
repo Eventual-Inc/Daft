@@ -1405,6 +1405,7 @@ class PyPushdowns:
         ...
 
 PyArrowParquetType = tuple[pa.Field, dict[str, str], pa.Array, int]
+PyArrowSchemaType = tuple[list[pa.Field], dict[str, str]]
 
 def read_parquet(
     uri: str,
@@ -1451,6 +1452,12 @@ def read_parquet_schema(
     multithreaded_io: bool | None = None,
     coerce_int96_timestamp_unit: PyTimeUnit | None = None,
 ) -> PySchema: ...
+def read_parquet_arrow_schema(
+    uri: str,
+    io_config: IOConfig | None = None,
+    multithreaded_io: bool | None = None,
+    coerce_int96_timestamp_unit: PyTimeUnit | None = None,
+) -> PyArrowSchemaType: ...
 def read_csv(
     uri: str,
     convert_options: CsvConvertOptions | None = None,
