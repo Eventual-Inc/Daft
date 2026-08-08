@@ -25,6 +25,25 @@ df = daft.read_iceberg(table, ignore_corrupt_files=True)
 df.collect()
 ```
 
+The same option is available on the SQL table functions as a named argument:
+
+```python
+df = daft.sql("""
+    SELECT * FROM read_parquet('s3://my-bucket/data/**/*.parquet', ignore_corrupt_files => true)
+""")
+df.collect()
+```
+
+`read_csv` and `read_iceberg` accept it the same way. Named arguments also accept the
+`:=` form (`ignore_corrupt_files := true`), and `df.skipped_corrupt_files` works
+identically for dataframes built through SQL:
+
+```python
+df = daft.sql("SELECT * FROM read_csv('s3://my-bucket/data/**/*.csv', ignore_corrupt_files => true)")
+df.collect()
+print(df.skipped_corrupt_files)
+```
+
 ### What counts as "corrupt"
 
 Daft skips a file when it encounters a problem that is specific to the file itself and cannot be resolved by retrying:
@@ -114,6 +133,10 @@ This pattern — **errors visible, impact contained, tooling to fix** — lets a
 | Parquet (`read_parquet`) | Yes (bad footer, wrong magic bytes, file too small) | Yes (corrupt row group data) |
 | CSV (`read_csv`) | Yes (unreadable file, truncated) | Yes (bad encoding, wrong field count in chunk) |
 | Iceberg (`read_iceberg`) | Yes (data files go through the Rust Parquet reader) | Yes |
+
+All three are supported from both the Python API and the SQL table functions. See
+[Table Function Options](../sql/index.md#table-function-options) for the full list of
+named arguments each SQL reader accepts.
 
 !!! note "Iceberg delete files"
     Corruption in Iceberg *delete files* is not covered. If a delete file is unreadable, Daft will raise an error regardless of `ignore_corrupt_files`. Delete files are small metadata structures and corruption there generally indicates a more serious catalog inconsistency.
