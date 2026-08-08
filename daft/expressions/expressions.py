@@ -2781,6 +2781,56 @@ class Expression:
 
         return list_append(self, other)
 
+    def list_compact(self) -> Expression:
+        """Removes null values from each list, preserving the order of remaining elements.
+
+        Tip: See Also
+            [`daft.functions.list_compact`](https://docs.daft.ai/en/stable/api/functions/list_compact/)
+        """
+        from daft.functions import list_compact
+
+        return list_compact(self)
+
+    def list_position(self, item: Expression) -> Expression:
+        """Returns the 1-based position of the first occurrence of ``item`` in each list (0 if not found).
+
+        Tip: See Also
+            [`daft.functions.list_position`](https://docs.daft.ai/en/stable/api/functions/list_position/)
+        """
+        from daft.functions import list_position
+
+        return list_position(self, item)
+
+    def list_except(self, other: Expression) -> Expression:
+        """Returns the elements present in this list but not in ``other``, with duplicates removed.
+
+        Tip: See Also
+            [`daft.functions.list_except`](https://docs.daft.ai/en/stable/api/functions/list_except/)
+        """
+        from daft.functions import list_except
+
+        return list_except(self, other)
+
+    def list_intersect(self, other: Expression) -> Expression:
+        """Returns the elements present in both this list and ``other``, with duplicates removed.
+
+        Tip: See Also
+            [`daft.functions.list_intersect`](https://docs.daft.ai/en/stable/api/functions/list_intersect/)
+        """
+        from daft.functions import list_intersect
+
+        return list_intersect(self, other)
+
+    def list_union(self, other: Expression) -> Expression:
+        """Returns the union of elements in this list and ``other``, with duplicates removed.
+
+        Tip: See Also
+            [`daft.functions.list_union`](https://docs.daft.ai/en/stable/api/functions/list_union/)
+        """
+        from daft.functions import list_union
+
+        return list_union(self, other)
+
     def get(self, index: int | builtins.str | Expression, default: Any = None) -> Expression:
         """Get an index from a list expression or a field from a struct expression.
 
