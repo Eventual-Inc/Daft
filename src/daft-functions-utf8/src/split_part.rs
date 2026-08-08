@@ -73,7 +73,7 @@ impl ScalarUDF for SplitPart {
             delim.dtype.is_string(), TypeError: "Delimiter must be of type Utf8"
         );
         ensure!(
-            part.dtype.is_integer(), TypeError: "Part must be of integer type, got {}", part.dtype
+            part.dtype.is_integer() || part.dtype.is_null(), TypeError: "Part must be of integer type, got {}", part.dtype
         );
         Ok(input)
     }

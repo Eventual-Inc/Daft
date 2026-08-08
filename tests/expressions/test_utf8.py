@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import pytest
+
+import daft
+from daft.functions import split_part
+
 
 def test_endswith(test_expression):
     test_data = ["hello", "world", "python"]
@@ -259,12 +264,19 @@ def test_split_part_empty_delimiter(test_expression):
     )
 
 
+def test_split_part_null_part(test_expression):
+    # Spark-parity: a null part returns null for every row.
+    test_data = ["a,b,c", "x,y", None]
+    expected = [None, None, None]
+    test_expression(
+        data=test_data,
+        expected=expected,
+        name="split_part",
+        args=[",", None],
+    )
+
+
 def test_split_part_zero_errors():
-    import pytest
-
-    import daft
-    from daft.functions import split_part
-
     df = daft.from_pydict({"x": ["a,b,c"]})
     with pytest.raises(Exception, match="part must not be 0"):
         df.select(split_part(df["x"], ",", 0)).collect()
