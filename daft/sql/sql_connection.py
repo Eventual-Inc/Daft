@@ -8,9 +8,10 @@ from daft.dependencies import pa
 from daft.logical.schema import Schema
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
     from sqlalchemy.engine import Connection
+    from sqlglot.expressions import Expr
 
 
 logger = logging.getLogger(__name__)
@@ -67,7 +68,7 @@ class SQLConnection:
     def construct_sql_query(
         self,
         sql: str,
-        projection: list[str] | None = None,
+        projection: Sequence[str | Expr] | None = None,
         predicate: str | None = None,
         limit: int | None = None,
         partition_bounds: tuple[str, str] | None = None,
@@ -85,6 +86,9 @@ class SQLConnection:
         # sqlglot does not recognize "mssql" as a dialect, it instead recognizes "tsql", which is the SQL dialect for Microsoft SQL Server
         elif target_dialect == "mssql":
             target_dialect = "tsql"
+        # clickhouse-connect SQLAlchemy driver registers as "clickhousedb", but sqlglot recognizes "clickhouse"
+        elif target_dialect == "clickhousedb":
+            target_dialect = "clickhouse"
         # sqlglot does not recognize "awsathena", the dialect registered by PyAthena, SQLAlchemy driver for reading from AWS Athena. It only support "athena"
         elif target_dialect == "awsathena":
             target_dialect = "athena"
@@ -97,6 +101,7 @@ class SQLConnection:
         query = sqlglot.subquery(sql, "subquery", dialect=target_dialect)
 
         if projection is not None:
+            projection = _adapt_projection_for_dialect(projection, target_dialect)
             query = query.select(*projection)
         else:
             query = query.select("*")
@@ -126,9 +131,8 @@ class SQLConnection:
             "redshift",
         }
 
-        if isinstance(self.conn, str):
-            if self.dialect in connectorx_supported_dbs and self.driver == "":
-                return True
+        if isinstance(self.conn, str) and self.dialect in connectorx_supported_dbs and self.driver == "":
+            return True
         return False
 
     def execute_sql_query(self, sql: str, schema: pa.Schema | None = None) -> pa.Table:
@@ -173,3 +177,81 @@ class SQLConnection:
             # See note in `_execute_sql_query_with_connectorx`: don't echo
             # back the connection URL.
             raise RuntimeError(f"Failed to execute sql: {sql}, error: {e}") from e
+
+
+def _adapt_projection_for_dialect(
+    projection: Sequence[str | Expr],
+    target_dialect: str,
+) -> Sequence[str | Expr]:
+    """Apply dialect-specific AST transforms to projection expressions.
+
+    Only rewrites ``exp.Expression`` items; raw ``str`` projections
+    (e.g. ``"COUNT(*)"``) pass through unchanged.
+    """
+    import sqlglot.expressions as exp
+
+    if target_dialect == "clickhouse":
+        return [
+            p.transform(_rewrite_percentile_to_clickhouse) if isinstance(p, exp.Expression) else p for p in projection
+        ]
+    if target_dialect == "tsql":
+        return [p.transform(_rewrite_percentile_to_tsql) if isinstance(p, exp.Expression) else p for p in projection]
+    return projection
+
+
+def _rewrite_percentile_to_clickhouse(node: Expr) -> Expr:
+    """Rewrite ``WithinGroup(PercentileDisc, Order)`` → ``quantileExactLow`` for ClickHouse.
+
+    ``quantileExactLow`` is chosen over ``quantileExact`` because it returns
+    the *lower* value when the index falls at a boundary (``median_low``
+    semantics). This is the closest match to ``PERCENTILE_DISC``'s
+    nearest-rank behaviour available in ClickHouse. ``quantile()``
+    (HyperLogLog-based, approximate) is deliberately avoided — its
+    ``quantile(0)`` and ``quantile(1)`` are not guaranteed to equal the
+    true min/max, which would silently drop rows at partition edges.
+
+    ``node`` is a single AST node visited by ``Expression.transform()``.
+    The parent ``Alias`` wrapper (from ``.as_("bound_n")``) is preserved
+    automatically by ``transform()``.
+    """
+    import sqlglot.expressions as exp
+
+    if isinstance(node, exp.WithinGroup) and isinstance(node.this, exp.PercentileDisc):
+        p_val = node.this.this
+        if not isinstance(node.expression, exp.Order):
+            raise TypeError(f"Expected exp.Order for percentile WITHIN GROUP, got {type(node.expression).__name__}")
+        order_expressions = node.expression.expressions
+        if len(order_expressions) != 1:
+            raise ValueError(f"Expected exactly one ORDER BY expression for percentile, got {len(order_expressions)}")
+        ordered = order_expressions[0]
+        if not isinstance(ordered, exp.Ordered):
+            raise TypeError(f"Expected exp.Ordered, got {type(ordered).__name__}")
+        if ordered.args.get("desc"):
+            raise ValueError("DESC ordering is not supported for percentile rewrite")
+        order_col = ordered.this
+        return exp.ParameterizedAgg(
+            this="quantileExactLow",
+            expressions=[p_val],
+            params=[order_col],
+        )
+    return node
+
+
+def _rewrite_percentile_to_tsql(node: Expr) -> Expr:
+    """Wrap ``WithinGroup(PercentileDisc)`` in ``Window`` for TSQL ``OVER ()``.
+
+    SQL Server requires ``PERCENTILE_DISC(...) WITHIN GROUP (...) OVER ()``;
+    SQLGlot 30.8 does not add ``OVER ()`` automatically.
+
+    Unlike the ClickHouse rewrite, TSQL **does** support ``DESC`` in the
+    ``WITHIN GROUP (ORDER BY ...)`` clause, so we do not reject it.
+    """
+    import sqlglot.expressions as exp
+
+    if isinstance(node, exp.WithinGroup) and isinstance(node.this, exp.PercentileDisc):
+        if not isinstance(node.expression, exp.Order):
+            raise TypeError(f"Expected exp.Order for percentile WITHIN GROUP, got {type(node.expression).__name__}")
+        if not node.expression.expressions:
+            raise ValueError("Expected at least one ORDER BY expression")
+        return exp.Window(this=node)
+    return node
