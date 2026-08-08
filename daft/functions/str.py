@@ -1995,3 +1995,60 @@ def space(expr: Expression) -> Expression:
 
     """
     return Expression._call_builtin_scalar_fn("space", expr)
+
+
+def split_part(
+    expr: Expression,
+    delim: str | Expression,
+    part: int | Expression,
+) -> Expression:
+    """Splits the string on occurrences of the delimiter and returns the requested part (1-based).
+
+    If part is negative, the parts are counted backward from the end of the string.
+    If part is out of range, an empty string is returned.
+    If part is 0, an error is raised.
+    If the delimiter is an empty string, the string is not split.
+    This is compatible with Spark's split_part function.
+
+    Args:
+        expr: The string expression to split
+        delim: The delimiter string to split on (not a regular expression)
+        part: The 1-based index of the part to return
+
+    Returns:
+        Expression: a String expression with the requested part
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import split_part
+        >>> df = daft.from_pydict({"x": ["a,b,c", "x,y,z"]})
+        >>> df.select(split_part(df["x"], ",", 2)).show()
+        ╭────────╮
+        │ x      │
+        │ ---    │
+        │ String │
+        ╞════════╡
+        │ b      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ y      │
+        ╰────────╯
+        <BLANKLINE>
+        (Showing first 2 of 2 rows)
+
+        Negative parts are counted from the end of the string:
+
+        >>> df.select(split_part(df["x"], ",", -1)).show()
+        ╭────────╮
+        │ x      │
+        │ ---    │
+        │ String │
+        ╞════════╡
+        │ c      │
+        ├╌╌╌╌╌╌╌╌┤
+        │ z      │
+        ╰────────╯
+        <BLANKLINE>
+        (Showing first 2 of 2 rows)
+
+    """
+    return Expression._call_builtin_scalar_fn("split_part", expr, delim, part)
