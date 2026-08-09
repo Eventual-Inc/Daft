@@ -427,31 +427,28 @@ impl GCSClientWrapper {
                 .await?;
             forced_directory_ls_result.not_found_if_empty = !key.is_empty();
 
-            // If no items were obtained, then this is actually a file and we perform a second ls to obtain just the file's
-            // details as the one-and-only-one entry
-            if forced_directory_ls_result.files.is_empty() {
-                let mut file_result = self
-                    .ls_impl(
-                        client,
-                        bucket,
-                        key,
-                        Some(GCS_DELIMITER),
-                        continuation_token,
-                        page_size,
-                        io_stats.as_ref(),
-                    )
-                    .await?;
+            if forced_directory_ls_result.files.is_empty()
+                && continuation_token.is_none()
+                && !key.is_empty()
+            {
+                // get_size() acquires its own connection permit.
+                drop(_permit);
 
-                // Only retain exact matches (since the API does prefix lists by default)
                 let target_path = format!("{GCS_SCHEME}://{bucket}/{key}");
-                file_result.files.retain(|fm| fm.filepath == target_path);
-
-                if file_result.files.is_empty() {
-                    // This page is empty, but the complete paginated directory listing might not be.
-                    Ok(forced_directory_ls_result)
-                } else {
-                    file_result.not_found_if_empty = forced_directory_ls_result.not_found_if_empty;
-                    Ok(file_result)
+                match self.get_size(&target_path, io_stats.clone()).await {
+                    Ok(size) => Ok(LSResult {
+                        files: vec![FileMetadata {
+                            filepath: target_path,
+                            size: Some(size as u64),
+                            filetype: FileType::File,
+                        }],
+                        continuation_token: forced_directory_ls_result.continuation_token,
+                        not_found_if_empty: forced_directory_ls_result.not_found_if_empty,
+                    }),
+                    // Keep the empty directory result. iter_dir will follow
+                    // its token before deciding whether the path is missing.
+                    Err(super::Error::NotFound { .. }) => Ok(forced_directory_ls_result),
+                    Err(error) => Err(error),
                 }
             } else {
                 Ok(forced_directory_ls_result)
