@@ -1029,6 +1029,7 @@ impl S3LikeSource {
                 Ok(LSResult {
                     files,
                     continuation_token,
+                    not_found_if_empty: false,
                 })
             }
             Err(SdkError::ServiceError(err)) => {
@@ -1438,7 +1439,7 @@ impl ObjectSource for S3LikeSource {
             } else {
                 format!("{}{S3_DELIMITER}", key.trim_end_matches(S3_DELIMITER))
             };
-            let lsr = {
+            let mut lsr = {
                 let permit = self
                     .connection_pool_sema
                     .acquire()
@@ -1457,6 +1458,7 @@ impl ObjectSource for S3LikeSource {
                 )
                 .await?
             };
+            lsr.not_found_if_empty = !key.is_empty();
             if let Some(is) = io_stats.as_ref() {
                 is.mark_list_requests(1);
             }
@@ -1469,7 +1471,7 @@ impl ObjectSource for S3LikeSource {
                     .context(UnableToGrabSemaphoreSnafu)?;
                 // Might be a File
                 let key = key.trim_end_matches(S3_DELIMITER);
-                let mut lsr = self
+                let mut file_lsr = self
                     .list_impl(
                         permit,
                         scheme.as_str(),
@@ -1485,13 +1487,15 @@ impl ObjectSource for S3LikeSource {
                     is.mark_list_requests(1);
                 }
                 let target_path = format!("{scheme}://{bucket}/{key}");
-                lsr.files.retain(|f| f.filepath == target_path);
+                file_lsr.files.retain(|f| f.filepath == target_path);
 
-                if lsr.files.is_empty() {
-                    // Isn't a file or a directory
-                    return Err(Error::NotFound { path: path.into() }.into());
+                if file_lsr.files.is_empty() {
+                    // This page is empty, but the complete paginated directory listing might not be.
+                    Ok(lsr)
+                } else {
+                    file_lsr.not_found_if_empty = lsr.not_found_if_empty;
+                    Ok(file_lsr)
                 }
-                Ok(lsr)
             } else {
                 Ok(lsr)
             }

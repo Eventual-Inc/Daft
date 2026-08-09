@@ -385,6 +385,7 @@ impl GCSClientWrapper {
         Ok(LSResult {
             files: files.chain(dirs).collect(),
             continuation_token: ls_response.next_page_token,
+            not_found_if_empty: false,
         })
     }
 
@@ -413,7 +414,7 @@ impl GCSClientWrapper {
             } else {
                 format!("{}{GCS_DELIMITER}", key.trim_end_matches(GCS_DELIMITER))
             };
-            let forced_directory_ls_result = self
+            let mut forced_directory_ls_result = self
                 .ls_impl(
                     client,
                     bucket,
@@ -424,6 +425,7 @@ impl GCSClientWrapper {
                     io_stats.as_ref(),
                 )
                 .await?;
+            forced_directory_ls_result.not_found_if_empty = !key.is_empty();
 
             // If no items were obtained, then this is actually a file and we perform a second ls to obtain just the file's
             // details as the one-and-only-one entry
@@ -444,15 +446,13 @@ impl GCSClientWrapper {
                 let target_path = format!("{GCS_SCHEME}://{bucket}/{key}");
                 file_result.files.retain(|fm| fm.filepath == target_path);
 
-                // Not dir and not file, so it is missing
                 if file_result.files.is_empty() {
-                    return Err(Error::NotFound {
-                        path: path.to_string(),
-                    }
-                    .into());
+                    // This page is empty, but the complete paginated directory listing might not be.
+                    Ok(forced_directory_ls_result)
+                } else {
+                    file_result.not_found_if_empty = forced_directory_ls_result.not_found_if_empty;
+                    Ok(file_result)
                 }
-
-                Ok(file_result)
             } else {
                 Ok(forced_directory_ls_result)
             }
