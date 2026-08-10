@@ -2000,11 +2000,26 @@ impl SQLPlanner<'_> {
                     .map(|entry| {
                         let key = entry.key.value.clone();
                         let value = self.plan_expr(&entry.value)?;
-                        Ok(value.alias(key))
+                        Ok((key, value))
                     })
                     .collect::<SQLPlannerResult<Vec<_>>>()?;
 
-                Ok(daft_functions::to_struct::to_struct(entries).alias("literal"))
+                // If every value is a literal, fold to a struct literal directly so that
+                // callers relying on `Expr::as_literal` (e.g. table-function args like
+                // `schema := {...}`) still see this as a literal, not a `struct(...)` call.
+                if let Some(literal_entries) = entries
+                    .iter()
+                    .map(|(key, value)| value.as_literal().map(|lit| (key.clone(), lit.clone())))
+                    .collect::<Option<Vec<_>>>()
+                {
+                    Ok(Expr::Literal(Literal::new_struct(literal_entries)).arced())
+                } else {
+                    let aliased = entries
+                        .into_iter()
+                        .map(|(key, value)| value.alias(key))
+                        .collect::<Vec<_>>();
+                    Ok(daft_functions::to_struct::to_struct(aliased).alias("literal"))
+                }
             }
             SQLExpr::Map(map) => {
                 if map.entries.is_empty() {

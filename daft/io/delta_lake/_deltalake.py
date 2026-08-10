@@ -91,7 +91,6 @@ def read_deltalake(
         table_uri, storage_config=storage_config, version=version, ignore_deletion_vectors=ignore_deletion_vectors
     )
     df = delta_lake_source.read()
-    # Preserve resolved path/io metadata added on the main branch
     df._resolved_deltalake_path = table_uri
     df._resolved_deltalake_io_config = io_config
     return df
@@ -1210,7 +1209,7 @@ class DistributedDeltaMergeBuilder:
         Reuses ``delta_schema_to_pyarrow`` — the module's single Delta->Arrow source of
         truth (version-robust: ``schema.to_pyarrow()`` before deltalake 1.0.0, an arro3
         ``pa.schema(schema.to_arrow())`` conversion after). This is exactly what
-        ``DeltaLakeScanOperator`` feeds ``Schema.from_pyarrow_schema`` to build the schema
+        ``DeltaLakeDataSource`` feeds ``Schema.from_pyarrow_schema`` to build the schema
         that ``execute()`` reads its target from, so the dtypes checked here are the same
         ones the alignment (``_decomposed_outer_join``) and output casts actually run. No
         data is read.

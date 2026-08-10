@@ -26,6 +26,7 @@ pub struct ParquetScanBuilder {
     pub file_path_column: Option<String>,
     pub hive_partitioning: bool,
     pub ignore_corrupt_files: bool,
+    pub geometry: bool,
 }
 
 impl ParquetScanBuilder {
@@ -49,6 +50,7 @@ impl ParquetScanBuilder {
             file_path_column: None,
             hive_partitioning: false,
             ignore_corrupt_files: false,
+            geometry: true,
         }
     }
     pub fn infer_schema(mut self, infer_schema: bool) -> Self {
@@ -102,6 +104,11 @@ impl ParquetScanBuilder {
         self
     }
 
+    pub fn geometry(mut self, geometry: bool) -> Self {
+        self.geometry = geometry;
+        self
+    }
+
     pub async fn finish(self) -> DaftResult<LogicalPlanBuilder> {
         let cfg = ParquetSourceConfig {
             coerce_int96_timestamp_unit: self.coerce_int96_timestamp_unit,
@@ -109,7 +116,7 @@ impl ParquetScanBuilder {
             row_groups: self.row_groups,
             chunk_size: self.chunk_size,
             ignore_corrupt_files: self.ignore_corrupt_files,
-            geometry: true,
+            geometry: self.geometry,
         };
 
         let operator = Arc::new(
