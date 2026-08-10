@@ -1340,6 +1340,8 @@ fn physical_plan_to_pipeline(
             build_side,
             partition_key,
             schema,
+            full_schema,
+            output_projection,
             stats_state,
             context,
         }) => {
@@ -1349,6 +1351,26 @@ fn physical_plan_to_pipeline(
             let probe_child = left;
             let build_child = right;
 
+            // Fail LOUDLY at plan-build time on schema arity mismatches: the
+            // NLJ emits the full probe+build column concatenation, and a
+            // full_schema that disagrees with the children previously
+            // surfaced only inside a worker task (historically as a wedged
+            // pipeline — see the using-join hang fix).
+            let expected = probe_child.schema().len() + build_child.schema().len();
+            if full_schema.len() != expected {
+                return Err(crate::Error::PipelineCreationError {
+                    plan_name: "NestedLoopJoin".to_string(),
+                    source: common_error::DaftError::InternalError(format!(
+                    "NestedLoopJoin full_schema arity mismatch: full_schema has {} columns \
+                     but probe ({}) + build ({}) = {expected}. This join shape should have \
+                     been rejected at translation.",
+                    full_schema.len(),
+                    probe_child.schema().len(),
+                    build_child.schema().len(),
+                    )),
+                });
+            }
+
             let build_child_node =
                 physical_plan_to_pipeline(build_child, cfg, ctx, input_senders)?;
             let probe_child_node =
@@ -1356,8 +1378,15 @@ fn physical_plan_to_pipeline(
 
             // Convert partition_key from plan-level [usize; 2] to operator-level Option<(usize,usize)>.
             let pk = partition_key.map(|[bk, pk]| (bk, pk));
-            let nested_loop_op =
-                NestedLoopJoinOperator::new(filter.clone(), schema.clone(), *build_side, build_child.schema().len(), pk);
+            let nested_loop_op = NestedLoopJoinOperator::new(
+                filter.clone(),
+                full_schema.clone(),
+                schema.clone(),
+                output_projection.clone(),
+                *build_side,
+                build_child.schema().len(),
+                pk,
+            );
 
             JoinNode::new(
                 Arc::new(nested_loop_op),

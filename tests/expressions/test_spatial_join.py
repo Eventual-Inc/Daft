@@ -489,6 +489,251 @@ def test_distributed_spatial_join_combined_on_predicate():
     assert all(pid == qid for pid, qid in zip(got["pid"], got["qid"]))
 
 
+@pytest.mark.skipif(
+    os.environ.get("DAFT_RUNNER") != "ray",
+    reason="BroadcastSpatialJoinNode only exists in the distributed (Ray) pipeline",
+)
+def test_distributed_pure_spatial_join_broadcasts_small_side():
+    """A PURE spatial `on=` predicate — no equi key at all — must work on the
+    distributed runner by broadcasting the small side and running the R-tree
+    NLJ against it per task. Before this existed, the shape fell into the
+    generic join translator's `todo!()` for non-equality joins."""
+    pts = daft.from_pydict(
+        {"pid": [1, 2, 3, 4], "x": [1.0, 9.0, 1.5, 50.0], "y": [1.0, 9.0, 1.5, 50.0]}
+    ).select("pid", st_point(daft.col("x"), daft.col("y")).alias("pg"))
+    polys = daft.from_pydict(
+        {
+            "qid": [10, 20],
+            "wkt": [
+                "POLYGON((0 0,2 0,2 2,0 2,0 0))",
+                "POLYGON((8 8,10 8,10 10,8 10,8 8))",
+            ],
+        }
+    ).select("qid", st_geomfromtext(daft.col("wkt")).alias("qg"))
+
+    from daft.functions import st_contains
+
+    got = (
+        pts.join(polys, on=st_contains(polys["qg"], pts["pg"]))
+        .select("pid", "qid")
+        .sort(["pid", "qid"])
+        .to_pydict()
+    )
+    assert list(zip(got["pid"], got["qid"])) == [(1, 10), (2, 20), (3, 10)]
+
+
+@pytest.mark.skipif(
+    os.environ.get("DAFT_RUNNER") != "ray",
+    reason="BroadcastSpatialJoinNode only exists in the distributed (Ray) pipeline",
+)
+def test_distributed_pure_spatial_join_small_side_on_left():
+    """Same, with the SMALL (broadcast/build) side as the LEFT input and the
+    probe geometry as arg0 — both the side-selection and the argument-order
+    handling must hold."""
+    from daft.functions import st_within
+
+    polys = daft.from_pydict({"qid": [10], "wkt": ["POLYGON((0 0,2 0,2 2,0 2,0 0))"]}).select(
+        "qid", st_geomfromtext(daft.col("wkt")).alias("qg")
+    )
+    pts = daft.from_pydict(
+        {"pid": [1, 2], "x": [1.0, 9.0], "y": [1.0, 9.0]}
+    ).select("pid", st_point(daft.col("x"), daft.col("y")).alias("pg"))
+
+    got = (
+        polys.join(pts, on=st_within(pts["pg"], polys["qg"]))
+        .select("pid", "qid")
+        .sort("pid")
+        .to_pydict()
+    )
+    assert list(zip(got["pid"], got["qid"])) == [(1, 10)]
+
+
+@pytest.mark.skipif(
+    os.environ.get("DAFT_RUNNER") != "ray",
+    reason="BroadcastSpatialJoinNode only exists in the distributed (Ray) pipeline",
+)
+def test_distributed_pure_spatial_join_too_large_gives_clear_error():
+    """When NEITHER side fits under the broadcast threshold AND the predicate
+    is not supported by the grid rewrite (st_dwithin needs distance-padded
+    coverings — not implemented), the planner must fail with an actionable
+    message (bucket / partition key / threshold), not the generic
+    non-equality-join `todo!()` panic."""
+    from daft.functions import st_dwithin
+
+    pts = daft.from_pydict({"pid": [1], "x": [1.0], "y": [1.0]}).select(
+        "pid", st_point(daft.col("x"), daft.col("y")).alias("pg")
+    )
+    polys = daft.from_pydict({"qid": [10], "wkt": ["POLYGON((0 0,2 0,2 2,0 2,0 0))"]}).select(
+        "qid", st_geomfromtext(daft.col("wkt")).alias("qg")
+    )
+
+    with daft.execution_config_ctx(broadcast_join_size_bytes_threshold=1):
+        with pytest.raises(Exception, match="broadcast"):
+            pts.join(polys, on=st_dwithin(polys["qg"], pts["pg"], 1.0)).collect()
+
+
+@pytest.mark.skipif(
+    os.environ.get("DAFT_RUNNER") != "ray",
+    reason="grid spatial join only exists in the distributed (Ray) pipeline",
+)
+def test_distributed_grid_spatial_join_when_neither_side_broadcastable():
+    """A pure spatial join where NEITHER side fits the broadcast threshold must
+    run via the planner-synthesized grid: explode the sides by geohash covering
+    cells, equi-join on cell, and dedup with the reference-cell conjunct.
+
+    The polygon spans MULTIPLE gh6 cells (~0.011° x 0.0055°), and its matching
+    points sit in DIFFERENT cells of that cover — so correctness requires the
+    explode (a single-cell assignment would miss one point) and exactly-once
+    output requires the reference-cell dedup (naive cell-joins emit the pair
+    once per shared cell)."""
+    from daft.functions import st_contains
+
+    # Polygon covering [0, 0.02] x [0, 0.02] degrees: ~2x4 gh6 cells.
+    polys = daft.from_pydict(
+        {"qid": [10, 20], "wkt": [
+            "POLYGON((0 0,0.02 0,0.02 0.02,0 0.02,0 0))",
+            "POLYGON((1 1,1.001 1,1.001 1.001,1 1.001,1 1))",
+        ]}
+    ).select("qid", st_geomfromtext(daft.col("wkt")).alias("qg"))
+    pts = daft.from_pydict(
+        {
+            "pid": [1, 2, 3],
+            "x": [0.001, 0.015, 0.5],
+            "y": [0.001, 0.015, 0.5],
+        }
+    ).select("pid", st_point(daft.col("x"), daft.col("y")).alias("pg"))
+
+    with daft.execution_config_ctx(broadcast_join_size_bytes_threshold=1):
+        got = (
+            pts.join(polys, on=st_contains(polys["qg"], pts["pg"]))
+            .select("pid", "qid")
+            .sort(["pid", "qid"])
+            .to_pydict()
+        )
+    # Exactly-once pairs: pid 1 and 2 in poly 10 (different cells), pid 3 nowhere.
+    assert list(zip(got["pid"], got["qid"])) == [(1, 10), (2, 10)]
+
+
+@pytest.mark.skipif(
+    os.environ.get("DAFT_RUNNER") != "ray",
+    reason="grid spatial join only exists in the distributed (Ray) pipeline",
+)
+def test_distributed_grid_spatial_join_poly_poly_exactly_once():
+    """Both sides multi-cell (polygon x polygon st_intersects): overlapping
+    rects share SEVERAL covering cells, so without the reference-cell dedup
+    the pair would be emitted once per shared cell."""
+    from daft.functions import st_intersects
+
+    left = daft.from_pydict(
+        {"lid": [1, 2], "wkt": [
+            "POLYGON((0 0,0.03 0,0.03 0.03,0 0.03,0 0))",
+            "POLYGON((5 5,5.001 5,5.001 5.001,5 5.001,5 5))",
+        ]}
+    ).select("lid", st_geomfromtext(daft.col("wkt")).alias("lg"))
+    right = daft.from_pydict(
+        {"rid": [10], "wkt": ["POLYGON((0.01 0.01,0.04 0.01,0.04 0.04,0.01 0.04,0.01 0.01))"]}
+    ).select("rid", st_geomfromtext(daft.col("wkt")).alias("rg"))
+
+    with daft.execution_config_ctx(broadcast_join_size_bytes_threshold=1):
+        got = (
+            left.join(right, on=st_intersects(left["lg"], right["rg"]))
+            .select("lid", "rid")
+            .sort(["lid", "rid"])
+            .to_pydict()
+        )
+    assert list(zip(got["lid"], got["rid"])) == [(1, 10)], "pair must appear EXACTLY once"
+
+
+@pytest.mark.skipif(
+    os.environ.get("DAFT_RUNNER") != "ray",
+    reason="grid spatial join only exists in the distributed (Ray) pipeline",
+)
+def test_distributed_grid_spatial_join_adaptive_mixed_scale():
+    """One build polygon is ~2 DEGREES wide (a region-scale geometry: >60k gh6
+    cells, far past the fixed-precision covering cap) alongside a normal
+    building-scale polygon. The adaptive grid must coarsen the big row's cells
+    instead of erroring, keep the small row fine, and still produce exact,
+    exactly-once pairs for points in BOTH — including a point in the big
+    polygon but outside the small one's cells entirely."""
+    from daft.functions import st_contains
+
+    polys = daft.from_pydict(
+        {"qid": [10, 20], "wkt": [
+            "POLYGON((0 0,2 0,2 2,0 2,0 0))",          # ~2° region-scale
+            "POLYGON((0.5 0.5,0.502 0.5,0.502 0.502,0.5 0.502,0.5 0.5))",  # ~200 m
+        ]}
+    ).select("qid", st_geomfromtext(daft.col("wkt")).alias("qg"))
+    pts = daft.from_pydict(
+        {
+            "pid": [1, 2, 3, 4],
+            "x": [0.501, 1.9, 0.1, 5.0],
+            "y": [0.501, 1.9, 1.5, 5.0],
+        }
+    ).select("pid", st_point(daft.col("x"), daft.col("y")).alias("pg"))
+
+    with daft.execution_config_ctx(broadcast_join_size_bytes_threshold=1):
+        got = (
+            pts.join(polys, on=st_contains(polys["qg"], pts["pg"]))
+            .select("pid", "qid")
+            .sort(["pid", "qid"])
+            .to_pydict()
+        )
+    # pid1 inside BOTH (exactly once each); pid2/pid3 only in the big one;
+    # pid4 outside everything.
+    assert list(zip(got["pid"], got["qid"])) == [(1, 10), (1, 20), (2, 10), (3, 10)]
+
+
+@pytest.mark.timeout(60)
+def test_using_join_with_spatial_where_does_not_hang():
+    """Regression: a column-merging using-join (same key name both sides) under
+    a spatial WHERE previously wedged .collect() forever on both runners — the
+    NLJ emitted the full left+right column concatenation against the merged
+    (shrunken) join schema, and the worker's arity error was swallowed. The
+    translators now skip the NLJ rewrite for that shape."""
+    from daft.functions import st_contains
+    from daft import lit
+
+    pts = daft.from_pydict({"eid": [1, 2, 3], "wkt": ["POINT(0.5 0.5)", "POINT(5 5)", "POINT(1.5 1.5)"]}).select(
+        "eid", st_geomfromtext(daft.col("wkt")).alias("pg")
+    ).with_column("_jk", lit(1))
+    polys = daft.from_pydict({"qid": [10, 11], "wkt": [
+        "POLYGON((0 0,0 1,1 1,1 0,0 0))", "POLYGON((1 1,1 2,2 2,2 1,1 1))",
+    ]}).select("qid", st_geomfromtext(daft.col("wkt")).alias("qg")).with_column("_jk", lit(1))
+
+    got = (
+        pts.join(polys, on="_jk")
+        .where(st_contains(daft.col("qg"), daft.col("pg")))
+        .select("eid", "qid")
+        .sort(["eid", "qid"])
+        .to_pydict()
+    )
+    assert list(zip(got["eid"], got["qid"])) == [(1, 10), (3, 11)]
+
+
+def test_fused_projection_applies_on_non_accelerated_filter():
+    """Regression: a plain column select fused into the NLJ must be applied on
+    EVERY operator path. The naive fallback (filter not R-tree-accelerable,
+    e.g. OR-composed spatial ON) previously emitted the full join schema while
+    the plan declared the projected one — silent wrong-schema output that
+    by-name readers masked."""
+    left = daft.from_pydict({"lid": [1, 2], "x": [1.0, 9.0], "y": [1.0, 9.0]}).select(
+        "lid", st_point(daft.col("x"), daft.col("y")).alias("lg")
+    )
+    right = daft.from_pydict({"rid": [10, 11], "wkt": [
+        "POLYGON((0 0,2 0,2 2,0 2,0 0))", "POLYGON((8 8,10 8,10 10,8 10,8 8))",
+    ]}).select("rid", st_geomfromtext(daft.col("wkt")).alias("rg"))
+
+    out = (
+        left.join(right, on=st_intersects(left["lg"], right["rg"]) | ((left["lid"] + 9) == right["rid"]))
+        .select("lid", "rid")
+        .collect()
+    )
+    assert out.column_names == ["lid", "rid"]
+    tbl = out.to_pydict()
+    assert set(tbl.keys()) == {"lid", "rid"}
+    assert sorted(zip(tbl["lid"], tbl["rid"])) == [(1, 10), (2, 11)]
+
+
 # ── R-tree acceleration must not be applied to unsound predicates ─────────────
 
 

@@ -100,6 +100,39 @@ pub fn normalize_join_keys(
 /// Convert `ResolvedColumn::JoinSide(field, _)` markers in a join residual predicate
 /// into plain unresolved column references (by the post-deduplication field name),
 /// so the predicate can be re-bound against the join output schema.
+/// Spatial predicate function names recognized by the spatial-join rewrites.
+/// NOTE: the local NLJ operator's acceleration list (`SPATIAL_FNS` in
+/// daft-local-execution) intentionally EXCLUDES `st_disjoint` — routing here
+/// is broader than acceleration soundness.
+pub const SPATIAL_JOIN_PREDICATES: &[&str] = &[
+    "st_contains", "st_intersects", "st_within", "st_covers", "st_covered_by",
+    "st_disjoint", "st_touches", "st_overlaps", "st_crosses", "st_equals",
+    "st_dwithin",
+];
+
+/// Bound-column index of arg0 of the first spatial predicate call found under
+/// AND/NOT compositions — the "container" geometry used to pick the R-tree
+/// build side. Shared by the native and distributed spatial-join translators.
+pub fn spatial_join_arg0_bound_index(expr: &ExprRef) -> Option<usize> {
+    match expr.as_ref() {
+        Expr::ScalarFn(crate::functions::scalar::ScalarFn::Builtin(sf))
+            if SPATIAL_JOIN_PREDICATES.contains(&sf.name()) =>
+        {
+            let arg0 = sf.inputs.required(0).ok()?;
+            if let Expr::Column(Column::Bound(bc)) = arg0.as_ref() {
+                Some(bc.index)
+            } else {
+                None
+            }
+        }
+        Expr::BinaryOp { left, right, .. } => {
+            spatial_join_arg0_bound_index(left).or_else(|| spatial_join_arg0_bound_index(right))
+        }
+        Expr::Not(inner) => spatial_join_arg0_bound_index(inner),
+        _ => None,
+    }
+}
+
 pub fn strip_join_side_cols(expr: ExprRef) -> DaftResult<ExprRef> {
     Ok(expr
         .transform(|e| match e.as_ref() {

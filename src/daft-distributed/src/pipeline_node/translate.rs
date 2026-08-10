@@ -13,15 +13,15 @@ use daft_dsl::{
     Expr,
     clustering_is_covered_by,
     expr::{
-        Column,
+        Column, ResolvedColumn,
         agg::extract_agg_expr,
         bound_expr::{BoundAggExpr, BoundExpr, BoundVLLMExpr, BoundWindowExpr},
     },
     join::strip_join_side_cols,
-    resolved_col,
+    left_col, resolved_col, right_col, unresolved_col,
 };
 use daft_logical_plan::{
-    JoinType, LogicalPlan, LogicalPlanRef, SourceInfo,
+    JoinOptions, JoinType, LogicalPlan, LogicalPlanBuilder, LogicalPlanRef, SourceInfo,
     ops,
     partitioning::{HashRepartitionConfig, RepartitionSpec},
 };
@@ -32,7 +32,7 @@ use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, concat::ConcatNode, distinct::DistinctNode,
         explode::ExplodeNode, filter::FilterNode, glob_scan_source::GlobScanSourceNode,
-        in_memory_source::InMemorySourceNode, into_batches::IntoBatchesNode,
+        in_memory_source::InMemorySourceNode, into_batches::IntoBatchesNode, join::BroadcastSpatialJoinNode,
         into_partitions::IntoPartitionsNode, limit::LimitNode,
         monotonically_increasing_id::MonotonicallyIncreasingIdNode, pivot::PivotNode,
         project::ProjectNode, random_shuffle::RandomShuffleNode, sample::SampleNode,
@@ -65,18 +65,9 @@ pub(crate) fn logical_plan_to_pipeline_node(
 
 /// Spatial function names whose presence in a Filter predicate above a Join triggers
 /// the NLJ R-tree rewrite instead of hash-join + post-filter.
-const SPATIAL_PREDICATES: &[&str] = &[
-    "st_contains",
-    "st_intersects",
-    "st_within",
-    "st_covers",
-    "st_covered_by",
-    "st_disjoint",
-    "st_touches",
-    "st_overlaps",
-    "st_crosses",
-    "st_equals",
-];
+// Single source of truth: `daft_dsl::join` (the operator's acceleration list
+// in daft-local-execution intentionally differs — no st_disjoint).
+const SPATIAL_PREDICATES: &[&str] = daft_dsl::join::SPATIAL_JOIN_PREDICATES;
 
 /// Check whether `expr` contains at least one spatial predicate call.
 fn is_spatial_predicate(expr: &daft_dsl::ExprRef) -> bool {
@@ -224,31 +215,12 @@ impl LogicalPlanToPipelineNodeTranslator {
         // R-tree.
         let left_schema_len = join.left.schema().len();
         let build_on_left: bool = (|| {
-            fn spatial_arg0_idx(expr: &daft_dsl::ExprRef) -> Option<usize> {
-                match expr.as_ref() {
-                    Expr::ScalarFn(daft_dsl::functions::scalar::ScalarFn::Builtin(sf))
-                        if SPATIAL_PREDICATES.contains(&sf.func.name()) =>
-                    {
-                        let arg0 = sf.inputs.required(0).ok()?;
-                        if let Expr::Column(Column::Bound(bc)) = arg0.as_ref() {
-                            Some(bc.index)
-                        } else {
-                            None
-                        }
-                    }
-                    Expr::BinaryOp { left, right, .. } => {
-                        spatial_arg0_idx(left).or_else(|| spatial_arg0_idx(right))
-                    }
-                    Expr::Not(inner) => spatial_arg0_idx(inner),
-                    _ => None,
-                }
-            }
             // `spatial_filter` has already been rebound to `join_schema`, so its
             // Bound-column indices are positions in the concatenated [left | right]
             // join output — valid for both call sites (Filter predicate combined with
             // equi keys, and the JoinSide-stripped bare-Join residual combined with
             // equi keys).
-            if let Some(idx) = spatial_arg0_idx(spatial_filter.inner()) {
+            if let Some(idx) = daft_dsl::join::spatial_join_arg0_bound_index(spatial_filter.inner()) {
                 idx < left_schema_len
             } else {
                 // Fallback: build on the side with fewer estimated rows.
@@ -281,8 +253,336 @@ impl LogicalPlanToPipelineNodeTranslator {
             &left_stats,
             &right_stats,
         )?;
-
         Ok(Some(spatial_node))
+    }
+
+    /// Plan a PURE spatial join (inner join, spatial ON, no equality
+    /// conjuncts): broadcast the small side when one fits under the
+    /// threshold; otherwise synthesize a grid partition key (explode by
+    /// geohash covering cells + reference-cell dedup) so giant×giant joins
+    /// run through the hash-partitioned spatial path; otherwise error with
+    /// the available options.
+    fn build_pure_spatial_join_node(
+        &mut self,
+        join: &ops::Join,
+        combined_predicate: daft_dsl::ExprRef,
+    ) -> DaftResult<DistributedPipelineNode> {
+        let left_bytes = join.left.materialized_stats().approx_stats.size_bytes;
+        let right_bytes = join.right.materialized_stats().approx_stats.size_bytes;
+        let threshold = self
+            .plan_config
+            .config
+            .broadcast_join_size_bytes_threshold;
+        if left_bytes.min(right_bytes) <= threshold {
+            return self.build_broadcast_spatial_join_node(join, combined_predicate);
+        }
+        if let Some(node) = self.build_grid_spatial_join_node(join)? {
+            return Ok(node);
+        }
+        Err(common_error::DaftError::not_implemented(format!(
+            "A spatial join without a usable equality partition key on the distributed runner \
+             requires one side small enough to broadcast (left ~{left_bytes} bytes, right \
+             ~{right_bytes} bytes, broadcast_join_size_bytes_threshold = {threshold}), and this \
+             predicate is not supported by the grid rewrite (st_dwithin, st_disjoint, \
+             OR/NOT-composed predicates, and non-column geometry arguments are not supported). Options: raise the threshold via \
+             daft.set_execution_config(broadcast_join_size_bytes_threshold=...), add an equality \
+             partition key (e.g. a geohash cell) to the ON clause, or bucket the larger side and \
+             join per bucket."
+        )))
+    }
+
+    /// Synthesize a grid-partitioned plan for a giant×giant pure spatial join
+    /// (the PBSM / reference-cell method):
+    ///
+    /// 1. Each side is augmented with its geometry's geohash COVERING cells
+    ///    (`st_geohash_cells` of the bbox — strict: it errors rather than
+    ///    silently dropping oversized coverings) and its bbox min corner,
+    ///    then exploded to one row per covering cell.
+    /// 2. The sides are equi-joined on the cell (riding the existing
+    ///    hash-partitioned `SpatialHashJoinNode` path) with the original
+    ///    spatial predicate AND a reference-cell conjunct:
+    ///    `st_geohash(st_point(max(l_min_x, r_min_x), max(l_min_y, r_min_y))) == cell`.
+    ///    The reference point is the min corner of the two bboxes'
+    ///    intersection, which lies in BOTH bboxes, so its cell is in both
+    ///    covers — every true pair meets in exactly that one cell and is
+    ///    emitted exactly once. No post-join dedup needed.
+    /// 3. A final projection restores the original join output schema.
+    ///
+    /// Returns `Ok(None)` when the ON shape isn't supported (predicate whose
+    /// truth doesn't imply bbox intersection — st_dwithin, st_disjoint — or
+    /// geometry arguments that aren't plain columns).
+    fn build_grid_spatial_join_node(
+        &mut self,
+        join: &ops::Join,
+    ) -> DaftResult<Option<DistributedPipelineNode>> {
+        /// Truth implies the geometries' bounding boxes intersect — the
+        /// soundness requirement for covering-cell co-partitioning.
+        const GRID_SUPPORTED_PREDICATES: &[&str] = &[
+            "st_contains", "st_intersects", "st_within", "st_covers",
+            "st_covered_by", "st_touches", "st_overlaps", "st_crosses", "st_equals",
+        ];
+        /// Adaptive precision ladder. The container (arg0) side picks, PER
+        /// ROW, the finest precision in [MIN, MAX] whose bbox covering stays
+        /// within TARGET cells — building-scale rows stay at gh6 (~1.2 km ×
+        /// 0.6 km cells), region-scale rows coarsen instead of erroring. The
+        /// other side emits its covering at EVERY ladder precision (for a
+        /// point: the geohash prefixes of its gh6 cell) so it meets build
+        /// rows at whatever precision each chose.
+        const GRID_MIN_PRECISION: u8 = 4;
+        const GRID_MAX_PRECISION: u8 = 6;
+        const GRID_TARGET_CELLS: u16 = 64;
+        const CELL_L: &str = "__grid_cell_l";
+        const CELL_R: &str = "__grid_cell_r";
+        const MINX_L: &str = "__grid_min_x_l";
+        const MINY_L: &str = "__grid_min_y_l";
+        const MINX_R: &str = "__grid_min_x_r";
+        const MINY_R: &str = "__grid_min_y_r";
+
+        let Some(on_expr) = join.on.inner() else {
+            return Ok(None);
+        };
+
+        // Find the spatial call, its per-side geometry COLUMN names, and
+        // which join side arg0 (the container geometry) lives on.
+        fn find_geoms(expr: &daft_dsl::ExprRef) -> Option<(String, String, JoinSide)> {
+            match expr.as_ref() {
+                Expr::ScalarFn(daft_dsl::functions::scalar::ScalarFn::Builtin(sf))
+                    if GRID_SUPPORTED_PREDICATES.contains(&sf.name()) =>
+                {
+                    let side_col = |e: &daft_dsl::ExprRef| match e.as_ref() {
+                        Expr::Column(Column::Resolved(ResolvedColumn::JoinSide(f, side))) => {
+                            Some((f.name.to_string(), *side))
+                        }
+                        _ => None,
+                    };
+                    let (n0, s0) = side_col(sf.inputs.required(0).ok()?)?;
+                    let (n1, s1) = side_col(sf.inputs.required(1).ok()?)?;
+                    match (s0, s1) {
+                        (JoinSide::Left, JoinSide::Right) => Some((n0, n1, JoinSide::Left)),
+                        (JoinSide::Right, JoinSide::Left) => Some((n1, n0, JoinSide::Right)),
+                        _ => None,
+                    }
+                }
+                Expr::BinaryOp {
+                    op: daft_core::prelude::Operator::And,
+                    left,
+                    right,
+                } => find_geoms(left).or_else(|| find_geoms(right)),
+                _ => None,
+            }
+        }
+        let Some((left_geom, right_geom, arg0_side)) = find_geoms(on_expr) else {
+            return Ok(None);
+        };
+
+        // Augment a side: covering cells + bbox min corner, then explode.
+        // `ignore_empty_and_null = true` drops rows with null/invalid
+        // geometry — they can never satisfy the spatial predicate.
+        // The container (arg0) side uses the ADAPTIVE covering; the other
+        // side the LADDER covering.
+        let augment = |plan: LogicalPlanRef,
+                       geom: &str,
+                       adaptive: bool,
+                       cell: &str,
+                       minx: &str,
+                       miny: &str|
+         -> DaftResult<LogicalPlanRef> {
+            let bbox = daft_geo::st_bbox::st_bbox(unresolved_col(geom));
+            let cells = if adaptive {
+                daft_geo::st_geohash_cells_adaptive(
+                    unresolved_col(geom),
+                    GRID_MIN_PRECISION,
+                    GRID_MAX_PRECISION,
+                    GRID_TARGET_CELLS,
+                )
+            } else {
+                daft_geo::st_geohash_cells_ladder(
+                    unresolved_col(geom),
+                    GRID_MIN_PRECISION,
+                    GRID_MAX_PRECISION,
+                )
+            };
+            let b = LogicalPlanBuilder::from(plan)
+                .with_columns(vec![
+                    cells.alias(cell),
+                    daft_dsl::functions::struct_::get(bbox.clone(), "min_x").alias(minx),
+                    daft_dsl::functions::struct_::get(bbox, "min_y").alias(miny),
+                ])?
+                .explode(vec![unresolved_col(cell)], true, None)?;
+            Ok(b.plan)
+        };
+        let left_aug = augment(
+            join.left.clone(),
+            &left_geom,
+            arg0_side == JoinSide::Left,
+            CELL_L,
+            MINX_L,
+            MINY_L,
+        )?;
+        let right_aug = augment(
+            join.right.clone(),
+            &right_geom,
+            arg0_side == JoinSide::Right,
+            CELL_R,
+            MINX_R,
+            MINY_R,
+        )?;
+
+        // New ON: original spatial predicate AND cell equality AND the
+        // reference-cell dedup conjunct.
+        use daft_schema::{dtype::DataType, field::Field};
+        let lcell = || left_col(Field::new(CELL_L, DataType::Utf8));
+        let rcell = right_col(Field::new(CELL_R, DataType::Utf8));
+        let lminx = left_col(Field::new(MINX_L, DataType::Float64));
+        let lminy = left_col(Field::new(MINY_L, DataType::Float64));
+        let rminx = right_col(Field::new(MINX_R, DataType::Float64));
+        let rminy = right_col(Field::new(MINY_R, DataType::Float64));
+        let gx = lminx
+            .clone()
+            .gt_eq(rminx.clone())
+            .if_else(lminx, rminx);
+        let gy = lminy
+            .clone()
+            .gt_eq(rminy.clone())
+            .if_else(lminy, rminy);
+        // Reference-cell dedup at the PAIR's precision: the adaptive side's
+        // cell length IS the precision the pair met at, and geohash cells are
+        // prefixes of their finer refinements — so compare the reference
+        // point's finest-precision geohash TRUNCATED to that length. (The
+        // equality conjunct makes lcell == rcell for matched pairs, so
+        // comparing against the left cell is fully general.)
+        let ref_cell_fine: daft_dsl::ExprRef = daft_dsl::functions::BuiltinScalarFn::new(
+            daft_geo::StGeohash {
+                precision: GRID_MAX_PRECISION,
+            },
+            vec![daft_geo::st_point::st_point(gx, gy)],
+        )
+        .into();
+        let ref_cell_at_pair_precision = daft_functions_utf8::left(
+            ref_cell_fine,
+            daft_functions_utf8::utf8_length_bytes(lcell()),
+        );
+        let new_on = on_expr
+            .clone()
+            .and(lcell().eq(rcell))
+            .and(ref_cell_at_pair_precision.eq(lcell()));
+
+        let joined = LogicalPlanBuilder::from(left_aug).join(
+            right_aug,
+            Some(new_on),
+            vec![],
+            JoinType::Inner,
+            None,
+            JoinOptions::default(),
+        )?;
+        // Restore the ORIGINAL join output schema (drop helper columns).
+        let out_cols: Vec<daft_dsl::ExprRef> = join
+            .output_schema
+            .fields()
+            .iter()
+            .map(|f| unresolved_col(f.name.as_ref()))
+            .collect();
+        let final_plan = joined.select(out_cols)?.plan;
+
+        // Freshly built nodes have no materialized stats; the spatial hash
+        // path downstream reads approx stats, so enrich before translating.
+        use daft_logical_plan::optimization::{EnrichWithStats, OptimizerRule};
+        let enriched = EnrichWithStats::new(Some(self.plan_config.config.clone()))
+            .try_optimize(final_plan)?
+            .data;
+
+        Ok(Some(self.translate_subtree(&enriched)?))
+    }
+
+    /// Build a `BroadcastSpatialJoinNode` for a PURE spatial join — an inner
+    /// join whose ON predicate is spatial with NO equality conjuncts, so there
+    /// is no key to hash-partition by. The smaller side (by approx stats) is
+    /// broadcast to every task and becomes the local NLJ's build side; every
+    /// task therefore sees the complete build side and no matches can be lost
+    /// across partitions.
+    ///
+    /// Errors when neither side fits under
+    /// `broadcast_join_size_bytes_threshold` — a pure spatial join with two
+    /// large sides needs either a partition key (e.g. a geohash cell) or
+    /// bucketed execution, and silently falling back to a cross-join would
+    /// OOM at exactly the scales where it matters.
+    fn build_broadcast_spatial_join_node(
+        &mut self,
+        join: &ops::Join,
+        combined_predicate: daft_dsl::ExprRef,
+    ) -> DaftResult<DistributedPipelineNode> {
+        let left_node = self.translate_subtree(&join.left)?;
+        let right_node = self.translate_subtree(&join.right)?;
+
+        let join_schema = join.output_schema.clone();
+        let spatial_filter = rebind_predicate(combined_predicate, &join_schema)?;
+
+        // Broadcast-side selection: PREFER the spatial function's arg0 side
+        // (the container geometry — e.g. polygons in st_contains(poly, pt)):
+        // it is the natural R-tree build side and typically the one carrying
+        // precomputed `rtree_*` bbox columns. Fall back to the other side
+        // when the preferred one doesn't fit under the threshold, and error
+        // when neither does.
+        let left_bytes = join.left.materialized_stats().approx_stats.size_bytes;
+        let right_bytes = join.right.materialized_stats().approx_stats.size_bytes;
+        let threshold = self
+            .plan_config
+            .config
+            .broadcast_join_size_bytes_threshold;
+
+        let left_schema_len = join.left.schema().len();
+        let preferred = (|| {
+            // Bound indices in `spatial_filter` are positions in [left | right].
+            if let Some(idx) = daft_dsl::join::spatial_join_arg0_bound_index(spatial_filter.inner()) {
+                if idx < left_schema_len {
+                    JoinSide::Left
+                } else {
+                    JoinSide::Right
+                }
+            } else if left_bytes <= right_bytes {
+                JoinSide::Left
+            } else {
+                JoinSide::Right
+            }
+        })();
+        let (preferred_bytes, other_bytes, other) = match preferred {
+            JoinSide::Left => (left_bytes, right_bytes, JoinSide::Right),
+            JoinSide::Right => (right_bytes, left_bytes, JoinSide::Left),
+        };
+        let build_side = if preferred_bytes <= threshold {
+            preferred
+        } else if other_bytes <= threshold {
+            other
+        } else {
+            return Err(common_error::DaftError::not_implemented(format!(
+                "A spatial join without a usable equality partition key on the distributed runner \
+                 requires one side small enough to broadcast: left ~{left_bytes} bytes, right \
+                 ~{right_bytes} bytes, broadcast_join_size_bytes_threshold = {threshold}. Options: \
+                 raise the threshold via \
+                 daft.set_execution_config(broadcast_join_size_bytes_threshold=...), add an \
+                 equality partition key (e.g. a geohash cell) to the ON clause, or bucket the \
+                 larger side and join per bucket."
+            )));
+        };
+        let (broadcaster, receiver) = match build_side {
+            JoinSide::Left => (left_node, right_node),
+            JoinSide::Right => (right_node, left_node),
+        };
+
+        let node_id = self.get_next_pipeline_node_id();
+        Ok(DistributedPipelineNode::new(
+            Arc::new(BroadcastSpatialJoinNode::new(
+                node_id,
+                &self.plan_config,
+                spatial_filter,
+                build_side,
+                broadcaster,
+                receiver,
+                join_schema,
+                &self.meter,
+            )),
+            &self.meter,
+        ))
     }
 
     pub fn get_next_pipeline_node_id(&mut self) -> NodeID {
@@ -343,10 +643,18 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 // to find the inner Join.
                 let inner_join: Option<&ops::Join> = match filter.input.as_ref() {
                     LogicalPlan::Join(j) if j.join_type == JoinType::Inner => Some(j),
-                    LogicalPlan::Project(p) => match p.input.as_ref() {
-                        LogicalPlan::Join(j) if j.join_type == JoinType::Inner => Some(j),
-                        _ => None,
-                    },
+                    // Only look through PLAIN column projections (see the
+                    // native translator's identical guard).
+                    LogicalPlan::Project(p)
+                        if p.projection.iter().all(|e| {
+                            matches!(e.as_ref(), Expr::Column(_))
+                        }) =>
+                    {
+                        match p.input.as_ref() {
+                            LogicalPlan::Join(j) if j.join_type == JoinType::Inner => Some(j),
+                            _ => None,
+                        }
+                    }
                     _ => None,
                 };
 
@@ -434,9 +742,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 let (remaining, left_eq_keys, right_eq_keys, _null_equals_nulls) =
                     join.on.split_eq_preds();
 
-                if !left_eq_keys.is_empty()
-                    && remaining.inner().is_some_and(is_spatial_predicate)
-                {
+                if remaining.inner().is_some_and(is_spatial_predicate) {
                     // No separate WHERE filter here — the full ON predicate (equi
                     // conjuncts AND spatial residual) already IS the complete
                     // semantics the local NLJ must enforce.
@@ -447,12 +753,34 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                         .clone();
                     let combined_predicate = strip_join_side_cols(full_on)?;
 
-                    if let Some(spatial_node) = self.build_spatial_hash_join_node(
-                        join,
-                        combined_predicate,
-                        &left_eq_keys,
-                        &right_eq_keys,
-                    )? {
+                    let spatial_node = if left_eq_keys.is_empty() {
+                        // PURE spatial join — no key to hash-partition by.
+                        // Broadcast when a side is small; synthesize a grid
+                        // key otherwise; error only when neither applies.
+                        Some(self.build_pure_spatial_join_node(join, combined_predicate)?)
+                    } else {
+                        match self.build_spatial_hash_join_node(
+                            join,
+                            combined_predicate.clone(),
+                            &left_eq_keys,
+                            &right_eq_keys,
+                        )? {
+                            Some(node) => Some(node),
+                            // The hash-partitioned path declined (equi-key
+                            // dtype mismatch across sides: hashing raw values
+                            // could split equal logical keys into different
+                            // partitions). Broadcasting needs no partitioning
+                            // at all, and the NLJ filter carries the FULL ON
+                            // predicate including the equality conjuncts — so
+                            // it is a sound fallback, and better than the
+                            // generic non-equality-join error.
+                            None => Some(
+                                self.build_broadcast_spatial_join_node(join, combined_predicate)?,
+                            ),
+                        }
+                    };
+
+                    if let Some(spatial_node) = spatial_node {
                         self.curr_node.push(spatial_node);
                         // Mark this Join node so that f_up is a no-op for it.
                         let ptr = Arc::as_ptr(node) as *const LogicalPlan;

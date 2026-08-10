@@ -132,6 +132,7 @@ impl PipelineNodeImpl for SpatialHashJoinNode {
             "Right equi key: {}",
             self.right_on.iter().map(|e| e.to_string()).join(", ")
         ));
+        res.push("Local join: NLJ (Rtree)".to_string());
         res.push(format!("Spatial filter: {}", self.spatial_filter));
         res
     }
@@ -140,6 +141,10 @@ impl PipelineNodeImpl for SpatialHashJoinNode {
         self: Arc<Self>,
         plan_context: &mut PlanExecutionContext,
     ) -> TaskBuilderStream {
+        tracing::info!(
+            "SpatialHashJoin: per-task local join is NLJ (Rtree) — spatial filter: {}",
+            self.spatial_filter
+        );
         let left_input = self.left.clone().produce_tasks(plan_context);
         let right_input = self.right.clone().produce_tasks(plan_context);
 

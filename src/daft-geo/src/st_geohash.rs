@@ -103,7 +103,7 @@ pub fn st_geohash(geom: ExprRef, precision: u8) -> ExprRef {
 /// filter geometries (neighborhoods, cities, even large metro areas) at the
 /// precisions typically used for geohash columns, while being small enough
 /// that hitting the cap costs microseconds, not seconds.
-const MAX_COVERING_CELLS: usize = 4096;
+pub(crate) const MAX_COVERING_CELLS: usize = 4096;
 
 /// Compute all geohash cells at `precision` that overlap with the given geometry's bounding box.
 /// Used for automatic geohash-based partition pruning.
@@ -169,7 +169,7 @@ pub fn geohash_covers_geometry(g: &Geometry, precision: usize) -> Vec<String> {
 /// incomplete prefix of the true covering set, not a sound approximation of
 /// it. (`geohash_covers_geometry` never reads `cells` when `capped` is
 /// `true`, so this partial content is never observed by callers.)
-fn collect_covering_cells(
+pub(crate) fn collect_covering_cells(
     cells: &mut std::collections::HashSet<String>,
     start: &str,
     bbox: &geo::Rect<f64>,
