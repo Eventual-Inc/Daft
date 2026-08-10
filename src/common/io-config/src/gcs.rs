@@ -45,22 +45,41 @@ impl Default for GCSConfig {
 impl GCSConfig {
     #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
+        let defaults = Self::default();
         let mut res = vec![];
         if let Some(project_id) = &self.project_id {
             res.push(format!("Project ID = {project_id}"));
         }
-        res.push(format!("Anonymous = {}", self.anonymous));
-        res.push(format!(
-            "Max connections = {}",
-            self.max_connections_per_io_thread
-        ));
-        res.push(format!(
-            "Retry initial backoff ms = {}",
-            self.retry_initial_backoff_ms
-        ));
-        res.push(format!("Connect timeout ms = {}", self.connect_timeout_ms));
-        res.push(format!("Read timeout ms = {}", self.read_timeout_ms));
-        res.push(format!("Max retries = {}", self.num_tries));
+        if self.credentials.is_some() {
+            res.push("Credentials = ***".to_string());
+        }
+        if self.token.is_some() {
+            res.push("Token = ***".to_string());
+        }
+        if self.anonymous != defaults.anonymous {
+            res.push(format!("Anonymous = {}", self.anonymous));
+        }
+        if self.max_connections_per_io_thread != defaults.max_connections_per_io_thread {
+            res.push(format!(
+                "Max connections = {}",
+                self.max_connections_per_io_thread
+            ));
+        }
+        if self.retry_initial_backoff_ms != defaults.retry_initial_backoff_ms {
+            res.push(format!(
+                "Retry initial backoff ms = {}",
+                self.retry_initial_backoff_ms
+            ));
+        }
+        if self.connect_timeout_ms != defaults.connect_timeout_ms {
+            res.push(format!("Connect timeout ms = {}", self.connect_timeout_ms));
+        }
+        if self.read_timeout_ms != defaults.read_timeout_ms {
+            res.push(format!("Read timeout ms = {}", self.read_timeout_ms));
+        }
+        if self.num_tries != defaults.num_tries {
+            res.push(format!("Max retries = {}", self.num_tries));
+        }
         res
     }
 }

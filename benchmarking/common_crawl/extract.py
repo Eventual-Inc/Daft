@@ -42,7 +42,7 @@ def process_html(html_bytes: bytes | None):
         return {"extracted_text": None, "text_length": 0}
 
 
-@daft.udf(
+@daft.func.batch(
     return_dtype=daft.DataType.struct({"extracted_text": daft.DataType.string(), "text_length": daft.DataType.int32()}),
     batch_size=128,
     use_process=True,

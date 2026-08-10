@@ -300,6 +300,7 @@ class DataFrame:
         self._preview = Preview(partition=None, total_rows=None)
         self._metadata: ExecutionMetadata | None = None
         self._num_preview_rows = get_context().daft_execution_config.num_preview_rows
+        self._source_builder: LogicalPlanBuilder | None = None
         # Internal write-target hints for resolver utilities.
         self._resolved_parquet_path: str | None = None
         self._resolved_deltalake_path: str | None = None
@@ -461,7 +462,9 @@ class DataFrame:
             from daft.dataframe.display import MermaidFormatter
             from daft.utils import in_notebook
 
-            instance = MermaidFormatter(self.__builder, show_all, simple, is_cached)
+            instance = MermaidFormatter(
+                self._source_builder or self.__builder, show_all, simple, is_cached or self._source_builder is not None
+            )
             if file is not None:
                 # if we are printing to a file, we print the markdown representation of the plan
                 text = instance._repr_markdown_()
@@ -481,7 +484,12 @@ class DataFrame:
 
             print_to_file("However here is the logical plan used to produce this result:\n", file=file)
 
-        builder = self.__builder
+        if self._source_builder is not None:
+            builder = self._source_builder
+            if self._result_cache is None:
+                print_to_file("However here is the logical plan used to produce this result:\n", file=file)
+        else:
+            builder = self.__builder
         print_to_file("== Unoptimized Logical Plan ==\n")
         print_to_file(builder.pretty_print(simple, format=format))
         if show_all:
@@ -1698,10 +1706,9 @@ class DataFrame:
 
         from daft import from_pydict
 
-        # NOTE: We are losing the history of the plan here.
-        # This is due to the fact that the logical plan of the write_iceberg returns datafiles but we want to return the above data
         df = from_pydict(with_operations)
         df._metadata = write_df._metadata
+        df._source_builder = write_df._get_current_builder()
         return df
 
     def _write_iceberg_with_checkpoint(
@@ -1796,6 +1803,7 @@ class DataFrame:
                 )
             result = from_pydict(with_operations)
             result._metadata = write_df._metadata
+            result._source_builder = write_df._get_current_builder()
             return result
 
         # ── 1. Check-first: did a previous attempt already land?
@@ -2275,6 +2283,7 @@ class DataFrame:
             }
         )
         with_operations._metadata = write_df._metadata
+        with_operations._source_builder = write_df._get_current_builder()
         with_operations._resolved_deltalake_path = table_uri
         with_operations._resolved_deltalake_table = resolved_deltatable
         with_operations._resolved_deltalake_io_config = io_config
@@ -2669,6 +2678,7 @@ class DataFrame:
                 }
             )
             result._metadata = write_df._metadata
+            result._source_builder = write_df._get_current_builder()
             return result
 
         # Defensive retry — parity with iceberg's max_retries = 2. We narrow
@@ -2753,11 +2763,9 @@ class DataFrame:
             raise ValueError(
                 f"Schema mismatch between the data sink's schema and the result's schema:\nSink schema:\n{sink.schema()}\nResult schema:\n{micropartition.schema()}"
             )
-        # TODO(desmond): Connect the old and new logical plan builders so that a .explain() shows the
-        # plan from the source all the way to the sink to the sink's results. In theory we can do this
-        # for all other sinks too.
         df = DataFrame._from_micropartitions(micropartition)
         df._metadata = write_df._metadata
+        df._source_builder = write_df._get_current_builder()
         return df
 
     @DataframePublicAPI
@@ -2947,7 +2955,7 @@ class DataFrame:
         from daft.dependencies import pa as _pa
         from daft.recordbatch import MicroPartition
 
-        return DataFrame._from_micropartitions(
+        result_df = DataFrame._from_micropartitions(
             MicroPartition.from_pydict(
                 {
                     "num_fragments": _pa.array([stats["num_fragments"]], type=_pa.int64()),
@@ -2957,6 +2965,9 @@ class DataFrame:
                 }
             )
         )
+        # No Sink node in the plan (merge bypasses Daft's planner), but show the source plan
+        result_df._source_builder = self._get_current_builder()
+        return result_df
 
     @DataframePublicAPI
     def write_turbopuffer(
@@ -7013,7 +7024,7 @@ class GroupedDataFrame:
             >>>
             >>> df = daft.from_pydict({"group": ["a", "a", "a", "b", "b", "b"], "data": [1, 20, 30, 4, 50, 600]})
             >>>
-            >>> @daft.udf(return_dtype=daft.DataType.float64())
+            >>> @daft.func.batch(return_dtype=daft.DataType.float64())
             ... def std_dev(data):
             ...     return [statistics.stdev(data)]
             >>>

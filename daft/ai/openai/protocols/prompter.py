@@ -102,9 +102,15 @@ class OpenAIPrompter(Prompter):
         )
         self.llm = AsyncOpenAI(**merged_provider_options)
 
-        # Remaining options become generation config
+        # Remaining non-provider and non-UDF options become generation config.
+        # UDF options are consumed by the descriptor and must not be forwarded
+        # to the OpenAI request methods.
+        non_generation_keys = {
+            *OpenAIProviderOptions.__annotations__,
+            *UDFOptions.__annotations__,
+        }
         self.generation_config = {
-            k: v for k, v in prompt_options_dict.items() if k not in OpenAIProviderOptions.__annotations__.keys()
+            key: value for key, value in prompt_options_dict.items() if key not in non_generation_keys
         }
 
     IMAGE_EXTENSIONS = frozenset(
@@ -311,8 +317,11 @@ class OpenAIPrompter(Prompter):
     async def _prompt_with_chat_completions(self, messages_list: list[dict[str, Any]]) -> Any:
         """Generate responses using the Chat Completions API."""
         if self.return_format is not None:
-            # Use structured outputs with Pydantic model
-            response = await self.llm.chat.completions.parse(
+            # Structured outputs: `.parse()` is only on the `beta` namespace in
+            # older openai SDKs (<1.92); newer versions alias it from `beta` to
+            # the main `chat.completions`. Route through `beta` for compat across
+            # supported openai versions. See issue #5888.
+            response = await self.llm.beta.chat.completions.parse(
                 model=self.model,
                 messages=messages_list,
                 response_format=self.return_format,
