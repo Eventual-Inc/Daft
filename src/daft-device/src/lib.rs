@@ -76,7 +76,9 @@ pub(crate) mod testing {
         }
     }
 
-    impl DeviceAllocator for EmulatedDeviceAllocator {
+    // SAFETY: storage, copies, and events all delegate to `HostAllocator`; only
+    // the reported device identity differs.
+    unsafe impl DeviceAllocator for EmulatedDeviceAllocator {
         fn device(&self) -> Device {
             EMULATED_DEVICE
         }

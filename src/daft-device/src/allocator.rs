@@ -78,7 +78,24 @@ impl DeviceAllocation {
 ///
 /// All operations are stream-ordered (see [`DeviceStream`]); host backends may
 /// implement them synchronously.
-pub trait DeviceAllocator: Send + Sync + fmt::Debug {
+///
+/// # Safety
+///
+/// Safe code (e.g. [`crate::DeviceBuffer`]) relies on implementations
+/// upholding the contracts documented on each method, so implementing this
+/// trait is a soundness promise (like `GlobalAlloc`). In particular:
+///
+/// - [`Self::allocate`] must return a valid, exclusively owned allocation of
+///   at least `len` bytes on [`Self::device`], aligned to at least
+///   [`MIN_DEVICE_ALIGNMENT`], that stays valid until passed to
+///   [`Self::deallocate`], and [`DeviceAllocation::len`] must not exceed the
+///   actual usable size.
+/// - [`Self::copy_device_to_host`] must have initialized all `len` bytes at
+///   `dst` when it returns `Ok` (the caller may `set_len` a `Vec` over them).
+/// - Returned [`SyncEvent`]s must genuinely guard the completion of the work
+///   they were returned for: after a successful `synchronize`, the copy's
+///   effects are visible and its source may be released.
+pub unsafe trait DeviceAllocator: Send + Sync + fmt::Debug {
     /// The device this allocator serves.
     fn device(&self) -> Device;
 

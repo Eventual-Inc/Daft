@@ -47,7 +47,13 @@ impl Drop for DeviceBufferInner {
                 .get_mut()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .clone();
-            let _ = event.synchronize();
+            if event.synchronize().is_err() {
+                // If we cannot prove pending producers finished, freeing the
+                // memory risks a use-after-free on the device; leaking the
+                // allocation is the safer failure mode (dropping the handle
+                // does not free the memory).
+                return;
+            }
             // SAFETY: `allocation` was produced by `self.allocator` at
             // construction and this is the last owner, so it is never used
             // again. All producing work was synchronized above; consumers are
@@ -108,8 +114,13 @@ impl DeviceBuffer {
     }
 
     /// Copies `data` from host memory into a new buffer on `allocator`'s
-    /// device. The copy is ordered on `stream` and guarded by the buffer's
-    /// [sync event](Self::synchronize).
+    /// device.
+    ///
+    /// The copy is ordered on `stream` and *completes before this returns*:
+    /// this is a safe API borrowing `data`, and the borrow must not end while
+    /// an asynchronous backend could still be reading it. Zero-copy /
+    /// asynchronous ingestion (DLPack, Arrow C Device) adopts externally owned
+    /// memory instead of copying from a borrow and is a later slice.
     pub fn from_host(
         allocator: Arc<dyn DeviceAllocator>,
         data: &[u8],
@@ -119,14 +130,15 @@ impl DeviceBuffer {
         if !data.is_empty() {
             // SAFETY: `data_ptr` points at the start of a live allocation of at
             // least `data.len()` bytes, freshly allocated above so nothing else
-            // accesses it.
+            // accesses it, and `data` remains borrowed until the copy completes
+            // (synchronized below).
             let event = unsafe {
                 buffer
                     .inner
                     .allocator
                     .copy_host_to_device(data, buffer.data_ptr(), stream)?
             };
-            buffer.set_sync_event(event);
+            event.synchronize()?;
         }
         Ok(buffer)
     }
@@ -206,7 +218,10 @@ impl DeviceBuffer {
     /// after the current [`Self::sync_event`] (e.g. by making its stream wait
     /// on that event), so that waiting on the newest event alone is always
     /// sufficient. [`Self::synchronize`] and the buffer's final release both
-    /// rely on this.
+    /// rely on this. With concurrent producers, reading the current event and
+    /// then calling this races (both may chain off the same predecessor and
+    /// one guard is lost) — use [`Self::update_sync_event`], which performs
+    /// the read-chain-store atomically.
     ///
     /// The event is shared by all clones/slices of the buffer.
     pub fn set_sync_event(&self, event: Arc<dyn SyncEvent>) {
@@ -215,6 +230,25 @@ impl DeviceBuffer {
             .sync_event
             .lock()
             .expect("sync_event lock poisoned") = event;
+    }
+
+    /// Atomically replaces the sync event with one derived from the current
+    /// event.
+    ///
+    /// The internal lock is held across `chain`, so concurrent producers
+    /// serialize: each sees the event installed by the previous producer and
+    /// must return an event ordered after both it and the newly enqueued work
+    /// (e.g. by making the producing stream wait on the current event before
+    /// enqueueing). Keep `chain` short — every clone/slice of the buffer
+    /// blocks on this lock while it runs.
+    pub fn update_sync_event(&self, chain: impl FnOnce(Arc<dyn SyncEvent>) -> Arc<dyn SyncEvent>) {
+        let mut guard = self
+            .inner
+            .sync_event
+            .lock()
+            .expect("sync_event lock poisoned");
+        let current = guard.clone();
+        *guard = chain(current);
     }
 
     /// Blocks the calling host thread until the work producing this buffer's
@@ -346,6 +380,41 @@ mod tests {
         assert_eq!(buffer.as_ptr().as_ptr() as usize % MIN_DEVICE_ALIGNMENT, 0);
         assert_eq!(buffer.device(), Device::CPU);
         assert_eq!(buffer.stream(), DeviceStream::DEFAULT);
+    }
+
+    #[derive(Debug)]
+    struct FailingSyncEvent;
+
+    impl SyncEvent for FailingSyncEvent {
+        fn synchronize(&self) -> DaftResult<()> {
+            Err(DaftError::InternalError("device lost".to_string()))
+        }
+    }
+
+    #[test]
+    fn failed_synchronization_leaks_instead_of_freeing() {
+        let (emulated, allocator) = host_backed();
+        let buffer = DeviceBuffer::from_host(allocator, &[1u8; 8], DeviceStream::DEFAULT).unwrap();
+        buffer.set_sync_event(Arc::new(FailingSyncEvent));
+        assert!(buffer.synchronize().is_err());
+        drop(buffer);
+        // Intentionally leaked: without proof the producer finished, freeing
+        // risks a device use-after-free, so the allocation must stay live.
+        assert_eq!(emulated.host().live_allocations(), 1);
+    }
+
+    #[test]
+    fn update_sync_event_chains_off_the_current_event() {
+        let (_, allocator) = host_backed();
+        let buffer = DeviceBuffer::from_host(allocator, &[0u8; 4], DeviceStream::DEFAULT).unwrap();
+        let first: Arc<dyn SyncEvent> = Arc::new(ReadySyncEvent);
+        buffer.set_sync_event(first.clone());
+        buffer.update_sync_event(|current| {
+            assert!(Arc::ptr_eq(&current, &first));
+            Arc::new(ReadySyncEvent)
+        });
+        assert!(!Arc::ptr_eq(&buffer.sync_event(), &first));
+        assert!(buffer.synchronize().is_ok());
     }
 
     #[test]

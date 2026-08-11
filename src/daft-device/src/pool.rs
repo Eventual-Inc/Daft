@@ -151,7 +151,10 @@ impl Drop for PooledDeviceAllocator {
     }
 }
 
-impl DeviceAllocator for PooledDeviceAllocator {
+// SAFETY: every handed-out allocation originates from `inner.allocate` (pooled
+// blocks have `len` >= their class >= the request), and all copies and events
+// are forwarded to `inner` unchanged.
+unsafe impl DeviceAllocator for PooledDeviceAllocator {
     fn device(&self) -> Device {
         self.inner.device()
     }

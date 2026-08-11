@@ -59,7 +59,10 @@ impl HostAllocator {
     }
 }
 
-impl DeviceAllocator for HostAllocator {
+// SAFETY: allocations come from the global allocator with `HOST_ALIGNMENT` and
+// exact lengths; copies are synchronous memcpys that fully initialize their
+// destinations; the returned events are always-complete `ReadySyncEvent`s.
+unsafe impl DeviceAllocator for HostAllocator {
     fn device(&self) -> Device {
         Device::CPU
     }
