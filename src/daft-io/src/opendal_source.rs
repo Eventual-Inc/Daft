@@ -296,6 +296,7 @@ impl ObjectSource for OpenDALSource {
             return Ok(LSResult {
                 files: vec![],
                 continuation_token: None,
+                not_found_if_empty: false,
             });
         }
 
@@ -345,6 +346,7 @@ impl ObjectSource for OpenDALSource {
         Ok(LSResult {
             files,
             continuation_token: None,
+            not_found_if_empty: false,
         })
     }
 
