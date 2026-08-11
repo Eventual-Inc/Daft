@@ -167,11 +167,13 @@ pub fn pullback_stats() -> &'static PullbackStats {
 /// (Explicit user-requested exits like `to_cupy()` / `__dlpack__` use
 /// [`DeviceBuffer::copy_to_host`] directly and are not pullbacks.)
 ///
-/// Buffers already resident on CPU are copied out without being counted: there
-/// is no device round trip to attribute.
+/// Buffers in host-accessible memory (CPU, pinned host, managed) are copied
+/// out without being counted: there is no discrete device-to-host round trip
+/// to attribute (managed-memory page migration is the device backend's cost,
+/// not a pullback).
 pub fn materialize_to_host(buffer: &DeviceBuffer, reason: PullbackReason) -> DaftResult<Vec<u8>> {
     let data = buffer.copy_to_host()?;
-    if !buffer.device().is_cpu() {
+    if !buffer.device().is_host_accessible() {
         pullback_stats().record(reason, data.len() as u64);
     }
     Ok(data)

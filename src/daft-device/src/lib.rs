@@ -111,11 +111,12 @@ pub(crate) mod testing {
         unsafe fn copy_device_to_host(
             &self,
             src: NonNull<u8>,
-            dst: &mut [u8],
+            dst: NonNull<u8>,
+            len: usize,
             stream: DeviceStream,
         ) -> DaftResult<()> {
             // SAFETY: forwarded contract; `src` points into host-backed storage.
-            unsafe { self.host.copy_device_to_host(src, dst, stream) }
+            unsafe { self.host.copy_device_to_host(src, dst, len, stream) }
         }
 
         unsafe fn copy_device_to_device(

@@ -12,20 +12,42 @@ use crate::{Device, DeviceAllocation, DeviceAllocator, DeviceStream, SyncEvent};
 /// Smallest size class: sub-256-byte requests are rounded up to one block.
 const MIN_POOL_BLOCK: usize = 256;
 
-/// Rounds a requested length up to its size class (the next power of two, at
-/// least [`MIN_POOL_BLOCK`]). Pathological lengths whose next power of two
-/// would overflow are used as-is, bypassing rounding.
+/// Largest power-of-two size class. Rounding to the next power of two wastes
+/// up to 2x, which is unacceptable for large column chunks, so requests above
+/// this are instead rounded up to a [`LARGE_CLASS_GRANULE`] multiple (waste
+/// bounded by one granule).
+const MAX_POW2_CLASS: usize = 1 << 20;
+
+/// Granularity of size classes above [`MAX_POW2_CLASS`].
+const LARGE_CLASS_GRANULE: usize = 64 * 1024;
+
+/// Rounds a requested length up to its size class: the next power of two (at
+/// least [`MIN_POOL_BLOCK`]) up to [`MAX_POW2_CLASS`], and the next
+/// [`LARGE_CLASS_GRANULE`] multiple above that. Pathological lengths whose
+/// rounding would overflow are used as-is, bypassing rounding.
 fn request_class(len: usize) -> usize {
-    let len = len.max(MIN_POOL_BLOCK);
-    len.checked_next_power_of_two().unwrap_or(len)
+    if len <= MAX_POW2_CLASS {
+        // Cannot overflow: len <= MAX_POW2_CLASS, itself a power of two.
+        len.max(MIN_POOL_BLOCK).next_power_of_two()
+    } else {
+        len.checked_add(LARGE_CLASS_GRANULE - 1)
+            .map_or(len, |bumped| {
+                bumped / LARGE_CLASS_GRANULE * LARGE_CLASS_GRANULE
+            })
+    }
 }
 
-/// The size class a freed block is stored under: the largest power of two not
-/// exceeding its actual length, so every block in class `c` has at least `c`
-/// usable bytes.
+/// The size class a freed block is stored under: its length rounded *down*
+/// (largest power of two, or largest granule multiple, not exceeding it), so
+/// every block stored in class `c` has at least `c` usable bytes and can serve
+/// any request of class `c`.
 fn storage_class(len: usize) -> usize {
     debug_assert!(len > 0);
-    1usize << (usize::BITS - 1 - len.leading_zeros())
+    if len <= MAX_POW2_CLASS {
+        1usize << (usize::BITS - 1 - len.leading_zeros())
+    } else {
+        (len / LARGE_CLASS_GRANULE * LARGE_CLASS_GRANULE).max(MAX_POW2_CLASS)
+    }
 }
 
 /// Point-in-time counters for a [`PooledDeviceAllocator`].
@@ -63,8 +85,9 @@ struct PoolState {
 /// that stream claims them, capacity pressure evicts them, or [`Self::trim`]
 /// releases them.
 ///
-/// Requests are rounded up to power-of-two size classes (min 256 bytes) and
-/// reused only within their exact class; freed blocks above the configured
+/// Requests are rounded up to size classes — powers of two (min 256 bytes) up
+/// to 1 MiB, then 64 KiB granules so large chunks waste at most one granule —
+/// and reused only within their exact class; freed blocks above the configured
 /// capacity are released to the backing allocator immediately.
 pub struct PooledDeviceAllocator {
     inner: Arc<dyn DeviceAllocator>,
@@ -188,11 +211,12 @@ impl DeviceAllocator for PooledDeviceAllocator {
     unsafe fn copy_device_to_host(
         &self,
         src: NonNull<u8>,
-        dst: &mut [u8],
+        dst: NonNull<u8>,
+        len: usize,
         stream: DeviceStream,
     ) -> DaftResult<()> {
         // SAFETY: forwarded contract; pooled allocations are backed by `inner`.
-        unsafe { self.inner.copy_device_to_host(src, dst, stream) }
+        unsafe { self.inner.copy_device_to_host(src, dst, len, stream) }
     }
 
     unsafe fn copy_device_to_device(
@@ -224,7 +248,16 @@ mod tests {
         assert_eq!(request_class(1), MIN_POOL_BLOCK);
         assert_eq!(request_class(256), 256);
         assert_eq!(request_class(257), 512);
-        assert_eq!(request_class(1 << 20), 1 << 20);
+        assert_eq!(request_class(MAX_POW2_CLASS), MAX_POW2_CLASS);
+        // Above MAX_POW2_CLASS: granule rounding, not power-of-two doubling.
+        assert_eq!(
+            request_class(MAX_POW2_CLASS + 1),
+            MAX_POW2_CLASS + LARGE_CLASS_GRANULE
+        );
+        let big = 1_100_000_000; // ~1.1 GB must not become 2 GB
+        let class = request_class(big);
+        assert!(class >= big && class < big + LARGE_CLASS_GRANULE);
+        assert_eq!(class % LARGE_CLASS_GRANULE, 0);
         // Overflowing sizes bypass rounding (and will fail at the backing
         // allocator rather than panic here).
         assert_eq!(request_class(usize::MAX), usize::MAX);
@@ -232,7 +265,39 @@ mod tests {
         assert_eq!(storage_class(256), 256);
         assert_eq!(storage_class(300), 256);
         assert_eq!(storage_class(512), 512);
-        assert_eq!(storage_class(usize::MAX), 1 << (usize::BITS - 1));
+        assert_eq!(storage_class(MAX_POW2_CLASS + 5), MAX_POW2_CLASS);
+        assert_eq!(storage_class(class), class);
+        assert_eq!(
+            storage_class(usize::MAX),
+            usize::MAX / LARGE_CLASS_GRANULE * LARGE_CLASS_GRANULE
+        );
+
+        // Every storable block can serve requests of its storage class.
+        for len in [1, 256, 300, 4097, MAX_POW2_CLASS + 1, big, class] {
+            assert!(storage_class(request_class(len)) >= len.max(1));
+            assert!(request_class(len) >= len);
+        }
+    }
+
+    #[test]
+    fn large_blocks_are_reused_within_their_granule_class() {
+        let (_, pool) = pooled(1 << 30);
+        let stream = DeviceStream::DEFAULT;
+        let len = MAX_POW2_CLASS + 3;
+
+        let a = pool.allocate(len, stream).unwrap();
+        let ptr = a.ptr();
+        assert_eq!(a.len(), MAX_POW2_CLASS + LARGE_CLASS_GRANULE);
+        // SAFETY: `a` came from `pool.allocate` and is not used afterwards.
+        unsafe { pool.deallocate(a, stream) };
+
+        let b = pool
+            .allocate(MAX_POW2_CLASS + LARGE_CLASS_GRANULE, stream)
+            .unwrap();
+        assert_eq!(b.ptr(), ptr);
+        // SAFETY: `b` came from `pool.allocate` and is not used afterwards.
+        unsafe { pool.deallocate(b, stream) };
+        assert_eq!(pool.stats().hits, 1);
     }
 
     #[test]

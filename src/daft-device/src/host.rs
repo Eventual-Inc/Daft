@@ -109,13 +109,14 @@ impl DeviceAllocator for HostAllocator {
     unsafe fn copy_device_to_host(
         &self,
         src: NonNull<u8>,
-        dst: &mut [u8],
+        dst: NonNull<u8>,
+        len: usize,
         _stream: DeviceStream,
     ) -> DaftResult<()> {
-        // SAFETY: the caller guarantees `src` has at least `dst.len()` bytes
-        // available in a live allocation; `dst` is a valid exclusive slice, so
-        // no overlap.
-        unsafe { ptr::copy_nonoverlapping(src.as_ptr(), dst.as_mut_ptr(), dst.len()) };
+        // SAFETY: the caller guarantees `src` has at least `len` bytes
+        // available in a live allocation, and `dst` is valid for `len` bytes
+        // of writes with no overlap.
+        unsafe { ptr::copy_nonoverlapping(src.as_ptr(), dst.as_ptr(), len) };
         Ok(())
     }
 
@@ -205,8 +206,9 @@ mod tests {
             event.synchronize().unwrap();
 
             let mut out = vec![0u8; 256];
+            let dst = NonNull::new(out.as_mut_ptr()).unwrap();
             allocator
-                .copy_device_to_host(b.ptr(), &mut out, DeviceStream::DEFAULT)
+                .copy_device_to_host(b.ptr(), dst, 256, DeviceStream::DEFAULT)
                 .unwrap();
             assert_eq!(out, src_data);
 

@@ -33,10 +33,22 @@ impl fmt::Debug for DeviceBufferInner {
 impl Drop for DeviceBufferInner {
     fn drop(&mut self) {
         if let Some(allocation) = self.allocation.take() {
+            // The sync event transitively guards all outstanding work on this
+            // buffer (see `DeviceBuffer::set_sync_event`); wait on it so the
+            // free cannot race producers still writing on other streams. The
+            // free itself is only ordered against `self.stream`. Best-effort:
+            // a sync failure must not panic in drop.
+            let event = self
+                .sync_event
+                .get_mut()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone();
+            let _ = event.synchronize();
             // SAFETY: `allocation` was produced by `self.allocator` at
             // construction and this is the last owner, so it is never used
-            // again. Consumers are responsible for ordering their reads before
-            // dropping their reference (see `DeviceBuffer::synchronize`).
+            // again. All producing work was synchronized above; consumers are
+            // responsible for ordering their reads before dropping their
+            // reference (see `DeviceBuffer::synchronize`).
             unsafe { self.allocator.deallocate(allocation, self.stream) };
         }
     }
@@ -183,7 +195,16 @@ impl DeviceBuffer {
     /// Replaces the buffer's sync event. Called by producers (H2D copies,
     /// kernel launches) after enqueueing work that writes the buffer.
     ///
-    /// Note that the event is shared by all clones/slices of the buffer.
+    /// # Contract
+    ///
+    /// The new event must *transitively guard all previously enqueued work* on
+    /// this buffer: before enqueueing new work, the producer must order it
+    /// after the current [`Self::sync_event`] (e.g. by making its stream wait
+    /// on that event), so that waiting on the newest event alone is always
+    /// sufficient. [`Self::synchronize`] and the buffer's final release both
+    /// rely on this.
+    ///
+    /// The event is shared by all clones/slices of the buffer.
     pub fn set_sync_event(&self, event: Arc<dyn SyncEvent>) {
         *self
             .inner
@@ -206,17 +227,24 @@ impl DeviceBuffer {
     /// go through [`crate::materialize_to_host`] instead so they are counted.
     pub fn copy_to_host(&self) -> DaftResult<Vec<u8>> {
         self.synchronize()?;
-        let mut out = vec![0u8; self.len];
-        if !out.is_empty() {
+        let mut out = Vec::with_capacity(self.len);
+        if self.len > 0 {
+            let dst = NonNull::new(out.as_mut_ptr())
+                .expect("Vec with non-zero capacity has a non-null pointer");
             // SAFETY: `data_ptr` points into the live allocation with `len`
-            // bytes available (slice construction is bounds-checked), and all
-            // producing work was synchronized above.
+            // bytes available (slice construction is bounds-checked), all
+            // producing work was synchronized above, and `dst` is `len` bytes
+            // of exclusively owned spare capacity. The copy completes
+            // synchronously and initializes all `len` bytes, so `set_len` is
+            // sound.
             unsafe {
                 self.inner.allocator.copy_device_to_host(
                     self.data_ptr(),
-                    &mut out,
+                    dst,
+                    self.len,
                     self.inner.stream,
                 )?;
+                out.set_len(self.len);
             }
         }
         Ok(out)

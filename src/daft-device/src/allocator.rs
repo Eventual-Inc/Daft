@@ -115,18 +115,26 @@ pub trait DeviceAllocator: Send + Sync + fmt::Debug {
         stream: DeviceStream,
     ) -> DaftResult<Arc<dyn SyncEvent>>;
 
-    /// Copies `dst.len()` bytes from device memory at `src` into `dst`,
+    /// Copies `len` bytes from device memory at `src` to host memory at `dst`,
     /// completing synchronously: when this returns, `dst` holds the data.
+    ///
+    /// `dst` may be uninitialized host memory (which is why this takes a raw
+    /// pointer rather than a slice: forming a reference to uninitialized bytes
+    /// is undefined behavior, and the pullback path fills freshly reserved
+    /// `Vec` capacity).
     ///
     /// # Safety
     ///
     /// `src` must point into a live allocation from this allocator with at
-    /// least `dst.len()` bytes available, and all device work writing that
-    /// region must be ordered before this copy on `stream`.
+    /// least `len` bytes available, and all device work writing that region
+    /// must be ordered before this copy on `stream`. `dst` must be valid for
+    /// writes of `len` bytes of host memory not overlapping `src`'s region,
+    /// with no concurrent access by anything else.
     unsafe fn copy_device_to_host(
         &self,
         src: NonNull<u8>,
-        dst: &mut [u8],
+        dst: NonNull<u8>,
+        len: usize,
         stream: DeviceStream,
     ) -> DaftResult<()>;
 
