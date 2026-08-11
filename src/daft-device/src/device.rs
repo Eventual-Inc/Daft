@@ -106,20 +106,29 @@ impl fmt::Display for DeviceType {
 
 /// Identity of a physical memory space: a device type plus an ordinal, matching
 /// the `(device_type, device_id)` pair of DLPack and the Arrow C Device model.
+///
+/// Fields are private so every construction path goes through [`Self::new`],
+/// which canonicalizes the identity: there is only one host memory space, so a
+/// [`DeviceType::Cpu`] ordinal is normalized to 0 (interchange data is allowed
+/// to carry an arbitrary CPU ordinal) and `Device::new(DeviceType::Cpu, 1) ==
+/// Device::CPU` holds for equality, hashing, and allocator registry lookups.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Device {
-    /// The kind of device.
-    pub device_type: DeviceType,
-    /// Ordinal of the device within its type (e.g. CUDA device index).
-    pub device_id: i32,
+    device_type: DeviceType,
+    device_id: i32,
 }
 
 impl Device {
     /// Host (CPU) memory.
     pub const CPU: Self = Self::new(DeviceType::Cpu, 0);
 
-    /// Creates a device from a type and ordinal.
+    /// Creates a device from a type and ordinal (normalizing the meaningless
+    /// CPU ordinal to 0).
     pub const fn new(device_type: DeviceType, device_id: i32) -> Self {
+        let device_id = match device_type {
+            DeviceType::Cpu => 0,
+            _ => device_id,
+        };
         Self {
             device_type,
             device_id,
@@ -129,6 +138,16 @@ impl Device {
     /// The CUDA device with the given ordinal.
     pub const fn cuda(device_id: i32) -> Self {
         Self::new(DeviceType::Cuda, device_id)
+    }
+
+    /// The kind of device.
+    pub const fn device_type(&self) -> DeviceType {
+        self.device_type
+    }
+
+    /// Ordinal of the device within its type (e.g. CUDA device index).
+    pub const fn device_id(&self) -> i32 {
+        self.device_id
     }
 
     /// Whether this is host (CPU) memory.
@@ -207,6 +226,16 @@ mod tests {
         assert_eq!(Device::CPU.to_string(), "cpu");
         assert_eq!(Device::cuda(3).to_string(), "cuda:3");
         assert_eq!(Device::new(DeviceType::Rocm, 1).to_string(), "rocm:1");
+    }
+
+    #[test]
+    fn cpu_ordinal_is_normalized() {
+        assert_eq!(Device::new(DeviceType::Cpu, 3), Device::CPU);
+        assert_eq!(Device::new(DeviceType::Cpu, 3).device_id(), 0);
+        // Non-CPU ordinals are meaningful and preserved (including pinned host
+        // memory, whose ordinal names the owning device).
+        assert_eq!(Device::cuda(3).device_id(), 3);
+        assert_eq!(Device::new(DeviceType::CudaHost, 2).device_id(), 2);
     }
 
     #[test]

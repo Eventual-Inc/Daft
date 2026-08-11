@@ -106,8 +106,9 @@ pub trait DeviceAllocator: Send + Sync + fmt::Debug {
     /// # Safety
     ///
     /// `dst` must point into a live allocation from this allocator with at
-    /// least `src.len()` bytes available, and no concurrent device work may
-    /// access that region except as ordered on `stream`.
+    /// least `src.len()` bytes available, the destination region must not
+    /// overlap `src`, and no concurrent device work may access that region
+    /// except as ordered on `stream`.
     unsafe fn copy_host_to_device(
         &self,
         src: &[u8],

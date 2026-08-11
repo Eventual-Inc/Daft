@@ -35,9 +35,13 @@ impl Drop for DeviceBufferInner {
         if let Some(allocation) = self.allocation.take() {
             // The sync event transitively guards all outstanding work on this
             // buffer (see `DeviceBuffer::set_sync_event`); wait on it so the
-            // free cannot race producers still writing on other streams. The
-            // free itself is only ordered against `self.stream`. Best-effort:
-            // a sync failure must not panic in drop.
+            // free cannot race producers still writing on other streams (the
+            // free itself is only ordered against `self.stream`). Blocking the
+            // host here is the deliberately conservative v1 policy: it only
+            // stalls when a producer is still in flight at release time, and
+            // an async backend can avoid even that by deferring frees behind
+            // recorded events once that machinery exists. Best-effort: a sync
+            // failure must not panic in drop.
             let event = self
                 .sync_event
                 .get_mut()

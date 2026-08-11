@@ -160,11 +160,14 @@ impl DeviceAllocator for PooledDeviceAllocator {
         let class = request_class(len);
         {
             let mut state = self.state.lock().expect("pool lock poisoned");
-            if let Some(block) = state
-                .free_lists
-                .get_mut(&(stream, class))
-                .and_then(Vec::pop)
-            {
+            let key = (stream, class);
+            if let Some(list) = state.free_lists.get_mut(&key) {
+                let block = list.pop().expect("free lists are never left empty");
+                // Drop drained entries so `free_lists` only ever holds
+                // non-empty lists (the eviction path relies on this).
+                if list.is_empty() {
+                    state.free_lists.remove(&key);
+                }
                 debug_assert!(block.len() >= class && class >= len);
                 state.stats.hits += 1;
                 state.stats.pooled_bytes -= block.len();
@@ -178,9 +181,37 @@ impl DeviceAllocator for PooledDeviceAllocator {
 
     unsafe fn deallocate(&self, allocation: DeviceAllocation, stream: DeviceStream) {
         let class = storage_class(allocation.len());
+        // Blocks released to the backing allocator, with the stream each was
+        // pooled under (frees stay ordered on their own stream). Deallocation
+        // happens after the pool lock is dropped.
+        let mut released: Vec<(DeviceStream, DeviceAllocation)> = Vec::new();
         {
             let mut state = self.state.lock().expect("pool lock poisoned");
-            if state.stats.pooled_bytes + allocation.len() <= self.max_pool_bytes {
+            if allocation.len() <= self.max_pool_bytes {
+                // Make room by evicting retained blocks (arbitrary order):
+                // freshly freed memory is the most likely to be requested
+                // again, and this keeps blocks pooled under idle streams from
+                // pinning the capacity forever.
+                while state.stats.pooled_bytes + allocation.len() > self.max_pool_bytes {
+                    let key = state
+                        .free_lists
+                        .keys()
+                        .next()
+                        .copied()
+                        .expect("pooled_bytes > 0 implies a non-empty free list");
+                    let mut list = state
+                        .free_lists
+                        .remove(&key)
+                        .expect("key was just observed");
+                    let block = list.pop().expect("free lists are never left empty");
+                    if !list.is_empty() {
+                        state.free_lists.insert(key, list);
+                    }
+                    state.stats.pooled_bytes -= block.len();
+                    state.stats.pooled_blocks -= 1;
+                    state.stats.evictions += 1;
+                    released.push((key.0, block));
+                }
                 state.stats.pooled_bytes += allocation.len();
                 state.stats.pooled_blocks += 1;
                 state
@@ -188,14 +219,20 @@ impl DeviceAllocator for PooledDeviceAllocator {
                     .entry((stream, class))
                     .or_default()
                     .push(allocation);
-                return;
+            } else {
+                // Larger than the whole pool: release it directly.
+                state.stats.evictions += 1;
+                released.push((stream, allocation));
             }
-            state.stats.evictions += 1;
         }
-        // SAFETY: the caller's guarantees are forwarded unchanged: `allocation`
-        // originated from `self.inner.allocate` (via `Self::allocate`) and is
-        // not used after this free.
-        unsafe { self.inner.deallocate(allocation, stream) };
+        for (stream, block) in released {
+            // SAFETY: the caller's guarantees are forwarded unchanged: every
+            // released block originated from `self.inner.allocate` (via
+            // `Self::allocate`), left the free lists above, and is never used
+            // again; each free is ordered on the stream the block was last
+            // freed on.
+            unsafe { self.inner.deallocate(block, stream) };
+        }
     }
 
     unsafe fn copy_host_to_device(
@@ -366,6 +403,49 @@ mod tests {
         assert_eq!(stats.pooled_bytes, 512);
         assert_eq!(stats.evictions, 1);
         assert_eq!(emulated.host().live_allocations(), 1);
+    }
+
+    #[test]
+    fn frees_evict_blocks_pooled_under_idle_streams() {
+        let (emulated, pool) = pooled(1024);
+        let dead_stream = DeviceStream::from_raw(1);
+        let live_stream = DeviceStream::from_raw(2);
+
+        // Fill the pool from a stream that then never allocates again.
+        let a = pool.allocate(1024, dead_stream).unwrap();
+        // SAFETY: `a` came from `pool.allocate` and is not used afterwards.
+        unsafe { pool.deallocate(a, dead_stream) };
+        assert_eq!(pool.stats().pooled_bytes, 1024);
+
+        // A free on another stream evicts the idle stream's block instead of
+        // being rejected, so pooling keeps working.
+        let b = pool.allocate(1024, live_stream).unwrap();
+        let ptr = b.ptr();
+        // SAFETY: `b` came from `pool.allocate` and is not used afterwards.
+        unsafe { pool.deallocate(b, live_stream) };
+        let stats = pool.stats();
+        assert_eq!(stats.evictions, 1);
+        assert_eq!(stats.pooled_bytes, 1024);
+        assert_eq!(emulated.host().live_allocations(), 1);
+
+        let c = pool.allocate(1024, live_stream).unwrap();
+        assert_eq!(c.ptr(), ptr);
+        assert_eq!(pool.stats().hits, 1);
+        // SAFETY: `c` came from `pool.allocate` and is not used afterwards.
+        unsafe { pool.deallocate(c, live_stream) };
+    }
+
+    #[test]
+    fn oversized_frees_are_released_directly() {
+        let (emulated, pool) = pooled(512);
+        let stream = DeviceStream::DEFAULT;
+        let block = pool.allocate(4096, stream).unwrap();
+        // SAFETY: `block` came from `pool.allocate` and is not used afterwards.
+        unsafe { pool.deallocate(block, stream) };
+        let stats = pool.stats();
+        assert_eq!(stats.evictions, 1);
+        assert_eq!(stats.pooled_bytes, 0);
+        assert_eq!(emulated.host().live_allocations(), 0);
     }
 
     #[test]
