@@ -12,10 +12,52 @@ use daft_dsl::{
         BuiltinScalarFnVariant, FunctionArgs, ScalarFunctionFactory, ScalarUDF, scalar::EvalContext,
     },
 };
-use daft_ext::abi::{ArrowArray, ArrowSchema, FFI_ScalarFunction};
+use daft_ext::abi::{ArgDescriptor, ArrowArray, ArrowSchema, FFI_ScalarFunction};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::module::ModuleHandle;
+
+/// Export a daft [`Field`] as a C Data Interface schema.
+fn export_field(field: &Field) -> DaftResult<ArrowSchema> {
+    let arrow_field = field.to_arrow()?;
+    let ffi = arrow::ffi::FFI_ArrowSchema::try_from(&arrow_field)
+        .map_err(|e| DaftError::InternalError(format!("schema export failed: {e}")))?;
+    Ok(unsafe { ArrowSchema::from_owned(ffi) })
+}
+
+/// Materialize a literal as a length-1 array of `dtype`, for the ABI.
+///
+/// Returns `None` when the literal has no Arrow representation (Python objects,
+/// for instance) or cannot be represented as `dtype`. Extensions see that as
+/// "this argument is not a foldable constant", which is always a safe answer —
+/// planning must never fail because a value could not be described.
+fn export_literal(literal: &Literal, dtype: &DataType) -> Option<ArrowArray> {
+    let series = Series::from_literals(vec![literal.clone()]).ok()?;
+    // Literal types are lossy (`FixedSizeList` round-trips as `List`, and so
+    // on), so restore the argument's declared type: extensions read the literal
+    // through the descriptor's field.
+    let series = if series.data_type() == dtype {
+        series
+    } else {
+        series.cast(dtype).ok()?
+    };
+    let array = series.to_arrow().ok()?;
+    let mut data = array.to_data();
+    data.align_buffers();
+    let ffi = arrow::ffi::FFI_ArrowArray::new(&data);
+    Some(unsafe { ArrowArray::from_owned(ffi) })
+}
+
+/// Release every descriptor in `descriptors`.
+///
+/// The host owns the descriptors it passes to `get_return_field`; extensions
+/// only borrow them. Neither [`ArrowSchema`] nor [`ArrowArray`] has a `Drop`
+/// impl, so dropping the `Vec` without this would leak.
+fn release_descriptors(descriptors: &mut [ArgDescriptor]) {
+    for descriptor in descriptors {
+        unsafe { descriptor.release() };
+    }
+}
 
 /// Bundles an `FFI_ScalarFunction` vtable with its parent `ModuleHandle`.
 ///
@@ -66,6 +108,13 @@ unsafe impl Sync for Inner {}
 pub struct ScalarFunctionHandle {
     name: &'static str,
     module_path: Option<PathBuf>,
+    /// Values of the arguments that folded to constants when this call site was
+    /// planned, positionally; `None` where the argument is not a constant.
+    ///
+    /// Captured once in [`ScalarFunctionFactory::get_function`] and used by both
+    /// `get_return_field` and `call` so that planning and execution always agree
+    /// on the output field, even though `call` only ever sees arrays.
+    literals: Arc<[Option<Literal>]>,
     inner: Option<Arc<Inner>>,
 }
 
@@ -84,6 +133,7 @@ impl ScalarFunctionHandle {
         Self {
             name,
             module_path,
+            literals: Arc::from([]),
             inner: Some(Arc::new(Inner { ffi, module })),
         }
     }
@@ -94,6 +144,66 @@ impl ScalarFunctionHandle {
             DaftError::InternalError(format!("extension function '{}' is not loaded", self.name,))
         })
     }
+
+    /// The literal captured for argument `index`, if any.
+    ///
+    /// Falls back to "no literal" when the arity does not match what was
+    /// captured — a handle can be built for one argument list and reused with
+    /// another (SQL registration, for one), and a positional mismatch must not
+    /// hand an extension the wrong value.
+    fn literal_at(&self, index: usize, arity: usize) -> Option<&Literal> {
+        if self.literals.len() != arity {
+            return None;
+        }
+        self.literals[index].as_ref()
+    }
+
+    /// Build the argument descriptors passed to the module's `get_return_field`.
+    ///
+    /// The caller owns the result and must pass it to [`release_descriptors`].
+    fn build_descriptors(&self, fields: &[Field]) -> DaftResult<Vec<ArgDescriptor>> {
+        let mut descriptors = Vec::with_capacity(fields.len());
+        for (i, field) in fields.iter().enumerate() {
+            let schema = match export_field(field) {
+                Ok(schema) => schema,
+                Err(e) => {
+                    // Don't leak the descriptors already built.
+                    release_descriptors(&mut descriptors);
+                    return Err(e);
+                }
+            };
+            let literal = self
+                .literal_at(i, fields.len())
+                .and_then(|literal| export_literal(literal, &field.dtype));
+            descriptors.push(ArgDescriptor::new(schema, literal));
+        }
+        Ok(descriptors)
+    }
+
+    /// Invoke the module's `get_return_field` for the given argument fields.
+    fn ffi_return_field(&self, fields: &[Field]) -> DaftResult<Field> {
+        let inner = self.inner()?;
+        let mut descriptors = self.build_descriptors(fields)?;
+
+        let mut ret_schema = ArrowSchema::empty();
+        let mut errmsg: *mut c_char = std::ptr::null_mut();
+        let rc = unsafe {
+            (inner.ffi.get_return_field)(
+                inner.ffi.ctx,
+                descriptors.as_ptr(),
+                descriptors.len(),
+                &raw mut ret_schema,
+                &raw mut errmsg,
+            )
+        };
+        release_descriptors(&mut descriptors);
+        inner.check(rc, errmsg, "unknown error in extension get_return_field")?;
+
+        let ffi_schema: arrow::ffi::FFI_ArrowSchema = unsafe { ret_schema.into_owned() };
+        let arrow_field = arrow_schema::Field::try_from(&ffi_schema)
+            .map_err(|e| DaftError::InternalError(format!("schema import failed: {e}")))?;
+        Field::try_from(&arrow_field)
+    }
 }
 
 #[typetag::serde]
@@ -103,47 +213,27 @@ impl ScalarUDF for ScalarFunctionHandle {
     }
 
     fn get_return_field(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
-        let inner = self.inner()?;
-
-        let arrow_fields: Vec<arrow_schema::Field> = args
+        let fields: Vec<Field> = args
             .into_inner()
             .into_iter()
-            .map(|expr| expr.to_field(schema)?.to_arrow())
+            .map(|expr| expr.to_field(schema))
             .collect::<DaftResult<_>>()?;
 
-        let ffi_schemas: Vec<ArrowSchema> = arrow_fields
-            .iter()
-            .map(|f| {
-                let ffi = arrow::ffi::FFI_ArrowSchema::try_from(f)
-                    .map_err(|e| DaftError::InternalError(format!("schema export failed: {e}")))?;
-                Ok(unsafe { ArrowSchema::from_owned(ffi) })
-            })
-            .collect::<DaftResult<_>>()?;
-
-        let mut ret_schema = ArrowSchema::empty();
-        let mut errmsg: *mut c_char = std::ptr::null_mut();
-
-        let rc = unsafe {
-            (inner.ffi.get_return_field)(
-                inner.ffi.ctx,
-                ffi_schemas.as_ptr(),
-                ffi_schemas.len(),
-                &raw mut ret_schema,
-                &raw mut errmsg,
-            )
-        };
-        inner.check(rc, errmsg, "unknown error in extension get_return_field")?;
-
-        let ffi_schema: arrow::ffi::FFI_ArrowSchema = unsafe { ret_schema.into_owned() };
-        let arrow_field = arrow_schema::Field::try_from(&ffi_schema)
-            .map_err(|e| DaftError::InternalError(format!("schema import failed: {e}")))?;
-
-        Field::try_from(&arrow_field)
+        self.ffi_return_field(&fields)
     }
 
     fn call(&self, args: FunctionArgs<Series>, _ctx: &EvalContext) -> DaftResult<Series> {
         let inner = self.inner()?;
         let series_vec: Vec<Series> = args.into_inner();
+
+        // Get expected return field via get_return_field (the call FFI only
+        // returns a bare array whose schema has an empty field name). The
+        // descriptors carry the literals captured at planning time, so this
+        // resolves to the same field the planner saw. Do this before exporting
+        // the arguments: ownership of those transfers to the module, so an
+        // early return after exporting them would leak.
+        let arg_fields: Vec<Field> = series_vec.iter().map(|s| s.field().clone()).collect();
+        let ret_daft_field = self.ffi_return_field(&arg_fields)?;
 
         let mut ffi_arrays: Vec<ArrowArray> = Vec::with_capacity(series_vec.len());
         let mut ffi_schemas: Vec<ArrowSchema> = Vec::with_capacity(series_vec.len());
@@ -159,31 +249,6 @@ impl ScalarUDF for ScalarFunctionHandle {
             ffi_arrays.push(unsafe { ArrowArray::from_owned(ffi_array) });
             ffi_schemas.push(unsafe { ArrowSchema::from_owned(ffi_schema) });
         }
-
-        // Get expected return field via get_return_field (the call FFI only
-        // returns a bare array whose schema has an empty field name).
-        let mut ret_field_schema = ArrowSchema::empty();
-        let mut field_errmsg: *mut c_char = std::ptr::null_mut();
-        let field_rc = unsafe {
-            (inner.ffi.get_return_field)(
-                inner.ffi.ctx,
-                ffi_schemas.as_ptr(),
-                ffi_schemas.len(),
-                &raw mut ret_field_schema,
-                &raw mut field_errmsg,
-            )
-        };
-        inner.check(
-            field_rc,
-            field_errmsg,
-            "error in extension get_return_field",
-        )?;
-
-        let ffi_field_schema: arrow::ffi::FFI_ArrowSchema =
-            unsafe { ret_field_schema.into_owned() };
-        let ret_arrow_field = arrow_schema::Field::try_from(&ffi_field_schema)
-            .map_err(|e| DaftError::InternalError(format!("schema import failed: {e}")))?;
-        let ret_daft_field = Field::try_from(&ret_arrow_field)?;
 
         // Execute the function.
         let mut ret_array = ArrowArray::empty();
@@ -220,9 +285,12 @@ impl ScalarUDF for ScalarFunctionHandle {
 impl Serialize for ScalarFunctionHandle {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
-        let mut s = serializer.serialize_struct("ScalarFunctionHandle", 2)?;
+        let mut s = serializer.serialize_struct("ScalarFunctionHandle", 3)?;
         s.serialize_field("name", self.name)?;
         s.serialize_field("module_path", &self.module_path)?;
+        // Carried to the worker so it resolves the same return field as the
+        // driver did.
+        s.serialize_field("literals", self.literals.as_ref())?;
         s.end()
     }
 }
@@ -237,16 +305,24 @@ impl<'de> Deserialize<'de> for ScalarFunctionHandle {
             // predate this field.
             #[serde(default)]
             module_path: Option<PathBuf>,
+            #[serde(default)]
+            literals: Vec<Option<Literal>>,
         }
         let h = Helper::deserialize(deserializer)?;
+        let literals: Arc<[Option<Literal>]> = Arc::from(h.literals);
 
-        // If the module is loaded in this process, return the live handle
-        // directly so `inner` is populated and FFI calls work.
+        // If the module is loaded in this process, adopt the live handle's FFI
+        // vtable so calls work — but keep this call site's captured literals,
+        // which the registry entry (one per function, not per call site) has no
+        // way to know about.
         if let Some(path) = &h.module_path
             && let Some(existing) =
                 crate::module::lookup_extension_function(path, &h.name).map_err(D::Error::custom)?
         {
-            return Ok(existing);
+            return Ok(Self {
+                literals,
+                ..existing
+            });
         }
 
         // Fall back to a handle with `inner: None`. Calls will error with
@@ -256,6 +332,7 @@ impl<'de> Deserialize<'de> for ScalarFunctionHandle {
         Ok(Self {
             name,
             module_path: h.module_path,
+            literals,
             inner: None,
         })
     }
@@ -268,10 +345,22 @@ impl ScalarFunctionFactory for ScalarFunctionHandle {
 
     fn get_function(
         &self,
-        _args: FunctionArgs<ExprRef>,
+        args: FunctionArgs<ExprRef>,
         _schema: &Schema,
     ) -> DaftResult<BuiltinScalarFnVariant> {
-        Ok(BuiltinScalarFnVariant::Sync(Arc::new(self.clone())))
+        // Capture which arguments fold to constants for this call site. This is
+        // the only point where the argument *expressions* are in hand; `call`
+        // sees arrays only.
+        let literals: Arc<[Option<Literal>]> = args
+            .into_inner()
+            .iter()
+            .map(|expr| expr.as_literal().cloned())
+            .collect();
+
+        Ok(BuiltinScalarFnVariant::Sync(Arc::new(Self {
+            literals,
+            ..self.clone()
+        })))
     }
 }
 
@@ -312,7 +401,7 @@ mod tests {
 
     unsafe extern "C" fn mock_get_return_field(
         _ctx: *const c_void,
-        _args: *const ArrowSchema,
+        _args: *const ArgDescriptor,
         _args_count: usize,
         ret: *mut ArrowSchema,
         _errmsg: *mut *mut c_char,
@@ -569,7 +658,7 @@ mod tests {
 
     unsafe extern "C" fn meta_mock_get_return_field(
         _ctx: *const c_void,
-        _args: *const ArrowSchema,
+        _args: *const ArgDescriptor,
         _args_count: usize,
         ret: *mut ArrowSchema,
         _errmsg: *mut *mut c_char,
@@ -664,6 +753,192 @@ mod tests {
         assert!(
             METADATA_SEEN.load(Ordering::SeqCst),
             "extension metadata was not preserved in the FFI schema"
+        );
+    }
+
+    // --- mock whose output field depends on a literal argument's value ---
+
+    /// Reads the single i64 out of a length-1 literal array.
+    unsafe fn read_literal_i64(array: &ArrowArray) -> i64 {
+        unsafe {
+            let bufs = std::slice::from_raw_parts(array.buffers.cast_const(), 2);
+            *bufs[1].cast::<i64>().add(array.offset as usize)
+        }
+    }
+
+    unsafe extern "C" fn width_mock_name(_ctx: *const c_void) -> *const c_char {
+        c"width".as_ptr()
+    }
+
+    /// Names its output `width_<n>` after the value of argument 1, which must
+    /// be a foldable constant.
+    unsafe extern "C" fn width_mock_get_return_field(
+        _ctx: *const c_void,
+        args: *const ArgDescriptor,
+        args_count: usize,
+        ret: *mut ArrowSchema,
+        errmsg: *mut *mut c_char,
+    ) -> c_int {
+        let descriptors = unsafe { std::slice::from_raw_parts(args, args_count) };
+        let Some(literal) = descriptors.get(1).and_then(ArgDescriptor::literal) else {
+            let msg = CString::new("width: argument 1 must be a literal").unwrap();
+            unsafe { std::ptr::write(errmsg, msg.into_raw()) };
+            return 1;
+        };
+        let width = unsafe { read_literal_i64(literal) };
+
+        let field = arrow_schema::Field::new(
+            format!("width_{width}"),
+            arrow_schema::DataType::Int64,
+            false,
+        );
+        let schema: ArrowSchema = unsafe {
+            ArrowSchema::from_owned(arrow::ffi::FFI_ArrowSchema::try_from(&field).unwrap())
+        };
+        unsafe { std::ptr::write(ret, schema) };
+        0
+    }
+
+    unsafe extern "C" fn width_mock_call(
+        _ctx: *const c_void,
+        args: *const ArrowArray,
+        args_schemas: *const ArrowSchema,
+        args_count: usize,
+        ret_array: *mut ArrowArray,
+        ret_schema: *mut ArrowSchema,
+        _errmsg: *mut *mut c_char,
+    ) -> c_int {
+        // Take ownership of every argument so nothing leaks.
+        let mut len = 0usize;
+        for i in 0..args_count {
+            let abi_array = unsafe { std::ptr::read(args.add(i)) };
+            let abi_schema = unsafe { std::ptr::read(args_schemas.add(i)) };
+            let ffi_array: arrow::ffi::FFI_ArrowArray = unsafe { abi_array.into_owned() };
+            let ffi_schema: arrow::ffi::FFI_ArrowSchema = unsafe { abi_schema.into_owned() };
+            let data = unsafe { arrow::ffi::from_ffi(ffi_array, &ffi_schema) }.unwrap();
+            if i == 0 {
+                len = data.len();
+            }
+        }
+
+        let output: arrow_array::ArrayRef =
+            Arc::new(arrow_array::Int64Array::from(vec![0i64; len]));
+        let (ffi_arr, ffi_sch) = arrow::ffi::to_ffi(&output.to_data()).unwrap();
+        unsafe {
+            std::ptr::write(ret_array, ArrowArray::from_owned(ffi_arr));
+            std::ptr::write(ret_schema, ArrowSchema::from_owned(ffi_sch));
+        }
+        0
+    }
+
+    fn make_width_factory() -> ScalarFunctionHandle {
+        let ctx = Box::into_raw(Box::new(IncrementCtx));
+        let ffi = FFI_ScalarFunction {
+            ctx: ctx.cast(),
+            name: width_mock_name,
+            get_return_field: width_mock_get_return_field,
+            call: width_mock_call,
+            fini: mock_fini,
+        };
+        ScalarFunctionHandle::new(ffi, make_mock_module_handle())
+    }
+
+    #[test]
+    fn test_return_field_sees_literal_value() {
+        let factory = make_width_factory();
+        let args =
+            FunctionArgs::new_unnamed(vec![daft_dsl::resolved_col("x"), daft_dsl::lit(3i64)]);
+        let udf =
+            ScalarFunctionFactory::get_function(&factory, args.clone(), &Schema::empty()).unwrap();
+        let BuiltinScalarFnVariant::Sync(udf) = udf else {
+            panic!("expected a sync function");
+        };
+
+        let schema = Schema::new(vec![Field::new("x", DataType::Int64)]);
+        let field = udf.get_return_field(args, &schema).unwrap();
+        assert_eq!(field.name.as_ref(), "width_3");
+    }
+
+    #[test]
+    fn test_return_field_errors_when_argument_is_not_foldable() {
+        let factory = make_width_factory();
+        let args = FunctionArgs::new_unnamed(vec![
+            daft_dsl::resolved_col("x"),
+            daft_dsl::resolved_col("y"),
+        ]);
+        let udf =
+            ScalarFunctionFactory::get_function(&factory, args.clone(), &Schema::empty()).unwrap();
+        let BuiltinScalarFnVariant::Sync(udf) = udf else {
+            panic!("expected a sync function");
+        };
+
+        let schema = Schema::new(vec![
+            Field::new("x", DataType::Int64),
+            Field::new("y", DataType::Int64),
+        ]);
+        let err = udf.get_return_field(args, &schema).unwrap_err();
+        assert!(err.to_string().contains("must be a literal"), "{err}");
+    }
+
+    #[test]
+    fn test_call_resolves_same_field_as_planning() {
+        let factory = make_width_factory();
+        let args =
+            FunctionArgs::new_unnamed(vec![daft_dsl::resolved_col("x"), daft_dsl::lit(4i64)]);
+        let udf = ScalarFunctionFactory::get_function(&factory, args, &Schema::empty()).unwrap();
+        let BuiltinScalarFnVariant::Sync(udf) = udf else {
+            panic!("expected a sync function");
+        };
+
+        // `call` only ever sees arrays, so the literal has to come from what was
+        // captured at planning time.
+        let column: arrow_array::ArrayRef = Arc::new(arrow_array::Int64Array::from(vec![1, 2, 3]));
+        let column = Series::from_arrow(Field::new("x", DataType::Int64), column).unwrap();
+        let literal = Series::from_literals(vec![Literal::Int64(4)]).unwrap();
+
+        let args = FunctionArgs::new_unnamed(vec![column, literal]);
+        let ctx = EvalContext { row_count: 3 };
+        let result = udf.call(args, &ctx).unwrap();
+        assert_eq!(result.field().name.as_ref(), "width_4");
+        assert_eq!(result.len(), 3);
+    }
+
+    #[test]
+    fn test_serde_preserves_captured_literals() {
+        // Simulate the driver → worker hop: the worker's registry entry is the
+        // one built at load time and carries no literals, so the call site's
+        // literals have to survive serialization.
+        let path = std::path::PathBuf::from("/mock/test_serde_preserves_captured_literals/mock");
+        let registry_entry = ScalarFunctionHandle {
+            module_path: Some(path.clone()),
+            ..make_width_factory()
+        };
+        crate::module::insert_test_module(path.clone());
+        crate::module::register_extension_function(
+            &path,
+            "width".to_string(),
+            registry_entry.clone(),
+        )
+        .unwrap();
+
+        // Driver: a planned call site carrying a captured literal.
+        let planned = ScalarFunctionHandle {
+            literals: Arc::from([None, Some(Literal::Int64(7))]),
+            ..registry_entry.clone()
+        };
+        let json = serde_json::to_string(&planned).unwrap();
+
+        // Worker: the registry supplies the vtable, the plan supplies literals.
+        let deser: ScalarFunctionHandle = serde_json::from_str(&json).unwrap();
+        assert_eq!(deser.literals.to_vec(), vec![None, Some(Literal::Int64(7))]);
+        assert!(deser.inner.is_some(), "expected the vtable to re-attach");
+
+        let args =
+            FunctionArgs::new_unnamed(vec![daft_dsl::resolved_col("x"), daft_dsl::lit(7i64)]);
+        let schema = Schema::new(vec![Field::new("x", DataType::Int64)]);
+        assert_eq!(
+            deser.get_return_field(args, &schema).unwrap().name.as_ref(),
+            "width_7"
         );
     }
 

@@ -59,6 +59,25 @@ impl ArrowSchema {
         self.release.is_none()
     }
 
+    /// Invoke the release callback, leaving `self` in the released state.
+    ///
+    /// This is a no-op if the schema is already released. Because this type has
+    /// no `Drop` impl, owners must call this (or transfer ownership) to avoid
+    /// leaking the producer's allocation.
+    ///
+    /// # Safety
+    ///
+    /// The caller must own this schema — releasing a borrowed schema, or
+    /// releasing the same schema twice from different owners, is undefined
+    /// behavior.
+    pub unsafe fn release(&mut self) {
+        if let Some(release) = self.release {
+            unsafe { release(std::ptr::from_mut(self)) };
+            // A conforming producer clears `release`, but don't rely on it.
+            self.release = None;
+        }
+    }
+
     /// Borrow a foreign C Data Interface schema as ours (zero-copy).
     ///
     /// # Safety
@@ -204,6 +223,25 @@ impl ArrowArray {
     /// Whether this array has been released (release callback is None).
     pub fn is_released(&self) -> bool {
         self.release.is_none()
+    }
+
+    /// Invoke the release callback, leaving `self` in the released state.
+    ///
+    /// This is a no-op if the array is already released. Because this type has
+    /// no `Drop` impl, owners must call this (or transfer ownership) to avoid
+    /// leaking the producer's allocation.
+    ///
+    /// # Safety
+    ///
+    /// The caller must own this array — releasing a borrowed array, or
+    /// releasing the same array twice from different owners, is undefined
+    /// behavior.
+    pub unsafe fn release(&mut self) {
+        if let Some(release) = self.release {
+            unsafe { release(std::ptr::from_mut(self)) };
+            // A conforming producer clears `release`, but don't rely on it.
+            self.release = None;
+        }
     }
 
     /// Borrow a foreign C Data Interface array as ours (zero-copy).

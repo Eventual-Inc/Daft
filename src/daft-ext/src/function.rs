@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    abi::{ArrowArray, ArrowData, ArrowSchema, FFI_ScalarFunction},
+    abi::{ArgDescriptor, ArrowArray, ArrowData, ArrowSchema, FFI_ScalarFunction},
     error::DaftResult,
     ffi::trampoline::trampoline,
 };
@@ -12,7 +12,17 @@ use crate::{
 /// Trait that extension authors implement to define a scalar function.
 pub trait DaftScalarFunction {
     fn name(&self) -> &CStr;
-    fn return_field(&self, args: &[ArrowSchema]) -> DaftResult<ArrowSchema>;
+
+    /// Compute the output field from the planning-time argument descriptors.
+    ///
+    /// Each [`ArgDescriptor`] carries the argument's field via
+    /// [`ArgDescriptor::field`], plus its value via [`ArgDescriptor::literal`]
+    /// when the argument folds to a constant during planning. Output types may
+    /// therefore depend on literal argument *values*, not just their types.
+    ///
+    /// The descriptors are borrowed for the duration of this call only.
+    fn return_field(&self, args: &[ArgDescriptor]) -> DaftResult<ArrowSchema>;
+
     fn call(&self, args: Vec<ArrowData>) -> DaftResult<ArrowData>;
 }
 
@@ -41,23 +51,23 @@ unsafe extern "C" fn ffi_name(ctx: *const c_void) -> *const c_char {
         .as_ptr()
 }
 
-/// Returns the output field given the input fields.
+/// Returns the output field given the input argument descriptors.
 #[rustfmt::skip]
 unsafe extern "C" fn ffi_get_return_field(
     ctx:        *const c_void,
-    args:       *const ArrowSchema,
+    args:       *const ArgDescriptor,
     args_count: usize,
     ret:        *mut ArrowSchema,
     errmsg:     *mut *mut c_char,
 ) -> c_int {
     unsafe { trampoline(errmsg, "panic in get_return_field", || {
         let ctx = &*ctx.cast::<DaftScalarFunctionRef>();
-        let schemas = if args_count == 0 {
+        let descriptors = if args_count == 0 {
             &[]
         } else {
             std::slice::from_raw_parts(args, args_count)
         };
-        let result = ctx.return_field(schemas)?;
+        let result = ctx.return_field(descriptors)?;
         std::ptr::write(ret, result);
         Ok(())
     })}
@@ -177,7 +187,7 @@ mod tests {
             c"increment"
         }
 
-        fn return_field(&self, _args: &[ArrowSchema]) -> DaftResult<ArrowSchema> {
+        fn return_field(&self, _args: &[ArgDescriptor]) -> DaftResult<ArrowSchema> {
             let field = Field::new("result", DataType::Int32, false);
             Ok(export_schema(&Schema::new(vec![field])))
         }
@@ -209,7 +219,7 @@ mod tests {
         let vtable = into_ffi(Arc::new(IncrementFn));
 
         let field = Field::new("x", DataType::Int32, false);
-        let ffi_schema = export_schema(&Schema::new(vec![field]));
+        let arg = ArgDescriptor::new(export_schema(&Schema::new(vec![field])), None);
 
         let mut ret_schema = ArrowSchema::empty();
         let mut errmsg: *mut c_char = std::ptr::null_mut();
@@ -217,7 +227,7 @@ mod tests {
         let rc = unsafe {
             (vtable.get_return_field)(
                 vtable.ctx,
-                &raw const ffi_schema,
+                &raw const arg,
                 1,
                 &raw mut ret_schema,
                 &raw mut errmsg,
@@ -273,7 +283,7 @@ mod tests {
             fn name(&self) -> &CStr {
                 c"failing"
             }
-            fn return_field(&self, _: &[ArrowSchema]) -> DaftResult<ArrowSchema> {
+            fn return_field(&self, _: &[ArgDescriptor]) -> DaftResult<ArrowSchema> {
                 Err(DaftError::TypeError("bad type".into()))
             }
             fn call(&self, _: Vec<ArrowData>) -> DaftResult<ArrowData> {
@@ -313,7 +323,7 @@ mod tests {
             fn name(&self) -> &CStr {
                 c"call_fail"
             }
-            fn return_field(&self, _: &[ArrowSchema]) -> DaftResult<ArrowSchema> {
+            fn return_field(&self, _: &[ArgDescriptor]) -> DaftResult<ArrowSchema> {
                 Ok(export_schema(&Schema::new(vec![Field::new(
                     "x",
                     DataType::Int32,
@@ -365,7 +375,7 @@ mod tests {
             fn name(&self) -> &CStr {
                 c"no_args"
             }
-            fn return_field(&self, args: &[ArrowSchema]) -> DaftResult<ArrowSchema> {
+            fn return_field(&self, args: &[ArgDescriptor]) -> DaftResult<ArrowSchema> {
                 assert!(args.is_empty());
                 Ok(export_schema(&Schema::new(vec![Field::new(
                     "result",
@@ -400,6 +410,106 @@ mod tests {
         unsafe { (vtable.fini)(vtable.ctx.cast_mut()) };
     }
 
+    /// Read the first i32 of a length-1 literal array (non-null, zero-offset).
+    fn read_literal_i32(array: &ArrowArray) -> i32 {
+        unsafe {
+            let bufs = std::slice::from_raw_parts(array.buffers.cast_const(), 2);
+            *bufs[1].cast::<i32>()
+        }
+    }
+
+    /// Names its output after the value of its second argument, which must be
+    /// a foldable constant — the shape of a value-dependent return type.
+    struct WidthFn;
+
+    impl DaftScalarFunction for WidthFn {
+        fn name(&self) -> &CStr {
+            c"width"
+        }
+
+        fn return_field(&self, args: &[ArgDescriptor]) -> DaftResult<ArrowSchema> {
+            let width = args
+                .get(1)
+                .and_then(ArgDescriptor::literal)
+                .ok_or_else(|| DaftError::TypeError("width: arg 1 must be a literal".into()))?;
+            let field = Field::new(
+                format!("width_{}", read_literal_i32(width)),
+                DataType::Int32,
+                false,
+            );
+            Ok(export_schema(&Schema::new(vec![field])))
+        }
+
+        fn call(&self, _: Vec<ArrowData>) -> DaftResult<ArrowData> {
+            Ok(make_int32(&[0]))
+        }
+    }
+
+    #[test]
+    fn vtable_get_return_field_reads_literal() {
+        let vtable = into_ffi(Arc::new(WidthFn));
+
+        let column = ArgDescriptor::new(
+            export_schema(&Schema::new(vec![Field::new("x", DataType::Int32, false)])),
+            None,
+        );
+        let literal = make_int32(&[3]);
+        let args = [
+            column,
+            ArgDescriptor::new(literal.schema, Some(literal.array)),
+        ];
+
+        let mut ret_schema = ArrowSchema::empty();
+        let mut errmsg: *mut c_char = std::ptr::null_mut();
+
+        let rc = unsafe {
+            (vtable.get_return_field)(
+                vtable.ctx,
+                args.as_ptr(),
+                args.len(),
+                &raw mut ret_schema,
+                &raw mut errmsg,
+            )
+        };
+        assert_eq!(rc, 0, "get_return_field should succeed");
+        assert_eq!(import_schema(&ret_schema).field(0).name(), "width_3");
+
+        unsafe { (vtable.fini)(vtable.ctx.cast_mut()) };
+    }
+
+    #[test]
+    fn vtable_get_return_field_missing_literal() {
+        let vtable = into_ffi(Arc::new(WidthFn));
+
+        let field = || {
+            ArgDescriptor::new(
+                export_schema(&Schema::new(vec![Field::new("x", DataType::Int32, false)])),
+                None,
+            )
+        };
+        let args = [field(), field()];
+
+        let mut ret_schema = ArrowSchema::empty();
+        let mut errmsg: *mut c_char = std::ptr::null_mut();
+
+        let rc = unsafe {
+            (vtable.get_return_field)(
+                vtable.ctx,
+                args.as_ptr(),
+                args.len(),
+                &raw mut ret_schema,
+                &raw mut errmsg,
+            )
+        };
+        assert_ne!(rc, 0, "a non-foldable argument should surface an error");
+        assert!(!errmsg.is_null());
+        let err_str = unsafe { CStr::from_ptr(errmsg) }.to_str().unwrap();
+        assert!(err_str.contains("must be a literal"), "{err_str}");
+
+        unsafe { free_string(errmsg) };
+        unsafe { (vtable.fini)(vtable.ctx.cast_mut()) };
+    }
+
     #[test]
     fn fini_is_callable() {
         struct DisposableFn;
@@ -407,7 +517,7 @@ mod tests {
             fn name(&self) -> &CStr {
                 c"disposable"
             }
-            fn return_field(&self, _: &[ArrowSchema]) -> DaftResult<ArrowSchema> {
+            fn return_field(&self, _: &[ArgDescriptor]) -> DaftResult<ArrowSchema> {
                 Ok(export_schema(&Schema::new(vec![Field::new(
                     "x",
                     DataType::Null,

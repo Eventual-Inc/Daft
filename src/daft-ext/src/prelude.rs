@@ -6,9 +6,12 @@ pub use daft_ext_macros::{daft_extension, daft_func, daft_func_batch};
     feature = "arrow-58",
     feature = "arrow-59"
 ))]
-pub use crate::helpers::{export_array, export_field, import_array, import_field};
+pub use crate::helpers::{export_array, export_field, import_array, import_field, with_literal};
 pub use crate::{
-    abi::{ArrowArray, ArrowArrayStream, ArrowData, ArrowSchema, ffi::strings::free_string},
+    abi::{
+        ArgDescriptor, ArrowArray, ArrowArrayStream, ArrowData, ArrowSchema,
+        ffi::strings::free_string,
+    },
     aggregate::{DaftAggregateFunction, DaftAggregateFunctionRef},
     error::{DaftError, DaftResult},
     function::{DaftScalarFunction, DaftScalarFunctionRef},

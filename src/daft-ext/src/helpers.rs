@@ -9,7 +9,7 @@ macro_rules! impl_helpers {
         use $arrow_schema_crate::Field;
 
         use crate::{
-            abi::{ArrowArray, ArrowData, ArrowSchema},
+            abi::{ArgDescriptor, ArrowArray, ArrowData, ArrowSchema},
             error::{DaftError, DaftResult},
         };
 
@@ -52,6 +52,59 @@ macro_rules! impl_helpers {
             let ffi = $arrow_array_crate::ffi::FFI_ArrowSchema::try_from(field)
                 .map_err(|e| DaftError::RuntimeError(format!("schema export failed: {e}")))?;
             Ok(unsafe { ArrowSchema::from_owned(ffi) })
+        }
+
+        /// Release callback for a borrowed view over a C Data Interface struct.
+        ///
+        /// The buffers belong to the descriptor the view was taken from, so
+        /// there is nothing to free — but the callback must be non-null for
+        /// arrow-rs to accept the struct as un-released.
+        unsafe extern "C" fn noop_release_array(array: *mut ArrowArray) {
+            unsafe { (*array).release = None };
+        }
+
+        unsafe extern "C" fn noop_release_schema(schema: *mut ArrowSchema) {
+            unsafe { (*schema).release = None };
+        }
+
+        /// Import an argument's literal value as an arrow-rs array, for the
+        /// duration of `f`.
+        ///
+        /// Returns `Ok(None)` when the argument is not a foldable constant.
+        /// Otherwise `f` is called with a length-1 array whose type is the one
+        /// described by [`ArgDescriptor::field`].
+        ///
+        /// The array borrows the descriptor's buffers, which the host owns only
+        /// for the duration of `return_field` — hence the scoped closure rather
+        /// than a returned [`ArrayRef`].
+        pub fn with_literal<R>(
+            arg: &ArgDescriptor,
+            f: impl FnOnce(&ArrayRef) -> DaftResult<R>,
+        ) -> DaftResult<Option<R>> {
+            let Some(literal) = arg.literal() else {
+                return Ok(None);
+            };
+
+            // Shallow, non-owning views: same pointers, but a release callback
+            // that frees nothing. Dropping the arrow-rs wrappers must not free
+            // buffers still owned by the host.
+            let mut array_view: ArrowArray = unsafe { std::ptr::read(literal) };
+            array_view.release = Some(noop_release_array);
+            array_view.private_data = std::ptr::null_mut();
+
+            let mut schema_view: ArrowSchema = unsafe { std::ptr::read(arg.field()) };
+            schema_view.release = Some(noop_release_schema);
+            schema_view.private_data = std::ptr::null_mut();
+
+            let ffi_array: $arrow_array_crate::ffi::FFI_ArrowArray =
+                unsafe { array_view.into_owned() };
+            let ffi_schema: $arrow_array_crate::ffi::FFI_ArrowSchema =
+                unsafe { schema_view.into_owned() };
+
+            let data = unsafe { $arrow_array_crate::ffi::from_ffi(ffi_array, &ffi_schema) }
+                .map_err(|e| DaftError::RuntimeError(format!("literal FFI import failed: {e}")))?;
+            let array = $arrow_array_crate::make_array(data);
+            f(&array).map(Some)
         }
 
         /// Create an arrow-rs [`Field`] with the given name and [`DataType`](arrow DataType).

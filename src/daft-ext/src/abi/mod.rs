@@ -17,7 +17,12 @@ use std::ffi::{c_char, c_int, c_void};
 pub use arrow::{ArrowArray, ArrowArrayStream, ArrowData, ArrowSchema};
 
 /// Modules built against a different ABI version are rejected at load time.
-pub const DAFT_ABI_VERSION: u32 = 1;
+///
+/// History:
+/// - `1` — initial release.
+/// - `2` — `FFI_ScalarFunction::get_return_field` takes [`ArgDescriptor`]s
+///   instead of bare [`ArrowSchema`]s.
+pub const DAFT_ABI_VERSION: u32 = 2;
 
 /// Symbol that every Daft module cdylib must export.
 ///
@@ -57,6 +62,70 @@ pub struct FFI_Module {
 unsafe impl Send for FFI_Module {}
 unsafe impl Sync for FFI_Module {}
 
+/// Planning-time description of a single argument to a scalar function.
+///
+/// Carries the argument's field, plus its *value* when the argument folds to a
+/// constant during planning (`lit(...)`, or an expression the optimizer folded
+/// into one). Arguments that are not foldable — plain columns, or the result of
+/// a row-dependent expression — carry a released `literal`.
+///
+/// **Ownership:** the host owns both members for the duration of the
+/// `get_return_field` call and releases them afterwards. The module borrows
+/// them; it must not release them, and must not retain anything derived from
+/// them past the call.
+///
+/// **Invariant:** when present, `literal` is a length-1 array whose type is
+/// exactly the type described by `field`.
+#[repr(C)]
+pub struct ArgDescriptor {
+    /// The argument's field (name + type + metadata). Always present.
+    pub field: ArrowSchema,
+
+    /// The argument's constant value as a length-1 array, or a released array
+    /// (`release == NULL`) when the argument is not a foldable constant.
+    pub literal: ArrowArray,
+}
+
+impl ArgDescriptor {
+    /// Build a descriptor from a field and an optional literal value.
+    pub fn new(field: ArrowSchema, literal: Option<ArrowArray>) -> Self {
+        Self {
+            field,
+            literal: literal.unwrap_or_else(ArrowArray::empty),
+        }
+    }
+
+    /// The argument's field.
+    pub fn field(&self) -> &ArrowSchema {
+        &self.field
+    }
+
+    /// The argument's constant value, or `None` if it is not a foldable constant.
+    pub fn literal(&self) -> Option<&ArrowArray> {
+        (!self.literal.is_released()).then_some(&self.literal)
+    }
+
+    /// Whether the argument folds to a constant at planning time.
+    pub fn has_literal(&self) -> bool {
+        !self.literal.is_released()
+    }
+
+    /// Release both members, leaving the descriptor in the released state.
+    ///
+    /// # Safety
+    ///
+    /// The caller must own this descriptor; see [`ArrowSchema::release`].
+    pub unsafe fn release(&mut self) {
+        unsafe {
+            self.field.release();
+            self.literal.release();
+        }
+    }
+}
+
+// SAFETY: ArgDescriptor is two plain C structs, both of which are Send.
+unsafe impl Send for ArgDescriptor {}
+
 /// Virtual function table for a scalar function.
 ///
 /// The host calls methods through these function pointers. `ctx` is an opaque
@@ -71,9 +140,11 @@ pub struct FFI_ScalarFunction {
     /// The returned pointer borrows from `ctx` and is valid until `fini`.
     pub name: unsafe extern "C" fn(ctx: *const c_void) -> *const c_char,
 
-    /// Compute the output field given input fields.
+    /// Compute the output field given the input argument descriptors.
     ///
-    /// `args` points to `args_count` Arrow field schemas (C Data Interface).
+    /// `args` points to `args_count` [`ArgDescriptor`]s, each carrying the
+    /// argument's field plus its value when it folds to a constant. The host
+    /// owns the descriptors and releases them once this call returns.
     /// On success, writes the result schema to `*ret`.
     /// On error, writes a null-terminated message to `*errmsg`
     /// (freed by `FFI_Module::free_string`).
@@ -81,7 +152,7 @@ pub struct FFI_ScalarFunction {
     /// Returns 0 on success, non-zero on error.
     pub get_return_field: unsafe extern "C" fn(
         ctx: *const c_void,
-        args: *const ArrowSchema,
+        args: *const ArgDescriptor,
         args_count: usize,
         ret: *mut ArrowSchema,
         errmsg: *mut *mut c_char,
@@ -256,7 +327,28 @@ mod tests {
     fn constants() {
         // !! THIS TEST EXISTS SO THAT THESE ARE NOT CHANGED BY ACCIDENT
         // IT MEANS WE HAVE TO MANUALLY UPDATE IN TWO PLACES !!
-        assert_eq!(DAFT_ABI_VERSION, 1);
+        assert_eq!(DAFT_ABI_VERSION, 2);
         assert_eq!(DAFT_MODULE_MAGIC_SYMBOL, "daft_module_magic");
+    }
+
+    #[test]
+    fn arg_descriptor_layout() {
+        // The descriptor is two C Data Interface structs back to back; C/C++
+        // modules mirror this layout by hand.
+        assert_eq!(
+            std::mem::size_of::<ArgDescriptor>(),
+            std::mem::size_of::<ArrowSchema>() + std::mem::size_of::<ArrowArray>()
+        );
+    }
+
+    #[test]
+    fn arg_descriptor_literal_presence() {
+        let without = ArgDescriptor::new(ArrowSchema::empty(), None);
+        assert!(!without.has_literal());
+        assert!(without.literal().is_none());
+
+        // A released array is indistinguishable from an absent literal.
+        let released = ArgDescriptor::new(ArrowSchema::empty(), Some(ArrowArray::empty()));
+        assert!(!released.has_literal());
     }
 }
