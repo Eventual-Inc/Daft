@@ -5,7 +5,14 @@
 #[allow(unused_macros)]
 macro_rules! impl_helpers {
     ($arrow_schema_crate:ident, $arrow_data_crate:ident, $arrow_array_crate:ident) => {
-        use $arrow_array_crate::ArrayRef;
+        use $arrow_array_crate::{
+            Array as _, ArrayRef,
+            cast::AsArray as _,
+            types::{
+                Float32Type, Float64Type, Int8Type, Int16Type, Int32Type, Int64Type, UInt8Type,
+                UInt16Type, UInt32Type, UInt64Type,
+            },
+        };
         use $arrow_schema_crate::Field;
 
         use crate::{
@@ -134,7 +141,6 @@ macro_rules! impl_helpers {
             // public accessors below, and `read` returns an owned value.
             let value = unsafe {
                 with_literal(arg, |array| {
-                    use $arrow_array_crate::Array as _;
                     if array.is_empty() || array.is_null(0) {
                         return Ok(None);
                     }
@@ -228,7 +234,6 @@ macro_rules! impl_helpers {
         /// Returns `Ok(None)` when the argument is not a literal or its value is
         /// null, and an error when the literal is present but not a boolean.
         pub fn literal_bool(arg: &ArgDescriptor) -> DaftResult<Option<bool>> {
-            use $arrow_array_crate::cast::AsArray as _;
             read_literal(arg, "literal_bool", |array| match array.data_type() {
                 $arrow_schema_crate::DataType::Boolean => Some(array.as_boolean().value(0)),
                 _ => None,
@@ -240,7 +245,6 @@ macro_rules! impl_helpers {
         /// Returns `Ok(None)` when the argument is not a literal or its value is
         /// null, and an error when the literal is present but not a string.
         pub fn literal_string(arg: &ArgDescriptor) -> DaftResult<Option<String>> {
-            use $arrow_array_crate::cast::AsArray as _;
             read_literal(arg, "literal_string", |array| match array.data_type() {
                 $arrow_schema_crate::DataType::Utf8 => {
                     Some(array.as_string::<i32>().value(0).to_owned())
@@ -257,7 +261,6 @@ macro_rules! impl_helpers {
         /// Returns `Ok(None)` when the argument is not a literal or its value is
         /// null, and an error when the literal is present but not binary.
         pub fn literal_binary(arg: &ArgDescriptor) -> DaftResult<Option<Vec<u8>>> {
-            use $arrow_array_crate::cast::AsArray as _;
             read_literal(arg, "literal_binary", |array| match array.data_type() {
                 $arrow_schema_crate::DataType::Binary => {
                     Some(array.as_binary::<i32>().value(0).to_vec())

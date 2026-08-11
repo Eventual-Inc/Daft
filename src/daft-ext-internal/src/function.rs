@@ -54,6 +54,19 @@ fn export_literal(literal: &Literal, dtype: &DataType) -> Option<ArrowArray> {
     Some(unsafe { ArrowArray::from_owned(ffi) })
 }
 
+/// Whether two argument lists would produce identical descriptors.
+///
+/// `Field`'s own `PartialEq` skips metadata, but metadata crosses the ABI and an
+/// extension may derive its output from it — so a cache keyed on `Field::eq`
+/// would hand back a stale return field for two fields that differ only there.
+fn same_fields(left: &[Field], right: &[Field]) -> bool {
+    left.len() == right.len()
+        && left
+            .iter()
+            .zip(right)
+            .all(|(a, b)| a.name == b.name && a.dtype == b.dtype && a.metadata == b.metadata)
+}
+
 /// Release every descriptor in `descriptors`.
 ///
 /// The host owns the descriptors it passes to `get_return_field`; extensions
@@ -197,7 +210,7 @@ impl ScalarFunctionHandle {
     /// the module only the first time a given argument list is seen.
     fn resolved_return_field(&self, fields: &[Field]) -> DaftResult<Field> {
         if let Some((cached_fields, ret)) = self.return_field_cache.get()
-            && cached_fields == fields
+            && same_fields(cached_fields, fields)
         {
             return Ok(ret.clone());
         }
@@ -941,6 +954,26 @@ mod tests {
         let result = udf.call(args, &ctx).unwrap();
         assert_eq!(result.field().name.as_ref(), "width_4");
         assert_eq!(result.len(), 3);
+    }
+
+    #[test]
+    fn test_return_field_cache_distinguishes_metadata() {
+        // `Field::eq` skips metadata, but extensions can read it off the
+        // descriptor, so it has to be part of the cache key.
+        let plain = Field::new("x", DataType::Int64);
+        let metadata: std::collections::BTreeMap<String, String> =
+            std::iter::once(("unit".to_string(), "meters".to_string())).collect();
+        let annotated = plain.clone().with_metadata(metadata);
+
+        assert_eq!(plain, annotated, "Field::eq is expected to skip metadata");
+        assert!(!same_fields(
+            std::slice::from_ref(&plain),
+            std::slice::from_ref(&annotated)
+        ));
+        assert!(same_fields(
+            std::slice::from_ref(&plain),
+            std::slice::from_ref(&plain.clone())
+        ));
     }
 
     #[test]
