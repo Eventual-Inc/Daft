@@ -64,10 +64,10 @@ unsafe impl Sync for FFI_Module {}
 
 /// Planning-time description of a single argument to a scalar function.
 ///
-/// Carries the argument's field, plus its *value* when the argument folds to a
-/// constant during planning (`lit(...)`, or an expression the optimizer folded
-/// into one). Arguments that are not foldable — plain columns, or the result of
-/// a row-dependent expression — carry a released `literal`.
+/// Carries the argument's field, plus its *value* when the argument is a
+/// literal at the point the call is planned. Every other argument — a column, or
+/// any expression, including one that is constant but not yet folded — carries a
+/// released `literal`.
 ///
 /// **Ownership:** the host owns both members for the duration of the
 /// `get_return_field` call and releases them afterwards. The module borrows

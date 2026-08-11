@@ -474,6 +474,10 @@ mod tests {
         assert_eq!(rc, 0, "get_return_field should succeed");
         assert_eq!(import_schema(&ret_schema).field(0).name(), "width_3");
 
+        // The host owns the descriptors it passes in.
+        for mut arg in args {
+            unsafe { arg.release() };
+        }
         unsafe { (vtable.fini)(vtable.ctx.cast_mut()) };
     }
 
@@ -506,6 +510,9 @@ mod tests {
         let err_str = unsafe { CStr::from_ptr(errmsg) }.to_str().unwrap();
         assert!(err_str.contains("must be a literal"), "{err_str}");
 
+        for mut arg in args {
+            unsafe { arg.release() };
+        }
         unsafe { free_string(errmsg) };
         unsafe { (vtable.fini)(vtable.ctx.cast_mut()) };
     }

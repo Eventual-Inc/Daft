@@ -263,53 +263,61 @@ impl DaftScalarFunction for Greet {
 ### Literal arguments
 
 `return_field` sees argument *values*, not just their types. When an argument
-folds to a constant during planning — `lit(3)`, or an expression the optimizer
-folded into one — `ArgDescriptor::literal` carries that value as a length-1
-array typed exactly like `ArgDescriptor::field`. Arguments that are plain
-columns carry no literal.
+is a literal — `lit(3)`, or `daft.lit(3)` from Python — `ArgDescriptor::literal`
+carries its value as a length-1 array typed exactly like `ArgDescriptor::field`.
+Every other argument carries no literal.
 
-This is what lets an output type depend on an argument's value:
+Read scalars with the typed accessors — `literal_i64`, `literal_u64`,
+`literal_f64`, `literal_bool`, `literal_string`, `literal_binary`. Each returns
+`Ok(None)` when the argument is not a literal (or its value is null), and an
+error when it is a literal of the wrong type:
 
 ```rust
 /// `splat(value, count)` repeats each value into a `FixedSizeList` whose
 /// width is the *value* of `count`.
 fn return_field(&self, args: &[ArgDescriptor]) -> DaftResult<ArrowSchema> {
-    // `with_literal` gives you an arrow-rs array for the duration of the
-    // closure; it returns `Ok(None)` when the argument is not a constant.
-    let count = with_literal(&args[1], |array| {
-        Ok(array.as_primitive::<Int64Type>().value(0))
-    })?
-    .ok_or_else(|| {
+    let value_field = import_field(args[0].field())?;
+
+    let count = literal_i64(&args[1])?.ok_or_else(|| {
         DaftError::TypeError("splat: 'count' must be a literal, not a column".into())
     })?;
 
     let item = Field::new("item", DataType::Int64, true);
     export_field(&Field::new(
-        "splat",
+        value_field.name(),
         DataType::FixedSizeList(Arc::new(item), count as i32),
         true,
     ))
 }
 ```
 
-!!! warning "Descriptors are borrowed"
+For a literal that is not a scalar — a list, a struct — use `with_literal`,
+which hands your closure the arrow-rs array itself. It is `unsafe`: the array
+borrows buffers the host owns only for the duration of `return_field`, so
+nothing derived from it may escape the closure.
 
-    The host owns the descriptors and releases them as soon as `return_field`
-    returns. Copy out whatever you need (`count` above is an `i64`); never
-    retain an array that borrows from a descriptor, and never release one
-    yourself.
+!!! warning "Name the output after your first argument"
 
-!!! note "Not every constant is visible"
+    Daft derives an expression's name from its *first input*, while the column's
+    schema entry comes from `return_field`. Returning a field with some other
+    name makes the two disagree, and projection pushdown will prune the column
+    the query asked for. Echo `import_field(args[0].field())?.name()`, as above
+    and as `#[daft_func]` does.
 
-    A literal is present on a best-effort basis: values with no Arrow
-    representation (Python objects, for instance) arrive as if they were not
-    constant. Treat a missing literal as a plain type-check failure — as in the
-    example above — rather than assuming it can't happen.
+!!! note "Only literals, and only what Arrow can carry"
+
+    An argument is visible as a literal when it is *already* a literal at the
+    point the call is planned. A constant expression that has not been folded
+    (`lit(1) + lit(2)`) is not, and neither is a Python-object literal, which
+    has no representation an extension can plan against. Treat a missing literal
+    as a plain type-check failure — as in the example above — rather than
+    assuming it can't happen.
 
 `call` still receives every argument as an array, literals included (typically
 as a length-1 column). Daft resolves the return field with the same literals it
 captured during planning, so the output type your `return_field` computed is the
-one execution uses.
+one execution uses — but `call` must still derive the same shape from its own
+arguments, so keep that logic shared between the two.
 
 !!! tip "ABI pattern"
 
@@ -555,8 +563,9 @@ Follow the Daft extension authoring guide at docs/extensions/authoring.md. Here 
 - Each scalar function is a struct implementing `DaftScalarFunction` with:
   - `name(&self) -> &CStr` — use `c"<extension_name>_<fn_name>"` prefix to avoid collisions.
   - `return_field(&self, args: &[ArgDescriptor]) -> DaftResult<ArrowSchema>` — use
-    `import_field(args[i].field())` for type checking, and `with_literal(&args[i], ..)` to read
-    the value of an argument that folds to a constant, then `export_field` to return the output.
+    `import_field(args[i].field())` for type checking, and `literal_i64(&args[i])` (or
+    `literal_string` / `literal_f64` / ...) to read the value of a literal argument, then
+    `export_field` to return the output. Name the output field after `args[0]`'s field.
   - `call(&self, args: &[ArrowData]) -> DaftResult<ArrowData>` — use `ArrowData::take_arg` then
     `.into()` to convert to arrow-rs FFI types, compute, then `.into()` to return the result.
 - Each aggregate function is a struct implementing `DaftAggregateFunction` with:

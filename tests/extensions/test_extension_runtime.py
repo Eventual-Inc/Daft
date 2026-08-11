@@ -52,11 +52,13 @@ def test_extension_literal_dependent_return_type(hello_extension_path: str):
         df = daft.from_pydict({{"x": [1, 2, None]}})
         df = df.select(daft.get_function("splat", daft.col("x"), daft.lit(3)))
 
+        # The output takes its name from the first argument, per the SDK
+        # convention that keeps `Expr::name` and the schema field in agreement.
         expected = daft.DataType.fixed_size_list(daft.DataType.int64(), 3)
-        assert df.schema()["splat"].dtype == expected, df.schema()
+        assert df.schema()["x"].dtype == expected, df.schema()
 
         result = df.to_pydict()
-        assert result["splat"] == [[1, 1, 1], [2, 2, 2], None], result
+        assert result["x"] == [[1, 1, 1], [2, 2, 2], None], result
     """)
     proc = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
     assert proc.returncode == 0, proc.stdout + proc.stderr
@@ -74,7 +76,30 @@ def test_extension_literal_dependent_return_type_ray(hello_extension_path: str):
         df = df.select(daft.get_function("splat", daft.col("x"), daft.lit(2)))
 
         result = df.to_pydict()
-        assert result["splat"] == [[1, 1], [2, 2], [3, 3]], result
+        assert result["x"] == [[1, 1], [2, 2], [3, 3]], result
+    """)
+    proc = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+def test_extension_survives_projection_pushdown(hello_extension_path: str):
+    """A value-dependent output column survives a downstream projection.
+
+    Daft derives an expression's name from its first input, so an extension that
+    returns a differently-named field makes projection pushdown prune the very
+    column it needs.
+    """
+    script = textwrap.dedent(f"""
+        import daft
+        daft.set_runner_native()
+        daft.load_extension({hello_extension_path!r})
+
+        df = daft.from_pydict({{"x": [1, 2], "y": [10, 20]}})
+        df = df.select(daft.get_function("splat", daft.col("x"), daft.lit(3)), daft.col("y"))
+        assert df.schema().column_names() == ["x", "y"], df.schema()
+
+        result = df.select(daft.col("x")).to_pydict()
+        assert result["x"] == [[1, 1, 1], [2, 2, 2]], result
     """)
     proc = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
     assert proc.returncode == 0, proc.stdout + proc.stderr

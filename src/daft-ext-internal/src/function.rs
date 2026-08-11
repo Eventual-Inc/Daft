@@ -1,7 +1,7 @@
 use std::{
     ffi::{CStr, c_char},
     path::PathBuf,
-    sync::Arc,
+    sync::{Arc, OnceLock},
 };
 
 use common_error::{DaftError, DaftResult};
@@ -27,11 +27,17 @@ fn export_field(field: &Field) -> DaftResult<ArrowSchema> {
 
 /// Materialize a literal as a length-1 array of `dtype`, for the ABI.
 ///
-/// Returns `None` when the literal has no Arrow representation (Python objects,
-/// for instance) or cannot be represented as `dtype`. Extensions see that as
-/// "this argument is not a foldable constant", which is always a safe answer —
-/// planning must never fail because a value could not be described.
+/// Returns `None` when the literal has no meaningful Arrow representation or
+/// cannot be represented as `dtype`. Extensions see that as "this argument is
+/// not a constant", which is always a safe answer — planning must never fail
+/// because a value could not be described.
 fn export_literal(literal: &Literal, dtype: &DataType) -> Option<ArrowArray> {
+    // Python objects only cross the ABI as pickled bytes, which is not something
+    // an extension can plan against — and pickling would take the GIL here.
+    if dtype.is_python() {
+        return None;
+    }
+
     let series = Series::from_literals(vec![literal.clone()]).ok()?;
     // Literal types are lossy (`FixedSizeList` round-trips as `List`, and so
     // on), so restore the argument's declared type: extensions read the literal
@@ -115,6 +121,12 @@ pub struct ScalarFunctionHandle {
     /// `get_return_field` and `call` so that planning and execution always agree
     /// on the output field, even though `call` only ever sees arrays.
     literals: Arc<[Option<Literal>]>,
+    /// Memoized `(argument fields, return field)` for this call site.
+    ///
+    /// A call site's argument fields don't change between batches, so this turns
+    /// what would be an FFI round trip plus a literal materialization per batch
+    /// into one per plan.
+    return_field_cache: Arc<OnceLock<(Vec<Field>, Field)>>,
     inner: Option<Arc<Inner>>,
 }
 
@@ -134,6 +146,7 @@ impl ScalarFunctionHandle {
             name,
             module_path,
             literals: Arc::from([]),
+            return_field_cache: Arc::default(),
             inner: Some(Arc::new(Inner { ffi, module })),
         }
     }
@@ -180,6 +193,23 @@ impl ScalarFunctionHandle {
         Ok(descriptors)
     }
 
+    /// Resolve the return field for the given argument fields, going through
+    /// the module only the first time a given argument list is seen.
+    fn resolved_return_field(&self, fields: &[Field]) -> DaftResult<Field> {
+        if let Some((cached_fields, ret)) = self.return_field_cache.get()
+            && cached_fields == fields
+        {
+            return Ok(ret.clone());
+        }
+
+        let ret = self.ffi_return_field(fields)?;
+        // A miss on an already-populated cache means this handle was reused with
+        // a different argument list; recomputing every time is correct, just
+        // slower, so ignore the `set` failure.
+        let _ = self.return_field_cache.set((fields.to_vec(), ret.clone()));
+        Ok(ret)
+    }
+
     /// Invoke the module's `get_return_field` for the given argument fields.
     fn ffi_return_field(&self, fields: &[Field]) -> DaftResult<Field> {
         let inner = self.inner()?;
@@ -197,7 +227,14 @@ impl ScalarFunctionHandle {
             )
         };
         release_descriptors(&mut descriptors);
-        inner.check(rc, errmsg, "unknown error in extension get_return_field")?;
+        if rc != 0 {
+            // A well-behaved module leaves `ret` untouched on failure, but a
+            // buggy one may have written to it; don't leak what it wrote.
+            unsafe { ret_schema.release() };
+            return Err(inner
+                .check(rc, errmsg, "unknown error in extension get_return_field")
+                .expect_err("rc is non-zero"));
+        }
 
         let ffi_schema: arrow::ffi::FFI_ArrowSchema = unsafe { ret_schema.into_owned() };
         let arrow_field = arrow_schema::Field::try_from(&ffi_schema)
@@ -219,7 +256,7 @@ impl ScalarUDF for ScalarFunctionHandle {
             .map(|expr| expr.to_field(schema))
             .collect::<DaftResult<_>>()?;
 
-        self.ffi_return_field(&fields)
+        self.resolved_return_field(&fields)
     }
 
     fn call(&self, args: FunctionArgs<Series>, _ctx: &EvalContext) -> DaftResult<Series> {
@@ -233,7 +270,7 @@ impl ScalarUDF for ScalarFunctionHandle {
         // the arguments: ownership of those transfers to the module, so an
         // early return after exporting them would leak.
         let arg_fields: Vec<Field> = series_vec.iter().map(|s| s.field().clone()).collect();
-        let ret_daft_field = self.ffi_return_field(&arg_fields)?;
+        let ret_daft_field = self.resolved_return_field(&arg_fields)?;
 
         let mut ffi_arrays: Vec<ArrowArray> = Vec::with_capacity(series_vec.len());
         let mut ffi_schemas: Vec<ArrowSchema> = Vec::with_capacity(series_vec.len());
@@ -321,6 +358,7 @@ impl<'de> Deserialize<'de> for ScalarFunctionHandle {
         {
             return Ok(Self {
                 literals,
+                return_field_cache: Arc::default(),
                 ..existing
             });
         }
@@ -333,6 +371,7 @@ impl<'de> Deserialize<'de> for ScalarFunctionHandle {
             name,
             module_path: h.module_path,
             literals,
+            return_field_cache: Arc::default(),
             inner: None,
         })
     }
@@ -359,6 +398,7 @@ impl ScalarFunctionFactory for ScalarFunctionHandle {
 
         Ok(BuiltinScalarFnVariant::Sync(Arc::new(Self {
             literals,
+            return_field_cache: Arc::default(),
             ..self.clone()
         })))
     }
@@ -924,7 +964,7 @@ mod tests {
         // Driver: a planned call site carrying a captured literal.
         let planned = ScalarFunctionHandle {
             literals: Arc::from([None, Some(Literal::Int64(7))]),
-            ..registry_entry.clone()
+            ..registry_entry
         };
         let json = serde_json::to_string(&planned).unwrap();
 

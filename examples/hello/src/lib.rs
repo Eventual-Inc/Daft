@@ -59,38 +59,54 @@ impl DaftScalarFunction for Splat {
             )));
         }
 
-        // `count` is only present when the argument folds to a constant; a
-        // column here is a planning error, not a runtime one.
-        let count = with_literal(&args[1], read_count)?.ok_or_else(|| {
+        // `count` is only present when the argument is a literal; a column here
+        // is a planning error, not a runtime one.
+        let count = validate_count(literal_i64(&args[1])?.ok_or_else(|| {
             DaftError::TypeError("splat: 'count' must be a literal, not a column".to_string())
-        })?;
+        })?)?;
 
         let item = Field::new("item", DataType::Int64, true);
+        // Name the output after the first argument, per the convention in the
+        // authoring guide — Daft derives an expression's name from its first
+        // input, and a different name here breaks projection pushdown.
         export_field(&Field::new(
-            "splat",
+            value_field.name(),
             DataType::FixedSizeList(Arc::new(item), count as i32),
             true,
         ))
     }
 
-    fn call(&self, args: Vec<ArrowData>) -> DaftResult<ArrowData> {
+    fn call(&self, mut args: Vec<ArrowData>) -> DaftResult<ArrowData> {
         if args.len() != 2 {
+            // The host handed us ownership of these; release them rather than
+            // leaking on the way out.
+            for arg in &mut args {
+                unsafe { arg.release() };
+            }
             return Err(DaftError::TypeError(format!(
                 "splat: expected 2 arguments in call, got {}",
                 args.len()
             )));
         }
         let mut args = args.into_iter();
-        let values = import_array(args.next().expect("checked above"))?;
-        let counts = import_array(args.next().expect("checked above"))?;
+        let values_data = args.next().expect("checked above");
+        let counts_data = args.next().expect("checked above");
+
+        let name = import_field(&values_data.schema)?.name().clone();
+        let values = import_array(values_data)?;
+        let counts = import_array(counts_data)?;
 
         let values = downcast_i64(&values, "value")?;
-        let count = read_count(&counts)?;
-
-        let mut builder =
-            FixedSizeListBuilder::new(Int64Builder::new(), count as i32).with_field(Arc::new(
-                Field::new("item", DataType::Int64, true),
+        let counts = downcast_i64(&counts, "count")?;
+        if counts.is_empty() || counts.is_null(0) {
+            return Err(DaftError::TypeError(
+                "splat: 'count' must not be null".to_string(),
             ));
+        }
+        let count = validate_count(counts.value(0))?;
+
+        let mut builder = FixedSizeListBuilder::new(Int64Builder::new(), count as i32)
+            .with_field(Arc::new(Field::new("item", DataType::Int64, true)));
         for i in 0..values.len() {
             let value = (!values.is_null(i)).then(|| values.value(i));
             for _ in 0..count {
@@ -99,7 +115,7 @@ impl DaftScalarFunction for Splat {
             builder.append(value.is_some());
         }
 
-        export_array(Arc::new(builder.finish()), "splat")
+        export_array(Arc::new(builder.finish()), &name)
     }
 }
 
@@ -112,15 +128,8 @@ fn downcast_i64<'a>(array: &'a ArrayRef, what: &str) -> DaftResult<&'a Int64Arra
     })
 }
 
-/// Read and validate the repeat count from a length-1 array.
-fn read_count(array: &ArrayRef) -> DaftResult<i64> {
-    let counts = downcast_i64(array, "count")?;
-    if counts.is_empty() || counts.is_null(0) {
-        return Err(DaftError::TypeError(
-            "splat: 'count' must not be null".to_string(),
-        ));
-    }
-    let count = counts.value(0);
+/// `return_field` and `call` must agree on the width, so they share this.
+fn validate_count(count: i64) -> DaftResult<i64> {
     if count <= 0 || count > SPLAT_MAX_COUNT {
         return Err(DaftError::TypeError(format!(
             "splat: 'count' must be between 1 and {SPLAT_MAX_COUNT}, got {count}"

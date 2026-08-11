@@ -18,6 +18,23 @@ pub struct ArrowData {
     pub array: ArrowArray,
 }
 
+impl ArrowData {
+    /// Release both members, leaving them in the released state.
+    ///
+    /// Useful for discarding arguments an implementation does not consume —
+    /// neither member has a `Drop` impl, so simply dropping them leaks.
+    ///
+    /// # Safety
+    ///
+    /// The caller must own this data; see [`ArrowSchema::release`].
+    pub unsafe fn release(&mut self) {
+        unsafe {
+            self.schema.release();
+            self.array.release();
+        }
+    }
+}
+
 /// ArrowSchema C Data Interface.
 ///
 /// See: <https://arrow.apache.org/docs/format/CDataInterface.html#the-arrowschema-structure>
