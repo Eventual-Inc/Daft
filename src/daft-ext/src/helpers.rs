@@ -161,10 +161,6 @@ macro_rules! impl_helpers {
         /// null, and an error when the literal is present but not a signed
         /// integer.
         pub fn literal_i64(arg: &ArgDescriptor) -> DaftResult<Option<i64>> {
-            use $arrow_array_crate::{
-                cast::AsArray as _,
-                types::{Int8Type, Int16Type, Int32Type, Int64Type},
-            };
             read_literal(arg, "literal_i64", |array| match array.data_type() {
                 $arrow_schema_crate::DataType::Int8 => {
                     Some(i64::from(array.as_primitive::<Int8Type>().value(0)))
@@ -188,10 +184,6 @@ macro_rules! impl_helpers {
         /// null, and an error when the literal is present but not an unsigned
         /// integer.
         pub fn literal_u64(arg: &ArgDescriptor) -> DaftResult<Option<u64>> {
-            use $arrow_array_crate::{
-                cast::AsArray as _,
-                types::{UInt8Type, UInt16Type, UInt32Type, UInt64Type},
-            };
             read_literal(arg, "literal_u64", |array| match array.data_type() {
                 $arrow_schema_crate::DataType::UInt8 => {
                     Some(u64::from(array.as_primitive::<UInt8Type>().value(0)))
@@ -214,10 +206,6 @@ macro_rules! impl_helpers {
         /// Returns `Ok(None)` when the argument is not a literal or its value is
         /// null, and an error when the literal is present but not a float.
         pub fn literal_f64(arg: &ArgDescriptor) -> DaftResult<Option<f64>> {
-            use $arrow_array_crate::{
-                cast::AsArray as _,
-                types::{Float32Type, Float64Type},
-            };
             read_literal(arg, "literal_f64", |array| match array.data_type() {
                 $arrow_schema_crate::DataType::Float32 => {
                     Some(f64::from(array.as_primitive::<Float32Type>().value(0)))

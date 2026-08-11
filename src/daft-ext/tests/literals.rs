@@ -4,7 +4,12 @@
 //! buffers, the extension only reads through them, and releasing the descriptor
 //! afterwards must still be correct.
 
-#![cfg(any(feature = "arrow-56", feature = "arrow-57", feature = "arrow-58"))]
+#![cfg(any(
+    feature = "arrow-56",
+    feature = "arrow-57",
+    feature = "arrow-58",
+    feature = "arrow-59"
+))]
 
 use std::sync::Arc;
 
