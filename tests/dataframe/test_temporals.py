@@ -1034,6 +1034,25 @@ def test_unix_millis_negative_fractional_floors() -> None:
     assert result == {"ms": [-2, -1, 0, 1]}
 
 
+def test_unix_epoch_functions_upscale_from_second_unit() -> None:
+    # Second-resolution timestamps take the upscaling path (input unit coarser
+    # than the target unit); negative values must scale linearly.
+    df = daft.from_pydict({"s": [-86400, 0, 1609459200]})
+    df = df.select(timestamp_seconds(col("s")).cast(DataType.timestamp("s")).alias("ts"))
+    df = df.select(
+        unix_seconds(col("ts")).alias("s"),
+        unix_millis(col("ts")).alias("ms"),
+        unix_micros(col("ts")).alias("us"),
+    )
+    result = df.to_pydict()
+
+    assert result == {
+        "s": [-86400, 0, 1609459200],
+        "ms": [-86400000, 0, 1609459200000],
+        "us": [-86400000000, 0, 1609459200000000],
+    }
+
+
 def test_unix_epoch_functions_sql() -> None:
     df = daft.from_pydict({"ts": [datetime(2021, 1, 1)]})  # noqa: F841
     sql = "SELECT unix_seconds(ts) as s, unix_millis(ts) as ms, unix_micros(ts) as us FROM df"

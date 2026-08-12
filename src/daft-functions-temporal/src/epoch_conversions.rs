@@ -1,7 +1,4 @@
-use daft_core::{
-    datatypes::TimeUnit,
-    prelude::{Int64Array, IntoSeries},
-};
+use daft_core::{datatypes::TimeUnit, prelude::IntoSeries};
 use daft_dsl::functions::{UnaryArg, prelude::*};
 
 // --- DateFromUnixDate ---
@@ -239,28 +236,24 @@ macro_rules! impl_unix_epoch_fn {
                     )));
                 };
                 // Timestamps are physically stored as i64 epoch values in `input_unit`
-                // (already UTC-based for timezone-aware inputs). Convert between units
-                // with floor semantics to match Spark's floorDiv behavior for pre-epoch
-                // values, rather than the truncate-toward-zero semantics of a unit cast.
+                // (already UTC-based for timezone-aware inputs), so unit conversion is
+                // pure integer arithmetic on the physical values.
                 let physical = input.cast(&DataType::Int64)?;
+                let values = physical.i64()?;
                 let src = input_unit.to_scale_factor();
                 let dst = TimeUnit::$time_unit.to_scale_factor();
-                if src >= dst {
-                    // Floor division: subtract the non-negative remainder first, then
-                    // divide exactly. (`Series::floor_div` truncates toward zero for
-                    // integer types, which would round pre-epoch values the wrong way.)
-                    let factor =
-                        Int64Array::from_values("factor", std::iter::once(src / dst)).into_series();
-                    let rem = (&physical % &factor)?;
-                    let rem = (&rem + &factor)?;
-                    let rem = (&rem % &factor)?;
-                    let adjusted = (&physical - &rem)?;
-                    adjusted.floor_div(&factor)
+                let converted = if src >= dst {
+                    // `div_euclid` with a positive divisor is floor division, matching
+                    // Spark's floorDiv. Plain `/` (and a unit cast) truncates toward
+                    // zero, which rounds pre-epoch values the wrong way: -1.5s would
+                    // yield -1 instead of -2.
+                    let factor = src / dst;
+                    values.apply(|v| v.div_euclid(factor))?
                 } else {
-                    let factor =
-                        Int64Array::from_values("factor", std::iter::once(dst / src)).into_series();
-                    &physical * &factor
-                }
+                    let factor = dst / src;
+                    values.apply(|v| v.wrapping_mul(factor))?
+                };
+                Ok(converted.into_series())
             }
 
             fn get_return_field(
