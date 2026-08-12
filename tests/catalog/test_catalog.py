@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from typing import TYPE_CHECKING
 
 import pytest
@@ -330,6 +331,50 @@ def test_create_table_if_not_exists_catalog_qualified():
     assert t1 is not None
     assert t2 is not None
     assert t1.name == t2.name
+
+
+def test_create_table_if_not_exists_returns_existing_table():
+    """create_table_if_not_exists on an existing table returns the existing table."""
+    catalog = MemoryCatalog._new("test")
+    schema = Schema.from_pydict({"a": dt.int64()})
+
+    t1 = catalog.create_table_if_not_exists("tbl", schema)
+    t2 = catalog.create_table_if_not_exists("tbl", Schema.from_pydict({"b": dt.string()}))
+
+    assert t1.name == t2.name == "tbl"
+    # IF NOT EXISTS must not overwrite the existing table.
+    assert t2.schema() == schema
+
+
+def test_create_table_if_not_exists_concurrent():
+    """Concurrent create_table_if_not_exists calls should both succeed."""
+    catalog = MemoryCatalog._new("test")
+    schema = Schema.from_pydict({"a": dt.int64()})
+    # Warm up the runner so concurrent calls don't race on runner
+    # initialization (which is not thread-safe to initialize concurrently).
+    catalog.create_table_if_not_exists("warmup", schema)
+    barrier = threading.Barrier(2, timeout=10)
+    results: list = []
+    lock = threading.Lock()
+
+    def create(i):
+        barrier.wait()  # maximize overlap between the two callers
+        try:
+            t = catalog.create_table_if_not_exists("tbl", schema)
+            with lock:
+                results.append((i, t.name))
+        except Exception as e:
+            with lock:
+                results.append((i, f"error: {e}"))
+
+    threads = [threading.Thread(target=create, args=(i,)) for i in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert len(results) == 2, results
+    assert all(name == "tbl" for _, name in results), results
 
 
 def test_drop_table_catalog_qualified():

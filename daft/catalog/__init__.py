@@ -545,10 +545,15 @@ class Catalog(ABC):
         Returns:
             Table: the existing table (if exists) or the new table instance.
         """
-        if self.has_table(identifier):
-            return self.get_table(identifier)
-        else:
+        try:
             return self.create_table(identifier, source, properties)
+        except ValueError:
+            # Creation failed – if the table already exists (either
+            # pre-existing or created concurrently by another caller),
+            # return the existing table.  This avoids a TOCTOU race
+            # between has_table and create_table.
+            # See: https://github.com/Eventual-Inc/Daft/issues/7310
+            return self.get_table(identifier)
 
     ###
     # has_*

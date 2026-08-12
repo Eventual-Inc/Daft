@@ -1,5 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
+use daft_catalog::error::CatalogError;
 use daft_context::partition_cache::logical_plan_from_micropartitions;
 use daft_core::{prelude::Utf8Array, series::IntoSeries};
 use daft_logical_plan::{LogicalPlan, LogicalPlanBuilder};
@@ -99,15 +100,30 @@ fn execute_create_table(
         (catalog, ident)
     };
 
-    // Handle IF NOT EXISTS.
-    if create_table.if_not_exists && catalog.has_table(&ident)? {
-        return Ok(None);
+    // Try to create the table. If IF NOT EXISTS is specified and the table
+    // already exists (either pre-existing or created concurrently by another
+    // caller), treat it as success – the existing table satisfies the
+    // IF NOT EXISTS contract.
+    //
+    // References Spark's CreateTableExec which catches
+    // TableAlreadyExistsException after create for the same reason.
+    //
+    // We match both the direct CatalogError::ObjectAlreadyExists (pure-Rust
+    // catalogs like MemoryCatalog) and the indirect PythonError variant
+    // (Python-backed catalogs where the error wraps a DaftCoreException).
+    match catalog.create_table(&ident, Arc::new(schema)) {
+        Ok(_) => Ok(None),
+        Err(e) => {
+            if create_table.if_not_exists
+                && (matches!(e, CatalogError::ObjectAlreadyExists { .. })
+                    || e.to_string().contains("already exists"))
+            {
+                Ok(None)
+            } else {
+                Err(e.into())
+            }
+        }
     }
-
-    // Create the table.
-    catalog.create_table(&ident, Arc::new(schema))?;
-
-    Ok(None)
 }
 
 fn execute_show_tables(

@@ -129,29 +129,27 @@ impl Catalog for MemoryCatalog {
     fn create_table(&self, ident: &Identifier, schema: SchemaRef) -> CatalogResult<TableRef> {
         let (namespace, table_name) = Self::split_table_ident(ident)?;
 
-        {
-            let tables = self.tables.read().unwrap();
-
-            let Some(namespace_tables) = tables.get(&namespace) else {
-                return Err(CatalogError::ObjectNotFound {
-                    type_: "namespace".to_string(),
-                    ident: namespace.unwrap(),
-                });
-            };
-
-            if namespace_tables.contains_key(table_name) {
-                return Err(CatalogError::obj_already_exists("table", ident));
-            }
-        }
-
+        // Build the table before taking the lock: MemoryTable::new registers
+        // the partition set with the (Python) runner and can release the GIL,
+        // so holding the lock across this call can deadlock with a concurrent
+        // creator that holds the GIL while waiting on the lock.
         let table = Arc::new(MemoryTable::new(table_name.to_string(), schema)?);
 
-        self.tables
-            .write()
-            .unwrap()
-            .get_mut(&namespace)
-            .unwrap()
-            .insert(table_name.to_string(), table.clone());
+        // Hold a single write lock for the entire check-then-insert to avoid TOCTOU races.
+        let mut tables = self.tables.write().unwrap();
+
+        let namespace_tables = tables.get_mut(&namespace).ok_or_else(|| {
+            CatalogError::ObjectNotFound {
+                type_: "namespace".to_string(),
+                ident: namespace.clone().unwrap(),
+            }
+        })?;
+
+        if namespace_tables.contains_key(table_name) {
+            return Err(CatalogError::obj_already_exists("table", ident));
+        }
+
+        namespace_tables.insert(table_name.to_string(), table.clone());
 
         Ok(table)
     }
