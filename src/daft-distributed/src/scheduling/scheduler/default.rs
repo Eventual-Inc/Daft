@@ -755,7 +755,7 @@ mod tests {
         // worker1 has the most capacity, but is being retired.
         let workers = setup_workers(&[(worker_1.clone(), 10), (worker_2.clone(), 1)]);
         let mut scheduler: DefaultScheduler<MockTask> =
-            setup_scheduler_with_draining(&workers, &[worker_1.clone()]);
+            setup_scheduler_with_draining(&workers, std::slice::from_ref(&worker_1));
 
         scheduler.enqueue_tasks(vec![create_spread_task(Some(1))]);
         let (result, _) = scheduler.schedule_tasks();
@@ -771,7 +771,7 @@ mod tests {
 
         let workers = setup_workers(&[(worker_1.clone(), 2), (worker_2.clone(), 2)]);
         let mut scheduler: DefaultScheduler<MockTask> =
-            setup_scheduler_with_draining(&workers, &[worker_1.clone()]);
+            setup_scheduler_with_draining(&workers, std::slice::from_ref(&worker_1));
 
         // Soft affinity has an alternative, so it must not pin work onto a worker
         // that is on its way out.
@@ -787,9 +787,9 @@ mod tests {
         let worker_1: WorkerId = Arc::from("worker1");
         let worker_2: WorkerId = Arc::from("worker2");
 
-        let workers = setup_workers(&[(worker_1.clone(), 2), (worker_2.clone(), 2)]);
+        let workers = setup_workers(&[(worker_1.clone(), 2), (worker_2, 2)]);
         let mut scheduler: DefaultScheduler<MockTask> =
-            setup_scheduler_with_draining(&workers, &[worker_1.clone()]);
+            setup_scheduler_with_draining(&workers, std::slice::from_ref(&worker_1));
 
         // Hard affinity has no fallback worker: skipping the draining target would
         // leave the task permanently unschedulable.
@@ -807,7 +807,7 @@ mod tests {
 
         let workers = setup_workers(&[(worker_1.clone(), 10)]);
         let mut scheduler: DefaultScheduler<MockTask> =
-            setup_scheduler_with_draining(&workers, &[worker_1]);
+            setup_scheduler_with_draining(&workers, std::slice::from_ref(&worker_1));
 
         // Capacity that is being retired must not count as provisioned capacity.
         scheduler.enqueue_tasks(vec![create_spread_task(Some(1))]);

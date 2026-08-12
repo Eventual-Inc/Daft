@@ -251,7 +251,7 @@ mod tests {
             (MIN_SURVIVOR_WORKERS_ENV, "3"),
             (DOWNSCALE_IDLE_SECONDS_ENV, "10"),
         ]);
-        let policy = DownscalePolicy::from_lookup(|k| env.get(k).map(|v| v.to_string()));
+        let policy = DownscalePolicy::from_lookup(|k| env.get(k).map(|v| (*v).to_string()));
         assert!(policy.enabled);
         assert_eq!(policy.min_survivor_workers, 3);
         assert_eq!(policy.idle_threshold, Duration::from_secs(10));
