@@ -18,7 +18,7 @@ use crate::{
     scheduling::{
         dispatcher::Dispatcher,
         task::{Task, TaskID},
-        worker::{Worker, WorkerManager},
+        worker::{AutoscaleDemandId, Worker, WorkerManager},
     },
     statistics::{StatisticsManagerRef, TaskEvent},
     utils::channel::{
@@ -42,6 +42,11 @@ struct SchedulerLoop<W: Worker, S: Scheduler<W::Task>> {
     worker_manager: Arc<dyn WorkerManager<Worker = W>>,
     statistics_manager: StatisticsManagerRef,
     input_exhausted: bool,
+    /// Identifies this loop's slice of the cluster-wide autoscaling demand.
+    /// Ray's `request_resources()` is a single replace-on-write slot, so the worker
+    /// manager keys demand by owner and always publishes the union; without this,
+    /// concurrent plans would overwrite each other's requests.
+    autoscale_demand_id: AutoscaleDemandId,
 }
 
 impl<W, S> SchedulerLoop<W, S>
@@ -63,6 +68,7 @@ where
             worker_manager,
             statistics_manager,
             input_exhausted: false,
+            autoscale_demand_id: AutoscaleDemandId::new(),
         }
     }
 
@@ -102,8 +108,11 @@ where
     async fn run(mut self) -> DaftResult<()> {
         let loop_result = self.event_loop().await;
 
-        // Job complete (successfully or not): clear any outstanding Ray autoscaling demand
+        // Job complete (successfully or not): retract this loop's autoscaling demand
         // so the autoscaler stops provisioning capacity for work that no longer exists.
+        // Only our own slice is dropped — demand published by other concurrently running
+        // plans stays in effect, since Ray's request_resources() is a single cluster-wide
+        // slot that the worker manager maintains as the union of all live owners.
         // This must also run when the loop exits with an error — a failed query is exactly
         // the case where the demand we signaled no longer has work behind it, and Ray's
         // request_resources() is sticky. It is best-effort: a cleanup failure must not
@@ -113,7 +122,10 @@ where
         // next query in the session and drained by the worker manager's background reaper
         // once workers pass the idle threshold (see #5683). This keeps retirement under a
         // single authority.
-        if let Err(e) = self.worker_manager.clear_autoscale_demand() {
+        if let Err(e) = self
+            .worker_manager
+            .clear_autoscale_demand(self.autoscale_demand_id)
+        {
             tracing::warn!(
                 target: SCHEDULER_LOG_TARGET,
                 error = %e,
@@ -157,7 +169,8 @@ where
                     autoscaling_request = %format!("{:#?}", request),
                     "Sending autoscaling request"
                 );
-                self.worker_manager.try_autoscale(request)?;
+                self.worker_manager
+                    .try_autoscale(self.autoscale_demand_id, request)?;
             }
 
             // 2: Get all tasks that are ready to be scheduled
@@ -453,6 +466,8 @@ impl Drop for SubmittedTask {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use rand::Rng;
 
     use super::*;
@@ -470,6 +485,7 @@ mod tests {
         scheduler_handle_ref: Arc<SchedulerHandle<MockTask>>,
         worker_manager: Arc<MockWorkerManager>,
         joinset: JoinSet<DaftResult<()>>,
+        autoscale_demand_id: AutoscaleDemandId,
     }
 
     impl SchedulerActorTestContext {
@@ -496,6 +512,7 @@ mod tests {
             worker_manager.clone(),
             StatisticsManagerRef::default(),
         );
+        let autoscale_demand_id = loop_state.autoscale_demand_id;
         joinset.spawn(loop_state.run());
         let scheduler_handle = SchedulerHandle::new(scheduler_sender);
 
@@ -503,6 +520,7 @@ mod tests {
             scheduler_handle_ref: Arc::new(scheduler_handle),
             worker_manager,
             joinset,
+            autoscale_demand_id,
         }
     }
 
@@ -538,6 +556,72 @@ mod tests {
         // On completion the scheduler clears outstanding autoscaling demand exactly once,
         // and does not retire workers (that is the reaper's job).
         assert_eq!(ctx.worker_manager.clear_demand_call_count(), 1);
+        // ...and it retracts its own demand slice, not the cluster-wide request.
+        assert_eq!(
+            ctx.worker_manager.cleared_demand_ids(),
+            vec![ctx.autoscale_demand_id]
+        );
+        Ok(())
+    }
+
+    /// Ray's `request_resources()` is a single cluster-wide slot, so autoscaling demand
+    /// must be attributed per plan: two concurrently running scheduler loops each own a
+    /// slice, and finishing one must only retract that one. Otherwise a finishing query
+    /// cancels the capacity a still-running query is waiting on.
+    #[tokio::test]
+    async fn test_concurrent_scheduler_loops_own_separate_autoscale_demand() -> DaftResult<()> {
+        // Start with an empty pool so the loops are pushed onto the autoscaling path.
+        let worker_manager = Arc::new(MockWorkerManager::new(setup_workers(&[])));
+        let mut joinset = JoinSet::new();
+        let mut handles = Vec::new();
+        let mut demand_ids = Vec::new();
+
+        for _ in 0..2 {
+            let (scheduler_sender, scheduler_receiver) = create_unbounded_channel();
+            let loop_state = SchedulerLoop::new(
+                DefaultScheduler::<MockTask>::default(),
+                scheduler_receiver,
+                worker_manager.clone(),
+                StatisticsManagerRef::default(),
+            );
+            demand_ids.push(loop_state.autoscale_demand_id);
+            joinset.spawn(loop_state.run());
+            handles.push(SchedulerHandle::new(scheduler_sender));
+        }
+
+        assert_ne!(
+            demand_ids[0], demand_ids[1],
+            "concurrent scheduler loops must not share an autoscaling demand id"
+        );
+
+        for handle in &handles {
+            let task = MockTaskBuilder::new(create_mock_partition_ref(100, 100)).build();
+            let submitted = SubmittableTask::task_only(task).submit(handle)?;
+            assert_eq!(submitted.await?.unwrap().partitions().len(), 1);
+        }
+
+        drop(handles);
+        while let Some(result) = joinset.join_next().await {
+            result??;
+        }
+
+        // Whether a given loop had to ask for capacity is timing-dependent (the mock
+        // manager materializes workers into a shared pool), but every request that is
+        // made must be attributed to the loop that made it.
+        let owners = demand_ids.iter().copied().collect::<HashSet<_>>();
+        for requested in worker_manager.autoscale_demand_ids() {
+            assert!(
+                owners.contains(&requested),
+                "autoscaling request published under an unknown owner"
+            );
+        }
+
+        // Both loops finished, so both slices — and only those — are retracted.
+        let cleared = worker_manager
+            .cleared_demand_ids()
+            .into_iter()
+            .collect::<HashSet<_>>();
+        assert_eq!(cleared, owners);
         Ok(())
     }
 

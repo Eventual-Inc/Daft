@@ -11,16 +11,19 @@
 //! snapshot taken just before retirement):
 //!
 //! 1. **Drain**: a worker idle past the threshold is marked as draining. A
-//!    draining worker stays alive and can still accept tasks, but is hidden
-//!    from `worker_snapshots()` so the scheduler stops assigning new work to it.
+//!    draining worker stays alive and can still accept tasks, but is flagged as
+//!    such in `worker_snapshots()` so the scheduler stops assigning new work to
+//!    it wherever it has an alternative. Hard-affinity tasks, which have no
+//!    fallback worker, may still be placed there — that immediately makes the
+//!    worker non-idle, so the next tick puts it back in service.
 //! 2. **Release**: on a later reaper tick, a draining worker that is *still*
 //!    idle is actually released. If it picked up work in the meantime (the
 //!    race resolving in favor of the task), it is put back in service instead.
 //!
-//! A release can therefore only happen after the worker has been invisible to
-//! the scheduler for at least one full reaper interval, which is orders of
-//! magnitude longer than the synchronous snapshot->dispatch span in the
-//! scheduler loop.
+//! A release can therefore only happen after the worker has been off the
+//! scheduler's list of candidates for at least one full reaper interval, which
+//! is orders of magnitude longer than the synchronous snapshot->dispatch span in
+//! the scheduler loop.
 
 // The runtime consumer (RayWorkerManager) only exists under the `python` feature;
 // without it this module is exercised by unit tests alone.
@@ -100,7 +103,7 @@ pub(crate) struct ReapPlan {
     /// Draining workers that stayed idle past the threshold for a full reaper
     /// cycle: safe to release now.
     pub release: Vec<WorkerId>,
-    /// Newly idle-past-threshold workers to mark as draining (hidden from
+    /// Newly idle-past-threshold workers to mark as draining (flagged in
     /// scheduler snapshots, released on a later tick if still idle).
     pub drain: Vec<WorkerId>,
     /// Draining workers to put back in service: they picked up work, downscale
@@ -158,9 +161,8 @@ pub(crate) fn plan_reap(
     let mut drain_candidates: Vec<(WorkerId, Duration)> = Vec::new();
 
     for w in workers {
-        let eligible = !w.is_head_node
-            && w.idle_for
-                .is_some_and(|idle| idle >= policy.idle_threshold);
+        let eligible =
+            !w.is_head_node && w.idle_for.is_some_and(|idle| idle >= policy.idle_threshold);
         match (w.draining, eligible) {
             (true, true) => release_candidates.push((w.worker_id.clone(), w.idle_for.unwrap())),
             // Draining worker picked up work (the dispatch/drain race resolving
@@ -258,7 +260,7 @@ mod tests {
     #[test]
     fn test_disabled_is_noop_and_undrains_everything() {
         // Flag flipped off mid-drain: draining workers must be restored so they
-        // don't stay hidden from scheduler snapshots forever.
+        // don't stay flagged as retiring forever.
         let plan = plan_reap(
             &policy(false, 1, 60),
             false,
@@ -316,7 +318,11 @@ mod tests {
 
     #[test]
     fn test_idle_threshold_protects_recently_busy_workers() {
-        let plan = plan_reap(&policy(true, 0, 60), false, &[worker("w1", Some(30), false)]);
+        let plan = plan_reap(
+            &policy(true, 0, 60),
+            false,
+            &[worker("w1", Some(30), false)],
+        );
         assert_eq!(plan, ReapPlan::default());
     }
 

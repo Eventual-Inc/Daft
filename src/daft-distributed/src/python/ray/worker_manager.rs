@@ -16,7 +16,7 @@ use crate::scheduling::{
     },
     scheduler::WorkerSnapshot,
     task::{SwordfishTask, TaskContext, TaskResourceRequest},
-    worker::{Worker, WorkerId, WorkerManager},
+    worker::{AutoscaleDemandId, Worker, WorkerId, WorkerManager},
 };
 
 const REFRESH_INTERVAL_SECS: Duration = Duration::from_secs(5);
@@ -25,14 +25,33 @@ const DEFAULT_AUTOSCALE_INTERVAL_SECS: u64 = 5;
 // We read the same variable so our rate-limit matches Ray's actual cycle length.
 const RAY_AUTOSCALER_UPDATE_INTERVAL_ENV: &str = "AUTOSCALER_UPDATE_INTERVAL_S";
 
+/// The autoscaling demand currently held by one owner (one running plan).
+///
+/// Ray's `request_resources` is a single cluster-wide slot that each call *replaces*,
+/// so the manager keeps one of these per owner and always publishes the concatenation
+/// of every live owner's `bundles`. Ending one plan then cannot cancel the capacity
+/// another plan is still waiting on.
+#[derive(Debug, Default)]
+struct AutoscaleDemand {
+    /// The bundles this owner last asked Ray for, in `request_resources` shape.
+    bundles: Vec<HashMap<&'static str, i64>>,
+    /// High-water mark of what this owner has requested so far. The request grows by one
+    /// bundle per autoscaler cycle, so this is ramp state and it is deliberately
+    /// per-owner: a newly started plan must not inherit an older plan's ramp.
+    high_water_mark: ResourceRequest,
+    /// When this owner last published, used to rate-limit its ramp to Ray's cycle.
+    last_request_time: Option<Instant>,
+}
+
 struct RayWorkerManagerState {
     ray_workers: HashMap<WorkerId, RaySwordfishWorker>,
     // Workers marked by the reaper as draining: still alive (and counted toward the
-    // min-survivor floor) but hidden from `worker_snapshots()` so the scheduler stops
-    // assigning new work to them. Released on a later reaper tick if still idle.
+    // min-survivor floor) but flagged in `worker_snapshots()` so the scheduler stops
+    // assigning them new work. Released on a later reaper tick if still idle.
     draining_workers: HashSet<WorkerId>,
     last_refresh: Option<Instant>,
-    max_resources_requested: ResourceRequest,
+    /// Live autoscaling demand, keyed by the plan that asked for it.
+    autoscale_demands: HashMap<AutoscaleDemandId, AutoscaleDemand>,
     pending_release_blacklist: HashMap<WorkerId, Instant>,
     last_autoscale_request_time: Option<Instant>,
     autoscale_interval_secs: Duration,
@@ -40,6 +59,18 @@ struct RayWorkerManagerState {
 }
 
 impl RayWorkerManagerState {
+    /// The bundles to publish to Ray: the concatenation of every live owner's demand.
+    ///
+    /// `request_resources` replaces the cluster-wide demand on every call, so this must
+    /// always be the full picture. An empty result is the "no demand" request, i.e. what
+    /// `clear_autoscaling_requests()` sends.
+    fn all_autoscale_bundles(&self) -> Vec<HashMap<&'static str, i64>> {
+        self.autoscale_demands
+            .values()
+            .flat_map(|demand| demand.bundles.iter().cloned())
+            .collect()
+    }
+
     fn refresh_workers(&mut self) -> DaftResult<()> {
         let should_refresh = match self.last_refresh {
             None => true,
@@ -101,7 +132,7 @@ impl RayWorkerManager {
             ray_workers: HashMap::new(),
             draining_workers: HashSet::new(),
             last_refresh: None,
-            max_resources_requested: ResourceRequest::default(),
+            autoscale_demands: HashMap::new(),
             pending_release_blacklist: HashMap::new(),
             last_autoscale_request_time: None,
             autoscale_interval_secs: Duration::from_secs(
@@ -124,8 +155,9 @@ impl RayWorkerManager {
         // manager is dropped.
         //
         // Retirement is two-phase (drain, then release on a later tick) so a worker is
-        // only ever killed after it has been hidden from scheduler snapshots for at least
-        // one full reaper interval — see `scheduling::downscale` for the race analysis.
+        // only ever killed after it has been flagged as draining in scheduler snapshots
+        // for at least one full reaper interval — see `scheduling::downscale` for the
+        // race analysis.
         let reaper_state = Arc::downgrade(&state);
         let spawn_result = std::thread::Builder::new()
             .name("daft-idle-reaper".to_string())
@@ -145,9 +177,10 @@ impl RayWorkerManager {
                     // The reaper is a detached thread with no supervisor: a stray panic
                     // (including lock poisoning from another thread) must not silently
                     // kill retirement for the rest of the session.
-                    let tick_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
-                        || Self::reap_idle_workers(&state),
-                    ));
+                    let tick_result =
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            Self::reap_idle_workers(&state)
+                        }));
                     match tick_result {
                         Ok(Ok(_)) => {}
                         Ok(Err(e)) => {
@@ -229,13 +262,15 @@ impl WorkerManager for RayWorkerManager {
         // Refresh workers if needed (internally rate-limited)
         state.refresh_workers()?;
 
-        // Draining workers are deliberately hidden from the scheduler so no new tasks
-        // are assigned to them while the reaper decides whether to release them.
+        // Draining workers stay visible but are tagged, so the scheduler stops giving
+        // them discretionary work while hard-affinity tasks that can only run there can
+        // still resolve their target. Hiding them outright made such tasks permanently
+        // unschedulable: the hard-affinity path has no fallback and simply fails when
+        // the worker is absent from the snapshots.
         Ok(state
             .ray_workers
             .values()
-            .filter(|w| !state.draining_workers.contains(w.id()))
-            .map(WorkerSnapshot::from)
+            .map(|w| WorkerSnapshot::from(w).with_draining(state.draining_workers.contains(w.id())))
             .collect::<Vec<_>>())
     }
 
@@ -265,7 +300,16 @@ impl WorkerManager for RayWorkerManager {
             .expect("Failed to lock RayWorkerManagerState");
         Python::attach(|py| {
             for worker in state.ray_workers.values() {
-                worker.shutdown(py);
+                // Best effort: a failure to tear one actor down must not abort the
+                // shutdown of the remaining workers.
+                if let Err(e) = worker.shutdown(py) {
+                    tracing::error!(
+                        target: "ray_worker_manager",
+                        worker_id = %worker.id(),
+                        error = %e,
+                        "Failed to shut down worker during teardown"
+                    );
+                }
             }
         });
         Ok(())
@@ -298,22 +342,37 @@ impl WorkerManager for RayWorkerManager {
     ///
     /// Algorithm: since we cannot detect failures and don't know the cluster's max capacity,
     /// we ramp up demand gradually. In each autoscaler cycle, we send one more bundle than the
-    /// previous request (tracked via `max_resources_requested` as a high-water mark). The
+    /// previous request (tracked as a per-owner high-water mark). The
     /// high-water mark is floored to current cluster resources so the very first cycle
     /// immediately requests scaling beyond current capacity.
-    fn try_autoscale(&self, bundles: Vec<TaskResourceRequest>) -> DaftResult<()> {
+    fn try_autoscale(
+        &self,
+        demand_id: AutoscaleDemandId,
+        bundles: Vec<TaskResourceRequest>,
+    ) -> DaftResult<()> {
         let mut state = self
             .state
             .lock()
             .expect("Failed to lock RayWorkerManagerState");
 
-        // 1. Only attempt to grow the request once per Ray autoscaler reconciliation cycle.
-        //    Sending more frequently would just overwrite the previous value before Ray processes it.
-        if let Some(last_time) = state.last_autoscale_request_time
-            && last_time.elapsed() < state.autoscale_interval_secs
-        {
-            return Ok(());
-        }
+        // 1. Only attempt to grow this owner's request once per Ray autoscaler
+        //    reconciliation cycle. Sending more frequently would just overwrite the
+        //    previous value before Ray processes it. The rate limit is per owner: a
+        //    plan that just started must not have to wait out another plan's cycle.
+        //    Note we deliberately do not register the owner here — an owner that bails
+        //    out below never published anything, so it must not appear in the demand map.
+        let autoscale_interval = state.autoscale_interval_secs;
+        let high_water_mark = match state.autoscale_demands.get(&demand_id) {
+            Some(demand) => {
+                if let Some(last_time) = demand.last_request_time
+                    && last_time.elapsed() < autoscale_interval
+                {
+                    return Ok(());
+                }
+                demand.high_water_mark.clone()
+            }
+            None => ResourceRequest::default(),
+        };
 
         // 2. Floor the high-water mark to at least the current cluster's total resources.
         //    On cold start (high-water mark is 0), this lets us skip straight to requesting
@@ -330,18 +389,15 @@ impl WorkerManager for RayWorkerManager {
                     acc.2 + worker.total_memory_bytes(),
                 )
             });
-        let high_water_mark_cpus = state
-            .max_resources_requested
+        let high_water_mark_cpus = high_water_mark
             .num_cpus()
             .unwrap_or(0.0)
             .max(cluster_num_cpus);
-        let high_water_mark_gpus = state
-            .max_resources_requested
+        let high_water_mark_gpus = high_water_mark
             .num_gpus()
             .unwrap_or(0.0)
             .max(cluster_num_gpus);
-        let high_water_mark_memory = state
-            .max_resources_requested
+        let high_water_mark_memory = high_water_mark
             .memory_bytes()
             .unwrap_or(0)
             .max(cluster_memory_bytes);
@@ -376,10 +432,10 @@ impl WorkerManager for RayWorkerManager {
             return Ok(());
         }
 
-        // 5. Send the selected bundles to Ray's autoscaler via request_resources().
-        //    Strip zero-valued GPU/memory keys so Ray doesn't interpret them as a demand
-        //    for zero-resource bundles on specialized nodes.
-        let python_bundles = selected_bundles
+        // 5. Translate the selected bundles into Ray's `request_resources` shape. Strip
+        //    zero-valued GPU/memory keys so Ray doesn't interpret them as a demand for
+        //    zero-resource bundles on specialized nodes.
+        let own_bundles = selected_bundles
             .iter()
             .map(|bundle| {
                 let mut dict = HashMap::new();
@@ -396,9 +452,33 @@ impl WorkerManager for RayWorkerManager {
             })
             .collect::<Vec<_>>();
 
+        // 6. Record this request as this owner's new high-water mark, so its next cycle
+        //    requests exactly one bundle more and never sends a smaller request.
+        let own_bundle_count = own_bundles.len();
+        let demand = state.autoscale_demands.entry(demand_id).or_default();
+        demand.bundles = own_bundles;
+        demand.high_water_mark =
+            ResourceRequest::try_new_internal(Some(cpu_sum), Some(gpu_sum), Some(memory_sum))?;
+        demand.last_request_time = Some(Instant::now());
+
+        // 7. Publish the union of every live owner's demand. `request_resources` replaces
+        //    the cluster-wide slot on every call, so sending only our own bundles would
+        //    silently cancel the capacity a concurrently running plan is waiting on.
+        let published_bundles = state.all_autoscale_bundles();
+
+        tracing::debug!(
+            target: "ray_worker_manager",
+            demand_id = %demand_id,
+            own_bundles = own_bundle_count,
+            total_bundles = published_bundles.len(),
+            live_owners = state.autoscale_demands.len(),
+            "Publishing autoscaling demand"
+        );
+
         Python::attach(|py| -> DaftResult<()> {
             let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
-            flotilla_module.call_method1(pyo3::intern!(py, "try_autoscale"), (python_bundles,))?;
+            flotilla_module
+                .call_method1(pyo3::intern!(py, "try_autoscale"), (published_bundles,))?;
             Ok(())
         })?;
 
@@ -409,42 +489,44 @@ impl WorkerManager for RayWorkerManager {
         state.pending_release_blacklist.clear();
         state.draining_workers.clear();
         state.last_refresh = None;
-
-        // 6. Record this request as the new high-water mark so the next cycle will
-        //    request exactly one bundle more, and so we never send a smaller request.
-        state.max_resources_requested =
-            ResourceRequest::try_new_internal(Some(cpu_sum), Some(gpu_sum), Some(memory_sum))?;
+        // Cluster-wide guard used by the reaper: any recent scale-up, from any owner,
+        // suppresses retirement for a full autoscaler cycle.
         state.last_autoscale_request_time = Some(Instant::now());
 
         Ok(())
     }
 
-    fn clear_autoscale_demand(&self) -> DaftResult<()> {
+    fn clear_autoscale_demand(&self, demand_id: AutoscaleDemandId) -> DaftResult<()> {
         // Tell Ray's autoscaler to stop provisioning capacity for a job that has
         // finished. This is demand-clearing only — it does not retire any workers.
         // Draining the idle warm pool is owned by the background reaper so retirement
         // has a single authority (see #5683).
-        {
+        let remaining_bundles = {
             let mut state = self
                 .state
                 .lock()
                 .expect("Failed to lock RayWorkerManagerState");
             // If this job never sent a scale-up request, there is no demand of ours in
             // Ray's autoscaler to clear. Skipping the call avoids touching Python on the
-            // default (non-autoscaling) path and avoids clobbering the cluster-wide
+            // default (non-autoscaling) path and avoids writing to the cluster-wide
             // `request_resources` slot that another job may be using.
-            if state.last_autoscale_request_time.is_none() {
+            if state.autoscale_demands.remove(&demand_id).is_none() {
                 return Ok(());
             }
-            state.max_resources_requested = ResourceRequest::default();
-            // Also reset the scale-up guard: with no outstanding demand there is nothing
-            // for the reaper's guard to protect, so idle workers can drain on schedule.
-            state.last_autoscale_request_time = None;
-        }
+            if state.autoscale_demands.is_empty() {
+                // Nothing of ours is outstanding any more, so the reaper's scale-up guard
+                // has nothing left to protect and idle workers can drain on schedule.
+                state.last_autoscale_request_time = None;
+            }
+            // Re-publish whatever other plans still need. When nothing is left this is an
+            // empty request, which is exactly `clear_autoscaling_requests()`.
+            state.all_autoscale_bundles()
+        };
 
         Python::attach(|py| -> DaftResult<()> {
             let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
-            flotilla_module.call_method0(pyo3::intern!(py, "clear_autoscaling_requests"))?;
+            flotilla_module
+                .call_method1(pyo3::intern!(py, "try_autoscale"), (remaining_bundles,))?;
             Ok(())
         })?;
         Ok(())
@@ -540,11 +622,11 @@ impl RayWorkerManager {
                 }
             }
 
-            // Only reset the autoscale high-water mark and force a worker refresh when
-            // we actually retired something; a no-op tick must not perturb shared
-            // autoscaling state.
+            // Only force a worker refresh when we actually retired something; a no-op
+            // tick must not perturb shared state. Autoscaling demand is deliberately
+            // untouched here: it belongs to whichever plans are still running, and the
+            // reaper is not one of them.
             if !workers_to_release.is_empty() {
-                state.max_resources_requested = ResourceRequest::default();
                 state.last_refresh = None;
             }
 
@@ -560,7 +642,7 @@ impl RayWorkerManager {
             tracing::info!(
                 target: "ray_worker_manager",
                 drained,
-                "Downscale: marked idle workers as draining (hidden from scheduler)"
+                "Downscale: marked idle workers as draining (skipped by the scheduler)"
             );
         }
 
@@ -575,19 +657,54 @@ impl RayWorkerManager {
         );
 
         let mut released = 0usize;
-        Python::attach(|py| -> DaftResult<()> {
+        // Workers we removed from state but could not actually shut down: they are
+        // still alive out there, so they must go back into the manager's state
+        // instead of being leaked (invisible to the scheduler, yet consuming cluster
+        // resources until the blacklist TTL expires).
+        let mut not_released = Vec::new();
+        Python::attach(|py| {
             for mut worker in workers_to_release {
-                worker.release(py);
-                released += 1;
+                match worker.release(py) {
+                    Ok(true) => released += 1,
+                    Ok(false) => {
+                        // Picked up work between selection and release.
+                        not_released.push(worker);
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            target: "ray_worker_manager",
+                            worker_id = %worker.id(),
+                            error = %e,
+                            "Failed to release worker; returning it to the pool"
+                        );
+                        not_released.push(worker);
+                    }
+                }
             }
-            Ok(())
-        })?;
+        });
 
-        Python::attach(|py| -> DaftResult<()> {
-            let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
-            flotilla_module.call_method0(pyo3::intern!(py, "clear_autoscaling_requests"))?;
-            Ok(())
-        })?;
+        if !not_released.is_empty() {
+            let mut state = Self::lock_state(state_arc);
+            for worker in not_released {
+                let worker_id = worker.id().clone();
+                state.pending_release_blacklist.remove(&worker_id);
+                state.draining_workers.remove(&worker_id);
+                state.ray_workers.insert(worker_id, worker);
+            }
+            // The pool changed under us; make the next snapshot re-read it.
+            state.last_refresh = None;
+        }
+
+        if released == 0 {
+            return Ok(0);
+        }
+
+        // Note: we deliberately do not touch Ray's autoscaling request here. It is the
+        // union of the demand published by every live plan, keyed by owner, and each owner
+        // retracts its own slice when it finishes (`clear_autoscale_demand`). Retiring an
+        // idle worker does not change that union, and because `request_resources` replaces
+        // the cluster-wide slot on every call, clearing it here — as this code used to —
+        // would cancel capacity that a still-running plan is waiting on.
 
         tracing::info!(
             target: "ray_worker_manager",
