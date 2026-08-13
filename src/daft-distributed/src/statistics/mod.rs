@@ -67,7 +67,7 @@ impl TaskEvent {
             Ok(task_status) => match task_status {
                 TaskStatus::Success { stats, .. } => Self::Completed {
                     context,
-                    stats: stats.clone(),
+                    stats: (**stats).clone(),
                     worker_id,
                 },
                 TaskStatus::Failed { error } => Self::Failed {
@@ -171,12 +171,12 @@ fn remap_task_profile_telemetry(stats: &ExecutionStats) -> ProfileTelemetry {
             for (name, stat) in snapshot.to_stats().iter() {
                 match (name, stat) {
                     (ROWS_OUT_KEY, Stat::Count(value)) if node_info.is_task_root => {
-                        values.0 += *value
+                        values.0 += *value;
                     }
                     (BYTES_OUT_KEY | BYTES_READ_KEY, Stat::Bytes(value))
                         if node_info.is_task_root || node_info.is_task_leaf =>
                     {
-                        values.1 = values.1.max(*value)
+                        values.1 = values.1.max(*value);
                     }
                     _ => {}
                 }

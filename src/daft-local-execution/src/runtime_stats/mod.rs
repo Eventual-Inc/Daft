@@ -718,7 +718,7 @@ impl ProfileInputBuilder {
             match (name, stat) {
                 (ROWS_OUT_KEY, Stat::Count(value)) => rows_out = *value,
                 (BYTES_OUT_KEY | BYTES_READ_KEY, Stat::Bytes(value)) => {
-                    bytes_out = bytes_out.max(*value)
+                    bytes_out = bytes_out.max(*value);
                 }
                 _ => {}
             }
@@ -892,9 +892,7 @@ mod tests {
         let peak = AtomicU64::new(0);
         for bytes in [100, 80, 120] {
             let stats = Stats(
-                [(Arc::<str>::from(PROCESS_RSS_KEY), Stat::Bytes(bytes))]
-                    .into_iter()
-                    .collect(),
+                std::iter::once((Arc::<str>::from(PROCESS_RSS_KEY), Stat::Bytes(bytes))).collect(),
             );
             update_peak_process_rss(&peak, &stats);
         }
