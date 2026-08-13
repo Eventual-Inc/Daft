@@ -40,6 +40,13 @@ pub use values::{DefaultRuntimeStats, RuntimeStats};
 
 use crate::pipeline::PipelineNode;
 
+/// Per-node runtime stats: NodeID -> InputId -> RuntimeStats
+/// Better than (NodeID, InputId) since we can narrow down the search space
+/// for aggregations.
+// TODO: Consider switching to (InputId, NodeID) instead
+// We need to check what the InputId is in the case of Swordfish though.
+type InputStatsMap = HashMap<NodeID, HashMap<InputId, Arc<dyn RuntimeStats>>>;
+
 /// Message type for the stats manager channel.
 #[allow(dead_code)]
 pub enum StatsManagerMessage {
@@ -219,7 +226,7 @@ impl RuntimeStatsManager {
     #[allow(clippy::too_many_arguments)]
     fn handle_message(
         msg: StatsManagerMessage,
-        input_stats: &mut HashMap<(NodeID, InputId), Arc<dyn RuntimeStats>>,
+        input_stats: &mut InputStatsMap,
         active_nodes: &mut HashSet<NodeID>,
         query_id: &QueryID,
         query_plan: &serde_json::Value,
@@ -260,7 +267,10 @@ impl RuntimeStatsManager {
                 }
             }
             StatsManagerMessage::RegisterRuntimeStats(node_id, input_id, stats) => {
-                input_stats.insert((node_id, input_id), stats);
+                input_stats
+                    .entry(node_id)
+                    .or_default()
+                    .insert(input_id, stats);
             }
             StatsManagerMessage::TakeInputSnapshot(input_id, respond_tx) => {
                 let _ = respond_tx.send(build_input_execution_stats(
@@ -277,7 +287,7 @@ impl RuntimeStatsManager {
     fn flush_and_finalize_node(
         query_id: &QueryID,
         node_id: NodeID,
-        input_stats: &HashMap<(NodeID, InputId), Arc<dyn RuntimeStats>>,
+        input_stats: &InputStatsMap,
         progress_bar: Option<&dyn ProgressBar>,
         subscribers: &[Arc<dyn Subscriber>],
         err_context: &'static str,
@@ -413,8 +423,8 @@ impl RuntimeStatsManager {
         let event_loop = async move {
             let mut interval = interval(throttle_interval);
             let mut active_nodes = HashSet::with_capacity(node_info_map.len());
-            // Per-input_id stats: (node_id, input_id) -> RuntimeStats
-            let mut input_stats: HashMap<(NodeID, InputId), Arc<dyn RuntimeStats>> = HashMap::new();
+            // Per-node, per-input_id stats: node_id -> input_id -> RuntimeStats
+            let mut input_stats: InputStatsMap = HashMap::new();
             // Reuse container for ticks
             let mut snapshot_container = Vec::with_capacity(node_info_map.len());
             let mut last_task_stats_emit: Option<Instant> = None;
@@ -600,7 +610,7 @@ fn dispatch_event(subscribers: &[Arc<dyn Subscriber>], event: &Event, err_contex
 /// and saturating the dashboard's POST queue on multi-CPU workers.
 fn emit_per_task_stats_updates(
     query_id: &QueryID,
-    input_stats: &HashMap<(NodeID, InputId), Arc<dyn RuntimeStats>>,
+    input_stats: &InputStatsMap,
     node_info_map: &HashMap<NodeID, Arc<NodeInfo>>,
     subscribers: &[Arc<dyn Subscriber>],
 ) {
@@ -615,16 +625,18 @@ fn emit_per_task_stats_updates(
     // logic stays in lockstep with `on_task_end` in the dashboard subscriber.
     let mut by_input: HashMap<InputId, common_metrics::task_io::TaskExternalIo> = HashMap::new();
     let default_node_info = NodeInfo::default();
-    for (&(node_id, input_id), stats) in input_stats {
-        let snapshot = stats.snapshot();
+    for (node_id, by_input_stats) in input_stats {
         let node_info = node_info_map
-            .get(&node_id)
+            .get(node_id)
             .map(Arc::as_ref)
             .unwrap_or(&default_node_info);
-        by_input
-            .entry(input_id)
-            .or_default()
-            .accumulate(node_info, &snapshot);
+        for (&input_id, stats) in by_input_stats {
+            let snapshot = stats.snapshot();
+            by_input
+                .entry(input_id)
+                .or_default()
+                .accumulate(node_info, &snapshot);
+        }
     }
     let by_input: HashMap<InputId, TaskStatsSnapshot> = by_input
         .into_iter()
@@ -655,19 +667,14 @@ fn emit_per_task_stats_updates(
 }
 
 /// Aggregate stats for a given node_id across all input_ids.
-fn aggregate_node_stats(
-    input_stats: &HashMap<(NodeID, InputId), Arc<dyn RuntimeStats>>,
-    node_id: NodeID,
-) -> Option<StatSnapshot> {
+fn aggregate_node_stats(input_stats: &InputStatsMap, node_id: NodeID) -> Option<StatSnapshot> {
     let mut aggregated: Option<StatSnapshot> = None;
-    for ((nid, _), stats) in input_stats {
-        if *nid == node_id {
-            let snapshot = stats.snapshot();
-            aggregated = Some(match aggregated {
-                Some(acc) => acc.merge(&snapshot),
-                None => snapshot,
-            });
-        }
+    for stats in input_stats.get(&node_id)?.values() {
+        let snapshot = stats.snapshot();
+        aggregated = Some(match aggregated {
+            Some(acc) => acc.merge(&snapshot),
+            None => snapshot,
+        });
     }
     aggregated
 }
@@ -743,7 +750,8 @@ impl ProfileInputBuilder {
         }
     }
 
-    fn finish(self, query_id: &QueryID, query_plan: &serde_json::Value) -> ExecutionStats {
+    fn finish(mut self, query_id: &QueryID, query_plan: &serde_json::Value) -> ExecutionStats {
+        self.nodes.sort_by_key(|(node_info, _)| node_info.id);
         ExecutionStats::new(query_id.clone(), self.nodes)
             .with_query_plan(query_plan.clone())
             .with_profile_telemetry(self.telemetry)
@@ -754,15 +762,15 @@ fn build_input_execution_stats(
     query_id: &QueryID,
     query_plan: &serde_json::Value,
     input_id: InputId,
-    input_stats: &HashMap<(NodeID, InputId), Arc<dyn RuntimeStats>>,
+    input_stats: &InputStatsMap,
     node_info_map: &HashMap<NodeID, Arc<NodeInfo>>,
 ) -> ExecutionStats {
     let mut builder = ProfileInputBuilder::new();
-    for (&(node_id, iid), runtime_stats) in input_stats {
-        if iid == input_id {
+    for (node_id, by_input) in input_stats {
+        if let Some(runtime_stats) = by_input.get(&input_id) {
             builder.record(
-                node_id,
-                node_info_map.get(&node_id),
+                *node_id,
+                node_info_map.get(node_id),
                 runtime_stats.as_ref(),
                 runtime_stats.flush(),
             );
@@ -774,20 +782,22 @@ fn build_input_execution_stats(
 fn build_all_input_execution_stats(
     query_id: &QueryID,
     query_plan: &serde_json::Value,
-    input_stats: &HashMap<(NodeID, InputId), Arc<dyn RuntimeStats>>,
+    input_stats: &InputStatsMap,
     node_info_map: &HashMap<NodeID, Arc<NodeInfo>>,
 ) -> HashMap<InputId, ExecutionStats> {
     let mut builders: HashMap<InputId, ProfileInputBuilder> = HashMap::new();
-    for (&(node_id, input_id), runtime_stats) in input_stats {
-        builders
-            .entry(input_id)
-            .or_insert_with(ProfileInputBuilder::new)
-            .record(
-                node_id,
-                node_info_map.get(&node_id),
-                runtime_stats.as_ref(),
-                runtime_stats.flush(),
-            );
+    for (node_id, by_input) in input_stats {
+        for (input_id, runtime_stats) in by_input {
+            builders
+                .entry(*input_id)
+                .or_insert_with(ProfileInputBuilder::new)
+                .record(
+                    *node_id,
+                    node_info_map.get(node_id),
+                    runtime_stats.as_ref(),
+                    runtime_stats.flush(),
+                );
+        }
     }
     builders
         .into_iter()
@@ -900,8 +910,10 @@ mod tests {
         runtime_stats.add_rows_out(100);
         runtime_stats.add_bytes_out(200);
         runtime_stats.add_shuffle_write_bytes(50);
-        let input_stats: HashMap<(NodeID, InputId), Arc<dyn RuntimeStats>> =
-            HashMap::from([((7, 3), runtime_stats as Arc<dyn RuntimeStats>)]);
+        let input_stats: InputStatsMap = HashMap::from([(
+            7,
+            HashMap::from([(3, runtime_stats as Arc<dyn RuntimeStats>)]),
+        )]);
 
         let stats = build_input_execution_stats(
             &"query".into(),
@@ -965,10 +977,13 @@ mod tests {
     fn final_metadata_flushes_once_and_keeps_inputs_independent() {
         let first = Arc::new(CountingRuntimeStats::new(10, 100));
         let second = Arc::new(CountingRuntimeStats::new(20, 200));
-        let input_stats: HashMap<(NodeID, InputId), Arc<dyn RuntimeStats>> = HashMap::from([
-            ((7, 1), first.clone() as Arc<dyn RuntimeStats>),
-            ((7, 2), second.clone() as Arc<dyn RuntimeStats>),
-        ]);
+        let input_stats: InputStatsMap = HashMap::from([(
+            7,
+            HashMap::from([
+                (1, first.clone() as Arc<dyn RuntimeStats>),
+                (2, second.clone() as Arc<dyn RuntimeStats>),
+            ]),
+        )]);
 
         let finished = build_all_input_execution_stats(
             &"query".into(),
@@ -1002,8 +1017,10 @@ mod tests {
         assert!(empty.profile_telemetry.partition_stats.is_empty());
 
         let runtime_stats = Arc::new(CountingRuntimeStats::new(12, 34));
-        let input_stats: HashMap<(NodeID, InputId), Arc<dyn RuntimeStats>> =
-            HashMap::from([((9, 1), runtime_stats as Arc<dyn RuntimeStats>)]);
+        let input_stats: InputStatsMap = HashMap::from([(
+            9,
+            HashMap::from([(1, runtime_stats as Arc<dyn RuntimeStats>)]),
+        )]);
         let unmapped = build_input_execution_stats(
             &"query".into(),
             &serde_json::Value::Null,
