@@ -66,6 +66,49 @@ fn not_over_builtin_scalar_fn_uses_childs_evaluated_field_name() -> DaftResult<(
     Ok(())
 }
 
+/// Root-cause regression test: `IfElse::to_field` with a constant-`false` predicate must
+/// name its output after `if_true`'s *actual evaluated* field name, not `Expr::name()`
+/// (the first-argument name). Both runtime eval paths in `daft-recordbatch` rename the
+/// result via the schema-aware `if_true.get_name(schema)`, so a `to_field` that disagrees
+/// trips the "Mismatch of expected expression name" consistency check -- which is exactly
+/// what broke `when(lit(False), st_area(geom)).otherwise(None)`.
+#[test]
+fn if_else_with_literal_predicate_uses_if_trues_evaluated_field_name() -> DaftResult<()> {
+    let schema = Schema::new(vec![Field::new("x", DataType::Boolean)]);
+    let aliased_arg = resolved_col("x").alias("g");
+    let if_true: ExprRef = ScalarFn::builtin(RenamingBoolFn, vec![aliased_arg]).into();
+
+    // Sanity-check the premise: `Expr::name()` (first-arg name) differs from what the
+    // scalar fn actually evaluates/`to_field`s to (its own return-field name).
+    #[allow(deprecated)]
+    let if_true_name = if_true.name().to_string();
+    assert_eq!(if_true_name, "g");
+    let if_true_field = if_true.to_field(&schema)?;
+    assert_eq!(if_true_field.name.as_ref(), "renaming_bool_fn");
+    assert_ne!(if_true_name, if_true_field.name.as_ref());
+
+    // Constant-`false`: the result takes `if_false`'s *value* but `if_true`'s *name*.
+    let false_field = lit(false)
+        .if_else(if_true.clone(), null_lit())
+        .to_field(&schema)?;
+    assert_eq!(false_field.name, if_true_field.name);
+
+    // Constant-`true` already resolves through `if_true.to_field`; pin it so the two
+    // literal arms stay consistent with each other.
+    let true_field = lit(true)
+        .if_else(if_true.clone(), null_lit())
+        .to_field(&schema)?;
+    assert_eq!(true_field.name, if_true_field.name);
+
+    // Non-constant predicates were never broken -- guard against a fix that regresses them.
+    let dynamic_field = resolved_col("x")
+        .if_else(if_true, null_lit())
+        .to_field(&schema)?;
+    assert_eq!(dynamic_field.name, if_true_field.name);
+
+    Ok(())
+}
+
 #[test]
 fn check_comparison_type() -> DaftResult<()> {
     let x = lit(10.);

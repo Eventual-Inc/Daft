@@ -2300,7 +2300,16 @@ impl Expr {
                 match predicate.as_ref() {
                     Self::Literal(Literal::Boolean(true)) => if_true.to_field(schema),
                     Self::Literal(Literal::Boolean(false)) => {
-                        Ok(if_false.to_field(schema)?.rename(if_true.name()))
+                        // Name after `if_true`'s *evaluated* field name rather than the
+                        // deprecated `Expr::name()`, which for a builtin ScalarFn is its
+                        // first argument's name. Both runtime eval paths rename the result
+                        // via the schema-aware `if_true.get_name(schema)`, so using
+                        // `name()` here makes `to_field` disagree with evaluation for any
+                        // renaming builtin (e.g. `st_area`) and trips the
+                        // "Mismatch of expected expression name" check.
+                        Ok(if_false
+                            .to_field(schema)?
+                            .rename(if_true.to_field(schema)?.name))
                     }
                     _ => {
                         let if_true_field = if_true.to_field(schema)?;

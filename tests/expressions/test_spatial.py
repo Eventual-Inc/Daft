@@ -1374,3 +1374,41 @@ def test_cast_to_geometry_from_binary_still_works():
     wkb = df.select(daft.col("g").cast(daft.DataType.binary()).alias("wkb"))
     back = wkb.select(daft.col("wkb").cast(daft.DataType.geometry()).alias("g2"))
     assert back.to_pydict()["g2"] == df.to_pydict()["g"]
+
+
+# ── when()/otherwise with a constant predicate ───────────────────────────────
+
+
+def test_when_literal_false_over_st_area_does_not_mismatch_names():
+    """Regression: `when(lit(False), st_area(g)).otherwise(None)` must evaluate cleanly.
+
+    `IfElse::to_field` used the deprecated `Expr::name()` (a builtin ScalarFn's *first
+    argument* name, "geom") while both runtime eval paths rename via the schema-aware
+    `get_name()` ("st_area"). The disagreement tripped the "Mismatch of expected
+    expression name" consistency check for any constant-`False` predicate whose
+    `if_true` branch is a renaming builtin such as `st_area`.
+    """
+    from daft.functions import when
+
+    df = daft.from_pydict({"geom": ["POINT(1 2)", "POINT(3 4)"]}).select(
+        st_geomfromtext(daft.col("geom")).alias("geom")
+    )
+
+    expr = when(daft.lit(False), st_area(daft.col("geom"))).otherwise(daft.lit(None))
+    result = df.select(expr.alias("area")).to_pydict()
+
+    assert result == {"area": [None, None]}
+
+
+def test_when_literal_true_over_st_area_keeps_if_true_branch():
+    """The constant-`True` arm must still evaluate `st_area` and keep its name."""
+    from daft.functions import when
+
+    df = daft.from_pydict({"geom": ["POLYGON((0 0, 2 0, 2 2, 0 2, 0 0))"]}).select(
+        st_geomfromtext(daft.col("geom")).alias("geom")
+    )
+
+    expr = when(daft.lit(True), st_area(daft.col("geom"))).otherwise(daft.lit(None))
+    result = df.select(expr.alias("area")).to_pydict()
+
+    assert result["area"] == [4.0]
