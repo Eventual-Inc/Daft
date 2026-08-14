@@ -9,7 +9,14 @@ import pyarrow.parquet as pq
 import pytest
 
 import daft
-from daft.datasets.lerobot import load_episode_frames, read, read_episodes, read_tasks
+from daft.datasets.lerobot import (
+    _V2_VIDEO_PATH,
+    _format_path_template,
+    load_episode_frames,
+    read,
+    read_episodes,
+    read_tasks,
+)
 
 
 def _write_table(path, table: pa.Table) -> None:
@@ -576,7 +583,7 @@ def test_v21_read_load_video_frames(tiny_lerobot_v21_video):
         assert img0.mode == "RGB"
         assert img0.size[0] > 10 and img0.size[1] > 10
     else:
-        import numpy as np
+        np = pytest.importorskip("numpy")
 
         assert isinstance(img0, np.ndarray)
         assert img0.ndim == 3 and img0.shape[2] >= 3
@@ -601,8 +608,6 @@ def test_v21_video_frames_match_raw_pyav_decode(tiny_lerobot_v21_video):
 
 
 def test_format_path_template_pads_episode_chunk():
-    from daft.datasets.lerobot import _V2_VIDEO_PATH, _format_path_template
-
     df = daft.from_pydict({"episode_index": [0, 1000]})
     df = df.with_column(
         "path",
@@ -623,8 +628,6 @@ def test_format_path_template_pads_episode_chunk():
 
 
 def test_format_path_template_chunk_index_alias():
-    from daft.datasets.lerobot import _format_path_template
-
     template = "videos/chunk-{chunk_index:03d}/{video_key}/episode_{episode_index:06d}.mp4"
     df = daft.from_pydict({"episode_index": [42]})
     df = df.with_column(
