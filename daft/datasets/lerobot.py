@@ -1,9 +1,11 @@
-"""LeRobot Dataset v3.0 helpers for `daft.datasets`.
+"""LeRobot Dataset helpers for `daft.datasets`.
 
-This module reads the file-based LeRobot v3 layout (`meta/episodes`, `data`,
-`videos`) and exposes episode-level scans plus frame expansion utilities.
+Supports the episode-per-file v2.0/v2.1 layout (`meta/episodes.jsonl`,
+`data/chunk-XXX/episode_YYYYYY.parquet`) used by datasets such as AgiBot World
+2026, and the file-based v3 layout (`meta/episodes/**/*.parquet`, shared
+Parquet/MP4 shards).
 
-See https://huggingface.co/docs/lerobot/lerobot-dataset-v3 for format details.
+See https://huggingface.co/docs/lerobot/lerobot-dataset-v3 for v3 details.
 """
 
 from __future__ import annotations
@@ -19,7 +21,7 @@ from daft.dependencies import av, pil_image
 from daft.exceptions import DaftCoreException
 from daft.expressions import col, lit
 from daft.file import VideoFile
-from daft.functions import lpad
+from daft.functions import format, lpad
 from daft.functions.file_ import video_file
 from daft.series import Series
 from daft.udf import func
@@ -85,32 +87,31 @@ def _decode_one_shard(
     best_arr: dict[int, Any] = {}
     decoded = 0
 
-    with file.open() as f_open:
-        with av.open(f_open) as container:
-            stream = container.streams.video[0]
-            for cluster in clusters:
-                earliest = cluster[0][1]
-                latest = cluster[-1][1]
-                # Match LeRobot: seek backwards to preceding keyframe, then decode forwards.
-                container.seek(max(0, int(earliest * av.time_base)), backward=True)
-                for vf in container.decode(stream):
-                    if vf.pts is None:
-                        continue
-                    current_ts = float(vf.pts * stream.time_base)
-                    arr = None  # convert lazily: most frames improve no target
-                    for row, target in cluster:
-                        dist = abs(current_ts - target)
-                        if dist < best_dist[row]:
-                            if arr is None:
-                                arr = vf.to_ndarray(format="rgb24")
-                            best_dist[row] = dist
-                            best_arr[row] = arr
+    with file.open() as f_open, av.open(f_open) as container:
+        stream = container.streams.video[0]
+        for cluster in clusters:
+            earliest = cluster[0][1]
+            latest = cluster[-1][1]
+            # Match LeRobot: seek backwards to preceding keyframe, then decode forwards.
+            container.seek(max(0, int(earliest * av.time_base)), backward=True)
+            for vf in container.decode(stream):
+                if vf.pts is None:
+                    continue
+                current_ts = float(vf.pts * stream.time_base)
+                arr = None  # convert lazily: most frames improve no target
+                for row, target in cluster:
+                    dist = abs(current_ts - target)
+                    if dist < best_dist[row]:
+                        if arr is None:
+                            arr = vf.to_ndarray(format="rgb24")
+                        best_dist[row] = dist
+                        best_arr[row] = arr
 
-                    decoded += 1
-                    if decoded >= _DECODE_FRAME_BUDGET:
-                        raise ValueError("Exceeded decode frame budget while aligning to parquet timestamps.")
-                    if current_ts >= latest + tail_s:
-                        break
+                decoded += 1
+                if decoded >= _DECODE_FRAME_BUDGET:
+                    raise ValueError("Exceeded decode frame budget while aligning to parquet timestamps.")
+                if current_ts >= latest + tail_s:
+                    break
 
     if decoded == 0:
         raise ValueError(f"No frames decoded from shard while seeking timestamp {targets[0][1]:.6f}s.")
@@ -182,20 +183,102 @@ class Feature(TypedDict):
     dtype: str
 
 
-class LeRobotInfo(TypedDict):
+class LeRobotInfo(TypedDict, total=False):
     codebase_version: str
     data_path: str
     video_path: str
     fps: float
     features: dict[str, Feature]
+    chunks_size: int
+
+
+_PATH_PLACEHOLDER = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)(?::([^}]+))?\}")
+_VERSION = re.compile(r"^v(\d+)(?:\.(\d+))?$")
+
+_DEFAULT_CHUNKS_SIZE = 1000
+_V2_VIDEO_PATH = "videos/chunk-{episode_chunk:03d}/{video_key}/episode_{episode_index:06d}.mp4"
+
+
+def _parse_version(codebase_version: str) -> tuple[int, int]:
+    """Parse ``v2.1`` / ``v3.0`` into ``(major, minor)``."""
+    m = _VERSION.fullmatch(codebase_version.strip())
+    if not m:
+        raise ValueError(
+            f"Unrecognized LeRobot codebase_version {codebase_version!r}; expected a string like 'v2.1' or 'v3.0'."
+        )
+    return int(m.group(1)), int(m.group(2) or 0)
 
 
 def _read_info(normalized_uri: str, io_config: IOConfig | None = None) -> LeRobotInfo:
     with daft.open_file(f"{normalized_uri}/meta/info.json", io_config=io_config) as f:
         info = cast("LeRobotInfo", json.load(f))
-        if info["codebase_version"] != "v3.0":
-            raise ValueError("`daft.datasets.lerobot` currently only supports LeRobot datasets of v3 and above")
+        version = info.get("codebase_version", "")
+        major, _minor = _parse_version(version)
+        if major not in (2, 3):
+            raise ValueError(
+                f"`daft.datasets.lerobot` currently supports LeRobot datasets v2.0, v2.1, and v3.x (got {version!r})"
+            )
         return info
+
+
+def _is_v3(info: LeRobotInfo) -> bool:
+    return _parse_version(info["codebase_version"])[0] >= 3
+
+
+def _video_keys(info: LeRobotInfo) -> list[str]:
+    return [name for name, feat_info in info.get("features", {}).items() if feat_info["dtype"] == "video"]
+
+
+def _format_path_template(
+    template: str,
+    *,
+    root: str,
+    bindings: dict[str, Any],
+) -> Any:
+    """Turn a LeRobot ``info.json`` path template into a Daft string expression.
+
+    Numeric placeholders such as ``{episode_index:06d}`` are padded; string
+    bindings (for example ``video_key``) are spliced in as literals.
+    """
+    format_string = ""
+    args: list[Any] = []
+    last = 0
+    for m in _PATH_PLACEHOLDER.finditer(template):
+        format_string += template[last : m.start()]
+        name, spec = m.group(1), m.group(2)
+        if name not in bindings:
+            raise ValueError(f"Unknown placeholder {{{name}}} in LeRobot path template {template!r}")
+        val = bindings[name]
+        if isinstance(val, str):
+            format_string += val
+        else:
+            if spec and spec.endswith("d"):
+                width = int(spec[:-1]) if spec[:-1] else 0
+                val = lpad(val.cast(DataType.string), width, "0")
+            else:
+                val = val.cast(DataType.string)
+            format_string += "{}"
+            args.append(val)
+        last = m.end()
+    format_string += template[last:]
+    prefix = root.rstrip("/") + "/"
+    if not args:
+        return lit(prefix + format_string)
+    return format(prefix + format_string, *args)
+
+
+def _v2_path_bindings(info: LeRobotInfo, video_key: str | None = None) -> dict[str, Any]:
+    chunks_size = int(info.get("chunks_size") or _DEFAULT_CHUNKS_SIZE)
+    episode_index = col("episode_index")
+    chunk = episode_index // lit(chunks_size)
+    bindings: dict[str, Any] = {
+        "episode_index": episode_index,
+        "episode_chunk": chunk,
+        "chunk_index": chunk,
+    }
+    if video_key is not None:
+        bindings["video_key"] = video_key
+    return bindings
 
 
 @PublicAPI
@@ -205,12 +288,15 @@ def read(
     include_stats: bool = False,
     load_video_frames: str | list[str] | bool = False,
 ) -> DataFrame:
-    """Read a LeRobot v3 dataset as a lazy DataFrame with one row per frame.
+    """Read a LeRobot v2 or v3 dataset as a lazy DataFrame with one row per frame.
 
-    Reads the per-episode metadata under ``meta/episodes`` and the per-frame
-    sensor data under ``data``, joins them on ``episode_index``, and broadcasts
-    each episode's metadata across its frames. Optionally decodes the matching
-    video frame for one or more camera keys into an image column.
+    Reads per-episode metadata and the per-frame sensor data under ``data``,
+    joins them on ``episode_index``, and broadcasts each episode's metadata
+    across its frames. Optionally decodes the matching video frame for one or
+    more camera keys into an image column.
+
+    v2.0/v2.1 datasets (including AgiBot World 2026 after unpacking) store one
+    Parquet/MP4 file per episode. v3 packs many episodes into shared shards.
 
     Args:
         dataset_uri: Huggingface repo id (``org/name``), or a local / remote
@@ -243,7 +329,7 @@ def read(
     # Load video frames into memory
     if load_video_frames is not False:
         if load_video_frames is True:
-            video_keys = [name for name, feat_info in info["features"].items() if feat_info["dtype"] == "video"]
+            video_keys = _video_keys(info)
         elif isinstance(load_video_frames, str):
             video_keys = [load_video_frames]
         elif isinstance(load_video_frames, list) and all(isinstance(k, str) for k in load_video_frames):
@@ -251,12 +337,13 @@ def read(
         else:
             raise ValueError(f"Invalid value provided for argument load_video_frames=`{load_video_frames}`")
 
-        # An MP4 shard packs many episodes back to back, so the shard's internal
-        # frame numbering is NOT the parquet's episode-local `frame_index` (which
-        # resets to 0 each episode). Seeking by `frame_index` only happens to work
-        # for the first episode in each shard. Instead, seek by absolute timestamp:
-        # `from_timestamp` (where this episode begins in the shard) + the per-frame
-        # episode-local `timestamp`. That keeps a single coordinate system end to end.
+        # Seek by absolute timestamp inside the MP4: `from_timestamp` (where this
+        # episode begins in the file) + the per-frame episode-local `timestamp`.
+        # v3 shards pack many episodes back to back, so `from_timestamp` is the
+        # offset within the shard. v2 stores one MP4 per episode, so
+        # `from_timestamp` is 0 and the episode-local timestamp is already
+        # absolute in that file. Seeking by `frame_index` is wrong for v3 (it
+        # only happens to work for the first episode in each shard).
         fps = float(info["fps"])
         tolerance_s = 1.0 / fps / 2.0  # half a frame period: any closer frame is unambiguously "the" frame
 
@@ -290,24 +377,27 @@ def read_episodes(
     include_stats: bool = False,
     include_video_metadata: bool = False,
 ) -> DataFrame:
-    """Read LeRobot v3 episode metadata as a lazy DataFrame (one row per episode).
+    """Read LeRobot episode metadata as a lazy DataFrame (one row per episode).
 
-    This reads the `meta/episodes/**/*.parquet` path under the dataset root.
+    v3 reads ``meta/episodes/**/*.parquet``. v2.0/v2.1 (including AgiBot World
+    2026) reads ``meta/episodes.jsonl``. Extra per-episode fields such as
+    AgiBot's ``instruction_segments`` / ``key_frame`` are kept as columns.
 
     Args:
         dataset_uri: Huggingface repo id (`org/name`),
             or a local / remote directory (`s3://...`, `hf://datasets/...`)
         io_config: Optional IO configuration for remote reads.
         include_meta: If True, keep the internal ``meta/episodes/*`` columns
-            (the chunk/file indices locating each episode's own metadata shard).
-            These are bookkeeping for random access into the sharded metadata
-            and carry no analytical value once the rows are loaded. Defaults to
+            (v3 chunk/file indices locating each episode's own metadata shard).
+            No effect on v2, which has no such bookkeeping columns. Defaults to
             False.
-        include_stats: If True, keep the per-episode ``stats/*`` columns
-            (per-feature min/max/mean/std/quantiles). Defaults to False.
+        include_stats: If True, keep per-episode statistics. On v3 these are
+            ``stats/*`` columns in the episode parquet; on v2.1 they are joined
+            from ``meta/episodes_stats.jsonl``. Defaults to False.
         include_video_metadata: If True, keep the per-episode ``videos/{key}/*``
-            columns (the chunk/file indices and from/to timestamps locating each
-            episode's footage within its video shard). Defaults to False.
+            columns (chunk/file indices and from/to timestamps locating each
+            episode's footage). On v2, ``from_timestamp`` is 0 because each
+            episode has its own MP4. Defaults to False.
 
     Returns:
         Lazy DataFrame of episode metadata, one row per episode. Always includes
@@ -316,16 +406,40 @@ def read_episodes(
     """
     root = _normalize_dataset_root(dataset_uri)
     info = _read_info(root, io_config=io_config)
+    if _is_v3(info):
+        return _read_episodes_v3(
+            root,
+            info,
+            io_config=io_config,
+            include_meta=include_meta,
+            include_stats=include_stats,
+            include_video_metadata=include_video_metadata,
+        )
+    return _read_episodes_v2(
+        root,
+        info,
+        io_config=io_config,
+        include_stats=include_stats,
+        include_video_metadata=include_video_metadata,
+    )
+
+
+def _read_episodes_v3(
+    root: str,
+    info: LeRobotInfo,
+    *,
+    io_config: IOConfig | None,
+    include_meta: bool,
+    include_stats: bool,
+    include_video_metadata: bool,
+) -> DataFrame:
     df = daft.read_parquet(f"{root}/meta/episodes/**/*.parquet", io_config=io_config)
     if not include_meta:
         df = df.exclude(*(c for c in df.column_names if c.startswith("meta/")))
     if not include_stats:
         df = df.exclude(*(c for c in df.column_names if c.startswith("stats/")))
 
-    # Get the video keys
-    video_keys = set(name for name, feat_info in info["features"].items() if feat_info["dtype"] == "video")
-
-    for key in video_keys:
+    for key in _video_keys(info):
         file_name_expr = (
             lit(f"{root}/videos/{key}/chunk-")
             + lpad(col(f"videos/{key}/chunk_index").cast(DataType.string), 3, "0")
@@ -333,12 +447,41 @@ def read_episodes(
             + lpad(col(f"videos/{key}/file_index").cast(DataType.string), 3, "0")
             + lit(".mp4")
         )
-
         df = df.with_column(f"videos/{key}/video", video_file(file_name_expr, verify=False, io_config=io_config))
 
     if not include_video_metadata:
         df = df.exclude(*(c for c in df.column_names if c.startswith("videos/") and not c.endswith("/video")))
+    return df
 
+
+def _read_episodes_v2(
+    root: str,
+    info: LeRobotInfo,
+    *,
+    io_config: IOConfig | None,
+    include_stats: bool,
+    include_video_metadata: bool,
+) -> DataFrame:
+    df = daft.read_json(f"{root}/meta/episodes.jsonl", io_config=io_config)
+
+    if include_stats:
+        try:
+            stats_df = daft.read_json(f"{root}/meta/episodes_stats.jsonl", io_config=io_config)
+            df = df.join(stats_df, on="episode_index")
+        except (OSError, DaftCoreException, FileNotFoundError):
+            pass
+
+    video_path = info.get("video_path") or _V2_VIDEO_PATH
+    bindings = _v2_path_bindings(info)
+    for key in _video_keys(info):
+        bindings["video_key"] = key
+        file_name_expr = _format_path_template(video_path, root=root, bindings=bindings)
+        df = df.with_column(f"videos/{key}/video", video_file(file_name_expr, verify=False, io_config=io_config))
+        # One MP4 per episode: episode-local timestamps are already absolute.
+        df = df.with_column(f"videos/{key}/from_timestamp", lit(0.0))
+
+    if not include_video_metadata:
+        df = df.exclude(*(c for c in df.column_names if c.startswith("videos/") and not c.endswith("/video")))
     return df
 
 
@@ -350,9 +493,10 @@ def load_episode_frames(
 ) -> DataFrame:
     """Expand an episode-level DataFrame into a frame-level DataFrame.
 
-    Reads the per-frame parquet under ``data/**`` and joins it to the provided
-    episode metadata on ``episode_index``, producing one row per frame. Episode
-    metadata is broadcast across each episode's frames.
+    Reads the per-frame parquet under ``data/**`` (v3 shared shards or v2
+    per-episode files) and joins it to the provided episode metadata on
+    ``episode_index``, producing one row per frame. Episode metadata is
+    broadcast across each episode's frames.
 
     Filter ``episodes`` before calling this to expand only the episodes you need;
     only the surviving episodes contribute to the join.
