@@ -2,7 +2,7 @@
 
 [LeRobot](https://huggingface.co/docs/lerobot/lerobot-dataset-v3) stores robot learning data as Parquet (`meta/`, `data/`) plus per-camera MP4 under `videos/`. Daft exposes this layout under [`daft.datasets.lerobot`](../api/datasets.md) so you can stay at **episode granularity** for filtering, then expand to **frames** only for the episodes you need.
 
-The reader accepts **v2.0 / v2.1** (one Parquet and one MP4 per episode — the layout used by [AgiBot World 2026](https://huggingface.co/datasets/agibot-world/AgiBotWorld2026) after unpacking) and **v3.0** (many episodes packed into shared Parquet/MP4 shards). Version is taken from `meta/info.json` → `codebase_version`.
+The reader accepts **v2.0 / v2.1** (one Parquet and one MP4 per episode) and **v3.0** (many episodes packed into shared Parquet/MP4 shards). Version is taken from `meta/info.json` → `codebase_version`.
 
 !!! warning "Beta"
 
@@ -21,7 +21,7 @@ df = lerobot.read("your-org/your-robot-dataset", load_video_frames=True)
 
 `dataset_uri` can be:
 
-- A local directory that contains `meta/`, `data/`, etc. (for AgiBot World 2026, point at an **extracted** task directory, not the Hub repo of `.tar.gz` shards)
+- A local directory that contains `meta/`, `data/`, etc.
 - An `hf://datasets/org/name` URI (Hub layout matches the on-disk tree)
 - A bare `org/name` string, which is interpreted as `hf://datasets/org/name`
 
@@ -30,7 +30,7 @@ df = lerobot.read("your-org/your-robot-dataset", load_video_frames=True)
 Use [`daft.datasets.lerobot.read_episodes`](../api/datasets.md#daft.datasets.lerobot.read_episodes) for one row per episode:
 
 - **v3:** `meta/episodes/**/*.parquet`
-- **v2:** `meta/episodes.jsonl` (extra fields such as AgiBot's `instruction_segments` are kept as columns)
+- **v2:** `meta/episodes.jsonl` (any extra per-episode fields in that file are kept as columns)
 
 Per-episode `meta/` and `stats/` columns are hidden by default; opt in with `include_meta=True` / `include_stats=True`. On v2.1, stats are joined from `meta/episodes_stats.jsonl`.
 

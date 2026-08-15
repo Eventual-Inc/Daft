@@ -1,9 +1,8 @@
 """LeRobot Dataset helpers for `daft.datasets`.
 
 Supports the episode-per-file v2.0/v2.1 layout (`meta/episodes.jsonl`,
-`data/chunk-XXX/episode_YYYYYY.parquet`) used by datasets such as AgiBot World
-2026, and the file-based v3 layout (`meta/episodes/**/*.parquet`, shared
-Parquet/MP4 shards).
+`data/chunk-XXX/episode_YYYYYY.parquet`) and the file-based v3 layout
+(`meta/episodes/**/*.parquet`, shared Parquet/MP4 shards).
 
 See https://huggingface.co/docs/lerobot/lerobot-dataset-v3 for v3 details.
 """
@@ -295,8 +294,8 @@ def read(
     across its frames. Optionally decodes the matching video frame for one or
     more camera keys into an image column.
 
-    v2.0/v2.1 datasets (including AgiBot World 2026 after unpacking) store one
-    Parquet/MP4 file per episode. v3 packs many episodes into shared shards.
+    v2.0/v2.1 datasets store one Parquet/MP4 file per episode. v3 packs many
+    episodes into shared shards.
 
     Args:
         dataset_uri: Huggingface repo id (``org/name``), or a local / remote
@@ -379,9 +378,9 @@ def read_episodes(
 ) -> DataFrame:
     """Read LeRobot episode metadata as a lazy DataFrame (one row per episode).
 
-    v3 reads ``meta/episodes/**/*.parquet``. v2.0/v2.1 (including AgiBot World
-    2026) reads ``meta/episodes.jsonl``. Extra per-episode fields such as
-    AgiBot's ``instruction_segments`` / ``key_frame`` are kept as columns.
+    v3 reads ``meta/episodes/**/*.parquet``. v2.0/v2.1 reads
+    ``meta/episodes.jsonl``. Extra per-episode fields present in that metadata
+    are kept as columns.
 
     Args:
         dataset_uri: Huggingface repo id (`org/name`),

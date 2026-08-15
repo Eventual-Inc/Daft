@@ -244,10 +244,10 @@ def tiny_lerobot_v21(tmp_path):
 
 
 @pytest.fixture
-def tiny_lerobot_v21_agibot(tmp_path):
-    """v2.1 layout plus AgiBot-style extra episode metadata."""
+def tiny_lerobot_v21_extra_fields(tmp_path):
+    """v2.1 layout plus extra per-episode metadata columns."""
     return _write_tiny_v2(
-        tmp_path / "ds_agibot",
+        tmp_path / "ds_v21_extra",
         version="v2.1",
         extra_episode_fields={
             "instruction_segments": [{"start": 0, "end": 2, "instruction": "pick the cube"}],
@@ -550,8 +550,8 @@ def test_v21_read_tasks_jsonl(tiny_lerobot_v21):
     assert t.to_pydict()["task"] == ["pick"]
 
 
-def test_v21_agibot_extra_episode_fields(tiny_lerobot_v21_agibot):
-    ep = read_episodes(tiny_lerobot_v21_agibot).sort("episode_index").collect()
+def test_v21_extra_episode_fields(tiny_lerobot_v21_extra_fields):
+    ep = read_episodes(tiny_lerobot_v21_extra_fields).sort("episode_index").collect()
     assert "instruction_segments" in ep.column_names
     segments = ep.to_pydict()["instruction_segments"]
     assert segments[0][0]["instruction"] == "pick the cube"
