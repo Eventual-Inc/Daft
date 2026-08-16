@@ -148,12 +148,7 @@ async def start_udf_actors(
 
     # Wait for actors to be ready
     ready_futures = [asyncio.wrap_future(actor.__ray_ready__.remote().future()) for actor in actors]
-    ready_refs, pending_refs = await asyncio.wait(ready_futures, return_when=asyncio.ALL_COMPLETED, timeout=timeout)
-
-    for actor, ready_future in zip(actors, ready_futures):
-        if ready_future in pending_refs:
-            ready_future.cancel()
-            ray.kill(actor)
+    ready_refs, _ = await asyncio.wait(ready_futures, return_when=asyncio.ALL_COMPLETED, timeout=timeout)
 
     # Verify that the __ray_ready__ calls were successful
     await asyncio.gather(*ready_refs)
