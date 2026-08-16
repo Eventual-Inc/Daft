@@ -2731,6 +2731,16 @@ class Expression:
 
         return substring_index(self, delim, count)
 
+    def split_part(self, delim: builtins.str | Expression, part: builtins.int | Expression) -> Expression:
+        """Splits the string on occurrences of the delimiter and returns the requested part (1-based).
+
+        Tip: See Also
+            [`daft.functions.split_part`](https://docs.daft.ai/en/stable/api/functions/split_part/)
+        """
+        from daft.functions import split_part
+
+        return split_part(self, delim, part)
+
     def soundex(self) -> Expression:
         """Returns the Soundex code of the string.
 

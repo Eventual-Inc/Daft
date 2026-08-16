@@ -36,6 +36,10 @@ Daft offers a variety of approaches to creating a DataFrame from reading various
 
 <!-- read_ -->
 
+::: daft.read_blob
+    options:
+        heading_level: 3
+
 ::: daft.read_csv
     options:
         heading_level: 3
