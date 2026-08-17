@@ -18,6 +18,7 @@ from daft.daft import (
     HuggingFaceConfig,
 )
 from daft.lazy_import import LazyImport
+from daft.io._blob import read_blob
 from daft.io._csv import read_csv
 from daft.io._text import read_text
 from daft.io.delta_lake._deltalake import (
@@ -80,6 +81,7 @@ __all__ = [
     "from_glob_path",
     "delete_deltalake",
     "distributed_merge_deltalake",
+    "read_blob",
     "read_csv",
     "read_deltalake",
     "history_deltalake",

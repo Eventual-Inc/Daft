@@ -355,6 +355,7 @@ from .str import (
     ascii_func,
     chr_func,
     space,
+    split_part,
 )
 from .struct import unnest, to_struct, named_struct
 from .url import download, upload, parse_url
@@ -629,6 +630,7 @@ __all__ = [
     "soundex",
     "space",
     "split",
+    "split_part",
     "sqrt",
     "startswith",
     "st_area",
