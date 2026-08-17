@@ -377,6 +377,23 @@ def test_create_table_if_not_exists_concurrent():
     assert all(name == "tbl" for _, name in results), results
 
 
+def test_create_table_if_not_exists_recovers_generic_already_exists_error():
+    """Backends like pyiceberg raise a bare Exception (not ValueError) for
+    "already exists" conflicts; those should be recovered the same way."""
+
+    class ConflictCatalog(MockCatalog):
+        def _create_table(self, identifier, schema, properties=None, partition_fields=None):
+            raise Exception(f"Table {identifier} already exists")
+
+    catalog = ConflictCatalog()
+    existing = MockTable("tbl")
+    catalog._tables[str(Identifier.from_str("tbl"))] = existing
+
+    t = catalog.create_table_if_not_exists("tbl", Schema.from_pydict({"a": dt.int64()}))
+
+    assert t is existing
+
+
 def test_create_table_if_not_exists_propagates_other_errors():
     """create_table_if_not_exists must not swallow unrelated creation failures."""
 
@@ -386,6 +403,15 @@ def test_create_table_if_not_exists_propagates_other_errors():
 
     catalog = FailingCatalog()
     with pytest.raises(ValueError, match="connection failed"):
+        catalog.create_table_if_not_exists("tbl", Schema.from_pydict({"a": dt.int64()}))
+
+    # Unrelated failures that are not ValueErrors must propagate as well.
+    class FailingCatalogGeneric(MockCatalog):
+        def _create_table(self, identifier, schema, properties=None, partition_fields=None):
+            raise RuntimeError("connection failed")
+
+    catalog = FailingCatalogGeneric()
+    with pytest.raises(RuntimeError, match="connection failed"):
         catalog.create_table_if_not_exists("tbl", Schema.from_pydict({"a": dt.int64()}))
 
 

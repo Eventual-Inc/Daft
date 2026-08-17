@@ -547,10 +547,15 @@ class Catalog(ABC):
         """
         try:
             return self.create_table(identifier, source, properties)
-        except ValueError as e:
-            # Only recover from "already exists" failures. Unrelated
-            # ValueErrors (e.g. connection or permission errors raised by
-            # Python-backed catalogs) propagate unchanged.
+        except Exception as e:
+            # Only recover from "already exists" failures. Unrelated errors
+            # (e.g. connection or permission failures raised by Python-backed
+            # catalogs) propagate unchanged.
+            #
+            # "already exists" is matched by message because the exception
+            # types vary across backends: DaftCoreException (ValueError) from
+            # Rust catalogs, TableAlreadyExistsError (bare Exception) from
+            # pyiceberg, and bare ValueErrors from others.
             if "already exists" not in str(e):
                 raise
             # The table already exists (either pre-existing or created
