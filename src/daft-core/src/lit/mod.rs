@@ -438,9 +438,20 @@ impl Literal {
                 "TIMESTAMP '{}'",
                 display_timestamp(*val, tu, tz).replace('T', " ")
             ),
-            Self::Decimal(..)
-            | Self::Uuid(..)
-            | Self::List(..)
+            Self::Decimal(val, precision, scale) => {
+                if *scale < 0 {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        format!(
+                            "Cannot display Decimal({}, {}) as SQL: negative scale not supported",
+                            precision, scale
+                        ),
+                    ));
+                }
+                write!(buffer, "{}", display_decimal128(*val, *precision, *scale))
+            }
+            Self::Uuid(val) => write!(buffer, "'{}'", val),
+            Self::List(..)
             | Self::Time(..)
             | Self::Binary(..)
             | Self::Duration(..)
@@ -708,5 +719,49 @@ mod test {
         roundtrip("test".to_string())?;
 
         Ok(())
+    }
+
+    #[test]
+    fn test_display_sql_uuid() {
+        use uuid::Uuid;
+        let uuid = Uuid::parse_str("12345678-1234-5678-1234-567812345678").unwrap();
+        let lit = Literal::Uuid(uuid);
+        let mut buf = Vec::<u8>::new();
+        lit.display_sql(&mut buf).unwrap();
+        assert_eq!(
+            String::from_utf8(buf).unwrap(),
+            "'12345678-1234-5678-1234-567812345678'"
+        );
+    }
+
+    #[test]
+    fn test_display_sql_decimal_positive_scale() {
+        // 123.45 with precision=5, scale=2
+        let lit = Literal::Decimal(12345, 5, 2);
+        let mut buf = Vec::<u8>::new();
+        lit.display_sql(&mut buf).unwrap();
+        assert_eq!(String::from_utf8(buf).unwrap(), "123.45");
+    }
+
+    #[test]
+    fn test_display_sql_decimal_zero_scale() {
+        let lit = Literal::Decimal(1500, 4, 0);
+        let mut buf = Vec::<u8>::new();
+        lit.display_sql(&mut buf).unwrap();
+        assert_eq!(String::from_utf8(buf).unwrap(), "1500");
+    }
+
+    #[test]
+    fn test_display_sql_decimal_negative_scale_returns_error() {
+        let lit = Literal::Decimal(1500, 4, -2);
+        let mut buf = Vec::<u8>::new();
+        let result = lit.display_sql(&mut buf);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("negative scale"),
+            "Expected negative scale error, got: {}",
+            err
+        );
     }
 }
