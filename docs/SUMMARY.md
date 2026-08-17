@@ -32,7 +32,7 @@
         * [Batch Inference](use-case/batch-inference.md)
     * Datasets
         * [Common Crawl](datasets/common-crawl.md)
-        * [LeRobot v3](datasets/lerobot.md)
+        * [LeRobot](datasets/lerobot.md)
         * [DROID](datasets/droid.md)
     * Data Connectors
         * [Overview](connectors/index.md)
@@ -62,6 +62,7 @@
         * Files
             * [Files](connectors/files.md)
             * [Text Files](connectors/text.md)
+            * [Blob Files](connectors/blob.md)
             * [Generic File Source Options](connectors/generic-file-source-options.md)
         * Other Sources
             * [Apache Kafka](connectors/kafka.md)

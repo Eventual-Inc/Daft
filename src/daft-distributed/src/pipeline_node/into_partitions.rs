@@ -167,6 +167,9 @@ impl IntoPartitionsNode {
             builders.len(),
             self.num_partitions
         );
+        if builders.is_empty() {
+            return Ok(());
+        }
         // Split partitions evenly with remainder handling
         // Example: 3 inputs, 10 partitions = 4, 3, 3
 
