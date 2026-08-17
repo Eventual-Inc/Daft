@@ -15,8 +15,8 @@ use super::{
     pylib_scan_info::{PyPartitionField, PyPushdowns},
 };
 use crate::{
-    ClusteringKeys, DataSourceTaskRef, PartitionField, Pushdowns, ScanOperator, ScanSource,
-    ScanSourceKind, ScanTask, ScanTaskRef, SourceConfig,
+    ClusteringKeys, DataSourceTaskRef, ExpandsToDataFrame, PartitionField, Pushdowns, ScanOperator,
+    ScanSource, ScanSourceKind, ScanTask, ScanTaskRef, SourceConfig,
     clustering::PyClusteringKeys,
     pushdowns::SupportsPushdownFilters,
     source::{DataSource, DataSourceTask, DataSourceTaskStream, ReadOptions, RecordBatchStream},
@@ -161,6 +161,29 @@ impl PyDataSourceWrapper {
             pushdowns.clone(),
             None,
         )))
+    }
+
+    fn pushdowns_to_py<'py>(py: Python<'py>, pushdowns: &Pushdowns) -> PyResult<Bound<'py, PyAny>> {
+        let py_pushdowns = PyPushdowns(Arc::new(pushdowns.clone())).into_pyobject(py)?;
+        let pushdowns_mod = py.import(intern!(py, "daft.io.pushdowns"))?;
+        let pushdowns_cls = pushdowns_mod.getattr(intern!(py, "Pushdowns"))?;
+        pushdowns_cls.call_method1(intern!(py, "_from_pypushdowns"), (py_pushdowns,))
+    }
+}
+
+impl ExpandsToDataFrame for PyDataSourceWrapper {
+    fn expand_dataframe(&self, pushdowns: &Pushdowns) -> DaftResult<Option<Py<PyAny>>> {
+        Python::attach(|py| {
+            let pushdowns_obj = Self::pushdowns_to_py(py, pushdowns)?;
+            let result =
+                self.source
+                    .call_method1(py, intern!(py, "get_dataframe"), (pushdowns_obj,))?;
+            if result.is_none(py) {
+                Ok(None)
+            } else {
+                Ok(Some(result))
+            }
+        })
     }
 }
 
@@ -316,6 +339,10 @@ impl ScanOperator for PyDataSourceWrapper {
 
     fn as_pushdown_filter(&self) -> Option<&dyn SupportsPushdownFilters> {
         None
+    }
+
+    fn as_dataframe_expander(&self) -> Option<&dyn ExpandsToDataFrame> {
+        Some(self)
     }
 }
 
