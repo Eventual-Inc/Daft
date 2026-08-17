@@ -10,11 +10,11 @@ use azure_identity::{
     WorkloadIdentityCredential,
 };
 use azure_storage_blob::{
-    BlobServiceClient, BlobServiceClientOptions,
+    BlobClient, BlobClientOptions, BlobServiceClient, BlobServiceClientOptions,
     models::{
         BlobClientDownloadOptions, BlobClientGetPropertiesResultHeaders,
         BlobContainerClientListBlobsHierarchicalOptions, BlobContainerClientListBlobsOptions,
-        BlobItem, BlobPrefix, ContainerItem, HttpRange,
+        BlobItem, ContainerItem, HttpRange,
     },
 };
 use common_io_config::AzureConfig;
@@ -35,6 +35,10 @@ const AZURE_DELIMITER: &str = "/";
 const DEFAULT_GLOB_FANOUT_LIMIT: usize = 1024;
 const AZURE_STORAGE_RESOURCE: &str = "https://storage.azure.com/.default";
 const AZURE_STORE_SUFFIX: &str = ".dfs.core.windows.net";
+/// Pin below the GA crate default (`2026-04-06`). Azurite rejects newer
+/// `x-ms-version` values with HTTP 400 (`InvalidHeaderValue`). Azure Storage
+/// still accepts this version, and delimiter listing does not need the latest.
+const AZURE_REST_API_VERSION: &str = "2025-01-05";
 
 #[derive(Debug, Snafu)]
 enum Error {
@@ -71,6 +75,9 @@ enum Error {
         path: String,
         source: azure_core::Error,
     },
+
+    #[snafu(display("Unable to parse Azure list-blobs XML for {}: {}", path, reason))]
+    InvalidListBlobsXml { path: String, reason: String },
 
     #[snafu(display("Not Found: \"{}\"", path))]
     NotFound { path: String },
@@ -231,27 +238,143 @@ fn blob_to_file_metadata(
     container_name: &str,
     blob: &BlobItem,
 ) -> Option<FileMetadata> {
-    blob.name.as_ref().map(|name| FileMetadata {
-        filepath: format!("{protocol}://{container_name}/{name}"),
-        size: blob.properties.as_ref().and_then(|p| p.content_length),
-        filetype: FileType::File,
+    blob.name.as_ref().map(|name| {
+        file_metadata_for_blob(
+            protocol,
+            container_name,
+            name,
+            blob.properties.as_ref().and_then(|p| p.content_length),
+        )
     })
 }
 
-fn blob_prefix_to_file_metadata(
+fn file_metadata_for_blob(
     protocol: &str,
     container_name: &str,
-    prefix: &BlobPrefix,
-) -> Option<FileMetadata> {
-    prefix.name.as_ref().map(|name| FileMetadata {
+    name: &str,
+    size: Option<u64>,
+) -> FileMetadata {
+    FileMetadata {
+        filepath: format!("{protocol}://{container_name}/{name}"),
+        size,
+        filetype: FileType::File,
+    }
+}
+
+fn file_metadata_for_prefix(protocol: &str, container_name: &str, name: &str) -> FileMetadata {
+    FileMetadata {
         filepath: format!("{protocol}://{container_name}/{name}"),
         size: None,
         filetype: FileType::Directory,
-    })
+    }
+}
+
+struct ParsedBlobList {
+    blobs: Vec<(String, Option<u64>)>,
+    prefixes: Vec<String>,
+}
+
+/// Parse a List Blobs (hierarchical / delimiter) XML body.
+///
+/// `azure_storage_blob` 1.1.0-beta.1 deserializes `blob_prefixes` as
+/// `Option<Vec<BlobPrefix>>`, which treats a second `<BlobPrefix>` sibling as a
+/// duplicate field. HNS accounts also attach `<Properties>` to prefixes. Parse
+/// the XML ourselves so posix listing keeps working.
+fn parse_hierarchical_listing_xml(xml: &[u8]) -> Result<ParsedBlobList, String> {
+    let text = std::str::from_utf8(xml).map_err(|e| format!("invalid utf-8: {e}"))?;
+    let text = text.trim_start_matches('\u{feff}');
+
+    let mut prefixes = Vec::new();
+    for block in xml_blocks(text, "<BlobPrefix>", "</BlobPrefix>") {
+        if let Some(name) = xml_tag_text(block, "Name") {
+            prefixes.push(name);
+        }
+    }
+
+    let mut blobs = Vec::new();
+    for block in xml_blocks(text, "<Blob>", "</Blob>") {
+        if let Some(name) = xml_tag_text(block, "Name") {
+            let size = xml_tag_text(block, "Content-Length")
+                .filter(|s| !s.is_empty())
+                .and_then(|s| s.parse().ok());
+            blobs.push((name, size));
+        }
+    }
+
+    Ok(ParsedBlobList { blobs, prefixes })
+}
+
+fn xml_blocks<'a>(xml: &'a str, open: &'a str, close: &'a str) -> Vec<&'a str> {
+    let mut out = Vec::new();
+    let mut rest = xml;
+    while let Some(start) = rest.find(open) {
+        let after = &rest[start + open.len()..];
+        match after.find(close) {
+            Some(end) => {
+                out.push(&after[..end]);
+                rest = &after[end + close.len()..];
+            }
+            None => break,
+        }
+    }
+    out
+}
+
+fn xml_tag_text(block: &str, tag: &str) -> Option<String> {
+    let open = format!("<{tag}");
+    let close = format!("</{tag}>");
+    let start = block.find(&open)?;
+    let after_name = &block[start + open.len()..];
+    let inner_start = after_name.find('>')? + 1;
+    let inner = &after_name[inner_start..];
+    let end = inner.find(&close)?;
+    Some(unescape_xml(&inner[..end]))
+}
+
+fn unescape_xml(s: &str) -> String {
+    s.replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+}
+
+fn ensure_trailing_slash(mut url: Url) -> Url {
+    let mut path = url.path().to_string();
+    if !path.ends_with('/') {
+        path.push('/');
+        url.set_path(&path);
+    }
+    url
+}
+
+/// Join container + blob name onto the service URL without encoding `/` in the
+/// blob name. The GA helper `BlobServiceClient::blob_client` treats the whole
+/// blob name as one path segment, turning `dir/file` into `dir%2Ffile`, which
+/// Azure treats as a different blob.
+fn blob_url(service: &Url, container: &str, key: &str) -> Url {
+    let mut url = service.clone();
+    {
+        let mut segments = url
+            .path_segments_mut()
+            .expect("Azure service URL must be a base URL");
+        segments.pop_if_empty();
+        if !container.is_empty() {
+            segments.push(container);
+        }
+        for segment in key.split('/') {
+            if !segment.is_empty() {
+                segments.push(segment);
+            }
+        }
+    }
+    url
 }
 
 pub struct AzureBlobSource {
     blob_client: Arc<BlobServiceClient>,
+    token_credential: Option<Arc<dyn TokenCredential>>,
+    blob_client_options: BlobClientOptions,
     connection_pool_sema: Arc<tokio::sync::Semaphore>,
 }
 
@@ -337,16 +460,22 @@ impl AzureBlobSource {
         let endpoint = Url::parse(&endpoint).with_context(|_| InvalidUrlSnafu {
             path: endpoint.clone(),
         })?;
+        let endpoint = ensure_trailing_slash(endpoint);
 
-        let options = BlobServiceClientOptions {
-            client_options: ClientOptions {
-                per_try_policies,
-                ..Default::default()
-            },
+        let client_options = ClientOptions {
+            per_try_policies,
             ..Default::default()
         };
+        let options = BlobServiceClientOptions {
+            client_options: client_options.clone(),
+            version: AZURE_REST_API_VERSION.to_string(),
+        };
+        let blob_client_options = BlobClientOptions {
+            client_options,
+            version: AZURE_REST_API_VERSION.to_string(),
+        };
 
-        let blob_client = BlobServiceClient::new(endpoint, token_credential, Some(options))
+        let blob_client = BlobServiceClient::new(endpoint, token_credential.clone(), Some(options))
             .context(AzureGenericSnafu {})?;
 
         let connection_pool_sema = Arc::new(tokio::sync::Semaphore::new(
@@ -356,9 +485,20 @@ impl AzureBlobSource {
 
         Ok(Self {
             blob_client: blob_client.into(),
+            token_credential,
+            blob_client_options,
             connection_pool_sema,
         }
         .into())
+    }
+
+    fn blob_client_for(&self, container: &str, key: &str) -> super::Result<BlobClient> {
+        Ok(BlobClient::new(
+            blob_url(self.blob_client.url(), container, key),
+            self.token_credential.clone(),
+            Some(self.blob_client_options.clone()),
+        )
+        .context(AzureGenericSnafu {})?)
     }
 
     async fn list_containers_stream(
@@ -573,35 +713,35 @@ impl AzureBlobSource {
                         is.mark_list_requests(1);
                     }
                     match page {
-                        Ok(response) => match response.into_model() {
-                            Ok(body) => {
-                                for blob_prefix in
-                                    body.hierarchical_list.blob_prefixes.unwrap_or_default()
-                                {
-                                    if let Some(file_metadata) = blob_prefix_to_file_metadata(
-                                        &protocol,
-                                        &container_name,
-                                        &blob_prefix,
-                                    ) {
-                                        yield Ok(file_metadata);
+                        Ok(response) => {
+                            let body = response.into_body();
+                            match parse_hierarchical_listing_xml(&body) {
+                                Ok(listing) => {
+                                    for name in listing.prefixes {
+                                        yield Ok(file_metadata_for_prefix(
+                                            &protocol,
+                                            &container_name,
+                                            &name,
+                                        ));
+                                    }
+                                    for (name, size) in listing.blobs {
+                                        yield Ok(file_metadata_for_blob(
+                                            &protocol,
+                                            &container_name,
+                                            &name,
+                                            size,
+                                        ));
                                     }
                                 }
-                                for blob in body.hierarchical_list.blob_items {
-                                    if let Some(file_metadata) =
-                                        blob_to_file_metadata(&protocol, &container_name, &blob)
-                                    {
-                                        yield Ok(file_metadata);
+                                Err(reason) => {
+                                    yield Err(Error::InvalidListBlobsXml {
+                                        path: request_path.clone(),
+                                        reason,
                                     }
+                                    .into());
                                 }
                             }
-                            Err(error) => {
-                                yield Err(Error::RequestFailedForPath {
-                                    path: request_path.clone(),
-                                    source: error,
-                                }
-                                .into());
-                            }
-                        },
+                        }
                         Err(error) => {
                             yield Err(Error::RequestFailedForPath {
                                 path: request_path.clone(),
@@ -683,7 +823,7 @@ impl AzureBlobSource {
             return Err(Error::NotAFile { path: uri.into() }.into());
         }
 
-        let blob_client = self.blob_client.blob_client(&container, &key);
+        let blob_client = self.blob_client_for(&container, &key)?;
         let response = blob_client
             .get_properties(None)
             .await
@@ -732,7 +872,7 @@ impl ObjectSource for AzureBlobSource {
             return Err(Error::NotAFile { path: uri.into() }.into());
         }
 
-        let blob_client = self.blob_client.blob_client(&container, &key);
+        let blob_client = self.blob_client_for(&container, &key)?;
         let mut options = BlobClientDownloadOptions::default();
         if let Some(range) = range {
             range.validate().context(InvalidRangeRequestSnafu)?;
@@ -873,5 +1013,87 @@ impl ObjectSource for AzureBlobSource {
 
     fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use azure_core::http::Url;
+
+    use super::{blob_url, ensure_trailing_slash, parse_hierarchical_listing_xml, unescape_xml};
+
+    #[test]
+    fn parses_repeated_hns_blob_prefixes() {
+        // HNS accounts emit multiple <BlobPrefix> siblings, each with <Properties>.
+        // The GA SDK's Option<Vec<BlobPrefix>> deserializer rejects this XML with
+        // "duplicate field BlobPrefix".
+        let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<EnumerationResults ServiceEndpoint="https://dafttestdata.blob.core.windows.net/" ContainerName="public-anonymous">
+  <Prefix>/</Prefix>
+  <Delimiter>/</Delimiter>
+  <Blobs>
+    <BlobPrefix>
+      <Name>iceberg/</Name>
+      <Properties>
+        <Creation-Time>Thu, 06 Jun 2024 21:52:18 GMT</Creation-Time>
+        <ResourceType>directory</ResourceType>
+        <Content-Length>0</Content-Length>
+        <BlobType>BlockBlob</BlobType>
+      </Properties>
+    </BlobPrefix>
+    <Blob>
+      <Name>mvp.parquet</Name>
+      <Properties>
+        <Content-Length>1234</Content-Length>
+        <BlobType>BlockBlob</BlobType>
+      </Properties>
+    </Blob>
+    <BlobPrefix>
+      <Name>test_ls/</Name>
+      <Properties>
+        <ResourceType>directory</ResourceType>
+        <Content-Length>0</Content-Length>
+      </Properties>
+    </BlobPrefix>
+  </Blobs>
+  <NextMarker />
+</EnumerationResults>"#;
+
+        let listing = parse_hierarchical_listing_xml(xml.as_bytes()).unwrap();
+        assert_eq!(listing.prefixes, vec!["iceberg/", "test_ls/"]);
+        assert_eq!(listing.blobs, vec![("mvp.parquet".to_string(), Some(1234))]);
+    }
+
+    #[test]
+    fn strips_bom_and_unescapes_names() {
+        let xml = "\u{feff}<Blobs><BlobPrefix><Name>a&amp;b/</Name></BlobPrefix><Blob><Name>c&lt;d</Name><Properties><Content-Length></Content-Length></Properties></Blob></Blobs>";
+        let listing = parse_hierarchical_listing_xml(xml.as_bytes()).unwrap();
+        assert_eq!(listing.prefixes, vec!["a&b/"]);
+        assert_eq!(listing.blobs, vec![("c<d".to_string(), None)]);
+        assert_eq!(unescape_xml("&quot;x&apos;"), "\"x'");
+    }
+
+    #[test]
+    fn blob_url_keeps_virtual_directory_slashes() {
+        let service = Url::parse("http://127.0.0.1:10000/devstoreaccount1/").unwrap();
+        let url = blob_url(&service, "test-data", "/part_idx=0/file.parquet");
+        assert_eq!(
+            url.as_str(),
+            "http://127.0.0.1:10000/devstoreaccount1/test-data/part_idx=0/file.parquet"
+        );
+    }
+
+    #[test]
+    fn blob_url_production_account() {
+        let service = Url::parse("https://myaccount.blob.core.windows.net").unwrap();
+        let url = blob_url(
+            &ensure_trailing_slash(service),
+            "container",
+            "dir/blob.parquet",
+        );
+        assert_eq!(
+            url.as_str(),
+            "https://myaccount.blob.core.windows.net/container/dir/blob.parquet"
+        );
     }
 }

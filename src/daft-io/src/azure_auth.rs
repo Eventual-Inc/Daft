@@ -323,6 +323,19 @@ mod tests {
         assert!(azure_core::base64::decode(sig).is_ok());
     }
 
+    #[test]
+    fn canonicalized_resource_doubles_account_for_azurite_path_style() {
+        // Azurite uses path-style URLs (`http://host:port/account/container/blob`).
+        // SharedKey's canonicalized resource is `/account` plus every path
+        // segment, which is the emulator's required double-account form.
+        let url =
+            Url::parse("http://127.0.0.1:10000/devstoreaccount1/test-data/foo.parquet").unwrap();
+        assert_eq!(
+            canonicalized_resource("devstoreaccount1", &url),
+            "/devstoreaccount1/devstoreaccount1/test-data/foo.parquet"
+        );
+    }
+
     #[tokio::test]
     async fn static_bearer_credential_returns_token() {
         let cred = StaticBearerCredential::new("my-fabric-token".to_string());
