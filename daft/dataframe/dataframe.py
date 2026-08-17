@@ -44,6 +44,7 @@ from daft.dataframe.preview import (
     resolve_show_defaults,
 )
 from daft.datatype import DataType
+from daft.dependencies import pa, pc
 from daft.errors import ExpressionTypeError
 from daft.execution.native_executor import NativeExecutor
 from daft.expressions import Expression, ExpressionsProjection, col, lit
@@ -2594,6 +2595,175 @@ class DataFrame:
             write_kwargs=write_kwargs,
         )
         return self.write_sink(sink)
+
+    @DataframePublicAPI
+    def write_lerobot(
+        self,
+        uri: str | pathlib.Path,
+        fps: int,
+        *,
+        task_column: str = "task",
+        robot_type: str | None = None,
+        features: dict[str, dict[str, Any]] | None = None,
+        overwrite: bool = False,
+        chunks_size: int = 1000,
+        data_files_size_in_mb: int = 100,
+        io_config: IOConfig | None = None,
+    ) -> "DataFrame":
+        """Write a frame-level DataFrame in the LeRobot v3 dataset format.
+
+        The input must contain ``episode_index`` and ``frame_index`` columns, both
+        contiguous and zero-based, plus a string task column. If ``timestamp`` is
+        absent, it is generated as ``frame_index / fps``. Daft generates the global
+        ``index`` and ``task_index`` columns and writes the frame data, episode/task
+        metadata, feature statistics, and ``meta/info.json``.
+
+        This initial implementation supports scalar and fixed-shape tabular
+        features. Image and video encoding are not yet supported.
+
+        Args:
+            uri: Local directory or object-store URI for the output dataset.
+            fps: Dataset frame rate. Must be a positive integer.
+            task_column: Input string column containing the task for each frame.
+            robot_type: Optional robot type stored in ``meta/info.json``.
+            features: Optional LeRobot feature descriptors for all non-canonical
+                columns. When omitted, descriptors are inferred from Arrow scalar
+                and fixed-size-list types.
+            overwrite: Replace the destination if it already exists. Defaults to
+                False.
+            chunks_size: Maximum number of files per chunk directory.
+            data_files_size_in_mb: Target maximum uncompressed size of each data
+                Parquet shard. Episodes are never split between final shards.
+            io_config: Optional IO configuration for remote storage.
+
+        Note:
+            On a multi-node Ray cluster, local output paths must be on a
+            filesystem shared by every worker. Object-store URIs are supported.
+
+        Returns:
+            A one-row DataFrame containing the output path and total episode,
+            frame, and task counts.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "episode_index": [0, 0, 1],
+            ...         "frame_index": [0, 1, 0],
+            ...         "task": ["pick", "pick", "place"],
+            ...         "action": [0.1, 0.2, 0.3],
+            ...     }
+            ... )
+            >>> df.write_lerobot("/tmp/my_lerobot_dataset", fps=30)  # doctest: +SKIP
+        """
+        # Keep this import lazy: importing ``daft.io`` while this module is
+        # initializing creates a cycle through ``daft.io._blob -> DataFrame``.
+        from daft.io.lerobot.sink import (
+            _TASK_COLUMN,
+            LeRobotSink,
+            feature_arrow_type,
+            normalize_lerobot_features,
+        )
+
+        columns = self.column_names
+        required = {"episode_index", "frame_index", task_column}
+        missing = sorted(required - set(columns))
+        if missing:
+            raise ValueError(f"write_lerobot is missing required columns: {missing}")
+        if task_column in {"episode_index", "frame_index", "timestamp", "index", "task_index", _TASK_COLUMN}:
+            raise ValueError(f"task_column conflicts with a reserved LeRobot column: {task_column!r}")
+        if _TASK_COLUMN in columns:
+            raise ValueError(f"Input contains Daft's reserved internal column {_TASK_COLUMN!r}")
+
+        input_schema = self.schema()
+        if input_schema[task_column].dtype != DataType.string():
+            raise ValueError(f"task_column must be String, got {input_schema[task_column].dtype}")
+        for index_column in ("episode_index", "frame_index"):
+            if not input_schema[index_column].dtype.is_integer():
+                raise ValueError(f"{index_column} must have an integer type, got {input_schema[index_column].dtype}")
+
+        reserved = {"episode_index", "frame_index", "timestamp", "index", "task_index", task_column}
+        feature_names = [name for name in columns if name not in reserved]
+        normalized_features = normalize_lerobot_features(input_schema.to_pyarrow_schema(), feature_names, features, fps)
+
+        prepared = self
+        for name in feature_names:
+            target_type = DataType.from_arrow_type(feature_arrow_type(name, normalized_features[name]))
+            prepared = prepared.with_column(name, col(name).cast(target_type))
+        prepared = prepared.with_column("episode_index", col("episode_index").cast(DataType.int64()))
+        prepared = prepared.with_column("frame_index", col("frame_index").cast(DataType.int64()))
+        if "timestamp" in columns:
+            prepared = prepared.with_column("timestamp", col("timestamp").cast(DataType.float32()))
+        else:
+            prepared = prepared.with_column(
+                "timestamp", (col("frame_index").cast(DataType.float64()) / lit(fps)).cast(DataType.float32())
+            )
+        prepared = prepared.with_column(_TASK_COLUMN, col(task_column))
+        prepared = prepared.select(
+            *feature_names,
+            "episode_index",
+            "frame_index",
+            "timestamp",
+            _TASK_COLUMN,
+        )
+        globally_sorted = get_or_create_runner().name != "native"
+        if globally_sorted:
+            prepared = prepared.sort(["episode_index", "frame_index"])
+
+        resolved_io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+        sink = LeRobotSink(
+            uri=str(uri),
+            fps=fps,
+            features=normalized_features,
+            robot_type=robot_type,
+            overwrite=overwrite,
+            chunks_size=chunks_size,
+            data_files_size_in_mb=data_files_size_in_mb,
+            io_config=resolved_io_config,
+            globally_sorted=globally_sorted,
+        )
+        if not globally_sorted:
+            # Native execution does not currently execute Python DataSink operators.
+            # Normalize input partitions with Arrow and stage them one at a time
+            # so large datasets are not materialized on the driver. The sink
+            # splits native staging files at episode boundaries and globally
+            # orders those fragments during finalize.
+            sink.start()
+            try:
+                write_results: list[Any] = []
+                for partition in self.iter_partitions(results_buffer_size=1):
+                    assert isinstance(partition, MicroPartition)
+                    input_table = partition.to_arrow()
+                    output_columns: dict[str, Any] = {}
+                    for name in feature_names:
+                        output_columns[name] = pc.cast(
+                            input_table[name], feature_arrow_type(name, normalized_features[name])
+                        )
+                    output_columns["episode_index"] = pc.cast(input_table["episode_index"], pa.int64())
+                    output_columns["frame_index"] = pc.cast(input_table["frame_index"], pa.int64())
+                    if "timestamp" in columns:
+                        output_columns["timestamp"] = pc.cast(input_table["timestamp"], pa.float32())
+                    else:
+                        output_columns["timestamp"] = pc.cast(
+                            pc.divide(
+                                pc.cast(input_table["frame_index"], pa.float64()),
+                                pa.scalar(fps, type=pa.float64()),
+                            ),
+                            pa.float32(),
+                        )
+                    output_columns[_TASK_COLUMN] = input_table[task_column]
+                    normalized_partition = MicroPartition.from_arrow(pa.table(output_columns))
+                    write_results.extend(sink.write(iter([normalized_partition])))
+                result_partition = sink.finalize(write_results)
+            except Exception:
+                sink.abort()
+                raise
+            return DataFrame._from_micropartitions(result_partition)
+        try:
+            return prepared.write_sink(sink)
+        except Exception:
+            sink.abort()
+            raise
 
     def write_huggingface(
         self,
