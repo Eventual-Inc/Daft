@@ -377,6 +377,18 @@ def test_create_table_if_not_exists_concurrent():
     assert all(name == "tbl" for _, name in results), results
 
 
+def test_create_table_if_not_exists_propagates_other_errors():
+    """create_table_if_not_exists must not swallow unrelated creation failures."""
+
+    class FailingCatalog(MockCatalog):
+        def _create_table(self, identifier, schema, properties=None, partition_fields=None):
+            raise ValueError("connection failed")
+
+    catalog = FailingCatalog()
+    with pytest.raises(ValueError, match="connection failed"):
+        catalog.create_table_if_not_exists("tbl", Schema.from_pydict({"a": dt.int64()}))
+
+
 def test_drop_table_catalog_qualified():
     """Test that drop_table routes to the correct catalog when using a catalog-qualified identifier."""
     from daft.session import Session

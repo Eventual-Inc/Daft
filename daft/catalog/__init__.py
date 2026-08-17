@@ -547,11 +547,16 @@ class Catalog(ABC):
         """
         try:
             return self.create_table(identifier, source, properties)
-        except ValueError:
-            # Creation failed – if the table already exists (either
-            # pre-existing or created concurrently by another caller),
-            # return the existing table.  This avoids a TOCTOU race
-            # between has_table and create_table.
+        except ValueError as e:
+            # Only recover from "already exists" failures. Unrelated
+            # ValueErrors (e.g. connection or permission errors raised by
+            # Python-backed catalogs) propagate unchanged.
+            if "already exists" not in str(e):
+                raise
+            # The table already exists (either pre-existing or created
+            # concurrently by another caller), so return the existing
+            # table.  This avoids a TOCTOU race between has_table and
+            # create_table.
             # See: https://github.com/Eventual-Inc/Daft/issues/7310
             return self.get_table(identifier)
 
