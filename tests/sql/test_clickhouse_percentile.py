@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 # Module-level rewrite functions — these are pure functions with no
@@ -221,25 +223,25 @@ class TestConstructSQLQueryDialect:
 
 @pytest.mark.integration
 @pytest.mark.skipif(
-    "not config.getoption('--clickhouse', False)",
-    reason="ClickHouse integration tests require a running ClickHouse instance",
+    not os.environ.get("DAFT_CLICKHOUSE_URL"),
+    reason="ClickHouse integration tests require DAFT_CLICKHOUSE_URL",
 )
 class TestClickHouseIntegration:
     """End-to-end tests against a real ClickHouse instance.
 
-    Run with: pytest --clickhouse tests/sql/test_clickhouse_percentile.py
+    Run with:
+        DAFT_RUNNER=native \
+        DAFT_CLICKHOUSE_URL=clickhousedb://default:@localhost:8123/default \
+        pytest -m integration \
+        tests/sql/test_clickhouse_percentile.py::TestClickHouseIntegration
     """
 
     @pytest.fixture(scope="class")
     def ch_conn(self):
         from daft.sql.sql_connection import SQLConnection
 
-        return SQLConnection(
-            "clickhouse://default:@localhost:8123/default",
-            driver="",
-            dialect="clickhousedb",
-            url="clickhouse://default:@localhost:8123/default",
-        )
+        clickhouse_url = os.environ["DAFT_CLICKHOUSE_URL"]
+        return SQLConnection.from_url(clickhouse_url)
 
     def test_percentile_syntax_executable(self, ch_conn):
         """QuantileExactLow SQL must execute without syntax errors."""
