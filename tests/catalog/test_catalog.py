@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from daft.catalog import Catalog, Identifier, NotFoundError, Properties, Table
+from daft.catalog import Catalog, Identifier, NotFoundError, Properties, Table, TableAlreadyExistsError
 from daft.dataframe import DataFrame
 from daft.exceptions import DaftCoreException
 from daft.logical.schema import DataType as dt
@@ -377,13 +377,14 @@ def test_create_table_if_not_exists_concurrent():
     assert all(name == "tbl" for _, name in results), results
 
 
-def test_create_table_if_not_exists_recovers_generic_already_exists_error():
-    """Backends like pyiceberg raise a bare Exception (not ValueError) for
-    "already exists" conflicts; those should be recovered the same way."""
+def test_create_table_if_not_exists_recovers_table_already_exists_error():
+    """Backends translate their native conflicts into TableAlreadyExistsError;
+    create_table_if_not_exists should recover from the typed error.
+    """
 
     class ConflictCatalog(MockCatalog):
         def _create_table(self, identifier, schema, properties=None, partition_fields=None):
-            raise Exception(f"Table {identifier} already exists")
+            raise TableAlreadyExistsError(f"Table {identifier} already exists")
 
     catalog = ConflictCatalog()
     existing = MockTable("tbl")
@@ -412,6 +413,16 @@ def test_create_table_if_not_exists_propagates_other_errors():
 
     catalog = FailingCatalogGeneric()
     with pytest.raises(RuntimeError, match="connection failed"):
+        catalog.create_table_if_not_exists("tbl", Schema.from_pydict({"a": dt.int64()}))
+
+    # Recovery is driven by the exception type, not the message: a generic
+    # Exception whose message mentions "already exists" must still propagate.
+    class BareAlreadyExistsCatalog(MockCatalog):
+        def _create_table(self, identifier, schema, properties=None, partition_fields=None):
+            raise Exception(f"Table {identifier} already exists")  # noqa: TRY002
+
+    catalog = BareAlreadyExistsCatalog()
+    with pytest.raises(Exception, match="already exists"):
         catalog.create_table_if_not_exists("tbl", Schema.from_pydict({"a": dt.int64()}))
 
 

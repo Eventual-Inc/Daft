@@ -7,6 +7,8 @@ use daft_logical_plan::{LogicalPlan, LogicalPlanBuilder};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use daft_session::Session;
+#[cfg(feature = "python")]
+use pyo3::Python;
 
 use crate::{
     SQLPlanner,
@@ -107,22 +109,33 @@ fn execute_create_table(
     //
     // References Spark's CreateTableExec which catches
     // TableAlreadyExistsException after create for the same reason.
-    //
-    // We match both the direct CatalogError::ObjectAlreadyExists (pure-Rust
-    // catalogs like MemoryCatalog) and the indirect PythonError variant
-    // (Python-backed catalogs where the error wraps a DaftCoreException).
     match catalog.create_table(&ident, Arc::new(schema)) {
         Ok(_) => Ok(None),
         Err(e) => {
-            if create_table.if_not_exists
-                && (matches!(e, CatalogError::ObjectAlreadyExists { .. })
-                    || e.to_string().contains("already exists"))
-            {
+            if create_table.if_not_exists && is_table_already_exists_error(&e) {
                 Ok(None)
             } else {
                 Err(e.into())
             }
         }
+    }
+}
+
+/// Returns true if the error indicates the table already exists.
+///
+/// Daft-native catalogs surface this as CatalogError::ObjectAlreadyExists
+/// (PyCatalogWrapper translates the typed TableAlreadyExistsError back into
+/// this variant). Third-party Python catalogs may raise backend-specific
+/// exceptions instead, so we fall back to a message check scoped to the
+/// PythonError variant only.
+fn is_table_already_exists_error(e: &CatalogError) -> bool {
+    match e {
+        CatalogError::ObjectAlreadyExists { .. } => true,
+        #[cfg(feature = "python")]
+        CatalogError::PythonError { source } => {
+            Python::attach(|py| source.value(py).to_string().contains("already exists"))
+        }
+        _ => false,
     }
 }
 

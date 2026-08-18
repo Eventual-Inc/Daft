@@ -7,7 +7,7 @@ use daft_micropartition::{
     MicroPartition,
     partitioning::{MicroPartitionSet, PartitionSet},
 };
-use indexmap::IndexMap;
+use indexmap::{IndexMap, map::Entry};
 
 use crate::{
     Catalog, FunctionRef, Identifier, Table, TableRef,
@@ -135,21 +135,28 @@ impl Catalog for MemoryCatalog {
         // creator that holds the GIL while waiting on the lock.
         let table = Arc::new(MemoryTable::new(table_name.to_string(), schema)?);
 
-        // Hold a single write lock for the entire check-then-insert to avoid TOCTOU races.
+        // Insert with conflict detection: entry() reports "already exists"
+        // from the insert operation itself, so there is no separate check
+        // that could race with a concurrent creator. The write lock keeps
+        // the entry lookup and insert atomic across threads.
         let mut tables = self.tables.write().unwrap();
 
-        let namespace_tables = tables.get_mut(&namespace).ok_or_else(|| {
-            CatalogError::ObjectNotFound {
-                type_: "namespace".to_string(),
-                ident: namespace.clone().unwrap(),
+        let namespace_tables =
+            tables
+                .get_mut(&namespace)
+                .ok_or_else(|| CatalogError::ObjectNotFound {
+                    type_: "namespace".to_string(),
+                    ident: namespace.clone().unwrap(),
+                })?;
+
+        match namespace_tables.entry(table_name.to_string()) {
+            Entry::Vacant(slot) => {
+                slot.insert(table.clone());
             }
-        })?;
-
-        if namespace_tables.contains_key(table_name) {
-            return Err(CatalogError::obj_already_exists("table", ident));
+            Entry::Occupied(_) => {
+                return Err(CatalogError::obj_already_exists("table", ident));
+            }
         }
-
-        namespace_tables.insert(table_name.to_string(), table.clone());
 
         Ok(table)
     }

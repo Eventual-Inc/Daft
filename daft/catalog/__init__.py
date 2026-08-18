@@ -67,6 +67,7 @@ __all__ = [
     "Properties",
     "Schema",
     "Table",
+    "TableAlreadyExistsError",
 ]
 
 
@@ -75,6 +76,14 @@ Properties = dict[str, Any]
 
 class NotFoundError(Exception):
     """Raised when some catalog object is not able to be found."""
+
+
+class TableAlreadyExistsError(ValueError):
+    """Raised when a table already exists in a catalog.
+
+    Subclasses ValueError for backwards compatibility with code that
+    catches ValueError on duplicate creation.
+    """
 
 
 class Catalog(ABC):
@@ -547,21 +556,11 @@ class Catalog(ABC):
         """
         try:
             return self.create_table(identifier, source, properties)
-        except Exception as e:
-            # Only recover from "already exists" failures. Unrelated errors
-            # (e.g. connection or permission failures raised by Python-backed
-            # catalogs) propagate unchanged.
-            #
-            # "already exists" is matched by message because the exception
-            # types vary across backends: DaftCoreException (ValueError) from
-            # Rust catalogs, TableAlreadyExistsError (bare Exception) from
-            # pyiceberg, and bare ValueErrors from others.
-            if "already exists" not in str(e):
-                raise
+        except TableAlreadyExistsError:
             # The table already exists (either pre-existing or created
             # concurrently by another caller), so return the existing
-            # table.  This avoids a TOCTOU race between has_table and
-            # create_table.
+            # table. Creating and catching the conflict avoids the TOCTOU
+            # race of checking existence before creating.
             # See: https://github.com/Eventual-Inc/Daft/issues/7310
             return self.get_table(identifier)
 
