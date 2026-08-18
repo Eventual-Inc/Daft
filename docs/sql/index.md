@@ -143,6 +143,16 @@ mutually exclusive:
     daft.sql("SELECT * FROM read_iceberg('/warehouse/db/t/metadata/v3.metadata.json', branch => 'audit')")
     ```
 
+`ignore_corrupt_files` skips unreadable files instead of failing the query, and
+`df.skipped_corrupt_files` reports what was skipped once the DataFrame is materialized:
+
+=== "🐍 Python"
+    ```python
+    df = daft.sql("SELECT * FROM read_csv('s3://my-bucket/data/**/*.csv', ignore_corrupt_files => true)")
+    df.collect()
+    print(df.skipped_corrupt_files)
+    ```
+
 ### SQL Expressions
 
 SQL has the concept of expressions as well. Here is an example of a simple addition expression, adding columns `A` and `B` in SQL to produce a new column `C`.

@@ -25,25 +25,6 @@ df = daft.read_iceberg(table, ignore_corrupt_files=True)
 df.collect()
 ```
 
-The same option is available on the SQL table functions as a named argument:
-
-```python
-df = daft.sql("""
-    SELECT * FROM read_parquet('s3://my-bucket/data/**/*.parquet', ignore_corrupt_files => true)
-""")
-df.collect()
-```
-
-`read_csv` and `read_iceberg` accept it the same way. Named arguments also accept the
-`:=` form (`ignore_corrupt_files := true`), and `df.skipped_corrupt_files` works
-identically for dataframes built through SQL:
-
-```python
-df = daft.sql("SELECT * FROM read_csv('s3://my-bucket/data/**/*.csv', ignore_corrupt_files => true)")
-df.collect()
-print(df.skipped_corrupt_files)
-```
-
 ### What counts as "corrupt"
 
 Daft skips a file when it encounters a problem that is specific to the file itself and cannot be resolved by retrying:
