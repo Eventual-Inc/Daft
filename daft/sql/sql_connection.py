@@ -131,9 +131,7 @@ class SQLConnection:
             "redshift",
         }
 
-        if isinstance(self.conn, str) and self.dialect in connectorx_supported_dbs and self.driver == "":
-            return True
-        return False
+        return isinstance(self.conn, str) and self.dialect in connectorx_supported_dbs and self.driver == ""
 
     def execute_sql_query(self, sql: str, schema: pa.Schema | None = None) -> pa.Table:
         if schema is None and self._should_use_connectorx():
@@ -202,13 +200,13 @@ def _adapt_projection_for_dialect(
 def _rewrite_percentile_to_clickhouse(node: Expr) -> Expr:
     """Rewrite ``WithinGroup(PercentileDisc, Order)`` → ``quantileExactLow`` for ClickHouse.
 
-    ``quantileExactLow`` is chosen over ``quantileExact`` because it returns
-    the *lower* value when the index falls at a boundary (``median_low``
-    semantics). This is the closest match to ``PERCENTILE_DISC``'s
-    nearest-rank behaviour available in ClickHouse. ``quantile()``
-    (HyperLogLog-based, approximate) is deliberately avoided — its
-    ``quantile(0)`` and ``quantile(1)`` are not guaranteed to equal the
-    true min/max, which would silently drop rows at partition edges.
+    ``quantileExactLow`` uses ClickHouse's exact, lower-median convention and
+    returns values in the input type. Its rank convention is not identical to
+    ``PERCENTILE_DISC`` for every fraction, but it provides ordered, exact
+    values suitable for adjacent range boundaries, including the true
+    endpoints. ``quantile()`` is deliberately avoided because it uses
+    randomized reservoir sampling and returns approximate, non-deterministic
+    results.
 
     ``node`` is a single AST node visited by ``Expression.transform()``.
     The parent ``Alias`` wrapper (from ``.as_("bound_n")``) is preserved
