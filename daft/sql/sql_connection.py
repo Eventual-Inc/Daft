@@ -67,7 +67,7 @@ class SQLConnection:
             # avoid a second COM_STMT_PREPARE failure + warning log.
             if any(dt == pa.null() for dt in table.schema.types):
                 schema_sql = self.construct_sql_query(sql, limit=infer_schema_length)
-                table = self._execute_sql_query_with_sqlalchemy(schema_sql, _conn=self._sa_ready_url())
+                table = self._execute_sql_query_with_sqlalchemy_fallback(schema_sql)
         else:
             schema_sql = self.construct_sql_query(sql, limit=infer_schema_length)
             table = self.execute_sql_query(schema_sql)
@@ -149,8 +149,8 @@ class SQLConnection:
 
         Bare ``mysql://`` URLs default to the mysqldb driver which requires
         ``mysqlclient`` (not included in Daft's sql extra).  Rewrite them to
-        ``mysql+pymysql://`` so PyMySQL (already a dev dependency and widely
-        available) is used instead.
+        ``mysql+pymysql://`` so PyMySQL (included in Daft's sql extra) is used
+        instead.
 
         Must only be called when ``self.conn`` is a string (i.e., when the
         ConnectorX path or its fallback is relevant).
@@ -159,6 +159,24 @@ class SQLConnection:
         if self.conn.startswith("mysql://"):
             return self.conn.replace("mysql://", "mysql+pymysql://", 1)
         return self.conn
+
+    def _redact_connection_urls(self, message: str) -> str:
+        """Redact both ConnectorX and SQLAlchemy forms of the connection URL."""
+        assert isinstance(self.conn, str), "URL redaction requires a string connection"
+        redacted = message.replace(self.conn, "<redacted>")
+        sqlalchemy_url = self._sa_ready_url()
+        if sqlalchemy_url != self.conn:
+            redacted = redacted.replace(sqlalchemy_url, "<redacted>")
+        return redacted
+
+    def _execute_sql_query_with_sqlalchemy_fallback(self, sql: str) -> pa.Table:
+        """Execute a ConnectorX fallback without exposing its connection URL."""
+        try:
+            return self._execute_sql_query_with_sqlalchemy(sql, _conn=self._sa_ready_url())
+        except RuntimeError as e:
+            # Do not chain the original error: it may contain the unredacted URL,
+            # which Python would display even when this message is sanitized.
+            raise RuntimeError(self._redact_connection_urls(str(e))) from None
 
     def _execute_sql_query_with_connectorx(self, sql: str) -> pa.Table:
         import connectorx as cx
@@ -170,8 +188,8 @@ class SQLConnection:
             return table
         except Exception as e:
             # Fallback to SQLAlchemy only for COM_STMT_PREPARE failures.
-            # MySQL-compatible databases like Doris and StarRocks do not support
-            # the binary prepared-statement protocol that ConnectorX uses.
+            # Some MySQL-compatible endpoints reject the prepared-statement
+            # protocol that ConnectorX uses for metadata queries.
             # Connection-level errors (auth, network, DNS) should surface immediately.
             if "COM_STMT_PREPARE" not in str(e):
                 raise RuntimeError(f"Failed to execute sql: {sql}, error: {type(e).__name__}") from e
@@ -179,30 +197,22 @@ class SQLConnection:
             # in their error message — sanitize before logging.
             logger.warning(
                 "ConnectorX COM_STMT_PREPARE failed, falling back to SQLAlchemy: %s",
-                str(e).replace(self.conn, "<redacted>") if isinstance(self.conn, str) else e,
+                self._redact_connection_urls(str(e)),
             )
-            fallback_conn = self._sa_ready_url()
             try:
-                return self._execute_sql_query_with_sqlalchemy(sql, _conn=fallback_conn)
+                return self._execute_sql_query_with_sqlalchemy_fallback(sql)
             except RuntimeError as sqlalchemy_error:
                 # Sanitize exception messages: strip the connection URL to
                 # prevent credential leakage (secrets can appear anywhere in a
                 # URL – userinfo, query params, driver extras).  We still expose
                 # the exception type and the sanitised message so callers can
                 # diagnose which backend failed and why.
-                if isinstance(self.conn, str):
-                    cx_msg = str(e).replace(self.conn, "<redacted>")
-                    sa_msg = str(sqlalchemy_error).replace(self.conn, "<redacted>")
-                    # Also sanitize the rewritten URL if it differs.
-                    if fallback_conn != self.conn:
-                        sa_msg = sa_msg.replace(fallback_conn, "<redacted>")
-                else:
-                    cx_msg = str(e)
-                    sa_msg = str(sqlalchemy_error)
+                cx_msg = self._redact_connection_urls(str(e))
+                sa_msg = self._redact_connection_urls(str(sqlalchemy_error))
                 raise RuntimeError(
                     f"Failed to execute sql with both ConnectorX ({type(e).__name__}: {cx_msg}) "
                     f"and SQLAlchemy ({type(sqlalchemy_error).__name__}: {sa_msg})"
-                ) from e
+                ) from None
 
     def _execute_sql_query_with_sqlalchemy(
         self, sql: str, schema: pa.Schema | None = None, *, _conn: str | None = None

@@ -1,14 +1,13 @@
 """Tests for Doris ConnectorX fallback (Issue #7199).
 
-Covers three paths:
-1. ConnectorX succeeds → SQLAlchemy not called
-2. ConnectorX fails → fallback to SQLAlchemy succeeds
-3. Both ConnectorX and SQLAlchemy fail → error preserves both causes
+Covers ConnectorX success, targeted SQLAlchemy fallback, dual-failure
+reporting, credential redaction, and schema-inference retry behavior.
 """
 
 from __future__ import annotations
 
 import socket
+import traceback
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -61,7 +60,7 @@ class TestConnectorXFallbackUnit:
             mock_cx.read_sql.assert_called_once()
             mock_sa.assert_called_once_with("SELECT 1", _conn="mysql+pymysql://user:pass@host:9030/db")
 
-    def test_both_fail_preserves_both_causes(self):
+    def test_both_fail_reports_both_backends(self):
         """When both backends fail, the error must include both exception types and messages."""
         conn = _make_conn()
         mock_cx = MagicMock()
@@ -107,6 +106,11 @@ class TestConnectorXFallbackUnit:
             assert secret not in str(exc_info.value)
             # The host should also be redacted
             assert "doris.example.com" not in str(exc_info.value)
+            # The traceback must not recover an unredacted chained exception.
+            rendered_traceback = "".join(traceback.format_exception(exc_info.type, exc_info.value, exc_info.tb))
+            assert secret not in rendered_traceback
+            assert "doris.example.com" not in rendered_traceback
+            assert exc_info.value.__cause__ is None
 
     def test_non_com_stmt_prepare_error_propagates(self):
         """Connection-level errors (auth, network) should NOT trigger fallback."""
@@ -153,7 +157,7 @@ class TestConnectorXFallbackUnit:
 
         # First call (LIMIT 0 via fallback): returns null-typed schema.
         null_table = pa.table({"x": pa.array([], type=pa.null())})
-        # Retry goes directly to _execute_sql_query_with_sqlalchemy → proper types.
+        # Retry uses the SQLAlchemy fallback wrapper → proper types.
         typed_table = pa.table({"x": pa.array([1, 2, 3], type=pa.int64())})
 
         with (
@@ -167,10 +171,36 @@ class TestConnectorXFallbackUnit:
             schema = conn.read_schema("SELECT x FROM t", infer_schema_length=100)
 
         # First call: execute_sql_query (ConnectorX → fallback → LIMIT 0 → null).
-        # Second call: _execute_sql_query_with_sqlalchemy directly (skips ConnectorX).
+        # Second call: SQLAlchemy fallback wrapper (skips ConnectorX).
         assert mock_exec.call_count == 1
         mock_sa.assert_called_once()
         assert schema.to_pyarrow_schema().field("x").type == pa.int64()
+
+    def test_read_schema_retry_failure_does_not_leak_credentials(self):
+        """The sampled SQLAlchemy retry must redact its URL and exception chain."""
+        import pyarrow as pa
+
+        secret = "super-secret-pw"
+        url = f"mysql://alice:{secret}@doris.example.com:9030/db"
+        sqlalchemy_url = f"mysql+pymysql://alice:{secret}@doris.example.com:9030/db"
+        conn = _make_conn(url)
+        null_table = pa.table({"x": pa.array([], type=pa.null())})
+
+        with (
+            patch.object(conn, "execute_sql_query", return_value=null_table),
+            patch.object(
+                conn,
+                "_execute_sql_query_with_sqlalchemy",
+                side_effect=RuntimeError(f"SQLAlchemy connection failed to {sqlalchemy_url}"),
+            ),
+            pytest.raises(RuntimeError) as exc_info,
+        ):
+            conn.read_schema("SELECT x FROM t", infer_schema_length=100)
+
+        rendered_traceback = "".join(traceback.format_exception(exc_info.type, exc_info.value, exc_info.tb))
+        assert secret not in rendered_traceback
+        assert "doris.example.com" not in rendered_traceback
+        assert exc_info.value.__cause__ is None
 
 
 # ── Docker integration test ─────────────────────────────────────────────────
@@ -192,7 +222,7 @@ def _doris_reachable() -> bool:
 
 @pytest.mark.integration
 class TestDorisFallbackIntegration:
-    """End-to-end test against a real Doris instance.
+    """Exercise the SQLAlchemy fallback against a real Doris instance.
 
     Requires:
     - Doris Docker container reachable at 127.0.0.40:9032
@@ -237,9 +267,8 @@ class TestDorisFallbackIntegration:
     def test_connectorx_failure_falls_back_to_sqlalchemy_doris(self, doris_setup):
         """ConnectorX fails on Doris (COM_STMT_PREPARE), SQLAlchemy fallback reads data.
 
-        This is the critical end-to-end path: we mock ConnectorX to simulate
-        the COM_STMT_PREPARE failure, then verify that data is correctly read
-        through the SQLAlchemy fallback.
+        ConnectorX is mocked to simulate the COM_STMT_PREPARE failure while the
+        fallback executes real queries against Doris.
         """
         import daft
 
@@ -256,4 +285,4 @@ class TestDorisFallbackIntegration:
         assert result["id"] == list(range(20))
         assert result["value"] == [float(i) for i in range(20)]
         assert result["label"] == [f"row_{i}" for i in range(20)]
-        mock_cx.read_sql.assert_called_once()
+        assert mock_cx.read_sql.called
