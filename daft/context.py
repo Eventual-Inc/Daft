@@ -244,6 +244,10 @@ def set_execution_config(
     dynamic_batching_strategy: str | None = None,
     flight_shuffle_dirs: list[str] | None = None,
     flight_shuffle_compression: str | None = None,
+    celeborn_lm_host: str | None = None,
+    celeborn_lm_port: int | None = None,
+    celeborn_app_id: str | None = None,
+    celeborn_properties: list[tuple[str, str]] | None = None,
     enable_multi_glob_path_tasks: bool | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
@@ -281,7 +285,7 @@ def set_execution_config(
         high_cardinality_aggregation_threshold: Threshold selectivity for performing high cardinality aggregations on the Native Runner. Defaults to 0.8.
         read_sql_partition_size_bytes: Target size of partition when reading from SQL databases. Defaults to 512MB
         default_morsel_size: Default size of morsels used for the new local executor. Defaults to 131072 rows.
-        shuffle_algorithm: The shuffle algorithm to use. Defaults to "auto", which will let Daft determine the algorithm. Options are "map_reduce", "pre_shuffle_merge", and "flight_shuffle".
+        shuffle_algorithm: The shuffle algorithm to use. Defaults to "auto", which will let Daft determine the algorithm. Options are "map_reduce", "pre_shuffle_merge", "flight_shuffle", and "celeborn". "celeborn" requires a build with the `celeborn` cargo feature enabled, and is never selected by "auto".
         pre_shuffle_merge_threshold: Memory threshold in bytes for pre-shuffle merge. Defaults to 1GB
         pre_shuffle_merge_partition_threshold: Number of partitions threshold to enable pre-shuffle merge when shuffle_algorithm is "auto". Defaults to 200.
         scantask_max_parallel: Set the max parallelism for running scan tasks simultaneously. Currently, this only works for Native Runner. If set to 0, all available CPUs will be used. Defaults to 8.
@@ -294,6 +298,10 @@ def set_execution_config(
         dynamic_batching_strategy: The strategy to use for dynamic batching. Defaults to 'auto'.
         flight_shuffle_dirs: Directories to use for flight shuffle. Defaults to ["/tmp"]. Must not be empty.
         flight_shuffle_compression: Arrow IPC compression for flight shuffle spill files. One of "lz4", "zstd", or "none". Defaults to "lz4". Pass "none" to disable compression; passing Python None leaves the current config unchanged.
+        celeborn_lm_host: Host of the Celeborn LifecycleManager. Required when shuffle_algorithm is "celeborn".
+        celeborn_lm_port: Port of the Celeborn LifecycleManager. Required when shuffle_algorithm is "celeborn".
+        celeborn_app_id: Application id registered with Celeborn, used to namespace shuffle data. Defaults to an id that is unique per Daft process and stable for that process. Set it explicitly only when the LifecycleManager deployment requires a coordinated application id.
+        celeborn_properties: Native `celeborn.*` client options, forwarded verbatim to the Celeborn client rather than mirrored as typed config fields. Unknown keys are the client's to reject, not Daft's.
         enable_multi_glob_path_tasks: Whether to create multiple glob path tasks in Ray Runner to achieve parallel glob. Defaults to False.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
@@ -344,6 +352,10 @@ def set_execution_config(
             dynamic_batching_strategy=dynamic_batching_strategy,
             flight_shuffle_dirs=flight_shuffle_dirs,
             flight_shuffle_compression=flight_shuffle_compression,
+            celeborn_lm_host=celeborn_lm_host,
+            celeborn_lm_port=celeborn_lm_port,
+            celeborn_app_id=celeborn_app_id,
+            celeborn_properties=celeborn_properties,
             enable_multi_glob_path_tasks=enable_multi_glob_path_tasks,
         )
 

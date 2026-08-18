@@ -47,8 +47,8 @@ use crate::{
     ExecutionRuntimeContext,
     channel::{Sender, UnboundedSender, create_channel, create_unbounded_channel},
     pipeline::{
-        BuilderContext, PipelineMessage, translate_physical_plan_to_pipeline, viz_pipeline_ascii,
-        viz_pipeline_mermaid,
+        BuilderContext, MapperAttempt, MapperAttemptRegistry, PipelineMessage,
+        translate_physical_plan_to_pipeline, viz_pipeline_ascii, viz_pipeline_mermaid,
     },
     resource_manager::get_or_init_memory_manager,
     runtime_stats::{RuntimeStatsManager, RuntimeStatsManagerHandle},
@@ -57,6 +57,11 @@ use crate::{
 enum ExecutionEngineResultItem {
     Partition(MicroPartition),
     FlightPartitionRef(FlightPartitionRef),
+    /// Terminal error for an input whose pipeline output was torn down before
+    /// it received its completing `Flush`. Delivered by [`MessageRouter`]'s
+    /// `Drop` so the consuming task fails loudly instead of seeing a clean EOF
+    /// and reporting success on partial (or missing) output.
+    Error(String),
 }
 
 /// Global tokio runtime shared by all NativeExecutor instances
@@ -156,6 +161,28 @@ impl MessageRouter {
 
 impl Drop for MessageRouter {
     fn drop(&mut self) {
+        // Any input_id still registered here never received its terminating
+        // `Flush` (which `route_message` removes the sender on): its pipeline
+        // output was torn down mid-flight — cancel, shutdown, or a source whose
+        // in-flight read was aborted before delivering. Dropping the sender now
+        // would close the channel with a *clean* EOF, and the consuming task
+        // would report success on partial/missing output. This is exactly how
+        // the Celeborn reduce empty-output bug manifested: slow data-bearing
+        // reads were aborted at teardown, their inputs closed without a Flush,
+        // and the tasks "succeeded" with zero rows. Deliver a terminal error
+        // instead so the task fails loudly and is retried rather than silently
+        // succeeding. (In a *normal* completion every input is Flushed before
+        // the run loop exits, so `output_senders` is empty here and no error is
+        // sent — this fires only on abnormal teardown.)
+        for (input_id, sender) in std::mem::take(&mut self.output_senders) {
+            let elapsed = self.input_start_times.remove(&input_id);
+            let _ = sender.send(ExecutionEngineResultItem::Error(format!(
+                "input_id={input_id} pipeline output ended without completion \
+                 (torn down after {:?}); the read did not finish, refusing to \
+                 report partial output as success",
+                elapsed.map(|s| s.elapsed())
+            )));
+        }
         for (input_id, started) in self.input_start_times.drain() {
             log::debug!(
                 "NativeExecutor: input_id={input_id} ended without Flush after {:?} (cancel/shutdown?)",
@@ -172,6 +199,18 @@ struct PlanState {
     stats_handle: RuntimeStatsManagerHandle,
     active_input_ids: HashSet<InputId>,
     skipped_corrupt_files: Arc<std::sync::Mutex<Vec<(String, String, bool)>>>,
+    /// Set by [`run_execution_loop`] right before it exits, on **every** exit
+    /// path. Lets a late `enqueue` (which only sees a closed channel) decide by
+    /// type whether the race is retriable ([`PlanEnd::Finished`]) or terminal,
+    /// and report *why* — rather than parsing an error string. This is the only
+    /// reliable channel in distributed (flotilla) mode: the worker's
+    /// stdout/stderr are not collected, so the reason must travel back through
+    /// the task result to reach the driver.
+    end_reason: Arc<Mutex<Option<PlanEnd>>>,
+    /// Per-pipeline registry of shuffle map task attempts, keyed by `InputId`.
+    /// Shared with the pipeline's Celeborn sink; entries are removed on
+    /// `try_finish` so it does not grow unbounded on a reused pipeline.
+    map_attempts: MapperAttemptRegistry,
 }
 
 #[cfg_attr(
@@ -207,6 +246,77 @@ impl PyNativeExecutor {
         self.address.clone()
     }
 
+    /// Connect to a Celeborn LifecycleManager and set the resulting client
+    /// on this executor.
+    ///
+    /// Configuration is read from the `DaftExecutionConfig.celeborn` field.
+    /// Must be called before any shuffle task that uses the Celeborn backend.
+    /// Idempotent: if a client is already connected, this is a no-op. The
+    /// early-out below is only a fast path — two callers racing past it both
+    /// connect, and `NativeExecutor::set_celeborn_client` keeps whichever
+    /// arrives first rather than swapping out a client already in use, so the
+    /// loser's connection is simply dropped.
+    ///
+    /// # Arguments
+    /// * `daft_execution_config` - A `PyDaftExecutionConfig` whose inner
+    ///   `celeborn` field supplies the connection parameters (lm_host,
+    ///   lm_port, app_id, and native `celeborn.*` properties).
+    #[cfg(feature = "celeborn")]
+    pub fn set_celeborn_client(
+        &self,
+        py: Python<'_>,
+        daft_execution_config: &PyDaftExecutionConfig,
+    ) -> PyResult<()> {
+        if self
+            .executor
+            .lock_py_attached(py)
+            .unwrap()
+            .has_celeborn_client()
+        {
+            return Ok(());
+        }
+
+        let exec_config = daft_execution_config.config.as_ref();
+        let celeborn_cfg = exec_config.celeborn.as_ref().ok_or_else(|| {
+            pyo3::exceptions::PyValueError::new_err(
+                "DaftExecutionConfig.celeborn is None; \
+                 set celeborn config via with_config_values() before calling set_celeborn_client()",
+            )
+        })?;
+        if !celeborn_cfg.is_complete() {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "DaftExecutionConfig.celeborn is missing the LifecycleManager coordinates \
+                 (lm_host={:?}, lm_port={}); set them with \
+                 daft.context.set_execution_config(celeborn_lm_host=..., celeborn_lm_port=...)",
+                celeborn_cfg.lm_host, celeborn_cfg.lm_port
+            )));
+        }
+
+        let client_config = daft_shuffles::client::celeborn::CelebornClientConfig {
+            lm_host: celeborn_cfg.lm_host.clone(),
+            lm_port: celeborn_cfg.lm_port,
+            app_id: celeborn_cfg.app_id.clone(),
+            properties: celeborn_cfg.properties.clone(),
+        };
+        // `connect` is a blocking RPC to the LifecycleManager, so detach from
+        // the interpreter for it: this runs on the worker's main Python thread
+        // and would otherwise stall every other thread in the process for the
+        // round-trip.
+        let client = py
+            .detach(|| daft_shuffles::client::celeborn::connect_celeborn_client(&client_config))
+            .map_err(|e| {
+                pyo3::exceptions::PyRuntimeError::new_err(format!(
+                    "Failed to connect to Celeborn LifecycleManager at {}:{}: {e}",
+                    celeborn_cfg.lm_host, celeborn_cfg.lm_port
+                ))
+            })?;
+        self.executor
+            .lock_py_attached(py)
+            .unwrap()
+            .set_celeborn_client(client);
+        Ok(())
+    }
+
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (local_physical_plan, daft_ctx, input_id, inputs, context=None, maintain_order=true))]
     pub fn run<'py>(
@@ -223,27 +333,65 @@ impl PyNativeExecutor {
         let plan = local_physical_plan.plan.clone();
         let exec_cfg = daft_ctx.execution_config();
         let subscribers = daft_ctx.subscribers();
-        let (fingerprint, enqueue_future) = {
-            self.executor.lock_py_attached(py).unwrap().run(
-                &plan,
-                exec_cfg,
-                subscribers,
-                context,
-                inputs,
-                input_id,
-                maintain_order,
-            )?
-        };
-
         let executor = self.executor.clone();
+
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let result = enqueue_future.await?;
-            Ok(PyResultReceiver {
-                result: Arc::new(tokio::sync::Mutex::new(Some(result))),
-                fingerprint,
-                input_id,
-                executor,
-            })
+            // A task reuses a pipeline keyed by `fingerprint`. That pipeline can
+            // finish (all currently-active inputs drained) and start tearing down
+            // in the tiny window between `run()` observing the plan as present and
+            // the detached `enqueue` actually sending — the input then lands on a
+            // just-closed channel and fails with "cannot enqueue new input".
+            //
+            // This is benign and recoverable: drop the finished plan and rebuild
+            // it, then re-enqueue. Bounded so a genuinely-broken plan still errors
+            // out instead of spinning forever. Retrying here treats the symptom;
+            // closing the window itself would mean holding the pipeline open until
+            // the reduce stage ends, which reaches well beyond this backend.
+            const MAX_ENQUEUE_ATTEMPTS: usize = 5;
+            let mut attempt = 0usize;
+            loop {
+                attempt += 1;
+                let (fingerprint, enqueue_future) = Python::attach(|py| {
+                    executor.lock_py_attached(py).unwrap().run(
+                        &plan,
+                        exec_cfg.clone(),
+                        subscribers.clone(),
+                        context.clone(),
+                        inputs.clone(),
+                        input_id,
+                        maintain_order,
+                    )
+                })?;
+
+                // `?` propagates terminal failures (cancel / real error / abort)
+                // unchanged — only the typed `PipelineFinished` signal retries.
+                match enqueue_future.await? {
+                    EnqueueOutcome::Ready(result) => {
+                        return Ok(PyResultReceiver {
+                            result: Arc::new(tokio::sync::Mutex::new(Some(result))),
+                            fingerprint,
+                            input_id,
+                            executor,
+                        });
+                    }
+                    EnqueueOutcome::PipelineFinished => {
+                        if attempt >= MAX_ENQUEUE_ATTEMPTS {
+                            return Err(common_error::DaftError::InternalError(format!(
+                                "cannot enqueue input_id={input_id}: reused pipeline kept \
+                                 finishing across {MAX_ENQUEUE_ATTEMPTS} rebuild attempts"
+                            ))
+                            .into());
+                        }
+                        // Evict the finished plan so the next attempt rebuilds it.
+                        Python::attach(|py| {
+                            executor
+                                .lock_py_attached(py)
+                                .unwrap()
+                                .discard_finished_plan(fingerprint);
+                        });
+                    }
+                }
+            }
         })
     }
 
@@ -315,6 +463,21 @@ fn parse_context(ctx: Option<&HashMap<String, String>>) -> (QueryID, u64, Option
     (query_id, fingerprint, task_id)
 }
 
+/// Parse the shuffle map task attempt from the task context.
+///
+/// `map_id` is the upstream partition ordinal (set by the coordinator when it
+/// builds the shuffle-write task); `attempt_id` is the reschedule count (set by
+/// the dispatcher). Returns `None` when the task is not a shuffle mapper
+/// (`map_id` absent). `attempt_id` defaults to 0 when not yet supplied.
+fn parse_map_attempt(ctx: Option<&HashMap<String, String>>) -> Option<MapperAttempt> {
+    let map_id = ctx?.get("map_id")?.parse::<u32>().ok()?;
+    let attempt_id = ctx
+        .and_then(|c| c.get("attempt_id"))
+        .and_then(|s| s.parse::<u32>().ok())
+        .unwrap_or(0);
+    Some(MapperAttempt { map_id, attempt_id })
+}
+
 // TODO: fix configuration for events
 // This is copied from task_lifecycle.rs to avoid the daft-distributed dependency
 pub fn task_events_enabled() -> bool {
@@ -329,6 +492,38 @@ pub fn task_events_enabled() -> bool {
 /// Receives inputs via `enqueue_input_rx`, routes pipeline outputs to
 /// per-input_id channels, and runs until the pipeline finishes, errors,
 /// or is cancelled.
+/// How a plan's execution loop ended. Recorded by [`run_execution_loop`] before
+/// it returns (on every exit path), so a late `enqueue` that observes the closed
+/// channel can react by *type* — not by parsing an error string.
+#[derive(Clone)]
+enum PlanEnd {
+    /// Pipeline drained normally. A late enqueue racing this teardown is a
+    /// benign lifecycle race and is safe to retry on a rebuilt plan.
+    Finished,
+    /// Terminal (cancelled / failed / aborted / …); not retriable. The string is
+    /// a human-readable reason folded into the surfaced error.
+    Terminal(String),
+}
+
+impl PlanEnd {
+    fn detail(&self) -> String {
+        match self {
+            Self::Finished => "state=Finished".to_string(),
+            Self::Terminal(s) => s.clone(),
+        }
+    }
+}
+
+/// Outcome of enqueueing one input into a (possibly reused) pipeline.
+pub enum EnqueueOutcome {
+    /// Input accepted; results will stream from the receiver.
+    Ready(ExecutionEngineResult),
+    /// The reused pipeline had already finished before this input landed — the
+    /// caller should rebuild the plan and retry. (Distinct from a real error,
+    /// which is returned as `Err`.)
+    PipelineFinished,
+}
+
 async fn run_execution_loop(
     cancel: CancellationToken,
     stats_manager: RuntimeStatsManager,
@@ -336,6 +531,7 @@ async fn run_execution_loop(
     input_senders: Arc<HashMap<SourceId, crate::input_sender::InputSender>>,
     pipeline: Box<dyn crate::pipeline::PipelineNode>,
     maintain_order: bool,
+    end_reason: Arc<Mutex<Option<PlanEnd>>>,
 ) -> DaftResult<()> {
     let stats_manager_handle = stats_manager.handle();
     let memory_manager = get_or_init_memory_manager();
@@ -392,7 +588,11 @@ async fn run_execution_loop(
                         // unblock, then drain runtime tasks.
                         drop(message_router);
                         let res = runtime_handle.shutdown().await;
-                        let status = if res.is_ok() { QueryEndState::Finished } else { QueryEndState::Failed };
+                        let status = if res.is_ok() {
+                            QueryEndState::Finished
+                        } else {
+                            QueryEndState::Failed
+                        };
                         break (res, status);
                     }
                 }
@@ -400,8 +600,21 @@ async fn run_execution_loop(
         }
     };
 
-    stats_manager.finish(finish_status).await;
+    stats_manager.finish(finish_status.clone()).await;
     flush_opentelemetry_providers();
+    // Record how the loop ended before we return (and `enqueue_input_rx` is
+    // dropped), so any subsequent `enqueue` that observes the closed channel can
+    // report the reason. We record on every path — not just errors — because a
+    // cancel/finish that races with a late input is otherwise invisible and
+    // surfaces only as the bare "pipeline died" message.
+    let plan_end = match &result {
+        // Normal drain: a late enqueue racing this teardown is the benign,
+        // retriable case.
+        Ok(()) if matches!(finish_status, QueryEndState::Finished) => PlanEnd::Finished,
+        Ok(()) => PlanEnd::Terminal(format!("state={finish_status:?}")),
+        Err(e) => PlanEnd::Terminal(format!("state={finish_status:?}; root cause: {e:?}")),
+    };
+    *end_reason.lock().unwrap() = Some(plan_end);
     result
 }
 
@@ -410,6 +623,11 @@ pub struct NativeExecutor {
     is_flotilla_worker: bool,
     shuffle_server: Option<Arc<ShuffleFlightServer>>,
     shuffle_server_connection: Option<FlightServerConnectionHandle>,
+    /// Global Celeborn shuffle client, shared across all queries/shuffles on
+    /// this worker. Created once via [`Self::set_celeborn_client`] and injected
+    /// into every [`BuilderContext`] so that pipeline nodes can use it.
+    #[cfg(feature = "celeborn")]
+    celeborn_client: Option<Arc<dyn daft_shuffles::client::celeborn::CelebornClient>>,
     plans: HashMap<u64, PlanState>,
 }
 
@@ -425,6 +643,8 @@ impl NativeExecutor {
                 is_flotilla_worker: true,
                 shuffle_server: Some(shuffle_server),
                 shuffle_server_connection,
+                #[cfg(feature = "celeborn")]
+                celeborn_client: None,
                 plans: HashMap::new(),
             }
         } else {
@@ -433,9 +653,31 @@ impl NativeExecutor {
                 is_flotilla_worker: false,
                 shuffle_server: None,
                 shuffle_server_connection: None,
+                #[cfg(feature = "celeborn")]
+                celeborn_client: None,
                 plans: HashMap::new(),
             }
         }
+    }
+
+    /// Set the global Celeborn shuffle client for this executor.
+    ///
+    /// Must be called before any shuffle task that uses the Celeborn backend.
+    /// The client is injected into every `BuilderContext` created by `run()`.
+    /// Idempotent: once a client is set it is never replaced.
+    #[cfg(feature = "celeborn")]
+    pub fn set_celeborn_client(
+        &mut self,
+        client: Arc<dyn daft_shuffles::client::celeborn::CelebornClient>,
+    ) {
+        if self.celeborn_client.is_none() {
+            self.celeborn_client = Some(client);
+        }
+    }
+
+    #[cfg(feature = "celeborn")]
+    pub fn has_celeborn_client(&self) -> bool {
+        self.celeborn_client.is_some()
     }
 
     pub fn shuffle_address(&self) -> Option<String> {
@@ -454,8 +696,9 @@ impl NativeExecutor {
         inputs: HashMap<SourceId, Input>,
         input_id: InputId,
         maintain_order: bool,
-    ) -> DaftResult<(u64, BoxFuture<'static, DaftResult<ExecutionEngineResult>>)> {
+    ) -> DaftResult<(u64, BoxFuture<'static, DaftResult<EnqueueOutcome>>)> {
         let (query_id, fingerprint, task_id) = parse_context(additional_context.as_ref());
+        let map_attempt = parse_map_attempt(additional_context.as_ref());
 
         if self.is_flotilla_worker {
             debug_assert_eq!(
@@ -487,6 +730,18 @@ impl NativeExecutor {
             None
         };
 
+        // Per-pipeline registry shared between this pipeline's Celeborn sink
+        // (reads by `input_id` in `make_state`) and the enqueue path below
+        // (writes each task's map attempt). Created on first use of the
+        // fingerprint and reused for every same-fingerprint task on the shared
+        // pipeline.
+        let map_attempts: MapperAttemptRegistry =
+            if let Some(plan_state) = self.plans.get(&fingerprint) {
+                plan_state.map_attempts.clone()
+            } else {
+                Arc::new(std::sync::Mutex::new(HashMap::new()))
+            };
+
         if !self.plans.contains_key(&fingerprint) {
             let cancel = self.cancel.clone();
             let additional_context = additional_context.unwrap_or_default();
@@ -498,6 +753,12 @@ impl NativeExecutor {
                     .as_ref()
                     .map(|server| (server.clone(), shuffle_address.unwrap())),
             );
+            #[cfg(feature = "celeborn")]
+            if let Some(celeborn_client) = &self.celeborn_client {
+                ctx.set_celeborn_client(celeborn_client.clone());
+            }
+            #[cfg(feature = "celeborn")]
+            ctx.set_map_attempts(map_attempts.clone());
             let (pipeline, input_senders) =
                 translate_physical_plan_to_pipeline(local_physical_plan, &exec_cfg, &ctx)?;
 
@@ -514,6 +775,7 @@ impl NativeExecutor {
             let (enqueue_input_tx, enqueue_input_rx) = create_channel::<EnqueueInputMessage>(1);
 
             let input_senders = Arc::new(input_senders);
+            let end_reason = Arc::new(Mutex::new(None));
             let task = run_execution_loop(
                 cancel,
                 stats_manager,
@@ -521,6 +783,7 @@ impl NativeExecutor {
                 input_senders,
                 pipeline,
                 maintain_order,
+                end_reason.clone(),
             );
 
             let task_handle = RuntimeTask::new(handle, task);
@@ -532,13 +795,25 @@ impl NativeExecutor {
                     stats_handle,
                     active_input_ids: HashSet::new(),
                     skipped_corrupt_files: ctx.skipped_corrupt_files.clone(),
+                    end_reason,
+                    map_attempts,
                 },
             );
         }
 
         let plan_state = self.plans.get_mut(&fingerprint).unwrap();
         let enqueue_input_sender = plan_state.enqueue_input_sender.clone();
+        let end_reason = plan_state.end_reason.clone();
         plan_state.active_input_ids.insert(input_id);
+
+        // Register this task's shuffle map attempt before enqueue so the sink's
+        // `make_state` (which runs later, when the first morsel arrives) can look
+        // it up by `input_id`. Removed in `try_finish` once the task completes.
+        if let Some(map_attempt) = map_attempt
+            && let Ok(mut map) = plan_state.map_attempts.lock()
+        {
+            map.insert(input_id, map_attempt);
+        }
 
         Ok((
             fingerprint,
@@ -550,9 +825,25 @@ impl NativeExecutor {
                     result_sender: result_tx,
                 };
                 if enqueue_input_sender.send(enqueue_msg).await.is_err() {
-                    return Err(common_error::DaftError::InternalError(
-                        "Plan execution task has died; cannot enqueue new input".to_string(),
-                    ));
+                    // The execution loop has already exited. `end_reason` was set
+                    // (on every exit path) before the channel closed. Decide by
+                    // type: a normal `Finished` is a retriable lifecycle race;
+                    // anything else is terminal and surfaces as an error.
+                    let end = end_reason.lock().unwrap().clone();
+                    match end {
+                        Some(PlanEnd::Finished) => {
+                            return Ok(EnqueueOutcome::PipelineFinished);
+                        }
+                        other => {
+                            let detail = other
+                                .map(|e| e.detail())
+                                .unwrap_or_else(|| "reason NOT recorded".to_string());
+                            return Err(common_error::DaftError::InternalError(format!(
+                                "Plan execution task has died; cannot enqueue new input \
+                                 [fingerprint={fingerprint} input_id={input_id}] ({detail})"
+                            )));
+                        }
+                    }
                 }
 
                 // Send the event after the task has been enqueued for execution
@@ -560,9 +851,9 @@ impl NativeExecutor {
                     dispatch_task_start_event(&subscribers, &event);
                 }
 
-                Ok(ExecutionEngineResult {
+                Ok(EnqueueOutcome::Ready(ExecutionEngineResult {
                     receiver: result_rx,
-                })
+                }))
             }
             .boxed(),
         ))
@@ -583,6 +874,11 @@ impl NativeExecutor {
         };
 
         plan_state.active_input_ids.remove(&input_id);
+        // Drop this task's shuffle map attempt so the registry does not grow
+        // unbounded on a reused (flotilla) pipeline.
+        if let Ok(mut map) = plan_state.map_attempts.lock() {
+            map.remove(&input_id);
+        }
         let pipeline_dead = plan_state.enqueue_input_sender.is_closed();
         let should_remove = plan_state.active_input_ids.is_empty() || pipeline_dead;
 
@@ -626,6 +922,19 @@ impl NativeExecutor {
     pub fn cancel_plan(&mut self, fingerprint: u64) {
         // RuntimeTask drop cancels the spawned task
         self.plans.remove(&fingerprint);
+    }
+
+    /// Evict a plan whose execution loop has already finished (its enqueue
+    /// channel is closed) so a subsequent `run()` rebuilds a fresh pipeline.
+    /// No-op if the plan is absent or still live — used by the enqueue retry to
+    /// recover from the "plan finished mid-enqueue" race without disturbing a
+    /// healthy pipeline.
+    pub fn discard_finished_plan(&mut self, fingerprint: u64) {
+        if let Some(plan_state) = self.plans.get(&fingerprint)
+            && plan_state.enqueue_input_sender.is_closed()
+        {
+            self.plans.remove(&fingerprint);
+        }
     }
 
     fn repr_ascii(
@@ -730,21 +1039,28 @@ impl PyResultReceiver {
                 .next()
                 .await;
             Python::attach(|py| {
-                Ok(match part {
-                    None => py.None(),
+                match part {
+                    None => Ok(py.None()),
                     Some(ExecutionEngineResultItem::Partition(partition)) => {
-                        PyMicroPartition::from(partition)
+                        Ok(PyMicroPartition::from(partition)
                             .into_pyobject(py)?
                             .unbind()
-                            .into_any()
+                            .into_any())
                     }
                     Some(ExecutionEngineResultItem::FlightPartitionRef(partition_ref)) => {
-                        PyFlightPartitionRef::from(partition_ref)
+                        Ok(PyFlightPartitionRef::from(partition_ref)
                             .into_pyobject(py)?
                             .unbind()
-                            .into_any()
+                            .into_any())
                     }
-                })
+                    // The pipeline was torn down before this input completed:
+                    // raise so the task fails and is retried instead of ending
+                    // the async iterator on a clean EOF (which would report the
+                    // partial/empty output as success).
+                    Some(ExecutionEngineResultItem::Error(msg)) => {
+                        Err(pyo3::exceptions::PyRuntimeError::new_err(msg))
+                    }
+                }
             })
         })
     }

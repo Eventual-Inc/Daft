@@ -74,3 +74,6 @@ CLAUDE.local.md
 .claude/**/*.md
 .claude/worktrees/
 .beads
+# Locally built Celeborn client stub (see the celeborn-stub Makefile target);
+# the source next to it is tracked.
+tools/celeborn-stub/lib/

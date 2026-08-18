@@ -106,6 +106,81 @@ impl DaftPlanningConfig {
     }
 }
 
+/// Process-stable default Celeborn `app_id`.
+///
+/// Derived once per process so that every query in a session shares it and the
+/// value survives being serialized out to the workers, while two Daft processes
+/// against the same cluster never share a shuffle namespace.
+static DEFAULT_CELEBORN_APP_ID: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    format!("daft-{}-{:x}", std::process::id(), nanos)
+});
+
+/// Configuration for the Celeborn shuffle backend.
+///
+/// When present in [`DaftExecutionConfig`], indicates that the Celeborn
+/// shuffle backend is available and provides the connection parameters
+/// needed to reach the LifecycleManager.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CelebornConfig {
+    /// LifecycleManager hostname or IP address. Empty until the user supplies
+    /// it; see [`CelebornConfig::is_complete`].
+    pub lm_host: String,
+    /// LifecycleManager port. `0` until the user supplies it; see
+    /// [`CelebornConfig::is_complete`].
+    pub lm_port: i32,
+    /// Application-level identifier for this Celeborn session. Celeborn keys
+    /// shuffle data by `(app_id, shuffle_id)`, so this must be unique per
+    /// application run; it defaults to [`CelebornConfig::default_app_id`],
+    /// which is unique per Daft process.
+    pub app_id: String,
+    /// Native `celeborn.*` properties (key, value) forwarded verbatim to the
+    /// C++ client when it is constructed. This is the single channel for
+    /// every tunable Celeborn client option — compression codec
+    /// (`celeborn.client.shuffle.compression.codec`), push/fetch timeouts
+    /// (`celeborn.client.push.timeout` / `celeborn.client.fetch.timeout`),
+    /// inflight backpressure, etc. — so no per-option field is needed.
+    #[serde(default)]
+    pub properties: Vec<(String, String)>,
+}
+
+impl CelebornConfig {
+    /// The default `app_id`: unique per Daft process, stable within it.
+    ///
+    /// Celeborn namespaces shuffle data by `(app_id, shuffle_id)` and shuffle
+    /// ids restart from 0 in every process, so a shared `app_id` would let two
+    /// concurrent Daft jobs read each other's shuffle blocks. Defaulting to a
+    /// per-process id makes that impossible unless the user opts in by setting
+    /// `celeborn_app_id` explicitly.
+    pub fn default_app_id() -> String {
+        DEFAULT_CELEBORN_APP_ID.clone()
+    }
+
+    /// Whether the LifecycleManager coordinates have actually been supplied.
+    ///
+    /// `lm_host`/`lm_port` have no meaningful default, so a config assembled
+    /// from only the optional fields (`celeborn_app_id`, `celeborn_properties`)
+    /// carries their unset sentinels. Callers that need to reach the
+    /// LifecycleManager must check this rather than just `celeborn.is_some()`.
+    pub fn is_complete(&self) -> bool {
+        !self.lm_host.trim().is_empty() && self.lm_port > 0
+    }
+}
+
+impl Default for CelebornConfig {
+    fn default() -> Self {
+        Self {
+            lm_host: String::new(),
+            lm_port: 0,
+            app_id: Self::default_app_id(),
+            properties: Vec::new(),
+        }
+    }
+}
+
 /// Configurations for Daft to use during the execution of a Dataframe
 ///  Note that this should be immutable for a given end-to-end execution of a logical plan.
 ///
@@ -152,6 +227,7 @@ pub struct DaftExecutionConfig {
     pub dynamic_batching_strategy: String,
     pub flight_shuffle_dirs: Vec<String>,
     pub flight_shuffle_compression: Option<String>,
+    pub celeborn: Option<CelebornConfig>,
     pub enable_multi_glob_path_tasks: bool,
 }
 
@@ -199,6 +275,7 @@ impl Default for DaftExecutionConfig {
             dynamic_batching_strategy: "auto".to_string(),
             flight_shuffle_dirs: vec!["/tmp".to_string()],
             flight_shuffle_compression: Some("lz4".to_string()),
+            celeborn: None,
             enable_multi_glob_path_tasks: false,
         }
     }

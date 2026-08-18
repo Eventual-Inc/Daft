@@ -59,17 +59,54 @@ check-toolchain:
 hooks: .venv
 	source $(VENV_BIN)/activate && pre-commit install --install-hooks
 
+# Celeborn shuffle is opt-in: `make build CELEBORN=1`. The feature links against
+# libceleborn_client — the aggregated shared library of the Apache Celeborn C++
+# client — so point CELEBORN_CPP_PREFIX at an install of it
+# (`<prefix>/lib/libceleborn_client.{so,dylib}`) to build against the real thing.
+# Left unset, we fall back to a stub: celeborn-client-sys would otherwise compile
+# Celeborn's `cpp/` tree from source, which needs folly, glog, gflags and friends
+# installed, and no prebuilt library is published for it.
+CELEBORN_STUB_PREFIX := $(CURDIR)/tools/celeborn-stub
+CELEBORN_CPP_PREFIX ?= $(CELEBORN_STUB_PREFIX)
+export CELEBORN_CPP_PREFIX
+
+ifeq ($(CELEBORN),1)
+CELEBORN_FEATURE_ARGS := --features python,celeborn
+CELEBORN_PREREQ := celeborn-stub
+else
+CELEBORN_FEATURE_ARGS :=
+CELEBORN_PREREQ :=
+endif
+
+ifeq ($(shell uname -s),Darwin)
+CELEBORN_LIB := libceleborn_client.dylib
+CELEBORN_STUB_LDFLAGS := -install_name @rpath/libceleborn_client.dylib
+else
+CELEBORN_LIB := libceleborn_client.so
+CELEBORN_STUB_LDFLAGS := -fPIC -Wl,-soname,libceleborn_client.so
+endif
+
+.PHONY: celeborn-stub
+celeborn-stub:  ## Build a stub celeborn client, for builds without a real one
+ifeq ($(CELEBORN_CPP_PREFIX),$(CELEBORN_STUB_PREFIX))
+	@mkdir -p $(CELEBORN_STUB_PREFIX)/lib
+	@if [ ! -f $(CELEBORN_STUB_PREFIX)/lib/$(CELEBORN_LIB) ] || [ $(CELEBORN_STUB_PREFIX)/celeborn_stub.c -nt $(CELEBORN_STUB_PREFIX)/lib/$(CELEBORN_LIB) ]; then \
+		echo "Building celeborn stub $(CELEBORN_LIB) (set CELEBORN_CPP_PREFIX to use a real client)..."; \
+		cc -shared $(CELEBORN_STUB_LDFLAGS) -o $(CELEBORN_STUB_PREFIX)/lib/$(CELEBORN_LIB) $(CELEBORN_STUB_PREFIX)/celeborn_stub.c; \
+	fi
+endif
+
 .PHONY: build
-build: check-toolchain .venv  ## Compile and install Daft for development
-	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin develop --uv
+build: check-toolchain .venv $(CELEBORN_PREREQ)  ## Compile and install Daft for development
+	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin develop --uv $(CELEBORN_FEATURE_ARGS)
 
 .PHONY: build-release
-build-release: check-toolchain .venv  ## Compile and install a faster Daft binary
-	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin develop --release --uv
+build-release: check-toolchain .venv $(CELEBORN_PREREQ)  ## Compile and install a faster Daft binary
+	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin develop --release --uv $(CELEBORN_FEATURE_ARGS)
 
 .PHONY: build-whl
-build-whl: check-toolchain .venv  ## Compile Daft for development, only generate whl file without installation
-	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin build --release
+build-whl: check-toolchain .venv $(CELEBORN_PREREQ)  ## Compile Daft for development, only generate whl file without installation
+	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin build --release $(CELEBORN_FEATURE_ARGS)
 
 # Experimental target for development-only cross-wheel builds.
 # Do not rely on this target for production release workflows.
@@ -95,16 +132,33 @@ build-whl-cross: check-toolchain .venv  ## Compile Daft wheel with optional --ta
 	fi; \
 	unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin build --release $(BUILD_WHL_COMPATIBILITY_FLAG) $(BUILD_WHL_TARGET_FLAG) $(BUILD_WHL_ZIG_FLAG)
 
+# A CELEBORN=1 extension links libceleborn_client but carries no rpath to it, so
+# the dynamic loader has to be pointed at whichever copy the build linked
+# against. The directory is appended, so a real client on an already-exported
+# library path keeps precedence. Empty for a default build, which does not link
+# the client at all.
+ifeq ($(CELEBORN),1)
+ifeq ($(shell uname -s),Darwin)
+DYLD_ENV := DYLD_LIBRARY_PATH=$${DYLD_LIBRARY_PATH:+$$DYLD_LIBRARY_PATH:}$(CELEBORN_CPP_PREFIX)/lib
+else
+DYLD_ENV := LD_LIBRARY_PATH=$${LD_LIBRARY_PATH:+$$LD_LIBRARY_PATH:}$(CELEBORN_CPP_PREFIX)/lib
+endif
+else
+DYLD_ENV :=
+endif
+
 .PHONY: test
 test: .venv build  ## Run tests
 	# You can set additional run parameters through EXTRA_ARGS, such as running a specific test case file or method:
 	# make test EXTRA_ARGS="-v tests/dataframe/test_select.py" # Run a single test file
 	# make test EXTRA_ARGS="-v tests/dataframe/test_select.py::test_select_dataframe" # Run a single test method
-	HYPOTHESIS_MAX_EXAMPLES=$(HYPOTHESIS_MAX_EXAMPLES) $(VENV_BIN)/pytest -n auto --hypothesis-seed=$(HYPOTHESIS_SEED) --ignore tests/integration $(EXTRA_ARGS)
+	# With CELEBORN=1, running pytest directly instead needs DYLD_LIBRARY_PATH (macOS)
+	# or LD_LIBRARY_PATH (Linux) = $(CELEBORN_CPP_PREFIX)/lib
+	$(DYLD_ENV) HYPOTHESIS_MAX_EXAMPLES=$(HYPOTHESIS_MAX_EXAMPLES) $(VENV_BIN)/pytest -n auto --hypothesis-seed=$(HYPOTHESIS_SEED) --ignore tests/integration $(EXTRA_ARGS)
 
 .PHONY: doctests
 doctests: .venv
-	DAFT_BOLD_TABLE_HEADERS=0 DAFT_PROGRESS_BAR=0 $(VENV_BIN)/pytest --doctest-modules --continue-on-collection-errors --ignore=daft/functions/llm.py --ignore=daft/functions/ai/__init__.py daft/dataframe/dataframe.py daft/expressions/expressions.py daft/convert.py daft/udf/__init__.py daft/functions/ daft/datatype.py
+	$(DYLD_ENV) DAFT_BOLD_TABLE_HEADERS=0 DAFT_PROGRESS_BAR=0 $(VENV_BIN)/pytest --doctest-modules --continue-on-collection-errors --ignore=daft/functions/llm.py --ignore=daft/functions/ai/__init__.py daft/dataframe/dataframe.py daft/expressions/expressions.py daft/convert.py daft/udf/__init__.py daft/functions/ daft/datatype.py
 
 .PHONY: dsdgen
 dsdgen: .venv ## Generate TPC-DS data

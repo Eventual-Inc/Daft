@@ -123,6 +123,10 @@ impl PyDaftExecutionConfig {
         dynamic_batching_strategy=None,
         flight_shuffle_dirs=None,
         flight_shuffle_compression=None,
+        celeborn_lm_host=None,
+        celeborn_lm_port=None,
+        celeborn_app_id=None,
+        celeborn_properties=None,
         enable_multi_glob_path_tasks=None,
     ))]
     fn with_config_values(
@@ -161,6 +165,10 @@ impl PyDaftExecutionConfig {
         dynamic_batching_strategy: Option<&str>,
         flight_shuffle_dirs: Option<Vec<String>>,
         flight_shuffle_compression: Option<&str>,
+        celeborn_lm_host: Option<String>,
+        celeborn_lm_port: Option<i32>,
+        celeborn_app_id: Option<String>,
+        celeborn_properties: Option<Vec<(String, String)>>,
         enable_multi_glob_path_tasks: Option<bool>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
@@ -243,10 +251,10 @@ impl PyDaftExecutionConfig {
         if let Some(shuffle_algorithm) = shuffle_algorithm {
             if !matches!(
                 shuffle_algorithm,
-                "map_reduce" | "pre_shuffle_merge" | "flight_shuffle" | "auto"
+                "map_reduce" | "pre_shuffle_merge" | "flight_shuffle" | "celeborn" | "auto"
             ) {
                 return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                    "shuffle_algorithm must be 'auto', 'map_reduce', 'pre_shuffle_merge', or 'flight_shuffle'",
+                    "shuffle_algorithm must be 'auto', 'map_reduce', 'pre_shuffle_merge', 'flight_shuffle', or 'celeborn'",
                 ));
             }
             config.shuffle_algorithm = shuffle_algorithm.to_string();
@@ -311,6 +319,57 @@ impl PyDaftExecutionConfig {
                     )));
                 }
             };
+        }
+
+        // Celeborn configuration — assemble or update the CelebornConfig.
+        // If any celeborn_* parameter is provided, we either update an existing
+        // CelebornConfig or create a new one with defaults for unset fields.
+        // Each field is validated as it is set, so an invalid value fails here
+        // with the parameter's name rather than at connect time. The
+        // LifecycleManager coordinates keep their unset sentinels until supplied
+        // (they have no sensible default); `CelebornConfig::is_complete` is what
+        // consumers check, since a config built from only the optional fields is
+        // `Some` without being usable.
+        if celeborn_lm_host.is_some()
+            || celeborn_lm_port.is_some()
+            || celeborn_app_id.is_some()
+            || celeborn_properties.is_some()
+        {
+            let mut celeborn = config.celeborn.take().unwrap_or_default();
+
+            if let Some(host) = celeborn_lm_host {
+                if host.trim().is_empty() {
+                    return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                        "celeborn_lm_host must not be empty",
+                    ));
+                }
+                celeborn.lm_host = host;
+            }
+            if let Some(port) = celeborn_lm_port {
+                if !(1..=65535).contains(&port) {
+                    return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                        "celeborn_lm_port must be in [1, 65535], got {port}"
+                    )));
+                }
+                celeborn.lm_port = port;
+            }
+            if let Some(app_id) = celeborn_app_id {
+                // Celeborn namespaces shuffle data by `(app_id, shuffle_id)`, so
+                // an empty id would put this job in the same namespace as every
+                // other job that left it empty.
+                if app_id.trim().is_empty() {
+                    return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                        "celeborn_app_id must not be empty; leave it unset to get a \
+                         per-process default",
+                    ));
+                }
+                celeborn.app_id = app_id;
+            }
+            if let Some(properties) = celeborn_properties {
+                celeborn.properties = properties;
+            }
+
+            config.celeborn = Some(celeborn);
         }
 
         if let Some(enable_multi_glob_path_tasks) = enable_multi_glob_path_tasks {
@@ -483,6 +542,26 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn flight_shuffle_compression(&self) -> PyResult<Option<&str>> {
         Ok(self.config.flight_shuffle_compression.as_deref())
+    }
+
+    #[getter]
+    fn celeborn_lm_host(&self) -> PyResult<Option<String>> {
+        Ok(self.config.celeborn.as_ref().map(|c| c.lm_host.clone()))
+    }
+
+    #[getter]
+    fn celeborn_lm_port(&self) -> PyResult<Option<i32>> {
+        Ok(self.config.celeborn.as_ref().map(|c| c.lm_port))
+    }
+
+    #[getter]
+    fn celeborn_app_id(&self) -> PyResult<Option<String>> {
+        Ok(self.config.celeborn.as_ref().map(|c| c.app_id.clone()))
+    }
+
+    #[getter]
+    fn celeborn_properties(&self) -> PyResult<Option<Vec<(String, String)>>> {
+        Ok(self.config.celeborn.as_ref().map(|c| c.properties.clone()))
     }
 }
 

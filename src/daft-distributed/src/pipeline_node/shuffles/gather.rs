@@ -51,7 +51,12 @@ impl GatherNode {
             plan_config.config.clone(),
             ClusteringStrategy::Explicit(BoundClusteringSpec::unknown(1)),
         );
-        let shuffle_context = ShuffleContext::new(&context, schema, backend);
+        let shuffle_context = ShuffleContext::new(
+            &context,
+            schema,
+            backend,
+            child.config().clustering_spec.num_partitions(),
+        );
         Self {
             config,
             context,
@@ -77,16 +82,9 @@ impl GatherNode {
             .try_collect::<Vec<MaterializedOutput>>()
             .await?;
 
-        // Gather = single read task that consumes every ref from every worker.
-        let refs = materialized
-            .into_iter()
-            .flat_map(|output| output.into_inner().0)
-            .collect();
-        let task = self
-            .shuffle_context
-            .build_refs_task_builder(refs, self.as_ref(), |plan| plan);
-        let _ = result_tx.send(task).await;
-        Ok(())
+        self.shuffle_context
+            .emit_gather_read_task(materialized, self.as_ref(), result_tx)
+            .await
     }
 }
 
@@ -117,15 +115,17 @@ impl PipelineNodeImpl for GatherNode {
         let schema = self.shuffle_context.schema().clone();
         let node_id = self.shuffle_context.node_id();
         let shuffle_backend = self.shuffle_context.backend().clone();
-        let local_gather_write_node = input_node.pipeline_instruction(self.clone(), move |input| {
-            LocalPhysicalPlan::gather_write(
-                input,
-                schema.clone(),
-                shuffle_backend.clone(),
-                StatsState::NotMaterialized,
-                LocalNodeContext::new(Some(node_id as usize)),
-            )
-        });
+        let local_gather_write_node =
+            self.shuffle_context
+                .build_map_stream(input_node, self.clone(), move |input| {
+                    LocalPhysicalPlan::gather_write(
+                        input,
+                        schema.clone(),
+                        shuffle_backend.clone(),
+                        StatsState::NotMaterialized,
+                        LocalNodeContext::new(Some(node_id as usize)),
+                    )
+                });
 
         let (result_tx, result_rx) = create_channel(1);
 
