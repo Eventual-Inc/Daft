@@ -129,6 +129,11 @@ def read_parquet(
 
     df = DataFrame(builder)
     if isinstance(path, str):
-        resolved_paths, _ = _resolve_paths_and_filesystem(path, io_config=io_config)
-        df._resolved_parquet_path = resolved_paths[0].rstrip("/")
+        try:
+            resolved_paths, _ = _resolve_paths_and_filesystem(path, io_config=io_config)
+            df._resolved_parquet_path = resolved_paths[0].rstrip("/")
+        except NotImplementedError:
+            # Protocols without a PyArrow filesystem (e.g. custom OpenDAL backends) are
+            # still read natively by the Rust scan; fall back to the raw path.
+            df._resolved_parquet_path = path.rstrip("/")
     return df

@@ -1216,8 +1216,13 @@ class DataFrame:
         result_df._result_cache = write_df._result_cache
         result_df._preview = write_df._preview
         result_df._metadata = write_df._metadata
-        resolved_paths, _ = _resolve_paths_and_filesystem(str(root_dir), io_config=io_config)
-        result_df._resolved_parquet_path = resolved_paths[0].rstrip("/")
+        try:
+            resolved_paths, _ = _resolve_paths_and_filesystem(str(root_dir), io_config=io_config)
+            result_df._resolved_parquet_path = resolved_paths[0].rstrip("/")
+        except NotImplementedError:
+            # Protocols without a PyArrow filesystem (e.g. custom OpenDAL backends) are
+            # still written natively by the Rust writer; fall back to the raw path.
+            result_df._resolved_parquet_path = str(root_dir).rstrip("/")
         return result_df
 
     def resolve_parquet(self) -> str:
