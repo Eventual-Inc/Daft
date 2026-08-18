@@ -23,7 +23,7 @@ impl ExpandDataFrameSources {
     }
 }
 
-// Replace a DataSource leaf with the plan from get_dataframe.
+// Replace a DataFrameSource leaf with the plan from get_dataframe.
 impl OptimizerRule for ExpandDataFrameSources {
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         #[cfg(feature = "python")]
@@ -76,7 +76,7 @@ impl ExpandDataFrameSources {
             inner = Filter::try_new(inner, predicate)
                 .map_err(|e| {
                     DaftError::ValueError(format!(
-                        "Failed to apply filter to DataSource '{source_name}': {e}"
+                        "Failed to apply filter to DataFrameSource '{source_name}': {e}"
                     ))
                 })?
                 .into();
@@ -90,13 +90,13 @@ impl ExpandDataFrameSources {
                     Ok(got) if got.dtype == expected.dtype => {}
                     Ok(got) => {
                         return Err(DaftError::ValueError(format!(
-                            "DataSource '{source_name}' column '{name}' has type {}, expected {}",
+                            "DataFrameSource '{source_name}' column '{name}' has type {}, expected {}",
                             got.dtype, expected.dtype
                         )));
                     }
                     Err(_) => {
                         return Err(DaftError::ValueError(format!(
-                            "DataSource '{source_name}' is missing column '{name}' (got: {})",
+                            "DataFrameSource '{source_name}' is missing column '{name}' (got: {})",
                             inner_schema.names().join(", ")
                         )));
                     }
@@ -105,7 +105,7 @@ impl ExpandDataFrameSources {
             inner = Project::new_from_schema(inner, source.output_schema.clone())
                 .map_err(|e| {
                     DaftError::ValueError(format!(
-                        "Failed to project DataSource '{source_name}' to source schema: {e}"
+                        "Failed to project DataFrameSource '{source_name}' to source schema: {e}"
                     ))
                 })?
                 .into();
@@ -130,17 +130,17 @@ fn logical_plan_from_py_dataframe(
             .call_method0(intern!(py, "_get_current_builder"))
             .map_err(|e| {
                 DaftError::ValueError(format!(
-                    "DataSource '{source_name}' get_dataframe must return a DataFrame: {e}"
+                    "DataFrameSource '{source_name}' get_dataframe must return a DataFrame: {e}"
                 ))
             })?;
         let inner = current.getattr(intern!(py, "_builder")).map_err(|e| {
             DaftError::ValueError(format!(
-                "DataSource '{source_name}' get_dataframe returned a DataFrame without a logical plan: {e}"
+                "DataFrameSource '{source_name}' get_dataframe returned a DataFrame without a logical plan: {e}"
             ))
         })?;
         let py_lpb = inner.extract::<PyLogicalPlanBuilder>().map_err(|e| {
             DaftError::ValueError(format!(
-                "DataSource '{source_name}' get_dataframe returned an unexpected builder: {e}"
+                "DataFrameSource '{source_name}' get_dataframe returned an unexpected builder: {e}"
             ))
         })?;
         Ok(py_lpb.builder.plan)

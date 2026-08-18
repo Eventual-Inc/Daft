@@ -54,6 +54,7 @@ pub struct PyDataSourceWrapper {
     partition_fields: Vec<PartitionField>,
     clustering_keys: Option<ClusteringKeys>,
     supports_count_pushdown: bool,
+    expands_to_dataframe: bool,
 }
 
 impl PyDataSourceWrapper {
@@ -107,6 +108,13 @@ impl PyDataSourceWrapper {
             .and_then(|v| v.extract())
             .unwrap_or(false);
 
+        let expands_to_dataframe = source
+            .py()
+            .import(intern!(source.py(), "daft.io.source"))
+            .and_then(|m| m.getattr(intern!(source.py(), "DataFrameSource")))
+            .and_then(|cls| source.is_instance(&cls))
+            .unwrap_or(false);
+
         Self {
             source: source.unbind(),
             name,
@@ -114,6 +122,7 @@ impl PyDataSourceWrapper {
             partition_fields,
             clustering_keys,
             supports_count_pushdown,
+            expands_to_dataframe,
         }
     }
 
@@ -179,7 +188,10 @@ impl ExpandsToDataFrame for PyDataSourceWrapper {
                 self.source
                     .call_method1(py, intern!(py, "get_dataframe"), (pushdowns_obj,))?;
             if result.is_none(py) {
-                Ok(None)
+                Err(DaftError::ValueError(format!(
+                    "DataFrameSource '{}' get_dataframe must return a DataFrame",
+                    self.name
+                )))
             } else {
                 Ok(Some(result))
             }
@@ -342,7 +354,7 @@ impl ScanOperator for PyDataSourceWrapper {
     }
 
     fn as_dataframe_expander(&self) -> Option<&dyn ExpandsToDataFrame> {
-        Some(self)
+        self.expands_to_dataframe.then_some(self)
     }
 }
 

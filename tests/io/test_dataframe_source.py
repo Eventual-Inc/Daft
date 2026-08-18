@@ -1,9 +1,8 @@
-"""Tests for DataSource.get_dataframe unfold."""
+"""Tests for DataFrameSource.get_dataframe unfold."""
 
 from __future__ import annotations
 
 import io
-from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pyarrow as pa
@@ -12,7 +11,7 @@ import pytest
 
 import daft
 from daft import DataType, col
-from daft.io.source import DataSource, DataSourceTask
+from daft.io.source import DataFrameSource
 from daft.schema import Schema
 
 SCHEMA = Schema.from_pydict({"id": DataType.int64(), "x": DataType.int64(), "y": DataType.string()})
@@ -25,7 +24,7 @@ def _parquet(path: Path, table: pa.Table) -> str:
     return str(path)
 
 
-class _Unfold(DataSource):
+class _Unfold(DataFrameSource):
     def __init__(self, name: str = "Fake", schema: Schema = SCHEMA) -> None:
         self._name = name
         self._schema = schema
@@ -37,10 +36,6 @@ class _Unfold(DataSource):
     @property
     def schema(self) -> Schema:
         return self._schema
-
-    async def get_tasks(self, pushdowns) -> AsyncIterator[DataSourceTask]:
-        raise NotImplementedError("do not call self.read() inside get_dataframe")
-        yield  # type: ignore[misc]
 
 
 class Fake(_Unfold):
@@ -102,20 +97,6 @@ def test_explain_limit_count_select(files: dict[str, str]):
     assert Fake(files).read().select("y").sort("y").to_pydict() == {"y": list("abcde")}
 
 
-def test_none_falls_through_to_get_tasks(tmp_path: Path):
-    path = _parquet(tmp_path / "t.parquet", pa.table({"x": [1, 2, 3]}))
-    schema = Schema.from_pydict({"x": DataType.int64()})
-
-    class Tasks(_Unfold):
-        def get_dataframe(self, pushdowns):
-            return None
-
-        async def get_tasks(self, pushdowns) -> AsyncIterator[DataSourceTask]:
-            yield DataSourceTask.parquet(path=path, schema=schema, pushdowns=pushdowns)
-
-    assert Tasks("Tasks", schema).read().sort("x").to_pydict() == {"x": [1, 2, 3]}
-
-
 def test_errors(files: dict[str, str]):
     class Boom(_Unfold):
         def get_dataframe(self, pushdowns):
@@ -136,7 +117,7 @@ def test_self_read_raises():
         def get_dataframe(self, pushdowns):
             return self.read()
 
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(Exception, match="get_tasks"):
         Loop().read().collect()
 
 

@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 
 
 __all__ = [
+    "DataFrameSource",
     "DataSource",
     "DataSourceTask",
 ]
@@ -86,21 +87,6 @@ class DataSource(ABC):
         """
         return False
 
-    def get_dataframe(self, pushdowns: Pushdowns) -> DataFrame | None:
-        """Returns a DataFrame to replace this source, or None to use get_tasks.
-
-        Called once per optimize() after pushdowns are attached to the source
-        and before scan tasks are materialized.
-
-        Use pushdowns.filters and partition_filters only to choose files.
-        Do not .where() the residual filter; the optimizer re-applies it.
-        Do not call self.read(), collect, optimize, or explain(show_all=True).
-
-        Warning:
-            This API is early in its development and is subject to change.
-        """
-        return None
-
     @abstractmethod
     async def get_tasks(self, pushdowns: Pushdowns) -> AsyncIterator[DataSourceTask]:
         """Yields tasks as they are discovered. Called during execution, not planning."""
@@ -111,6 +97,55 @@ class DataSource(ABC):
 
     def read(self) -> DataFrame:
         """Reads a DataSource as a DataFrame."""
+        from daft.daft import ScanOperatorHandle
+        from daft.dataframe import DataFrame
+        from daft.logical.builder import LogicalPlanBuilder
+
+        handle = ScanOperatorHandle.from_data_source(self)
+        builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
+        return DataFrame(builder)
+
+
+class DataFrameSource(ABC):
+    """DataFrameSource is for sources whose read is already a DataFrame plan.
+
+    Use this if the read is ``read_*`` plus join or similar DataFrame code.
+    Use :class:`DataSource` if you yield tasks (Iceberg, a file list).
+
+    After pushdowns land, the optimizer replaces this source with the plan
+    from :meth:`get_dataframe`. People querying still call :meth:`read`.
+
+    Warning:
+        This API is early in its development and is subject to change.
+    """
+
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Returns the source name which is useful for debugging."""
+        ...
+
+    @property
+    @abstractmethod
+    def schema(self) -> Schema:
+        """Returns the schema of the DataFrame from :meth:`get_dataframe`."""
+        ...
+
+    @abstractmethod
+    def get_dataframe(self, pushdowns: Pushdowns) -> DataFrame:
+        """Returns a DataFrame to replace this source in the plan.
+
+        Called once per optimize() after pushdowns are attached to the source
+        and before scan tasks are materialized.
+
+        Use pushdowns.filters and partition_filters only to choose files.
+        Do not .where() the residual filter; the optimizer re-applies it.
+        Do not call self.read(), collect, optimize, or explain(show_all=True).
+        """
+        ...
+
+    def read(self) -> DataFrame:
+        """Reads a DataFrameSource as a DataFrame."""
         from daft.daft import ScanOperatorHandle
         from daft.dataframe import DataFrame
         from daft.logical.builder import LogicalPlanBuilder
