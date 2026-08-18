@@ -48,6 +48,26 @@ class TestSQLConnectionEngineCaching:
         assert restored.driver == ""
         assert restored.url == "sqlite://"
 
+    def test_legacy_pickle_state_restores_missing_fields(self):
+        """State serialized before engine caching should still be loadable."""
+        restored = SQLConnection.__new__(SQLConnection)
+        restored.__setstate__(
+            {
+                "conn": "sqlite://",
+                "driver": "",
+                "dialect": "sqlite",
+                "url": "sqlite://",
+            }
+        )
+
+        assert restored._engine is None
+        assert restored._engine_lock is not None
+
+        with patch("sqlalchemy.create_engine") as mock_create:
+            mock_create.return_value = MagicMock()
+            assert restored._get_or_create_engine() is not None
+        mock_create.assert_called_once()
+
     def test_engine_thread_safety(self):
         """Concurrent calls should not create multiple engines."""
         conn = SQLConnection("sqlite://", "", "sqlite", "sqlite://")

@@ -37,8 +37,11 @@ class SQLConnection:
 
     def __setstate__(self, state: dict[str, Any]) -> None:
         self.__dict__.update(state)
-        if self._engine_lock is None:
-            self._engine_lock = threading.Lock()
+        # Always restore these fields from a clean state. This handles both
+        # objects serialized before the fields were introduced and objects
+        # serialized by __getstate__, which deliberately stores None here.
+        self._engine = None
+        self._engine_lock = threading.Lock()
 
     def __repr__(self) -> str:
         # Deliberately omit the URL: secrets can appear anywhere in a
