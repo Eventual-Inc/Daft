@@ -64,7 +64,7 @@ where
                             match active_joinset.poll_join_next(cx) {
                                 // Keep polling after successful completions so the remaining
                                 // tasks register this stream's waker before we return Pending.
-                                Poll::Ready(Some(Ok(Ok(())))) => continue,
+                                Poll::Ready(Some(Ok(Ok(())))) => {}
                                 Poll::Ready(Some(Ok(Err(e)))) => {
                                     active_joinset.abort_all();
                                     *state = ForwardingStreamState::Complete;
