@@ -378,7 +378,8 @@ def test_create_table_if_not_exists_concurrent():
 
 
 def test_create_table_if_not_exists_recovers_table_already_exists_error():
-    """Backends translate their native conflicts into TableAlreadyExistsError;
+    """Backends translate their native conflicts into TableAlreadyExistsError.
+
     create_table_if_not_exists should recover from the typed error.
     """
 
@@ -415,14 +416,17 @@ def test_create_table_if_not_exists_propagates_other_errors():
     with pytest.raises(RuntimeError, match="connection failed"):
         catalog.create_table_if_not_exists("tbl", Schema.from_pydict({"a": dt.int64()}))
 
-    # Recovery is driven by the exception type, not the message: a generic
-    # Exception whose message mentions "already exists" must still propagate.
+    # Recovery is driven by the exception type, not the message: a non-typed
+    # error whose message mentions "already exists" must still propagate.
+    class _AlreadyExistsError(Exception):
+        """Stand-in for a third-party catalog's native already-exists error."""
+
     class BareAlreadyExistsCatalog(MockCatalog):
         def _create_table(self, identifier, schema, properties=None, partition_fields=None):
-            raise Exception(f"Table {identifier} already exists")  # noqa: TRY002
+            raise _AlreadyExistsError(f"Table {identifier} already exists")
 
     catalog = BareAlreadyExistsCatalog()
-    with pytest.raises(Exception, match="already exists"):
+    with pytest.raises(_AlreadyExistsError, match="already exists"):
         catalog.create_table_if_not_exists("tbl", Schema.from_pydict({"a": dt.int64()}))
 
 
