@@ -1,4 +1,4 @@
-use daft_core::datatypes::TimeUnit;
+use daft_core::{datatypes::TimeUnit, prelude::IntoSeries};
 use daft_dsl::functions::{UnaryArg, prelude::*};
 
 // --- DateFromUnixDate ---
@@ -208,3 +208,73 @@ impl ScalarUDF for FromUnixtime {
         Ok(Field::new(field.name, DataType::Utf8))
     }
 }
+
+// --- UnixSeconds / UnixMillis / UnixMicros ---
+
+macro_rules! impl_unix_epoch_fn {
+    ($name:ident, $fn_name:literal, $time_unit:ident) => {
+        #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+        pub struct $name;
+
+        #[typetag::serde]
+        impl ScalarUDF for $name {
+            fn name(&self) -> &'static str {
+                $fn_name
+            }
+
+            fn call(
+                &self,
+                inputs: FunctionArgs<Series>,
+                _ctx: &daft_dsl::functions::scalar::EvalContext,
+            ) -> DaftResult<Series> {
+                let UnaryArg { input } = inputs.try_into()?;
+                let DataType::Timestamp(input_unit, _) = input.data_type().clone() else {
+                    return Err(common_error::DaftError::TypeError(format!(
+                        "Expected timestamp input to {}, got {}",
+                        $fn_name,
+                        input.data_type()
+                    )));
+                };
+                // Timestamps are physically stored as i64 epoch values in `input_unit`
+                // (already UTC-based for timezone-aware inputs), so unit conversion is
+                // pure integer arithmetic on the physical values.
+                let physical = input.cast(&DataType::Int64)?;
+                let values = physical.i64()?;
+                let src = input_unit.to_scale_factor();
+                let dst = TimeUnit::$time_unit.to_scale_factor();
+                let converted = if src >= dst {
+                    // `div_euclid` with a positive divisor is floor division, matching
+                    // Spark's floorDiv. Plain `/` (and a unit cast) truncates toward
+                    // zero, which rounds pre-epoch values the wrong way: -1.5s would
+                    // yield -1 instead of -2.
+                    let factor = src / dst;
+                    values.apply(|v| v.div_euclid(factor))?
+                } else {
+                    let factor = dst / src;
+                    values.apply(|v| v.wrapping_mul(factor))?
+                };
+                Ok(converted.into_series())
+            }
+
+            fn get_return_field(
+                &self,
+                inputs: FunctionArgs<ExprRef>,
+                schema: &Schema,
+            ) -> DaftResult<Field> {
+                let UnaryArg { input } = inputs.try_into()?;
+                let field = input.to_field(schema)?;
+                ensure!(
+                    matches!(field.dtype, DataType::Timestamp(..)),
+                    TypeError: "Expected timestamp input to {}, got {}",
+                    $fn_name,
+                    field.dtype
+                );
+                Ok(Field::new(field.name, DataType::Int64))
+            }
+        }
+    };
+}
+
+impl_unix_epoch_fn!(UnixSeconds, "unix_seconds", Seconds);
+impl_unix_epoch_fn!(UnixMillis, "unix_millis", Milliseconds);
+impl_unix_epoch_fn!(UnixMicros, "unix_micros", Microseconds);

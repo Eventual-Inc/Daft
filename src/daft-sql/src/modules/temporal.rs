@@ -14,6 +14,7 @@ use daft_functions_temporal::{
     date_navigation::{LastDay, NextDay},
     epoch_conversions::{
         DateFromUnixDate, FromUnixtime, TimestampMicros, TimestampMillis, TimestampSeconds,
+        UnixMicros, UnixMillis, UnixSeconds,
     },
     time::{ConvertTimeZone, FromUtcTimestamp, ToUtcTimestamp},
     truncate::Truncate,
@@ -53,6 +54,9 @@ impl SQLModule for SQLModuleTemporal {
         parent.add_fn("timestamp_seconds", SQLTimestampSeconds);
         parent.add_fn("timestamp_millis", SQLTimestampMillis);
         parent.add_fn("timestamp_micros", SQLTimestampMicros);
+        parent.add_fn("unix_seconds", SQLUnixSeconds);
+        parent.add_fn("unix_millis", SQLUnixMillis);
+        parent.add_fn("unix_micros", SQLUnixMicros);
         parent.add_fn("from_unixtime", SQLFromUnixtime);
         parent.add_fn("make_date", SQLMakeDate);
         parent.add_fn("make_timestamp", SQLMakeTimestamp);
@@ -598,6 +602,56 @@ impl SQLFunction for SQLFromUnixtime {
         &["seconds", "format"]
     }
 }
+
+macro_rules! impl_sql_unix_epoch_fn {
+    ($sql_name:ident, $udf:ident, $fn_name:literal, $doc:literal) => {
+        pub struct $sql_name;
+
+        impl SQLFunction for $sql_name {
+            fn to_expr(
+                &self,
+                inputs: &[ast::FunctionArg],
+                planner: &crate::planner::SQLPlanner,
+            ) -> SQLPlannerResult<ExprRef> {
+                if inputs.len() != 1 {
+                    invalid_operation_err!(
+                        concat!($fn_name, " expects 1 argument, got {}"),
+                        inputs.len()
+                    );
+                }
+                let input = planner.plan_function_arg(&inputs[0])?.into_inner();
+                Ok(unary_temporal_expr($udf, input))
+            }
+
+            fn docstrings(&self, _alias: &str) -> String {
+                $doc.to_string()
+            }
+
+            fn arg_names(&self) -> &'static [&'static str] {
+                &["timestamp"]
+            }
+        }
+    };
+}
+
+impl_sql_unix_epoch_fn!(
+    SQLUnixSeconds,
+    UnixSeconds,
+    "unix_seconds",
+    "Returns the number of seconds since 1970-01-01 00:00:00 UTC for a timestamp."
+);
+impl_sql_unix_epoch_fn!(
+    SQLUnixMillis,
+    UnixMillis,
+    "unix_millis",
+    "Returns the number of milliseconds since 1970-01-01 00:00:00 UTC for a timestamp."
+);
+impl_sql_unix_epoch_fn!(
+    SQLUnixMicros,
+    UnixMicros,
+    "unix_micros",
+    "Returns the number of microseconds since 1970-01-01 00:00:00 UTC for a timestamp."
+);
 
 // --- Date construction SQL functions ---
 
