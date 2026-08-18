@@ -33,22 +33,46 @@ impl Default for HuggingFaceConfig {
 
 impl HuggingFaceConfig {
     pub fn multiline_display(&self) -> Vec<String> {
+        let defaults = Self::default();
         let mut res = vec![];
         if let Some(token) = &self.token {
             res.push(format!("Token = {token}"));
         }
-        res.push(format!("Anonymous = {}", self.anonymous));
-        res.push(format!("Use Xet = {}", self.use_xet));
+        if self.anonymous != defaults.anonymous {
+            res.push(format!("Anonymous = {}", self.anonymous));
+        }
+        if self.use_xet != defaults.use_xet {
+            res.push(format!("Use Xet = {}", self.use_xet));
+        }
+        if self.use_content_defined_chunking != defaults.use_content_defined_chunking {
+            res.push(format!(
+                "Use content defined chunking = {:?}",
+                self.use_content_defined_chunking
+            ));
+        }
+        if self.row_group_size != defaults.row_group_size {
+            res.push(format!("Row group size = {:?}", self.row_group_size));
+        }
+        if self.target_filesize != defaults.target_filesize {
+            res.push(format!("Target filesize = {}", self.target_filesize));
+        }
+        if self.max_operations_per_commit != defaults.max_operations_per_commit {
+            res.push(format!(
+                "Max operations per commit = {}",
+                self.max_operations_per_commit
+            ));
+        }
         res
     }
 }
 
 impl Display for HuggingFaceConfig {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-        write!(
-            f,
-            "HuggingFaceConfig\n{}",
-            self.multiline_display().join("\n")
-        )
+        let lines = self.multiline_display();
+        if lines.is_empty() {
+            write!(f, "HuggingFaceConfig {{}}")
+        } else {
+            write!(f, "HuggingFaceConfig\n{}", lines.join("\n"))
+        }
     }
 }
