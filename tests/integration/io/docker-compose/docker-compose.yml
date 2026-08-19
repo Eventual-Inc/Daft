@@ -1,5 +1,13 @@
 services:
 
+  # Azurite is a local Azure Blob Storage emulator
+  # Test fixtures should populate data via azure.storage.blob (see tests/integration/io/conftest.py)
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite
+    ports:
+    - 10000:10000
+    command: [azurite-blob, --loose, --blobHost, 0.0.0.0]
+
   # MinIO is an S3-compatible API object store
   # Test fixtures should populate data in MinIO directly using S3 APIs such as boto3 or s3fs
   minio:

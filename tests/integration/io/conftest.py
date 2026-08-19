@@ -19,32 +19,7 @@ T = TypeVar("T")
 YieldFixture: TypeAlias = Generator[T, None, None]
 
 
-###
-# Config fixtures
-###
-
-
-@pytest.fixture(scope="session")
-def minio_io_config() -> daft.io.IOConfig:
-    return daft.io.IOConfig(
-        s3=daft.io.S3Config(
-            endpoint_url="http://127.0.0.1:9000",
-            key_id="minioadmin",
-            access_key="minioadmin",
-            use_ssl=False,
-        )
-    )
-
-
-@pytest.fixture(scope="session")
-def anonymous_minio_io_config() -> daft.io.IOConfig:
-    return daft.io.IOConfig(
-        s3=daft.io.S3Config(
-            endpoint_url="http://127.0.0.1:9000",
-            use_ssl=False,
-            anonymous=True,
-        )
-    )
+# ----------------- Public Config Fixtures ----------------- #
 
 
 @pytest.fixture(scope="session")
@@ -78,6 +53,79 @@ def azure_storage_public_config() -> daft.io.IOConfig:
             anonymous=True,
         )
     )
+
+
+# ----------------- Azurite Fixtures ----------------- #
+
+# Well-known Azurite credentials:
+# https://learn.microsoft.com/en-us/azure/storage/common/storage-connect-azurite?tabs=blob-storage
+AZURITE_ACCOUNT_NAME = "devstoreaccount1"
+AZURITE_ACCOUNT_KEY = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+AZURITE_BLOB_ENDPOINT = f"http://127.0.0.1:10000/{AZURITE_ACCOUNT_NAME}"
+
+
+@pytest.fixture(scope="session")
+def azurite_io_config() -> daft.io.IOConfig:
+    return daft.io.IOConfig(
+        azure=daft.io.AzureConfig(
+            storage_account=AZURITE_ACCOUNT_NAME,
+            access_key=AZURITE_ACCOUNT_KEY,
+            endpoint_url=AZURITE_BLOB_ENDPOINT,
+            use_ssl=False,
+        )
+    )
+
+
+def azurite_connection_string() -> str:
+    return (
+        f"DefaultEndpointsProtocol=http;AccountName={AZURITE_ACCOUNT_NAME};"
+        f"AccountKey={AZURITE_ACCOUNT_KEY};BlobEndpoint={AZURITE_BLOB_ENDPOINT};"
+    )
+
+
+@contextlib.contextmanager
+def azurite_create_container(
+    container_name: str | None = None,
+) -> YieldFixture[tuple[object, str, daft.io.IOConfig]]:
+    """Creates a container in Azurite.
+
+    Yields a tuple of (BlobServiceClient, container_name, io_config).
+    If container_name is not provided, generates a unique one using UUID.
+    """
+    from azure.storage.blob import BlobServiceClient
+
+    if container_name is None:
+        container_name = f"container-{uuid.uuid4()}"
+
+    io_config = daft.io.IOConfig(
+        azure=daft.io.AzureConfig(
+            storage_account=AZURITE_ACCOUNT_NAME,
+            access_key=AZURITE_ACCOUNT_KEY,
+            endpoint_url=AZURITE_BLOB_ENDPOINT,
+            use_ssl=False,
+        )
+    )
+    blob_service = BlobServiceClient.from_connection_string(azurite_connection_string())
+    blob_service.create_container(container_name)
+    try:
+        yield blob_service, container_name, io_config
+    finally:
+        blob_service.delete_container(container_name)
+
+
+def azurite_upload_bytes(blob_service: object, container: str, blob_name: str, data: bytes) -> str:
+    """Upload bytes to Azurite and return the az:// URL."""
+    blob_service.get_blob_client(container=container, blob=blob_name).upload_blob(data, overwrite=True)
+    return f"az://{container}/{blob_name}"
+
+
+def azurite_upload_parquet(blob_service: object, container: str, blob_name: str, table: object) -> str:
+    """Write a pyarrow table to Azurite as parquet and return the az:// URL."""
+    import pyarrow.parquet as pq
+
+    buffer = io.BytesIO()
+    pq.write_table(table, buffer)
+    return azurite_upload_bytes(blob_service, container, blob_name, buffer.getvalue())
 
 
 @pytest.fixture(scope="session")
@@ -122,11 +170,33 @@ def bigtable_emulator_config() -> dict[str, str]:
     }
 
 
-###
+# ----------------- Minio Fixtures ----------------- #
+
+
+@pytest.fixture(scope="session")
+def minio_io_config() -> daft.io.IOConfig:
+    return daft.io.IOConfig(
+        s3=daft.io.S3Config(
+            endpoint_url="http://127.0.0.1:9000",
+            key_id="minioadmin",
+            access_key="minioadmin",
+            use_ssl=False,
+        )
+    )
+
+
+@pytest.fixture(scope="session")
+def anonymous_minio_io_config() -> daft.io.IOConfig:
+    return daft.io.IOConfig(
+        s3=daft.io.S3Config(
+            endpoint_url="http://127.0.0.1:9000",
+            use_ssl=False,
+            anonymous=True,
+        )
+    )
+
+
 # Mounting utilities: mount data and perform cleanup at the end of each test
-###
-
-
 @contextlib.contextmanager
 def minio_create_bucket(
     minio_io_config: daft.io.IOConfig, bucket_name: str | None = None
