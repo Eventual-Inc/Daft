@@ -3,7 +3,7 @@ use std::{borrow::Cow, collections::HashSet, num::NonZeroUsize, sync::Arc};
 use arrow::array::builder::ArrayBuilder;
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
-use daft_dsl::{Expr, ExprRef, expr::bound_expr::BoundExpr, optimization::get_required_columns};
+use daft_dsl::{Expr, ExprRef, expr::bound_expr::BoundExpr};
 use daft_recordbatch::RecordBatch;
 use indexmap::IndexMap;
 use num_traits::Pow;
@@ -255,17 +255,11 @@ impl<'a> JsonReader<'a> {
         }
         .context(RayonThreadPoolSnafu)?;
 
+        // Columns required by the predicate are guaranteed to be part of the
+        // projection pushdown by the optimizer
+        // (https://github.com/Eventual-Inc/Daft/issues/6757).
         let projected_schema = match convert_options.and_then(|options| options.include_columns) {
-            Some(mut projected_columns) => {
-                if let Some(ref predicate) = predicate {
-                    for rc in get_required_columns(predicate) {
-                        if projected_columns.iter().all(|c| c.as_str() != rc.as_str()) {
-                            projected_columns.push(rc);
-                        }
-                    }
-                }
-                Arc::new(schema.project(&projected_columns)?)
-            }
+            Some(projected_columns) => Arc::new(schema.project(&projected_columns)?),
             None => schema,
         };
 

@@ -12,7 +12,7 @@ use daft_dsl::{
     optimization::{get_required_columns, replace_columns_with_expressions},
     resolved_col,
 };
-use daft_scan::{PredicateGroups, ScanState, rewrite_predicate_for_partitioning};
+use daft_scan::{PredicateGroups, Pushdowns, ScanState, rewrite_predicate_for_partitioning};
 
 use super::OptimizerRule;
 use crate::{
@@ -30,6 +30,43 @@ pub struct PushDownFilter {
 impl PushDownFilter {
     pub fn new(strict_pushdown: bool) -> Self {
         Self { strict_pushdown }
+    }
+}
+
+/// Union the columns referenced by the pushed filters (and partition filters)
+/// into the projection pushdown (`pushdowns.columns`), if one exists.
+///
+/// This maintains the invariant that every column referenced by a pushed
+/// filter is still read from the source. Without it, `PushDownFilter` and
+/// `PushDownProjection` race: this rule pushes a predicate into the scan
+/// while leaving `pushdowns.columns` untouched, and a later projection
+/// pass may then narrow `pushdowns.columns` to only the columns required by
+/// the parent plan — silently dropping columns the filter needs.
+///
+/// When `pushdowns.columns` is `None` the scan reads all columns anyway, so
+/// there is nothing to do.
+fn add_filter_columns_to_pushdowns(pushdowns: &Pushdowns) -> Pushdowns {
+    let Some(existing) = &pushdowns.columns else {
+        return pushdowns.clone();
+    };
+    let mut new_columns: Vec<String> = (**existing).clone();
+    let mut changed = false;
+    for filter in pushdowns
+        .filters
+        .iter()
+        .chain(pushdowns.partition_filters.iter())
+    {
+        for col in get_required_columns(filter) {
+            if !new_columns.contains(&col) {
+                new_columns.push(col);
+                changed = true;
+            }
+        }
+    }
+    if changed {
+        pushdowns.with_columns(Some(Arc::new(new_columns)))
+    } else {
+        pushdowns.clone()
     }
 }
 
@@ -183,6 +220,11 @@ impl PushDownFilter {
                         } else {
                             new_pushdowns
                         };
+                        // If the source already carries a projection pushdown,
+                        // extend it with the columns required by the filters we
+                        // just pushed, so later projection pruning cannot drop
+                        // them (https://github.com/Eventual-Inc/Daft/issues/6757).
+                        let new_pushdowns = add_filter_columns_to_pushdowns(&new_pushdowns);
 
                         let scan_op = external_info.scan_state.get_scan_op().0.clone();
                         let remaining_filters = if let Some(supports_pushdown) =
@@ -1264,6 +1306,55 @@ mod tests {
         .build();
 
         assert_optimized_plan_eq(plan, expected, false)?;
+        Ok(())
+    }
+
+    /// Tests that filter columns are unioned into an existing projection
+    /// pushdown (https://github.com/Eventual-Inc/Daft/issues/6757).
+    #[test]
+    fn add_filter_columns_unions_into_existing_projection() -> DaftResult<()> {
+        let pred = resolved_col("b").lt(lit(2));
+        let pushdowns = Pushdowns::default()
+            .with_columns(Some(Arc::new(vec!["a".to_string()])))
+            .with_filters(Some(pred));
+        let result = super::add_filter_columns_to_pushdowns(&pushdowns);
+        assert_eq!(result.columns.unwrap().as_slice(), ["a", "b"]);
+        Ok(())
+    }
+
+    /// Tests that nothing happens when there is no projection pushdown yet:
+    /// the scan reads all columns anyway.
+    #[test]
+    fn add_filter_columns_noop_without_projection() -> DaftResult<()> {
+        let pred = resolved_col("b").lt(lit(2));
+        let pushdowns = Pushdowns::default().with_filters(Some(pred));
+        let result = super::add_filter_columns_to_pushdowns(&pushdowns);
+        assert!(result.columns.is_none());
+        Ok(())
+    }
+
+    /// Tests that already-present filter columns are not duplicated.
+    #[test]
+    fn add_filter_columns_no_duplicates() -> DaftResult<()> {
+        let pred = resolved_col("a").lt(lit(2));
+        let pushdowns = Pushdowns::default()
+            .with_columns(Some(Arc::new(vec!["a".to_string(), "b".to_string()])))
+            .with_filters(Some(pred));
+        let result = super::add_filter_columns_to_pushdowns(&pushdowns);
+        assert_eq!(result.columns.unwrap().as_slice(), ["a", "b"]);
+        Ok(())
+    }
+
+    /// Tests that columns referenced by partition filters are also unioned in,
+    /// since partition filters are evaluated on the scanned table after reads.
+    #[test]
+    fn add_filter_columns_includes_partition_filter_columns() -> DaftResult<()> {
+        let pred = resolved_col("p").eq(lit(1));
+        let pushdowns = Pushdowns::default()
+            .with_columns(Some(Arc::new(vec!["a".to_string()])))
+            .with_partition_filters(Some(pred));
+        let result = super::add_filter_columns_to_pushdowns(&pushdowns);
+        assert_eq!(result.columns.unwrap().as_slice(), ["a", "p"]);
         Ok(())
     }
 }
