@@ -35,9 +35,16 @@ jobs:
       fail-fast: false
       matrix:
         platform:
-          - name: linux
+          - name: linux-arm64
             runner: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            cross: true
             maturin_args: --target aarch64-unknown-linux-gnu --compatibility manylinux_2_28 --zig
+          - name: linux-amd64
+            runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            cross: true
+            maturin_args: --target x86_64-unknown-linux-gnu --compatibility manylinux_2_28 --zig
           - name: macos
             runner: macos-15
             maturin_args: ""
@@ -103,7 +110,7 @@ jobs:
           npm run build
 
       - name: Install Zig for Linux cross-build
-        if: matrix.platform.name == 'linux'
+        if: matrix.platform.cross
         run: |
           set -euo pipefail
           ZIG_VERSION="0.13.0"
@@ -118,11 +125,11 @@ jobs:
           "$ZIG_DIR/zig" version
 
       - name: Install Rust target for Linux cross-build
-        if: matrix.platform.name == 'linux'
+        if: matrix.platform.cross
         run: |
           set -euo pipefail
-          rustup target add aarch64-unknown-linux-gnu
-          rustup target list --installed | grep -E '^aarch64-unknown-linux-gnu$'
+          rustup target add ${{ matrix.platform.target }}
+          rustup target list --installed | grep -E "^${{ matrix.platform.target }}$"
 
       - name: Build wheel (single command)
         # Keep this path simple and deterministic to reduce CI overhead and debugging complexity.
