@@ -23,7 +23,14 @@ impl FlotillaProgressBar {
     pub fn try_new(py: Python) -> PyResult<Self> {
         let progress_bar_module = py.import(pyo3::intern!(py, "daft.runners.progress_bar"))?;
         let progress_bar_class = progress_bar_module.getattr(pyo3::intern!(py, "ProgressBar"))?;
-        let progress_bar = progress_bar_class.call1((true,))?.extract::<Py<PyAny>>()?;
+        // use_ray_tqdm=False: ray.experimental.tqdm_ray caches its bars in a
+        // process-global singleton that outlives our own close()/Drop, so its
+        // underlying tqdm.auto instance (tqdm_asyncio outside notebooks) is only
+        // torn down at interpreter shutdown, where it can segfault (delta_new
+        // in _datetimemodule.c, called from __del__ after _datetime's module
+        // state is already cleared). Plain tqdm.auto is closed directly by
+        // ProgressBar.close(), which avoids that path.
+        let progress_bar = progress_bar_class.call1((false,))?.extract::<Py<PyAny>>()?;
         Ok(Self {
             progress_bar_pyobject: progress_bar,
         })
