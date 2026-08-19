@@ -4,7 +4,8 @@ use common_error::DaftResult;
 use common_treenode::{DynTreeNode, Transformed, TreeNode};
 use daft_core::prelude::*;
 use daft_dsl::{
-    Column, Expr, ExprRef, ResolvedColumn, optimization::replace_columns_with_expressions,
+    Column, Expr, ExprRef, ResolvedColumn,
+    optimization::{get_required_columns, replace_columns_with_expressions},
     resolved_col,
 };
 use daft_scan::ScanState;
@@ -140,7 +141,7 @@ impl PushDownProjection {
         match upstream_plan.as_ref() {
             LogicalPlan::Source(source) => {
                 // Prune unnecessary columns directly from the source.
-                let required_columns = plan.required_columns().single();
+                let mut required_columns = plan.required_columns().single();
                 // If the Source has a checkpoint, only allow projection pushdown
                 // when the `on=` key column is still required downstream —
                 // otherwise pruning would strip the key before the anti-join
@@ -155,6 +156,19 @@ impl PushDownProjection {
                 }
                 match source.source_info.as_ref() {
                     SourceInfo::Physical(external_info) => {
+                        // Columns referenced by pushed filters must stay in the
+                        // projection pushdown even if the parent plan does not
+                        // use them, otherwise the scan would stop reading them
+                        // and the filter would fail
+                        // (https://github.com/Eventual-Inc/Daft/issues/6757).
+                        for filter in external_info
+                            .pushdowns
+                            .filters
+                            .iter()
+                            .chain(external_info.pushdowns.partition_filters.iter())
+                        {
+                            required_columns.extend(get_required_columns(filter));
+                        }
                         if required_columns.len() < upstream_schema.names().len() {
                             // Don't modify materialized scans — their tasks are already built.
                             if matches!(external_info.scan_state, ScanState::Tasks(_)) {
@@ -701,7 +715,7 @@ mod tests {
         ops::{Project, Unpivot},
         optimization::{
             optimizer::{RuleBatch, RuleExecutionStrategy},
-            rules::PushDownProjection,
+            rules::{PushDownFilter, PushDownProjection},
             test::assert_optimized_plan_with_rules_eq,
         },
         test::{dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator},
@@ -1028,6 +1042,78 @@ mod tests {
 
         assert_optimized_plan_eq(plan.clone(), plan)?;
 
+        Ok(())
+    }
+
+    /// Pruning a source that already carries a pushed filter must keep the
+    /// filter's columns in the projection pushdown, otherwise the scan stops
+    /// reading a column the filter still evaluates
+    /// (https://github.com/Eventual-Inc/Daft/issues/6757).
+    #[test]
+    fn test_source_pruning_keeps_pushed_filter_columns() -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Int64),
+            Field::new("c", DataType::Int64),
+        ]);
+        let pred = resolved_col("b").lt(lit(2));
+        let plan = dummy_scan_node_with_pushdowns(
+            scan_op.clone(),
+            Pushdowns::default().with_filters(Some(pred.clone())),
+        )
+        .select(vec![resolved_col("a")])?
+        .build();
+
+        let expected = dummy_scan_node_with_pushdowns(
+            scan_op,
+            Pushdowns::default()
+                .with_columns(Some(Arc::new(vec!["a".to_string(), "b".to_string()])))
+                .with_filters(Some(pred)),
+        )
+        .select(vec![resolved_col("a")])?
+        .build();
+
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// End-to-end regression test for https://github.com/Eventual-Inc/Daft/issues/6757.
+    /// Runs PushDownFilter and PushDownProjection together to a fixed point, as
+    /// the real optimizer does: the filter must end up pushed into the scan
+    /// while its columns survive projection pruning.
+    #[test]
+    fn test_filter_projection_pushdown_race() -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Int64),
+            Field::new("c", DataType::Int64),
+        ]);
+        let pred = resolved_col("b").lt(lit(2));
+        let plan = dummy_scan_node(scan_op.clone())
+            .filter(pred.clone())?
+            .select(vec![resolved_col("a")])?
+            .build();
+
+        let expected = dummy_scan_node_with_pushdowns(
+            scan_op,
+            Pushdowns::default()
+                .with_columns(Some(Arc::new(vec!["a".to_string(), "b".to_string()])))
+                .with_filters(Some(pred)),
+        )
+        .select(vec![resolved_col("a")])?
+        .build();
+
+        assert_optimized_plan_with_rules_eq(
+            plan,
+            expected,
+            vec![RuleBatch::new(
+                vec![
+                    Box::new(PushDownFilter::new(false)),
+                    Box::new(PushDownProjection::new()),
+                ],
+                RuleExecutionStrategy::FixedPoint(None),
+            )],
+        )?;
         Ok(())
     }
 }
