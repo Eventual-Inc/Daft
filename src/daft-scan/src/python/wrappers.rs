@@ -181,6 +181,10 @@ impl PyDataSourceWrapper {
 }
 
 impl ExpandsToDataFrame for PyDataSourceWrapper {
+    fn python_object_id(&self) -> usize {
+        self.source.as_ptr() as usize
+    }
+
     fn expand_dataframe(&self, pushdowns: &Pushdowns) -> DaftResult<Option<Py<PyAny>>> {
         Python::attach(|py| {
             let pushdowns_obj = Self::pushdowns_to_py(py, pushdowns)?;

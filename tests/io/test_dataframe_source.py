@@ -121,6 +121,34 @@ def test_self_read_raises():
         Loop().read().collect()
 
 
+def test_nested_dataframe_source(files: dict[str, str]):
+    inner_schema = Schema.from_pydict({"id": DataType.int64(), "y": DataType.string()})
+
+    class Inner(_Unfold):
+        def __init__(self, path: str) -> None:
+            super().__init__("Inner", inner_schema)
+            self.path = path
+            self.seen: list = []
+
+        def get_dataframe(self, pushdowns):
+            self.seen.append(pushdowns)
+            return daft.read_parquet(self.path)
+
+    class Outer(_Unfold):
+        def __init__(self, inner: Inner, left: list[str]) -> None:
+            super().__init__("Outer")
+            self.inner = inner
+            self.left = left
+
+        def get_dataframe(self, pushdowns):
+            return daft.read_parquet(self.left).join(self.inner.read(), on="id")
+
+    inner = Inner(files["right"])
+    outer = Outer(inner, [files["low"], files["high"]])
+    assert outer.read().sort("id").to_pydict() == FULL
+    assert inner.seen
+
+
 def test_wrong_dtype():
     class Wrong(_Unfold):
         def get_dataframe(self, pushdowns):

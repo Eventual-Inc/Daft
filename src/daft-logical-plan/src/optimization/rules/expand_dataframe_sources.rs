@@ -1,11 +1,13 @@
 use std::sync::Arc;
+#[cfg(feature = "python")]
+use std::{cell::RefCell, collections::HashSet};
 
 #[cfg(feature = "python")]
 use common_error::DaftError;
 use common_error::DaftResult;
 use common_treenode::Transformed;
 #[cfg(feature = "python")]
-use common_treenode::{TreeNode, TreeNodeRecursion};
+use common_treenode::TreeNode;
 #[cfg(feature = "python")]
 use daft_scan::ScanState;
 
@@ -15,11 +17,14 @@ use crate::LogicalPlan;
 use crate::{SourceInfo, ops::Filter, ops::Project};
 
 #[derive(Default, Debug)]
-pub struct ExpandDataFrameSources {}
+pub struct ExpandDataFrameSources {
+    #[cfg(feature = "python")]
+    expanding: RefCell<HashSet<usize>>,
+}
 
 impl ExpandDataFrameSources {
     pub fn new() -> Self {
-        Self {}
+        Self::default()
     }
 }
 
@@ -28,6 +33,7 @@ impl OptimizerRule for ExpandDataFrameSources {
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         #[cfg(feature = "python")]
         {
+            self.expanding.borrow_mut().clear();
             plan.transform_down(|node| self.try_optimize_node(node))
         }
         #[cfg(not(feature = "python"))]
@@ -55,6 +61,14 @@ impl ExpandDataFrameSources {
         let Some(expander) = scan_op.0.as_dataframe_expander() else {
             return Ok(Transformed::no(plan));
         };
+
+        if !self
+            .expanding
+            .borrow_mut()
+            .insert(expander.python_object_id())
+        {
+            return Ok(Transformed::no(plan));
+        }
 
         let Some(py_df) = expander.expand_dataframe(&physical.pushdowns)? else {
             return Ok(Transformed::no(plan));
@@ -111,7 +125,7 @@ impl ExpandDataFrameSources {
                 .into();
         }
 
-        Ok(Transformed::new(inner, true, TreeNodeRecursion::Jump))
+        Ok(Transformed::yes(inner))
     }
 }
 

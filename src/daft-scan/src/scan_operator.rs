@@ -16,6 +16,9 @@ use crate::{
 #[cfg(feature = "python")]
 pub trait ExpandsToDataFrame: Send + Sync {
     fn expand_dataframe(&self, pushdowns: &Pushdowns) -> DaftResult<Option<Py<pyo3::PyAny>>>;
+
+    /// Identity of the Python DataFrameSource object, used to refuse `self.read()`.
+    fn python_object_id(&self) -> usize;
 }
 
 pub trait ScanOperator: Send + Sync + Debug {
