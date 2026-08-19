@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeType};
 use common_runtime::OrderedJoinSet;
-use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, ShuffleBackend};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
@@ -12,8 +12,7 @@ use super::{PipelineNodeImpl, TaskBuilderStream, clustering::BoundClusteringSpec
 use crate::{
     pipeline_node::{
         ClusteringStrategy, DistributedPipelineNode, NodeID, PipelineNodeConfig,
-        PipelineNodeContext,
-        shuffles::backends::{DistributedShuffleBackend, ShuffleBackend},
+        PipelineNodeContext, shuffles::backends::ShuffleContext,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -28,7 +27,7 @@ pub(crate) struct IntoPartitionsNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     num_partitions: usize,
-    shuffle_backend: ShuffleBackend,
+    shuffle_context: ShuffleContext,
     child: DistributedPipelineNode,
 }
 
@@ -40,7 +39,7 @@ impl IntoPartitionsNode {
         plan_config: &PlanConfig,
         num_partitions: usize,
         schema: SchemaRef,
-        backend: DistributedShuffleBackend,
+        backend: ShuffleBackend,
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
@@ -56,13 +55,13 @@ impl IntoPartitionsNode {
             plan_config.config.clone(),
             ClusteringStrategy::Explicit(BoundClusteringSpec::unknown(num_partitions)),
         );
-        let shuffle_backend = ShuffleBackend::new(&context, schema, backend);
+        let shuffle_context = ShuffleContext::new(&context, schema, backend);
 
         Self {
             config,
             context,
             num_partitions,
-            shuffle_backend,
+            shuffle_context,
             child,
         }
     }
@@ -132,8 +131,8 @@ impl IntoPartitionsNode {
                 .collect::<Vec<_>>();
 
             let node_id = self.node_id();
-            let shuffle_backend = self.shuffle_backend.local_shuffle_backend();
-            let builder = self.shuffle_backend.build_refs_task_builder(
+            let shuffle_backend = self.shuffle_context.backend().clone();
+            let builder = self.shuffle_context.build_refs_task_builder(
                 partition_refs,
                 self.as_ref(),
                 move |input| {
@@ -190,7 +189,7 @@ impl IntoPartitionsNode {
                 LocalPhysicalPlan::into_partitions(
                     plan,
                     num_outputs,
-                    self.shuffle_backend.local_shuffle_backend(),
+                    self.shuffle_context.backend().clone(),
                     StatsState::NotMaterialized,
                     LocalNodeContext::new(Some(self.node_id() as usize)),
                 )
@@ -213,7 +212,7 @@ impl IntoPartitionsNode {
             if let Some(output) = materialized_outputs {
                 for output in output.split_into_materialized_outputs() {
                     let partition_refs = output.into_inner().0;
-                    let builder = self.shuffle_backend.build_refs_task_builder(
+                    let builder = self.shuffle_context.build_refs_task_builder(
                         partition_refs,
                         self.as_ref(),
                         |input| input,
@@ -252,7 +251,7 @@ impl IntoPartitionsNode {
                             LocalPhysicalPlan::into_partitions(
                                 plan,
                                 1,
-                                self.shuffle_backend.local_shuffle_backend(),
+                                self.shuffle_context.backend().clone(),
                                 StatsState::NotMaterialized,
                                 LocalNodeContext::new(Some(node_id as usize)),
                             )
@@ -304,10 +303,7 @@ impl PipelineNodeImpl for IntoPartitionsNode {
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
-        let backend_name = match self.shuffle_backend.backend() {
-            DistributedShuffleBackend::Ray => "Ray",
-            DistributedShuffleBackend::Flight(_) => "Flight",
-        };
+        let backend_name = self.shuffle_context.backend().name();
         vec![
             format!("IntoPartitions({})", backend_name),
             format!("Num partitions = {}", self.num_partitions),
@@ -318,7 +314,7 @@ impl PipelineNodeImpl for IntoPartitionsNode {
         self: Arc<Self>,
         plan_context: &mut PlanExecutionContext,
     ) -> TaskBuilderStream {
-        self.shuffle_backend.register_cleanup(plan_context);
+        self.shuffle_context.register_cleanup(plan_context);
         let input_stream = self.child.clone().produce_tasks(plan_context);
         let (result_tx, result_rx) = create_channel(1);
 
