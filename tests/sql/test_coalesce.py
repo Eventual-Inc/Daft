@@ -18,6 +18,13 @@ def test_coalesce_no_arguments_raises():
         coalesce()
 
 
+def test_coalesce_single_argument_warns():
+    df = daft.from_pydict({"a": [None, 1]})
+    with pytest.warns(UserWarning, match="no-op"):
+        result = df.select(coalesce(col("a")))
+    assert result.to_pydict() == {"a": [None, 1]}
+
+
 def test_coalesce_basic():
     df = daft.from_pydict(
         {

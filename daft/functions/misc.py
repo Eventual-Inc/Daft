@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Iterable
 from typing import Any, Literal
 
@@ -648,6 +649,8 @@ def coalesce(*args: Expression) -> Expression:
     """
     if len(args) == 0:
         raise ValueError("coalesce requires at least one argument")
+    if len(args) == 1:
+        warnings.warn("coalesce with a single argument is a no-op; it returns the argument unchanged", stacklevel=2)
     return Expression._from_pyexpr(native.coalesce([arg._expr for arg in args]))
 
 
