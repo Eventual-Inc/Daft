@@ -94,6 +94,85 @@ This call will then return a DataFrame containing the operations that were perfo
 ╰───────────┴───────┴───────────┴────────────────────────────────╯
 ```
 
+### Overwriting a Table
+
+`mode="overwrite"` replaces the entire table: the existing rows are deleted, then the
+DataFrame's rows are appended.
+
+=== "🐍 Python"
+
+    ```python
+    written_df = df.write_iceberg(table, mode="overwrite")
+    ```
+
+### Overwriting a Partition
+
+To replace only part of a table, known as a *static partition overwrite*, pass an
+`overwrite_filter` along with `mode="overwrite"`. Only the rows matching the predicate are
+deleted, and the delete and the append land in a single Iceberg transaction.
+
+=== "🐍 Python"
+
+    ```python
+    # Replace only the `dt = '2024-01-01'` partition and leave the others in place.
+    written_df = df.write_iceberg(table, mode="overwrite", overwrite_filter="dt = '2024-01-01'")
+    ```
+
+The filter accepts an Iceberg predicate string, a Daft expression, or a PyIceberg
+`BooleanExpression`, so these are equivalent:
+
+=== "🐍 Python"
+
+    ```python
+    from pyiceberg.expressions import EqualTo
+
+    from daft import col
+
+    df.write_iceberg(table, mode="overwrite", overwrite_filter="dt = '2024-01-01'")
+    df.write_iceberg(table, mode="overwrite", overwrite_filter=col("dt") == "2024-01-01")
+    df.write_iceberg(table, mode="overwrite", overwrite_filter=EqualTo("dt", "2024-01-01"))
+    ```
+
+Daft checks that the rows being written fall inside the filter, so an overwrite cannot
+leave behind rows its delete did not cover:
+
+``` {title="Output"}
+ValueError: Cannot write rows that do not match overwrite_filter EqualTo(term=Reference(name='dt'), literal=literal('2024-01-01')): .../dt=2024-01-02/....parquet holds rows outside the filter, or its statistics are not sufficient to prove otherwise. Filter the DataFrame down to the rows the filter covers, or pass validate_overwrite_filter=False to write anyway.
+```
+
+The check reads the written files' partition values and column statistics rather than the
+rows themselves. Statistics only ever widen, since truncated bounds cover more than the real
+range, so the check may refuse a write it cannot prove but never admits a row the filter does
+not cover. It runs before anything commits, so a rejected write leaves the table unchanged.
+
+Two cases are not provable: an equality predicate over a **non-partition** column whose values
+exceed the bounds truncation length (16 bytes by default), and a predicate over a column whose
+table properties disable statistics. Partition values are stored whole and a range predicate
+only needs the bounds to sit inside it, so neither of those is affected. Pass
+`validate_overwrite_filter=False` for the cases that cannot be proven.
+
+To drop a partition without writing anything, pass an empty DataFrame with the filter:
+
+=== "🐍 Python"
+
+    ```python
+    empty = df.limit(0)
+    empty.write_iceberg(table, mode="overwrite", overwrite_filter="dt = '2024-01-01'")
+    ```
+
+!!! warning "Warning"
+
+    A filter aligned with partition boundaries is a metadata-only delete. A finer predicate
+    makes PyIceberg fall back to copy-on-write and rewrite the partially matched data files.
+
+The same option is available through the [Catalog](../api/catalogs_tables.md) API:
+
+=== "🐍 Python"
+
+    ```python
+    catalog.write_table("default.my_table", df, mode="overwrite", overwrite_filter="dt = '2024-01-01'")
+    ```
+
 ## Checkpointing
 
 Daft supports idempotent writes to Iceberg via the `checkpoint=` parameter on [`df.write_iceberg()`][daft.DataFrame.write_iceberg]. Retries of the same logical commit — after a crash, a transient catalog error, or a deliberate re-invocation — produce the same Iceberg state without duplicate snapshots. See the [Checkpointing user guide](../use-case/checkpointing.md) for concepts; the sections below cover Iceberg-specific behavior.
@@ -418,4 +497,4 @@ column's value (identity) or use a *partition transform* to derive a partition v
 
 14. **Which writes operations does Daft support?**
 
-    *Daft supports basic overwrite and append, it does not support upserts like copy-on-write updates.*
+    *Daft supports append, full overwrite, and static partition overwrite (`overwrite_filter`); it does not support upserts like copy-on-write updates.*
