@@ -190,15 +190,16 @@ where
             let schema = node.schema();
             object["schema"] = json!(schema.fields());
         }
+
         self.objects.insert(id, object);
         self.parent_ids.push(id);
         Ok(common_treenode::TreeNodeRecursion::Continue)
     }
 
-    fn f_up(&mut self, _node: &Self::Node) -> DaftResult<common_treenode::TreeNodeRecursion> {
+    fn f_up(&mut self, node: &Self::Node) -> DaftResult<common_treenode::TreeNodeRecursion> {
         let id = self.parent_ids.pop().unwrap();
 
-        let current_node = self
+        let mut current_node = self
             .objects
             .remove(&id)
             .ok_or_else(|| DaftError::ValueError("Missing current node!".to_string()))?;
@@ -216,7 +217,9 @@ where
 
             plans.push(current_node);
         } else {
-            // This is the root node
+            // This is the root node; attach plan-level lineage alongside it.
+            current_node["lineage"] =
+                serde_json::to_value(node.lineage()).map_err(DaftError::SerdeJsonError)?;
             let plan = serde_json::json!(&current_node);
             write!(
                 self.f,
@@ -354,6 +357,7 @@ mod tests {
               "type": "Project"
             }
           ],
+          "lineage": { "inputs": [], "outputs": [] },
           "limit": 10,
           "type": "Limit"
         }
@@ -375,6 +379,7 @@ mod tests {
         let expected = r#"
             {
               "children": [],
+              "lineage": { "inputs": [], "outputs": [] },
               "schema": [
                 {
                   "dtype": "Utf8",
@@ -415,6 +420,61 @@ mod tests {
             "Hash (num_partitions=auto, by=[col(id)])",
         );
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_repr_json_lineage() -> DaftResult<()> {
+        use std::sync::Arc;
+
+        use common_file_formats::{FileFormat, WriteMode};
+
+        use crate::{
+            LogicalPlan,
+            ops::Sink,
+            sink_info::{OutputFileInfo, SinkInfo},
+        };
+
+        // A glob scan feeding a file sink exercises both input and output extraction.
+        let input =
+            LogicalPlanBuilder::from_glob_scan(vec!["/data/events/*.parquet".to_string()], None)?
+                .build();
+
+        let sink_info = SinkInfo::OutputFileInfo(OutputFileInfo::new(
+            "/warehouse/out".to_string(),
+            WriteMode::Overwrite,
+            FileFormat::Parquet,
+            None,
+            None,
+            None,
+            None,
+            false,
+            false,
+        ));
+        let plan = LogicalPlan::Sink(
+            Sink::try_new(input, Arc::new(sink_info)).expect("failed to build sink"),
+        )
+        .arced();
+
+        let mut output = String::new();
+        let mut json_vis = super::JsonVisitor::new(&mut output);
+        plan.visit(&mut json_vis).unwrap();
+        let actual: serde_json::Value = serde_json::from_str(&output).unwrap();
+
+        let expected_lineage: serde_json::Value = serde_json::from_str(
+            r#"{
+              "inputs": [
+                { "type": "glob_scan", "glob_paths": ["/data/events/*.parquet"] }
+              ],
+              "outputs": [
+                { "type": "file", "root_dir": "/warehouse/out", "file_format": "Parquet" }
+              ]
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(actual["type"], "Sink");
+        assert_eq!(actual["lineage"], expected_lineage);
         Ok(())
     }
 }
