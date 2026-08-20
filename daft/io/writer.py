@@ -4,11 +4,13 @@ import uuid
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
+from daft.datatype import DataType
 from daft.dependencies import pa, pacsv, pafs, pq
 from daft.filesystem import (
     _resolve_paths_and_filesystem,
     get_protocol_from_path,
 )
+from daft.io.common import _get_schema_from_dict
 from daft.io.delta_lake.delta_lake_write import (
     make_deltalake_add_action,
     make_deltalake_fs,
@@ -80,6 +82,8 @@ class FileWriterBase(ABC):
         if is_local_fs:
             self.fs.create_dir(self.dir_path, recursive=True)
 
+        # Normalize to a string so downstream code (e.g. _resolve_column_compression)
+        # can rely on self.compression always being a valid PyArrow codec name, never None.
         self.compression = compression if compression is not None else "none"
         self.position = 0
 
@@ -120,6 +124,7 @@ class ParquetFileWriter(FileWriterBase):
         version: int | None = None,
         default_partition_fallback: str | None = None,
         metadata_collector: list[pq.FileMetaData] | None = None,
+        column_compression: dict[str, str] | None = None,
     ):
         super().__init__(
             root_dir=root_dir,
@@ -134,15 +139,21 @@ class ParquetFileWriter(FileWriterBase):
         self.is_closed = False
         self.current_writer: pq.ParquetWriter | None = None
         self.metadata_collector: list[pq.FileMetaData] | None = metadata_collector
+        self.column_compression = column_compression
 
     def _create_writer(self, schema: pa.Schema) -> pq.ParquetWriter:
         opts = {}
         if self.metadata_collector is not None:
             opts["metadata_collector"] = self.metadata_collector
+        compression: str | dict[str, str]
+        if self.column_compression:
+            compression = self._resolve_column_compression(schema)
+        else:
+            compression = self.compression
         return pq.ParquetWriter(
             self.full_path,
             schema,
-            compression=self.compression,
+            compression=compression,
             use_compliant_nested_type=False,
             filesystem=self.fs,
             # When using Arrow 8, it defaults to parquet version 1.
@@ -155,8 +166,11 @@ class ParquetFileWriter(FileWriterBase):
 
     def write(self, table: MicroPartition) -> int:
         assert not self.is_closed, "Cannot write to a closed ParquetFileWriter"
+        if len(table) == 0:
+            return 0
         if self.current_writer is None:
-            self.current_writer = self._create_writer(table.schema().to_pyarrow_schema())
+            schema = table.schema().to_pyarrow_schema()
+            self.current_writer = self._create_writer(schema)
         self.current_writer.write_table(table.to_arrow(), row_group_size=len(table))
 
         current_position = self.current_writer.file_handle.tell()
@@ -165,15 +179,54 @@ class ParquetFileWriter(FileWriterBase):
         return bytes_written
 
     def close(self) -> RecordBatch:
-        if self.current_writer is not None:
-            self.current_writer.close()
-
         self.is_closed = True
-        metadata = {"path": Series.from_pylist([self.full_path])}
+        metadata: dict[str, Series] = {"path": Series.from_pylist([self.full_path])}
         if self.partition_values is not None:
             for column in self.partition_values.columns():
                 metadata[column.name()] = column
+        if self.current_writer is None:
+            return RecordBatch.from_pydict(metadata).slice(0, 0)
+        self.current_writer.close()
         return RecordBatch.from_pydict(metadata)
+
+    def _resolve_column_compression(
+        self,
+        schema: pa.Schema,
+    ) -> dict[str, str]:
+        """Build a leaf-path -> codec dict for ``pq.ParquetWriter``.
+
+        PyArrow requires every leaf column be listed when a dict is passed.
+        Recursion handles top-level struct nesting only; overrides for leaves
+        nested inside list/large_list/map types are not supported on the
+        PyArrow fallback path (the native writer is unaffected). Any override
+        key that does not match a discovered leaf raises ``ValueError`` rather
+        than being silently dropped.
+        """
+        assert self.column_compression is not None
+        overrides = self.column_compression
+        leaves: list[str] = []
+
+        def collect(field: pa.Field, prefix: str) -> None:
+            path = f"{prefix}.{field.name}" if prefix else field.name
+            if pa.types.is_struct(field.type):
+                for i in range(field.type.num_fields):
+                    collect(field.type.field(i), path)
+            else:
+                leaves.append(path)
+
+        for field in schema:
+            collect(field, "")
+
+        leaf_set = set(leaves)
+        unmatched = sorted(k for k in overrides if k not in leaf_set)
+        if unmatched:
+            raise ValueError(
+                "column_compression keys do not match any leaf column: "
+                f"{unmatched}. The PyArrow writer fallback does not support "
+                "overrides for leaves nested inside list/large_list/map types; "
+                "apply the override at the top-level column instead."
+            )
+        return {leaf: overrides.get(leaf, self.compression) for leaf in leaves}
 
 
 class CSVFileWriter(FileWriterBase):
@@ -240,6 +293,8 @@ class CSVFileWriter(FileWriterBase):
 
     def write(self, table: MicroPartition) -> int:
         assert not self.is_closed, "Cannot write to a closed CSVFileWriter"
+        if len(table) == 0:
+            return 0
         arrow_table = table.to_arrow()
 
         # Apply custom date/timestamp formatting if specified
@@ -256,15 +311,14 @@ class CSVFileWriter(FileWriterBase):
         return bytes_written
 
     def close(self) -> RecordBatch:
-        if self.current_writer is not None:
-            self.current_writer.close()
-
         self.is_closed = True
-        metadata = {"path": Series.from_pylist([self.full_path])}
+        metadata: dict[str, Series] = {"path": Series.from_pylist([self.full_path])}
         if self.partition_values is not None:
             for column in self.partition_values.columns():
                 metadata[column.name()] = column
-
+        if self.current_writer is None:
+            return RecordBatch.from_pydict(metadata).slice(0, 0)
+        self.current_writer.close()
         return RecordBatch.from_pydict(metadata)
 
 
@@ -302,6 +356,8 @@ class IcebergWriter(ParquetFileWriter):
 
     def write(self, table: MicroPartition) -> int:
         assert not self.is_closed, "Cannot write to a closed IcebergFileWriter"
+        if len(table) == 0:
+            return 0
         if self.current_writer is None:
             self.current_writer = self._create_writer(self.file_schema)
         casted = coerce_pyarrow_table_to_schema(table.to_arrow(), self.file_schema)
@@ -313,9 +369,10 @@ class IcebergWriter(ParquetFileWriter):
         return bytes_written
 
     def close(self) -> RecordBatch:
-        if self.current_writer is not None:
-            self.current_writer.close()
         self.is_closed = True
+        if self.current_writer is None:
+            return RecordBatch.empty(_get_schema_from_dict({"data_file": DataType.python()}))
+        self.current_writer.close()
 
         assert self.metadata_collector is not None
         metadata = self.metadata_collector[0]
@@ -361,11 +418,13 @@ class DeltalakeWriter(ParquetFileWriter):
 
     def write(self, table: MicroPartition) -> int:
         assert not self.is_closed, "Cannot write to a closed DeltalakeFileWriter"
+        if len(table) == 0:
+            return 0
 
         converted_arrow_table = sanitize_table_for_deltalake(
             table,
             self.large_dtypes,
-            self.partition_values.schema().column_names() if self.partition_values is not None else None,
+            (self.partition_values.schema().column_names() if self.partition_values is not None else None),
         )
         if self.current_writer is None:
             self.current_writer = self._create_writer(converted_arrow_table.schema)
@@ -377,9 +436,10 @@ class DeltalakeWriter(ParquetFileWriter):
         return bytes_written
 
     def close(self) -> RecordBatch:
-        if self.current_writer is not None:
-            self.current_writer.close()
         self.is_closed = True
+        if self.current_writer is None:
+            return RecordBatch.empty(_get_schema_from_dict({"add_action": DataType.python()}))
+        self.current_writer.close()
 
         assert self.metadata_collector is not None
         metadata = self.metadata_collector[0]

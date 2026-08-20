@@ -5,7 +5,7 @@ use common_py_serde::impl_bincode_py_state_serialization;
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::{DaftExecutionConfig, DaftPlanningConfig};
+use crate::{DaftEventLogConfig, DaftExecutionConfig, DaftPlanningConfig};
 
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[pyclass(module = "daft.daft", from_py_object)]
@@ -122,6 +122,7 @@ impl PyDaftExecutionConfig {
         enable_dynamic_batching=None,
         dynamic_batching_strategy=None,
         flight_shuffle_dirs=None,
+        flight_shuffle_compression=None,
         enable_multi_glob_path_tasks=None,
     ))]
     fn with_config_values(
@@ -159,6 +160,7 @@ impl PyDaftExecutionConfig {
         enable_dynamic_batching: Option<bool>,
         dynamic_batching_strategy: Option<&str>,
         flight_shuffle_dirs: Option<Vec<String>>,
+        flight_shuffle_compression: Option<&str>,
         enable_multi_glob_path_tasks: Option<bool>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
@@ -296,6 +298,19 @@ impl PyDaftExecutionConfig {
                 ));
             }
             config.flight_shuffle_dirs = flight_shuffle_dirs;
+        }
+
+        if let Some(flight_shuffle_compression) = flight_shuffle_compression {
+            config.flight_shuffle_compression = match flight_shuffle_compression {
+                "" | "none" => None,
+                "lz4" | "zstd" => Some(flight_shuffle_compression.to_string()),
+                other => {
+                    return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                        "flight_shuffle_compression must be 'lz4', 'zstd', or 'none' (got '{}')",
+                        other
+                    )));
+                }
+            };
         }
 
         if let Some(enable_multi_glob_path_tasks) = enable_multi_glob_path_tasks {
@@ -464,6 +479,61 @@ impl PyDaftExecutionConfig {
     fn enable_multi_glob_path_tasks(&self) -> PyResult<bool> {
         Ok(self.config.enable_multi_glob_path_tasks)
     }
+
+    #[getter]
+    fn flight_shuffle_compression(&self) -> PyResult<Option<&str>> {
+        Ok(self.config.flight_shuffle_compression.as_deref())
+    }
 }
 
 impl_bincode_py_state_serialization!(PyDaftExecutionConfig);
+
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[pyclass(module = "daft.daft", from_py_object)]
+pub struct PyDaftEventLogConfig {
+    pub config: DaftEventLogConfig,
+}
+
+#[pymethods]
+impl PyDaftEventLogConfig {
+    #[new]
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    #[staticmethod]
+    #[must_use]
+    pub fn from_env() -> Self {
+        Self {
+            config: DaftEventLogConfig::from_env(),
+        }
+    }
+
+    #[pyo3(signature = (enabled=None, path=None))]
+    fn with_config_values(&self, enabled: Option<bool>, path: Option<String>) -> PyResult<Self> {
+        let mut config = self.config.clone();
+
+        if let Some(enabled) = enabled {
+            config.enabled = enabled;
+        }
+
+        if let Some(path) = path {
+            config.path = path;
+        }
+
+        Ok(Self { config })
+    }
+
+    #[getter(enabled)]
+    fn enabled(&self) -> bool {
+        self.config.enabled
+    }
+
+    #[getter(path)]
+    fn path(&self) -> String {
+        self.config.path.clone()
+    }
+}
+
+impl_bincode_py_state_serialization!(PyDaftEventLogConfig);

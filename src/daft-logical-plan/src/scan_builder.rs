@@ -25,6 +25,7 @@ pub struct ParquetScanBuilder {
     pub schema: Option<SchemaRef>,
     pub file_path_column: Option<String>,
     pub hive_partitioning: bool,
+    pub ignore_corrupt_files: bool,
 }
 
 impl ParquetScanBuilder {
@@ -47,6 +48,7 @@ impl ParquetScanBuilder {
             io_config: None,
             file_path_column: None,
             hive_partitioning: false,
+            ignore_corrupt_files: false,
         }
     }
     pub fn infer_schema(mut self, infer_schema: bool) -> Self {
@@ -95,12 +97,18 @@ impl ParquetScanBuilder {
         self
     }
 
+    pub fn ignore_corrupt_files(mut self, ignore_corrupt_files: bool) -> Self {
+        self.ignore_corrupt_files = ignore_corrupt_files;
+        self
+    }
+
     pub async fn finish(self) -> DaftResult<LogicalPlanBuilder> {
         let cfg = ParquetSourceConfig {
             coerce_int96_timestamp_unit: self.coerce_int96_timestamp_unit,
             field_id_mapping: self.field_id_mapping,
             row_groups: self.row_groups,
             chunk_size: self.chunk_size,
+            ignore_corrupt_files: self.ignore_corrupt_files,
         };
 
         let operator = Arc::new(
@@ -144,6 +152,7 @@ pub struct CsvScanBuilder {
     pub allow_variable_columns: bool,
     pub buffer_size: Option<usize>,
     pub chunk_size: Option<usize>,
+    pub ignore_corrupt_files: bool,
 }
 
 impl CsvScanBuilder {
@@ -170,6 +179,7 @@ impl CsvScanBuilder {
             allow_variable_columns: false,
             buffer_size: None,
             chunk_size: None,
+            ignore_corrupt_files: false,
         }
     }
     pub fn infer_schema(mut self, infer_schema: bool) -> Self {
@@ -229,6 +239,11 @@ impl CsvScanBuilder {
         self
     }
 
+    pub fn ignore_corrupt_files(mut self, ignore_corrupt_files: bool) -> Self {
+        self.ignore_corrupt_files = ignore_corrupt_files;
+        self
+    }
+
     pub async fn finish(self) -> DaftResult<LogicalPlanBuilder> {
         let cfg = CsvSourceConfig {
             delimiter: self.delimiter,
@@ -240,6 +255,7 @@ impl CsvScanBuilder {
             allow_variable_columns: self.allow_variable_columns,
             buffer_size: self.buffer_size,
             chunk_size: self.chunk_size,
+            ignore_corrupt_files: self.ignore_corrupt_files,
         };
 
         let operator = Arc::new(
@@ -372,15 +388,11 @@ pub fn delta_scan<T: AsRef<str>>(
         };
 
         let delta_lake_scan = PyModule::import(py, "daft.io.delta_lake.delta_lake_scan")?;
-        let delta_lake_scan_operator =
-            delta_lake_scan.getattr(pyo3::intern!(py, "DeltaLakeScanOperator"))?;
-        let delta_lake_operator = delta_lake_scan_operator
-            .call1((glob_path.as_ref(), storage_config))?
-            .into_pyobject(py)
-            .unwrap()
-            .into();
-        let scan_operator_handle =
-            ScanOperatorHandle::from_python_scan_operator(delta_lake_operator, py)?;
+        let delta_lake_data_source =
+            delta_lake_scan.getattr(pyo3::intern!(py, "DeltaLakeDataSource"))?;
+        let delta_lake_source =
+            delta_lake_data_source.call1((glob_path.as_ref(), storage_config))?;
+        let scan_operator_handle = ScanOperatorHandle::from_data_source(delta_lake_source);
         LogicalPlanBuilder::table_scan(scan_operator_handle.into(), None)
     })
 }
@@ -394,38 +406,53 @@ pub fn delta_scan<T: IntoGlobPath>(
     panic!("Delta Lake scan requires the 'python' feature to be enabled.")
 }
 
-/// Creates a logical scan operator from a Python IcebergScanOperator.
+/// Creates a logical scan operator from a Python IcebergDataSource.
 #[cfg(feature = "python")]
 pub fn iceberg_scan<T: AsRef<str>>(
     metadata_location: T,
     snapshot_id: Option<usize>,
+    branch: Option<String>,
+    tag: Option<String>,
     io_config: Option<IOConfig>,
+    ignore_corrupt_files: bool,
 ) -> DaftResult<LogicalPlanBuilder> {
-    use pyo3::IntoPyObjectExt;
-    let storage_config: StorageConfig = io_config.unwrap_or_default().into();
-    let scan_operator = Python::attach(|py| -> DaftResult<ScanOperatorHandle> {
+    Python::attach(|py| {
         let iceberg_table_module = PyModule::import(py, "pyiceberg.table")?;
         let iceberg_static_table = iceberg_table_module.getattr("StaticTable")?;
         let iceberg_table =
             iceberg_static_table.call_method1("from_metadata", (metadata_location.as_ref(),))?;
+        let iceberg_helper_module = PyModule::import(py, "daft.io.iceberg._iceberg")?;
+        let snapshot_id = iceberg_helper_module
+            .getattr("resolve_snapshot_id")?
+            .call1((&iceberg_table, snapshot_id, branch, tag))?;
+        let py_io_config = io_config.map(common_io_config::python::IOConfig::from);
+        let resolved_io_config: Option<common_io_config::python::IOConfig> = iceberg_helper_module
+            .getattr("resolve_iceberg_io_config")?
+            .call1((&iceberg_table, py_io_config))?
+            .extract()?;
+        let storage_config =
+            StorageConfig::new_internal(true, resolved_io_config.map(|c| c.config));
         let iceberg_scan_module = PyModule::import(py, "daft.io.iceberg.iceberg_scan")?;
-        let iceberg_scan_class = iceberg_scan_module.getattr("IcebergScanOperator")?;
-        let iceberg_scan = iceberg_scan_class
-            .call1((iceberg_table, snapshot_id, storage_config))?
-            .into_py_any(py)?;
-        Ok(ScanOperatorHandle::from_python_scan_operator(
-            iceberg_scan,
-            py,
-        )?)
-    })?;
-    LogicalPlanBuilder::table_scan(scan_operator.into(), None)
+        let iceberg_data_source = iceberg_scan_module.getattr("IcebergDataSource")?;
+        let iceberg_source = iceberg_data_source.call1((
+            iceberg_table,
+            snapshot_id,
+            storage_config,
+            ignore_corrupt_files,
+        ))?;
+        let scan_operator_handle = ScanOperatorHandle::from_data_source(iceberg_source);
+        LogicalPlanBuilder::table_scan(scan_operator_handle.into(), None)
+    })
 }
 
 #[cfg(not(feature = "python"))]
 pub fn iceberg_scan<T: AsRef<str>>(
-    uri: T,
-    snapshot_id: Option<usize>,
-    io_config: Option<IOConfig>,
+    _uri: T,
+    _snapshot_id: Option<usize>,
+    _branch: Option<String>,
+    _tag: Option<String>,
+    _io_config: Option<IOConfig>,
+    _ignore_corrupt_files: bool,
 ) -> DaftResult<LogicalPlanBuilder> {
     panic!("Iceberg scan requires the 'python' feature to be enabled.")
 }

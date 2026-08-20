@@ -31,6 +31,7 @@ impl ScalarUDF for Ceil {
             | DataType::UInt16
             | DataType::UInt32
             | DataType::UInt64 => Ok(input.clone()),
+            DataType::Float16 => Ok(input.f16().unwrap().ceil()?.into_series()),
             DataType::Float32 => Ok(input.f32().unwrap().ceil()?.into_series()),
             DataType::Float64 => Ok(input.f64().unwrap().ceil()?.into_series()),
             dt => Err(DaftError::TypeError(format!(

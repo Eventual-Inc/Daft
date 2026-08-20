@@ -25,7 +25,7 @@ impl TryFrom<SQLFunctionArguments> for ParquetScanBuilder {
         } else if let Some(arg) = args.get_named("path") {
             try_coerce_list(arg.clone())?
         } else {
-            invalid_operation_err!("path is required for `read_json`")
+            invalid_operation_err!("path is required for `read_parquet`")
         };
 
         let infer_schema = args.try_get_named("infer_schema")?.unwrap_or(true);
@@ -42,6 +42,7 @@ impl TryFrom<SQLFunctionArguments> for ParquetScanBuilder {
         let file_path_column = args.try_get_named("file_path_column")?;
         let multithreaded = args.try_get_named("multithreaded")?.unwrap_or(true);
         let hive_partitioning = args.try_get_named("hive_partitioning")?.unwrap_or(false);
+        let ignore_corrupt_files = args.try_get_named("ignore_corrupt_files")?.unwrap_or(false);
 
         let field_id_mapping = None; // TODO
         let row_groups = None; // TODO
@@ -64,6 +65,7 @@ impl TryFrom<SQLFunctionArguments> for ParquetScanBuilder {
             schema,
             file_path_column,
             hive_partitioning,
+            ignore_corrupt_files,
         })
     }
 }
@@ -77,6 +79,7 @@ impl SQLTableFunction for ReadParquetFunction {
         let builder: ParquetScanBuilder = planner.plan_function_args(
             args.args.as_slice(),
             &[
+                "path",
                 "infer_schema",
                 "coerce_int96_timestamp_unit",
                 "chunk_size",
@@ -85,13 +88,14 @@ impl SQLTableFunction for ReadParquetFunction {
                 // "field_id_mapping",
                 // "row_groups",
                 "io_config",
+                "file_path_column",
+                "hive_partitioning",
+                "ignore_corrupt_files",
             ],
             1, // 1 positional argument (path)
         )?;
 
-        let runtime = common_runtime::get_io_runtime(true);
-
-        let result = runtime.block_within_async_context(builder.finish())??;
+        let result = super::block_on_io_runtime(builder.finish())??;
         Ok(result)
     }
 }

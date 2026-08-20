@@ -159,7 +159,7 @@ pub fn predicate_removes_nulls(
 
     let simplified = simplify_expr(nulled, schema)?.data;
 
-    let simplified = if let Expr::Cast(inner, DataType::Boolean) = simplified.as_ref() {
+    let simplified = if let Expr::Cast(inner, DataType::Boolean, _) = simplified.as_ref() {
         inner
     } else {
         &simplified

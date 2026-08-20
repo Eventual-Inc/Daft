@@ -38,7 +38,10 @@ def test_sharding_invalid_arguments() -> None:
 
 
 def test_sharding_with_file_scan(tmpdir) -> None:
-    num_files = 100
+    # Use a large number of files so the hash-based sharding reliably places at
+    # least one file in every shard, regardless of the tmpdir path (which varies
+    # across CI runs). See #6475 for the same deflake applied to a sibling test.
+    num_files = 500
     write_test_files(tmpdir, num_files)
 
     world_size = 10

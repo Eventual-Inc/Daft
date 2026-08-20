@@ -12,8 +12,9 @@ use std::{
 };
 
 pub use agg_ops::{
-    try_mean_aggregation_supertype, try_product_supertype, try_skew_aggregation_supertype,
-    try_stddev_aggregation_supertype, try_sum_supertype, try_variance_aggregation_supertype,
+    try_mean_aggregation_supertype, try_percentile_aggregation_supertype, try_product_supertype,
+    try_skew_aggregation_supertype, try_stddev_aggregation_supertype, try_sum_supertype,
+    try_variance_aggregation_supertype,
 };
 // Import DataType enum
 pub use daft_schema::dtype::DataType;
@@ -31,7 +32,7 @@ pub use crate::array::{DataArray, FixedSizeListArray, file_array::FileArray};
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
 use crate::{
-    array::{ListArray, StructArray},
+    array::{ListArray, StructArray, UnionArray},
     file::{DaftMediaType, FileType},
 };
 
@@ -229,7 +230,7 @@ Please see the [Arrow Spec](https://github.com/apache/arrow/blob/081b4022fe6f659
 "
 );
 
-// impl_daft_arrow_datatype!(Float16Type, Float16);
+impl_daft_arrow_datatype!(Float16Type, Float16);
 impl_daft_arrow_datatype!(Float32Type, Float32);
 impl_daft_arrow_datatype!(Float64Type, Float64);
 impl_daft_arrow_datatype!(BinaryType, Binary);
@@ -241,6 +242,7 @@ impl_daft_arrow_datatype!(Decimal128Type, Unknown);
 impl_nested_datatype!(FixedSizeListType, FixedSizeListArray);
 impl_nested_datatype!(StructType, StructArray);
 impl_nested_datatype!(ListType, ListArray);
+impl_nested_datatype!(UnionType, UnionArray);
 
 impl_daft_logical_data_array_datatype!(TimestampType, Unknown, Int64Type);
 impl_daft_logical_data_array_datatype!(DateType, Date, Int32Type);
@@ -250,6 +252,8 @@ impl_daft_logical_data_array_datatype!(ImageType, Unknown, StructType);
 impl_daft_logical_data_array_datatype!(TensorType, Unknown, StructType);
 impl_daft_logical_data_array_datatype!(SparseTensorType, Unknown, StructType);
 impl_daft_logical_data_array_datatype!(FixedShapeSparseTensorType, Unknown, StructType);
+impl_daft_logical_data_array_datatype!(UuidType, Uuid, FixedSizeBinaryType);
+
 impl_daft_logical_fixed_size_list_datatype!(EmbeddingType, Unknown);
 impl_daft_logical_fixed_size_list_datatype!(FixedShapeImageType, Unknown);
 impl_daft_logical_fixed_size_list_datatype!(FixedShapeTensorType, Unknown);
@@ -360,6 +364,10 @@ impl NumericNative for u64 {
     type ARROWTYPE = arrow::datatypes::UInt64Type;
 }
 
+impl NumericNative for half::f16 {
+    type DAFTTYPE = Float16Type;
+    type ARROWTYPE = arrow::datatypes::Float16Type;
+}
 impl NumericNative for f32 {
     type DAFTTYPE = Float32Type;
     type ARROWTYPE = arrow::datatypes::Float32Type;
@@ -398,6 +406,9 @@ impl DaftNumericType for Int128Type {
     type Native = i128;
 }
 
+impl DaftNumericType for Float16Type {
+    type Native = half::f16;
+}
 impl DaftNumericType for Float32Type {
     type Native = f32;
 }
@@ -407,7 +418,7 @@ impl DaftNumericType for Float64Type {
 
 pub trait DaftIntegerType: DaftNumericType
 where
-    Self::Native: Ord,
+    Self::Native: Ord + std::hash::Hash,
 {
 }
 
@@ -438,6 +449,7 @@ where
 {
 }
 
+impl DaftFloatType for Float16Type {}
 impl DaftFloatType for Float32Type {}
 impl DaftFloatType for Float64Type {}
 
@@ -456,6 +468,7 @@ pub type UInt8Array = DataArray<UInt8Type>;
 pub type UInt16Array = DataArray<UInt16Type>;
 pub type UInt32Array = DataArray<UInt32Type>;
 pub type UInt64Array = DataArray<UInt64Type>;
+pub type Float16Array = DataArray<Float16Type>;
 pub type Float32Array = DataArray<Float32Type>;
 pub type Float64Array = DataArray<Float64Type>;
 pub type BinaryArray = DataArray<BinaryType>;

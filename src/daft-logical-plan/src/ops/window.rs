@@ -56,6 +56,29 @@ impl Window {
         aliases: Vec<String>,
         window_spec: Arc<WindowSpec>,
     ) -> Result<Self> {
+        for func in &window_functions {
+            if matches!(
+                func,
+                WindowExpr::FirstValue(_, _) | WindowExpr::LastValue(_, _)
+            ) {
+                if window_spec.partition_by.is_empty() {
+                    return Err(common_error::DaftError::ValueError(
+                        "first_value() and last_value() require a partition_by in the window spec — use Window().partition_by(...).order_by(...).rows_between(...)".to_string(),
+                    ).into());
+                }
+                if window_spec.order_by.is_empty() {
+                    return Err(common_error::DaftError::ValueError(
+                        "first_value() and last_value() require an order_by in the window spec — use Window().partition_by(...).order_by(...).rows_between(...)".to_string(),
+                    ).into());
+                }
+                if window_spec.frame.is_none() {
+                    return Err(common_error::DaftError::ValueError(
+                        "first_value() and last_value() require a frame (rows_between) in the window spec — use Window().partition_by(...).order_by(...).rows_between(...)".to_string(),
+                    ).into());
+                }
+            }
+        }
+
         let input_schema = input.schema();
 
         let fields = input_schema

@@ -15,8 +15,9 @@ use super::{
     pylib_scan_info::{PyPartitionField, PyPushdowns},
 };
 use crate::{
-    DataSourceTaskRef, PartitionField, Pushdowns, ScanOperator, ScanSource, ScanSourceKind,
-    ScanTask, ScanTaskRef, SourceConfig,
+    ClusteringKeys, DataSourceTaskRef, PartitionField, Pushdowns, ScanOperator, ScanSource,
+    ScanSourceKind, ScanTask, ScanTaskRef, SourceConfig,
+    clustering::PyClusteringKeys,
     pushdowns::SupportsPushdownFilters,
     source::{DataSource, DataSourceTask, DataSourceTaskStream, ReadOptions, RecordBatchStream},
     storage_config::StorageConfig,
@@ -51,6 +52,8 @@ pub struct PyDataSourceWrapper {
     name: String,
     schema: SchemaRef,
     partition_fields: Vec<PartitionField>,
+    clustering_keys: Option<ClusteringKeys>,
+    supports_count_pushdown: bool,
 }
 
 impl PyDataSourceWrapper {
@@ -82,11 +85,35 @@ impl PyDataSourceWrapper {
             })
             .unwrap_or_default();
 
+        // A source may declare how its output is clustered at execution time via
+        // `get_clustering_keys()`, whose returned `ClusteringKeys` proxy holds the bound
+        // `PyClusteringKeys` on its `_keys` attribute. This is a brand-new user-implemented API, so
+        // any failure (a raised exception, a missing/renamed attribute) degrades gracefully to
+        // "no declared clustering" — the optimizer stays conservative rather than panicking,
+        // mirroring how `get_partition_fields` uses `unwrap_or_default` above.
+        let clustering_keys: Option<ClusteringKeys> = source
+            .call_method0(intern!(source.py(), "get_clustering_keys"))
+            .ok()
+            .filter(|keys| !keys.is_none())
+            .and_then(|keys| keys.getattr(intern!(source.py(), "_keys")).ok())
+            .and_then(|keys| keys.extract::<PyClusteringKeys>().ok())
+            .map(ClusteringKeys::from);
+
+        // A source may opt into count pushdown via `supports_count_pushdown()`. Any
+        // failure degrades gracefully to false so the optimizer stays conservative,
+        // mirroring the `get_clustering_keys` handling above.
+        let supports_count_pushdown: bool = source
+            .call_method0(intern!(source.py(), "supports_count_pushdown"))
+            .and_then(|v| v.extract())
+            .unwrap_or(false);
+
         Self {
             source: source.unbind(),
             name,
             schema,
             partition_fields,
+            clustering_keys,
+            supports_count_pushdown,
         }
     }
 
@@ -230,6 +257,10 @@ impl ScanOperator for PyDataSourceWrapper {
         &self.partition_fields
     }
 
+    fn clustering_keys(&self) -> Option<ClusteringKeys> {
+        self.clustering_keys.clone()
+    }
+
     fn file_path_column(&self) -> Option<&str> {
         None
     }
@@ -252,6 +283,10 @@ impl ScanOperator for PyDataSourceWrapper {
 
     fn can_absorb_shard(&self) -> bool {
         false
+    }
+
+    fn supports_count_pushdown(&self) -> bool {
+        self.supports_count_pushdown
     }
 
     fn multiline_display(&self) -> Vec<String> {

@@ -13,4 +13,15 @@ impl Series {
 
         self.map()?.map_get(key)
     }
+
+    pub fn map_keys(&self) -> DaftResult<Self> {
+        let DataType::Map { .. } = self.data_type() else {
+            return Err(DaftError::TypeError(format!(
+                "map.map_keys not implemented for {}",
+                self.data_type()
+            )));
+        };
+
+        self.map()?.map_keys()
+    }
 }

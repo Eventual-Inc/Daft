@@ -110,7 +110,7 @@ export default function PlanVisualizer({ planJson }: { planJson: string }) {
     plan = parsePlan(planJson);
   } catch {
     return (
-      <div className="bg-zinc-900 p-4">
+      <div className="p-4">
         <pre
           className={`${main.className} text-sm font-mono text-zinc-300 whitespace-pre-wrap`}
         >
@@ -121,9 +121,9 @@ export default function PlanVisualizer({ planJson }: { planJson: string }) {
   }
 
   return (
-    <div className="bg-zinc-900 h-full flex flex-col">
+    <div className="h-full flex flex-col">
       {/* View toggle */}
-      <div className="flex items-center gap-2 px-4 pt-3 pb-2 border-b border-zinc-800">
+      <div className="flex items-center gap-2 px-6 pt-3 pb-2 border-b border-zinc-800">
         <button
           onClick={() => setViewMode("tree")}
           className={`${main.className} text-xs px-3 py-1 rounded-md transition-colors ${

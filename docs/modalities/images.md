@@ -3,6 +3,7 @@
 Daft is built to work comfortably with images. This guide shows you how to accomplish common image processing tasks with Daft:
 
 - [Downloading and decoding images](#quickstart)
+- [Near-duplicate detection with perceptual hashing](#near-duplicate-detection-with-perceptual-hashing)
 - [Generate image embeddings](#generate-image-embeddings)
 - [Classify images](#classify-images)
 
@@ -219,7 +220,7 @@ Daft data may contain `None` (null) values. Your UDF must handle these gracefull
 
 ### 2. Choosing the Right `return_dtype`
 
-The `return_dtype` argument in `@daft.func` or `@daft.udf` is crucial. It tells Daft what kind of data to expect, allowing for optimizations and correct schema inference.
+The `return_dtype` argument in `@daft.func`, `@daft.func.batch`, or `@daft.method.batch` is crucial. It tells Daft what kind of data to expect, allowing for optimizations and correct schema inference.
 
 - **`daft.DataType.tensor(dtype)`**: Best for returning numerical data (numpy arrays, torch tensors). This allows Daft to treat the column as a native tensor type, enabling further vectorized operations.
 - **`daft.DataType.binary()`**: Best for returning raw bytes (e.g. encoded PNG/JPEG data). This is often more memory efficient than full bitmaps, and avoids the pickling overhead associated with Python objects.
@@ -305,6 +306,82 @@ For even higher performance, especially with heavy libraries like OpenCV or PyTo
         return results
     ```
 
+## Near-Duplicate Detection with Perceptual Hashing
+
+[`image_hash()`][daft.functions.image_hash] computes a compact perceptual hash for each image.
+Two hashes with a low [Hamming distance](https://en.wikipedia.org/wiki/Hamming_distance) indicate visually similar images, making this a fast first-pass filter for near-duplicate detection at scale.
+
+### Algorithms
+
+| Method | Description |
+|---|---|
+| `"phash"` (default) | Full 2D DCT perceptual hash — most robust to mild edits |
+| `"phash_simple"` | Row-wise DCT only, compared to mean — faster variant of phash |
+| `"dhash"` | Horizontal difference / gradient hash — fast and accurate |
+| `"dhash_vertical"` | Vertical difference hash — compares top/bottom neighbours |
+| `"ahash"` | Average hash — fastest, least robust |
+| `"whash"` | Multi-level Haar wavelet hash (bit-exact with `imagehash.whash`) |
+| `"colorhash"` | Color distribution hash in HSV space; use `binbits` to control precision |
+| `"crop_resistant"` | Divides the image into a 3×3 grid and hashes each segment; robust against cropping at the cost of a larger (9×) hash |
+
+### Basic usage
+
+=== "🐍 Python"
+
+    ```python
+    import daft
+    from daft.functions import image_hash
+
+    df = daft.from_pydict({"urls": ["https://example.com/a.jpg", "https://example.com/b.jpg"]})
+    df = (
+        df.with_column("image", daft.col("urls").download(on_error="null").decode_image())
+          .with_column("hash", image_hash(daft.col("image")))  # default: phash, hash_size=8
+    )
+    df.select("urls", "hash").show()
+    ```
+
+The `hash` column has dtype `FixedSizeBinary(8)` — 64 bits per image for the default `hash_size=8`.
+
+### Finding near-duplicates
+
+Compare hashes within a dataset by joining the DataFrame with itself and computing the bitwise Hamming distance using the built-in [`hamming_distance`][daft.functions.hamming_distance]:
+
+=== "🐍 Python"
+
+    ```python
+    import daft
+    from daft.functions import image_hash, hamming_distance
+
+    df = daft.from_pydict({
+        "id": [1, 2, 3],
+        "image": [...],  # Image column
+    })
+    df = df.with_column("hash", image_hash(daft.col("image")))
+
+    # Self-join to find all pairs
+    left = df.select(daft.col("id").alias("id_a"), daft.col("hash").alias("hash_a"))
+    right = df.select(daft.col("id").alias("id_b"), daft.col("hash").alias("hash_b"))
+
+    pairs = (
+        left.join(right, how="cross")
+            .where(daft.col("id_a") < daft.col("id_b"))
+            .with_column("dist", hamming_distance(daft.col("hash_a"), daft.col("hash_b")))
+            .where(daft.col("dist") <= 10)  # threshold: ≤10 bits differ
+    )
+    pairs.show()
+    ```
+
+### Crop-resistant hashing
+
+Use `method="crop_resistant"` when images may have been cropped or have different aspect ratios.
+The output hash is 9× larger (72 bytes for `hash_size=8`):
+
+=== "🐍 Python"
+
+    ```python
+    df = df.with_column("hash_cr", image_hash(daft.col("image"), method="crop_resistant"))
+    ```
+
 ## Generate Image Embeddings
 
 Image embeddings convert images into numerical vectors that capture semantic meaning. Use them for semantic search, similarity calculations, etc.
@@ -357,7 +434,7 @@ Define your `ClassifyImages` UDF. Models are expensive to initialize and load, s
 === "🐍 Python"
 
     ```python
-    @daft.udf(return_dtype=daft.DataType.fixed_size_list(dtype=daft.DataType.string(), size=2))
+    @daft.cls()
     class ClassifyImages:
         def __init__(self):
             # Perform expensive initializations - create and load the pre-trained model
@@ -365,6 +442,7 @@ Define your `ClassifyImages` UDF. Models are expensive to initialize and load, s
             self.utils = torch.hub.load("NVIDIA/DeepLearningExamples:torchhub", "nvidia_convnets_processing_utils")
             self.model.eval().to(torch.device("cpu"))
 
+        @daft.method.batch(return_dtype=daft.DataType.fixed_size_list(dtype=daft.DataType.string(), size=2))
         def __call__(self, images_urls):
             batch = torch.cat([self.utils.prepare_input_from_uri(uri) for uri in images_urls]).to(torch.device("cpu"))
 
@@ -375,12 +453,13 @@ Define your `ClassifyImages` UDF. Models are expensive to initialize and load, s
             return [result[0] for result in results]
     ```
 
-Now you're ready to call this function on the `urls` column and store the outputs in a new column we'll call `classify_breed`:
+Now you're ready to instantiate the classifier and call it on the `urls` column, storing the outputs in a new column we'll call `classify_breed`:
 
 === "🐍 Python"
 
     ```python
-    classified_images_df = df_family.with_column("classify_breed", ClassifyImages(daft.col("urls")))
+    classifier = ClassifyImages()
+    classified_images_df = df_family.with_column("classify_breed", classifier(daft.col("urls")))
     classified_images_df.select("dog_name", "image", "classify_breed").show()
     ```
 
@@ -465,11 +544,14 @@ This is necessary because multimodal data such as images, videos, and audio file
 **Vectorized Operations:** Operations that can operate on many rows in parallel, such as byte decoding / encoding, aggregations, and scalar projections, will use larger batch sizes that can take advantage of vectorized execution using SIMD.
 
 === "🐍 Python"
-`python
+    ```python
     # Each operation uses different batch sizes automatically
-    df = daft.read_parquet("metadata.parquet") # Large batches
-          .with_column("image_data", col("urls").download())  # Small batches
-          .with_column("resized", col("image_data").resize(224, 224))  # Medium batches
-    `
+    df = (
+        daft.read_parquet("metadata.parquet")  # Large batches
+        .with_column("image_data", col("urls").download())  # Small batches
+        .with_column("image", col("image_data").decode_image())  # Decode to image
+        .with_column("resized", col("image").resize(224, 224))  # Medium batches
+    )
+    ```
 
 This approach allows processing of datasets larger than available memory, while maintaining optimal performance for each operation type.

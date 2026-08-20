@@ -4,22 +4,29 @@ pub mod events;
 #[cfg(feature = "python")]
 pub mod python;
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
-use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
-use common_metrics::{NodeID, QueryEndState, QueryID, QueryPlan, Stats};
+use common_metrics::{QueryEndState, QueryID, QueryPlan};
 use daft_core::prelude::SchemaRef;
-use daft_micropartition::MicroPartitionRef;
 pub use events::Event;
-use events::{OperatorEndEvent, OperatorStartEvent, StatsEvent};
 
+use crate::subscribers::events::EventHeader;
+
+#[derive(Debug)]
 pub struct QueryMetadata {
     pub output_schema: SchemaRef,
     pub unoptimized_plan: QueryPlan,
     pub runner: String,
     pub ray_dashboard_url: Option<String>,
     pub entrypoint: Option<String>,
+    pub python_version: Option<String>,
+    pub daft_version: Option<String>,
+    pub ray_version: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -28,71 +35,22 @@ pub struct QueryResult {
     pub error_message: Option<String>,
 }
 
-#[async_trait]
+pub fn now_epoch_secs() -> f64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock is before UNIX_EPOCH")
+        .as_secs_f64()
+}
+
+pub fn event_header(query_id: QueryID) -> EventHeader {
+    EventHeader {
+        query_id,
+        timestamp_epoch_secs: now_epoch_secs(),
+    }
+}
+
 pub trait Subscriber: Send + Sync + std::fmt::Debug + 'static {
-    fn on_query_start(&self, query_id: QueryID, metadata: Arc<QueryMetadata>) -> DaftResult<()>;
-    fn on_query_end(&self, query_id: QueryID, result: QueryResult) -> DaftResult<()>;
-    fn on_result_out(&self, query_id: QueryID, result: MicroPartitionRef) -> DaftResult<()>;
-    fn on_optimization_start(&self, query_id: QueryID) -> DaftResult<()>;
-    fn on_optimization_end(&self, query_id: QueryID, optimized_plan: QueryPlan) -> DaftResult<()>;
-    fn on_exec_start(&self, query_id: QueryID, physical_plan: QueryPlan) -> DaftResult<()>;
-    fn on_exec_start_with_id(
-        &self,
-        query_id: QueryID,
-        _execution_id: &str,
-        physical_plan: QueryPlan,
-    ) -> DaftResult<()> {
-        self.on_exec_start(query_id, physical_plan)
-    }
-    /// Deprecated: use on_operator_start instead
-    async fn on_exec_operator_start(&self, _query_id: QueryID, _node_id: NodeID) -> DaftResult<()> {
-        Ok(())
-    }
-    /// Deprecated: use on_stats instead
-    async fn on_exec_emit_stats(
-        &self,
-        _query_id: QueryID,
-        _stats: Arc<Vec<(NodeID, Stats)>>,
-    ) -> DaftResult<()> {
-        Ok(())
-    }
-    async fn on_exec_emit_stats_with_id(
-        &self,
-        query_id: QueryID,
-        _execution_id: &str,
-        stats: Arc<Vec<(NodeID, Stats)>>,
-    ) -> DaftResult<()> {
-        self.on_exec_emit_stats(query_id, stats).await
-    }
-    /// Deprecated: use on_operator_end instead
-    async fn on_exec_operator_end(&self, _query_id: QueryID, _node_id: NodeID) -> DaftResult<()> {
-        Ok(())
-    }
-    async fn on_exec_end(&self, query_id: QueryID) -> DaftResult<()>;
-    /// Called with process-level stats (memory, CPU) on each tick.
-    /// Default no-op; only subscribers interested in process stats need to override.
-    async fn on_process_stats(&self, _query_id: QueryID, _stats: Stats) -> DaftResult<()> {
-        Ok(())
-    }
-    async fn on_exec_end_with_id(&self, query_id: QueryID, _execution_id: &str) -> DaftResult<()> {
-        self.on_exec_end(query_id).await
-    }
-
-    async fn on_operator_start(&self, _event: Arc<OperatorStartEvent>) -> DaftResult<()> {
-        Ok(())
-    }
-
-    async fn on_operator_end(&self, _event: Arc<OperatorEndEvent>) -> DaftResult<()> {
-        Ok(())
-    }
-
-    async fn on_stats(&self, _event: Arc<StatsEvent>) -> DaftResult<()> {
-        Ok(())
-    }
-
-    async fn on_event(&self, _event: Event) -> DaftResult<()> {
-        Ok(())
-    }
+    fn on_event(&self, _event: Event) -> DaftResult<()>;
 }
 
 pub fn default_subscribers() -> HashMap<String, Arc<dyn Subscriber>> {

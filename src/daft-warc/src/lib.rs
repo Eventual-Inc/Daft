@@ -2,7 +2,9 @@ use std::{num::NonZeroUsize, sync::Arc};
 
 use arrow_array::{
     ArrayRef,
-    builder::{ArrayBuilder, Int64Builder, LargeBinaryBuilder, LargeStringBuilder},
+    builder::{
+        ArrayBuilder, FixedSizeBinaryBuilder, Int64Builder, LargeBinaryBuilder, LargeStringBuilder,
+    },
 };
 use chrono::{DateTime, Utc};
 use common_error::{DaftError, DaftResult};
@@ -119,7 +121,7 @@ impl WarcHeaderState {
 struct WarcRecordBatchBuilder {
     chunk_size: usize,
     schema: SchemaRef,
-    record_id_array: LargeStringBuilder,
+    record_id_array: FixedSizeBinaryBuilder,
     warc_target_uri_array: LargeStringBuilder,
     warc_type_array: LargeStringBuilder,
     warc_date_array: Int64Builder,
@@ -128,7 +130,6 @@ struct WarcRecordBatchBuilder {
     content_array: LargeBinaryBuilder,
     header_array: LargeStringBuilder,
     rows_processed: usize,
-    record_id_elements_so_far: usize,
     warc_target_uri_elements_so_far: usize,
     warc_type_elements_so_far: usize,
     content_bytes_so_far: usize,
@@ -143,10 +144,7 @@ impl WarcRecordBatchBuilder {
         Self {
             chunk_size,
             schema,
-            record_id_array: LargeStringBuilder::with_capacity(
-                chunk_size,
-                Self::DEFAULT_STRING_LENGTH * chunk_size,
-            ),
+            record_id_array: FixedSizeBinaryBuilder::with_capacity(chunk_size, 16),
             warc_target_uri_array: LargeStringBuilder::with_capacity(
                 chunk_size,
                 Self::DEFAULT_STRING_LENGTH * chunk_size,
@@ -170,7 +168,6 @@ impl WarcRecordBatchBuilder {
                 Self::DEFAULT_STRING_LENGTH * chunk_size,
             ),
             rows_processed: 0,
-            record_id_elements_so_far: 0,
             warc_target_uri_elements_so_far: 0,
             warc_type_elements_so_far: 0,
             content_bytes_so_far: 0,
@@ -181,7 +178,7 @@ impl WarcRecordBatchBuilder {
     #[allow(clippy::too_many_arguments)]
     fn push(
         &mut self,
-        record_id: Option<&str>,
+        record_id: Option<&Uuid>,
         warc_target_uri: Option<&str>,
         warc_type: Option<&str>,
         warc_date: Option<i64>,
@@ -189,7 +186,14 @@ impl WarcRecordBatchBuilder {
         warc_identified_payload_type: Option<&str>,
         header: Option<&str>,
     ) {
-        self.record_id_array.append_option(record_id);
+        if let Some(record_id) = record_id {
+            self.record_id_array
+                .append_value(record_id)
+                .expect("Expected to be able to append a UUID to a FixedSizeBinaryBuilder[16]");
+        } else {
+            self.record_id_array.append_null();
+        }
+
         self.warc_target_uri_array.append_option(warc_target_uri);
         self.warc_type_array.append_option(warc_type);
         self.warc_date_array.append_option(warc_date);
@@ -201,7 +205,6 @@ impl WarcRecordBatchBuilder {
 
         // book keeping
         self.rows_processed += 1;
-        self.record_id_elements_so_far += record_id.map(|s| s.len()).unwrap_or(0);
         self.warc_target_uri_elements_so_far += warc_target_uri.map(|s| s.len()).unwrap_or(0);
         self.warc_type_elements_so_far += warc_type.map(|s| s.len()).unwrap_or(0);
         self.content_bytes_so_far += warc_content_length.map(|l| l as usize).unwrap_or(0);
@@ -232,15 +235,12 @@ impl WarcRecordBatchBuilder {
             )?;
             let chunk_size = self.chunk_size;
             let rows_processed = self.rows_processed;
-            let avg_record_id_size = self.record_id_elements_so_far / rows_processed;
 
             // Reset arrays.
             // TODO: Is this necessary with arrow_array::builder::ArrayBuilder?
-            self.record_id_array =
-                LargeStringBuilder::with_capacity(chunk_size, avg_record_id_size * chunk_size);
+            self.record_id_array = FixedSizeBinaryBuilder::with_capacity(chunk_size, 16);
 
             let avg_warc_target_uri_size = self.warc_target_uri_elements_so_far / rows_processed;
-
             self.warc_target_uri_array = LargeStringBuilder::with_capacity(
                 chunk_size,
                 avg_warc_target_uri_size * chunk_size,
@@ -333,10 +333,7 @@ impl WarcRecordBatchIterator {
                         .expect("Content length is required");
 
                     self.rb_builder.push(
-                        self.header_state
-                            .record_id
-                            .map(|id| id.to_string())
-                            .as_deref(),
+                        self.header_state.record_id.as_ref(),
                         self.header_state.warc_target_uri.as_deref(),
                         self.header_state
                             .warc_type
@@ -390,7 +387,7 @@ impl WarcRecordBatchIterator {
                             "WARC-Record-ID" => {
                                 if value.starts_with('<') && value.ends_with('>') {
                                     let uuid_str = &value[10..value.len() - 1];
-                                    if let Ok(uuid) = Uuid::parse_str(uuid_str) {
+                                    if let Ok(uuid) = Uuid::try_parse(uuid_str) {
                                         self.header_state.record_id = Some(uuid);
                                     }
                                 }
@@ -637,7 +634,7 @@ mod tests {
     #[test]
     fn test_warc_read_iostats() -> DaftResult<()> {
         let schema = Arc::new(Schema::new(vec![
-            Field::new("WARC-Record-ID", daft_core::prelude::DataType::Utf8),
+            Field::new("WARC-Record-ID", daft_core::prelude::DataType::Uuid),
             Field::new("WARC-Type", daft_core::prelude::DataType::Utf8),
             Field::new(
                 "WARC-Date",

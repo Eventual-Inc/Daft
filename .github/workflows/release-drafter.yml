@@ -1,5 +1,3 @@
-# Adapted from: https://github.com/release-drafter/release-drafter#readme
-
 name: Release Drafter
 
 on:
@@ -8,7 +6,6 @@ on:
     branches:
     - main
   workflow_dispatch:
-
 
 permissions:
   # write permission is required to create a github release
@@ -21,16 +18,84 @@ jobs:
   update_release_draft:
     runs-on: ubuntu-latest
     steps:
-      # (Optional) GitHub Enterprise requires GHE_HOST variable set
-      #- name: Set GHE_HOST
-      #  run: |
-      #    echo "GHE_HOST=${GITHUB_SERVER_URL##https:\/\/}" >> $GITHUB_ENV
+    - name: Update draft release notes
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const owner = context.repo.owner;
+          const repo = context.repo.repo;
+          const draftTagPlaceholder = 'v0.0.0-next';
 
-      # Drafts your next Release notes as Pull Requests are merged into "master"
-    - uses: release-drafter/release-drafter@v7
-        # (Optional) specify config name to use, relative to .github/. Default: release-drafter.yml
-        # with:
-        #   config-name: my-config.yml
-        #   disable-autolabeler: true
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          const { data: releases } = await github.rest.repos.listReleases({
+            owner,
+            repo,
+            per_page: 100,
+          });
+
+          const publishedReleases = releases.filter((release) => !release.draft && !release.prerelease);
+          const draftRelease = releases.find((release) => release.draft);
+
+          const parseSemver = (tag) => {
+            const match = tag.replace(/^v/i, '').match(/^(\d+)\.(\d+)\.(\d+)/);
+            if (!match) {
+              return null;
+            }
+            return [Number(match[1]), Number(match[2]), Number(match[3])];
+          };
+
+          const compareSemver = (left, right) => {
+            for (let index = 0; index < 3; index += 1) {
+              if (left[index] !== right[index]) {
+                return left[index] - right[index];
+              }
+            }
+            return 0;
+          };
+
+          const previousTag = publishedReleases
+            .map((release) => ({ tag: release.tag_name, semver: parseSemver(release.tag_name) }))
+            .filter((release) => release.semver)
+            .sort((left, right) => compareSemver(right.semver, left.semver))[0]?.tag;
+
+          let tagName;
+          let releaseId;
+
+          if (draftRelease) {
+            tagName = draftRelease.tag_name;
+            releaseId = draftRelease.id;
+          } else {
+            tagName = draftTagPlaceholder;
+            const { data: newDraft } = await github.rest.repos.createRelease({
+              owner,
+              repo,
+              tag_name: tagName,
+              target_commitish: 'main',
+              name: tagName,
+              body: '',
+              draft: true,
+            });
+            releaseId = newDraft.id;
+          }
+
+          const generateNotesParams = {
+            owner,
+            repo,
+            tag_name: tagName,
+            target_commitish: 'main',
+            configuration_file_path: '.github/release.yml',
+          };
+          if (previousTag) {
+            generateNotesParams.previous_tag_name = previousTag;
+          }
+
+          const { data: notes } = await github.rest.repos.generateReleaseNotes(generateNotesParams);
+
+          await github.rest.repos.updateRelease({
+            owner,
+            repo,
+            release_id: releaseId,
+            body: notes.body,
+            name: notes.name || tagName,
+          });
+
+          core.info(`Updated draft release ${tagName}${previousTag ? ` since ${previousTag}` : ''}`);

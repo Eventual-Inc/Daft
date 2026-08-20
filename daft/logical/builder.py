@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 from daft.context import get_context
 from daft.daft import (
+    AsofJoinStrategy,
     CountMode,
     FileFormat,
     IOConfig,
@@ -142,6 +143,10 @@ class LogicalPlanBuilder:
     ) -> LogicalPlanBuilder:
         to_select_pyexprs = [expr._expr for expr in to_select]
         builder = self._builder.select(to_select_pyexprs)
+        return LogicalPlanBuilder(builder)
+
+    def with_checkpoint(self, config: Any) -> LogicalPlanBuilder:
+        builder = self._builder.with_checkpoint(config)
         return LogicalPlanBuilder(builder)
 
     def with_columns(self, columns: list[Expression]) -> LogicalPlanBuilder:
@@ -297,6 +302,7 @@ class LogicalPlanBuilder:
         strategy: JoinStrategy | None = None,
         prefix: str | None = None,
         suffix: str | None = None,
+        key_filtering_config: Any = None,
     ) -> LogicalPlanBuilder:
         builder = self._builder.join(
             right._builder,
@@ -306,6 +312,33 @@ class LogicalPlanBuilder:
             strategy,
             prefix,
             suffix,
+            key_filtering_config,
+        )
+        return LogicalPlanBuilder(builder)
+
+    def join_asof(
+        self,
+        right: LogicalPlanBuilder,
+        left_by: list[Expression],
+        right_by: list[Expression],
+        left_on: Expression,
+        right_on: Expression,
+        strategy: AsofJoinStrategy,
+        prefix: str | None = None,
+        suffix: str | None = None,
+        assume_sorted_and_aligned: bool = False,
+    ) -> LogicalPlanBuilder:
+        """Asof join (logical plan). Each left row matches the nearest right row according to the chosen strategy."""
+        builder = self._builder.join_asof(
+            right._builder,
+            [expr._expr for expr in left_by],
+            [expr._expr for expr in right_by],
+            left_on._expr,
+            right_on._expr,
+            strategy,
+            prefix,
+            suffix,
+            assume_sorted_and_aligned,
         )
         return LogicalPlanBuilder(builder)
 
@@ -347,6 +380,7 @@ class LogicalPlanBuilder:
         file_format_option: PyFormatSinkOption | None = None,
         partition_cols: list[Expression] | None = None,
         compression: str | None = None,
+        single_file: bool = False,
     ) -> LogicalPlanBuilder:
         part_cols_pyexprs = [expr._expr for expr in partition_cols] if partition_cols is not None else None
         builder = self._builder.table_write(
@@ -358,6 +392,7 @@ class LogicalPlanBuilder:
             part_cols_pyexprs,
             compression,
             io_config,
+            single_file,
         )
         return LogicalPlanBuilder(builder)
 

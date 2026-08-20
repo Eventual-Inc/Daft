@@ -6,12 +6,17 @@ use common_metrics::{
 };
 use common_partitioning::PartitionRef;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
-use daft_logical_plan::{ClusteringSpec, InMemoryInfo, stats::StatsState};
+use daft_logical_plan::{InMemoryInfo, stats::StatsState};
 use futures::{StreamExt, stream};
 
-use super::{PipelineNodeContext, PipelineNodeImpl, scan_source::SourceStats};
+use super::{
+    PipelineNodeContext, PipelineNodeImpl, clustering::BoundClusteringSpec,
+    scan_source::SourceStats,
+};
 use crate::{
-    pipeline_node::{DistributedPipelineNode, NodeID, PipelineNodeConfig, TaskBuilderStream},
+    pipeline_node::{
+        ClusteringStrategy, DistributedPipelineNode, NodeID, PipelineNodeConfig, TaskBuilderStream,
+    },
     plan::{PlanConfig, PlanExecutionContext},
     scheduling::task::SwordfishTaskBuilder,
     statistics::stats::RuntimeStatsRef,
@@ -47,7 +52,7 @@ impl InMemorySourceNode {
         let config = PipelineNodeConfig::new(
             info.source_schema.clone(),
             plan_config.config.clone(),
-            Arc::new(ClusteringSpec::unknown_with_num_partitions(num_partitions)),
+            ClusteringStrategy::Explicit(BoundClusteringSpec::unknown(num_partitions)),
         );
         Self {
             config,

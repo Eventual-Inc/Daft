@@ -11,8 +11,11 @@ use crate::{
 impl<T> DaftLogical<&Self> for DataArray<T>
 where
     T: DaftIntegerType,
-    <T as DaftNumericType>::Native:
-        Ord + BitAnd<Output = T::Native> + BitOr<Output = T::Native> + BitXor<Output = T::Native>,
+    <T as DaftNumericType>::Native: Ord
+        + std::hash::Hash
+        + BitAnd<Output = T::Native>
+        + BitOr<Output = T::Native>
+        + BitXor<Output = T::Native>,
 {
     type Output = DaftResult<Self>;
 

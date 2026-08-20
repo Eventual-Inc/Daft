@@ -74,5 +74,6 @@ class TransformersImageEmbedder(ImageEmbedder):
         pixel_values = processed["pixel_values"].to(self.device)
 
         with torch.inference_mode():
-            embeddings = self.model.get_image_features(pixel_values)
+            output = self.model.get_image_features(pixel_values)
+            embeddings = output if isinstance(output, torch.Tensor) else output.pooler_output
         return embeddings.cpu().numpy().tolist()

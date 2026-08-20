@@ -10,7 +10,7 @@ use common_metrics::{
 };
 use daft_dsl::{expr::bound_expr::BoundExpr, functions::python::UDFProperties};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
-use daft_logical_plan::{partitioning::translate_clustering_spec, stats::StatsState};
+use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use itertools::Itertools;
 use opentelemetry::KeyValue;
@@ -18,8 +18,8 @@ use opentelemetry::KeyValue;
 use super::PipelineNodeImpl;
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext,
-        TaskBuilderStream, metrics::key_values_from_context,
+        ClusteringStrategy, DistributedPipelineNode, NodeID, PipelineNodeConfig,
+        PipelineNodeContext, TaskBuilderStream, metrics::key_values_from_context,
     },
     plan::{PlanConfig, PlanExecutionContext},
     statistics::{RuntimeStats, stats::RuntimeStatsRef},
@@ -29,6 +29,9 @@ pub struct UdfStats {
     duration_us: Counter,
     rows_in: Counter,
     rows_out: Counter,
+    bytes_in: Counter,
+    bytes_out: Counter,
+    num_tasks: Counter,
     custom_counters: Mutex<HashMap<Arc<str>, Counter>>,
     meter: Meter,
     node_kv: Vec<KeyValue>,
@@ -41,6 +44,9 @@ impl UdfStats {
             duration_us: meter.duration_us_metric(),
             rows_in: meter.rows_in_metric(),
             rows_out: meter.rows_out_metric(),
+            bytes_in: meter.bytes_in_metric(),
+            bytes_out: meter.bytes_out_metric(),
+            num_tasks: meter.num_tasks_metric(),
             custom_counters: Mutex::new(HashMap::new()),
             meter: meter.clone(),
             node_kv,
@@ -58,6 +64,10 @@ impl RuntimeStats for UdfStats {
         self.rows_in.add(snapshot.rows_in, self.node_kv.as_slice());
         self.rows_out
             .add(snapshot.rows_out, self.node_kv.as_slice());
+        self.bytes_in
+            .add(snapshot.bytes_in, self.node_kv.as_slice());
+        self.bytes_out
+            .add(snapshot.bytes_out, self.node_kv.as_slice());
 
         // Handle custom counters dynamically
         let mut custom_counters = self.custom_counters.lock().unwrap();
@@ -82,7 +92,14 @@ impl RuntimeStats for UdfStats {
                 .iter()
                 .map(|(name, counter)| (name.clone(), counter.load(Ordering::Relaxed)))
                 .collect(),
+            bytes_in: self.bytes_in.load(Ordering::Relaxed),
+            bytes_out: self.bytes_out.load(Ordering::Relaxed),
+            num_tasks: self.num_tasks.load(Ordering::Relaxed),
         })
+    }
+
+    fn increment_num_tasks(&self) {
+        self.num_tasks.add(1, self.node_kv.as_slice());
     }
 }
 
@@ -128,13 +145,10 @@ impl UDFNode {
         let config = PipelineNodeConfig::new(
             schema,
             plan_config.config.clone(),
-            translate_clustering_spec(
-                child.config().clustering_spec.clone(),
-                &passthrough_columns
-                    .iter()
-                    .map(|e| e.inner().clone())
-                    .collect::<Vec<_>>(),
-            ),
+            ClusteringStrategy::Projection {
+                child: &child,
+                projection: &passthrough_columns,
+            },
         );
         Self {
             config,

@@ -295,6 +295,7 @@ impl<'de> Deserializer<'de> for OwnedLiteralDeserializer {
             Literal::UInt32(u32) => visitor.visit_u32(u32),
             Literal::Int64(i64) => visitor.visit_i64(i64),
             Literal::UInt64(u64) => visitor.visit_u64(u64),
+            Literal::Float16(f16) => visitor.visit_f32(f16.to_f32()),
             Literal::Float32(f32) => visitor.visit_f32(f32),
             Literal::Float64(f64) => visitor.visit_f64(f64),
             Literal::Timestamp(..) => Err(LitError::custom("Not implemented: Timestamp")),
@@ -304,6 +305,7 @@ impl<'de> Deserializer<'de> for OwnedLiteralDeserializer {
             Literal::Interval(..) => Err(LitError::custom("Not implemented: Interval")),
             Literal::Decimal(_, _, _) => Err(LitError::custom("Not implemented: Decimal")),
             Literal::List(_) => Err(LitError::custom("Not implemented: List")),
+            Literal::Uuid(_) => Err(LitError::custom("Not implemented: UUID")),
             #[cfg(feature = "python")]
             Literal::Python(_) => Err(LitError::custom("Not implemented: Python")),
             Literal::Struct(_) => Err(LitError::custom("Not implemented: Struct")),
@@ -344,6 +346,7 @@ impl<'de> Deserializer<'de> for LiteralDeserializer<'de> {
             Literal::UInt32(u32) => visitor.visit_u32(*u32),
             Literal::Int64(i64) => visitor.visit_i64(*i64),
             Literal::UInt64(u64) => visitor.visit_u64(*u64),
+            Literal::Float16(f16) => visitor.visit_f32(f16.to_f32()),
             Literal::Float32(f32) => visitor.visit_f32(*f32),
             Literal::Float64(f64) => visitor.visit_f64(*f64),
             Literal::Timestamp(..) => Err(LitError::custom("Not implemented: Timestamp")),
@@ -353,6 +356,7 @@ impl<'de> Deserializer<'de> for LiteralDeserializer<'de> {
             Literal::Interval(..) => Err(LitError::custom("Not implemented: Interval")),
             Literal::Decimal(_, _, _) => Err(LitError::custom("Not implemented: Decimal")),
             Literal::List(s) => visitor.visit_seq(SeriesDeserializer::new(s)),
+            Literal::Uuid(_) => Err(LitError::custom("Not implemented: UUID")),
             #[cfg(feature = "python")]
             Literal::Python(_) => Err(LitError::custom("Not implemented: Python")),
             Literal::File(_) => Err(LitError::custom("Not implemented: File")),

@@ -42,7 +42,7 @@ def get_tests_daft_runner_name() -> Literal["ray"] | Literal["native"]:
     return name
 
 
-class UuidType(pa.ExtensionType):
+class DaftUuidType(pa.ExtensionType):
     NAME = "daft.uuid"
 
     def __init__(self):
@@ -52,7 +52,7 @@ class UuidType(pa.ExtensionType):
         return b""
 
     def __reduce__(self):
-        return UuidType, ()
+        return DaftUuidType, ()
 
     @classmethod
     def __arrow_ext_deserialize__(cls, storage_type, serialized):
@@ -60,8 +60,8 @@ class UuidType(pa.ExtensionType):
 
 
 @pytest.fixture
-def uuid_ext_type() -> Generator[UuidType, None, None]:
-    ext_type = UuidType()
+def uuid_ext_type() -> Generator[DaftUuidType, None, None]:
+    ext_type = DaftUuidType()
     pa.register_extension_type(ext_type)
     yield ext_type
     pa.unregister_extension_type(ext_type.NAME)

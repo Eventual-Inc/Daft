@@ -30,6 +30,25 @@ pub(crate) fn build_filename(
     }
 }
 
+/// Helper function to build the filename for the output file, treating `path` as the
+/// exact target file path (no partition dir, no UUID).
+pub(crate) fn build_filename_single(source_type: &SourceType, path: &str) -> DaftResult<PathBuf> {
+    match source_type {
+        SourceType::File => {
+            let stripped = daft_io::strip_file_uri_to_path(path).unwrap_or(path);
+            Ok(PathBuf::from(stripped))
+        }
+        source if source.supports_native_writer() => {
+            let ObjectPath { bucket, key, .. } = daft_io::utils::parse_object_url(path)?;
+            Ok(PathBuf::from(format!("{}/{}", bucket, key)))
+        }
+        _ => Err(DaftError::ValueError(format!(
+            "Unsupported source type: {:?}",
+            source_type
+        ))),
+    }
+}
+
 /// Helper function to get the partition path from the record batch.
 fn get_partition_path(partition_values: Option<&RecordBatch>) -> DaftResult<PathBuf> {
     match partition_values {
@@ -94,7 +113,7 @@ fn build_local_file_path(
     partition_path: PathBuf,
     filename: String,
 ) -> DaftResult<PathBuf> {
-    let root_dir = Path::new(root_dir.trim_start_matches("file://"));
+    let root_dir = Path::new(daft_io::strip_file_uri_to_path(root_dir).unwrap_or(root_dir));
     let dir = root_dir.join(partition_path);
     Ok(dir.join(filename))
 }
@@ -126,7 +145,7 @@ mod tests {
     };
     use daft_recordbatch::RecordBatch;
 
-    use crate::utils::record_batch_to_partition_path;
+    use crate::utils::{build_object_path, record_batch_to_partition_path};
 
     #[test]
     fn test_record_batch_to_partition_string() -> DaftResult<()> {
@@ -197,6 +216,42 @@ mod tests {
             result.as_ref().unwrap_err().to_string(),
             "DaftError::InternalError Only single row RecordBatches can be converted to partition strings"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_build_object_path_preserves_port() -> DaftResult<()> {
+        use std::path::PathBuf;
+
+        // Regression guard: a port-bearing authority (e.g. an HDFS name node)
+        // must keep its port with the bucket and never leak it into the key,
+        // which previously produced an invalid path like `localhost/:9000/...`.
+        let path = build_object_path(
+            "hdfs://localhost:9000/tmp/out",
+            PathBuf::new(),
+            "file.parquet".to_string(),
+        )?;
+        assert_eq!(path, PathBuf::from("localhost:9000/tmp/out/file.parquet"));
+
+        // With a partition path.
+        let path = build_object_path(
+            "hdfs://localhost:9000/tmp/out",
+            PathBuf::from("year=2023"),
+            "file.parquet".to_string(),
+        )?;
+        assert_eq!(
+            path,
+            PathBuf::from("localhost:9000/tmp/out/year=2023/file.parquet")
+        );
+
+        // Port-less authority (e.g. S3) is unaffected.
+        let path = build_object_path(
+            "s3://bucket/prefix",
+            PathBuf::new(),
+            "file.parquet".to_string(),
+        )?;
+        assert_eq!(path, PathBuf::from("bucket/prefix/file.parquet"));
+
         Ok(())
     }
 }

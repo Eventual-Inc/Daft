@@ -22,8 +22,9 @@ use daft_schema::{
 use super::PipelineNodeImpl;
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext,
-        TaskBuilderStream, project::ProjectNode, translate::LogicalPlanToPipelineNodeTranslator,
+        ClusteringStrategy, DistributedPipelineNode, NodeID, PipelineNodeConfig,
+        PipelineNodeContext, TaskBuilderStream, project::ProjectNode,
+        translate::LogicalPlanToPipelineNodeTranslator,
     },
     plan::{PlanConfig, PlanExecutionContext},
 };
@@ -78,9 +79,9 @@ impl AggregateNode {
         let config = PipelineNodeConfig::new(
             output_schema,
             plan_config.config.clone(),
-            // Often child is a repartition node
-            // TODO: Be more specific if group_by columns overlap with partitioning columns
-            child.config().clustering_spec.clone(),
+            // Often the child is a repartition node.
+            // TODO: Be more specific if group_by columns overlap with partitioning columns.
+            ClusteringStrategy::Passthrough { child: &child },
         );
         Self {
             config,
@@ -236,7 +237,11 @@ fn split_groupby_aggs(
 impl LogicalPlanToPipelineNodeTranslator {
     /// Generate PipelineNodes for aggregates with no pre-aggregation.
     /// This is only necessary if the pre-aggregation (first stage aggregation) is empty.
-    /// That is currently only applicable for MapGroup aggregations
+    /// That is currently only applicable for:
+    /// - MapGroups aggregations, because they can't be decomposed
+    /// - ApproxCountDistinct aggregations, because we can't merge HLL sketches
+    /// - List aggregations, because it is more efficient to do a single post-repartition aggregate
+    /// - Decimal128 aggregations, because it messed with the supertyping logic
     fn gen_without_pre_agg(
         &mut self,
         input_node: DistributedPipelineNode,
@@ -244,17 +249,19 @@ impl LogicalPlanToPipelineNodeTranslator {
         aggregations: Vec<BoundAggExpr>,
         output_schema: SchemaRef,
         partition_by: Vec<BoundExpr>,
+        input_size_bytes: usize,
     ) -> DaftResult<DistributedPipelineNode> {
         let shuffle = if partition_by.is_empty() {
-            self.gen_gather_node(input_node)
+            self.gen_gather_node(input_node, input_size_bytes)
         } else {
-            self.gen_shuffle_node(
+            self.gen_repartition_node(
                 RepartitionSpec::Hash(HashRepartitionConfig::new(
                     None,
                     partition_by.into_iter().map(|e| e.into()).collect(),
                 )),
                 input_node.config().schema.clone(),
                 input_node,
+                input_size_bytes,
             )?
         };
 
@@ -279,6 +286,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         input_node: DistributedPipelineNode,
         split_details: GroupByAggSplit,
         output_schema: SchemaRef,
+        input_size_bytes: usize,
     ) -> DaftResult<DistributedPipelineNode> {
         let num_partitions = input_node.config().clustering_spec.num_partitions();
         let node_id = self.get_next_pipeline_node_id();
@@ -302,9 +310,9 @@ impl LogicalPlanToPipelineNodeTranslator {
                 .shuffle_aggregation_default_partitions,
         );
         let shuffle = if split_details.partition_by.is_empty() {
-            self.gen_gather_node(initial_agg)
+            self.gen_gather_node(initial_agg, input_size_bytes)
         } else {
-            self.gen_shuffle_node(
+            self.gen_repartition_node(
                 RepartitionSpec::Hash(HashRepartitionConfig::new(
                     Some(num_partitions),
                     split_details
@@ -313,8 +321,9 @@ impl LogicalPlanToPipelineNodeTranslator {
                         .map(|e| e.into())
                         .collect(),
                 )),
-                split_details.second_stage_schema.clone(),
+                split_details.first_stage_schema.clone(),
                 initial_agg,
+                input_size_bytes,
             )?
         };
 
@@ -363,8 +372,9 @@ impl LogicalPlanToPipelineNodeTranslator {
         aggregations: Vec<BoundAggExpr>,
         output_schema: SchemaRef,
         partition_by: Vec<BoundExpr>,
+        input_size_bytes: usize,
     ) -> DaftResult<DistributedPipelineNode> {
-        if Self::needs_hash_repartition(&input_node, &group_by)? {
+        if Self::can_skip_hash_repartition(&input_node, &group_by)? {
             let node_id = self.get_next_pipeline_node_id();
             return Ok(DistributedPipelineNode::new(
                 Arc::new(AggregateNode::new(
@@ -387,14 +397,12 @@ impl LogicalPlanToPipelineNodeTranslator {
         )?;
 
         if split_details.first_stage_aggs.is_empty()
-        // Special case for ApproxCountDistinct
-        // Right now, we can't do a pre-aggregation because we can't recursively merge HLL sketches
-        // TODO: Look for alternative approaches for this
+            // Special case for:
+            // - List: it is more efficient to do a single post-repartition aggregate
+            // - Decimal128: we can't do a pre-aggregation because decimal dtype will change in swordfish's own two stage aggregation
             || aggregations
                 .iter()
-                .any(|agg| matches!(agg.as_ref(), AggExpr::ApproxCountDistinct(_)))
-            // Special case for Decimal128
-            // Right now, we can't do a pre-aggregation because decimal dtype will change in swordfish's own two stage aggregation
+                .any(|agg| matches!(agg.as_ref(), AggExpr::List(_)))
             || split_details
                 .first_stage_schema
                 .fields()
@@ -407,9 +415,10 @@ impl LogicalPlanToPipelineNodeTranslator {
                 aggregations,
                 output_schema,
                 partition_by,
+                input_size_bytes,
             )
         } else {
-            self.gen_with_pre_agg(input_node, split_details, output_schema)
+            self.gen_with_pre_agg(input_node, split_details, output_schema, input_size_bytes)
         }
     }
 }

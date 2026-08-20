@@ -17,6 +17,7 @@ use common_py_serde::PyObjectWrapper;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::{
     datatypes::IntervalValue,
@@ -40,6 +41,8 @@ pub enum Literal {
     Utf8(String),
     /// A raw binary array
     Binary(Vec<u8>),
+    /// A UUID (Universally Unique Identifier) represented as 16 bytes
+    Uuid(Uuid),
     /// A 8-bit signed integer number.
     Int8(i8),
     /// A 8-bit unsigned integer number.
@@ -80,6 +83,8 @@ pub enum Literal {
     Duration(i64, TimeUnit),
     /// Interval: relative elapsed time measured in (months, days, nanoseconds)
     Interval(IntervalValue),
+    /// A 16-bit floating point number.
+    Float16(half::f16),
     /// A 32-bit floating point number.
     Float32(f32),
     /// A 64-bit floating point number.
@@ -128,6 +133,7 @@ impl Hash for Literal {
             Self::Boolean(bool) => bool.hash(state),
             Self::Utf8(s) => s.hash(state),
             Self::Binary(arr) => arr.hash(state),
+            Self::Uuid(uuid) => uuid.hash(state),
             Self::Int8(n) => n.hash(state),
             Self::UInt8(n) => n.hash(state),
             Self::Int16(n) => n.hash(state),
@@ -153,6 +159,7 @@ impl Hash for Literal {
             Self::Interval(n) => {
                 n.hash(state);
             }
+            Self::Float16(n) => FloatWrapper(*n).hash(state),
             Self::Float32(n) => FloatWrapper(*n).hash(state),
             Self::Float64(n) => FloatWrapper(*n).hash(state),
             Self::Decimal(n, precision, scale) => {
@@ -210,6 +217,7 @@ impl Display for Literal {
             Self::Boolean(val) => write!(f, "{val}"),
             Self::Utf8(val) => write!(f, "\"{val}\""),
             Self::Binary(val) => write!(f, "Binary[{}]", val.len()),
+            Self::Uuid(val) => write!(f, "Uuid({})", val),
             Self::Int8(val) => write!(f, "{val}"),
             Self::UInt8(val) => write!(f, "{val}"),
             Self::Int16(val) => write!(f, "{val}"),
@@ -222,6 +230,7 @@ impl Display for Literal {
             Self::Time(val, tu) => write!(f, "{}", display_time64(*val, tu)),
             Self::Timestamp(val, tu, tz) => write!(f, "{}", display_timestamp(*val, tu, tz)),
             Self::Duration(val, tu) => write!(f, "{}", display_duration(*val, tu)),
+            Self::Float16(val) => write!(f, "{val:.1}"),
             Self::Float32(val) => write!(f, "{val:.1}"),
             Self::Float64(val) => write!(f, "{val:.1}"),
             Self::Decimal(val, precision, scale) => {
@@ -302,6 +311,7 @@ impl Literal {
             Self::Boolean(_) => DataType::Boolean,
             Self::Utf8(_) => DataType::Utf8,
             Self::Binary(_) => DataType::Binary,
+            Self::Uuid(_) => DataType::Uuid,
             Self::Int8(_) => DataType::Int8,
             Self::UInt8(_) => DataType::UInt8,
             Self::Int16(_) => DataType::Int16,
@@ -314,6 +324,7 @@ impl Literal {
             Self::Time(_, tu) => DataType::Time(*tu),
             Self::Timestamp(_, tu, tz) => DataType::Timestamp(*tu, tz.clone()),
             Self::Duration(_, tu) => DataType::Duration(*tu),
+            Self::Float16(_) => DataType::Float16,
             Self::Float32(_) => DataType::Float32,
             Self::Float64(_) => DataType::Float64,
             Self::Decimal(_, precision, scale) => {
@@ -391,6 +402,7 @@ impl Literal {
                     Ok(self.clone())
                 }
             }
+            Self::Float16(v) => Ok(Self::Float16(-v)),
             Self::Float32(v) => Ok(Self::Float32(-v)),
             Self::Float64(v) => Ok(Self::Float64(-v)),
             Self::Decimal(v, precision, scale) => Ok(Self::Decimal(-v, *precision, *scale)),
@@ -416,6 +428,7 @@ impl Literal {
             Self::UInt32(val) => write!(buffer, "{}", val),
             Self::Int64(val) => write!(buffer, "{}", val),
             Self::UInt64(val) => write!(buffer, "{}", val),
+            Self::Float16(val) => write!(buffer, "{}", val),
             Self::Float32(val) => write!(buffer, "{}", val),
             Self::Float64(val) => write!(buffer, "{}", val),
             Self::Utf8(val) => write!(buffer, "'{}'", val),
@@ -425,8 +438,20 @@ impl Literal {
                 "TIMESTAMP '{}'",
                 display_timestamp(*val, tu, tz).replace('T', " ")
             ),
-            Self::Decimal(..)
-            | Self::List(..)
+            Self::Decimal(val, precision, scale) => {
+                if *scale < 0 {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        format!(
+                            "Cannot display Decimal({}, {}) as SQL: negative scale not supported",
+                            precision, scale
+                        ),
+                    ));
+                }
+                write!(buffer, "{}", display_decimal128(*val, *precision, *scale))
+            }
+            Self::Uuid(val) => write!(buffer, "'{}'", val),
+            Self::List(..)
             | Self::Time(..)
             | Self::Binary(..)
             | Self::Duration(..)
@@ -544,6 +569,14 @@ impl Literal {
         .map_err(|e| DaftError::ValueError(format!("Failed to convert literal to usize: {}", e)))
     }
 
+    /// If the literal is `Float16`, return it. Otherwise, return None.
+    pub fn as_f16(&self) -> Option<half::f16> {
+        match self {
+            Self::Float16(f) => Some(*f),
+            _ => None,
+        }
+    }
+
     /// If the literal is `Float32`, return it. Otherwise, return None.
     pub fn as_f32(&self) -> Option<f32> {
         match self {
@@ -606,6 +639,7 @@ impl Literal {
             Self::Time(..) => std::mem::size_of::<i64>(),
             Self::Duration(..) => std::mem::size_of::<i64>(),
             Self::Interval(_) => std::mem::size_of::<IntervalValue>(),
+            Self::Float16(_) => std::mem::size_of::<half::f16>(),
             Self::Float32(_) => std::mem::size_of::<f32>(),
             Self::Float64(_) => std::mem::size_of::<f64>(),
             Self::Decimal(..) => std::mem::size_of::<i128>(),
@@ -614,6 +648,7 @@ impl Literal {
             Self::Python(_) => std::mem::size_of::<PyObjectWrapper>(),
             Self::Struct(entries) => entries.iter().map(|(k, v)| k.len() + v.size_bytes()).sum(),
             Self::File(f) => std::mem::size_of_val(f),
+            Self::Uuid(_) => 16,
             Self::Tensor { data, shape } => {
                 data.size_bytes() + shape.len() * std::mem::size_of::<u64>()
             }
@@ -684,5 +719,49 @@ mod test {
         roundtrip("test".to_string())?;
 
         Ok(())
+    }
+
+    #[test]
+    fn test_display_sql_uuid() {
+        use uuid::Uuid;
+        let uuid = Uuid::parse_str("12345678-1234-5678-1234-567812345678").unwrap();
+        let lit = Literal::Uuid(uuid);
+        let mut buf = Vec::<u8>::new();
+        lit.display_sql(&mut buf).unwrap();
+        assert_eq!(
+            String::from_utf8(buf).unwrap(),
+            "'12345678-1234-5678-1234-567812345678'"
+        );
+    }
+
+    #[test]
+    fn test_display_sql_decimal_positive_scale() {
+        // 123.45 with precision=5, scale=2
+        let lit = Literal::Decimal(12345, 5, 2);
+        let mut buf = Vec::<u8>::new();
+        lit.display_sql(&mut buf).unwrap();
+        assert_eq!(String::from_utf8(buf).unwrap(), "123.45");
+    }
+
+    #[test]
+    fn test_display_sql_decimal_zero_scale() {
+        let lit = Literal::Decimal(1500, 4, 0);
+        let mut buf = Vec::<u8>::new();
+        lit.display_sql(&mut buf).unwrap();
+        assert_eq!(String::from_utf8(buf).unwrap(), "1500");
+    }
+
+    #[test]
+    fn test_display_sql_decimal_negative_scale_returns_error() {
+        let lit = Literal::Decimal(1500, 4, -2);
+        let mut buf = Vec::<u8>::new();
+        let result = lit.display_sql(&mut buf);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("negative scale"),
+            "Expected negative scale error, got: {}",
+            err
+        );
     }
 }

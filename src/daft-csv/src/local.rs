@@ -193,7 +193,7 @@ pub async fn stream_csv_local(
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
 ) -> DaftResult<impl Stream<Item = DaftResult<RecordBatch>> + Send> {
-    let uri = uri.trim_start_matches("file://");
+    let uri = daft_io::strip_file_uri_to_path(&uri).unwrap_or(&uri);
     let file = std::fs::File::open(uri)?;
 
     // Process the CSV convert options.

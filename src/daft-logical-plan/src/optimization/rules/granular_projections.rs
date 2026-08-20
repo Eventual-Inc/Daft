@@ -283,6 +283,7 @@ mod tests {
             Arc::new(Expr::Cast(
                 BuiltinScalarFn::new_async(UrlDownload, vec![resolved_col("url")]).into(),
                 DataType::Utf8,
+                false,
             ))
             .alias("url_data"),
             lower(Expr::Column(Column::Resolved(ResolvedColumn::Basic("name".into()))).arced())
@@ -318,7 +319,7 @@ mod tests {
         let Expr::Alias(func, ..) = top_project.projection[0].as_ref() else {
             panic!("Expected alias");
         };
-        assert!(matches!(func.as_ref(), Expr::Cast(_, DataType::Utf8)));
+        assert!(matches!(func.as_ref(), Expr::Cast(_, DataType::Utf8, _)));
 
         // Check that the top level project has a single child, which is a project
         assert!(matches!(

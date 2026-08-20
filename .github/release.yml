@@ -1,0 +1,58 @@
+changelog:
+  exclude:
+    authors:
+    - dependabot[bot]
+    - github-actions[bot]
+
+  categories:
+  - title: '💥 Breaking Changes'
+    labels:
+    - breaking change
+    - breaking
+
+  - title: '✨ Features'
+    labels:
+    - feat
+    - feature
+    - enhancement
+
+  - title: '🐛 Bug Fixes'
+    labels:
+    - fix
+    - bug
+
+  - title: '🚀 Performance'
+    labels:
+    - perf
+    - performance
+
+  - title: '♻️ Refactor'
+    labels:
+    - refactor
+
+  - title: '📖 Documentation'
+    labels:
+    - docs
+    - documentation
+
+  - title: '✅ Tests'
+    labels:
+    - test
+    - testing
+
+  - title: '👷 CI'
+    labels:
+    - ci
+
+  - title: '🔧 Maintenance'
+    labels:
+    - chore
+
+  - title: '⏪ Reverts'
+    labels:
+    - revert
+
+  - title: '⬆️ Dependencies'
+    labels:
+    - dependencies
+    - deps

@@ -39,7 +39,7 @@ impl ScalarUDF for IsInf {
         let UnaryArg { input: data } = inputs.try_into()?;
         let data = data.to_field(schema)?;
         match &data.dtype {
-            DataType::Null | DataType::Float32 | DataType::Float64 => {
+            DataType::Float16 | DataType::Null | DataType::Float32 | DataType::Float64 => {
                 Ok(Field::new(data.name, DataType::Boolean))
             }
             _ => Err(DaftError::TypeError(format!(

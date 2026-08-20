@@ -23,7 +23,7 @@ use tracing::{Span, instrument};
 use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
 use crate::{
     ExecutionTaskSpawner,
-    pipeline::{MorselSizeRequirement, NodeName},
+    pipeline::{InputId, MorselSizeRequirement, NodeName},
 };
 
 #[derive(Clone, Debug)]
@@ -160,6 +160,7 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
         state: Self::State,
         _runtime_stats: Arc<Self::Stats>,
         task_spawner: &ExecutionTaskSpawner,
+        _input_id: InputId,
     ) -> IntermediateOpExecuteResult<Self> {
         #[cfg(feature = "python")]
         {

@@ -1,20 +1,29 @@
 from __future__ import annotations
 
 import os
+import threading
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 from mcap.writer import Writer as MCAPWriter
 from mcap_ros2.writer import Writer
 
 import daft
-from daft.filesystem import _infer_filesystem
+from daft.filesystem import _resolve_paths_and_filesystem
 from daft.io import IOConfig, S3Config
+from daft.io.mcap._mcap import list_files
 
 HAS_S3 = bool(
     os.environ.get("AWS_ACCESS_KEY_ID")
     and os.environ.get("AWS_SECRET_ACCESS_KEY")
     and os.environ.get("S3_ENDPOINT_URL")
 )
+
+
+class QuietHTTPRequestHandler(SimpleHTTPRequestHandler):
+    def log_message(self, format, *args):
+        pass
 
 
 def _get_s3_io_config() -> IOConfig:
@@ -51,6 +60,21 @@ def mcap_dataset_path(tmp_path_factory):
         writer.finish()
 
     yield file_path
+
+
+@pytest.fixture(scope="function")
+def mcap_http_url(mcap_dataset_path):
+    handler = partial(QuietHTTPRequestHandler, directory=str(mcap_dataset_path.parent))
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        yield f"http://127.0.0.1:{server.server_port}/{mcap_dataset_path.name}"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
 
 
 @pytest.fixture(scope="function")
@@ -99,7 +123,7 @@ def raw_bytes_mcap_dataset_path(tmp_path_factory):
 def data_from_s3():
     s3_file_path = "s3://kamui/las/mcap/test.mcap"
     io_config = _get_s3_io_config()
-    file_path, fs, _ = _infer_filesystem(s3_file_path, io_config)
+    [file_path], fs = _resolve_paths_and_filesystem(s3_file_path, io_config)
     with fs.open_output_stream(file_path) as f:
         writer = Writer(f)
         schema = writer.register_msgdef(datatype="std_msgs/msg/String", msgdef_text="string data")
@@ -131,6 +155,29 @@ def test_mcap_read(mcap_dataset_path):
     assert pdf["publish_time"].between(0, 9900).all()
 
 
+def test_mcap_http_url_resolves_through_pyarrow_fsspec_handler(mcap_http_url):
+    [resolved_path], fs = _resolve_paths_and_filesystem(mcap_http_url)
+
+    assert resolved_path == mcap_http_url
+    assert list_files(mcap_http_url, io_config=None) == [mcap_http_url]
+    with fs.open_input_file(resolved_path) as f:
+        assert f.read(5) == b"\x89MCAP"
+
+
+def test_mcap_read_huggingface():
+    """Read a public MCAP file from Hugging Face via hf://."""
+    # Public gameplay MCAP from https://huggingface.co/datasets/open-world-agents/D2E-480p (~1.4 MiB).
+    HF_MCAP_PATH = "hf://datasets/open-world-agents/D2E-480p/PEAK/recording_20250901_122320__8bd56fb0_split_02.mcap"
+
+    df = daft.read_mcap(HF_MCAP_PATH, topics=["mouse"]).limit(10)
+    pdf = df.to_pandas()
+
+    assert len(pdf) == 10
+    assert set(pdf.columns) == {"topic", "log_time", "publish_time", "sequence", "data"}
+    assert (pdf["topic"] == "mouse").all()
+    assert pdf["log_time"].is_monotonic_increasing
+
+
 @pytest.mark.skipif(not HAS_S3, reason="S3 Env not set, skip S3 tests")
 @pytest.mark.parametrize("data_from_s3", ["data_from_s3"], indirect=True)
 def test_mcap_read_s3(data_from_s3):
@@ -142,7 +189,7 @@ def test_mcap_read_s3(data_from_s3):
 
     assert len(pdf) == 100
     assert pdf["sequence"].nunique() == 100
-    assert pdf["data"].startswith("Chatter #").all()
+    assert pdf["data"].str.startswith("Chatter #").all()
 
 
 @pytest.mark.parametrize("raw_bytes_mcap_dataset_path", ["raw_bytes_mcap_dataset_path"], indirect=True)

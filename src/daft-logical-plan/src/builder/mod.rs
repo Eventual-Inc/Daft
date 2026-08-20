@@ -15,10 +15,10 @@ use common_file_formats::{FileFormat, WriteMode};
 use common_io_config::IOConfig;
 use common_treenode::TreeNode;
 use daft_algebra::boolean::combine_conjunction;
-use daft_core::join::{JoinStrategy, JoinType};
+use daft_core::join::{AsofJoinStrategy, JoinStrategy, JoinType};
 use daft_dsl::{
-    Column, Expr, ExprRef, UnresolvedColumn, WindowSpec, has_agg, left_col, resolved_col,
-    right_col, unresolved_col,
+    Column, Expr, ExprRef, ResolvedColumn, UnresolvedColumn, WindowSpec, has_agg, left_col,
+    resolved_col, right_col, unresolved_col,
 };
 use daft_scan::{PhysicalScanInfo, Pushdowns, ScanOperatorRef, Sharder, ShardingStrategy};
 use daft_schema::schema::{Schema, SchemaRef};
@@ -42,7 +42,7 @@ use crate::{
     display::json::JsonVisitor,
     logical_plan::{LogicalPlan, SubqueryAlias},
     ops::{
-        self, Limit, Offset, SetQuantifier, UnionStrategy,
+        self, Limit, Offset, SetQuantifier, UnionStrategy, get_right_cols_to_drop,
         join::{JoinOptions, JoinPredicate},
     },
     optimization::{OptimizerBuilder, OptimizerConfig},
@@ -144,6 +144,25 @@ impl LogicalPlanBuilder {
         self.with_new_plan(self.plan.clone().with_plan_id(id))
     }
 
+    /// Attach checkpoint configuration to the current plan's Source node.
+    ///
+    /// Panics if the current plan root is not a `LogicalPlan::Source`.
+    pub fn with_checkpoint(
+        &self,
+        config: common_checkpoint_config::CheckpointConfig,
+    ) -> DaftResult<Self> {
+        match self.plan.as_ref() {
+            LogicalPlan::Source(source) => {
+                let new_source = source.clone().with_checkpoint(config);
+                Ok(self.with_new_plan(LogicalPlan::Source(new_source)))
+            }
+            other => Err(DaftError::ValueError(format!(
+                "with_checkpoint can only be called on a Source node, got: {}",
+                other.name()
+            ))),
+        }
+    }
+
     pub fn in_memory_scan(
         partition_key: &str,
         cache_entry: common_partitioning::PartitionCacheEntry,
@@ -187,11 +206,13 @@ impl LogicalPlanBuilder {
     ) -> DaftResult<Self> {
         let schema = scan_operator.0.schema();
         let partitioning_keys = scan_operator.0.partitioning_keys();
+        let clustering_keys = scan_operator.0.clustering_keys();
         let source_info = SourceInfo::Physical(PhysicalScanInfo::new(
             scan_operator.clone(),
             schema.clone(),
             partitioning_keys.into(),
             pushdowns.clone().unwrap_or_default(),
+            clustering_keys,
         ));
         // If file path column is specified, check that it doesn't conflict with any column names in the schema.
         if let Some(file_path_column) = &scan_operator.0.file_path_column()
@@ -741,6 +762,61 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn join_asof<Right: Into<LogicalPlanRef>>(
+        &self,
+        right: Right,
+        left_by: Vec<ExprRef>,
+        right_by: Vec<ExprRef>,
+        left_on: ExprRef,
+        right_on: ExprRef,
+        strategy: AsofJoinStrategy,
+        options: JoinOptions,
+        assume_sorted_and_aligned: bool,
+    ) -> DaftResult<Self> {
+        let left_plan = self.plan.clone();
+        let right_plan = right.into();
+
+        let right_cols_to_drop =
+            get_right_cols_to_drop(&right_by, &left_on, &right_on, |e| {
+                match e.unwrap_alias().0.as_ref() {
+                    Expr::Column(Column::Unresolved(UnresolvedColumn { name, .. })) => {
+                        Some(name.to_string())
+                    }
+                    _ => None,
+                }
+            });
+
+        let (right_plan, right_by, right_on) = ops::AsofJoin::deduplicate_asof_join_columns(
+            left_plan.clone(),
+            right_plan,
+            right_by,
+            right_on,
+            &right_cols_to_drop,
+            &options,
+        )?;
+
+        let expr_resolver = ExprResolver::default();
+        let left_by = expr_resolver.resolve(left_by, left_plan.clone())?;
+        let right_by = expr_resolver.resolve(right_by, right_plan.clone())?;
+        let left_on = expr_resolver.resolve_single(left_on, left_plan.clone())?;
+        let right_on = expr_resolver.resolve_single(right_on, right_plan.clone())?;
+
+        let logical_plan: LogicalPlan = ops::AsofJoin::try_new(
+            left_plan,
+            right_plan,
+            left_by,
+            right_by,
+            left_on,
+            right_on,
+            right_cols_to_drop,
+            strategy,
+            assume_sorted_and_aligned,
+        )?
+        .into();
+        Ok(self.with_new_plan(logical_plan))
+    }
+
     pub fn cross_join<Right: Into<LogicalPlanRef>>(
         &self,
         right: Right,
@@ -811,6 +887,7 @@ impl LogicalPlanBuilder {
         partition_cols: Option<Vec<ExprRef>>,
         compression: Option<String>,
         io_config: Option<IOConfig>,
+        single_file: bool,
     ) -> DaftResult<Self> {
         let expr_resolver = ExprResolver::default();
 
@@ -827,6 +904,7 @@ impl LogicalPlanBuilder {
             compression,
             io_config,
             write_success_file,
+            single_file,
         ));
 
         let logical_plan: LogicalPlan =
@@ -970,7 +1048,12 @@ impl LogicalPlanBuilder {
                 .when(
                     !cfg.as_ref()
                         .is_some_and(|conf| conf.disable_join_reordering),
-                    |builder| builder.reorder_joins(Some(execution_config.clone())),
+                    |builder| {
+                        let use_dp_ccp = cfg
+                            .as_ref()
+                            .is_some_and(|conf| conf.enable_dp_ccp_join_ordering);
+                        builder.reorder_joins(Some(execution_config.clone()), use_dp_ccp)
+                    },
                 )
                 .simplify_expressions()
                 .split_granular_projections()
@@ -1040,7 +1123,12 @@ impl LogicalPlanBuilder {
             .when(
                 !cfg.as_ref()
                     .is_some_and(|conf| conf.disable_join_reordering),
-                |builder| builder.reorder_joins(Some(execution_config.clone())),
+                |builder| {
+                    let use_dp_ccp = cfg
+                        .as_ref()
+                        .is_some_and(|conf| conf.enable_dp_ccp_join_ordering);
+                    builder.reorder_joins(Some(execution_config.clone()), use_dp_ccp)
+                },
             )
             .simplify_expressions()
             .split_granular_projections()
@@ -1200,6 +1288,13 @@ impl PyLogicalPlanBuilder {
         io_config: Option<PyIOConfig>,
     ) -> PyResult<Self> {
         Ok(LogicalPlanBuilder::from_glob_scan(glob_paths, io_config.map(|c| c.config))?.into())
+    }
+
+    pub fn with_checkpoint(
+        &self,
+        config: common_checkpoint_config::python::PyCheckpointConfig,
+    ) -> PyResult<Self> {
+        Ok(self.builder.with_checkpoint(config.config)?.into())
     }
 
     pub fn with_planning_config(
@@ -1398,7 +1493,8 @@ impl PyLogicalPlanBuilder {
         join_type,
         join_strategy,
         prefix,
-        suffix
+        suffix,
+        key_filtering_config=None,
     ))]
     pub fn join(
         &self,
@@ -1409,7 +1505,56 @@ impl PyLogicalPlanBuilder {
         join_strategy: Option<JoinStrategy>,
         prefix: Option<String>,
         suffix: Option<String>,
+        key_filtering_config: Option<ops::PyKeyFilteringConfig>,
     ) -> PyResult<Self> {
+        let key_filtering_config = match (join_strategy, key_filtering_config) {
+            (Some(JoinStrategy::KeyFiltering), Some(config)) => {
+                if join_type != JoinType::Anti {
+                    return Err(DaftError::ValueError(
+                        "key_filtering_config may only be used with JoinType::Anti".to_string(),
+                    )
+                    .into());
+                }
+
+                let extract_key_columns = |exprs: &[PyExpr],
+                                           side: &str|
+                 -> DaftResult<Vec<String>> {
+                    exprs.iter()
+                        .map(|expr| match expr.expr.as_ref() {
+                            Expr::Column(Column::Unresolved(UnresolvedColumn { name, .. })) => {
+                                Ok(name.to_string())
+                            }
+                            Expr::Column(Column::Resolved(ResolvedColumn::Basic(field))) => {
+                                Ok(field.to_string())
+                            }
+                            _ => Err(DaftError::ValueError(format!(
+                                "KeyFiltering join requires {side}_on to contain simple column references"
+                            ))),
+                        })
+                        .collect::<DaftResult<Vec<_>>>()
+                };
+
+                Some(config.config.with_key_columns(
+                    extract_key_columns(&left_on, "left")?,
+                    extract_key_columns(&right_on, "right")?,
+                )?)
+            }
+            (Some(JoinStrategy::KeyFiltering), None) => {
+                return Err(DaftError::ValueError(
+                    "JoinStrategy::KeyFiltering requires key_filtering_config".to_string(),
+                )
+                .into());
+            }
+            (_, Some(_)) => {
+                return Err(DaftError::ValueError(
+                    "key_filtering_config may only be used with JoinStrategy::KeyFiltering"
+                        .to_string(),
+                )
+                .into());
+            }
+            (_, None) => None,
+        };
+
         let left_on = left_on.into_iter().map(|expr| expr.expr);
         let right_on = right_on.into_iter().map(|expr| expr.expr);
 
@@ -1436,15 +1581,55 @@ impl PyLogicalPlanBuilder {
 
         let on = combine_conjunction(on_exprs);
 
+        let mut result = self.builder.join(
+            &right.builder,
+            on,
+            using,
+            join_type,
+            join_strategy,
+            JoinOptions { prefix, suffix },
+        )?;
+
+        if let Some(key_filtering_config) = key_filtering_config {
+            result = match result.plan.as_ref() {
+                LogicalPlan::Join(join) => {
+                    let new_join = join
+                        .clone()
+                        .with_key_filtering_config(Some(key_filtering_config));
+                    let logical_plan: LogicalPlan = new_join.into();
+                    result.with_new_plan(logical_plan)
+                }
+                _ => unreachable!("join() must return a Join node"),
+            };
+        }
+
+        Ok(result.into())
+    }
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (right, left_by, right_by, left_on, right_on, strategy, prefix, suffix, assume_sorted_and_aligned=false))]
+    pub fn join_asof(
+        &self,
+        right: &Self,
+        left_by: Vec<PyExpr>,
+        right_by: Vec<PyExpr>,
+        left_on: PyExpr,
+        right_on: PyExpr,
+        strategy: AsofJoinStrategy,
+        prefix: Option<String>,
+        suffix: Option<String>,
+        assume_sorted_and_aligned: bool,
+    ) -> PyResult<Self> {
         Ok(self
             .builder
-            .join(
+            .join_asof(
                 &right.builder,
-                on,
-                using,
-                join_type,
-                join_strategy,
+                pyexprs_to_exprs(left_by),
+                pyexprs_to_exprs(right_by),
+                left_on.into(),
+                right_on.into(),
+                strategy,
                 JoinOptions { prefix, suffix },
+                assume_sorted_and_aligned,
             )?
             .into())
     }
@@ -1497,7 +1682,8 @@ impl PyLogicalPlanBuilder {
         format_option=None,
         partition_cols=None,
         compression=None,
-        io_config=None
+        io_config=None,
+        single_file=false
     ))]
     pub fn table_write(
         &self,
@@ -1509,6 +1695,7 @@ impl PyLogicalPlanBuilder {
         partition_cols: Option<Vec<PyExpr>>,
         compression: Option<String>,
         io_config: Option<common_io_config::python::IOConfig>,
+        single_file: bool,
     ) -> PyResult<Self> {
         Ok(self
             .builder
@@ -1521,6 +1708,7 @@ impl PyLogicalPlanBuilder {
                 partition_cols.map(pyexprs_to_exprs),
                 compression,
                 io_config.map(|cfg| cfg.config),
+                single_file,
             )?
             .into())
     }

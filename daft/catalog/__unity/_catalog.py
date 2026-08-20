@@ -6,12 +6,14 @@ from typing import TYPE_CHECKING, Any
 
 from unitycatalog import NotFoundError as UnityNotFoundError
 
-from daft.catalog import Catalog, Identifier, NotFoundError, Properties, Schema, Table
+from daft.catalog import Catalog, Function, Identifier, NotFoundError, Properties, Schema, Table
 from daft.catalog.__unity._client import UnityCatalogClient as InnerCatalog  # noqa: TID253
 from daft.catalog.__unity._client import UnityCatalogTable as InnerTable  # noqa: TID253
 from daft.io.delta_lake._deltalake import read_deltalake
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from daft.dataframe import DataFrame
     from daft.io.partitioning import PartitionField
 
@@ -40,6 +42,9 @@ class UnityCatalog(Catalog):
     # create_*
     ###
 
+    def _create_function(self, ident: Identifier, function: Function | Callable[..., Any]) -> None:
+        raise NotImplementedError("Unity does not support function registration.")
+
     def _create_namespace(self, identifier: Identifier) -> None:
         raise NotImplementedError("Unity create_namespace not yet supported.")
 
@@ -65,6 +70,9 @@ class UnityCatalog(Catalog):
     ###
     # get_*
     ###
+
+    def _get_function(self, ident: Identifier) -> Function:
+        raise NotFoundError(f"Function '{ident}' not found in catalog '{self.name}'")
 
     def _get_table(self, ident: Identifier) -> UnityTable:
         try:

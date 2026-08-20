@@ -7,15 +7,15 @@ use common_metrics::{
     snapshot::StatSnapshotImpl as _,
 };
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
-use daft_logical_plan::{partitioning::UnknownClusteringConfig, stats::StatsState};
+use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
 
-use super::{PipelineNodeImpl, TaskBuilderStream};
+use super::{PipelineNodeImpl, TaskBuilderStream, clustering::BoundClusteringSpec};
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, MaterializedOutput, NodeID, PipelineNodeConfig,
-        PipelineNodeContext,
+        ClusteringStrategy, DistributedPipelineNode, MaterializedOutput, NodeID,
+        PipelineNodeConfig, PipelineNodeContext,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -50,17 +50,23 @@ impl RuntimeStats for IntoBatchesStats {
         if let StatSnapshot::Default(snapshot) = snapshot
             && let Some(phase) = &node_info.node_phase
         {
-            // Track input rows for the initial local batching pass and output rows for the rebatch pass.
+            // Track input rows/bytes for the initial local batching pass and output rows/bytes for the rebatch pass.
             if phase == INITIAL_BATCH_PHASE {
                 self.base.add_rows_in(snapshot.rows_in);
+                self.base.add_bytes_in(snapshot.bytes_in);
             } else if phase == REBATCH_PHASE {
                 self.base.add_rows_out(snapshot.rows_out);
+                self.base.add_bytes_out(snapshot.bytes_out);
             }
         }
     }
 
     fn export_snapshot(&self) -> StatSnapshot {
         self.base.export_default_snapshot()
+    }
+
+    fn increment_num_tasks(&self) {
+        self.base.increment_num_tasks();
     }
 }
 
@@ -100,12 +106,9 @@ impl IntoBatchesNode {
         let config = PipelineNodeConfig::new(
             schema,
             plan_config.config.clone(),
-            Arc::new(
-                UnknownClusteringConfig::new(
-                    child.config().clustering_spec.num_partitions().max(2),
-                )
-                .into(),
-            ),
+            ClusteringStrategy::Explicit(BoundClusteringSpec::unknown(
+                child.config().clustering_spec.num_partitions().max(2),
+            )),
         );
         Self {
             config,

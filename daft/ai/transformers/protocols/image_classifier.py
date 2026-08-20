@@ -61,21 +61,22 @@ class TransformersImageClassifierPipeline(transformers.ZeroShotImageClassificati
     def postprocess(self, model_outputs: Any) -> str:
         candidate_labels = model_outputs.pop("candidate_labels")
         logits = model_outputs["logits"][0]
-        if self.framework == "pt" and "siglip" in self.model.config.model_type:
+        framework = getattr(self, "framework", "pt")
+        if framework == "pt" and "siglip" in self.model.config.model_type:
             probs = torch.sigmoid(logits).squeeze(-1)
             scores = probs.tolist()
             if not isinstance(scores, list):
                 scores = [scores]
-        elif self.framework == "pt":
+        elif framework == "pt":
             probs = logits.softmax(dim=-1).squeeze(-1)
             scores = probs.tolist()
             if not isinstance(scores, list):
                 scores = [scores]
-        elif self.framework == "tf":
+        elif framework == "tf":
             probs = tf.nn.softmax(logits=logits + 1e-9, axis=-1)
             scores = probs.numpy().tolist()
         else:
-            raise ValueError(f"Unsupported framework: {self.framework}")
+            raise ValueError(f"Unsupported framework: {framework}")
 
         sorted_results = sorted(zip(scores, candidate_labels), key=lambda x: -x[0])
 

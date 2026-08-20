@@ -2,6 +2,7 @@
 mod tests {
     use std::{
         any::Any,
+        collections::VecDeque,
         sync::{Arc, Mutex},
     };
 
@@ -9,12 +10,19 @@ mod tests {
     use async_trait::async_trait;
     use bytes::Bytes;
     use common_file_formats::FileFormat;
-    use futures::{StreamExt, stream::BoxStream};
+    use futures::{StreamExt, TryStreamExt, stream::BoxStream};
 
     use crate::{
-        Error, FileMetadata, GetRange, GetResult, IOStatsRef, ObjectSource, Result,
+        Error, FileMetadata, FileType, GetRange, GetResult, IOStatsRef, ObjectSource, Result,
         object_io::{LSResult, StreamingRetryParams},
     };
+
+    /// Which error variant the mock should emit on failure.
+    #[derive(Clone)]
+    enum MockFailError {
+        UnableToReadBytes,
+        MiscTransient,
+    }
 
     /// The mocked source used for testing read operations.
     struct MockSource {
@@ -22,10 +30,18 @@ mod tests {
         content: Arc<Vec<u8>>,
         // the object data will be chunked by this value
         chunk_size: usize,
-        // will raise UnableToReadBytes error when accumulated read chunk number of a single request reach this value
+        // will raise an error when accumulated read chunk number of a single request reaches this value
         fail_at_chunk: Option<usize>,
+        // which error to emit on stream failure
+        fail_error: MockFailError,
+        // number of get() calls that should fail before succeeding (simulates dispatch failures)
+        fail_get_remaining: Mutex<usize>,
         // the total received get requests
         requests: Arc<Mutex<Vec<Option<GetRange>>>>,
+        // Predetermined listing pages returned by ls().
+        ls_pages: Mutex<VecDeque<LSResult>>,
+        // The continuation token supplied to each ls() request.
+        ls_requests: Arc<Mutex<Vec<Option<String>>>>,
     }
 
     impl MockSource {
@@ -34,8 +50,27 @@ mod tests {
                 content: Arc::new(data),
                 chunk_size,
                 fail_at_chunk,
+                fail_error: MockFailError::UnableToReadBytes,
+                fail_get_remaining: Mutex::new(0),
                 requests: Arc::new(Mutex::new(Vec::new())),
+                ls_pages: Mutex::new(VecDeque::new()),
+                ls_requests: Arc::new(Mutex::new(Vec::new())),
             }
+        }
+
+        fn with_ls_pages(self, pages: Vec<LSResult>) -> Self {
+            *self.ls_pages.lock().unwrap() = pages.into();
+            self
+        }
+
+        fn with_fail_error(mut self, err: MockFailError) -> Self {
+            self.fail_error = err;
+            self
+        }
+
+        fn with_fail_get(self, count: usize) -> Self {
+            *self.fail_get_remaining.lock().unwrap() = count;
+            self
         }
 
         fn slice_for_range(&self, range: Option<GetRange>) -> std::ops::Range<usize> {
@@ -60,13 +95,24 @@ mod tests {
             let data = self.content[slice].to_vec();
             let chunk = self.chunk_size;
             let fail_idx = self.fail_at_chunk;
+            let fail_error = self.fail_error.clone();
             let path_owned = path.to_string();
 
             stream! {
                 for (sent_chunks, chunk_data) in data.chunks(chunk).enumerate() {
                     if let Some(fail) = fail_idx
                         && sent_chunks == fail {
-                            yield Err(Error::UnableToReadBytes { path: path_owned.clone(), source: std::io::Error::new(std::io::ErrorKind::Interrupted, "mock fail") });
+                            let err = match fail_error {
+                                MockFailError::UnableToReadBytes => Error::UnableToReadBytes {
+                                    path: path_owned.clone(),
+                                    source: std::io::Error::new(std::io::ErrorKind::Interrupted, "mock fail"),
+                                },
+                                MockFailError::MiscTransient => Error::MiscTransient {
+                                    path: path_owned.clone(),
+                                    source: Box::new(std::io::Error::other("mock transient")),
+                                },
+                            };
+                            yield Err(err);
                             break;
                         }
                     yield Ok(Bytes::copy_from_slice(chunk_data));
@@ -87,6 +133,16 @@ mod tests {
             range: Option<GetRange>,
             _io_stats: Option<IOStatsRef>,
         ) -> Result<GetResult> {
+            {
+                let mut remaining = self.fail_get_remaining.lock().unwrap();
+                if *remaining > 0 {
+                    *remaining -= 1;
+                    return Err(Error::MiscTransient {
+                        path: uri.to_string(),
+                        source: Box::new(std::io::Error::other("mock dispatch failure")),
+                    });
+                }
+            }
             self.requests.lock().unwrap().push(range.clone());
             let s = self.read_data(range, uri);
             Ok(GetResult::Stream(s, Some(self.content.len()), None, None))
@@ -120,18 +176,113 @@ mod tests {
             &self,
             _path: &str,
             _posix: bool,
-            _continuation_token: Option<&str>,
+            continuation_token: Option<&str>,
             _page_size: Option<i32>,
             _io_stats: Option<IOStatsRef>,
         ) -> Result<LSResult> {
-            Err(Error::NotImplementedSource {
-                store: "mock".to_string(),
+            self.ls_requests
+                .lock()
+                .unwrap()
+                .push(continuation_token.map(str::to_owned));
+
+            let page = self.ls_pages.lock().unwrap().pop_front();
+            page.ok_or_else(|| Error::NotImplementedSource {
+                store: "mock ls page was not configured".to_string(),
             })
         }
 
         fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
             self
         }
+    }
+
+    fn mock_ls_result(
+        files: Vec<FileMetadata>,
+        continuation_token: Option<&str>,
+        not_found_if_empty: bool,
+    ) -> LSResult {
+        LSResult {
+            files,
+            continuation_token: continuation_token.map(str::to_owned),
+            not_found_if_empty,
+        }
+    }
+
+    fn mock_file(path: &str) -> FileMetadata {
+        FileMetadata {
+            filepath: path.to_string(),
+            size: Some(10),
+            filetype: FileType::File,
+        }
+    }
+
+    async fn collect_iter_dir(source: &MockSource) -> Result<Vec<FileMetadata>> {
+        let stream = source
+            .iter_dir("mock://bucket/directory", true, None, None)
+            .await?;
+        stream.try_collect().await
+    }
+
+    #[tokio::test]
+    async fn test_iter_dir_follows_token_after_empty_page() {
+        let expected_file = mock_file("mock://bucket/directory/file.parquet");
+        let source = MockSource::new(Vec::new(), 1, None).with_ls_pages(vec![
+            mock_ls_result(Vec::new(), Some("page-2"), true),
+            mock_ls_result(vec![expected_file.clone()], None, true),
+        ]);
+
+        let files = collect_iter_dir(&source).await.unwrap();
+
+        assert_eq!(files, vec![expected_file]);
+        assert_eq!(
+            *source.ls_requests.lock().unwrap(),
+            vec![None, Some("page-2".to_string())]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_iter_dir_remembers_files_from_earlier_pages() {
+        let expected_file = mock_file("mock://bucket/directory/file.parquet");
+        let source = MockSource::new(Vec::new(), 1, None).with_ls_pages(vec![
+            mock_ls_result(vec![expected_file.clone()], Some("page-2"), true),
+            mock_ls_result(Vec::new(), None, true),
+        ]);
+
+        let files = collect_iter_dir(&source).await.unwrap();
+
+        assert_eq!(files, vec![expected_file]);
+    }
+
+    #[tokio::test]
+    async fn test_iter_dir_returns_not_found_after_all_pages_are_empty() {
+        let source = MockSource::new(Vec::new(), 1, None).with_ls_pages(vec![
+            mock_ls_result(Vec::new(), Some("page-2"), true),
+            mock_ls_result(Vec::new(), None, true),
+        ]);
+
+        let result = collect_iter_dir(&source).await;
+
+        assert!(matches!(result, Err(Error::NotFound { .. })));
+        assert_eq!(
+            *source.ls_requests.lock().unwrap(),
+            vec![None, Some("page-2".to_string())]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_iter_dir_allows_empty_result_when_source_policy_allows_it() {
+        let source = MockSource::new(Vec::new(), 1, None).with_ls_pages(vec![
+            mock_ls_result(Vec::new(), Some("page-2"), false),
+            mock_ls_result(Vec::new(), None, false),
+        ]);
+
+        let files = collect_iter_dir(&source).await.unwrap();
+
+        assert!(files.is_empty());
+        assert_eq!(
+            *source.ls_requests.lock().unwrap(),
+            vec![None, Some("page-2".to_string())]
+        );
     }
 
     #[tokio::test]
@@ -282,5 +433,74 @@ mod tests {
                 Some(GetRange::Offset(0)),
             ]
         );
+    }
+
+    /// Verify that MiscTransient errors during streaming trigger retry (same as SocketError/UnableToReadBytes).
+    #[tokio::test]
+    async fn test_misc_transient_triggers_streaming_retry() {
+        let data: Vec<u8> = (0..16_000u32).flat_map(|v| v.to_le_bytes()).collect();
+        let data_len = data.len();
+        let chunk_size = 4096;
+        let fail_at_chunk = 5;
+        let src = Arc::new(
+            MockSource::new(data.clone(), chunk_size, Some(fail_at_chunk))
+                .with_fail_error(MockFailError::MiscTransient),
+        );
+        let range = Some(GetRange::Bounded(0..data_len));
+        let initial = src.get("mock://path", range.clone(), None).await.unwrap();
+        let wrapped = initial.with_retry(StreamingRetryParams::new(
+            src.clone(),
+            "mock://path".to_string(),
+            range.clone(),
+            None,
+        ));
+        let out = wrapped.bytes().await.unwrap();
+        assert_eq!(out.len(), data.len());
+        assert_eq!(&out[..], &data[..]);
+        // Should have retried: initial request + retries on MiscTransient
+        let requests = src.requests.lock().unwrap().clone();
+        assert!(
+            requests.len() > 1,
+            "expected retry on MiscTransient, got {} requests",
+            requests.len()
+        );
+    }
+
+    /// Verify that transient get() failures are retried by ExponentialBackoff.
+    #[tokio::test]
+    async fn test_transient_get_failure_retried() {
+        use crate::retry::{ExponentialBackoff, RetryError};
+
+        let data: Vec<u8> = (0..4_000u32).flat_map(|v| v.to_le_bytes()).collect();
+        let src: Arc<dyn ObjectSource> = Arc::new(
+            MockSource::new(data.clone(), 4096, None).with_fail_get(2), // fail first 2 get() calls
+        );
+
+        let get_result = ExponentialBackoff {
+            max_tries: 4,
+            jitter_ms: 1,
+            max_backoff_ms: 10,
+            max_waittime_ms: None,
+        }
+        .retry(|| {
+            let source = src.clone();
+            async move {
+                source
+                    .get("mock://path", None, None)
+                    .await
+                    .map_err(|e| match &e {
+                        Error::MiscTransient { .. }
+                        | Error::SocketError { .. }
+                        | Error::ConnectTimeout { .. } => RetryError::Transient(e),
+                        _ => RetryError::Permanent(e),
+                    })
+            }
+        })
+        .await
+        .expect("should succeed after retries");
+
+        let out = get_result.bytes().await.unwrap();
+        assert_eq!(out.len(), data.len());
+        assert_eq!(&out[..], &data[..]);
     }
 }

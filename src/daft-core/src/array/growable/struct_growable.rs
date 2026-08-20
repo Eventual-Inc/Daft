@@ -98,4 +98,12 @@ impl Growable for StructGrowable<'_> {
         )
         .into_series())
     }
+
+    fn len(&self) -> usize {
+        if let Some(child) = self.children_growables.first() {
+            child.len()
+        } else {
+            0
+        }
+    }
 }

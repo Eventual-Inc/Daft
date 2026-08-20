@@ -19,7 +19,7 @@ Welcome to Daft Python API Documentation. For Daft User Guide, head to [User Gui
 
 - [**Datasets**](datasets.md)
 
-    Simple, performant, and responsible ways to access useful datasets like Common Crawl.
+    Simple, performant, and responsible ways to access useful datasets like Common Crawl and DROID.
 
 - [**Expressions**](expressions.md)
 

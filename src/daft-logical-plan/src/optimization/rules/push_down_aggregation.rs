@@ -6,8 +6,8 @@ use daft_core::{count_mode::CountMode, prelude::Schema};
 use daft_dsl::{AggExpr, Expr, ExprRef};
 
 use crate::{
-    LogicalPlan, logical_plan::Aggregate, ops::Source as LogicalSource,
-    optimization::rules::OptimizerRule, source_info::SourceInfo,
+    LogicalPlan, logical_plan::Aggregate, optimization::rules::OptimizerRule,
+    source_info::SourceInfo,
 };
 
 /// Optimization rules for pushing Aggregation further into the logical plan.
@@ -62,7 +62,8 @@ impl OptimizerRule for PushDownAggregation {
                                     };
                                     let can_pushdown = scan_op.supports_count_pushdown()
                                         && is_count_mode_supported(count_mode)
-                                        && is_remaining_filters;
+                                        && is_remaining_filters
+                                        && external_info.pushdowns.limit.is_none();
 
                                     if can_pushdown {
                                         // Create new pushdown info with count aggregation
@@ -75,11 +76,12 @@ impl OptimizerRule for PushDownAggregation {
 
                                         let new_external_info =
                                             external_info.with_pushdowns(new_pushdowns);
-                                        let new_source = LogicalPlan::Source(LogicalSource::new(
-                                            new_schema,
+                                        let mut new_source_node = source.clone().with_source_info(
                                             SourceInfo::Physical(new_external_info).into(),
-                                        ))
-                                        .into();
+                                        );
+                                        new_source_node.output_schema = new_schema;
+                                        let new_source =
+                                            LogicalPlan::Source(new_source_node).into();
                                         // Scan operators may produce partial counts over multiple scan tasks (e.g., distributed parquet reads), so we still need to sum them.
                                         let new_aggregate = Aggregate::try_new(
                                             new_source,
@@ -368,6 +370,22 @@ mod tests {
                 RuleExecutionStrategy::Once,
             )],
         )?;
+        Ok(())
+    }
+
+    #[test]
+    fn agg_count_all_with_limit_should_not_pushdown() -> DaftResult<()> {
+        // A limit is global; the count shortcut counts each scan task's row groups
+        // independently, so count pushdown must not happen under a limit.
+        let scan_op =
+            dummy_scan_operator_for_aggregation(vec![Field::new("a", DataType::UInt64)], true);
+        let plan =
+            dummy_scan_node_with_pushdowns(scan_op, Pushdowns::default().with_limit(Some(10)))
+                .aggregate(vec![unresolved_col("a").count(CountMode::All)], vec![])?
+                .build();
+
+        let expected = plan.clone();
+        assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 

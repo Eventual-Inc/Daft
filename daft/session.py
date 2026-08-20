@@ -29,11 +29,13 @@ __all__ = [
     "attach_function",
     "attach_provider",
     "attach_table",
+    "attach_view",
     "create_namespace",
     "create_namespace_if_not_exists",
     "create_table",
     "create_table_if_not_exists",
     "create_temp_table",
+    "create_temp_view",
     "current_catalog",
     "current_model",
     "current_namespace",
@@ -171,11 +173,11 @@ class Session:
     # attach & detach
     ###
 
-    def attach(self, object: Catalog | Provider | Table | UDF, alias: str | None = None) -> None:
-        """Attaches a known attachable object like a Catalog, Table or UDF.
+    def attach(self, object: Catalog | Provider | Table | UDF | DataFrame, alias: str | None = None) -> None:
+        """Attaches a known attachable object like a Catalog, Table, UDF, or DataFrame.
 
         Args:
-            object (Catalog|Table|UDF): object which is attachable to a session
+            object (Catalog|Table|UDF|DataFrame): object which is attachable to a session
 
         Returns:
             None
@@ -188,6 +190,10 @@ class Session:
             self.attach_table(object, alias)
         elif isinstance(object, UDF):
             self.attach_function(object, alias)
+        elif isinstance(object, DataFrame):
+            if alias is None:
+                raise ValueError("Cannot attach a DataFrame without an alias. Please provide `alias`.")
+            self.attach_view(object, alias)
         else:
             raise ValueError(f"Cannot attach object with type {type(object)}")
 
@@ -239,6 +245,14 @@ class Session:
         a = alias if alias else t.name
         self._session.attach_table(t, a)
         return t
+
+    def attach_view(self, view: DataFrame, alias: str) -> Table:
+        """Attaches a DataFrame as a non-materialized temporary view for SQL resolution.
+
+        Unlike ``attach_table(Table.from_df(...))``, this does not materialize data into a MemoryTable.
+        """
+        py_source = self._to_py_table_source(view)
+        return self._create_temp_table_with_source(alias, py_source, replace=False)
 
     def detach_catalog(self, alias: str) -> None:
         """Detaches the catalog from this session or raises if the catalog does not exist.
@@ -302,15 +316,35 @@ class Session:
 
     def create_namespace(self, identifier: Identifier | str) -> None:
         """Creates a namespace in the current catalog."""
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+
+        if resolved := self._resolve_catalog(identifier):
+            cat, identifier = resolved
+            return cat.create_namespace(identifier)
+
         if not (catalog := self.current_catalog()):
             raise ValueError("Cannot create a namespace without a current catalog")
         return catalog.create_namespace(identifier)
 
     def create_namespace_if_not_exists(self, identifier: Identifier | str) -> None:
         """Creates a namespace in the current catalog if it does not already exist."""
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+
+        if resolved := self._resolve_catalog(identifier):
+            cat, identifier = resolved
+            return cat.create_namespace_if_not_exists(identifier)
+
         if not (catalog := self.current_catalog()):
             raise ValueError("Cannot create a namespace without a current catalog")
         return catalog.create_namespace_if_not_exists(identifier)
+
+    def _resolve_catalog(self, identifier: Identifier) -> tuple[Catalog, Identifier] | None:
+        """If the identifier is catalog-qualified, return (catalog, remainder)."""
+        if len(identifier) >= 2 and self.has_catalog(identifier[0]):
+            return self.get_catalog(identifier[0]), identifier.drop(1)
+        return None
 
     def create_table(self, identifier: Identifier | str, source: Schema | DataFrame, **properties: Any) -> Table:
         """Creates a table in the current catalog.
@@ -320,12 +354,16 @@ class Session:
         Returns:
             Table: the newly created table instance.
         """
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+
+        if resolved := self._resolve_catalog(identifier):
+            cat, identifier = resolved
+            return cat.create_table(identifier, source, properties)
+
         if not (catalog := self.current_catalog()):
             # TODO relax this constraint by joining with the catalog name
             raise ValueError("Cannot create a table without a current catalog")
-
-        if isinstance(identifier, str):
-            identifier = Identifier.from_str(identifier)
 
         if len(identifier) == 1:
             if ns := self.current_namespace():
@@ -346,12 +384,16 @@ class Session:
         Returns:
             Table: the newly created instance, or the existing table instance.
         """
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+
+        if resolved := self._resolve_catalog(identifier):
+            cat, identifier = resolved
+            return cat.create_table_if_not_exists(identifier, source, properties)
+
         if not (catalog := self.current_catalog()):
             # TODO relax this constraint by joining with the catalog name
             raise ValueError("Cannot create a table without a current catalog")
-
-        if isinstance(identifier, str):
-            identifier = Identifier.from_str(identifier)
 
         if len(identifier) == 1:
             if ns := self.current_namespace():
@@ -385,15 +427,23 @@ class Session:
         Returns:
             Table: new table instance
         """
+        py_source = self._to_py_table_source(source)
+        return self._create_temp_table_with_source(identifier, py_source, replace=True)
+
+    def create_temp_view(self, identifier: str, view: DataFrame) -> Table:
+        """Creates or replaces a non-materialized temporary view from a DataFrame."""
+        py_source = self._to_py_table_source(view)
+        return self._create_temp_table_with_source(identifier, py_source, replace=True)
+
+    def _to_py_table_source(self, source: Schema | DataFrame) -> PyTableSource:
         if isinstance(source, Schema):
-            py_source = PyTableSource.from_pyschema(source._schema)
-        elif isinstance(source, DataFrame):
-            py_source = PyTableSource.from_pybuilder(source._builder._builder)
-        else:
-            raise ValueError(
-                f"Unsupported create_temp_table source, {type(source)}, expected either Schema or DataFrame."
-            )
-        return self._session.create_temp_table(identifier, py_source, replace=True)
+            return PyTableSource.from_pyschema(source._schema)
+        if isinstance(source, DataFrame):
+            return PyTableSource.from_pybuilder(source._builder._builder)
+        raise ValueError(f"Unsupported temp table source, {type(source)}, expected either Schema or DataFrame.")
+
+    def _create_temp_table_with_source(self, identifier: str, source: PyTableSource, replace: bool) -> Table:
+        return self._session.create_temp_table(identifier, source, replace=replace)
 
     ###
     # drop_*
@@ -403,8 +453,15 @@ class Session:
         """Drop the given namespace in the current catalog.
 
         Args:
-            identifier (Identifier|str): table identifier
+            identifier (Identifier|str): namespace identifier
         """
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+
+        if resolved := self._resolve_catalog(identifier):
+            cat, identifier = resolved
+            return cat.drop_namespace(identifier)
+
         if not (catalog := self.current_catalog()):
             raise ValueError("Cannot drop a namespace without a current catalog")
         return catalog.drop_namespace(identifier)
@@ -415,9 +472,20 @@ class Session:
         Args:
             identifier (Identifier|str): table identifier
         """
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+
+        if resolved := self._resolve_catalog(identifier):
+            cat, identifier = resolved
+            return cat.drop_table(identifier)
+
         if not (catalog := self.current_catalog()):
             raise ValueError("Cannot drop a table without a current catalog")
-        # TODO join the identifier with the current namespace
+
+        if len(identifier) == 1:
+            if ns := self.current_namespace():
+                identifier = ns + identifier
+
         return catalog.drop_table(identifier)
 
     ###
@@ -531,6 +599,18 @@ class Session:
         """
         return Expression._from_pyexpr(self._session.get_function(name, *[a._expr for a in args]))
 
+    def get_aggregate_function(self, name: str, *args: Expression) -> Expression:
+        """Returns an aggregate function expression from the current session.
+
+        Args:
+            name (str): aggregate function name as registered by an extension
+            *args: Expression arguments to pass to the aggregate function
+
+        Returns:
+            Expression: aggregate result expression
+        """
+        return Expression._from_pyexpr(self._session.get_aggregate_function(name, *[a._expr for a in args]))
+
     ###
     # has_*
     ###
@@ -541,6 +621,13 @@ class Session:
 
     def has_namespace(self, identifier: Identifier | str) -> bool:
         """Returns true if a namespace with the given identifier exists."""
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+
+        if resolved := self._resolve_catalog(identifier):
+            cat, identifier = resolved
+            return cat.has_namespace(identifier)
+
         if not (catalog := self.current_catalog()):
             raise ValueError("Cannot call has_namespace without a current catalog")
         return catalog.has_namespace(identifier)
@@ -574,10 +661,22 @@ class Session:
         return self._session.list_catalogs(pattern)
 
     def list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
-        """Returns a list of matching namespaces in the current catalog."""
-        if not (catalog := self.current_catalog()):
-            raise ValueError("Cannot list namespaces without a current catalog")
-        return catalog.list_namespaces(pattern)
+        r"""Returns a list of available namespaces.
+
+        Args:
+            - pattern (str, optional): Pattern to match namespace names. Pattern syntax is catalog-dependent:
+                - Native/Memory and Postgres catalogs: Use SQL LIKE syntax (`%`, `_`, `\`). Supports qualified patterns like `"cat1.%"` to dispatch to attached catalog `cat1`.
+                - Other catalogs: Pattern behavior varies (e.g., prefix matching for Iceberg/S3 Tables, AWS Glue expressions for Glue).
+
+        Returns:
+            list[Identifier]: list of available namespaces
+
+        Examples:
+            >>> sess.list_namespaces()  # List all namespaces in current catalog
+            >>> sess.list_namespaces("ns%")  # Namespaces starting with "ns" (native catalog)
+            >>> sess.list_namespaces("cat1.%")  # All namespaces in attached catalog "cat1"
+        """
+        return [Identifier._from_pyidentifier(i) for i in self._session.list_namespaces(pattern)]
 
     def list_tables(self, pattern: str | None = None) -> list[Identifier]:
         r"""Returns a list of available tables.
@@ -640,11 +739,12 @@ class Session:
             identifier = Identifier.from_str(identifier)
         self._session.set_namespace(identifier._ident if identifier else None)
 
-    def set_provider(self, identifier: str | None, **options: Any) -> None:
+    def set_provider(self, identifier: str | Provider | None, **options: Any) -> None:
         """Set the default model provider with associated options.
 
         Args:
-            identifier (str | None): provider identifier string or None.
+            identifier (str | Provider | None): provider identifier string, Provider instance, or None.
+                If a Provider instance is given, it is attached to the session before being set as current.
             **options (Any): provider specific options such as an API key or retry limit.
 
         Note:
@@ -652,6 +752,15 @@ class Session:
             like "openai", then we will create and attach this known provider.
             For example, `daft.set_provider("openai")` works.
         """
+        # If a Provider instance is given, attach it and resolve to its name
+        if isinstance(identifier, Provider):
+            if options:
+                raise TypeError(
+                    "Cannot pass keyword options when providing a Provider instance. Configure the Provider instance directly instead."
+                )
+            self.attach_provider(identifier)
+            identifier = identifier.name
+
         # consider using @overload on known providers for better type hints
         if identifier is not None and not self._session.has_provider(identifier) and identifier in PROVIDERS:
             # upsert semantic for known providers e.g. daft.set_provider("openai")
@@ -717,7 +826,7 @@ def _session() -> Session:
 ###
 
 
-def attach(object: Catalog | Provider | Table | UDF, alias: str | None = None) -> None:
+def attach(object: Catalog | Provider | Table | UDF | DataFrame, alias: str | None = None) -> None:
     """Attaches a known attachable object like a Catalog or Table."""
     return _session().attach(object, alias)
 
@@ -740,6 +849,11 @@ def attach_provider(provider: Provider, alias: str | None = None) -> Provider:
 def attach_table(table: object | Table, alias: str | None = None) -> Table:
     """Attaches an external table to the current session."""
     return _session().attach_table(table, alias)
+
+
+def attach_view(view: DataFrame, alias: str) -> Table:
+    """Attaches a DataFrame as a non-materialized temporary view to the current session."""
+    return _session().attach_view(view, alias)
 
 
 def detach_catalog(alias: str) -> None:
@@ -790,6 +904,11 @@ def create_table_if_not_exists(identifier: Identifier | str, source: Schema | Da
 def create_temp_table(identifier: str, source: Schema | DataFrame) -> Table:
     """Creates a temp table scoped to current session's lifetime."""
     return _session().create_temp_table(identifier, source)
+
+
+def create_temp_view(identifier: str, view: DataFrame) -> Table:
+    """Creates or replaces a non-materialized temporary view in the current session."""
+    return _session().create_temp_view(identifier, view)
 
 
 ###
@@ -860,6 +979,11 @@ def get_table(identifier: Identifier | str) -> Table:
 def get_function(name: str, *args: Expression) -> Expression:
     """Returns the function from the current session or raises an exception if it does not exist."""
     return _session().get_function(name, *args)
+
+
+def get_aggregate_function(name: str, *args: Expression) -> Expression:
+    """Returns the aggregate function from the current session or raises an exception if it does not exist."""
+    return _session().get_aggregate_function(name, *args)
 
 
 ###
@@ -957,7 +1081,7 @@ def set_namespace(identifier: Identifier | str | None) -> None:
     _session().set_namespace(identifier)
 
 
-def set_provider(identifier: str | None, **options: Any) -> None:
+def set_provider(identifier: str | Provider | None, **options: Any) -> None:
     """Set the given provider as current_provider for the active session."""
     _session().set_provider(identifier, **options)
 

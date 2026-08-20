@@ -47,11 +47,13 @@ from daft.daft import PyIdentifier
 
 from daft.dataframe import DataFrame
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Literal, overload
 
 from daft.logical.schema import Schema
 
 if TYPE_CHECKING:
+    from daft.expressions import Expression
     from daft.utils import ColumnInputType
     from daft.convert import InputListType
     from daft.io.partitioning import PartitionField
@@ -59,6 +61,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "Catalog",
+    "Function",
     "Identifier",
     "NotFoundError",
     "Properties",
@@ -97,6 +100,15 @@ class Catalog(ABC):
         """Returns the catalog's name."""
 
     @abstractmethod
+    def _create_function(self, ident: Identifier, function: Function | Callable[..., Any]) -> None:
+        """Register a function in the catalog.
+
+        Args:
+            ident: the function identifier.
+            function: the function to register. Can be a Function instance or a plain callable.
+        """
+
+    @abstractmethod
     def _create_namespace(self, ident: Identifier) -> None:
         """Create a namespace in the catalog, erroring if the namespace already exists."""
 
@@ -117,6 +129,20 @@ class Catalog(ABC):
     @abstractmethod
     def _drop_table(self, ident: Identifier) -> None:
         """Remove a table from the catalog, erroring if the table did not exist."""
+
+    @abstractmethod
+    def _get_function(self, ident: Identifier) -> Function:
+        """Get a function from the catalog by identifier.
+
+        Args:
+            ident: the function identifier to look up.
+
+        Returns:
+            A Function instance.
+
+        Raises:
+            NotFoundError: if the function does not exist.
+        """
 
     @abstractmethod
     def _get_table(self, ident: Identifier) -> Table:
@@ -446,6 +472,18 @@ class Catalog(ABC):
     # create_*
     ###
 
+    def create_function(self, identifier: Identifier | str, function: Function | Callable[..., Any]) -> None:
+        """Registers a function in this catalog.
+
+        Args:
+            identifier (Identifier | str): function identifier
+            function (Function | Callable): the function to register.
+        """
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+
+        self._create_function(identifier, function)
+
     def create_namespace(self, identifier: Identifier | str) -> None:
         """Creates a namespace in this catalog.
 
@@ -549,6 +587,24 @@ class Catalog(ABC):
     ###
     # get_*
     ###
+
+    def get_function(self, identifier: Identifier | str) -> Function:
+        """Get a function from the catalog by identifier or raises if the function does not exist.
+
+        Args:
+            identifier (Identifier | str): function identifier, where the last part is the
+                function name and preceding parts form the namespace.
+
+        Returns:
+            A Function instance.
+
+        Raises:
+            NotFoundError: if the function does not exist.
+        """
+        if isinstance(identifier, str):
+            identifier = Identifier.from_str(identifier)
+
+        return self._get_function(identifier)
 
     def get_table(self, identifier: Identifier | str) -> Table:
         """Get a table by its identifier or raises if the table does not exist.
@@ -742,6 +798,72 @@ class Identifier(Sequence[str]):
 
     def __str__(self) -> str:
         return ".".join(self)
+
+
+class Function(ABC):
+    """A registered function in a catalog, identified by an Identifier.
+
+    A Function can be called with arguments to produce a Daft Expression.
+    Subclasses implement the specific mechanism for resolving and invoking
+    the underlying callable.
+
+    Attributes:
+        identifier (Identifier): The full catalog identifier for this function.
+        name (str): The last part of the identifier (the function's local name).
+        namespace (Identifier): The namespace portion of the identifier (all parts except the last).
+
+    """
+
+    def __init__(self, identifier: Identifier) -> None:
+        """Creates a new Function.
+
+        Args:
+            identifier (Identifier): The full catalog identifier for this function.
+        """
+        if not isinstance(identifier, Identifier):
+            raise TypeError(f"identifier must be an Identifier, got {type(identifier).__name__!r}")
+        self._identifier = identifier
+
+    @property
+    def identifier(self) -> Identifier:
+        """The full catalog identifier for this function."""
+        return self._identifier
+
+    @property
+    def name(self) -> str:
+        """The last part of the identifier — the function's local name."""
+        return self._identifier[-1]
+
+    @property
+    def namespace(self) -> Identifier:
+        """The namespace portion of the identifier (all parts except the last)."""
+        return self._identifier.drop(1)
+
+    @abstractmethod
+    def __call__(self, *args: Any, **kwargs: Any) -> Expression:
+        """Call the function with the given arguments.
+
+        Args:
+            *args: Positional arguments passed to the underlying function.
+            **kwargs: Keyword arguments passed to the underlying function.
+
+        Returns:
+            Expression: a Daft Expression produced by the function.
+        """
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Function):
+            return False
+        return self._identifier == other._identifier
+
+    def __hash__(self) -> int:
+        return hash(self._identifier)
+
+    def __repr__(self) -> str:
+        return f"Function(identifier={self._identifier!r})"
+
+    def __str__(self) -> str:
+        return str(self._identifier)
 
 
 class Table(ABC):

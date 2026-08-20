@@ -5,10 +5,9 @@ from typing import TYPE_CHECKING
 
 from daft import context, runners
 from daft.api_annotations import PublicAPI
-from daft.daft import ScanOperatorHandle, StorageConfig
+from daft.daft import StorageConfig
 from daft.dataframe import DataFrame
 from daft.io import IOConfig, S3Config
-from daft.logical.builder import LogicalPlanBuilder
 
 if TYPE_CHECKING:
     from pypaimon.table.table import Table as PaimonTable
@@ -136,7 +135,7 @@ def read_paimon(
     except ImportError:
         raise ImportError("pypaimon is required to use read_paimon. Install it with: `pip install pypaimon`")
 
-    from daft.io.paimon.paimon_scan import PaimonScanOperator
+    from daft.io.paimon.paimon_scan import PaimonDataSource
 
     file_io = getattr(table, "file_io", None)
     catalog_options = (getattr(file_io, "properties", None) or {}) if file_io is not None else {}
@@ -151,7 +150,5 @@ def read_paimon(
     warehouse = catalog_options.get("warehouse", "")
     scan_catalog_options = {"warehouse": warehouse} if warehouse else {}
 
-    operator = PaimonScanOperator(table, storage_config=storage_config, catalog_options=scan_catalog_options)
-    handle = ScanOperatorHandle.from_python_scan_operator(operator)
-    builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
-    return DataFrame(builder)
+    source = PaimonDataSource(table, storage_config=storage_config, catalog_options=scan_catalog_options)
+    return source.read()

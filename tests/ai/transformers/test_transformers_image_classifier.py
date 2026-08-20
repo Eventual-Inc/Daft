@@ -13,6 +13,7 @@ from daft.ai.transformers.protocols.image_classifier import (
     TransformersImageClassifier,
     TransformersImageClassifierDescriptor,
 )
+from tests._hf_retry import call_with_hf_retry
 
 
 class MockProvider(Provider):
@@ -100,7 +101,9 @@ def test_instantiate():
         classify_options={},
     )
 
-    classifier = descriptor.instantiate()
+    # Pipeline construction downloads model files from HuggingFace Hub, which
+    # is occasionally rate-limited (HTTP 429) on shared CI runners.
+    classifier = call_with_hf_retry(descriptor.instantiate)
     assert isinstance(classifier, TransformersImageClassifier)
     assert classifier._model == "openai/clip-vit-base-patch32"
     assert classifier._pipeline, "Current implementation should have a pipeline."
@@ -123,7 +126,10 @@ def test_classify_image_with_default():
 
     df = df.with_column("label", classify_image(df["image"], labels=["red", "blue"]))
 
-    assert df.select("label").to_pylist() == [
+    # Materializing the result triggers HuggingFace Hub model downloads, which
+    # is occasionally rate-limited (HTTP 429) on shared CI runners.
+    result = call_with_hf_retry(lambda: df.select("label").to_pylist())
+    assert result == [
         {"label": "red"},
         {"label": "blue"},
     ]

@@ -22,16 +22,19 @@ impl RayRunner {
 
     pub fn try_new(
         address: Option<String>,
-        max_task_backlog: Option<usize>,
         force_client_mode: Option<bool>,
+        worker_startup_timeout: Option<usize>,
     ) -> DaftResult<Self> {
         Python::attach(|py| {
             let ray_runner_module = py.import(intern!(py, "daft.runners.ray_runner"))?;
             let ray_runner = ray_runner_module.getattr(intern!(py, "RayRunner"))?;
             let kwargs = PyDict::new(py);
             kwargs.set_item(intern!(py, "address"), address)?;
-            kwargs.set_item(intern!(py, "max_task_backlog"), max_task_backlog)?;
             kwargs.set_item(intern!(py, "force_client_mode"), force_client_mode)?;
+            kwargs.set_item(
+                intern!(py, "worker_startup_timeout"),
+                worker_startup_timeout,
+            )?;
 
             let instance = ray_runner.call((), Some(&kwargs))?;
             let instance = instance.unbind();
@@ -158,8 +161,8 @@ pub enum RunnerConfig {
     },
     Ray {
         address: Option<String>,
-        max_task_backlog: Option<usize>,
         force_client_mode: Option<bool>,
+        worker_startup_timeout: Option<usize>,
     },
 }
 
@@ -169,12 +172,12 @@ impl RunnerConfig {
             Self::Native { num_threads } => Ok(Runner::Native(NativeRunner::try_new(num_threads)?)),
             Self::Ray {
                 address,
-                max_task_backlog,
                 force_client_mode,
+                worker_startup_timeout,
             } => Ok(Runner::Ray(RayRunner::try_new(
                 address,
-                max_task_backlog,
                 force_client_mode,
+                worker_startup_timeout,
             )?)),
         }
     }
@@ -202,17 +205,24 @@ fn parse_bool_env_var(var_name: &str) -> Option<bool> {
         .map(|s| matches!(s.trim().to_lowercase().as_str(), "true" | "1"))
 }
 
-/// Helper function to parse a numeric environment variable.
 fn parse_usize_env_var(var_name: &str) -> Option<usize> {
-    std::env::var(var_name).ok().and_then(|s| s.parse().ok())
+    std::env::var(var_name).ok().and_then(|s| {
+        s.trim().parse::<usize>().map_or_else(
+            |_| {
+                log::warn!("Ignoring invalid ${var_name}='{s}', expected unsigned integer");
+                None
+            },
+            Some,
+        )
+    })
 }
 
 /// Helper function to get the ray runner config from the environment.
 fn get_ray_runner_config_from_env() -> RunnerConfig {
     const DAFT_RAY_ADDRESS: &str = "DAFT_RAY_ADDRESS";
     const RAY_ADDRESS: &str = "RAY_ADDRESS";
-    const DAFT_DEVELOPER_RAY_MAX_TASK_BACKLOG: &str = "DAFT_DEVELOPER_RAY_MAX_TASK_BACKLOG";
     const DAFT_RAY_FORCE_CLIENT_MODE: &str = "DAFT_RAY_FORCE_CLIENT_MODE";
+    const DAFT_RAY_WORKER_STARTUP_TIMEOUT: &str = "DAFT_RAY_WORKER_STARTUP_TIMEOUT";
 
     let address = if let Ok(address) = std::env::var(DAFT_RAY_ADDRESS) {
         log::warn!(
@@ -224,12 +234,12 @@ fn get_ray_runner_config_from_env() -> RunnerConfig {
     } else {
         std::env::var(RAY_ADDRESS).ok()
     };
-    let max_task_backlog = parse_usize_env_var(DAFT_DEVELOPER_RAY_MAX_TASK_BACKLOG);
     let force_client_mode = parse_bool_env_var(DAFT_RAY_FORCE_CLIENT_MODE);
+    let worker_startup_timeout = parse_usize_env_var(DAFT_RAY_WORKER_STARTUP_TIMEOUT);
     RunnerConfig::Ray {
         address,
-        max_task_backlog,
         force_client_mode,
+        worker_startup_timeout,
     }
 }
 

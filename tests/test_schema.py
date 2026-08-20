@@ -100,7 +100,7 @@ def test_repr():
     assert (
         without_escape.replace("\r", "")
         == """╭─────────────┬─────────╮
-│ column_name ┆ type    │
+│ Column Name ┆ DType   │
 ╞═════════════╪═════════╡
 │ int         ┆ Int64   │
 ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤

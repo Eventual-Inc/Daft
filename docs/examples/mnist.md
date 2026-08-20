@@ -10,7 +10,7 @@ This is a JSON file containing all the data for the MNIST test set. Let's load i
 
 ```python
 import daft
-from daft import DataType, col, udf
+from daft import DataType, col
 
 URL = "https://github.com/Eventual-Inc/mnist-json/raw/master/mnist_handwritten_test.json.gz"
 images_df = daft.read_json(URL)
@@ -27,7 +27,7 @@ You just loaded your first Daft Dataframe! It consists of two columns:
 1. The "image" column is a Python column of type `list` - where it looks like each row contains a list of digits representing the pixels of each image
 2. The "label" column is an Integer column, consisting of just the label of that image.
 
-## Processing Columns with [User-Defined Functions (UDF)](../custom-code/udfs.md)
+## Processing Columns with [User-Defined Functions (UDF)](../custom-code/index.md)
 
 It seems our JSON file has provided us with a one-dimensional array of pixels instead of two-dimensional images. We can easily modify data in this column by instructing Daft to run a method on every row in the column like so:
 
@@ -100,10 +100,10 @@ class Net(nn.Module):
         return output
 ```
 
-Now comes the fun part - we can define a UDF using the `@udf` decorator. Notice that for a batch of data we only initialize our model once!
+Now comes the fun part - we can define a class UDF using the [`@daft.cls`][daft.cls] decorator and a batched method using [`@daft.method.batch`][daft.method.batch]. Notice that for a batch of data we only initialize our model once!
 
 ```python
-@udf(return_dtype=DataType.int64())
+@daft.cls()
 class ClassifyImages:
     def __init__(self):
         # Perform expensive initializations - create the model, download model weights and load up the model with weights
@@ -113,6 +113,7 @@ class ClassifyImages:
         )
         self.model.load_state_dict(state_dict)
 
+    @daft.method.batch(return_dtype=DataType.int64())
     def __call__(self, images_2d_col):
         images_arr = np.array(images_2d_col.to_pylist())
         normalized_image_2d = images_arr / 255
@@ -121,10 +122,11 @@ class ClassifyImages:
         return classifications.detach().numpy().argmax(axis=1)
 ```
 
-Using this UDF is really easy, we simply run it on the columns that we want to process:
+To use this UDF, instantiate it once and then apply it to the columns we want to process:
 
 ```python
-classified_images_df = images_df.with_column("model_classification", ClassifyImages(col("image_2d")))
+classifier = ClassifyImages()
+classified_images_df = images_df.with_column("model_classification", classifier(col("image_2d")))
 
 classified_images_df.show(10)
 ```

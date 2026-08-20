@@ -11,6 +11,8 @@ use common_error::{DaftError, DaftResult};
 use daft_ext::abi::{DAFT_ABI_VERSION, DAFT_MODULE_MAGIC_SYMBOL, FFI_Module};
 use libloading::Library;
 
+use crate::{aggregate::AggregateFunctionHandle, function::ScalarFunctionHandle};
+
 /// A shared handle to a loaded extension module.
 ///
 /// Wraps an `FFI_Module` and provides safe accessors for module-level
@@ -18,12 +20,18 @@ use libloading::Library;
 /// one `Arc<ModuleHandle>`.
 pub struct ModuleHandle {
     module: FFI_Module,
+    path: PathBuf,
 }
 
 impl ModuleHandle {
     /// Wraps a raw `FFI_Module` in a `ModuleHandle`.
-    pub fn new(module: FFI_Module) -> Self {
-        Self { module }
+    pub fn new(module: FFI_Module, path: PathBuf) -> Self {
+        Self { module, path }
+    }
+
+    /// Path to the shared library this module was loaded from.
+    pub fn path(&self) -> &Path {
+        &self.path
     }
 
     /// Free a C string allocated by this module.
@@ -51,16 +59,27 @@ impl ModuleHandle {
 unsafe impl Send for ModuleHandle {}
 unsafe impl Sync for ModuleHandle {}
 
-/// A global, thread-safe store of loaded extension modules.
-static MODULES: OnceLock<Mutex<HashMap<PathBuf, LoadedModule>>> = OnceLock::new();
-
-/// A loaded extension module.
+/// A loaded extension module and all functions it registered during `init`.
+///
+/// `_library` is `Option<Library>` so that test helpers can insert stub entries
+/// without a real shared library — production code always uses `Some`.
 struct LoadedModule {
     /// The [`Library`] handle, kept alive for the lifetime of the process.
-    _library: Library,
+    _library: Option<Library>,
     /// Shared handle to the module's FFI descriptor.
     handle: Arc<ModuleHandle>,
+    /// Scalar functions registered by this module during `init`.
+    scalar_fns: HashMap<String, ScalarFunctionHandle>,
+    /// Aggregate functions registered by this module during `init`.
+    agg_fns: HashMap<String, AggregateFunctionHandle>,
 }
+
+/// A global, thread-safe store of loaded extension modules and their functions.
+///
+/// This is the single source of truth for all extension state in a process.
+/// Scalar and aggregate function handles live here (within each module's entry)
+/// rather than in separate top-level registries.
+static MODULES: OnceLock<Mutex<HashMap<PathBuf, LoadedModule>>> = OnceLock::new();
 
 /// Loads an extension module from a shared library, returning a shared [`ModuleHandle`].
 pub fn load_module(path: &Path) -> DaftResult<Arc<ModuleHandle>> {
@@ -79,16 +98,117 @@ pub fn load_module(path: &Path) -> DaftResult<Arc<ModuleHandle>> {
 
     let library = open_library(&path)?;
     let module = resolve_module(&library, &path)?;
-    let handle = Arc::new(ModuleHandle::new(module));
+    let handle = Arc::new(ModuleHandle::new(module, path.clone()));
     modules.insert(
         path,
         LoadedModule {
-            _library: library,
+            _library: Some(library),
             handle: handle.clone(),
+            scalar_fns: HashMap::new(),
+            agg_fns: HashMap::new(),
         },
     );
 
     Ok(handle)
+}
+
+/// Register a scalar function handle in the module's `MODULES` entry.
+///
+/// Called by [`crate::function::into_scalar_function_factory`] during extension
+/// initialization. Idempotent — re-registering the same `(path, name)` overwrites.
+/// Errors if the module is not loaded or the `MODULES` lock is poisoned.
+pub fn register_extension_function(
+    path: &Path,
+    name: String,
+    handle: ScalarFunctionHandle,
+) -> DaftResult<()> {
+    let mut guard = MODULES
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .map_err(|e| DaftError::InternalError(format!("MODULES lock poisoned: {e}")))?;
+    let entry = guard.get_mut(path).ok_or_else(|| {
+        DaftError::InternalError(format!(
+            "cannot register extension function '{name}': module '{}' not loaded",
+            path.display(),
+        ))
+    })?;
+    entry.scalar_fns.insert(name, handle);
+    Ok(())
+}
+
+/// Look up a scalar function handle by module path and function name.
+///
+/// Returns `Ok(None)` if the module is not loaded in this process or the
+/// function was never registered. Errors if the `MODULES` lock is poisoned.
+pub fn lookup_extension_function(
+    path: &Path,
+    name: &str,
+) -> DaftResult<Option<ScalarFunctionHandle>> {
+    let Some(modules) = MODULES.get() else {
+        return Ok(None);
+    };
+    let guard = modules
+        .lock()
+        .map_err(|e| DaftError::InternalError(format!("MODULES lock poisoned: {e}")))?;
+    Ok(guard
+        .get(path)
+        .and_then(|m| m.scalar_fns.get(name).cloned()))
+}
+
+/// Register an aggregate function handle in the module's `MODULES` entry.
+///
+/// Called by [`crate::aggregate::into_aggregate_fn_handle`] during extension
+/// initialization. Idempotent — re-registering the same `(path, name)` overwrites.
+/// Errors if the module is not loaded or the `MODULES` lock is poisoned.
+pub fn register_extension_aggregate(
+    path: &Path,
+    name: String,
+    handle: AggregateFunctionHandle,
+) -> DaftResult<()> {
+    let mut guard = MODULES
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .map_err(|e| DaftError::InternalError(format!("MODULES lock poisoned: {e}")))?;
+    let entry = guard.get_mut(path).ok_or_else(|| {
+        DaftError::InternalError(format!(
+            "cannot register extension aggregate '{name}': module '{}' not loaded",
+            path.display(),
+        ))
+    })?;
+    entry.agg_fns.insert(name, handle);
+    Ok(())
+}
+
+/// Look up an aggregate function handle by module path and function name.
+///
+/// Returns `Ok(None)` if the module is not loaded in this process or the
+/// function was never registered. Errors if the `MODULES` lock is poisoned.
+pub fn lookup_extension_aggregate(
+    path: &Path,
+    name: &str,
+) -> DaftResult<Option<AggregateFunctionHandle>> {
+    let Some(modules) = MODULES.get() else {
+        return Ok(None);
+    };
+    let guard = modules
+        .lock()
+        .map_err(|e| DaftError::InternalError(format!("MODULES lock poisoned: {e}")))?;
+    Ok(guard.get(path).and_then(|m| m.agg_fns.get(name).cloned()))
+}
+
+/// Return all paths currently in the process-global `MODULES` cache.
+///
+/// Order is unspecified. Intended for propagating the driver's loaded
+/// extension set to Ray workers. Returns an empty vec when no extensions
+/// have ever been loaded; errors only if the `MODULES` lock is poisoned.
+pub fn loaded_module_paths() -> DaftResult<Vec<PathBuf>> {
+    let Some(modules) = MODULES.get() else {
+        return Ok(Vec::new());
+    };
+    let guard = modules
+        .lock()
+        .map_err(|e| DaftError::InternalError(format!("MODULES lock poisoned: {e}")))?;
+    Ok(guard.keys().cloned().collect())
 }
 
 /// Opens a shared library from disk, returning a [`Library`] handle.
@@ -128,6 +248,42 @@ fn resolve_module(library: &Library, path: &Path) -> DaftResult<FFI_Module> {
     Ok(module)
 }
 
+/// Insert a stub module entry into `MODULES` for use in tests.
+///
+/// Uses `or_insert` so it is a no-op if the path is already registered.
+/// The stub has no real library (`_library: None`) and empty function maps.
+/// Call [`register_extension_function`] / [`register_extension_aggregate`] afterwards
+/// to populate the function maps for the test.
+#[cfg(test)]
+pub(crate) fn insert_test_module(path: PathBuf) {
+    use std::ffi::c_int;
+
+    use daft_ext::abi::{FFI_Module, FFI_SessionContext};
+
+    unsafe extern "C" fn noop_init(_: *mut FFI_SessionContext) -> c_int {
+        0
+    }
+    unsafe extern "C" fn noop_free(_: *mut c_char) {}
+
+    let ffi_module = FFI_Module {
+        daft_abi_version: DAFT_ABI_VERSION,
+        name: c"test_stub".as_ptr(),
+        init: noop_init,
+        free_string: noop_free,
+    };
+    let handle = Arc::new(ModuleHandle::new(ffi_module, path.clone()));
+    let mut guard = MODULES
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap();
+    guard.entry(path).or_insert(LoadedModule {
+        _library: None,
+        handle,
+        scalar_fns: HashMap::new(),
+        agg_fns: HashMap::new(),
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use std::ffi::c_int;
@@ -154,23 +310,31 @@ mod tests {
     #[test]
     fn module_handle_name() {
         let module = make_test_module(c"test_module");
-        let handle = ModuleHandle::new(module);
+        let handle = ModuleHandle::new(module, Path::new("/mock/test_module").to_path_buf());
         assert_eq!(handle.name().to_str().unwrap(), "test_module");
     }
 
     #[test]
     fn module_handle_ffi_module() {
         let module = make_test_module(c"test_module");
-        let handle = ModuleHandle::new(module);
+        let handle = ModuleHandle::new(module, Path::new("/mock/test_module").to_path_buf());
         assert_eq!(handle.ffi_module().daft_abi_version, DAFT_ABI_VERSION);
     }
 
     #[test]
     fn module_handle_free_string_null() {
         let module = make_test_module(c"test_module");
-        let handle = ModuleHandle::new(module);
+        let handle = ModuleHandle::new(module, Path::new("/mock/test_module").to_path_buf());
         // Should not panic on null
         unsafe { handle.free_string(std::ptr::null_mut()) };
+    }
+
+    #[test]
+    fn module_handle_exposes_path() {
+        let module = make_test_module(c"test_module");
+        let path = Path::new("/tmp/fake.so").to_path_buf();
+        let handle = ModuleHandle::new(module, path.clone());
+        assert_eq!(handle.path(), path.as_path());
     }
 
     #[test]
@@ -186,5 +350,19 @@ mod tests {
             }
             Ok(_) => panic!("expected error for nonexistent path"),
         }
+    }
+
+    #[test]
+    fn lookup_unknown_module_returns_none() {
+        assert!(
+            lookup_extension_function(Path::new("/no/such/module.so"), "some_fn")
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            lookup_extension_aggregate(Path::new("/no/such/module.so"), "some_agg")
+                .unwrap()
+                .is_none()
+        );
     }
 }

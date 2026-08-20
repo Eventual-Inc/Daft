@@ -6,4 +6,5 @@ pub use crate::{
     image_property::ImageProperty,
     schema::{Schema, SchemaRef},
     time_unit::{TimeUnit, infer_timeunit_from_format_string},
+    union_mode::UnionMode,
 };

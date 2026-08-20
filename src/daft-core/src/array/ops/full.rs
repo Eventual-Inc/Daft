@@ -7,7 +7,7 @@ use pyo3::Python;
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
 use crate::{
-    array::{DataArray, FixedSizeListArray, ListArray, StructArray},
+    array::{DataArray, FixedSizeListArray, ListArray, StructArray, UnionArray},
     datatypes::{
         DaftDataType, DaftLogicalType, DaftPhysicalType, DataType, Field, logical::LogicalArray,
     },
@@ -167,6 +167,49 @@ impl FullNull for StructArray {
                 Self::new(field, empty_children, None)
             }
             _ => panic!("Cannot create empty StructArray with dtype: {}", dtype),
+        }
+    }
+}
+
+impl FullNull for UnionArray {
+    fn full_null(name: &str, dtype: &DataType, length: usize) -> Self {
+        match dtype {
+            DataType::Union(fields, type_ids, mode) => {
+                let field = Field::new(name, dtype.clone());
+                let empty_children = fields
+                    .iter()
+                    .map(|f| Series::full_null(f.name.as_ref(), &f.dtype, length))
+                    .collect::<Vec<_>>();
+
+                let offsets = if mode.is_dense() {
+                    Some(vec![0i32; length])
+                } else {
+                    None
+                };
+
+                let null_id = type_ids[0];
+                let types = vec![null_id; length];
+
+                Self::new(field, types, empty_children, offsets)
+            }
+            _ => panic!("Cannot create empty UnionArray with dtype: {}", dtype),
+        }
+    }
+
+    fn empty(name: &str, dtype: &DataType) -> Self {
+        match dtype {
+            DataType::Union(fields, _, mode) => {
+                let field = Field::new(name, dtype.clone());
+                let empty_children = fields
+                    .iter()
+                    .map(|f| Series::empty(f.name.as_ref(), &f.dtype))
+                    .collect::<Vec<_>>();
+
+                let offsets = if mode.is_dense() { Some(vec![]) } else { None };
+
+                Self::new(field, vec![], empty_children, offsets)
+            }
+            _ => panic!("Cannot create empty UnionArray with dtype: {}", dtype),
         }
     }
 }

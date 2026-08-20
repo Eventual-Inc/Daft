@@ -70,6 +70,10 @@ impl Growable for MapGrowable<'_> {
         );
         Ok(map_array.into_series())
     }
+
+    fn len(&self) -> usize {
+        self.list_growable.len()
+    }
 }
 
 #[cfg(test)]

@@ -44,10 +44,10 @@ pub fn make_schema_vertical_table(
 
     maybe_apply_width(&mut table);
 
-    let mut header = vec![create_table_cell("column_name"), create_table_cell("type")];
+    let mut header = vec![create_table_cell("Column Name"), create_table_cell("DType")];
     let has_metadata = fields.iter().any(|(_, _, meta)| !meta.is_empty());
     if has_metadata {
-        header.push(create_table_cell("metadata"));
+        header.push(create_table_cell("Metadata"));
     }
     table.set_header(header);
 

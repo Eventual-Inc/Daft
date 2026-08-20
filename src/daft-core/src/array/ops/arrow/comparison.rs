@@ -6,7 +6,7 @@ use arrow::{
 use common_error::DaftResult;
 use num_traits::Float;
 
-use crate::{kernels::search_sorted::cmp_float, series::Series};
+use crate::{kernels::cmp::cmp_float, series::Series};
 
 fn build_is_equal_float<T>(
     left: &dyn Array,

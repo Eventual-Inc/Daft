@@ -38,6 +38,12 @@ class _PyArrowExpressionVisitor(PredicateVisitor[pc.Expression]):
         pc_type = dtype.to_arrow_dtype()
         return pc_expr.cast(pc_type)
 
+    def visit_try_cast(self, expr: Expression, dtype: DataType) -> pc.Expression:
+        """Converts the try_cast with safe=True cast options."""
+        pc_expr = self.visit(expr)
+        pc_type = dtype.to_arrow_dtype()
+        return pc_expr.cast(pc_type, safe=True)
+
     def visit_list(self, items: list[Expression]) -> pc.Expression:
         raise ValueError("pyarrow.compute does not have a make_list function.")
 

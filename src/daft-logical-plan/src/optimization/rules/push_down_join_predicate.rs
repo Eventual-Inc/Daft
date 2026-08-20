@@ -36,6 +36,7 @@ impl OptimizerRule for PushDownJoinPredicate {
                 on,
                 join_type,
                 join_strategy,
+                key_filtering_config,
                 ..
             }) = node.as_ref()
             {
@@ -82,6 +83,7 @@ impl OptimizerRule for PushDownJoinPredicate {
 
                     let new_join =
                         Join::try_new(new_left, new_right, new_on, *join_type, *join_strategy)?
+                            .with_key_filtering_config(key_filtering_config.clone())
                             .into();
 
                     return Ok(Transformed::yes(new_join));

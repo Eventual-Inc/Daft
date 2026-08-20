@@ -74,4 +74,8 @@ impl Growable for PythonGrowable<'_> {
 
         Ok(PythonArray::new(field, buffer.into(), built_validity).into_series())
     }
+
+    fn len(&self) -> usize {
+        self.buffer.len()
+    }
 }

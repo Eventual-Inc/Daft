@@ -7,7 +7,9 @@ use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
+use super::blocking_sink::{
+    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkOutput, BlockingSinkSinkResult,
+};
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{InputId, NodeName},
@@ -91,7 +93,7 @@ impl BlockingSink for SortSink {
                     let concated = MicroPartition::concat(parts)?;
                     let sorted =
                         concated.sort(&params.sort_by, &params.descending, &params.nulls_first)?;
-                    Ok(vec![sorted])
+                    Ok(BlockingSinkOutput::Partitions(vec![sorted]))
                 },
                 Span::current(),
             )

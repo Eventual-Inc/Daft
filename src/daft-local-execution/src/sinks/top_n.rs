@@ -11,6 +11,7 @@ use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSin
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{InputId, NodeName},
+    sinks::blocking_sink::BlockingSinkOutput,
 };
 
 /// Parameters for the TopN that both the state and sinker need
@@ -136,7 +137,7 @@ impl BlockingSink for TopNSink {
                         params.limit,
                         params.offset,
                     )?;
-                    Ok(vec![final_output])
+                    Ok(BlockingSinkOutput::Partitions(vec![final_output]))
                 },
                 Span::current(),
             )

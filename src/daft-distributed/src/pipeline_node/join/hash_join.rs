@@ -6,15 +6,15 @@ use common_metrics::{
 };
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
-use daft_logical_plan::{JoinType, partitioning::HashClusteringConfig, stats::StatsState};
+use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
 
 use super::stats::BasicJoinStats;
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
-        TaskBuilderStream,
+        ClusteringStrategy, DistributedPipelineNode, NodeID, PipelineNodeConfig,
+        PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream, clustering::BoundClusteringSpec,
     },
     plan::{PlanConfig, PlanExecutionContext},
     scheduling::task::SwordfishTaskBuilder,
@@ -62,13 +62,12 @@ impl HashJoinNode {
         let partition_cols = left_on
             .iter()
             .chain(right_on.iter())
-            .map(BoundExpr::inner)
             .cloned()
             .collect::<Vec<_>>();
         let config = PipelineNodeConfig::new(
             output_schema,
             plan_config.config.clone(),
-            Arc::new(HashClusteringConfig::new(num_partitions, partition_cols).into()),
+            ClusteringStrategy::Explicit(BoundClusteringSpec::hash(num_partitions, partition_cols)),
         );
         Self {
             config,

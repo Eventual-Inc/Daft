@@ -1,4 +1,8 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use common_error::DaftResult;
 use pyo3::prelude::*;
@@ -11,6 +15,15 @@ use crate::scheduling::{
 
 type ActiveTaskDetails = HashMap<TaskContext, TaskDetails>;
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum ActorState {
+    Ready,
+    Busy,
+    Idle,
+    Releasing,
+    Released,
+}
+
 #[pyclass(module = "daft.daft", name = "RaySwordfishWorker", from_py_object)]
 #[derive(Debug, Clone)]
 pub(crate) struct RaySwordfishWorker {
@@ -21,6 +34,8 @@ pub(crate) struct RaySwordfishWorker {
     num_gpus: f64,
     active_task_details: ActiveTaskDetails,
     ip_address: String,
+    last_task_finished_at: Instant,
+    state: ActorState,
 }
 
 #[pymethods]
@@ -42,6 +57,8 @@ impl RaySwordfishWorker {
             total_memory_bytes,
             active_task_details: Default::default(),
             ip_address,
+            last_task_finished_at: Instant::now(),
+            state: ActorState::Ready,
         }
     }
 }
@@ -51,8 +68,16 @@ impl RaySwordfishWorker {
         self.total_memory_bytes
     }
 
+    pub fn set_state(&mut self, state: ActorState) {
+        self.state = state;
+    }
+
     pub fn mark_task_finished(&mut self, task_context: &TaskContext) {
         self.active_task_details.remove(task_context);
+        self.last_task_finished_at = Instant::now();
+        if self.active_task_details.is_empty() {
+            self.set_state(ActorState::Idle);
+        }
     }
 
     pub fn submit_tasks(
@@ -75,6 +100,9 @@ impl RaySwordfishWorker {
 
             self.active_task_details
                 .insert(task_context.clone(), task_details);
+            if self.active_task_details.len() == 1 {
+                self.set_state(ActorState::Busy);
+            }
 
             let ray_task_result_handle = RayTaskResultHandle::new(
                 task_context,
@@ -89,11 +117,40 @@ impl RaySwordfishWorker {
         Ok(task_handles)
     }
 
+    pub fn is_idle(&self) -> bool {
+        self.active_task_details.is_empty()
+    }
+
+    pub fn idle_duration(&self, now: Instant) -> Duration {
+        if self.is_idle() {
+            now.saturating_duration_since(self.last_task_finished_at)
+        } else {
+            Duration::from_secs(0)
+        }
+    }
+
     #[allow(dead_code)]
     pub fn shutdown(&self, py: Python<'_>) {
         self.ray_worker_handle
             .call_method0(py, pyo3::intern!(py, "shutdown"))
             .expect("Failed to shutdown RaySwordfishWorker");
+    }
+
+    pub fn release(&mut self, py: Python<'_>) {
+        let inflight = self.active_task_details.len();
+        if inflight > 0 {
+            tracing::warn!(
+                target: "ray_swordfish_worker",
+                worker_id = %self.worker_id,
+                inflight_tasks = inflight,
+                "Cannot release worker because it has active tasks."
+            );
+            return;
+        }
+
+        self.set_state(ActorState::Releasing);
+        self.shutdown(py);
+        self.set_state(ActorState::Released);
     }
 }
 

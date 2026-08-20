@@ -57,7 +57,7 @@ fn simplify_misc_expr(expr: ExprRef, schema: &SchemaRef) -> DaftResult<Transform
                 .and(between.clone().gt_eq(low.clone())),
         ),
         // CAST(e AS dtype) -> e if e.dtype == dtype
-        Expr::Cast(e, dtype) if e.get_type(schema)? == *dtype => Transformed::yes(e.clone()),
+        Expr::Cast(e, dtype, _) if e.get_type(schema)? == *dtype => Transformed::yes(e.clone()),
         _ => Transformed::no(expr),
     })
 }

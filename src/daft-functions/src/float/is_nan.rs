@@ -41,8 +41,7 @@ impl ScalarUDF for IsNan {
         let UnaryArg { input } = inputs.try_into()?;
         let data_field = input.to_field(schema)?;
         match &data_field.dtype {
-            // DataType::Float16 |
-            DataType::Null | DataType::Float32 | DataType::Float64 => {
+            DataType::Float16 | DataType::Null | DataType::Float32 | DataType::Float64 => {
                 Ok(Field::new(data_field.name, DataType::Boolean))
             }
             _ => Err(DaftError::TypeError(format!(

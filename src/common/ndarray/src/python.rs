@@ -16,6 +16,7 @@ pub enum NumpyArray<'py> {
     U32(Bound<'py, PyArrayDyn<u32>>),
     I64(Bound<'py, PyArrayDyn<i64>>),
     U64(Bound<'py, PyArrayDyn<u64>>),
+    F16(Bound<'py, PyArrayDyn<half::f16>>),
     F32(Bound<'py, PyArrayDyn<f32>>),
     F64(Bound<'py, PyArrayDyn<f64>>),
     Py(Bound<'py, PyArrayDyn<Py<PyAny>>>),
@@ -32,6 +33,7 @@ impl<'py> NumpyArray<'py> {
             Self::U32(arr) => NdArray::U32(arr.to_owned_array()),
             Self::I64(arr) => NdArray::I64(arr.to_owned_array()),
             Self::U64(arr) => NdArray::U64(arr.to_owned_array()),
+            Self::F16(arr) => NdArray::F16(arr.to_owned_array()),
             Self::F32(arr) => NdArray::F32(arr.to_owned_array()),
             Self::F64(arr) => NdArray::F64(arr.to_owned_array()),
             Self::Py(arr) => NdArray::Py(
@@ -51,6 +53,7 @@ impl<'py> NumpyArray<'py> {
             NdArray::U32(arr) => Self::U32(arr.to_pyarray(py)),
             NdArray::I64(arr) => Self::I64(arr.to_pyarray(py)),
             NdArray::U64(arr) => Self::U64(arr.to_pyarray(py)),
+            NdArray::F16(arr) => Self::F16(arr.to_pyarray(py)),
             NdArray::F32(arr) => Self::F32(arr.to_pyarray(py)),
             NdArray::F64(arr) => Self::F64(arr.to_pyarray(py)),
             NdArray::Py(arr) => Self::Py(

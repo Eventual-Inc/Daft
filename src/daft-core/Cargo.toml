@@ -14,13 +14,14 @@ common-image = {workspace = true}
 common-io-config = {path = "../common/io-config", default-features = false}
 common-ndarray = {workspace = true}
 common-py-serde = {path = "../common/py-serde", default-features = false}
+half = {workspace = true}
 daft-hash = {workspace = true}
 daft-minhash = {path = "../daft-minhash", default-features = false}
 daft-schema = {path = "../daft-schema", default-features = false}
 daft-sketch = {path = "../daft-sketch", default-features = false}
 derive_more = {workspace = true}
 fastrand = "2.1.0"
-fnv = "1.0.7"
+smallvec = {workspace = true}
 html-escape = {workspace = true}
 hyperloglog = {path = "../hyperloglog"}
 image = {workspace = true, features = [
@@ -42,6 +43,7 @@ rand = {workspace = true}
 serde = {workspace = true}
 sketches-ddsketch = {workspace = true}
 xxhash-rust = {workspace = true}
+uuid = {workspace = true}
 
 [dev-dependencies]
 rstest = {workspace = true}

@@ -8,7 +8,7 @@ use self::logical::{DurationArray, ImageArray, MapArray};
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
 use crate::{
-    array::{ListArray, StructArray},
+    array::{ListArray, StructArray, UnionArray, UuidArray},
     datatypes::{
         logical::{DateArray, FixedShapeImageArray, TimeArray, TimestampArray},
         *,
@@ -73,9 +73,9 @@ impl Series {
         self.downcast()
     }
 
-    // pub fn f16(&self) -> DaftResult<&Float16Array> {
-    //     self.downcast()
-    // }
+    pub fn f16(&self) -> DaftResult<&Float16Array> {
+        self.downcast()
+    }
 
     pub fn f32(&self) -> DaftResult<&Float32Array> {
         self.downcast()
@@ -90,6 +90,10 @@ impl Series {
     }
 
     pub fn fixed_size_binary(&self) -> DaftResult<&FixedSizeBinaryArray> {
+        self.downcast()
+    }
+
+    pub fn uuid(&self) -> DaftResult<&UuidArray> {
         self.downcast()
     }
 
@@ -170,6 +174,10 @@ impl Series {
         self.downcast()
     }
     pub fn file<T: DaftMediaType>(&self) -> DaftResult<&FileArray<T>> {
+        self.downcast()
+    }
+
+    pub fn union(&self) -> DaftResult<&UnionArray> {
         self.downcast()
     }
 }

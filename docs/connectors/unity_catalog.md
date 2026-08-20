@@ -106,7 +106,7 @@ Daft supports downloading from Unity Catalog volumes using [`Expression.download
 
     # explicitly specify the unity catalog
     io_config = unity.to_io_config()
-    data_df = df.select("vol+dbfs:" + df["files"].download(io_config=io_config))
+    data_df = df.select(("vol+dbfs:" + df["files"]).download(io_config=io_config))
     data_df.show()
 
     # use the global session

@@ -8,7 +8,10 @@ use itertools::Itertools;
 use tracing::{Span, instrument};
 
 use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
-use crate::{ExecutionTaskSpawner, pipeline::NodeName};
+use crate::{
+    ExecutionTaskSpawner,
+    pipeline::{InputId, NodeName},
+};
 
 struct UnpivotParams {
     ids: Vec<BoundExpr>,
@@ -48,6 +51,7 @@ impl IntermediateOperator for UnpivotOperator {
         state: Self::State,
         _runtime_stats: Arc<Self::Stats>,
         task_spawner: &ExecutionTaskSpawner,
+        _input_id: InputId,
     ) -> IntermediateOpExecuteResult<Self> {
         let params = self.params.clone();
         task_spawner

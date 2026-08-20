@@ -9,11 +9,13 @@ import boto3
 import botocore
 from botocore.exceptions import ClientError
 
-from daft.catalog import Catalog, Identifier, NotFoundError, Properties, Schema, Table
+from daft.catalog import Catalog, Function, Identifier, NotFoundError, Properties, Schema, Table
 from daft.catalog.__iceberg import IcebergCatalog
 from daft.io import read_iceberg
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from boto3 import Session
     from mypy_boto3_s3tables import S3TablesClient
     from mypy_boto3_s3tables.type_defs import SchemaFieldTypeDef, TableMetadataTypeDef, TableSummaryTypeDef
@@ -138,6 +140,9 @@ class S3Catalog(Catalog):
     # create_*
     ###
 
+    def _create_function(self, ident: Identifier, function: Function | Callable[..., Any]) -> None:
+        raise NotImplementedError("S3Tables does not support function registration.")
+
     def _create_namespace(self, identifier: Identifier) -> None:
         try:
             path = S3Path.from_ident(identifier)
@@ -174,6 +179,9 @@ class S3Catalog(Catalog):
     ###
     # has_*
     ###
+
+    def _get_function(self, ident: Identifier) -> Function:
+        raise NotFoundError(f"Function '{ident}' not found in catalog '{self.name}'")
 
     def _has_namespace(self, identifier: Identifier) -> bool:
         try:

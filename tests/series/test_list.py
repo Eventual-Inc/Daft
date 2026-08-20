@@ -95,3 +95,11 @@ def test_list_contains_series():
     result = data.list.contains(items)
 
     assert result.to_pylist() == [True, False, None, False]
+
+
+def test_list_flatten_series():
+    data = Series.from_pylist([[[1, 2], [3]], [[], [4], None], None])
+
+    result = data.list.flatten()
+
+    assert result.to_pylist() == [[1, 2, 3], [4], None]

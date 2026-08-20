@@ -68,12 +68,17 @@ For tables on object stores, pass an `IOConfig` to supply credentials:
 
     catalog = pypaimon.CatalogFactory.create({
         "warehouse": "s3://my-bucket/warehouse",
-        "fs.s3.accessKeyId": "...",
-        "fs.s3.accessKeySecret": "...",
     })
     table = catalog.get_table("my_db.my_table")
 
-    df = daft.read_paimon(table)
+    io_config = IOConfig(
+        s3=S3Config(
+            key_id="...",
+            access_key="...",
+            region_name="us-west-2",
+        )
+    )
+    df = daft.read_paimon(table, io_config=io_config)
     df.show()
     ```
 

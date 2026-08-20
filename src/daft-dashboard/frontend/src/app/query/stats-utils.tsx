@@ -1,16 +1,94 @@
 import { AnimatedFish, Naruto } from "@/components/icons";
-import { OperatorStatus, Stat } from "./types";
+import { OperatorInfo, OperatorStatus, Stat, TaskStore } from "./types";
+import { QueryStatusName } from "@/hooks/use-queries";
 
 export const ROWS_IN_STAT_KEY = "rows.in";
 export const ROWS_OUT_STAT_KEY = "rows.out";
+export const BYTES_IN_STAT_KEY = "bytes.in";
+export const BYTES_OUT_STAT_KEY = "bytes.out";
 export const DURATION_US_STAT_KEY = "duration";
 
-export const getStatusIcon = (status: OperatorStatus) => {
+export const statNumericValue = (stat: Stat | undefined): number => {
+  if (!stat) return 0;
+  if (stat.type === "Duration") {
+    return stat.value.secs + stat.value.nanos / 1e9;
+  }
+  return Number(stat.value) || 0;
+};
+
+/**
+ * Compact human-readable row count: 1234 → "1.2K", 1234567 → "1.2M". Useful
+ * for narrow table cells where the long-form `toLocaleString()` would wrap.
+ */
+export const formatCount = (count: number): string => {
+  if (!isFinite(count) || count <= 0) return "0";
+  if (count >= 1_000_000_000) {
+    return `${(count / 1_000_000_000).toFixed(1)}B`;
+  } else if (count >= 1_000_000) {
+    return `${(count / 1_000_000).toFixed(1)}M`;
+  } else if (count >= 1_000) {
+    return `${(count / 1_000).toFixed(1)}K`;
+  }
+  return count.toString();
+};
+
+export const formatBytes = (bytes: number): string => {
+  if (!isFinite(bytes) || bytes <= 0) return "0 B";
+  if (bytes >= 1024 * 1024 * 1024) {
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GiB`;
+  } else if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+  } else if (bytes >= 1024) {
+    return `${(bytes / 1024).toFixed(1)} KiB`;
+  } else {
+    return `${Math.round(bytes)} B`;
+  }
+};
+
+/**
+ * Resolves the status to display for an operator, taking Flotilla task-level
+ * failures into account. A "Finished" operator is never overridden — retried
+ * tasks leave a non-zero failed_count even after the operator succeeds.
+ */
+export function getEffectiveStatus(
+  operator: OperatorInfo | undefined,
+  nodeId: number,
+  taskStore: TaskStore | undefined,
+  queryStatus: QueryStatusName = "Executing",
+): OperatorStatus {
+  if (!operator) return "Pending";
+
+  if (taskStore) {
+    const group = taskStore.groups.find((g) => g.node_ids.includes(nodeId));
+    if (group) {
+      // Tasks cancelled as part of a user-initiated cancellation → gray.
+      // Must come before the failed_count check: a task can have both
+      // failed_count > 0 and cancelled_count > 0 if some tasks failed before
+      // the cancellation arrived, and cancellation should win.
+      if (group.cancelled_count > 0 && queryStatus === "Canceled") return "Canceled";
+
+      // On a successful query, failed_count may be non-zero from Flotilla task
+      // retries that ultimately succeeded — don't override the Finished status.
+      if (group.failed_count > 0 && queryStatus !== "Finished") return "Failed";
+
+      // When Daft terminates the query externally (Failed/Dead), tasks that
+      // were still running never recorded an outcome — treat them as failed.
+      if (group.running_count > 0 && (queryStatus === "Failed" || queryStatus === "Dead")) return "Failed";
+    }
+  }
+
+  // Marked Finished by the backend but never actually started → never ran
+  if (operator.status === "Finished" && !operator.start_sec) return "Pending";
+
+  return operator.status;
+}
+
+export const getStatusIcon = (status: OperatorStatus, isTerminal = false) => {
   switch (status) {
     case "Finished":
-      return <Naruto />;
+      return <Naruto animated={!isTerminal} />;
     case "Executing":
-      return <AnimatedFish />;
+      return <AnimatedFish animated={!isTerminal} />;
     case "Failed":
       return (
         <div className="w-5 h-5 flex items-center justify-center">
@@ -19,37 +97,39 @@ export const getStatusIcon = (status: OperatorStatus) => {
           </div>
         </div>
       );
+    case "Canceled":
+      return (
+        <div className="w-5 h-5 flex items-center justify-center">
+          <div className="w-4 h-4 bg-zinc-600 rounded-full flex items-center justify-center">
+            <span className="text-zinc-300 text-[10px] font-bold">−</span>
+          </div>
+        </div>
+      );
     case "Pending":
     default:
       return (
-        <div className="w-5 h-5 shrink-0 border-2 border-zinc-400 border-t-transparent rounded-full animate-spin"></div>
+        <div className={`w-5 h-5 shrink-0 border-2 border-zinc-400 border-t-transparent rounded-full ${isTerminal ? "" : "animate-spin"}`}></div>
       );
   }
 };
 
 export const getStatusText = (status: OperatorStatus) => {
-  if (status === "Finished") {
-    return "Finished";
-  } else if (status === "Executing") {
-    return "Running";
-  } else if (status === "Failed") {
-    return "Failed";
-  } else {
-    return "Pending";
+  switch (status) {
+    case "Finished":  return "Finished";
+    case "Executing": return "Running";
+    case "Failed":    return "Failed";
+    case "Canceled":  return "Canceled";
+    default:          return "Pending";
   }
 };
 
 export const getStatusColor = (status: OperatorStatus) => {
   switch (status) {
-    case "Finished":
-      return "text-green-500";
-    case "Executing":
-      return "text-(--daft-accent)";
-    case "Failed":
-      return "text-red-500";
-    case "Pending":
-    default:
-      return "text-zinc-400";
+    case "Finished":  return "text-green-500";
+    case "Executing": return "text-(--daft-accent)";
+    case "Failed":    return "text-red-500";
+    case "Canceled":  return "text-zinc-400";
+    default:          return "text-zinc-400";
   }
 };
 
@@ -58,16 +138,7 @@ export const formatStatValue = (stat: Stat) => {
     case "Count":
       return stat.value.toLocaleString();
     case "Bytes":
-      const bytes = stat.value;
-      if (bytes >= 1024 * 1024 * 1024) {
-        return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GiB`;
-      } else if (bytes >= 1024 * 1024) {
-        return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
-      } else if (bytes >= 1024) {
-        return `${(bytes / 1024).toFixed(1)} KiB`;
-      } else {
-        return `${bytes} B`;
-      }
+      return formatBytes(stat.value);
     case "Percent":
       return `${stat.value.toFixed(1)}%`;
     case "Duration":
@@ -100,14 +171,10 @@ export const formatDuration = (seconds: number): string => {
 
 export const getStatusBorderColor = (status: OperatorStatus) => {
   switch (status) {
-    case "Finished":
-      return "border-green-600";
-    case "Executing":
-      return "border-orange-500";
-    case "Failed":
-      return "border-red-600";
-    case "Pending":
-    default:
-      return "border-zinc-600";
+    case "Finished":  return "border-green-600";
+    case "Executing": return "border-orange-500";
+    case "Failed":    return "border-red-600";
+    case "Canceled":  return "border-zinc-600";
+    default:          return "border-zinc-600";
   }
 };

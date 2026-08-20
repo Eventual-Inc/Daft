@@ -182,6 +182,89 @@ def test_series_canonical_tensor_extension_type_take() -> None:
     np.testing.assert_equal(result.to_pylist(), expected)
 
 
+def test_series_take_sparse_union() -> None:
+    type_ids = pa.array([0, 1, 2, 0, 1, 2], type=pa.int8())
+    int_child = pa.array([10, 0, 0, 40, 0, 0], type=pa.int32())
+    float_child = pa.array([0.0, 2.2, 0.0, 0.0, 5.5, 0.0], type=pa.float64())
+    str_child = pa.array(["", "", "c", "", "", "f"], type=pa.large_utf8())
+    arrow_arr = pa.UnionArray.from_sparse(type_ids, [int_child, float_child, str_child], field_names=["i", "f", "s"])
+    s = Series.from_arrow(arrow_arr)
+    # s = [10, 2.2, 'c', 40, 5.5, 'f']
+    idx = Series.from_pylist([5, 2, 0, 4])
+
+    result = s.take(idx)
+
+    assert result.datatype() == s.datatype()
+    assert result.to_pylist() == ["f", "c", 10, 5.5]
+
+
+def test_series_take_dense_union() -> None:
+    type_ids = pa.array([0, 1, 0, 0, 1], type=pa.int8())
+    offsets = pa.array([0, 0, 1, 2, 1], type=pa.int32())
+    int_child = pa.array([10, 30, 40], type=pa.int32())
+    float_child = pa.array([2.2, 5.5], type=pa.float64())
+    arrow_arr = pa.UnionArray.from_dense(type_ids, offsets, [int_child, float_child], field_names=["i", "f"])
+    s = Series.from_arrow(arrow_arr)
+    # s = [10, 2.2, 30, 40, 5.5]
+    idx = Series.from_pylist([4, 1, 0])
+
+    result = s.take(idx)
+
+    assert result.datatype() == s.datatype()
+    assert result.to_pylist() == [5.5, 2.2, 10]
+
+
+def test_series_take_sparse_union_null_indices() -> None:
+    """None indices in take produce null slots in the result."""
+    type_ids = pa.array([0, 1, 2, 0], type=pa.int8())
+    int_child = pa.array([10, 0, 0, 40], type=pa.int32())
+    float_child = pa.array([0.0, 2.2, 0.0, 0.0], type=pa.float64())
+    str_child = pa.array(["", "", "c", ""], type=pa.large_utf8())
+    arrow_arr = pa.UnionArray.from_sparse(type_ids, [int_child, float_child, str_child], field_names=["i", "f", "s"])
+    s = Series.from_arrow(arrow_arr)
+    # s = [10, 2.2, 'c', 40]
+    idx = Series.from_pylist([0, None, 2, None, 3])
+
+    result = s.take(idx)
+
+    assert result.datatype() == s.datatype()
+    assert result.to_pylist() == [10, None, "c", None, 40]
+
+
+def test_series_take_dense_union_null_indices() -> None:
+    """None indices in take produce null slots in the result."""
+    type_ids = pa.array([0, 1, 0, 1], type=pa.int8())
+    offsets = pa.array([0, 0, 1, 1], type=pa.int32())
+    int_child = pa.array([10, 30], type=pa.int32())
+    float_child = pa.array([2.2, 5.5], type=pa.float64())
+    arrow_arr = pa.UnionArray.from_dense(type_ids, offsets, [int_child, float_child], field_names=["i", "f"])
+    s = Series.from_arrow(arrow_arr)
+    # s = [10, 2.2, 30, 5.5]
+    idx = Series.from_pylist([None, 0, None, 3])
+
+    result = s.take(idx)
+
+    assert result.datatype() == s.datatype()
+    assert result.to_pylist() == [None, 10, None, 5.5]
+
+
+def test_series_take_sparse_union_repeated_indices() -> None:
+    """Repeated indices in take work for sparse unions."""
+    type_ids = pa.array([0, 1, 2], type=pa.int8())
+    int_child = pa.array([10, 0, 0], type=pa.int32())
+    float_child = pa.array([0.0, 2.2, 0.0], type=pa.float64())
+    str_child = pa.array(["", "", "c"], type=pa.large_utf8())
+    arrow_arr = pa.UnionArray.from_sparse(type_ids, [int_child, float_child, str_child], field_names=["i", "f", "s"])
+    s = Series.from_arrow(arrow_arr)
+    # s = [10, 2.2, 'c']
+    idx = Series.from_pylist([0, 0, 2, 1, 2])
+
+    result = s.take(idx)
+
+    assert result.datatype() == s.datatype()
+    assert result.to_pylist() == [10, 10, "c", 2.2, "c"]
+
+
 def test_series_deeply_nested_take() -> None:
     # Test take on a Series with a deeply nested type: struct of list of struct of list of strings.
     data = pa.array([{"a": [{"b": ["foo", "bar"]}]}, {"a": [{"b": ["baz", "quux"]}]}])

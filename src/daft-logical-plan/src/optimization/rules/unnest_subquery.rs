@@ -544,9 +544,11 @@ fn pull_up_correlated_cols(
         | LogicalPlan::Pivot(..)
         | LogicalPlan::Concat(..)
         | LogicalPlan::Join(..)
+        | LogicalPlan::AsofJoin(..)
         | LogicalPlan::Sink(..)
         | LogicalPlan::Window(..)
-        | LogicalPlan::VLLMProject(..) => {
+        | LogicalPlan::VLLMProject(..)
+        | LogicalPlan::StageCheckpointKeys(..) => {
             if subquery_on.is_empty() {
                 Ok((plan.clone(), vec![], vec![]))
             } else {

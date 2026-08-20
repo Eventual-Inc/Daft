@@ -1,15 +1,10 @@
-use std::{
-    collections::{HashMap, HashSet},
-    hash::BuildHasher,
-    num::ParseIntError,
-    str::Utf8Error,
-    sync::Arc,
-};
+use std::{collections::HashSet, num::ParseIntError, str::Utf8Error, sync::Arc};
 
 use base64::{DecodeError, Engine, engine::general_purpose};
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_io_runtime;
 use daft_io::{IOConfig, get_io_client};
+use rustc_hash::FxHashMap;
 use snafu::{Snafu, prelude::*};
 use tiktoken_rs::CoreBPE;
 
@@ -125,10 +120,7 @@ fn get_builtin_bpe(name: &str) -> Option<DaftBPE> {
 }
 
 // This function is templated because tiktoken-rs uses a special hasher for the HashMap.
-fn parse_tokens<H>(s: &str) -> DaftResult<HashMap<Vec<u8>, u32, H>>
-where
-    H: BuildHasher + Default,
-{
+fn parse_tokens(s: &str) -> DaftResult<FxHashMap<Vec<u8>, u32>> {
     s.lines()
         .map(|l| match l.split(' ').take(2).collect::<Vec<&str>>()[..] {
             [token, rank] => {
@@ -148,7 +140,7 @@ where
             }
             .into()),
         })
-        .collect::<DaftResult<HashMap<Vec<u8>, u32, H>>>()
+        .collect::<DaftResult<FxHashMap<Vec<u8>, u32>>>()
 }
 
 fn get_file_bpe(
@@ -171,7 +163,7 @@ fn get_file_bpe(
     let max_token = *tokens_res.values().max().ok_or(Error::EmptyTokenFile {})?;
 
     // Get the token->id mappings for special tokens
-    let mut special_hashmap = HashMap::default();
+    let mut special_hashmap = FxHashMap::default();
     let mut special_hashset = HashSet::default();
     for (i, token) in special_tokens.into_iter().enumerate() {
         let idx: u32 = max_token + 1 + i as u32;

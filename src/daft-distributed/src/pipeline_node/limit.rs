@@ -1,129 +1,91 @@
-use std::{cmp::Ordering, collections::VecDeque, sync::Arc};
+use std::{collections::HashSet, sync::Arc};
 
 use common_error::DaftResult;
-use common_metrics::{
-    Meter, StatSnapshot,
-    ops::{NodeCategory, NodeInfo, NodeType},
-    snapshot::StatSnapshotImpl as _,
-};
+use common_metrics::ops::{NodeCategory, NodeType};
+#[cfg(feature = "python")]
+use common_py_serde::PyObjectWrapper;
+use common_runtime::JoinSet;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
-use daft_logical_plan::stats::{PlanStats, StatsState};
+use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
+#[cfg(feature = "python")]
+use pyo3::{Py, PyAny, Python, types::PyAnyMethods};
+#[cfg(feature = "python")]
+use tokio_util::sync::CancellationToken;
 
-use super::{
-    DistributedPipelineNode, MaterializedOutput, PipelineNodeImpl, TaskBuilderStream, TaskOutput,
-};
+use super::{DistributedPipelineNode, PipelineNodeImpl, TaskBuilderStream};
 use crate::{
-    pipeline_node::{NodeID, PipelineNodeConfig, PipelineNodeContext},
-    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
-    scheduling::{
-        scheduler::SchedulerHandle,
-        task::{SwordfishTask, SwordfishTaskBuilder},
-    },
-    statistics::{
-        RuntimeStats,
-        stats::{BaseCounters, RuntimeStatsRef},
-    },
+    pipeline_node::{ClusteringStrategy, NodeID, PipelineNodeConfig, PipelineNodeContext},
+    plan::{PlanConfig, PlanExecutionContext},
+    scheduling::task::{SwordfishTaskBuilder, TaskID},
     utils::channel::{Sender, create_channel},
 };
 
-const FIRST_LIMIT_PHASE: &str = "local-limit";
-const SECOND_LIMIT_PHASE: &str = "post-limit";
-
-pub struct LimitStats {
-    base: BaseCounters,
+#[cfg(feature = "python")]
+async fn start_limit_counter_actor(
+    limit: u64,
+    offset: u64,
+    timeout: usize,
+) -> DaftResult<PyObjectWrapper> {
+    let actor: Py<PyAny> =
+        common_runtime::python::execute_python_coroutine::<_, Py<PyAny>>(move |py| {
+            let module = py.import(pyo3::intern!(py, "daft.execution.ray_distributed_limit"))?;
+            let coroutine = module.call_method1(
+                pyo3::intern!(py, "start_limit_counter_actor"),
+                (limit as i64, offset as i64, timeout as i64),
+            )?;
+            Ok(coroutine)
+        })
+        .await?;
+    Ok(PyObjectWrapper(Arc::new(actor)))
 }
 
-impl LimitStats {
-    pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
-        Self {
-            base: BaseCounters::new(meter, context),
+#[cfg(feature = "python")]
+fn teardown_limit_counter_actor(actor: &PyObjectWrapper) {
+    Python::attach(|py| {
+        if let Err(e) = actor.0.call_method1(py, pyo3::intern!(py, "teardown"), ()) {
+            tracing::warn!("Error tearing down limit counter actor: {:?}", e);
         }
-    }
+    });
 }
 
-impl RuntimeStats for LimitStats {
-    fn handle_worker_node_stats(&self, node_info: &NodeInfo, snapshot: &StatSnapshot) {
-        self.base.add_duration_us(snapshot.duration_us());
-        match snapshot {
-            StatSnapshot::Default(snapshot) => {
-                if let Some(phase) = &node_info.node_phase {
-                    // The first limit is used for pruning, the second limit is for the final output
-                    if phase == FIRST_LIMIT_PHASE {
-                        self.base.add_rows_in(snapshot.rows_in);
-                    } else if phase == SECOND_LIMIT_PHASE {
-                        self.base.add_rows_out(snapshot.rows_out);
-                    }
-                }
-            }
-            StatSnapshot::Source(snapshot) => {
-                if let Some(phase) = &node_info.node_phase
-                    && phase == SECOND_LIMIT_PHASE
-                {
-                    self.base.add_rows_out(snapshot.rows_out);
-                }
-            }
-            _ => {} // Limit don't receive stats from other Swordfish nodes
-        }
-    }
-
-    fn export_snapshot(&self) -> StatSnapshot {
-        self.base.export_default_snapshot()
-    }
+#[cfg(feature = "python")]
+async fn await_limit_completion(actor: &PyObjectWrapper) -> DaftResult<Vec<String>> {
+    let actor = actor.0.clone();
+    common_runtime::python::execute_python_coroutine::<_, Vec<String>>(move |py| {
+        let coroutine = actor.call_method1(py, pyo3::intern!(py, "await_limit_completion"), ())?;
+        Ok(coroutine.into_bound(py))
+    })
+    .await
 }
 
-/// Keeps track of the remaining skip and take.
-///
-/// Skip is the number of rows to skip if there is an offset.
-/// Take is the number of rows to take for the limit.
-struct LimitState {
-    remaining_skip: usize,
-    remaining_take: usize,
-}
-
-impl LimitState {
-    fn new(limit: usize, offset: Option<usize>) -> Self {
-        Self {
-            remaining_skip: offset.unwrap_or(0),
-            remaining_take: limit,
-        }
+/// Returns true once the limit loop has nothing left to do.
+fn limit_loop_done(
+    contributors: Option<&HashSet<TaskID>>,
+    completed_ids: &HashSet<TaskID>,
+    input_exhausted: bool,
+    running_tasks_empty: bool,
+) -> bool {
+    // Early-stop: the actor reported the limit was hit and at least one task
+    // contributed rows. We're done as soon as every contributor's task has
+    // finished flowing downstream; non-contributors get cancelled afterwards.
+    if let Some(contributors) = contributors
+        && !contributors.is_empty()
+    {
+        return contributors.is_subset(completed_ids);
     }
-
-    fn remaining_skip(&self) -> usize {
-        self.remaining_skip
-    }
-
-    fn remaining_take(&self) -> usize {
-        self.remaining_take
-    }
-
-    fn decrement_skip(&mut self, amount: usize) {
-        self.remaining_skip = self.remaining_skip.saturating_sub(amount);
-    }
-
-    fn decrement_take(&mut self, amount: usize) {
-        self.remaining_take = self.remaining_take.saturating_sub(amount);
-    }
-
-    fn is_skip_done(&self) -> bool {
-        self.remaining_skip == 0
-    }
-
-    fn is_take_done(&self) -> bool {
-        self.remaining_take == 0
-    }
-
-    fn total_remaining(&self) -> usize {
-        self.remaining_skip + self.remaining_take
-    }
+    // Natural drain: limit was never hit (e.g. `limit > total rows`) or hit
+    // with no contributors (e.g. `limit == 0`). Done when input is exhausted
+    // and no forwarded tasks are still running.
+    input_exhausted && running_tasks_empty
 }
 
 pub(crate) struct LimitNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
-    limit: usize,
-    offset: Option<usize>,
+    limit: u64,
+    offset: Option<u64>,
     child: DistributedPipelineNode,
 }
 
@@ -149,205 +111,91 @@ impl LimitNode {
         let config = PipelineNodeConfig::new(
             schema,
             plan_config.config.clone(),
-            child.config().clustering_spec.clone(),
+            ClusteringStrategy::Passthrough { child: &child },
         );
         Self {
             config,
             context,
-            limit,
-            offset,
+            limit: limit as u64,
+            offset: offset.map(|o| o as u64),
             child,
         }
     }
 
-    fn process_materialized_output(
-        self: &Arc<Self>,
-        materialized_output: MaterializedOutput,
-        limit_state: &mut LimitState,
-    ) -> Vec<SwordfishTaskBuilder> {
-        let mut downstream_tasks = vec![];
-        for next_input in materialized_output.split_into_materialized_outputs() {
-            let mut num_rows = next_input.num_rows();
-
-            let skip_num_rows = limit_state.remaining_skip().min(num_rows);
-            if !limit_state.is_skip_done() {
-                limit_state.decrement_skip(skip_num_rows);
-                // all input rows are skipped
-                if skip_num_rows >= num_rows {
-                    continue;
-                }
-
-                num_rows -= skip_num_rows;
-            }
-
-            let task = match num_rows.cmp(&limit_state.remaining_take()) {
-                Ordering::Less | Ordering::Equal => {
-                    limit_state.decrement_take(num_rows);
-                    let materialized_outputs = vec![next_input];
-
-                    if skip_num_rows > 0 {
-                        let (in_memory_scan, psets) =
-                            MaterializedOutput::into_in_memory_scan_with_psets(
-                                materialized_outputs,
-                                self.config.schema.clone(),
-                                self.node_id(),
-                            );
-
-                        let plan = LocalPhysicalPlan::limit(
-                            in_memory_scan,
-                            num_rows as u64,
-                            Some(skip_num_rows as u64),
-                            StatsState::NotMaterialized,
-                            LocalNodeContext::new(Some(self.node_id() as usize))
-                                .with_phase(SECOND_LIMIT_PHASE),
-                        );
-                        SwordfishTaskBuilder::new(plan, self.as_ref(), self.node_id())
-                            .with_psets(self.node_id(), psets)
-                            .extend_fingerprint(num_rows as u32)
-                            .extend_fingerprint(skip_num_rows as u32)
-                    } else {
-                        // No limit applied, just pass-through
-                        let (in_memory_scan, psets) =
-                            MaterializedOutput::into_in_memory_scan_with_psets_and_phase(
-                                materialized_outputs,
-                                self.config.schema.clone(),
-                                self.node_id(),
-                                SECOND_LIMIT_PHASE,
-                            );
-
-                        SwordfishTaskBuilder::new(in_memory_scan, self.as_ref(), self.node_id())
-                            .with_psets(self.node_id(), psets)
-                    }
-                }
-                Ordering::Greater => {
-                    let remaining = limit_state.remaining_take();
-                    let materialized_outputs = vec![next_input];
-                    let (in_memory_scan, psets) =
-                        MaterializedOutput::into_in_memory_scan_with_psets(
-                            materialized_outputs,
-                            self.config.schema.clone(),
-                            self.node_id(),
-                        );
-                    let plan = LocalPhysicalPlan::limit(
-                        in_memory_scan,
-                        remaining as u64,
-                        Some(skip_num_rows as u64),
-                        StatsState::NotMaterialized,
-                        LocalNodeContext::new(Some(self.node_id() as usize))
-                            .with_phase(SECOND_LIMIT_PHASE),
-                    );
-                    let task = SwordfishTaskBuilder::new(plan, self.as_ref(), self.node_id())
-                        .with_psets(self.node_id(), psets)
-                        .extend_fingerprint(remaining as u32)
-                        .extend_fingerprint(skip_num_rows as u32);
-                    limit_state.decrement_take(remaining);
-                    task
-                }
-            };
-            downstream_tasks.push(task);
-            if limit_state.is_take_done() {
-                break;
-            }
-        }
-        downstream_tasks
-    }
-
+    #[cfg(feature = "python")]
     async fn limit_execution_loop(
         self: Arc<Self>,
-        mut input: TaskBuilderStream,
+        mut input_task_stream: TaskBuilderStream,
         result_tx: Sender<SwordfishTaskBuilder>,
-        scheduler_handle: SchedulerHandle<SwordfishTask>,
-        task_id_counter: TaskIDCounter,
     ) -> DaftResult<()> {
-        let node_id = self.node_id();
-        let mut limit_state = LimitState::new(self.limit, self.offset);
-        let mut max_concurrent_tasks = 1;
+        let actor = start_limit_counter_actor(
+            self.limit,
+            self.offset.unwrap_or(0),
+            self.config.execution_config.actor_udf_ready_timeout,
+        )
+        .await?;
+
+        let parent_cancel = CancellationToken::new();
+        let mut running_tasks = JoinSet::new();
+        let mut completed_ids: HashSet<TaskID> = HashSet::new();
+        let mut contributors: Option<HashSet<TaskID>> = None;
+        let mut limit_completed = Box::pin(await_limit_completion(&actor));
         let mut input_exhausted = false;
-
-        // Keep submitting local limit tasks as long as we have remaining limit or we have input
-        while !input_exhausted {
-            let mut local_limits = VecDeque::new();
-            let local_limit_per_task = limit_state.total_remaining();
-
-            // Submit tasks until we have max_concurrent_tasks or we run out of input
-            for _ in 0..max_concurrent_tasks {
-                if let Some(builder) = input.next().await {
-                    let builder_with_limit = builder
+        while !limit_loop_done(
+            contributors.as_ref(),
+            &completed_ids,
+            input_exhausted,
+            running_tasks.is_empty(),
+        ) {
+            tokio::select! {
+                biased;
+                res = &mut limit_completed, if contributors.is_none() => {
+                    contributors = Some(
+                        res?
+                            .into_iter()
+                            .filter_map(|s| s.parse::<TaskID>().ok())
+                            .collect(),
+                    );
+                }
+                Some(join_result) = running_tasks.join_next(), if !running_tasks.is_empty() => {
+                    if let Ok(Ok(task_id)) = join_result {
+                        completed_ids.insert(task_id);
+                    }
+                }
+                builder_opt = input_task_stream.next(), if !input_exhausted => {
+                    let Some(builder) = builder_opt else {
+                        input_exhausted = true;
+                        continue;
+                    };
+                    let limit = self.limit;
+                    let offset = self.offset;
+                    let node_id = self.node_id();
+                    let actor_for_plan = actor.clone();
+                    let (builder, notify_token) = builder
                         .map_plan(self.as_ref(), move |input| {
-                            LocalPhysicalPlan::limit(
+                            LocalPhysicalPlan::distributed_limit(
                                 input,
-                                local_limit_per_task as u64,
-                                Some(0),
+                                actor_for_plan,
+                                limit,
+                                offset,
                                 StatsState::NotMaterialized,
-                                LocalNodeContext::new(Some(node_id as usize))
-                                    .with_phase(FIRST_LIMIT_PHASE),
+                                LocalNodeContext::new(Some(node_id as usize)),
                             )
                         })
-                        .extend_fingerprint(local_limit_per_task as u32)
-                        .extend_fingerprint(0);
-                    let submittable =
-                        builder_with_limit.build(self.context.query_idx, &task_id_counter);
-                    let future = submittable.submit(&scheduler_handle)?;
-                    local_limits.push_back(future);
-                } else {
-                    input_exhausted = true;
-                    break;
-                }
-            }
-            let num_local_limits = local_limits.len();
-            let mut total_num_rows: usize = 0;
-            for future in local_limits {
-                let maybe_result = future.await?;
-                if let Some(materialized_output) = maybe_result
-                    .map(TaskOutput::into_materialized)
-                    .transpose()?
-                {
-                    total_num_rows += materialized_output.num_rows();
-                    // Process the result and get the next tasks
-                    let next_tasks =
-                        self.process_materialized_output(materialized_output, &mut limit_state);
-                    if next_tasks.is_empty() {
-                        // If all rows need to be skipped, send an empty scan task to allow downstream tasks to
-                        // continue running, such as aggregate tasks
-                        let empty_plan = LocalPhysicalPlan::in_memory_scan(
-                            self.node_id(),
-                            self.config.schema.clone(),
-                            0,
-                            StatsState::Materialized(PlanStats::empty().into()),
-                            LocalNodeContext::new(Some(self.node_id() as usize)),
-                        );
-                        let empty_scan_builder =
-                            SwordfishTaskBuilder::new(empty_plan, self.as_ref(), self.node_id())
-                                .with_psets(self.node_id(), vec![]);
-                        if result_tx.send(empty_scan_builder).await.is_err() {
-                            return Ok(());
-                        }
-                    } else {
-                        // Send the next tasks to the result channel
-                        for task in next_tasks {
-                            if result_tx.send(task).await.is_err() {
-                                return Ok(());
-                            }
-                        }
-                    }
+                        .with_cancel_token(parent_cancel.child_token())
+                        .add_notify_token();
 
-                    if limit_state.is_take_done() {
-                        break;
+                    running_tasks.spawn(notify_token);
+                    if result_tx.send(builder).await.is_err() {
+                        input_exhausted = true;
                     }
                 }
-            }
-
-            // Update max_concurrent_tasks based on actual output
-            // Only update if we have remaining limit, and we did get some output
-            if limit_state.is_take_done() {
-                // Drop the input channel to cancel any input tasks
-                break;
-            } else if total_num_rows > 0 && num_local_limits > 0 {
-                let rows_per_task = total_num_rows.div_ceil(num_local_limits);
-                max_concurrent_tasks = limit_state.remaining_take().div_ceil(rows_per_task);
+                else => break,
             }
         }
 
+        parent_cancel.cancel();
+        teardown_limit_counter_actor(&actor);
         Ok(())
     }
 }
@@ -365,10 +213,6 @@ impl PipelineNodeImpl for LimitNode {
         vec![self.child.clone()]
     }
 
-    fn make_runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
-        Arc::new(LimitStats::new(meter, self.context()))
-    }
-
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         match &self.offset {
             Some(o) => vec![format!("Limit: Num Rows = {}, Offset = {}", self.limit, o)],
@@ -381,14 +225,17 @@ impl PipelineNodeImpl for LimitNode {
         plan_context: &mut PlanExecutionContext,
     ) -> TaskBuilderStream {
         let input_stream = self.child.clone().produce_tasks(plan_context);
-        let (result_tx, result_rx) = create_channel(1);
 
-        plan_context.spawn(self.limit_execution_loop(
-            input_stream,
-            result_tx,
-            plan_context.scheduler_handle(),
-            plan_context.task_id_counter(),
-        ));
-        TaskBuilderStream::from(result_rx)
+        #[cfg(feature = "python")]
+        {
+            let (result_tx, result_rx) = create_channel(1);
+            plan_context.spawn(self.limit_execution_loop(input_stream, result_tx));
+            TaskBuilderStream::from(result_rx)
+        }
+        #[cfg(not(feature = "python"))]
+        {
+            let _ = input_stream;
+            unimplemented!("Distributed Limit requires the python feature")
+        }
     }
 }

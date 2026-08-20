@@ -586,3 +586,123 @@ def test_series_if_else_wrong_types() -> None:
 
     with pytest.raises(ValueError):
         predicate_series.if_else(if_true_series, object())
+
+
+def make_sparse_union_series(type_ids, int_vals, float_vals):
+    arrow_arr = pa.UnionArray.from_sparse(
+        pa.array(type_ids, type=pa.int8()),
+        [
+            pa.array(int_vals, type=pa.int32()),
+            pa.array(float_vals, type=pa.float64()),
+        ],
+        field_names=["i", "f"],
+    )
+    return Series.from_arrow(arrow_arr)
+
+
+def make_dense_union_series(type_ids, offsets, int_vals, float_vals):
+    arrow_arr = pa.UnionArray.from_dense(
+        pa.array(type_ids, type=pa.int8()),
+        pa.array(offsets, type=pa.int32()),
+        [
+            pa.array(int_vals, type=pa.int32()),
+            pa.array(float_vals, type=pa.float64()),
+        ],
+        field_names=["i", "f"],
+    )
+    return Series.from_arrow(arrow_arr)
+
+
+def test_series_if_else_sparse_union_same_length() -> None:
+    if_true = make_sparse_union_series([0, 1, 0, 0], [10, 0, 30, 40], [0.0, 2.2, 0.0, 0.0])
+    if_false = make_sparse_union_series([1, 0, 1, 0], [0, 20, 0, 99], [9.9, 0.0, 5.5, 0.0])
+    predicate = Series.from_arrow(pa.array([True, False, True, False], type=pa.bool_()))
+
+    result = predicate.if_else(if_true, if_false)
+
+    assert result.datatype() == if_true.datatype()
+    assert result.to_pylist() == [10, 20, 30, 99]
+
+
+def test_series_if_else_sparse_union_all_true() -> None:
+    if_true = make_sparse_union_series([0, 1], [1, 0], [0.0, 3.14])
+    if_false = make_sparse_union_series([1, 0], [0, 99], [9.9, 0.0])
+    predicate = Series.from_arrow(pa.array([True, True], type=pa.bool_()))
+
+    result = predicate.if_else(if_true, if_false)
+    assert result.to_pylist() == [1, 3.14]
+
+
+def test_series_if_else_sparse_union_all_false() -> None:
+    if_true = make_sparse_union_series([0, 1], [1, 0], [0.0, 3.14])
+    if_false = make_sparse_union_series([1, 0], [0, 99], [9.9, 0.0])
+    predicate = Series.from_arrow(pa.array([False, False], type=pa.bool_()))
+
+    result = predicate.if_else(if_true, if_false)
+    assert result.to_pylist() == [9.9, 99]
+
+
+def test_series_if_else_sparse_union_all_null_predicate() -> None:
+    if_true = make_sparse_union_series([0, 0], [1, 2], [0.0, 0.0])
+    if_false = make_sparse_union_series([0, 0], [9, 8], [0.0, 0.0])
+    predicate = Series.from_arrow(pa.array([None, None], type=pa.bool_()))
+
+    result = predicate.if_else(if_true, if_false)
+    assert result.to_pylist() == [None, None]
+
+
+def test_series_if_else_dense_union_same_length() -> None:
+    if_true = make_dense_union_series([0, 1, 0], [0, 0, 1], [10, 30], [2.2])
+    if_false = make_dense_union_series([1, 0, 1], [0, 0, 1], [20], [9.9, 5.5])
+    predicate = Series.from_arrow(pa.array([True, False, None], type=pa.bool_()))
+
+    result = predicate.if_else(if_true, if_false)
+
+    assert result.datatype() == if_true.datatype()
+    assert result.to_pylist() == [10, 20, None]
+
+
+@pytest.mark.parametrize(
+    "predicate_val, expected",
+    [
+        (True, [10, 3.14]),
+        (False, [9.9, 20]),
+        (None, [None, None]),
+    ],
+)
+def test_series_if_else_sparse_union_broadcast_predicate(predicate_val, expected) -> None:
+    if_true = make_sparse_union_series([0, 1], [10, 0], [0.0, 3.14])
+    if_false = make_sparse_union_series([1, 0], [0, 20], [9.9, 0.0])
+    predicate = Series.from_arrow(pa.array([predicate_val], type=pa.bool_()))
+
+    result = predicate.if_else(if_true, if_false)
+    assert result.to_pylist() == expected
+
+
+def test_series_if_else_sparse_union_broadcast_if_true() -> None:
+    # Scalar if_true: int(42)
+    if_true = make_sparse_union_series([0], [42], [0.0])
+    if_false = make_sparse_union_series([0, 1, 0], [1, 0, 3], [0.0, 2.2, 0.0])
+    predicate = Series.from_arrow(pa.array([True, False, True], type=pa.bool_()))
+
+    result = predicate.if_else(if_true, if_false)
+    assert result.to_pylist() == [42, 2.2, 42]
+
+
+def test_series_if_else_sparse_union_broadcast_if_false() -> None:
+    if_true = make_sparse_union_series([0, 1, 0], [1, 0, 3], [0.0, 2.2, 0.0])
+    if_false = make_sparse_union_series([1], [0], [9.9])  # scalar float(9.9)
+    predicate = Series.from_arrow(pa.array([True, False, True], type=pa.bool_()))
+
+    result = predicate.if_else(if_true, if_false)
+    assert result.to_pylist() == [1, 9.9, 3]
+
+
+def test_series_if_else_sparse_union_mixed_predicate() -> None:
+    # predicate: [True, False, None, True, False]
+    if_true = make_sparse_union_series([0, 1, 0, 1, 0], [10, 0, 30, 0, 50], [0.0, 2.2, 0.0, 4.4, 0.0])
+    if_false = make_sparse_union_series([1, 0, 1, 0, 1], [0, 20, 0, 40, 0], [9.9, 0.0, 5.5, 0.0, 7.7])
+    predicate = Series.from_arrow(pa.array([True, False, None, True, False], type=pa.bool_()))
+
+    result = predicate.if_else(if_true, if_false)
+    assert result.to_pylist() == [10, 20, None, 4.4, 7.7]

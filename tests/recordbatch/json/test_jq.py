@@ -75,7 +75,7 @@ def test_json_query_invalid_filter():
 
 def test_json_query_invalid_json():
     mp = MicroPartition.from_pydict({"col": ["a", "b", "c"]})
-    with pytest.raises(ValueError, match="DaftError::SerdeJsonError"):
+    with pytest.raises(ValueError, match="expected value"):
         mp.eval_expression_list([col("col").jq(".a")])
 
 

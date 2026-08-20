@@ -4,11 +4,7 @@ use common_error::{DaftError, DaftResult};
 use common_treenode::{DynTreeNode, Transformed, TreeNode};
 
 use super::OptimizerRule;
-use crate::{
-    LogicalPlan,
-    ops::{Shard, Source},
-    source_info::SourceInfo,
-};
+use crate::{LogicalPlan, ops::Shard, source_info::SourceInfo};
 
 /// Optimization rules for pushing Limits further into the logical plan.
 #[derive(Default, Debug)]
@@ -93,11 +89,11 @@ impl PushDownShard {
                                 let new_pushdowns =
                                     external_info.pushdowns.with_sharder(Some(sharder.clone()));
                                 let new_external_info = external_info.with_pushdowns(new_pushdowns);
-                                let new_source = LogicalPlan::Source(Source::new(
-                                    source.output_schema.clone(),
-                                    SourceInfo::Physical(new_external_info).into(),
-                                ))
-                                .into();
+                                let new_source =
+                                    LogicalPlan::Source(source.clone().with_source_info(
+                                        SourceInfo::Physical(new_external_info).into(),
+                                    ))
+                                    .into();
                                 Ok(Transformed::yes(new_source))
                             }
                             SourceInfo::PlaceHolder(..) => {
@@ -109,12 +105,13 @@ impl PushDownShard {
                     LogicalPlan::Shard(_) => Err(DaftError::ValueError(
                         "Shards cannot be folded together".to_string(),
                     )),
-                    LogicalPlan::Join(_) => Err(DaftError::ValueError(
+                    LogicalPlan::Join(_) | LogicalPlan::AsofJoin(_) => Err(DaftError::ValueError(
                         "Shard cannot exist above join".to_string(),
                     )),
                     LogicalPlan::Intersect(_)
                     | LogicalPlan::Union(_)
-                    | LogicalPlan::SubqueryAlias(_) => Ok(Transformed::no(plan)),
+                    | LogicalPlan::SubqueryAlias(_)
+                    | LogicalPlan::StageCheckpointKeys(_) => Ok(Transformed::no(plan)),
                 }
             }
             _ => Ok(Transformed::no(plan)),

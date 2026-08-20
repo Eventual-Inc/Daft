@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from openai import AsyncOpenAI, OpenAIError, RateLimitError
 from openai import OpenAI as OpenAIClient
-from openai._types import Omit, omit
+from openai._types import omit
 from openai.types.create_embedding_response import Usage
 
 from daft import DataType
@@ -18,6 +18,7 @@ from daft.ai.utils import merge_provider_and_api_options
 from daft.dependencies import np
 
 if TYPE_CHECKING:
+    from openai._types import Omit
     from openai.types import EmbeddingModel
     from openai.types.create_embedding_response import CreateEmbeddingResponse
 

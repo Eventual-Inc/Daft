@@ -369,7 +369,7 @@ def test_repr_empty_struct():
     assert ANSI_ESCAPE.sub("", df.schema()._truncated_table_string()) == expected_schema_truncated_repr
 
     expected_schema_repr = """╭──────────────────────┬──────────────────────────────────╮
-│ column_name          ┆ type                             │
+│ Column Name          ┆ DType                            │
 ╞══════════════════════╪══════════════════════════════════╡
 │ empty_structs        ┆ Struct[]                         │
 ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤

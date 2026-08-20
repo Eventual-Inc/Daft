@@ -74,6 +74,7 @@ impl Default for CosConfig {
 impl CosConfig {
     #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
+        let defaults = Self::default();
         let mut res = vec![];
         if let Some(region) = &self.region {
             res.push(format!("Region name = {region}"));
@@ -90,19 +91,33 @@ impl CosConfig {
         if self.security_token.is_some() {
             res.push("Security token = ***".to_string());
         }
-        res.push(format!("Anonymous = {}", self.anonymous));
-        res.push(format!("Max retries = {}", self.max_retries));
-        res.push(format!("Retry timeout = {}ms", self.retry_timeout_ms));
-        res.push(format!("Connect timeout = {}ms", self.connect_timeout_ms));
-        res.push(format!("Read timeout = {}ms", self.read_timeout_ms));
-        res.push(format!(
-            "Max concurrent requests = {}",
-            self.max_concurrent_requests
-        ));
-        res.push(format!(
-            "Max connections = {}",
-            self.max_connections_per_io_thread
-        ));
+        if self.anonymous != defaults.anonymous {
+            res.push(format!("Anonymous = {}", self.anonymous));
+        }
+        if self.max_retries != defaults.max_retries {
+            res.push(format!("Max retries = {}", self.max_retries));
+        }
+        if self.retry_timeout_ms != defaults.retry_timeout_ms {
+            res.push(format!("Retry timeout = {}ms", self.retry_timeout_ms));
+        }
+        if self.connect_timeout_ms != defaults.connect_timeout_ms {
+            res.push(format!("Connect timeout = {}ms", self.connect_timeout_ms));
+        }
+        if self.read_timeout_ms != defaults.read_timeout_ms {
+            res.push(format!("Read timeout = {}ms", self.read_timeout_ms));
+        }
+        if self.max_concurrent_requests != defaults.max_concurrent_requests {
+            res.push(format!(
+                "Max concurrent requests = {}",
+                self.max_concurrent_requests
+            ));
+        }
+        if self.max_connections_per_io_thread != defaults.max_connections_per_io_thread {
+            res.push(format!(
+                "Max connections = {}",
+                self.max_connections_per_io_thread
+            ));
+        }
         res
     }
 
@@ -148,21 +163,26 @@ impl CosConfig {
         }
         config.insert("region".to_string(), region);
 
-        if let Some(secret_id) = &self.secret_id {
-            config.insert("secret_id".to_string(), secret_id.clone());
-        }
-        if let Some(secret_key) = &self.secret_key {
-            config.insert("secret_key".to_string(), secret_key.as_string().clone());
-        }
-        if let Some(security_token) = &self.security_token {
-            config.insert(
-                "security_token".to_string(),
-                security_token.as_string().clone(),
-            );
-        }
+        if self.anonymous {
+            // Anonymous mode: skip credential forwarding and prevent OpenDAL from loading credentials via env vars
+            config.insert("disable_config_load".to_string(), "true".to_string());
+        } else {
+            if let Some(secret_id) = &self.secret_id {
+                config.insert("secret_id".to_string(), secret_id.clone());
+            }
+            if let Some(secret_key) = &self.secret_key {
+                config.insert("secret_key".to_string(), secret_key.as_string().clone());
+            }
+            if let Some(security_token) = &self.security_token {
+                config.insert(
+                    "security_token".to_string(),
+                    security_token.as_string().clone(),
+                );
+            }
 
-        // Allow OpenDAL to also load from environment variables
-        config.insert("disable_config_load".to_string(), "false".to_string());
+            // Allow OpenDAL to load credentials from environment variables
+            config.insert("disable_config_load".to_string(), "false".to_string());
+        }
 
         config
     }
@@ -373,7 +393,7 @@ mod tests {
         assert!(lines.iter().any(|l| l.contains("Secret ID = test-id")));
         assert!(lines.iter().any(|l| l.contains("Secret key = ***")));
         assert!(lines.iter().any(|l| l.contains("Security token = ***")));
-        assert!(lines.iter().any(|l| l.contains("Anonymous = false")));
+        assert!(!lines.iter().any(|l| l.contains("Anonymous = false")));
         assert!(lines.iter().any(|l| l.contains("Max retries = 5")));
         assert!(lines.iter().any(|l| l.contains("Retry timeout = 60000ms")));
         assert!(
@@ -392,15 +412,10 @@ mod tests {
 
     #[test]
     fn test_cos_config_multiline_display_minimal() {
-        // Test with minimal config (no secrets)
+        // Default config should emit no lines (sparse / diff-from-default display).
         let config = CosConfig::default();
         let lines = config.multiline_display();
-        assert!(lines.iter().any(|l| l.contains("Anonymous = false")));
-        assert!(lines.iter().any(|l| l.contains("Max retries = 3")));
-        // Should not contain secret lines when not set
-        assert!(!lines.iter().any(|l| l.contains("Region name")));
-        assert!(!lines.iter().any(|l| l.contains("Endpoint URL")));
-        assert!(!lines.iter().any(|l| l.contains("Secret ID")));
+        assert!(lines.is_empty());
     }
 
     #[test]

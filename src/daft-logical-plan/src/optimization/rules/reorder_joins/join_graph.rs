@@ -589,11 +589,10 @@ impl JoinGraph {
         Ok(plan)
     }
 
-    pub(super) fn could_reorder(&self) -> bool {
+    pub(super) fn could_reorder(&self, max_relations: usize) -> bool {
         // For this join graph to reorder joins, there must be at least 3 relations to join. Otherwise
         // there is only one join to perform and no reordering is needed.
-        // TODO: We should raise the limit once we implement a DP-based join ordering algorithm.
-        self.adj_list.max_id >= 3 && self.adj_list.max_id <= 7
+        self.adj_list.max_id >= 3 && self.adj_list.max_id <= max_relations
     }
 
     /// Test helper function to get the number of edges that the current graph contains.

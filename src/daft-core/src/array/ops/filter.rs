@@ -4,7 +4,7 @@ use super::{as_arrow::AsArrow, from_arrow::FromArrow};
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
 use crate::{
-    array::{DataArray, FixedSizeListArray, ListArray, StructArray},
+    array::{DataArray, FixedSizeListArray, ListArray, StructArray, UnionArray},
     datatypes::{BooleanArray, DaftArrowBackedType},
 };
 
@@ -72,5 +72,12 @@ impl PythonArray {
         }
 
         Ok(growable.build()?.downcast::<Self>()?.clone())
+    }
+}
+
+impl UnionArray {
+    pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
+        let filtered = arrow::compute::filter(self.to_arrow()?.as_ref(), mask.as_arrow()?)?;
+        Self::from_arrow(self.field().clone(), filtered)
     }
 }

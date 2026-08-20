@@ -32,6 +32,10 @@ class ExpressionVisitor(ABC, Generic[R]):
         ...         print(f"Cast: {dtype}")
         ...         self.visit(expr)
         ...
+        ...     def visit_try_cast(self, expr: Expression, dtype: DataType) -> None:
+        ...         print(f"TryCast: {dtype}")
+        ...         self.visit(expr)
+        ...
         ...     def visit_function(self, name: str, args: list[Expression]) -> None:
         ...         print(f"Function: {name}")
         ...         for arg in args:
@@ -77,6 +81,13 @@ class ExpressionVisitor(ABC, Generic[R]):
     def visit_cast(self, expr: Expression, dtype: DataType) -> R:
         """Visit a cast expression."""
         ...
+
+    def visit_try_cast(self, expr: Expression, dtype: DataType) -> R:
+        """Visit a try_cast expression.
+
+        Default implementation delegates to visit_cast for backwards compatibility.
+        """
+        return self.visit_cast(expr, dtype)
 
     @abstractmethod
     def visit_function(self, name: str, args: list[Expression]) -> R:
@@ -171,6 +182,9 @@ class _ColumnVisitor(ExpressionVisitor[set[str]]):
         return self.visit(expr)
 
     def visit_cast(self, expr: Expression, dtype: DataType) -> set[str]:
+        return self.visit(expr)
+
+    def visit_try_cast(self, expr: Expression, dtype: DataType) -> set[str]:
         return self.visit(expr)
 
     def visit_function(self, name: str, args: list[Expression]) -> set[str]:

@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import itertools
+import uuid
 
 import numpy as np
 import pyarrow as pa
 import pytest
 
 from daft import DataType, Series
-from tests.conftest import UuidType, get_tests_daft_runner_name
+from tests.conftest import DaftUuidType, get_tests_daft_runner_name
 from tests.series import ARROW_FLOAT_TYPES, ARROW_INT_TYPES, ARROW_STRING_TYPES
 
 
@@ -150,6 +151,25 @@ def test_series_concat_struct_array(chunks) -> None:
             counter += 1
 
 
+@pytest.mark.skipif(
+    not hasattr(pa, "uuid"),
+    reason="Arrow version doesn't support the uuid extension type.",
+)
+@pytest.mark.parametrize("chunks", [1, 2, 3, 10])
+def test_series_concat_uuid_array(chunks) -> None:
+    data = []
+    for i in range(chunks):
+        data.append([uuid.uuid4().bytes for _ in range(i)])
+
+    series = []
+    for i in range(chunks):
+        series.append(Series.from_arrow(pa.array(data[i], type=pa.uuid())))
+
+    concated = Series.concat(series)
+    assert concated.datatype() == DataType.uuid()
+    assert concated.to_arrow() == pa.array([item for d in data for item in d], type=pa.uuid())
+
+
 @pytest.mark.parametrize("chunks", [1, 2, 3, 10])
 def test_series_concat_tensor_array_canonical(chunks) -> None:
     element_shape = (2, 2)
@@ -195,7 +215,7 @@ def test_series_concat_extension_type(uuid_ext_type, chunks) -> None:
         uuid_ext_type.NAME, DataType.from_arrow_type(uuid_ext_type.storage_type), ""
     )
     concated_arrow = concated.to_arrow()
-    assert isinstance(concated_arrow.type, UuidType)
+    assert isinstance(concated_arrow.type, DaftUuidType)
     assert concated_arrow.type == uuid_ext_type
 
     expected = uuid_ext_type.wrap_array(pa.concat_arrays(storage_arrays))
@@ -236,3 +256,109 @@ def test_series_concat_dtype_mismatch() -> None:
 
     with pytest.raises(ValueError, match="concat requires all data types to match"):
         Series.concat(mix_types_series)
+
+
+def _make_sparse_union() -> pa.Array:
+    type_ids = pa.array([0, 1, 2, 0, 1, 2], type=pa.int8())
+    int_child = pa.array([10, 0, 0, 40, 0, 0], type=pa.int32())
+    float_child = pa.array([0.0, 2.2, 0.0, 0.0, 5.5, 0.0], type=pa.float64())
+    str_child = pa.array(["", "", "c", "", "", "f"], type=pa.large_utf8())
+    return pa.UnionArray.from_sparse(type_ids, [int_child, float_child, str_child], field_names=["i", "f", "s"])
+
+
+def _make_dense_union() -> pa.Array:
+    type_ids = pa.array([0, 1, 0, 0, 1], type=pa.int8())
+    offsets = pa.array([0, 0, 1, 2, 1], type=pa.int32())
+    int_child = pa.array([10, 30, 40], type=pa.int32())
+    float_child = pa.array([2.2, 5.5], type=pa.float64())
+    return pa.UnionArray.from_dense(type_ids, offsets, [int_child, float_child], field_names=["i", "f"])
+
+
+@pytest.mark.parametrize("chunks", [1, 2, 3])
+def test_series_concat_sparse_union(chunks) -> None:
+    series = [Series.from_arrow(_make_sparse_union()) for _ in range(chunks)]
+
+    result = Series.concat(series)
+
+    assert result.datatype() == series[0].datatype()
+    assert result.to_pylist() == [10, 2.2, "c", 40, 5.5, "f"] * chunks
+
+
+@pytest.mark.parametrize("chunks", [1, 2, 3])
+def test_series_concat_dense_union(chunks) -> None:
+    series = [Series.from_arrow(_make_dense_union()) for _ in range(chunks)]
+
+    result = Series.concat(series)
+
+    assert result.datatype() == series[0].datatype()
+    assert result.to_pylist() == [10, 2.2, 30, 40, 5.5] * chunks
+
+
+def test_series_concat_sparse_union_with_slice() -> None:
+    """Concatenating sliced sparse union Series works correctly."""
+    s = Series.from_arrow(_make_sparse_union())
+    sliced = s.slice(1, 4)  # [2.2, 'c', 40]
+
+    result = Series.concat([sliced, sliced])
+
+    assert result.datatype() == s.datatype()
+    assert result.to_pylist() == [2.2, "c", 40, 2.2, "c", 40]
+
+
+def test_series_concat_dense_union_with_slice() -> None:
+    """Concatenating sliced dense union Series works correctly."""
+    s = Series.from_arrow(_make_dense_union())
+    sliced = s.slice(1, 4)  # [2.2, 30, 40]
+
+    result = Series.concat([sliced, sliced])
+
+    assert result.datatype() == s.datatype()
+    assert result.to_pylist() == [2.2, 30, 40, 2.2, 30, 40]
+
+
+def test_series_concat_sparse_union_different_arrays() -> None:
+    """Concatenating two different sparse union Series yields all elements in order."""
+    type_ids_a = pa.array([0, 1, 0], type=pa.int8())
+    int_child_a = pa.array([10, 0, 30], type=pa.int32())
+    float_child_a = pa.array([0.0, 2.2, 0.0], type=pa.float64())
+    a = Series.from_arrow(pa.UnionArray.from_sparse(type_ids_a, [int_child_a, float_child_a], field_names=["i", "f"]))
+
+    type_ids_b = pa.array([1, 0, 1], type=pa.int8())
+    int_child_b = pa.array([0, 99, 0], type=pa.int32())
+    float_child_b = pa.array([9.9, 0.0, 5.5], type=pa.float64())
+    b = Series.from_arrow(pa.UnionArray.from_sparse(type_ids_b, [int_child_b, float_child_b], field_names=["i", "f"]))
+
+    result = Series.concat([a, b])
+
+    assert result.datatype() == a.datatype()
+    assert result.to_pylist() == [10, 2.2, 30, 9.9, 99, 5.5]
+
+
+def test_series_concat_dense_union_different_arrays() -> None:
+    """Concatenating two different dense union Series yields all elements in order."""
+    type_ids_a = pa.array([0, 1, 0], type=pa.int8())
+    offsets_a = pa.array([0, 0, 1], type=pa.int32())
+    a = Series.from_arrow(
+        pa.UnionArray.from_dense(
+            type_ids_a,
+            offsets_a,
+            [pa.array([10, 30], type=pa.int32()), pa.array([2.2], type=pa.float64())],
+            field_names=["i", "f"],
+        )
+    )
+
+    type_ids_b = pa.array([1, 0, 1], type=pa.int8())
+    offsets_b = pa.array([0, 0, 1], type=pa.int32())
+    b = Series.from_arrow(
+        pa.UnionArray.from_dense(
+            type_ids_b,
+            offsets_b,
+            [pa.array([99], type=pa.int32()), pa.array([9.9, 5.5], type=pa.float64())],
+            field_names=["i", "f"],
+        )
+    )
+
+    result = Series.concat([a, b])
+
+    assert result.datatype() == a.datatype()
+    assert result.to_pylist() == [10, 2.2, 30, 9.9, 99, 5.5]

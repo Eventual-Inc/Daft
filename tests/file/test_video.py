@@ -5,6 +5,8 @@ import pytest
 pytest.importorskip("av")
 
 import daft
+from daft import dependencies
+from daft.file.file import BUFFER_METADATA
 from daft.schema import Field
 
 
@@ -26,6 +28,14 @@ def test_video_file_dtype(sample_video_path):
     field = next(df.schema().__iter__())
 
     assert field.dtype == daft.DataType.file(daft.MediaType.video())
+
+
+def test_video_file_from_generic_file(sample_video_path):
+    df = daft.from_pydict({"path": [sample_video_path]})
+    df = df.select(daft.functions.video_file(daft.functions.file(df["path"]), verify=True).alias("video"))
+
+    assert df.schema() == daft.Schema.from_pydict({"video": daft.DataType.file(daft.MediaType.video())})
+    df.collect()
 
 
 def test_video_file_verify():
@@ -53,6 +63,23 @@ def test_get_metadata(sample_video_path):
     }
 
     assert df.to_pydict() == expected
+
+
+def test_video_metadata_uses_configured_buffer(sample_video_path, monkeypatch):
+    file = daft.VideoFile(sample_video_path)
+    original_open = file.open
+    seen_buffer_sizes: list[int | None] = []
+
+    def track_open(buffer_size=None):
+        seen_buffer_sizes.append(buffer_size)
+        return original_open(buffer_size=buffer_size)
+
+    monkeypatch.setattr(file, "open", track_open)
+
+    assert file.metadata()["width"] == 192
+    assert file.metadata(buffer_size=None)["width"] == 192
+
+    assert seen_buffer_sizes == [BUFFER_METADATA, None]
 
 
 def test_keyframes(sample_video_path):
@@ -121,13 +148,278 @@ def test_video_keyframes_start_time_beyond_duration_returns_empty(sample_video_p
     assert frames == []
 
 
-def test_keyframes_raises_informative_error_when_pillow_missing(sample_video_path, monkeypatch):
-    """Regression test for issue #6064: ensure informative error when pillow is missing."""
-    from daft import dependencies
-
+def test_videofile_init_without_pillow(monkeypatch):
     monkeypatch.setattr(dependencies.pil_image, "module_available", lambda: False)
 
+    with pytest.raises(ImportError, match="pillow.*required.*pip install daft\\[video\\]"):
+        daft.VideoFile("dummy.mp4")
+
+
+def test_keyframes_raises_informative_error_when_pillow_missing(sample_video_path, monkeypatch):
+    """Regression test for issue #6064: ensure informative error when pillow is missing."""
     file = daft.VideoFile(sample_video_path)
+    monkeypatch.setattr(dependencies.pil_image, "module_available", lambda: False)
 
     with pytest.raises(ImportError, match="pillow.*required.*pip install daft\\[video\\]"):
         list(file.keyframes())
+
+
+# --- video_frames tests ---
+
+
+def test_frames_standalone(sample_video_path):
+    """VideoFile.frames() returns all 290 frames with metadata."""
+    file = daft.VideoFile(sample_video_path)
+    frames = list(file.frames())
+    assert len(frames) == 290
+
+    # Check first frame metadata
+    first = frames[0]
+    assert first["frame_index"] == 0
+    assert first["is_key_frame"] is True
+    assert first["frame_time"] is not None
+    assert first["data"].size == (192, 144)
+
+
+def test_frames_exits_tracing_span_before_yield(sample_video_path, monkeypatch):
+    """Caller work between frames must not inherit the VideoFile::frames span."""
+    import daft.file.video as video_module
+
+    events: list[str] = []
+
+    class FakeTracingSpan:
+        def __enter__(self):
+            events.append("enter")
+
+        def __exit__(self, _exc_type, _exc_value, _traceback):
+            events.append("exit")
+
+    class FakeFileTracing:
+        @staticmethod
+        def video_frames():
+            return FakeTracingSpan()
+
+    def fake_frames(*_args, **_kwargs):
+        try:
+            yield {"frame_index": 0}
+            yield {"frame_index": 1}
+        finally:
+            events.append("inner_close")
+
+    monkeypatch.setattr(video_module, "_FILE_TRACING_ENABLED", True)
+    monkeypatch.setattr(video_module, "_PyFileTracingSpan", FakeFileTracing)
+    monkeypatch.setattr(video_module.VideoFile, "_frames", fake_frames)
+
+    frames = daft.VideoFile(sample_video_path).frames()
+    assert next(frames)["frame_index"] == 0
+    assert events == ["enter", "exit"]
+
+    events.append("caller")
+    assert next(frames)["frame_index"] == 1
+    assert events == ["enter", "exit", "caller", "enter", "exit"]
+
+    frames.close()
+    assert events == ["enter", "exit", "caller", "enter", "exit", "inner_close"]
+
+
+def test_frames_with_resize(sample_video_path):
+    """VideoFile.frames() resizes frames when width/height are given."""
+    file = daft.VideoFile(sample_video_path)
+    frames = list(file.frames(width=64, height=48))
+    assert len(frames) == 290
+    assert frames[0]["data"].size == (64, 48)
+
+
+def test_frames_with_partial_resize_raises(sample_video_path):
+    file = daft.VideoFile(sample_video_path)
+
+    with pytest.raises(ValueError, match="Both width and height must be specified together"):
+        list(file.frames(width=64))
+
+
+def test_frames_time_range(sample_video_path):
+    """VideoFile.frames() filters by start_time and end_time."""
+    file = daft.VideoFile(sample_video_path)
+    all_frames = list(file.frames())
+    subset = list(file.frames(start_time=5.0, end_time=6.0))
+
+    assert len(subset) > 0
+    assert len(subset) < len(all_frames)
+    for f in subset:
+        assert f["frame_time"] is not None
+        assert f["frame_time"] >= 5.0
+        assert f["frame_time"] <= 6.0
+
+    expected_subset = [f for f in all_frames if f["frame_time"] is not None and 5.0 <= f["frame_time"] <= 6.0]
+    assert [f["frame_index"] for f in subset] == [f["frame_index"] for f in expected_subset]
+
+
+def test_frames_start_time_beyond_duration_returns_empty(sample_video_path):
+    file = daft.VideoFile(sample_video_path)
+    metadata = file.metadata()
+    duration = metadata["duration"]
+    assert duration is not None
+
+    frames = list(file.frames(start_time=duration + 1.0))
+    assert len(frames) == 0
+
+
+def test_frames_includes_keyframe_and_non_keyframe(sample_video_path):
+    """video_frames decodes all frames, not just keyframes."""
+    file = daft.VideoFile(sample_video_path)
+    frames = list(file.frames())
+
+    key_count = sum(1 for f in frames if f["is_key_frame"])
+    non_key_count = sum(1 for f in frames if not f["is_key_frame"])
+
+    # The sample video has 13 keyframes and 277 non-keyframes
+    assert key_count == 13
+    assert non_key_count == 277
+
+
+def test_frames_can_filter_keyframes(sample_video_path):
+    file = daft.VideoFile(sample_video_path)
+
+    keyframes = list(file.frames(is_key_frame=True))
+
+    assert len(keyframes) == 13
+    assert all(frame["is_key_frame"] for frame in keyframes)
+
+
+def test_frames_can_filter_non_keyframes(sample_video_path):
+    file = daft.VideoFile(sample_video_path)
+
+    frames = list(file.frames(is_key_frame=False))
+
+    assert len(frames) == 277
+    assert all(not frame["is_key_frame"] for frame in frames)
+
+
+def test_video_frames_expression(sample_video_path):
+    """video_frames() expression function returns correct schema and data."""
+    df = daft.from_pydict({"path": [sample_video_path]})
+    df = df.select(daft.functions.video_file(df["path"], verify=True).alias("video"))
+    df = df.select(daft.functions.video_frames(df["video"]).alias("frames"))
+
+    result = df.to_pydict()["frames"][0]
+    assert len(result) == 290
+
+    # Each element should be a struct with expected keys
+    first = result[0]
+    assert "frame_index" in first
+    assert "frame_time" in first
+    assert "is_key_frame" in first
+    assert "data" in first
+
+
+def test_video_frames_expression_with_time_range(sample_video_path):
+    """video_frames() expression function respects start_time/end_time."""
+    df = daft.from_pydict({"path": [sample_video_path]})
+    df = df.select(daft.functions.video_file(df["path"], verify=True).alias("video"))
+    df = df.select(daft.functions.video_frames(df["video"], start_time=5.0, end_time=6.0).alias("frames"))
+
+    result = df.to_pydict()["frames"][0]
+    assert len(result) > 0
+    assert len(result) < 290
+
+
+def test_video_frames_expression_can_filter_keyframes(sample_video_path):
+    df = daft.from_pydict({"path": [sample_video_path]})
+    df = df.select(daft.functions.video_file(df["path"], verify=True).alias("video"))
+    df = df.select(daft.functions.video_frames(df["video"], is_key_frame=True).alias("frames"))
+
+    result = df.to_pydict()["frames"][0]
+    assert len(result) == 13
+    assert all(frame["is_key_frame"] for frame in result)
+
+
+def test_video_frames_expression_with_resize(sample_video_path):
+    """video_frames() expression function respects width/height."""
+    df = daft.from_pydict({"path": [sample_video_path]})
+    df = df.select(daft.functions.video_file(df["path"], verify=True).alias("video"))
+    df = df.select(daft.functions.video_frames(df["video"], width=64, height=48).alias("frames"))
+
+    result = df.to_pydict()["frames"][0]
+    assert len(result) == 290
+    assert result[0]["data"].shape == (48, 64, 3)
+
+
+def test_frames_raises_informative_error_when_pillow_missing(sample_video_path, monkeypatch):
+    file = daft.VideoFile(sample_video_path)
+    monkeypatch.setattr(dependencies.pil_image, "module_available", lambda: False)
+
+    with pytest.raises(ImportError, match="pillow.*required.*pip install daft\\[video\\]"):
+        list(file.frames())
+
+
+# --- sample_interval_seconds tests ---
+
+
+def test_frames_sample_interval_seconds(sample_video_path):
+    """VideoFile.frames(sample_interval_seconds=1.0) emits one frame per second."""
+    file = daft.VideoFile(sample_video_path)
+    sampled = list(file.frames(sample_interval_seconds=1.0))
+
+    # Sample video is 290 frames at 30 fps ~= 9.67s, so sampling at 1.0s yields t=0,1,...,9 → 10 frames
+    assert len(sampled) == 10
+
+    times = [f["frame_time"] for f in sampled]
+    # First emitted frame is at t=0 (first frame whose time >= 0)
+    assert times[0] == pytest.approx(0.0, abs=0.05)
+    # Each subsequent emitted time is monotonically >= previous + ~1.0
+    for prev, curr in zip(times, times[1:]):
+        assert curr - prev >= 0.95
+
+
+def test_frames_sample_interval_zero_raises(sample_video_path):
+    file = daft.VideoFile(sample_video_path)
+    with pytest.raises(ValueError, match="sample_interval_seconds must be positive"):
+        list(file.frames(sample_interval_seconds=0.0))
+
+
+def test_frames_sample_interval_negative_raises(sample_video_path):
+    file = daft.VideoFile(sample_video_path)
+    with pytest.raises(ValueError, match="sample_interval_seconds must be positive"):
+        list(file.frames(sample_interval_seconds=-1.0))
+
+
+def test_frames_sample_interval_combined_with_keyframe(sample_video_path):
+    """sample_interval combined with is_key_frame=True samples among keyframes only."""
+    file = daft.VideoFile(sample_video_path)
+    keyframes_only = list(file.frames(is_key_frame=True))
+    sampled_keyframes = list(file.frames(is_key_frame=True, sample_interval_seconds=1.0))
+
+    # Sampling should yield no more frames than the unsampled keyframe set
+    assert len(sampled_keyframes) <= len(keyframes_only)
+    assert all(f["is_key_frame"] for f in sampled_keyframes)
+
+
+def test_video_frames_expression_sample_interval(sample_video_path):
+    """video_frames() expression accepts sample_interval_seconds and applies it."""
+    df = daft.from_pydict({"path": [sample_video_path]})
+    df = df.select(daft.functions.video_file(df["path"], verify=True).alias("video"))
+    df = df.select(daft.functions.video_frames(df["video"], sample_interval_seconds=1.0).alias("frames"))
+
+    result = df.to_pydict()["frames"][0]
+    assert len(result) == 10
+
+
+def test_get_frame_by_idx(sample_video_path):
+    """get_frame_by_idx returns the same frame as frames() for a given index."""
+    import numpy as np
+
+    file = daft.VideoFile(sample_video_path)
+    all_frames = list(file.frames())
+
+    for idx in (0, 1, 50, 150, 289):
+        expected = all_frames[idx]["data"]
+        actual = file.get_frame_by_idx(idx)
+        np.testing.assert_array_equal(np.array(actual), np.array(expected))
+
+
+def test_get_frame_by_idx_out_of_range(sample_video_path):
+    file = daft.VideoFile(sample_video_path)
+    with pytest.raises(IndexError):
+        file.get_frame_by_idx(290)
+    with pytest.raises(IndexError):
+        file.get_frame_by_idx(-1)

@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use derive_more::Display;
 use serde::{Deserialize, Serialize};
 
@@ -62,6 +64,7 @@ impl Default for TosConfig {
 impl TosConfig {
     #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
+        let defaults = Self::default();
         let mut res = vec![];
         if let Some(region) = &self.region {
             res.push(format!("Region name = {region}"));
@@ -78,24 +81,42 @@ impl TosConfig {
         if self.security_token.is_some() {
             res.push("Security token = ***".to_string());
         }
-        res.push(format!("Anonymous = {}", self.anonymous));
-        res.push(format!("Max retries = {}", self.max_retries));
-        res.push(format!("Retry timeout = {}ms", self.retry_timeout_ms));
-        res.push(format!("Connect timeout = {}ms", self.connect_timeout_ms));
-        res.push(format!("Read timeout = {}ms", self.read_timeout_ms));
-        res.push(format!(
-            "Max concurrent requests = {}",
-            self.max_concurrent_requests
-        ));
-        res.push(format!(
-            "Max connections = {}",
-            self.max_connections_per_io_thread
-        ));
-        res.push(format!("Multipart size = {}", self.multipart_size));
-        res.push(format!(
-            "Multipart max concurrency = {}",
-            self.multipart_max_concurrency
-        ));
+        if self.anonymous != defaults.anonymous {
+            res.push(format!("Anonymous = {}", self.anonymous));
+        }
+        if self.max_retries != defaults.max_retries {
+            res.push(format!("Max retries = {}", self.max_retries));
+        }
+        if self.retry_timeout_ms != defaults.retry_timeout_ms {
+            res.push(format!("Retry timeout = {}ms", self.retry_timeout_ms));
+        }
+        if self.connect_timeout_ms != defaults.connect_timeout_ms {
+            res.push(format!("Connect timeout = {}ms", self.connect_timeout_ms));
+        }
+        if self.read_timeout_ms != defaults.read_timeout_ms {
+            res.push(format!("Read timeout = {}ms", self.read_timeout_ms));
+        }
+        if self.max_concurrent_requests != defaults.max_concurrent_requests {
+            res.push(format!(
+                "Max concurrent requests = {}",
+                self.max_concurrent_requests
+            ));
+        }
+        if self.max_connections_per_io_thread != defaults.max_connections_per_io_thread {
+            res.push(format!(
+                "Max connections = {}",
+                self.max_connections_per_io_thread
+            ));
+        }
+        if self.multipart_size != defaults.multipart_size {
+            res.push(format!("Multipart size = {}", self.multipart_size));
+        }
+        if self.multipart_max_concurrency != defaults.multipart_max_concurrency {
+            res.push(format!(
+                "Multipart max concurrency = {}",
+                self.multipart_max_concurrency
+            ));
+        }
         res
     }
 
@@ -127,6 +148,45 @@ impl TosConfig {
             }
         }
     }
+
+    /// Convert TosConfig into an OpenDAL-compatible configuration map.
+    ///
+    /// This allows the generic OpenDAL backend to be used instead of a dedicated TOS source,
+    /// while preserving the friendly TosConfig API (region auto-derivation, env var scanning, etc.).
+    pub fn to_opendal_config(&self, bucket: &str) -> BTreeMap<String, String> {
+        let mut config = BTreeMap::new();
+
+        config.insert("bucket".to_string(), bucket.to_string());
+
+        let (endpoint, region) = self.endpoint_and_region();
+        config.insert("endpoint".to_string(), endpoint);
+        config.insert("region".to_string(), region);
+
+        if self.anonymous {
+            config.insert("disable_config_load".to_string(), "true".to_string());
+            config.insert("skip_signature".to_string(), "true".to_string());
+        } else {
+            if let Some(access_key) = &self.access_key {
+                config.insert("access_key_id".to_string(), access_key.clone());
+            }
+            if let Some(secret_key) = &self.secret_key {
+                config.insert(
+                    "secret_access_key".to_string(),
+                    secret_key.as_string().clone(),
+                );
+            }
+            if let Some(security_token) = &self.security_token {
+                config.insert(
+                    "security_token".to_string(),
+                    security_token.as_string().clone(),
+                );
+            }
+
+            config.insert("disable_config_load".to_string(), "false".to_string());
+        }
+
+        config
+    }
 }
 
 pub fn extract_region(endpoint: &str) -> Option<String> {
@@ -143,4 +203,67 @@ pub fn extract_region(endpoint: &str) -> Option<String> {
     }
 
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_to_opendal_config_with_credentials() {
+        let config = TosConfig {
+            region: Some("cn-beijing".to_string()),
+            endpoint: Some("https://tos-cn-beijing.volces.com".to_string()),
+            access_key: Some("test-ak".to_string()),
+            secret_key: Some("test-sk".to_string().into()),
+            security_token: Some("test-token".to_string().into()),
+            ..Default::default()
+        };
+
+        let opendal_config = config.to_opendal_config("my-bucket");
+        assert_eq!(opendal_config.get("bucket"), Some(&"my-bucket".to_string()));
+        assert_eq!(
+            opendal_config.get("endpoint"),
+            Some(&"https://tos-cn-beijing.volces.com".to_string())
+        );
+        assert_eq!(
+            opendal_config.get("region"),
+            Some(&"cn-beijing".to_string())
+        );
+        assert_eq!(
+            opendal_config.get("access_key_id"),
+            Some(&"test-ak".to_string())
+        );
+        assert_eq!(
+            opendal_config.get("secret_access_key"),
+            Some(&"test-sk".to_string())
+        );
+        assert_eq!(
+            opendal_config.get("security_token"),
+            Some(&"test-token".to_string())
+        );
+        assert_eq!(
+            opendal_config.get("disable_config_load"),
+            Some(&"false".to_string())
+        );
+    }
+
+    #[test]
+    fn test_to_opendal_config_anonymous() {
+        let config = TosConfig {
+            anonymous: true,
+            ..Default::default()
+        };
+
+        let opendal_config = config.to_opendal_config("public-bucket");
+        assert_eq!(
+            opendal_config.get("disable_config_load"),
+            Some(&"true".to_string())
+        );
+        assert_eq!(
+            opendal_config.get("skip_signature"),
+            Some(&"true".to_string())
+        );
+        assert!(!opendal_config.contains_key("access_key_id"));
+    }
 }

@@ -39,6 +39,7 @@ impl_logicalarray_take!(DateArray);
 impl_logicalarray_take!(TimeArray);
 impl_logicalarray_take!(DurationArray);
 impl_logicalarray_take!(TimestampArray);
+impl_logicalarray_take!(UuidArray);
 impl_logicalarray_take!(EmbeddingArray);
 impl_logicalarray_take!(ImageArray);
 impl_logicalarray_take!(FixedShapeImageArray);
@@ -132,6 +133,30 @@ impl StructArray {
                 .collect::<DaftResult<Vec<_>>>()?,
             nulls,
         ))
+    }
+}
+impl UnionArray {
+    pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
+        let mut growable = Self::make_growable(
+            self.name(),
+            self.data_type(),
+            vec![self],
+            idx.null_count() > 0,
+            idx.len(),
+        );
+
+        for i in idx {
+            match i {
+                None => {
+                    growable.add_nulls(1);
+                }
+                Some(i) => {
+                    growable.extend(0, i.to_usize().unwrap(), 1);
+                }
+            }
+        }
+
+        Ok(growable.build()?.downcast::<Self>()?.clone())
     }
 }
 impl<T> FileArray<T>

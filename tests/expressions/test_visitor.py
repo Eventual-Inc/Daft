@@ -86,6 +86,13 @@ class TracingVisitor(PredicateVisitor[list[Trace]]):
         acc += [trace]
         return acc
 
+    def visit_try_cast(self, expr: Expression, dtype: DataType) -> list[Trace]:
+        trace = Trace("visit_try_cast", [expr, dtype])
+        acc = []
+        acc += self.visit(expr)
+        acc += [trace]
+        return acc
+
     def visit_list(self, items: list[Expression]) -> list[Trace]:
         trace = Trace("visit_list", [items])
         acc = []

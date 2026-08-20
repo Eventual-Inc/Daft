@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 import psycopg
 from pgvector.psycopg import register_vector
 
-from daft.catalog import Catalog, Identifier, NotFoundError, Properties, Schema, Table
+from daft.catalog import Catalog, Function, Identifier, NotFoundError, Properties, Schema, Table
 from daft.datatype import DataType
 from daft.io._sql import read_sql
 from daft.logical.schema import Field
@@ -57,6 +57,8 @@ def postgres_connection(connection_string: str, extensions: list[str] | None) ->
 
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from daft.dataframe import DataFrame
     from daft.io.partitioning import PartitionField
 
@@ -204,6 +206,9 @@ class PostgresCatalog(Catalog):
     # create_*
     ###
 
+    def _create_function(self, ident: Identifier, function: Function | Callable[..., Any]) -> None:
+        raise NotImplementedError("Postgres does not support function registration.")
+
     def _create_namespace(self, identifier: Identifier) -> None:
         """Create a schema in PostgreSQL."""
         if len(identifier) != 1:
@@ -293,6 +298,9 @@ class PostgresCatalog(Catalog):
     ###
     # drop_*
     ###
+
+    def _get_function(self, ident: Identifier) -> Function:
+        raise NotFoundError(f"Function '{ident}' not found in catalog '{self.name}'")
 
     def _drop_namespace(self, identifier: Identifier) -> None:
         """Drop a schema from PostgreSQL."""

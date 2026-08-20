@@ -6,11 +6,11 @@ import lance
 import pyarrow as pa
 import pyarrow.compute as pc
 import pytest
+from daft_lance.lance_scan import LanceDBScanOperator, _lancedb_count_result_function
 
 import daft
 from daft import col
 from daft.daft import CountMode
-from daft.io.lance.lance_scan import LanceDBScanOperator, _lancedb_count_result_function
 from daft.recordbatch import RecordBatch
 
 
@@ -55,7 +55,7 @@ class TestLanceCountResultFunction:
         scan_op = LanceDBScanOperator(ds)
 
         with patch.object(scan_op, "supported_count_modes", return_value=[CountMode.All]):
-            with patch("daft.io.lance.lance_scan.logger") as mock_logger:
+            with patch("daft_lance.lance_scan.logger") as mock_logger:
                 mock_pushdowns = MagicMock()
                 mock_pushdowns.aggregation = MagicMock()
                 mock_pushdowns.aggregation_count_mode.return_value = CountMode.Valid

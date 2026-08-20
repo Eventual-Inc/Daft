@@ -1,7 +1,11 @@
 use futures::Stream;
 
-#[derive(Clone)]
 pub(crate) struct Sender<T>(tokio::sync::mpsc::Sender<T>);
+impl<T> Clone for Sender<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
 impl<T> Sender<T> {
     pub(crate) async fn send(&self, val: T) -> Result<(), tokio::sync::mpsc::error::SendError<T>> {
         self.0.send(val).await
@@ -28,8 +32,12 @@ pub(crate) fn create_channel<T>(buffer_size: usize) -> (Sender<T>, Receiver<T>) 
     (Sender(tx), Receiver(rx))
 }
 
-#[derive(Clone)]
 pub(crate) struct UnboundedSender<T>(tokio::sync::mpsc::UnboundedSender<T>);
+impl<T> Clone for UnboundedSender<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
 impl<T> UnboundedSender<T> {
     pub(crate) fn send(&self, val: T) -> Result<(), tokio::sync::mpsc::error::SendError<T>> {
         self.0.send(val)

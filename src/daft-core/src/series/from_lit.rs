@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use arrow::buffer::{NullBuffer, OffsetBuffer};
 use common_error::{DaftError, DaftResult};
 use common_image::CowImage;
 use indexmap::IndexMap;
@@ -8,7 +9,7 @@ use itertools::Itertools;
 use crate::{
     array::ops::image::image_array_from_img_buffers,
     datatypes::FileArray,
-    file::{MediaTypeAudio, MediaTypeUnknown, MediaTypeVideo},
+    file::{MediaTypeAudio, MediaTypeHdf5, MediaTypeImage, MediaTypeUnknown, MediaTypeVideo},
     prelude::*,
 };
 
@@ -181,7 +182,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
         .into_series(),
         DataType::Int8 | DataType::UInt8 | DataType::Int16 | DataType::UInt16
         | DataType::Int32 | DataType::UInt32 | DataType::Int64 | DataType::UInt64
-        | DataType::Float32 | DataType::Float64 => {
+        | DataType::Float16 | DataType::Float32 | DataType::Float64 => {
             macro_rules! primitive_arm {
                 ($($dt:ident => $arr:ident),+ $(,)?) => {
                     match &downcasted {
@@ -202,6 +203,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 UInt32 => UInt32Array,
                 Int64 => Int64Array,
                 UInt64 => UInt64Array,
+                Float16 => Float16Array,
                 Float32 => Float32Array,
                 Float64 => Float64Array,
             )
@@ -247,6 +249,12 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
 
             DurationArray::new(field, physical).into_series()
         }
+        DataType::Uuid => {
+            let data = values.map(|(i, lit)| unwrap_inner!(lit, i, Literal::Uuid(uuid) => uuid));
+            let physical = FixedSizeBinaryArray::from_iter("literal", data, 16);
+
+            UuidArray::new(field, physical).into_series()
+        }
         DataType::List(ref child_dtype) => {
             let data = values
                 .map(|(i, lit)| {
@@ -255,7 +263,16 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                         .transpose()
                 })
                 .collect::<DaftResult<Vec<_>>>()?;
-            ListArray::from_series("literal", data)?.into_series()
+            if data.iter().all(Option::is_none) {
+                let offsets = OffsetBuffer::from_lengths((0..data.len()).map(|_| 0));
+                let nulls = NullBuffer::from_iter((0..data.len()).map(|_| false));
+                let flat_child =
+                    Series::empty("literal", &child_dtype.to_physical()).cast(child_dtype)?;
+
+                ListArray::new(field, flat_child, offsets, Some(nulls)).into_series()
+            } else {
+                ListArray::from_series("literal", data)?.into_series()
+            }
         }
         DataType::Struct(ref fields) => {
             let values = values.collect::<Vec<_>>();
@@ -309,6 +326,14 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 }
                 daft_schema::media_type::MediaType::Audio => {
                     FileArray::<MediaTypeAudio>::new_from_file_references("literal", iter)?
+                        .into_series()
+                }
+                daft_schema::media_type::MediaType::Image => {
+                    FileArray::<MediaTypeImage>::new_from_file_references("literal", iter)?
+                        .into_series()
+                }
+                daft_schema::media_type::MediaType::Hdf5 => {
+                    FileArray::<MediaTypeHdf5>::new_from_file_references("literal", iter)?
                         .into_series()
                 }
             }
@@ -436,7 +461,8 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
         | DataType::FixedShapeImage(..)
         | DataType::FixedShapeTensor(..)
         | DataType::FixedShapeSparseTensor(..)
-        | DataType::Unknown => unreachable!("Literal should never have data type: {dtype}"),
+        | DataType::Unknown
+        | DataType::Union(..) => unreachable!("Literal should never have data type: {dtype}"),
     };
 
     let s = if downcasted != dtype {

@@ -10,11 +10,12 @@ use common_partitioning::Partition;
 use common_py_serde::impl_bincode_py_state_serialization;
 use daft_local_plan::python::PyExecutionStats;
 use daft_logical_plan::PyLogicalPlanBuilder;
+use daft_partition_refs::RayPartitionRef;
 use dashboard::DashboardStatisticsSubscriber;
 use futures::StreamExt;
 use progress_bar::FlotillaProgressBar;
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
-use ray::{FlightShufflePartitionRef, RaySwordfishTask, RaySwordfishWorker, RayWorkerManager};
+use ray::{RaySwordfishTask, RaySwordfishWorker, RayWorkerManager};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
@@ -24,9 +25,30 @@ use crate::{
         viz_distributed_pipeline_mermaid,
     },
     plan::{DistributedPhysicalPlan, PlanConfig, PlanResultStream, PlanRunner},
-    python::ray::{RayPartitionRef, RayTaskResult},
-    statistics::{StatisticsManagerRef, StatisticsSubscriber},
+    python::ray::RayTaskResult,
+    statistics::{
+        StatisticsManager, StatisticsManagerRef, StatisticsSubscriber,
+        task_lifecycle::{TaskLifecycleEventSubscriber, task_events_enabled},
+    },
 };
+
+// stacklevel=1: attribute to the immediate Python caller of the binding. Higher values would
+// point further up the daft-internal stack, but the depth varies per entry point (run_plan vs
+// repr_ascii vs ...), which would make Python's location-based warning dedup inconsistent.
+fn surface_hints(py: Python, hints: &[String]) -> PyResult<()> {
+    if hints.is_empty() {
+        return Ok(());
+    }
+    let warn =
+        PyModule::import(py, pyo3::intern!(py, "warnings"))?.getattr(pyo3::intern!(py, "warn"))?;
+    let user_warning = py
+        .import(pyo3::intern!(py, "builtins"))?
+        .getattr(pyo3::intern!(py, "UserWarning"))?;
+    for hint in hints {
+        warn.call1((hint.as_str(), &user_warning, 1_usize))?;
+    }
+    Ok(())
+}
 
 #[pyclass(frozen)]
 struct PythonPartitionRefStream {
@@ -65,6 +87,12 @@ impl PythonPartitionRefStream {
     }
 
     fn finish(&self) -> PyResult<PyExecutionStats> {
+        // Best-effort: synthesize OperatorEnd for any node that fired
+        // OperatorStart but didn't naturally drain its in-flight tasks
+        // (e.g. forced shutdown / aborted scheduler). Idempotent — if
+        // every node already finalized through the normal path, this is
+        // a no-op.
+        self.statistics_manager.flush_started_operators();
         let result = self.statistics_manager.export_metrics();
         Ok(PyExecutionStats::from(result))
     }
@@ -103,32 +131,42 @@ impl PyDistributedPhysicalPlan {
             self.plan.query_id(),
             self.plan.execution_config().clone(),
         );
-        let pipeline_node = logical_plan_to_pipeline_node(
+        let translation = logical_plan_to_pipeline_node(
             plan_config,
             self.plan.logical_plan().clone(),
             Default::default(),
             &Meter::global_scope("daft.execution.distributed.num_partitions"),
         )?;
 
-        Ok(pipeline_node.num_partitions())
+        Ok(translation.root.num_partitions())
     }
 
-    /// Visualize the distributed pipeline as ASCII text
+    /// Visualize the distributed pipeline as ASCII text. Hints are embedded inline so the
+    /// caller receives a single self-contained string — emitting them as `warnings.warn` here
+    /// would write to stderr mid-call and interleave with the plan body on stdout.
     fn repr_ascii(&self, simple: bool) -> PyResult<String> {
-        // Create pipeline nodes from the logical plan
         let plan_config = PlanConfig::new(
             self.plan.idx(),
             self.plan.query_id(),
             self.plan.execution_config().clone(),
         );
-        let pipeline_node = logical_plan_to_pipeline_node(
+        let translation = logical_plan_to_pipeline_node(
             plan_config,
             self.plan.logical_plan().clone(),
             Default::default(),
             &Meter::global_scope("daft.execution.distributed.repr_ascii"),
         )?;
 
-        Ok(viz_distributed_pipeline_ascii(&pipeline_node, simple))
+        let mut output = viz_distributed_pipeline_ascii(&translation.root, simple);
+        if !translation.hints.is_empty() {
+            output.push_str("\nHints:\n");
+            for hint in &translation.hints {
+                output.push_str("- ");
+                output.push_str(hint);
+                output.push('\n');
+            }
+        }
+        Ok(output)
     }
 
     /// Visualize the distributed pipeline as Mermaid markdown
@@ -139,7 +177,7 @@ impl PyDistributedPhysicalPlan {
             self.plan.query_id(),
             self.plan.execution_config().clone(),
         );
-        let pipeline_node = logical_plan_to_pipeline_node(
+        let translation = logical_plan_to_pipeline_node(
             plan_config,
             self.plan.logical_plan().clone(),
             Default::default(),
@@ -152,28 +190,45 @@ impl PyDistributedPhysicalPlan {
             DisplayLevel::Default
         };
         Ok(viz_distributed_pipeline_mermaid(
-            &pipeline_node,
+            &translation.root,
             display_level,
             bottom_up,
             None,
         ))
     }
 
-    fn repr_json(&self) -> PyResult<String> {
+    #[pyo3(signature = (psets=None))]
+    fn repr_json(&self, psets: Option<HashMap<String, Vec<RayPartitionRef>>>) -> PyResult<String> {
         let plan_config = PlanConfig::new(
             self.plan.idx(),
             self.plan.query_id(),
             self.plan.execution_config().clone(),
         );
-        let pipeline_node = logical_plan_to_pipeline_node(
+        let psets = match psets {
+            Some(psets) => Arc::new(
+                psets
+                    .into_iter()
+                    .map(|(k, v)| {
+                        (
+                            k,
+                            v.into_iter()
+                                .map(|v| Arc::new(v) as Arc<dyn Partition>)
+                                .collect(),
+                        )
+                    })
+                    .collect(),
+            ),
+            None => Arc::new(HashMap::new()),
+        };
+        let translation = logical_plan_to_pipeline_node(
             plan_config,
             self.plan.logical_plan().clone(),
-            Arc::new(HashMap::new()), // No psets needed for repr_json
+            psets,
             &Meter::global_scope("daft.execution.distributed.repr_json"),
         )
         .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
 
-        Ok(serde_json::to_string(&pipeline_node.repr_json()).unwrap())
+        Ok(serde_json::to_string(&translation.root.repr_json()).unwrap())
     }
 }
 impl_bincode_py_state_serialization!(PyDistributedPhysicalPlan);
@@ -186,10 +241,11 @@ struct PyDistributedPhysicalPlanRunner {
 #[pymethods]
 impl PyDistributedPhysicalPlanRunner {
     #[new]
-    fn new() -> PyResult<Self> {
-        let worker_manager = RayWorkerManager::new();
+    #[pyo3(signature = (worker_startup_timeout = 120))]
+    fn new(worker_startup_timeout: usize) -> PyResult<Self> {
+        let worker_manager = Arc::new(RayWorkerManager::new(worker_startup_timeout));
         Ok(Self {
-            runner: Arc::new(PlanRunner::new(Arc::new(worker_manager))),
+            runner: Arc::new(PlanRunner::new(worker_manager)),
         })
     }
 
@@ -215,6 +271,13 @@ impl PyDistributedPhysicalPlanRunner {
         let mut subscribers: Vec<Box<dyn StatisticsSubscriber>> =
             vec![Box::new(FlotillaProgressBar::try_new(py)?)];
 
+        // Add the TaskLifecycleEventSubscriber if task emitting enabled
+        if task_events_enabled() {
+            subscribers.push(Box::new(TaskLifecycleEventSubscriber::new(
+                plan.plan.query_id(),
+            )));
+        }
+
         // Only add DashboardStatisticsSubscriber if RAY_DISABLE_DASHBOARD is not set to "1"
         if std::env::var("RAY_DISABLE_DASHBOARD").as_deref() != Ok("1") {
             subscribers.push(Box::new(DashboardStatisticsSubscriber::new(
@@ -222,8 +285,32 @@ impl PyDistributedPhysicalPlanRunner {
             )));
         }
 
-        let plan_result = self.runner.run_plan(&plan.plan, psets, subscribers)?;
-        let statistics_manager = plan_result.statistics_manager.clone();
+        let query_idx = plan.plan.idx();
+        let query_id = plan.plan.query_id();
+        let logical_plan = plan.plan.logical_plan().clone();
+
+        let meter = Meter::query_scope(query_id.clone(), "daft.execution.distributed");
+
+        let translation = logical_plan_to_pipeline_node(
+            (&plan.plan).into(),
+            logical_plan,
+            Arc::new(psets),
+            &meter,
+        )?;
+
+        surface_hints(py, &translation.hints)?;
+
+        let statistics_manager = StatisticsManager::from_pipeline_node(
+            &translation.root,
+            subscribers,
+            &meter,
+            query_id,
+        )?;
+
+        let plan_result =
+            self.runner
+                .run_plan(query_idx, translation.root, statistics_manager.clone())?;
+
         let part_stream = PythonPartitionRefStream {
             inner: Arc::new(Mutex::new(plan_result.into_stream())),
             statistics_manager,
@@ -236,8 +323,6 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyDistributedPhysicalPlan>()?;
     parent.add_class::<PyDistributedPhysicalPlanRunner>()?;
     parent.add_class::<RaySwordfishTask>()?;
-    parent.add_class::<RayPartitionRef>()?;
-    parent.add_class::<FlightShufflePartitionRef>()?;
     parent.add_class::<RaySwordfishWorker>()?;
     parent.add_class::<RayTaskResult>()?;
     Ok(())

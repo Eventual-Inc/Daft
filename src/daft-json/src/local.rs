@@ -3,7 +3,7 @@ use std::{borrow::Cow, collections::HashSet, num::NonZeroUsize, sync::Arc};
 use arrow::array::builder::ArrayBuilder;
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
-use daft_dsl::{Expr, ExprRef, expr::bound_expr::BoundExpr};
+use daft_dsl::{Expr, ExprRef, expr::bound_expr::BoundExpr, optimization::get_required_columns};
 use daft_recordbatch::RecordBatch;
 use indexmap::IndexMap;
 use num_traits::Pow;
@@ -63,7 +63,7 @@ pub fn read_json_local_into_tables_with_range(
     max_chunks_in_flight: Option<usize>,
     range: Option<daft_io::GetRange>,
 ) -> DaftResult<Vec<RecordBatch>> {
-    let uri = uri.trim_start_matches("file://");
+    let uri = daft_io::strip_file_uri_to_path(uri).unwrap_or(uri);
     let file = std::fs::File::open(uri)?;
     // SAFETY: mmapping is inherently unsafe.
     // We are trusting that the file is not modified or accessed by other systems while we are reading it.
@@ -256,7 +256,16 @@ impl<'a> JsonReader<'a> {
         .context(RayonThreadPoolSnafu)?;
 
         let projected_schema = match convert_options.and_then(|options| options.include_columns) {
-            Some(projected_columns) => Arc::new(schema.project(&projected_columns)?),
+            Some(mut projected_columns) => {
+                if let Some(ref predicate) = predicate {
+                    for rc in get_required_columns(predicate) {
+                        if projected_columns.iter().all(|c| c.as_str() != rc.as_str()) {
+                            projected_columns.push(rc);
+                        }
+                    }
+                }
+                Arc::new(schema.project(&projected_columns)?)
+            }
             None => schema,
         };
 

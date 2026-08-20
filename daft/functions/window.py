@@ -305,3 +305,125 @@ def lead(expr: Expression, offset: int = 1, default: Expression | None = None) -
     if default is not None:
         default = Expression._to_expression(default)
     return Expression._from_pyexpr(expr._expr.offset(offset, default._expr if default is not None else None))
+
+
+def first_value(expr: Expression, ignore_nulls: bool = False) -> Expression:
+    """Returns the first value in the window frame.
+
+    Must be used with ``over()`` to specify the window partition, order, and frame.
+    When ``ignore_nulls=True``, skips null values and returns the first non-null value.
+
+    Args:
+        expr (Expression): The input expression.
+        ignore_nulls: whether to ignore null values. Defaults to False.
+
+    Returns:
+        Expression: The first value in the window frame.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import first_value
+        >>>
+        >>> df = daft.from_pydict(
+        ...     {
+        ...         "category": ["A", "A", "A", "A", "B", "B", "B", "B"],
+        ...         "time": [1, 2, 3, 4, 1, 2, 3, 4],
+        ...         "value": [1, None, None, 4, 10, None, 30, None],
+        ...     }
+        ... )
+        >>>
+        >>> # Backward fill using first_value: look ahead for the earliest following non-null value
+        >>> window = (
+        ...     daft.Window()
+        ...     .partition_by("category")
+        ...     .order_by("time")
+        ...     .rows_between(daft.Window.current_row, daft.Window.unbounded_following)
+        ... )
+        >>> df = df.with_column("bfill", first_value(df["value"], ignore_nulls=True).over(window))
+        >>> df.sort(["category", "time"]).show()
+        ╭──────────┬───────┬───────┬───────╮
+        │ category ┆ time  ┆ value ┆ bfill │
+        │ ---      ┆ ---   ┆ ---   ┆ ---   │
+        │ String   ┆ Int64 ┆ Int64 ┆ Int64 │
+        ╞══════════╪═══════╪═══════╪═══════╡
+        │ A        ┆ 1     ┆ 1     ┆ 1     │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ A        ┆ 2     ┆ None  ┆ 4     │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ A        ┆ 3     ┆ None  ┆ 4     │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ A        ┆ 4     ┆ 4     ┆ 4     │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ B        ┆ 1     ┆ 10    ┆ 10    │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ B        ┆ 2     ┆ None  ┆ 30    │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ B        ┆ 3     ┆ 30    ┆ 30    │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ B        ┆ 4     ┆ None  ┆ None  │
+        ╰──────────┴───────┴───────┴───────╯
+        <BLANKLINE>
+        (Showing first 8 rows)
+    """
+    return Expression._from_pyexpr(expr._expr.first_value(ignore_nulls))
+
+
+def last_value(expr: Expression, ignore_nulls: bool = False) -> Expression:
+    """Returns the last value in the window frame.
+
+    Must be used with ``over()`` to specify the window partition, order, and frame.
+    When ``ignore_nulls=True``, skips null values and returns the last non-null value.
+
+    Args:
+        expr (Expression): The input expression.
+        ignore_nulls: whether to ignore null values. Defaults to False.
+
+    Returns:
+        Expression: The last value in the window frame.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import last_value
+        >>>
+        >>> df = daft.from_pydict(
+        ...     {
+        ...         "category": ["A", "A", "A", "A", "B", "B", "B", "B"],
+        ...         "time": [1, 2, 3, 4, 1, 2, 3, 4],
+        ...         "value": [1, None, None, 4, 10, None, 30, None],
+        ...     }
+        ... )
+        >>>
+        >>> # Forward fill using last_value: look back for the latest preceding non-null value
+        >>> window = (
+        ...     daft.Window()
+        ...     .partition_by("category")
+        ...     .order_by("time")
+        ...     .rows_between(daft.Window.unbounded_preceding, daft.Window.current_row)
+        ... )
+        >>> df = df.with_column("ffill", last_value(df["value"], ignore_nulls=True).over(window))
+        >>> df.sort(["category", "time"]).show()
+        ╭──────────┬───────┬───────┬───────╮
+        │ category ┆ time  ┆ value ┆ ffill │
+        │ ---      ┆ ---   ┆ ---   ┆ ---   │
+        │ String   ┆ Int64 ┆ Int64 ┆ Int64 │
+        ╞══════════╪═══════╪═══════╪═══════╡
+        │ A        ┆ 1     ┆ 1     ┆ 1     │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ A        ┆ 2     ┆ None  ┆ 1     │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ A        ┆ 3     ┆ None  ┆ 1     │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ A        ┆ 4     ┆ 4     ┆ 4     │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ B        ┆ 1     ┆ 10    ┆ 10    │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ B        ┆ 2     ┆ None  ┆ 10    │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ B        ┆ 3     ┆ 30    ┆ 30    │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ B        ┆ 4     ┆ None  ┆ 30    │
+        ╰──────────┴───────┴───────┴───────╯
+        <BLANKLINE>
+        (Showing first 8 rows)
+    """
+    return Expression._from_pyexpr(expr._expr.last_value(ignore_nulls))

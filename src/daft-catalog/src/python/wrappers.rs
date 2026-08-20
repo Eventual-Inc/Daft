@@ -6,7 +6,11 @@ use indexmap::IndexMap;
 use pyo3::{intern, prelude::*, types::PyList};
 
 use super::PyIdentifier;
-use crate::{Catalog, Identifier, Table, TableRef, error::CatalogResult};
+use crate::{
+    Catalog, Function, FunctionRef, Identifier, Table, TableRef,
+    error::{CatalogError, CatalogResult},
+    function::PyFunctionWrapper,
+};
 
 /// Newtype to implement the Catalog trait for a Python catalog
 #[cfg_attr(debug_assertions, derive(Debug))]
@@ -40,6 +44,16 @@ impl Catalog for PyCatalogWrapper {
 
     fn to_py(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         Ok(self.0.clone_ref(py))
+    }
+
+    fn create_function(&self, ident: &Identifier, function: FunctionRef) -> CatalogResult<()> {
+        Python::attach(|py| {
+            let catalog = self.0.bind(py);
+            let ident_py = PyIdentifier(ident.clone()).to_pyobj(py)?;
+            let func_py = function.to_py(py)?;
+            catalog.call_method1(intern!(py, "_create_function"), (ident_py, func_py))?;
+            Ok(())
+        })
     }
 
     fn create_namespace(&self, ident: &Identifier) -> CatalogResult<()> {
@@ -147,6 +161,29 @@ impl Catalog for PyCatalogWrapper {
             let ident = PyIdentifier(ident.clone()).to_pyobj(py)?;
             let table = catalog.call_method1(intern!(py, "_get_table"), (ident,))?;
             Ok(Arc::new(PyTableWrapper(table.unbind())) as Arc<dyn Table>)
+        })
+    }
+
+    fn get_function(&self, ident: &Identifier) -> CatalogResult<FunctionRef> {
+        Python::attach(|py| {
+            let catalog = self.0.bind(py);
+            let ident_py = PyIdentifier(ident.clone()).to_pyobj(py)?;
+            match catalog.call_method1(intern!(py, "_get_function"), (ident_py,)) {
+                Ok(result) => {
+                    Ok(Arc::new(PyFunctionWrapper::new(result.unbind())) as Arc<dyn Function>)
+                }
+                Err(err) => {
+                    let not_found_type = py
+                        .import(intern!(py, "daft.catalog"))
+                        .and_then(|m| m.getattr(intern!(py, "NotFoundError")));
+                    if let Ok(not_found_type) = not_found_type
+                        && err.is_instance(py, &not_found_type)
+                    {
+                        return Err(CatalogError::obj_not_found("Function", ident));
+                    }
+                    Err(err.into())
+                }
+            }
         })
     }
 }

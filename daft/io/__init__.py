@@ -6,7 +6,9 @@ from daft.daft import (
     AzureConfig,
     CosConfig,
     GCSConfig,
+    GooseFSConfig,
     GravitinoConfig,
+    HdfsConfig,
     IOConfig,
     HTTPConfig,
     S3Config,
@@ -16,6 +18,7 @@ from daft.daft import (
     HuggingFaceConfig,
 )
 from daft.lazy_import import LazyImport
+from daft.io._blob import read_blob
 from daft.io._csv import read_csv
 from daft.io._text import read_text
 from daft.io.delta_lake._deltalake import read_deltalake
@@ -36,7 +39,7 @@ from daft.io.sink import DataSink
 from daft.io.source import DataSource, DataSourceTask
 from daft.io.av import read_video_frames
 
-# Lance is lazy-loaded because lance_namespace pulls in ~450ms of pydantic models.
+# Lance is lazy-loaded to keep `import daft` fast.
 if TYPE_CHECKING:
     from daft.io.lance._lance import read_lance
 
@@ -56,8 +59,10 @@ __all__ = [
     "DataSource",
     "DataSourceTask",
     "GCSConfig",
+    "GooseFSConfig",
     "GravitinoConfig",
     "HTTPConfig",
+    "HdfsConfig",
     "HuggingFaceConfig",
     "IOConfig",
     "S3Config",
@@ -67,6 +72,7 @@ __all__ = [
     "_range",
     "from_files",
     "from_glob_path",
+    "read_blob",
     "read_csv",
     "read_deltalake",
     "read_hudi",

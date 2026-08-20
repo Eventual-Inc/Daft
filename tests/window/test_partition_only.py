@@ -710,10 +710,13 @@ def test_window_on_hash_partitioned_df_does_not_shuffle():
     df.explain(True, file=plan_io)
     captured = plan_io.getvalue()
 
-    # Assert that "Repartition" only shows up 3 times in the explain output: logical + optimized + physical
-    # The window operation should NOT add an additional repartition since the input is already hash partitioned
-    assert captured.count("Repartition") == 3, (
-        f"Expected 'Repartition' to appear 3 times, got {captured.count('Repartition')}\n{captured}"
+    # The logical plan should retain the user repartition, and the physical plan should
+    # execute it as a single Ray shuffle without adding an extra shuffle for the window.
+    assert captured.count("Repartition") == 2, (
+        f"Expected 'Repartition' to appear twice in logical plans, got {captured.count('Repartition')}\n{captured}"
+    )
+    assert captured.count("RayShuffle") == 1, (
+        f"Expected a single physical RayShuffle, got {captured.count('RayShuffle')}\n{captured}"
     )
 
 
@@ -744,9 +747,13 @@ def test_window_on_hash_partitioned_df_multiple_columns_does_not_shuffle():
     df.explain(True, file=plan_io)
     captured = plan_io.getvalue()
 
-    # Assert that "Repartition" only shows up 3 times in the explain output
-    assert captured.count("Repartition") == 3, (
-        f"Expected 'Repartition' to appear 3 times, got {captured.count('Repartition')}\n{captured}"
+    # The logical plan should retain the user repartition, and the physical plan should
+    # execute it as a single Ray shuffle without adding an extra shuffle for the window.
+    assert captured.count("Repartition") == 2, (
+        f"Expected 'Repartition' to appear twice in logical plans, got {captured.count('Repartition')}\n{captured}"
+    )
+    assert captured.count("RayShuffle") == 1, (
+        f"Expected a single physical RayShuffle, got {captured.count('RayShuffle')}\n{captured}"
     )
 
 
@@ -778,7 +785,11 @@ def test_window_on_hash_partitioned_df_with_different_partition_does_shuffle():
     df.explain(True, file=plan_io)
     captured = plan_io.getvalue()
 
-    # Assert that "Repartition" shows up MORE than 3 times because we need an additional shuffle
-    assert captured.count("Repartition") > 3, (
-        f"Expected 'Repartition' to appear more than 3 times (window requires additional shuffle), got {captured.count('Repartition')}\n{captured}"
+    # The logical plans still show the original user repartition, but the physical plan
+    # should now contain two Ray shuffles: the original one plus an extra one for the window.
+    assert captured.count("Repartition") == 2, (
+        f"Expected 'Repartition' to appear twice in logical plans, got {captured.count('Repartition')}\n{captured}"
+    )
+    assert captured.count("RayShuffle") == 2, (
+        f"Expected two physical RayShuffles when the window requires an additional shuffle, got {captured.count('RayShuffle')}\n{captured}"
     )

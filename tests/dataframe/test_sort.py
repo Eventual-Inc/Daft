@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import math
 import struct
+import tempfile
+from contextlib import contextmanager
 
 import pyarrow as pa
 import pytest
@@ -9,11 +11,20 @@ import pytest
 import daft
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
+from tests.conftest import get_tests_daft_runner_name
 
 # Negative NaN: sign bit set, same payload as regular NaN.
 # IEEE 754 total ordering treats -NaN as less than all values,
 # but Daft's sort contract treats all NaN as greater than regular values.
 NEGATIVE_NAN = struct.unpack("d", struct.pack("Q", 0xFFF8000000000000))[0]
+
+
+@contextmanager
+def flight_shuffle_ctx():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        with daft.execution_config_ctx(shuffle_algorithm="flight_shuffle", flight_shuffle_dirs=[temp_dir]) as ctx:
+            yield ctx
+
 
 ###
 # Validation tests
@@ -54,6 +65,18 @@ def test_single_float_col_sort(make_df, desc: bool, n_partitions: int, with_mors
         expected = list(reversed(expected))
 
     assert _replace_nan_with_string(sorted_data["A"]) == _replace_nan_with_string(expected)
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="distributed sort backend routing is only relevant on the ray runner",
+)
+def test_sort_uses_ray_shuffle_path_under_flight_shuffle_config(make_df, with_morsel_size):
+    with flight_shuffle_ctx():
+        df = make_df({"A": [3, 1, 4, 2]}, repartition=3)
+        result = df.sort("A").to_pydict()
+
+    assert result == {"A": [1, 2, 3, 4]}
 
 
 @pytest.mark.skip(reason="Issue: https://github.com/Eventual-Inc/Daft/issues/546")

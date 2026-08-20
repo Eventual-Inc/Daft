@@ -170,7 +170,8 @@ mod tests {
             let num_edges = $edges.len();
             let graph = create_join_graph_with_edges(plans.clone(), $edges);
             let order = $orderer.order(&graph);
-            assert!(JoinOrderTree::order_eq(&order, &$optimal_order));
+            assert!(JoinOrderTree::order_eq(&order, &$optimal_order),
+                "Expected: {:?}\nGot: {:?}", &$optimal_order, &order);
             // Check that the number of join conditions does not increase due to join edge inference.
             assert!(JoinOrderTree::num_join_conditions(&order) <= num_edges);
             let build_result = graph.build_joins_from_join_order(&order);
