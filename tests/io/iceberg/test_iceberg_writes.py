@@ -1234,3 +1234,45 @@ def test_validation_rejects_when_column_metrics_are_disabled(bounds_table_factor
     daft.from_pydict({"dt": ["seed"], "s": ["short"]}).write_iceberg(
         table, mode="overwrite", overwrite_filter="s = 'short'", validate_overwrite_filter=False
     )
+
+
+def _spec_evolution_table(local_catalog, name):
+    schema = Schema(
+        NestedField(field_id=1, name="dt", type=StringType(), required=False),
+        NestedField(field_id=2, name="x", type=LongType(), required=False),
+    )
+    partition_spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="dt"))
+    table = local_catalog.create_table(f"default.{name}", schema, partition_spec=partition_spec)
+    daft.from_pydict({"dt": ["old"], "x": [1]}).write_iceberg(table)
+    return table
+
+
+def test_overwrite_result_reports_partition_values_after_adding_a_field(local_catalog):
+    """A file written before the new field has no value for it."""
+    table = _spec_evolution_table(local_catalog, "spec_add_field")
+    with table.update_spec() as update:
+        update.add_field("x", BucketTransform(4), "x_bucket_4")
+
+    result = daft.from_pydict({"dt": ["new"], "x": [2]}).write_iceberg(table, mode="overwrite")
+    as_dict = result.to_pydict()
+
+    assert list(zip(as_dict["operation"], as_dict["partitioning"])) == [
+        ("ADD", {"dt": "new", "x_bucket_4": BucketTransform(4).transform(LongType())(2)}),
+        ("DELETE", {"dt": "old", "x_bucket_4": None}),
+    ]
+
+
+def test_overwrite_result_reports_partition_values_from_a_replaced_field(local_catalog):
+    """A deleted file keeps the fields its own spec had, even once the table dropped them."""
+    table = _spec_evolution_table(local_catalog, "spec_replace_field")
+    with table.update_spec() as update:
+        update.remove_field("dt")
+        update.add_field("dt", TruncateTransform(4), "dt_trunc")
+
+    result = daft.from_pydict({"dt": ["new"], "x": [2]}).write_iceberg(table, mode="overwrite")
+    as_dict = result.to_pydict()
+
+    assert list(zip(as_dict["operation"], as_dict["partitioning"])) == [
+        ("ADD", {"dt_trunc": "new", "dt": None}),
+        ("DELETE", {"dt_trunc": None, "dt": "old"}),
+    ]

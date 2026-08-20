@@ -1516,28 +1516,27 @@ class DataFrame:
 
         specs = table.specs()
         current_spec = table.spec()
+        reported_files = [("ADD", data_file) for data_file in data_files]
+        reported_files += [("DELETE", pf.file) for pf in deleted_files]
+        reported_values = [
+            data_file_partition_values(data_file, specs, current_spec) for _, data_file in reported_files
+        ]
+
+        # A deleted file written under an older spec can carry partition fields the current
+        # spec no longer has, so the struct covers every field actually encountered.
         partitioning: dict[str, list[Any]] = {field.name: [] for field in current_spec.fields}
+        for values in reported_values:
+            for field in values:
+                partitioning.setdefault(field, [])
 
-        for data_file in data_files:
-            operations.append("ADD")
+        for (operation, data_file), values in zip(reported_files, reported_values):
+            operations.append(operation)
             path.append(data_file.file_path)
             rows.append(data_file.record_count)
             size.append(data_file.file_size_in_bytes)
 
-            partition_values = data_file_partition_values(data_file, specs, current_spec)
             for field in partitioning:
-                partitioning[field].append(partition_values.get(field))
-
-        for pf in deleted_files:
-            data_file = pf.file
-            operations.append("DELETE")
-            path.append(data_file.file_path)
-            rows.append(data_file.record_count)
-            size.append(data_file.file_size_in_bytes)
-
-            partition_values = data_file_partition_values(data_file, specs, current_spec)
-            for field in partitioning:
-                partitioning[field].append(partition_values.get(field))
+                partitioning[field].append(values.get(field))
 
         if parse(pyiceberg.__version__) >= parse("0.7.0"):
             from pyiceberg.table import ALWAYS_TRUE, TableProperties
