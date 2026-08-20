@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, PanelRightClose, X } from "lucide-react";
 import { main } from "@/lib/utils";
-import { ExecutingState, OperatorStatus, TaskInfo, TaskSource } from "./types";
+import { RunnerInfo, ExecutingState, OperatorStatus, TaskInfo, TaskSource } from "./types";
 import {
   formatBytes,
   formatCount,
@@ -40,6 +40,7 @@ import {
  */
 export default function TasksSidebar({
   exec_state,
+  runner,
   nodeFilter,
   onClearFilter,
   onSelectNode,
@@ -47,6 +48,7 @@ export default function TasksSidebar({
   onClose,
 }: {
   exec_state: ExecutingState;
+  runner?: RunnerInfo;
   /** If set, only show rows whose `node_ids` contains this id. */
   nodeFilter: number | null;
   /** Called when the user clears the node filter. */
@@ -154,14 +156,25 @@ export default function TasksSidebar({
 
       <div className="flex-1 overflow-auto">
         {rows.length === 0 && activeTasks.length === 0 ? (
-          <div className="p-8 text-center">
-            <p className={`${main.className} text-zinc-400`}>
-              {nodeFilter != null
-                ? "No tasks for this filter."
-                : allRows.length === 0
-                  ? "No tasks reported yet."
-                  : "No tasks match."}
-            </p>
+          <div className="p-8 text-center space-y-2">
+            {nodeFilter != null ? (
+              <p className={`${main.className} text-zinc-400`}>No tasks for this filter.</p>
+            ) : allRows.length > 0 ? (
+              <p className={`${main.className} text-zinc-400`}>No tasks match.</p>
+            ) : runner?.task_events_enabled === false ? (
+              <>
+                <p className={`${main.className} text-zinc-400`}>No task events reported for this query.</p>
+                <p className={`${main.className} text-zinc-500 text-xs`}>
+                  Task reporting may be disabled. Set{" "}
+                  <code className="bg-zinc-800 px-1 rounded">DAFT_TASK_EVENTS_ENABLED=1</code>{" "}
+                  and rerun the query to see task-level details.
+                </p>
+              </>
+            ) : queryActive ? (
+              <p className={`${main.className} text-zinc-400`}>No tasks reported yet.</p>
+            ) : (
+              <p className={`${main.className} text-zinc-400`}>No task events were received for this query.</p>
+            )}
           </div>
         ) : (
           <>

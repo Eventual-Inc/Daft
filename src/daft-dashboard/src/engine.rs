@@ -33,17 +33,25 @@ use crate::state::{
     QueryInfo, QueryState, TaskStatus, TaskStore,
 };
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct RunnerInfo {
+    pub name: String,
+    pub version: Option<String>,
+    #[serde(default)]
+    pub distributed: bool,
+    pub dashboard_url: Option<String>,
+    pub task_events_enabled: Option<bool>,
+}
+
 #[derive(Clone, Deserialize, Serialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct StartQueryArgs {
     pub start_sec: f64,
     pub unoptimized_plan: QueryPlan,
-    pub runner: Option<String>,
-    pub ray_dashboard_url: Option<String>,
+    pub runner: RunnerInfo,
     pub entrypoint: Option<String>,
     pub python_version: Option<String>,
     pub daft_version: Option<String>,
-    pub ray_version: Option<String>,
 }
 
 async fn query_start(
@@ -68,14 +76,10 @@ pub(crate) fn apply_query_start(
         start_sec: args.start_sec,
         last_heartbeat_sec: secs_from_epoch(),
         unoptimized_plan: args.unoptimized_plan,
-        runner: args
-            .runner
-            .unwrap_or_else(|| "Native (Swordfish)".to_string()),
-        ray_dashboard_url: args.ray_dashboard_url,
+        runner: args.runner,
         entrypoint: args.entrypoint,
         python_version: args.python_version,
         daft_version: args.daft_version,
-        ray_version: args.ray_version,
         state: QueryState::Pending,
     };
 
@@ -1139,7 +1143,9 @@ pub(crate) fn routes() -> Router<Arc<DashboardState>> {
 mod eviction_tests {
     use std::sync::Arc;
 
-    use super::{DashboardState, MAX_QUERIES_RETAINED, QueryInfo, QueryState, evict_old_queries};
+    use super::{
+        DashboardState, MAX_QUERIES_RETAINED, QueryInfo, QueryState, RunnerInfo, evict_old_queries,
+    };
 
     fn insert_query(state: &DashboardState, id: &str, start_sec: f64, active: bool) {
         let qid: common_metrics::QueryID = Arc::from(id);
@@ -1161,12 +1167,16 @@ mod eviction_tests {
                 start_sec,
                 last_heartbeat_sec: start_sec,
                 unoptimized_plan: Arc::from(""),
-                runner: "test".to_string(),
-                ray_dashboard_url: None,
+                runner: RunnerInfo {
+                    name: "test".to_string(),
+                    version: None,
+                    distributed: false,
+                    dashboard_url: None,
+                    task_events_enabled: None,
+                },
                 entrypoint: None,
                 python_version: None,
                 daft_version: None,
-                ray_version: None,
                 state: query_state,
             },
         );
@@ -1235,12 +1245,16 @@ mod eviction_tests {
                 start_sec: 0.0,
                 last_heartbeat_sec: 0.0,
                 unoptimized_plan: Arc::from(""),
-                runner: "test".to_string(),
-                ray_dashboard_url: None,
+                runner: RunnerInfo {
+                    name: "test".to_string(),
+                    version: None,
+                    distributed: false,
+                    dashboard_url: None,
+                    task_events_enabled: None,
+                },
                 entrypoint: None,
                 python_version: None,
                 daft_version: None,
-                ray_version: None,
                 state: QueryState::Finalizing {
                     plan_info: PlanInfo {
                         plan_start_sec: 0.0,
