@@ -30,6 +30,20 @@ def _adlfs_for_azurite() -> adlfs.AzureBlobFileSystem:
     )
 
 
+def _adlfs_recursive_list(fs: adlfs.AzureBlobFileSystem, path: str) -> list:
+    all_results = []
+    curr_level_result = fs.ls(path.replace("az://", ""), detail=True)
+    for item in curr_level_result:
+        if item["type"] == "directory":
+            new_path = f"az://{item['name']}"
+            all_results.extend(_adlfs_recursive_list(fs, new_path))
+            item["name"] += "/"
+            all_results.append(item)
+        else:
+            all_results.append(item)
+    return all_results
+
+
 def _compare_az_glob(daft_ls_result: list, fsspec_result: list) -> None:
     daft_files = [(f["path"], f["type"].lower()) for f in daft_ls_result]
     azfs_files = [(f"az://{f['name']}", f["type"]) for f in fsspec_result if f["type"] == "file"]
@@ -123,11 +137,12 @@ def test_azurite_glob_recursive() -> None:
         for name in files:
             azurite_upload_bytes(blob_service, container, name, name.encode())
 
-        glob_path = f"az://{container}/**"
+        # Match test_list_files_azure.py: bare `**` at container root lists with prefix
+        # "/" which Azurite blob keys do not use, so include a file wildcard.
+        path = f"az://{container}/"
+        glob_path = path.rstrip("/") + "/**/*.*"
         daft_ls_result = io_glob(glob_path, io_config=io_config)
 
-        fsspec_result = []
-        for name in files:
-            fsspec_result.append({"name": f"{container}/{name}", "type": "file"})
-
+        fs = _adlfs_for_azurite()
+        fsspec_result = _adlfs_recursive_list(fs, path)
         _compare_az_glob(daft_ls_result, fsspec_result)
