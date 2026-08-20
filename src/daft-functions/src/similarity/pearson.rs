@@ -21,9 +21,9 @@ fn pearson_correlation_metric<T: NumericNative>(a: &[T], b: &[T]) -> Option<f64>
     for (x, y) in a.iter().zip(b) {
         let dx = x.to_f64()? - mean_a;
         let dy = y.to_f64()? - mean_b;
-        numerator += dx * dy;
-        denom_a += dx * dx;
-        denom_b += dy * dy;
+        numerator = dx.mul_add(dy, numerator);
+        denom_a = dx.mul_add(dx, denom_a);
+        denom_b = dy.mul_add(dy, denom_b);
     }
 
     let denom = (denom_a * denom_b).sqrt();

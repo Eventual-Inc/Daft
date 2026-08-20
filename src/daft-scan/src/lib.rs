@@ -1,5 +1,3 @@
-#![feature(if_let_guard)]
-
 use std::{
     borrow::Cow,
     collections::HashMap,
@@ -907,7 +905,7 @@ impl DisplayAs for ScanTask {
 
         match level {
             common_display::DisplayLevel::Compact => {
-                format!("{{{condensed_sources}}}",).trim_start().to_string()
+                format!("{{{condensed_sources}}}").trim_start().to_string()
             }
             common_display::DisplayLevel::Default => {
                 format!(

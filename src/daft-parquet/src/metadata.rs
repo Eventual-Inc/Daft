@@ -367,7 +367,7 @@ fn strip_string_type(tp: &parquet::schema::types::Type) -> parquet::schema::type
 }
 
 fn validate_footer_magic(uri: &str, buffer: &[u8]) -> super::Result<()> {
-    const PARQUET_MAGIC: [u8; 4] = [b'P', b'A', b'R', b'1'];
+    const PARQUET_MAGIC: [u8; 4] = *b"PAR1";
 
     if buffer.len() < FOOTER_SIZE {
         return Err(Error::FileTooSmall {

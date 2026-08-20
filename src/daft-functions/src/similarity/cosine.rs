@@ -13,9 +13,9 @@ fn cosine_similarity_metric<T: NumericNative>(a: &[T], b: &[T]) -> Option<f64> {
     for (x, y) in a.iter().zip(b) {
         let x = x.to_f64()?;
         let y = y.to_f64()?;
-        dot += x * y;
-        norm_a += x * x;
-        norm_b += y * y;
+        dot = x.mul_add(y, dot);
+        norm_a = x.mul_add(x, norm_a);
+        norm_b = y.mul_add(y, norm_b);
     }
 
     let denom = norm_a.sqrt() * norm_b.sqrt();

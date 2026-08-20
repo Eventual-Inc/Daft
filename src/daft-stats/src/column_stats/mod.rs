@@ -55,7 +55,7 @@ impl std::fmt::Display for TruthValue {
             Self::True => "True",
         };
 
-        write!(f, "TruthValue: {value}",)
+        write!(f, "TruthValue: {value}")
     }
 }
 
