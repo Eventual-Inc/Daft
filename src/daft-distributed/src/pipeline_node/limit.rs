@@ -4,7 +4,6 @@ use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeType};
 #[cfg(feature = "python")]
 use common_py_serde::PyObjectWrapper;
-use common_runtime::JoinSet;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
@@ -18,7 +17,7 @@ use super::{DistributedPipelineNode, PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{ClusteringStrategy, NodeID, PipelineNodeConfig, PipelineNodeContext},
     plan::{PlanConfig, PlanExecutionContext},
-    scheduling::task::{SwordfishTaskBuilder, TaskID},
+    scheduling::task::{SwordfishTaskBuilder, TaskID, TaskNotifyToken},
     utils::channel::{Sender, create_channel},
 };
 
@@ -65,7 +64,7 @@ fn limit_loop_done(
     contributors: Option<&HashSet<TaskID>>,
     completed_ids: &HashSet<TaskID>,
     input_exhausted: bool,
-    running_tasks_empty: bool,
+    tasks_settled: bool,
 ) -> bool {
     // Early-stop: the actor reported the limit was hit and at least one task
     // contributed rows. We're done as soon as every contributor's task has
@@ -77,8 +76,9 @@ fn limit_loop_done(
     }
     // Natural drain: limit was never hit (e.g. `limit > total rows`) or hit
     // with no contributors (e.g. `limit == 0`). Done when input is exhausted
-    // and no forwarded tasks are still running.
-    input_exhausted && running_tasks_empty
+    // and every task derived from a forwarded builder has finished — see
+    // `tasks_settled` in the loop for why "derived from" is not "forwarded".
+    input_exhausted && tasks_settled
 }
 
 pub(crate) struct LimitNode {
@@ -136,7 +136,17 @@ impl LimitNode {
         .await?;
 
         let parent_cancel = CancellationToken::new();
-        let mut running_tasks = JoinSet::new();
+        // One token for every builder we forward, rather than one channel per
+        // builder: a downstream node may turn a single builder into several
+        // tasks — `CrossJoinNode` crosses each of ours with every builder from
+        // the other side — and every one of those tasks reports back here. The
+        // channel closes only once they have all finished *and* no builder that
+        // could spawn another survives, which is exactly the condition for
+        // tearing the counter actor down: a live task that reaches a torn-down
+        // actor fails and is retried forever.
+        let (notify_token, mut task_completions) = TaskNotifyToken::new();
+        let mut notify_token = Some(notify_token);
+        let mut tasks_settled = false;
         let mut completed_ids: HashSet<TaskID> = HashSet::new();
         let mut contributors: Option<HashSet<TaskID>> = None;
         let mut limit_completed = Box::pin(await_limit_completion(&actor));
@@ -157,7 +167,7 @@ impl LimitNode {
             contributors.as_ref(),
             &completed_ids,
             input_exhausted,
-            running_tasks.is_empty(),
+            tasks_settled,
         ) {
             tokio::select! {
                 biased;
@@ -169,22 +179,30 @@ impl LimitNode {
                             .collect(),
                     );
                 }
-                Some(join_result) = running_tasks.join_next(), if !running_tasks.is_empty() => {
-                    if let Ok(Ok(task_id)) = join_result {
-                        completed_ids.insert(task_id);
+                completed = task_completions.recv(), if !tasks_settled => {
+                    match completed {
+                        Some(task_id) => {
+                            completed_ids.insert(task_id);
+                        }
+                        // Every token clone is gone: nothing is running and
+                        // nothing more can be derived from what we forwarded.
+                        None => tasks_settled = true,
                     }
                 }
                 builder_opt = input_task_stream.next(), if !input_exhausted => {
                     let Some(builder) = builder_opt else {
                         input_exhausted = true;
                         result_tx = None;
+                        // Drop our own clone so the notify channel can close
+                        // once the forwarded builders and their tasks are done.
+                        notify_token = None;
                         continue;
                     };
                     let limit = self.limit;
                     let offset = self.offset;
                     let node_id = self.node_id();
                     let actor_for_plan = actor.clone();
-                    let (builder, notify_token) = builder
+                    let builder = builder
                         .map_plan(self.as_ref(), move |input| {
                             LocalPhysicalPlan::distributed_limit(
                                 input,
@@ -196,15 +214,20 @@ impl LimitNode {
                             )
                         })
                         .with_cancel_token(parent_cancel.child_token())
-                        .add_notify_token();
+                        .with_notify_token(
+                            notify_token
+                                .as_ref()
+                                .expect("limit notify token is live until the input stream ends")
+                                .clone(),
+                        );
 
-                    running_tasks.spawn(notify_token);
                     let sender = result_tx
                         .as_ref()
                         .expect("limit result sender is live until the input stream ends");
                     if sender.send(builder).await.is_err() {
                         input_exhausted = true;
                         result_tx = None;
+                        notify_token = None;
                     }
                 }
                 else => break,
