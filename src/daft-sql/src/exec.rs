@@ -10,6 +10,9 @@ use daft_session::Session;
 #[cfg(feature = "python")]
 use pyo3::Python;
 
+#[cfg(feature = "python")]
+pyo3::import_exception!(daft.catalog, TableAlreadyExistsError);
+
 use crate::{
     SQLPlanner,
     error::{PlannerError, SQLPlannerResult},
@@ -106,9 +109,6 @@ fn execute_create_table(
     // already exists (either pre-existing or created concurrently by another
     // caller), treat it as success – the existing table satisfies the
     // IF NOT EXISTS contract.
-    //
-    // References Spark's CreateTableExec which catches
-    // TableAlreadyExistsException after create for the same reason.
     match catalog.create_table(&ident, Arc::new(schema)) {
         Ok(_) => Ok(None),
         Err(e) => {
@@ -125,15 +125,13 @@ fn execute_create_table(
 ///
 /// Daft-native catalogs surface this as CatalogError::ObjectAlreadyExists
 /// (PyCatalogWrapper translates the typed TableAlreadyExistsError back into
-/// this variant). Third-party Python catalogs may raise backend-specific
-/// exceptions instead, so we fall back to a message check scoped to the
-/// PythonError variant only.
+/// this variant).
 fn is_table_already_exists_error(e: &CatalogError) -> bool {
     match e {
         CatalogError::ObjectAlreadyExists { .. } => true,
         #[cfg(feature = "python")]
         CatalogError::PythonError { source } => {
-            Python::attach(|py| source.value(py).to_string().contains("already exists"))
+            Python::attach(|py| source.is_instance_of::<TableAlreadyExistsError>(py))
         }
         _ => false,
     }

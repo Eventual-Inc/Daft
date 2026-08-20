@@ -557,11 +557,8 @@ class Catalog(ABC):
         try:
             return self.create_table(identifier, source, properties)
         except TableAlreadyExistsError:
-            # The table already exists (either pre-existing or created
-            # concurrently by another caller), so return the existing
-            # table. Creating and catching the conflict avoids the TOCTOU
-            # race of checking existence before creating.
-            # See: https://github.com/Eventual-Inc/Daft/issues/7310
+            # Create-then-catch instead of check-then-create to avoid the
+            # TOCTOU race of checking existence before creating.
             return self.get_table(identifier)
 
     ###
