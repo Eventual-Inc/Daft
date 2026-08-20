@@ -7,6 +7,54 @@ use common_error::DaftError;
 use serde::{Deserialize, Serialize};
 use sha1::Digest;
 
+/// Computes MD5 hash and returns a hex string
+pub fn compute_md5(data: &[u8]) -> String {
+    use md5::Md5;
+    let result = Md5::digest(data);
+    hex_encode(&result)
+}
+
+/// Computes SHA-1 hash and returns a hex string
+pub fn compute_sha1(data: &[u8]) -> String {
+    let result = sha1::Sha1::digest(data);
+    hex_encode(&result)
+}
+
+/// Computes SHA-2 hash and returns a hex string
+/// bit_length supports 224, 256, 384, 512; defaults to 256
+pub fn compute_sha2(data: &[u8], bit_length: u32) -> String {
+    use sha2::{Sha224, Sha256, Sha384, Sha512};
+    match bit_length {
+        224 => hex_encode(&Sha224::digest(data)),
+        256 | 0 => hex_encode(&Sha256::digest(data)),
+        384 => hex_encode(&Sha384::digest(data)),
+        512 => hex_encode(&Sha512::digest(data)),
+        _ => hex_encode(&Sha256::digest(data)), // Default to SHA-256
+    }
+}
+
+/// Computes CRC32 and returns an i64 value.
+pub fn compute_crc32(data: &[u8]) -> i64 {
+    let mut hasher = crc32fast::Hasher::new();
+    hasher.update(data);
+    hasher.finalize() as i64
+}
+
+// TODO: Spark-compatible xxhash64 (compute_xxhash64_seeded) belongs in a separate
+// Spark compatibility extension / function set. It conflicts with the core
+// `hash(..., hash_function="xxhash64")` kernel (Int64 vs UInt64, null/byte semantics).
+
+/// Converts a byte array to a hex string
+fn hex_encode(bytes: &[u8]) -> String {
+    use std::fmt::Write;
+    bytes
+        .iter()
+        .fold(String::with_capacity(bytes.len() * 2), |mut s, b| {
+            let _ = write!(s, "{:02x}", b);
+            s
+        })
+}
+
 pub struct MurBuildHasher {
     seed: u32,
 }
