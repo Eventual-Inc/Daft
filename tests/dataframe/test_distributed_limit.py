@@ -9,10 +9,13 @@ path is otherwise uncovered.
 
 from __future__ import annotations
 
+import threading
+
 import pytest
 
 ray = pytest.importorskip("ray")
 
+import daft
 from daft.execution.ray_distributed_limit import _LimitCounterImpl
 from tests.conftest import get_tests_daft_runner_name
 
@@ -182,8 +185,6 @@ def _materialize_with_deadline(df, timeout_s=120):
     The thread is a daemon so a regression fails this test and lets the rest of
     the session continue instead of wedging the run.
     """
-    import threading
-
     outcome: dict = {}
 
     def target():
@@ -220,8 +221,6 @@ def test_limit_under_into_partitions_does_not_hang(num_partitions):
     `num_partitions` covers all three `IntoPartitionsNode` shapes against the
     8-task input: coalesce to one task, coalesce to four, and split to sixteen.
     """
-    import daft
-
     df = daft.range(0, 10_000, partitions=8).into_partitions(num_partitions).limit(10)
     result = _materialize_with_deadline(df)
 
@@ -238,8 +237,6 @@ def test_limit_under_into_partitions_offset_and_overshoot():
     the output channel has to be released in that case too. `limit(0)` is the
     other no-contributor path.
     """
-    import daft
-
     df = daft.range(0, 100, partitions=8).into_partitions(3).offset(10).limit(20)
     assert len(_materialize_with_deadline(df)["id"]) == 20
 
