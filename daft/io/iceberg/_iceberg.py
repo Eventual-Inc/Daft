@@ -201,3 +201,165 @@ def read_iceberg(
     builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
     builder = attach_checkpoint(builder, checkpoint)
     return DataFrame(builder)
+
+
+@PublicAPI
+def read_iceberg_changes(
+    table: Union[str, os.PathLike[str], "PyIcebergTable"],
+    start_snapshot_id: int | None = None,
+    end_snapshot_id: int | None = None,
+    start_timestamp_ms: int | None = None,
+    end_timestamp_ms: int | None = None,
+    io_config: IOConfig | None = None,
+    compute_updates: bool = False,
+    identifier_columns: list[str] | None = None,
+    net_changes: bool = False,
+) -> DataFrame:
+    """Create a changelog (CDC) DataFrame from a copy-on-write (COW) Iceberg table over a snapshot range.
+
+    Only pure copy-on-write snapshot ranges are supported: if any snapshot in the range has a
+    delete manifest (position/equality deletes) in its currently effective manifest list, a
+    ``NotImplementedError`` is raised rather than an incorrect result. Tables with schema
+    evolution history (added/renamed/type-promoted columns, including nested fields inside
+    structs/lists/maps) are supported; each changelog data file's Parquet footer is verified
+    against the schema declared by the resolved end snapshot. Requires
+    ``pyiceberg>=0.11.0`` (raises ``NotImplementedError`` immediately, before any I/O, if the
+    installed version is older); :func:`read_iceberg` (non-CDC) is unaffected and continues to
+    support older PyIceberg versions. A baseline field with a declared Iceberg
+    ``initial_default`` that's missing from an older data file is rejected rather than
+    silently filled with ``None`` -- default-value materialization for historical files is not
+    yet implemented.
+
+    Every row in the returned DataFrame carries three additional columns: ``_change_type``
+    (``"INSERT"``, ``"DELETE"``, or -- when ``compute_updates=True`` -- ``"UPDATE_BEFORE"``/
+    ``"UPDATE_AFTER"``), ``_change_ordinal`` (int64, scan-relative -- not a stable cross-scan
+    identifier), and ``_commit_snapshot_id`` (int64, the Iceberg snapshot id that produced the
+    change). Carryover rows -- COW file-rewrite noise where a row's content didn't actually
+    change but still appears as a (DELETE, INSERT) pair because the whole file was rewritten --
+    are removed before the DataFrame is returned. This cannot be disabled, matching Iceberg's own
+    ``create_changelog_view`` procedure -- except when ``net_changes=True``, which replaces this
+    per-commit carryover removal with net cancellation across the entire scanned range instead.
+
+    Args:
+        table (str, os.PathLike, or pyiceberg.table.Table): Same as :func:`read_iceberg`.
+        start_snapshot_id (int, optional): Snapshot ID marking the exclusive start of the range.
+            If omitted (along with ``start_timestamp_ms``), the range starts from the table's
+            first snapshot.
+        end_snapshot_id (int, optional): Snapshot ID marking the inclusive end of the range. If
+            omitted (along with ``end_timestamp_ms``), defaults to the table's current snapshot.
+        start_timestamp_ms (int, optional): UTC millisecond epoch timestamp resolved to the
+            snapshot current at or before it, then used as the exclusive start boundary. Cannot
+            be combined with ``start_snapshot_id``.
+        end_timestamp_ms (int, optional): UTC millisecond epoch timestamp resolved to the
+            snapshot current at or before it, then used as the inclusive end boundary. Cannot be
+            combined with ``end_snapshot_id``.
+        io_config (IOConfig, optional): Same as :func:`read_iceberg`.
+        compute_updates (bool): If True, re-mark matched DELETE+INSERT pairs (by
+            ``identifier_columns``) as ``UPDATE_BEFORE``/``UPDATE_AFTER`` instead of leaving them
+            as independent ``DELETE``/``INSERT`` events. Pairing is cross-ordinal: an identifier
+            deleted in one commit and re-inserted in a later one (with no intervening event for
+            that identifier) is paired as a single update, matching Iceberg's
+            ``ComputeUpdateIterator`` semantics. This only proves the identifier's event sequence
+            paired up -- it does not prove any non-identifier column actually changed; some
+            writers can split a single logical update into separate DELETE and APPEND commits,
+            which would be paired here even though the row's content never changed. Cardinality
+            and consistency validation (at most one DELETE and one INSERT per identifier per
+            commit) only runs when the resulting ``_change_type`` column is actually consumed --
+            if you ``select()`` it away before collecting, validation does not run, but every
+            other column's value is unaffected either way. Defaults to False.
+        identifier_columns (list[str], optional): Column names that uniquely identify a logical
+            row, used to pair DELETE+INSERT events when ``compute_updates=True``. Defaults to the
+            table's schema-declared identifier fields (as of ``end_snapshot_id``) when omitted;
+            raises ``ValueError`` if explicitly passed as an empty list, or if the table declares
+            no identifier fields and none are given. Ignored (and must not be passed) unless
+            ``compute_updates=True``; also may not be passed when ``net_changes=True``.
+        net_changes (bool): If True, net-cancel changes across the *entire* scanned range
+            instead of only within each commit, replacing (not layering on top of) the
+            unconditional carryover removal -- matching Iceberg's own procedure, which runs one
+            or the other, never both. A row that nets to zero across the range (e.g. inserted
+            then later deleted, with no other net change) produces no output at all; a row whose
+            net count is nonzero is replayed that many times using its *first* occurrence's
+            metadata. Mutually exclusive with ``compute_updates``; ``identifier_columns`` may not
+            be passed together with this (net cancellation matches on every non-metadata column,
+            not an identifier). Defaults to False.
+
+    Returns:
+        DataFrame: A DataFrame with the table's schema plus ``_change_type``, ``_change_ordinal``,
+            and ``_commit_snapshot_id`` columns.
+
+    Note:
+        This function requires the use of [PyIceberg](https://py.iceberg.apache.org/).
+
+    Examples:
+        >>> df = daft.io.iceberg.read_iceberg_changes(table, start_snapshot_id=100, end_snapshot_id=105)
+        >>> df = daft.io.iceberg.read_iceberg_changes(table, compute_updates=True, identifier_columns=["id"])
+        >>> df = daft.io.iceberg.read_iceberg_changes(table, net_changes=True)
+    """
+    from pyiceberg.table import StaticTable
+
+    from daft.io.iceberg._changelog_planning import resolve_changelog_range
+    from daft.io.iceberg._changelog_schema import require_pyiceberg_version_for_changelog
+    from daft.io.iceberg.iceberg_changes_scan import IcebergChangesScanOperator
+
+    # Checked first, before any argument validation or I/O: an unsupported PyIceberg
+    # version must fail immediately, not partway through range resolution or planning.
+    # Applies regardless of how many schemas
+    # the table has had -- the single-schema gate depends on the same PyIceberg signatures.
+    require_pyiceberg_version_for_changelog()
+
+    if isinstance(table, (str, os.PathLike)):
+        table = StaticTable.from_metadata(metadata_location=os.fspath(table))
+
+    if compute_updates and net_changes:
+        raise ValueError("compute_updates and net_changes may not both be True.")
+    if net_changes and identifier_columns is not None:
+        raise ValueError("identifier_columns may not be passed when net_changes=True.")
+    if not compute_updates and not net_changes and identifier_columns is not None:
+        raise ValueError("identifier_columns may only be passed when compute_updates=True.")
+
+    # Resolved once, here, at DataFrame-construction time (metadata-only, no I/O) and passed explicitly to every consumer
+    # below, rather than each independently re-deriving it or reaching into the operator's
+    # internals: the operator itself, and (when compute_updates=True) the identifier
+    # resolver, both read `.baseline_schema` off this one shared object.
+    resolved_range = resolve_changelog_range(
+        table, start_snapshot_id, end_snapshot_id, start_timestamp_ms, end_timestamp_ms
+    )
+
+    io_config = (
+        _convert_iceberg_file_io_properties_to_io_config(table.io.properties, table.location())
+        if io_config is None
+        else io_config
+    )
+    io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
+
+    multithreaded_io = runners.get_or_create_runner().name != "ray"
+    storage_config = StorageConfig(multithreaded_io, io_config)
+
+    scan_operator = IcebergChangesScanOperator(
+        table,
+        resolved_range=resolved_range,
+        storage_config=storage_config,
+    )
+
+    handle = ScanOperatorHandle.from_python_scan_operator(scan_operator)
+    builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
+    df = DataFrame(builder)
+
+    if net_changes:
+        # Replaces (never layers on top of) carryover removal -- same-commit carryover
+        # noise is naturally absorbed by net_changes' own running-total reset.
+        from daft.io.iceberg._changelog_net_changes import net_changes as apply_net_changes
+
+        df = apply_net_changes(df)
+    else:
+        from daft.io.iceberg._changelog_postprocess import remove_carryovers
+
+        df = remove_carryovers(df)
+
+        if compute_updates:
+            from daft.io.iceberg._changelog_pairing import pair_updates, resolve_identifier_columns
+
+            resolved_identifier_columns = resolve_identifier_columns(identifier_columns, resolved_range.baseline_schema)
+            df = pair_updates(df, resolved_identifier_columns)
+
+    return df
