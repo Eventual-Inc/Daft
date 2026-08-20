@@ -170,3 +170,81 @@ def test_distributed_limit_retries_after_worker_death(tmp_path):
         "If 0 is missing, the limit actor failed to rewind the crashed "
         "task's claim in start_task."
     )
+
+
+def _materialize_with_deadline(df, timeout_s=120):
+    """Materialize `df` in a daemon thread, failing the test if it doesn't finish.
+
+    `@pytest.mark.timeout` can't guard the deadlock these tests cover: the query
+    blocks inside the Rust runtime holding the GIL, so a SIGALRM handler never
+    gets a chance to run and pytest-timeout's signal method hangs right along
+    with it. A watchdog in a separate thread is the only one that can report.
+    The thread is a daemon so a regression fails this test and lets the rest of
+    the session continue instead of wedging the run.
+    """
+    import threading
+
+    outcome: dict = {}
+
+    def target():
+        try:
+            outcome["result"] = df.to_pydict()
+        except BaseException as e:
+            outcome["error"] = e
+
+    thread = threading.Thread(target=target, daemon=True)
+    thread.start()
+    thread.join(timeout_s)
+    if thread.is_alive():
+        pytest.fail(f"query did not finish within {timeout_s}s — the distributed limit deadlocked instead of returning")
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome["result"]
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
+@pytest.mark.parametrize("num_partitions", [1, 4, 16])
+def test_limit_under_into_partitions_does_not_hang(num_partitions):
+    """`into_partitions` on top of a `Limit` must not deadlock the query.
+
+    `PushDownLimit` commutes `Limit-IntoPartitions` into `IntoPartitions-Limit`,
+    so `IntoPartitionsNode` ends up consuming `LimitNode`'s task-builder stream.
+    It has to count its input tasks before it can decide whether to coalesce or
+    split, so it drains that stream to exhaustion before submitting anything —
+    while `LimitNode`'s loop only finishes once the tasks it emitted have run
+    and claimed rows from the counter actor. If `LimitNode` holds its output
+    channel open until its loop ends, neither side can move: no task is ever
+    submitted, no `claim` ever arrives, and the query hangs forever with the
+    actor spinning in `_LimitCounterImpl.await_limit_completion`.
+
+    `num_partitions` covers all three `IntoPartitionsNode` shapes against the
+    8-task input: coalesce to one task, coalesce to four, and split to sixteen.
+    """
+    import daft
+
+    df = daft.range(0, 10_000, partitions=8).into_partitions(num_partitions).limit(10)
+    result = _materialize_with_deadline(df)
+
+    assert len(result["id"]) == 10
+    assert len(set(result["id"])) == 10, f"limit returned duplicate rows: {result['id']}"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
+def test_limit_under_into_partitions_offset_and_overshoot():
+    """The same deadlock, on the paths that don't early-stop.
+
+    With `limit > total rows` the counter never reaches zero, so the loop has to
+    end by draining its input rather than by the actor reporting completion —
+    the output channel has to be released in that case too. `limit(0)` is the
+    other no-contributor path.
+    """
+    import daft
+
+    df = daft.range(0, 100, partitions=8).into_partitions(3).offset(10).limit(20)
+    assert len(_materialize_with_deadline(df)["id"]) == 20
+
+    df = daft.range(0, 100, partitions=8).into_partitions(3).limit(1000)
+    assert len(_materialize_with_deadline(df)["id"]) == 100
+
+    df = daft.range(0, 100, partitions=8).into_partitions(3).limit(0)
+    assert len(_materialize_with_deadline(df)["id"]) == 0
