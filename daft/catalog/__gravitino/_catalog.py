@@ -294,11 +294,19 @@ def _is_rest_iceberg_table(table_info: GravitinoTableInfo) -> bool:
 def _open_iceberg_table_via_rest(table_info: GravitinoTableInfo, io_config: IOConfig | None) -> PyIcebergTable:
     from pyiceberg.catalog import load_catalog
 
-    props = table_info.properties.copy()
+    props: dict[str, Any] = dict(table_info.properties)
     props.update(_io_config_to_pyiceberg_props(io_config))
     props["type"] = "rest"
     if not props.get("warehouse"):
         props.pop("warehouse", None)
+
+    # With no credential configured, PyIceberg still installs a LegacyOAuth2AuthManager whose
+    # `auth_header()` formats the unset token unconditionally, sending a literal
+    # `Authorization: Bearer None`. Servers that require no auth reject that with 401 instead
+    # of ignoring it, so declare "no auth" explicitly. Catalogs that do need bearer/OAuth2 auth
+    # carry `credential`/`token`/`auth` in their Gravitino properties and are left alone.
+    if not any(key in props for key in ("credential", "token", "auth")):
+        props["auth"] = {"type": "noop"}
 
     catalog = load_catalog(table_info.catalog, **props)
     return catalog.load_table(f"{table_info.schema}.{table_info.name}")
