@@ -360,12 +360,30 @@ class IcebergDataSource(DataSource):
     def _create_count_tasks(self, pushdowns: Pushdowns, field_name: str) -> Iterator[DataSourceTask]:
         """Create count pushdown task using Iceberg metadata."""
         try:
+            if pushdowns.filters is not None:
+                # A row-level predicate cannot be answered from record counts: a file
+                # surviving metadata pruning may still hold rows that do not match.
+                yield from self._create_regular_tasks(pushdowns)
+                return
+
             iceberg_tasks = self._iceberg_table.scan(limit=None, snapshot_id=self._snapshot_id).plan_files()
             total_count = 0
 
-            # Aggregate row counts from all data files
+            # Aggregate row counts from all data files. `partition_filters` holds the
+            # predicates the optimizer resolved against partition values alone and then
+            # dropped from `filters`, so pruning here is what applies them; every row of a
+            # surviving file matches, which keeps the count exact.
             for task in iceberg_tasks:
                 data_file = task.file
+                if pushdowns.partition_filters is not None:
+                    pspec = self._iceberg_record_to_partition_spec(
+                        self._iceberg_table.specs()[data_file.spec_id], data_file.partition
+                    )
+                    if (
+                        pspec is not None
+                        and len(pspec.filter(ExpressionsProjection([pushdowns.partition_filters]))) == 0
+                    ):
+                        continue
                 total_count += data_file.record_count
 
             result_schema = Schema.from_pyarrow_schema(pa.schema([pa.field(field_name, pa.uint64())]))

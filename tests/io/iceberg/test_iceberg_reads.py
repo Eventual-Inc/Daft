@@ -183,3 +183,51 @@ def test_read_iceberg_partition_column_projection(local_catalog):
     assert df.select("part").sort("part").to_pydict() == {"part": ["a", "a", "b"]}
     assert df.where(daft.col("part") == "a").sort("v").to_pydict() == {"part": ["a", "a"], "v": [1, 3]}
     assert df.count_rows() == 3
+
+
+@pytest.fixture
+def partitioned_counts(local_catalog):
+    """identity(dt) partitioned table: dt='a' has 3 rows, dt='b' has 5, 8 in total."""
+    schema = Schema(
+        NestedField(field_id=1, name="dt", type=StringType(), required=False),
+        NestedField(field_id=2, name="x", type=LongType(), required=False),
+    )
+    partition_spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="dt"))
+    table = local_catalog.create_table("default.partitioned_counts", schema, partition_spec=partition_spec)
+    daft.from_pydict({"dt": ["a"] * 3 + ["b"] * 5, "x": list(range(8))}).write_iceberg(table)
+    table.refresh()
+    return table
+
+
+@pytest.mark.parametrize(("value", "expected"), [("a", 3), ("b", 5)])
+def test_count_rows_applies_partition_predicate(partitioned_counts, value, expected):
+    """A predicate on an identity-partitioned column must reach the count pushdown.
+
+    The optimizer moves such predicates out of `filters` and into `partition_filters`,
+    so a count path that only looks at `filters` sees no filter and counts the whole table.
+    """
+    df = daft.read_iceberg(partitioned_counts).where(daft.col("dt") == value)
+
+    assert df.count_rows() == expected
+    # Same answer the slow path gives.
+    assert len(df.to_pydict()["x"]) == expected
+
+
+def test_count_rows_without_predicate_counts_every_partition(partitioned_counts):
+    assert daft.read_iceberg(partitioned_counts).count_rows() == 8
+
+
+def test_count_rows_applies_data_column_predicate(partitioned_counts):
+    """A row-level predicate cannot be answered from record counts, so it must not be."""
+    assert daft.read_iceberg(partitioned_counts).where(daft.col("x") < 3).count_rows() == 3
+
+
+def test_count_rows_applies_partition_and_data_predicates_together(partitioned_counts):
+    df = daft.read_iceberg(partitioned_counts).where((daft.col("dt") == "b") & (daft.col("x") < 5))
+
+    assert df.count_rows() == 2
+    assert len(df.to_pydict()["x"]) == 2
+
+
+def test_count_rows_with_partition_predicate_matching_nothing(partitioned_counts):
+    assert daft.read_iceberg(partitioned_counts).where(daft.col("dt") == "missing").count_rows() == 0
