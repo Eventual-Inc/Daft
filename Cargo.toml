@@ -205,6 +205,7 @@ members = [
   "src/daft-groupby",
   "src/daft-csv",
   "src/daft-dashboard",
+  "src/daft-device",
   "src/daft-dsl",
   "src/daft-ext",
   "src/daft-ext-internal",
