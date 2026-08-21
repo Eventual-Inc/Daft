@@ -122,7 +122,8 @@ impl ShuffleContext {
         }
     }
 
-    /// Group a stream of map-task outputs into per-partition read tasks.
+    /// Group a stream of map-task outputs into per-partition read tasks, applying
+    /// `wrap_plan(partition_idx, read_plan)` on top of each partition's read plan.
     ///
     /// The Ray backend transposes the full (tasks x partitions) matrix of object refs.
     /// The flight backend folds the stream into per-server map-input lists shared by
@@ -134,6 +135,9 @@ impl ShuffleContext {
         num_partitions: usize,
         node: &dyn PipelineNodeImpl,
         result_tx: Sender<SwordfishTaskBuilder>,
+        wrap_plan: &mut (
+                 dyn FnMut(usize, LocalPhysicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> + Send
+             ),
     ) -> DaftResult<()> {
         match &self.backend {
             ShuffleBackend::Ray => {
@@ -149,6 +153,7 @@ impl ShuffleContext {
                     partition_groups,
                     node,
                     result_tx,
+                    wrap_plan,
                 )
                 .await
             }
@@ -165,6 +170,7 @@ impl ShuffleContext {
                     read_inputs,
                     node,
                     result_tx,
+                    wrap_plan,
                 )
                 .await
             }

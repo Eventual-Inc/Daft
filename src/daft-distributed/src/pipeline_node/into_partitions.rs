@@ -103,6 +103,28 @@ impl IntoPartitionsNode {
                 .by_ref()
                 .take(chunk_size)
                 .map(|builder| {
+                    // Under Flight, each input task must end in a flight write so its
+                    // outputs materialize as `FlightPartitionRef`s for the coalesce
+                    // read below; a raw child task materializes plain object refs,
+                    // which fail the flight downcast (#7002).
+                    let builder = if matches!(
+                        self.shuffle_context.backend(),
+                        ShuffleBackend::Flight { .. }
+                    ) {
+                        let node_id = self.node_id();
+                        let backend = self.shuffle_context.backend().clone();
+                        builder.map_plan(self.as_ref(), |plan| {
+                            LocalPhysicalPlan::into_partitions(
+                                plan,
+                                1,
+                                backend,
+                                StatsState::NotMaterialized,
+                                LocalNodeContext::new(Some(node_id as usize)),
+                            )
+                        })
+                    } else {
+                        builder
+                    };
                     let submittable_task = builder.build(self.context.query_idx, task_id_counter);
                     submittable_task.submit(scheduler_handle)
                 })
@@ -131,15 +153,19 @@ impl IntoPartitionsNode {
                 .collect::<Vec<_>>();
 
             let node_id = self.node_id();
-            let shuffle_backend = self.shuffle_context.backend().clone();
             let builder = self.shuffle_context.build_refs_task_builder(
                 partition_refs,
                 self.as_ref(),
                 move |input| {
+                    // The trailing `into_partitions(1)` only concatenates the read
+                    // refs into a single partition, so it must stay on the Ray
+                    // (in-memory) backend: a Flight-backed op here would write the
+                    // node's final outputs back to the flight cache, and downstream
+                    // consumers expect ordinary partition refs (#7002).
                     LocalPhysicalPlan::into_partitions(
                         input,
                         1,
-                        shuffle_backend,
+                        ShuffleBackend::Ray,
                         StatsState::NotMaterialized,
                         LocalNodeContext::new(Some(node_id as usize)),
                     )
