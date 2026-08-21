@@ -18,6 +18,7 @@ from daft.daft import (
 )
 from daft.dependencies import pa
 from daft.expressions import ExpressionsProjection
+from daft.expressions.visitor import _ColumnVisitor
 from daft.io.iceberg._expressions import convert_row_filter
 from daft.io.iceberg._metadata import (
     convert_iceberg_data_type,
@@ -383,16 +384,26 @@ class IcebergDataSource(DataSource):
             # Partition records are stored whole, unlike the truncated column bounds
             # PyIceberg prunes on, so this check is exact: every row of a surviving file
             # matches the predicate.
+            required_fields = (
+                _ColumnVisitor().visit(pushdowns.partition_filters)
+                if pushdowns.partition_filters is not None
+                else set()
+            )
+
             for task in iceberg_tasks:
                 data_file = task.file
                 if pushdowns.partition_filters is not None:
                     pspec = self._iceberg_record_to_partition_spec(
                         self._iceberg_table.specs()[data_file.spec_id], data_file.partition
                     )
-                    if (
-                        pspec is not None
-                        and len(pspec.filter(ExpressionsProjection([pushdowns.partition_filters]))) == 0
-                    ):
+                    # A file written under an older spec need not carry the fields the
+                    # predicate partitions on: partition evolution can add a field long
+                    # after data was written without it. Such a file mixes matching and
+                    # non-matching rows, so its rows have to be read to be counted.
+                    if pspec is None or not required_fields.issubset(pspec.schema().column_names()):
+                        yield from self._create_regular_tasks(pushdowns)
+                        return
+                    if len(pspec.filter(ExpressionsProjection([pushdowns.partition_filters]))) == 0:
                         continue
                 total_count += data_file.record_count
 

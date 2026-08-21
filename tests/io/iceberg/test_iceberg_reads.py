@@ -19,7 +19,7 @@ import daft
 pyiceberg = pytest.importorskip("pyiceberg")
 
 from pyiceberg.catalog.sql import SqlCatalog
-from pyiceberg.partitioning import PartitionField, PartitionSpec
+from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.types import LongType, NestedField, StringType
@@ -275,3 +275,66 @@ def test_count_rows_with_partition_values_past_bounds_truncation(local_catalog):
 
     assert daft.read_iceberg(table).where(daft.col("dt") == long_a).count_rows() == 2
     assert daft.read_iceberg(table).where(daft.col("dt") == long_b).count_rows() == 1
+
+
+def _evolving_table(local_catalog, name, initial_spec):
+    schema = Schema(
+        NestedField(field_id=1, name="dt", type=StringType(), required=False),
+        NestedField(field_id=2, name="region", type=StringType(), required=False),
+        NestedField(field_id=3, name="x", type=LongType(), required=False),
+    )
+    table = local_catalog.create_table(f"default.{name}", schema, partition_spec=initial_spec)
+    daft.from_pydict({"dt": ["a", "a", "b"], "region": ["cn", "us", "cn"], "x": [1, 2, 3]}).write_iceberg(table)
+    table.refresh()
+    return table
+
+
+def test_count_rows_matches_scan_after_partition_field_is_added(local_catalog):
+    """A count must never disagree with what the same query returns.
+
+    Files written before a partition field was added carry no value for it, so their
+    rows cannot be settled from partition metadata. The count path has to give up and
+    scan rather than assume every row in such a file matches.
+    """
+    table = _evolving_table(local_catalog, "count_after_evolution", UNPARTITIONED_PARTITION_SPEC)
+    with table.update_spec() as update:
+        update.add_field("dt", IdentityTransform(), "dt")
+    table.refresh()
+    daft.from_pydict({"dt": ["a", "b"], "region": ["cn", "us"], "x": [4, 5]}).write_iceberg(table)
+    table.refresh()
+
+    df = daft.read_iceberg(table).where(daft.col("dt") == "a")
+
+    assert df.count_rows() == len(df.to_pydict()["x"])
+
+
+def test_count_rows_with_field_present_in_every_spec(local_catalog):
+    """Evolution that leaves the filtered field in place keeps the metadata count exact."""
+    partition_spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="dt"))
+    table = _evolving_table(local_catalog, "count_field_in_all_specs", partition_spec)
+    with table.update_spec() as update:
+        update.add_field("region", IdentityTransform(), "region")
+    table.refresh()
+    daft.from_pydict({"dt": ["a", "b"], "region": ["cn", "us"], "x": [4, 5]}).write_iceberg(table)
+    table.refresh()
+
+    df = daft.read_iceberg(table).where(daft.col("dt") == "a")
+
+    assert df.count_rows() == 3
+    assert df.count_rows() == len(df.to_pydict()["x"])
+
+
+def test_count_rows_after_partition_field_is_dropped(local_catalog):
+    """Dropping the field leaves no partition keys, so the predicate stays a row filter."""
+    partition_spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="dt"))
+    table = _evolving_table(local_catalog, "count_after_drop", partition_spec)
+    with table.update_spec() as update:
+        update.remove_field("dt")
+    table.refresh()
+    daft.from_pydict({"dt": ["a", "b"], "region": ["cn", "us"], "x": [4, 5]}).write_iceberg(table)
+    table.refresh()
+
+    df = daft.read_iceberg(table).where(daft.col("dt") == "a")
+
+    assert df.count_rows() == 3
+    assert df.count_rows() == len(df.to_pydict()["x"])
