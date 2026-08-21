@@ -22,6 +22,7 @@ use tracing::info_span;
 use crate::{
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput,
     channel::{Receiver, Sender, create_channel},
+    input_cancel::InputCancelRegistry,
     pipeline::{
         BuilderContext, InputId, MorselSizeRequirement, NodeName, PipelineEvent, PipelineMessage,
         PipelineNode, next_event,
@@ -539,6 +540,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
         self: Box<Self>,
         _maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
+        input_cancel: &InputCancelRegistry,
     ) -> crate::Result<Receiver<PipelineMessage>> {
         let Self {
             op,
@@ -549,7 +551,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
             ..
         } = *self;
         let name: Arc<str> = node_info.name.clone();
-        let child_rx = child.start(false, runtime_handle)?;
+        let child_rx = child.start(false, runtime_handle, input_cancel)?;
         let (output_tx, output_rx) = create_channel(1);
         let memory_manager = runtime_handle.memory_manager();
         let stats_manager = runtime_handle.stats_manager();
