@@ -479,7 +479,8 @@ impl PushDownFilter {
             | LogicalPlan::Distinct(..)
             | LogicalPlan::AsofJoin(..)
             | LogicalPlan::VLLMProject(..)
-            | LogicalPlan::StageCheckpointKeys(..) => {
+            | LogicalPlan::StageCheckpointKeys(..)
+            | LogicalPlan::CommonSubplan(..) => {
                 return Ok(Transformed::no(plan));
             }
         };
