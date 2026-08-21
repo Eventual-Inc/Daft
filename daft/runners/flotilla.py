@@ -407,6 +407,44 @@ class RaySwordfishActorHandle:
 
 DEFAULT_WORKER_STARTUP_TIMEOUT = 120
 
+# Maximum number of times Ray restarts a crashed RaySwordfishActor in place
+# (e.g. after an OOM kill) before declaring it permanently dead. Ray's default
+# is 0 (never restart), which makes every actor crash terminal: all in-flight
+# calls raise `ActorDiedError`, the dispatcher evicts the whole node from the
+# worker pool (upstream PR Eventual-Inc/Daft#4628), and the node's compute is
+# lost until the next worker-refresh cycle re-creates an actor on it. With
+# `max_restarts > 0`, Ray restarts the actor on the same node and in-flight
+# calls surface `ActorUnavailableError` (the reason the ray floor was bumped
+# to >=2.11.0 in upstream PR Eventual-Inc/Daft#7116) instead, which maps to
+# `RayTaskResult.worker_unavailable()` -> the task is requeued *without*
+# evicting the node. `max_task_retries` intentionally stays at Ray's default
+# of 0: task re-execution is owned by Daft's dispatcher, which requeues
+# WorkerDied/WorkerUnavailable tasks itself.
+# Default matches MAX_UDFACTOR_ACTOR_RESTARTS in daft/execution/ray_actor_pool_udf.py.
+DEFAULT_SWORDFISH_ACTOR_MAX_RESTARTS = 4
+SWORDFISH_ACTOR_MAX_RESTARTS_ENV = "DAFT_SWORDFISH_ACTOR_MAX_RESTARTS"
+
+
+def _get_swordfish_actor_max_restarts() -> int:
+    """Resolve `max_restarts` for RaySwordfishActor from the environment.
+
+    Accepts any integer Ray accepts (-1 means infinite restarts, 0 disables
+    restarts). Falls back to the default on unset or unparsable values.
+    """
+    raw = os.environ.get(SWORDFISH_ACTOR_MAX_RESTARTS_ENV)
+    if raw is None:
+        return DEFAULT_SWORDFISH_ACTOR_MAX_RESTARTS
+    try:
+        return int(raw)
+    except ValueError:
+        logger.warning(
+            "Invalid value %r for %s; falling back to default %d",
+            raw,
+            SWORDFISH_ACTOR_MAX_RESTARTS_ENV,
+            DEFAULT_SWORDFISH_ACTOR_MAX_RESTARTS,
+        )
+        return DEFAULT_SWORDFISH_ACTOR_MAX_RESTARTS
+
 
 def _attach_remote_event_log_subscriber(component: str, node_role: str) -> None:
     """Attach a RemoteEventLogSubscriber to this process's context.
@@ -470,6 +508,10 @@ def start_ray_workers(
                     node_id=node["NodeID"],
                     soft=False,
                 ),
+                # Restart crashed actors in place so a transient crash (e.g.
+                # OOM kill) doesn't permanently evict the node's compute from
+                # the worker pool. See DEFAULT_SWORDFISH_ACTOR_MAX_RESTARTS.
+                "max_restarts": _get_swordfish_actor_max_restarts(),
             }
             if runtime_env:
                 swordfish_options["runtime_env"] = runtime_env
