@@ -183,6 +183,11 @@ pub(crate) struct WorkerSnapshot {
     total_num_cpus: f64,
     total_num_gpus: f64,
     active_task_details: HashMap<TaskContext, TaskDetails>,
+    /// The worker is being retired by the backend and should not be given new
+    /// discretionary work. It is still alive and still reachable, so tasks that
+    /// *must* run on this specific worker (hard affinity, which has no fallback)
+    /// may still be placed here.
+    draining: bool,
 }
 
 impl WorkerSnapshot {
@@ -197,7 +202,21 @@ impl WorkerSnapshot {
             total_num_cpus,
             total_num_gpus,
             active_task_details,
+            draining: false,
         }
+    }
+
+    pub fn with_draining(mut self, draining: bool) -> Self {
+        self.draining = draining;
+        self
+    }
+
+    /// Whether the scheduler may freely place new work on this worker. False for
+    /// workers the backend has started retiring: they stay in the snapshots so
+    /// hard-affinity lookups keep resolving, but every placement path that has an
+    /// alternative must pick a different worker.
+    pub fn accepts_new_work(&self) -> bool {
+        !self.draining
     }
 
     pub fn active_num_cpus(&self) -> f64 {
@@ -298,6 +317,25 @@ pub(super) mod test_utils {
             workers
                 .values()
                 .map(WorkerSnapshot::from)
+                .collect::<Vec<_>>()
+                .as_slice(),
+        );
+        scheduler
+    }
+
+    // Same as `setup_scheduler`, but flags the listed workers as draining (i.e. the
+    // backend has started retiring them).
+    pub fn setup_scheduler_with_draining<S: Scheduler<MockTask> + Default>(
+        workers: &HashMap<WorkerId, MockWorker>,
+        draining: &[WorkerId],
+    ) -> S {
+        let mut scheduler = S::default();
+        scheduler.update_worker_state(
+            workers
+                .values()
+                .map(|worker| {
+                    WorkerSnapshot::from(worker).with_draining(draining.contains(worker.id()))
+                })
                 .collect::<Vec<_>>()
                 .as_slice(),
         );

@@ -18,7 +18,7 @@ use crate::{
     scheduling::{
         dispatcher::Dispatcher,
         task::{Task, TaskID},
-        worker::{Worker, WorkerManager},
+        worker::{AutoscaleDemandId, Worker, WorkerManager},
     },
     statistics::{StatisticsManagerRef, TaskEvent},
     utils::channel::{
@@ -42,6 +42,11 @@ struct SchedulerLoop<W: Worker, S: Scheduler<W::Task>> {
     worker_manager: Arc<dyn WorkerManager<Worker = W>>,
     statistics_manager: StatisticsManagerRef,
     input_exhausted: bool,
+    /// Identifies this loop's slice of the cluster-wide autoscaling demand.
+    /// Ray's `request_resources()` is a single replace-on-write slot, so the worker
+    /// manager keys demand by owner and always publishes the union; without this,
+    /// concurrent plans would overwrite each other's requests.
+    autoscale_demand_id: AutoscaleDemandId,
 }
 
 impl<W, S> SchedulerLoop<W, S>
@@ -63,6 +68,7 @@ where
             worker_manager,
             statistics_manager,
             input_exhausted: false,
+            autoscale_demand_id: AutoscaleDemandId::new(),
         }
     }
 
@@ -100,6 +106,39 @@ where
 
     #[instrument(name = "FlotillaScheduler", skip_all)]
     async fn run(mut self) -> DaftResult<()> {
+        let loop_result = self.event_loop().await;
+
+        // Job complete (successfully or not): retract this loop's autoscaling demand
+        // so the autoscaler stops provisioning capacity for work that no longer exists.
+        // Only our own slice is dropped — demand published by other concurrently running
+        // plans stays in effect, since Ray's request_resources() is a single cluster-wide
+        // slot that the worker manager maintains as the union of all live owners.
+        // This must also run when the loop exits with an error — a failed query is exactly
+        // the case where the demand we signaled no longer has work behind it, and Ray's
+        // request_resources() is sticky. It is best-effort: a cleanup failure must not
+        // mask the loop's own result or fail an otherwise-successful job.
+        //
+        // We deliberately do NOT retire idle workers here — the warm pool is kept for the
+        // next query in the session and drained by the worker manager's background reaper
+        // once workers pass the idle threshold (see #5683). This keeps retirement under a
+        // single authority.
+        if let Err(e) = self
+            .worker_manager
+            .clear_autoscale_demand(self.autoscale_demand_id)
+        {
+            tracing::warn!(
+                target: SCHEDULER_LOG_TARGET,
+                error = %e,
+                "Failed to clear autoscaling demand on job completion; continuing"
+            );
+        }
+
+        loop_result?;
+        tracing::info!(target: SCHEDULER_LOG_TARGET, "Scheduler event loop completed");
+        Ok(())
+    }
+
+    async fn event_loop(&mut self) -> DaftResult<()> {
         let mut tick_interval = tokio::time::interval(SCHEDULER_TICK_INTERVAL);
 
         while !self.input_exhausted
@@ -124,14 +163,14 @@ where
             // We do this before scheduling tasks to ensure that the autoscaler sees the true demand
             // and not just the residual demand after scheduling.
             let autoscaling_request = self.scheduler.get_autoscaling_request();
-            let sent_scale_up_request = autoscaling_request.is_some();
             if let Some(request) = autoscaling_request {
                 tracing::info!(
                     target: SCHEDULER_LOG_TARGET,
                     autoscaling_request = %format!("{:#?}", request),
                     "Sending autoscaling request"
                 );
-                self.worker_manager.try_autoscale(request)?;
+                self.worker_manager
+                    .try_autoscale(self.autoscale_demand_id, request)?;
             }
 
             // 2: Get all tasks that are ready to be scheduled
@@ -164,23 +203,6 @@ where
                     .dispatch_tasks(scheduled_tasks, &self.worker_manager)?;
             }
 
-            // 3b: Ask the worker manager to retire idle workers when downscaling is configured.
-            //
-            // The worker manager owns the entire downscale policy: enable flag, idle thresholds,
-            // min-survivor floor, head-node protection, and blacklist TTLs. The scheduler only
-            // hands it the per-tick context it has — namely whether a scale-up was just sent —
-            // so the worker manager can avoid undoing scale-up demand in the same cycle.
-            let retired = self
-                .worker_manager
-                .retire_idle_workers(sent_scale_up_request, false)?;
-            if retired > 0 {
-                tracing::info!(
-                    target: SCHEDULER_LOG_TARGET,
-                    retired,
-                    "Downscale: retired idle workers"
-                );
-            }
-
             // 4: Concurrently wait for new tasks, task completions, or periodic tick.
             let Self {
                 task_rx,
@@ -188,7 +210,7 @@ where
                 worker_manager,
                 input_exhausted,
                 ..
-            } = &mut self;
+            } = &mut *self;
             let worker_manager: &Arc<dyn WorkerManager<Worker = W>> = worker_manager;
             let select_result = tokio::select! {
                 maybe_new_task = task_rx.recv(), if !*input_exhausted => {
@@ -215,18 +237,6 @@ where
             }
         }
 
-        // Final downscale on job completion: best-effort clear of Ray demand and idle actors.
-        // The worker manager itself is responsible for honoring the enable flag.
-        let final_retired = self.worker_manager.retire_idle_workers(false, true)?;
-        if final_retired > 0 {
-            tracing::info!(
-                target: SCHEDULER_LOG_TARGET,
-                final_retired,
-                "Final downscale completed"
-            );
-        }
-
-        tracing::info!(target: SCHEDULER_LOG_TARGET, "Scheduler event loop completed");
         Ok(())
     }
 }
@@ -456,6 +466,8 @@ impl Drop for SubmittedTask {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use rand::Rng;
 
     use super::*;
@@ -473,6 +485,7 @@ mod tests {
         scheduler_handle_ref: Arc<SchedulerHandle<MockTask>>,
         worker_manager: Arc<MockWorkerManager>,
         joinset: JoinSet<DaftResult<()>>,
+        autoscale_demand_id: AutoscaleDemandId,
     }
 
     impl SchedulerActorTestContext {
@@ -499,6 +512,7 @@ mod tests {
             worker_manager.clone(),
             StatisticsManagerRef::default(),
         );
+        let autoscale_demand_id = loop_state.autoscale_demand_id;
         joinset.spawn(loop_state.run());
         let scheduler_handle = SchedulerHandle::new(scheduler_sender);
 
@@ -506,43 +520,137 @@ mod tests {
             scheduler_handle_ref: Arc::new(scheduler_handle),
             worker_manager,
             joinset,
+            autoscale_demand_id,
         }
     }
 
-    /// The scheduler now defers all downscale gating (enable flag, min-survivor floor,
-    /// idle thresholds) to the worker manager. From the scheduler's point of view, it
-    /// just calls `retire_idle_workers` every tick — this test verifies the call wiring
-    /// and the per-tick context (skip-due-to-pending-scale-up flag) we hand off.
+    /// Retirement of idle workers is now owned entirely by the worker manager's own
+    /// background reaper, not the scheduler. This test verifies the scheduler no longer
+    /// drives retirement on normal ticks — it never touches the worker pool for downscale
+    /// purposes, so there is a single retirement authority (see #5683).
     #[tokio::test]
-    async fn test_scheduler_actor_invokes_retire_idle_workers_each_tick() -> DaftResult<()> {
+    async fn test_scheduler_actor_does_not_retire_during_ticks() -> DaftResult<()> {
         let ctx = setup_scheduler_actor_test_context(&[
             (Arc::from("worker1"), 1),
             (Arc::from("worker2"), 1),
         ]);
 
         tokio::time::sleep(Duration::from_millis(20)).await;
-        assert!(ctx.worker_manager.retire_call_count() > 0);
-        // No tasks have been enqueued so no scale-up was sent — `skip_due_to_pending_scale_up`
-        // must be false. The shutdown path is exercised by `cleanup`, which lifts
-        // `force_all_when_cluster_idle` to true; we only check the per-tick args here.
-        assert_eq!(ctx.worker_manager.last_retire_args(), Some((false, false)));
+        // The scheduler must not clear demand mid-query; that only happens on completion.
+        assert_eq!(ctx.worker_manager.clear_demand_call_count(), 0);
 
         ctx.cleanup().await?;
         Ok(())
     }
 
     #[tokio::test]
-    async fn test_scheduler_actor_invokes_final_retire_on_shutdown() -> DaftResult<()> {
+    async fn test_scheduler_actor_clears_demand_on_shutdown() -> DaftResult<()> {
         let ctx = setup_scheduler_actor_test_context(&[(Arc::from("worker1"), 1)]);
 
-        // Drop the scheduler handle so the loop drains and exits, triggering the final downscale.
+        // Drop the scheduler handle so the loop drains and exits, triggering the demand clear.
         drop(ctx.scheduler_handle_ref);
         let mut joinset = ctx.joinset;
         while let Some(result) = joinset.join_next().await {
             result??;
         }
-        // The final invocation must request a forced retirement.
-        assert_eq!(ctx.worker_manager.last_retire_args(), Some((false, true)));
+        // On completion the scheduler clears outstanding autoscaling demand exactly once,
+        // and does not retire workers (that is the reaper's job).
+        assert_eq!(ctx.worker_manager.clear_demand_call_count(), 1);
+        // ...and it retracts its own demand slice, not the cluster-wide request.
+        assert_eq!(
+            ctx.worker_manager.cleared_demand_ids(),
+            vec![ctx.autoscale_demand_id]
+        );
+        Ok(())
+    }
+
+    /// Ray's `request_resources()` is a single cluster-wide slot, so autoscaling demand
+    /// must be attributed per plan: two concurrently running scheduler loops each own a
+    /// slice, and finishing one must only retract that one. Otherwise a finishing query
+    /// cancels the capacity a still-running query is waiting on.
+    #[tokio::test]
+    async fn test_concurrent_scheduler_loops_own_separate_autoscale_demand() -> DaftResult<()> {
+        // Start with an empty pool so the loops are pushed onto the autoscaling path.
+        let worker_manager = Arc::new(MockWorkerManager::new(setup_workers(&[])));
+        let mut joinset = JoinSet::new();
+        let mut handles = Vec::new();
+        let mut demand_ids = Vec::new();
+
+        for _ in 0..2 {
+            let (scheduler_sender, scheduler_receiver) = create_unbounded_channel();
+            let loop_state = SchedulerLoop::new(
+                DefaultScheduler::<MockTask>::default(),
+                scheduler_receiver,
+                worker_manager.clone(),
+                StatisticsManagerRef::default(),
+            );
+            demand_ids.push(loop_state.autoscale_demand_id);
+            joinset.spawn(loop_state.run());
+            handles.push(SchedulerHandle::new(scheduler_sender));
+        }
+
+        assert_ne!(
+            demand_ids[0], demand_ids[1],
+            "concurrent scheduler loops must not share an autoscaling demand id"
+        );
+
+        for handle in &handles {
+            let task = MockTaskBuilder::new(create_mock_partition_ref(100, 100)).build();
+            let submitted = SubmittableTask::task_only(task).submit(handle)?;
+            assert_eq!(submitted.await?.unwrap().partitions().len(), 1);
+        }
+
+        drop(handles);
+        while let Some(result) = joinset.join_next().await {
+            result??;
+        }
+
+        // Whether a given loop had to ask for capacity is timing-dependent (the mock
+        // manager materializes workers into a shared pool), but every request that is
+        // made must be attributed to the loop that made it.
+        let owners = demand_ids.iter().copied().collect::<HashSet<_>>();
+        for requested in worker_manager.autoscale_demand_ids() {
+            assert!(
+                owners.contains(&requested),
+                "autoscaling request published under an unknown owner"
+            );
+        }
+
+        // Both loops finished, so both slices — and only those — are retracted.
+        let cleared = worker_manager
+            .cleared_demand_ids()
+            .into_iter()
+            .collect::<HashSet<_>>();
+        assert_eq!(cleared, owners);
+        Ok(())
+    }
+
+    /// A failed query is exactly the case where previously signaled autoscaling demand no
+    /// longer has work behind it, and Ray's request_resources() is sticky — so the
+    /// scheduler must clear demand on the error-exit path too, not just on clean shutdown.
+    #[tokio::test]
+    async fn test_scheduler_actor_clears_demand_on_error_exit() -> DaftResult<()> {
+        let ctx = setup_scheduler_actor_test_context(&[(Arc::from("worker1"), 1)]);
+
+        // Force the next scheduler iteration to fail at the top of the loop.
+        ctx.worker_manager.set_fail_worker_snapshots(true);
+
+        // Submit a task so the loop keeps iterating (and hits the injected failure).
+        let task = MockTaskBuilder::new(create_mock_partition_ref(100, 100)).build();
+        let submittable_task = SubmittableTask::task_only(task);
+        let _submitted_task = submittable_task.submit(&ctx.scheduler_handle_ref)?;
+
+        drop(ctx.scheduler_handle_ref);
+        let mut joinset = ctx.joinset;
+        let mut saw_error = false;
+        while let Some(result) = joinset.join_next().await {
+            if result?.is_err() {
+                saw_error = true;
+            }
+        }
+        assert!(saw_error, "scheduler loop should have exited with an error");
+        // Demand must be cleared exactly once even though the loop exited with an error.
+        assert_eq!(ctx.worker_manager.clear_demand_call_count(), 1);
         Ok(())
     }
 
