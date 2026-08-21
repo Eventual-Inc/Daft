@@ -9,11 +9,21 @@ import pyarrow as pa  # noqa: TID253
 from pypaimon.catalog.catalog import Catalog as InnerCatalog
 from pypaimon.catalog.catalog_exception import (
     DatabaseNotExistException,
+    TableAlreadyExistException,
     TableNotExistException,
 )
 from pypaimon.table.table import Table as InnerTable
 
-from daft.catalog import Catalog, Function, Identifier, NotFoundError, Properties, Schema, Table
+from daft.catalog import (
+    Catalog,
+    Function,
+    Identifier,
+    NotFoundError,
+    Properties,
+    Schema,
+    Table,
+    TableAlreadyExistsError,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -89,7 +99,10 @@ class PaimonCatalog(Catalog):
         )
 
         paimon_ident = _to_paimon_ident(ident)
-        self._inner.create_table(paimon_ident, paimon_schema, ignore_if_exists=False)
+        try:
+            self._inner.create_table(paimon_ident, paimon_schema, ignore_if_exists=False)
+        except TableAlreadyExistException as ex:
+            raise TableAlreadyExistsError(f"Table {ident} already exists") from ex
 
         inner_table = self._inner.get_table(paimon_ident)
         return PaimonTable._from_obj(inner_table)
