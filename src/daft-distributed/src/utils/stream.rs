@@ -58,16 +58,47 @@ where
                     input_stream,
                     joinset,
                 } => {
+                    let mut joinset_complete = false;
+                    if let Some(active_joinset) = joinset.as_mut() {
+                        loop {
+                            match active_joinset.poll_join_next(cx) {
+                                // Keep polling after successful completions so the remaining
+                                // tasks register this stream's waker before we return Pending.
+                                Poll::Ready(Some(Ok(Ok(())))) => {}
+                                Poll::Ready(Some(Ok(Err(e)))) => {
+                                    active_joinset.abort_all();
+                                    *state = ForwardingStreamState::Complete;
+                                    return Some(Poll::Ready(Some(Err(e))));
+                                }
+                                Poll::Ready(Some(Err(e))) => {
+                                    active_joinset.abort_all();
+                                    *state = ForwardingStreamState::Complete;
+                                    return Some(Poll::Ready(Some(Err(e))));
+                                }
+                                Poll::Ready(None) => {
+                                    joinset_complete = true;
+                                    break;
+                                }
+                                Poll::Pending => break,
+                            }
+                        }
+                    }
+                    if joinset_complete {
+                        *joinset = None;
+                    }
+
                     match input_stream.poll_next_unpin(cx) {
-                        // Received a result from the stream, forward it
+                        // Received a result from the stream, forward it.
                         Poll::Ready(Some(result)) => Some(Poll::Ready(Some(Ok(result)))),
-                        // Input stream is done, transition to awaiting tasks
+                        // Input stream is done, transition to awaiting tasks.
                         Poll::Ready(None) => {
-                            let joinset = joinset.take().expect("JoinSet should exist");
-                            *state = ForwardingStreamState::AwaitingTasks(joinset);
+                            *state = match joinset.take() {
+                                Some(joinset) => ForwardingStreamState::AwaitingTasks(joinset),
+                                None => ForwardingStreamState::Complete,
+                            };
                             None
                         }
-                        // Still waiting for more results from the stream
+                        // Still waiting for more results from the stream.
                         Poll::Pending => Some(Poll::Pending),
                     }
                 }
@@ -76,8 +107,16 @@ where
                     // Received a result from a background task
                     Poll::Ready(Some(result)) => match result {
                         Ok(Ok(())) => None,
-                        Ok(Err(e)) => Some(Poll::Ready(Some(Err(e)))),
-                        Err(e) => Some(Poll::Ready(Some(Err(e)))),
+                        Ok(Err(e)) => {
+                            joinset.abort_all();
+                            *state = ForwardingStreamState::Complete;
+                            Some(Poll::Ready(Some(Err(e))))
+                        }
+                        Err(e) => {
+                            joinset.abort_all();
+                            *state = ForwardingStreamState::Complete;
+                            Some(Poll::Ready(Some(Err(e))))
+                        }
                     },
                     // All background tasks are complete
                     Poll::Ready(None) => {
@@ -102,6 +141,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use common_error::DaftError;
 
     use super::*;
@@ -130,6 +171,91 @@ mod tests {
             count += 1;
         }
         assert_eq!(count, 10);
+    }
+
+    #[tokio::test]
+    async fn test_joinable_forwarding_stream_surfaces_background_error_while_input_pending() {
+        let mut joinset = JoinSet::new();
+        joinset.spawn(async move { Err(DaftError::InternalError("test error".to_string())) });
+
+        let input_stream = futures::stream::pending::<usize>();
+        let mut stream = JoinableForwardingStream::new(input_stream, joinset);
+
+        let result = tokio::time::timeout(Duration::from_secs(1), stream.next())
+            .await
+            .expect("background error should be surfaced while input is pending")
+            .expect("stream should emit an error item");
+
+        assert!(matches!(&result, Err(DaftError::InternalError(_))));
+        assert!(result.unwrap_err().to_string().contains("test error"));
+        assert!(stream.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_joinable_forwarding_stream_keeps_pending_after_background_success() {
+        let mut joinset = JoinSet::new();
+        joinset.spawn(async move { Ok(()) });
+
+        let input_stream = futures::stream::pending::<usize>();
+        let mut stream = JoinableForwardingStream::new(input_stream, joinset);
+
+        let result = tokio::time::timeout(Duration::from_millis(50), stream.next()).await;
+        assert!(
+            result.is_err(),
+            "background success must not end a pending input stream"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_joinable_forwarding_stream_wakes_for_error_after_background_success() {
+        let (error_tx, error_rx) = tokio::sync::oneshot::channel();
+        let mut joinset = JoinSet::new();
+        joinset.spawn(async move { Ok(()) });
+        joinset.spawn(async move {
+            error_rx.await.unwrap();
+            Err(DaftError::InternalError("delayed test error".to_string()))
+        });
+
+        // Let the successful task finish before the stream is first polled.
+        tokio::task::yield_now().await;
+
+        let input_stream = futures::stream::pending::<usize>();
+        let mut stream = JoinableForwardingStream::new(input_stream, joinset);
+        let next = stream.next();
+        tokio::pin!(next);
+
+        assert!(futures::poll!(&mut next).is_pending());
+        error_tx.send(()).unwrap();
+
+        let result = tokio::time::timeout(Duration::from_secs(1), next)
+            .await
+            .expect("delayed background error should wake the stream")
+            .expect("stream should emit an error item");
+
+        assert!(matches!(&result, Err(DaftError::InternalError(_))));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("delayed test error")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_joinable_forwarding_stream_preserves_input_after_background_tasks_complete() {
+        let mut joinset = JoinSet::new();
+        for _ in 0..3 {
+            joinset.spawn(async move { Ok(()) });
+        }
+
+        let input_stream = futures::stream::iter([1, 2, 3]);
+        let stream = JoinableForwardingStream::new(input_stream, joinset);
+        let results = stream.collect::<Vec<_>>().await;
+
+        assert_eq!(
+            results.into_iter().collect::<DaftResult<Vec<_>>>().unwrap(),
+            vec![1, 2, 3]
+        );
     }
 
     #[tokio::test]
@@ -164,8 +290,9 @@ mod tests {
             }
         }
         assert!(stream.next().await.is_none());
-        // 9 results because we consume the stream before joining the tasks
-        assert_eq!(count, 9);
+        // The stream should fail fast once a background task errors instead of draining
+        // all remaining input items first.
+        assert!(count < 9);
     }
 
     #[tokio::test]
@@ -200,7 +327,8 @@ mod tests {
             }
         }
         assert!(stream.next().await.is_none());
-        // 9 results because we consume the stream before joining the tasks
-        assert_eq!(count, 9);
+        // The stream should fail fast once a background task panics instead of draining
+        // all remaining input items first.
+        assert!(count < 9);
     }
 }
