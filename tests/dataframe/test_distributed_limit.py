@@ -10,6 +10,7 @@ path is otherwise uncovered.
 from __future__ import annotations
 
 import threading
+from collections import Counter
 
 import pytest
 
@@ -270,8 +271,6 @@ def test_limit_under_cross_join_does_not_hang(limit_on_left):
     not deterministic. The cross product's shape is: every row the limit let
     through pairs with every one of the other side's rows.
     """
-    from collections import Counter
-
     limit = 100
     other_rows = 5
 
