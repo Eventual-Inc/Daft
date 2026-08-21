@@ -3,9 +3,9 @@ use std::{cmp::Ordering, sync::Arc};
 use arrow::{
     array::{Array, ArrayRef, ArrowPrimitiveType},
     compute::{SortOptions, sort_to_indices},
-    datatypes::ArrowNativeType,
 };
 use common_error::{DaftError, DaftResult};
+use num_traits::ToPrimitive;
 
 use super::as_arrow::AsArrow;
 #[cfg(feature = "python")]
@@ -34,6 +34,73 @@ use crate::{
 };
 /// Compare the values at two arbitrary indices in two arrays.
 pub type DynComparator = Box<dyn Fn(usize, usize) -> Ordering + Send + Sync>;
+
+/// Maximum integer key span handled by the counting-sort fast path.
+///
+/// The fast path allocates one count and one cursor per possible key, so a wide sparse
+/// domain must fall back to the existing comparison sort instead of allocating based on
+/// the raw key range.
+const COUNTING_ARGSORT_MAX_SPAN: i128 = 1 << 20;
+
+/// Return a stable argsort permutation for a dense integer domain.
+///
+/// The fast path applies only to non-empty integer slices with a bounded key span. It
+/// first finds the minimum and maximum keys, counts each key, converts counts into output
+/// offsets, then scatters source indices in input order. Returning `None` leaves callers
+/// on the existing comparison-sort path.
+fn try_counting_argsort_indices<A: Copy + ToPrimitive>(
+    values: &[A],
+    descending: bool,
+) -> Option<Vec<u64>> {
+    let len = values.len();
+    if len == 0 {
+        return None;
+    }
+
+    // Keep the auxiliary tables proportional to the input for small inputs, while also
+    // putting a hard upper bound on their memory use for larger arrays.
+    let max_span = COUNTING_ARGSORT_MAX_SPAN.min((len as i128).saturating_mul(4).max(4096));
+    let mut min = values[0].to_i128()?;
+    let mut max = min;
+
+    for value in &values[1..] {
+        let value = value.to_i128()?;
+        min = min.min(value);
+        max = max.max(value);
+        if max - min + 1 > max_span {
+            return None;
+        }
+    }
+
+    let span = (max - min + 1) as usize;
+    let mut counts = vec![0_usize; span];
+    for value in values {
+        counts[(value.to_i128()? - min) as usize] += 1;
+    }
+
+    let mut cursors = vec![0_usize; span];
+    let mut next = 0;
+    if descending {
+        for key_offset in (0..span).rev() {
+            cursors[key_offset] = next;
+            next += counts[key_offset];
+        }
+    } else {
+        for key_offset in 0..span {
+            cursors[key_offset] = next;
+            next += counts[key_offset];
+        }
+    }
+
+    let mut indices = vec![0_u64; len];
+    for (index, value) in values.iter().enumerate() {
+        let key_offset = (value.to_i128()? - min) as usize;
+        indices[cursors[key_offset]] = index as u64;
+        cursors[key_offset] += 1;
+    }
+
+    Some(indices)
+}
 
 #[inline(never)]
 fn argsort_indices_array(name: &str, result: ArrayRef) -> DaftResult<UInt64Array> {
@@ -216,10 +283,21 @@ where
     T: DaftIntegerType,
     <T as DaftNumericType>::Native: Ord + std::hash::Hash,
     <<<T as DaftNumericType>::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native:
-        Ord,
+        Ord + ToPrimitive,
 {
     pub fn argsort(&self, descending: bool, nulls_first: bool) -> DaftResult<UInt64Array> {
         let arrow_array = self.as_arrow()?;
+
+        // A null-free, dense integer domain is ordered by bucket position rather than by
+        // pairwise comparison. All other inputs retain the established implementation.
+        if arrow_array.null_count() == 0 {
+            if let Some(indices) = try_counting_argsort_indices(arrow_array.values(), descending) {
+                return UInt64Array::from_arrow(
+                    Field::new(self.field().name.clone(), DataType::UInt64),
+                    Arc::new(arrow::array::UInt64Array::from(indices)),
+                );
+            }
+        }
 
         let result =
             indices_sorted_unstable_by(arrow_array, |l, r| l.cmp(r), descending, nulls_first);
@@ -717,5 +795,40 @@ where
 {
     pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
         todo!("impl sort for FileArray")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::try_counting_argsort_indices;
+
+    #[test]
+    fn counting_argsort_orders_signed_values_in_both_directions() {
+        let values = [2_i64, -1, 2, 0, -1];
+
+        assert_eq!(
+            try_counting_argsort_indices(&values, false),
+            Some(vec![1, 4, 3, 0, 2])
+        );
+        assert_eq!(
+            try_counting_argsort_indices(&values, true),
+            Some(vec![0, 2, 3, 1, 4])
+        );
+    }
+
+    #[test]
+    fn counting_argsort_rejects_a_sparse_wide_range() {
+        assert_eq!(
+            try_counting_argsort_indices(&[0_i64, 1_000_000_000], false),
+            None
+        );
+    }
+
+    #[test]
+    fn counting_argsort_handles_unsigned_values_near_the_u64_limit() {
+        assert_eq!(
+            try_counting_argsort_indices(&[u64::MAX, u64::MAX - 1, u64::MAX], false),
+            Some(vec![1, 0, 2])
+        );
     }
 }
