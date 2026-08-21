@@ -1,7 +1,7 @@
 [package]
 name = "daft-ext"
 description = "Daft extension SDK for building custom extensions"
-version = "0.1.1"
+version = "0.2.0"
 edition = {workspace = true}
 license = "Apache-2.0"
 homepage = "https://docs.daft.ai"
@@ -32,7 +32,7 @@ arrow-58 = ["dep:arrow-schema-58", "dep:arrow-data-58", "dep:arrow-array-58"]
 arrow-59 = ["dep:arrow-schema-59", "dep:arrow-data-59", "dep:arrow-array-59"]
 
 [dependencies]
-daft-ext-macros = {path = "../daft-ext-macros", version = "0.1.1"}
+daft-ext-macros = {path = "../daft-ext-macros", version = "0.2.0"}
 # Arrow C Data Interface compatibility (optional, feature-gated)
 arrow-schema-56 = {package = "arrow-schema", version = "56", features = ["ffi"], optional = true}
 arrow-data-56 = {package = "arrow-data", version = "56", features = ["ffi"], optional = true}
