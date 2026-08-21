@@ -24,6 +24,22 @@ class _LimitCounterImpl:
         self.remaining_take = limit
         # input_id -> (cumulative_skip_claimed, cumulative_take_claimed)
         self.input_claims: dict[str, tuple[int, int]] = {}
+        # Set the moment `remaining_take` reaches zero, so waiters are woken
+        # instead of polling. Created lazily: `__init__` runs on the actor's
+        # thread before its event loop exists, and binding an `asyncio.Event` to
+        # the wrong loop makes `wait()` hang.
+        self._done_event: asyncio.Event | None = None
+
+    def _signal_done(self) -> None:
+        if self._done_event is not None:
+            self._done_event.set()
+
+    def _get_done_event(self) -> asyncio.Event:
+        if self._done_event is None:
+            self._done_event = asyncio.Event()
+            if self.is_done():
+                self._done_event.set()
+        return self._done_event
 
     def start_task(self, input_id: str) -> None:
         # Called by a worker once when it begins processing `input_id`. If
@@ -36,6 +52,11 @@ class _LimitCounterImpl:
             skip, take = prior
             self.remaining_skip += skip
             self.remaining_take += take
+            # A refund can lift `remaining_take` back above zero, so a `done`
+            # already signalled is no longer true: the retry has to re-claim
+            # those rows before the limit is satisfied again.
+            if self.remaining_take > 0 and self._done_event is not None:
+                self._done_event.clear()
 
     def claim(self, input_id: str, num_rows: int) -> tuple[int, int, bool]:
         if self.remaining_take == 0:
@@ -52,7 +73,10 @@ class _LimitCounterImpl:
             prev_skip, prev_take = self.input_claims.get(input_id, (0, 0))
             self.input_claims[input_id] = (prev_skip + skip, prev_take + take)
 
-        return (skip, take, self.remaining_take == 0)
+        done = self.remaining_take == 0
+        if done:
+            self._signal_done()
+        return (skip, take, done)
 
     def is_done(self) -> bool:
         return self.remaining_take == 0
@@ -61,8 +85,7 @@ class _LimitCounterImpl:
         return [iid for iid, (_skip, take) in self.input_claims.items() if take > 0]
 
     async def await_limit_completion(self) -> list[str]:
-        while not self.is_done():
-            await asyncio.sleep(0.01)
+        await self._get_done_event().wait()
         return self.contributors()
 
 
@@ -92,7 +115,10 @@ async def start_limit_counter_actor(limit: int, offset: int, timeout: int) -> Li
     actor = LimitCounterActor.options(
         scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
             node_id=node_id,
-            soft=False,
+            # Soft: prefer the runner's node to keep claim RPCs local, but let
+            # Ray place the actor elsewhere rather than fail the query outright
+            # if that node has no room.
+            soft=True,
         ),
     ).remote(limit, offset)
     # Block until the actor's constructor has finished before returning the
