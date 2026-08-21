@@ -2,6 +2,7 @@ use std::{
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
+    time::Duration,
 };
 
 use arrow_flight::{Ticket, client::FlightClient, decode::FlightRecordBatchStream};
@@ -11,6 +12,22 @@ use daft_recordbatch::RecordBatch;
 use daft_schema::field::FieldRef;
 use futures::{FutureExt, Stream, StreamExt};
 use tonic::transport::Endpoint;
+
+const DAFT_FLIGHT_CONNECT_TIMEOUT_MS_ENV: &str = "DAFT_FLIGHT_CONNECT_TIMEOUT_MS";
+const DEFAULT_FLIGHT_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+
+fn flight_connect_timeout() -> Duration {
+    let value = std::env::var(DAFT_FLIGHT_CONNECT_TIMEOUT_MS_ENV).ok();
+    parse_flight_connect_timeout(value.as_deref())
+}
+
+fn parse_flight_connect_timeout(value: Option<&str>) -> Duration {
+    value
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .filter(|timeout_ms| *timeout_ms > 0)
+        .map(Duration::from_millis)
+        .unwrap_or(DEFAULT_FLIGHT_CONNECT_TIMEOUT)
+}
 
 #[allow(clippy::large_enum_variant)]
 enum ClientState {
@@ -33,9 +50,11 @@ impl ShuffleFlightClient {
 
     async fn connect(&mut self) -> DaftResult<(&str, &mut FlightClient)> {
         if let ClientState::Uninitialized(address) = &mut self.inner {
-            let endpoint = Endpoint::from_shared(address.clone()).map_err(|e| {
-                DaftError::External(format!("Failed to create endpoint: {:?}", e).into())
-            })?;
+            let endpoint = Endpoint::from_shared(address.clone())
+                .map_err(|e| {
+                    DaftError::External(format!("Failed to create endpoint: {:?}", e).into())
+                })?
+                .connect_timeout(flight_connect_timeout());
             let channel = endpoint.connect().await.map_err(|e| {
                 DaftError::External(format!("Failed to connect to endpoint: {:?}", e).into())
             })?;
@@ -139,5 +158,34 @@ impl Stream for FlightRecordBatchStreamToDaftRecordBatchStream {
             }
             Poll::Pending => Poll::Pending,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_flight_connect_timeout() {
+        assert_eq!(
+            parse_flight_connect_timeout(None),
+            DEFAULT_FLIGHT_CONNECT_TIMEOUT
+        );
+        assert_eq!(
+            parse_flight_connect_timeout(Some("1500")),
+            Duration::from_millis(1500)
+        );
+        assert_eq!(
+            parse_flight_connect_timeout(Some(" 2500 ")),
+            Duration::from_millis(2500)
+        );
+        assert_eq!(
+            parse_flight_connect_timeout(Some("invalid")),
+            DEFAULT_FLIGHT_CONNECT_TIMEOUT
+        );
+        assert_eq!(
+            parse_flight_connect_timeout(Some("0")),
+            DEFAULT_FLIGHT_CONNECT_TIMEOUT
+        );
     }
 }
