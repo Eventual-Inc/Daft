@@ -231,3 +231,47 @@ def test_count_rows_applies_partition_and_data_predicates_together(partitioned_c
 
 def test_count_rows_with_partition_predicate_matching_nothing(partitioned_counts):
     assert daft.read_iceberg(partitioned_counts).where(daft.col("dt") == "missing").count_rows() == 0
+
+
+def test_count_rows_when_partition_field_is_renamed(local_catalog):
+    """The partition field name need not match the source column it partitions on.
+
+    The predicate then references a name absent from the data schema, so it cannot be
+    forwarded to PyIceberg as a row filter and no metadata pruning happens. The count
+    still has to come out right, which is what the per-file partition check is for.
+    """
+    schema = Schema(
+        NestedField(field_id=1, name="dt", type=StringType(), required=False),
+        NestedField(field_id=2, name="x", type=LongType(), required=False),
+    )
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="dt_part")
+    )
+    table = local_catalog.create_table("default.renamed_partition_field", schema, partition_spec=partition_spec)
+    daft.from_pydict({"dt": ["a"] * 3 + ["b"] * 5, "x": list(range(8))}).write_iceberg(table)
+    table.refresh()
+
+    assert daft.read_iceberg(table).where(daft.col("dt") == "a").count_rows() == 3
+    assert daft.read_iceberg(table).where(daft.col("dt") == "b").count_rows() == 5
+    assert daft.read_iceberg(table).count_rows() == 8
+
+
+def test_count_rows_with_partition_values_past_bounds_truncation(local_catalog):
+    """Column bounds are truncated to 16 bytes, partition records are not.
+
+    Two values sharing a 16-byte prefix are indistinguishable to the metrics PyIceberg
+    prunes on, so the count has to be settled from the partition record itself.
+    """
+    schema = Schema(
+        NestedField(field_id=1, name="dt", type=StringType(), required=False),
+        NestedField(field_id=2, name="x", type=LongType(), required=False),
+    )
+    partition_spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="dt"))
+    table = local_catalog.create_table("default.long_partition_values", schema, partition_spec=partition_spec)
+
+    long_a, long_b = "L" * 30 + "aaa", "L" * 30 + "bbb"
+    daft.from_pydict({"dt": [long_a, long_a, long_b], "x": [1, 2, 3]}).write_iceberg(table)
+    table.refresh()
+
+    assert daft.read_iceberg(table).where(daft.col("dt") == long_a).count_rows() == 2
+    assert daft.read_iceberg(table).where(daft.col("dt") == long_b).count_rows() == 1

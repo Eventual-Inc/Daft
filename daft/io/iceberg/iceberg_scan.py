@@ -366,13 +366,23 @@ class IcebergDataSource(DataSource):
                 yield from self._create_regular_tasks(pushdowns)
                 return
 
-            iceberg_tasks = self._iceberg_table.scan(limit=None, snapshot_id=self._snapshot_id).plan_files()
+            # Forwarding the predicate lets PyIceberg drop whole manifests from its partition
+            # summaries instead of materializing every data file entry for us to filter.
+            # It only ever returns a superset of the matching files, and degrades to no
+            # pruning when the predicate cannot be converted, so the per-file check below
+            # remains the authority on what is counted.
+            row_filter = convert_row_filter(pushdowns._to_pypushdowns(), self._iceberg_schema)
+            iceberg_tasks = self._iceberg_table.scan(
+                row_filter=row_filter, limit=None, snapshot_id=self._snapshot_id
+            ).plan_files()
             total_count = 0
 
             # Aggregate row counts from all data files. `partition_filters` holds the
             # predicates the optimizer resolved against partition values alone and then
-            # dropped from `filters`, so pruning here is what applies them; every row of a
-            # surviving file matches, which keeps the count exact.
+            # dropped from `filters`, so applying them here is what keeps the count honest.
+            # Partition records are stored whole, unlike the truncated column bounds
+            # PyIceberg prunes on, so this check is exact: every row of a surviving file
+            # matches the predicate.
             for task in iceberg_tasks:
                 data_file = task.file
                 if pushdowns.partition_filters is not None:
