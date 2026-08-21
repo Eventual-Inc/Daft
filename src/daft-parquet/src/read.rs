@@ -470,6 +470,39 @@ pub async fn read_parquet_schema_and_metadata(
     Ok((schema, adapter))
 }
 
+/// Reads a Parquet file's footer schema as a raw arrow-rs `Schema`, without downcasting to
+/// Daft's own `Schema`/`DataType`.
+///
+/// `read_parquet_schema_and_metadata` above converts the footer schema into Daft's own
+/// `Schema` on the way out, and that conversion is lossy for nested types: `DataType::List`
+/// and `DataType::Map` only wrap a bare child `DataType` (no `arrow_schema::Field`), so any
+/// per-field Arrow metadata on a list element or map key/value — including Iceberg's
+/// `PARQUET:field_id` — is discarded and cannot be recovered afterwards. Callers that need to
+/// verify Iceberg field IDs at every nesting level (see the Iceberg changelog schema gate)
+/// must read the raw arrow-rs schema instead, which keeps every nested `Field` (and therefore
+/// its metadata) intact all the way to the PyArrow FFI boundary.
+///
+/// This is still a pure footer read: no row-group data pages are fetched.
+pub async fn read_parquet_arrow_schema(
+    uri: &str,
+    io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
+    schema_inference_options: ParquetSchemaInferenceOptions,
+) -> DaftResult<arrow::datatypes::SchemaRef> {
+    let metadata =
+        crate::metadata::read_parquet_metadata(uri, None, io_client, io_stats, None, None).await?;
+    let arrow_schema = crate::schema_inference::infer_schema_from_parquet_metadata_arrowrs(
+        &metadata,
+        Some(schema_inference_options.coerce_int96_timestamp_unit),
+        schema_inference_options.string_encoding == StringEncoding::Raw,
+    )
+    .map_err(|e| crate::Error::Arrow {
+        path: uri.to_string(),
+        source: e,
+    })?;
+    Ok(Arc::new(arrow_schema))
+}
+
 pub async fn read_parquet_metadata(
     uri: &str,
     io_client: Arc<IOClient>,
