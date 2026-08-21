@@ -9,10 +9,15 @@ path is otherwise uncovered.
 
 from __future__ import annotations
 
+import asyncio
+from collections import Counter
+
 import pytest
 
 ray = pytest.importorskip("ray")
 
+import daft
+from daft import DataType, col, func
 from daft.execution.ray_distributed_limit import _LimitCounterImpl
 from tests.conftest import get_tests_daft_runner_name
 
@@ -133,9 +138,6 @@ def test_distributed_limit_retries_after_worker_death(tmp_path):
     """
     import os
 
-    import daft
-    from daft import DataType, col, func
-
     marker = str(tmp_path / "crashed_once")
 
     @func(return_dtype=DataType.int64(), cpus=os.cpu_count())
@@ -174,7 +176,6 @@ def test_distributed_limit_retries_after_worker_death(tmp_path):
 
 def test_claim_signals_done_event():
     """`claim` must wake `await_limit_completion` rather than have it poll."""
-    import asyncio
 
     async def run():
         actor = _LimitCounterImpl(limit=2, offset=0)
@@ -198,7 +199,6 @@ def test_done_event_set_before_any_waiter():
     loop — so the first waiter has to notice a limit that was already satisfied
     instead of blocking forever.
     """
-    import asyncio
 
     async def run():
         actor = _LimitCounterImpl(limit=1, offset=0)
@@ -216,7 +216,6 @@ def test_retry_rewind_reopens_done_event():
     a waiter would conclude the limit was satisfied while the rewound rows had
     never reached downstream.
     """
-    import asyncio
 
     async def run():
         actor = _LimitCounterImpl(limit=1, offset=0)
@@ -233,6 +232,45 @@ def test_retry_rewind_reopens_done_event():
         assert not waiter.done(), "refund left the done event set"
 
         actor.claim("t2", 1)
+        return await asyncio.wait_for(waiter, timeout=5)
+
+    assert asyncio.run(run()) == ["t2"]
+
+
+def test_refund_between_set_and_resume_does_not_release_waiter():
+    """A refund landing after `set()` but before the waiter resumes must not release it.
+
+    `asyncio.Event.clear()` does not un-resolve a future that `set()` already
+    resolved, so a waiter that returned on the first wakeup would hand the
+    coordinator a contributor set for a limit that is no longer satisfied. The
+    coordinator consumes that set exactly once and then cancels the
+    non-contributors, so the refunded rows could be cancelled away before the
+    retry re-claims them and the query would return fewer rows than requested.
+
+    This is the ordering that the previous `while not is_done(): sleep(0.01)`
+    poll could not get wrong, because it re-checked the condition on every
+    wakeup. `await_limit_completion` has to keep doing that.
+    """
+
+    async def run():
+        actor = _LimitCounterImpl(limit=1, offset=0)
+        waiter = asyncio.create_task(actor.await_limit_completion())
+        await asyncio.sleep(0)  # park the waiter inside Event.wait()
+
+        actor.start_task("t1")
+        actor.claim("t1", 1)  # satisfied: resolves the parked waiter's future
+        actor.start_task("t1")  # retry refunds before the waiter ever resumes
+        assert not actor.is_done(), "refund should have reopened the budget"
+
+        # Give the waiter every chance to resume on a stale wakeup.
+        for _ in range(3):
+            await asyncio.sleep(0)
+        assert not waiter.done(), (
+            "await_limit_completion returned while remaining_take > 0; it must "
+            "re-check is_done() instead of trusting a single Event wakeup"
+        )
+
+        actor.claim("t2", 1)  # the retry supplies the row
         return await asyncio.wait_for(waiter, timeout=5)
 
     assert asyncio.run(run()) == ["t2"]
@@ -269,11 +307,6 @@ def test_limit_under_cross_join_keeps_the_other_side_whole():
     not deterministic. The cross product's shape is: every row the limit let
     through must pair with every one of the right side's rows.
     """
-    from collections import Counter
-
-    import daft
-    from daft import DataType, col, func
-
     limit = 100
     right_rows = 5
 
@@ -308,9 +341,6 @@ def test_limit_under_broadcast_join_emits_every_limited_row():
     inner join has to emit exactly `limit` rows — no assumption about *which*
     rows the distributed limit let through, which is not deterministic.
     """
-    import daft
-    from daft import DataType, col, func
-
     limit = 200
     universe = 400
 
@@ -348,9 +378,6 @@ def test_limit_stops_upstream_work():
     fire-and-forget so the total can undercount slightly — but the pre-fix
     behavior feeds the UDF *every* row, which is far outside it.
     """
-    import daft
-    from daft import DataType, col, func
-
     total_rows = 8 * 20_000
 
     @ray.remote(num_cpus=0)
@@ -400,8 +427,6 @@ def test_limit_larger_than_input_reads_everything():
     The complement of `test_limit_stops_upstream_work`: this query legitimately
     has to read all of its input, and early stopping must not truncate it.
     """
-    import daft
-    from daft import DataType, col, func
 
     @func(return_dtype=DataType.bool())
     def keep(a: int) -> bool:

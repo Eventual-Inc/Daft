@@ -85,7 +85,17 @@ class _LimitCounterImpl:
         return [iid for iid, (_skip, take) in self.input_claims.items() if take > 0]
 
     async def await_limit_completion(self) -> list[str]:
-        await self._get_done_event().wait()
+        # Re-check under a loop rather than returning on the first wakeup. The
+        # event is only a wakeup hint: a retry's refund in `start_task` can
+        # reopen the budget after `set()` has already resolved this waiter's
+        # future but before it resumes, and `asyncio.Event.clear()` does not
+        # un-resolve an already-resolved future. Returning there would hand the
+        # coordinator a contributor set for a limit that is no longer satisfied,
+        # and it consumes that set once — so the refunded rows could be
+        # cancelled away before the retry re-claims them.
+        event = self._get_done_event()
+        while not self.is_done():
+            await event.wait()
         return self.contributors()
 
 
