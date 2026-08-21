@@ -24,7 +24,10 @@ use serde::{Deserialize, Serialize};
 use snafu::Snafu;
 
 pub use crate::ops::*;
-use crate::stats::{PlanStats, StatsState};
+use crate::{
+    source_info::SourceInfo,
+    stats::{PlanStats, StatsState},
+};
 
 /// Logical plan for a Daft query.
 #[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -369,7 +372,28 @@ impl LogicalPlan {
             Self::Intersect(_) => RequiredCols::new(IndexSet::new(), Some(IndexSet::new())),
             Self::Union(_) => RequiredCols::new(IndexSet::new(), Some(IndexSet::new())),
             Self::Shuffle(_) => RequiredCols::new(IndexSet::new(), None),
-            Self::Source(_) => todo!(),
+            Self::Source(source) => {
+                // A Source needs every column it outputs, plus any columns
+                // referenced by filters pushed into the scan — those must keep
+                // being read even when they are not part of the projected output
+                // (https://github.com/Eventual-Inc/Daft/issues/6757).
+                let mut res: IndexSet<String> = source
+                    .output_schema
+                    .field_names()
+                    .map(ToString::to_string)
+                    .collect();
+                if let SourceInfo::Physical(external_info) = source.source_info.as_ref() {
+                    for filter in external_info
+                        .pushdowns
+                        .filters
+                        .iter()
+                        .chain(external_info.pushdowns.partition_filters.iter())
+                    {
+                        res.extend(get_required_columns(filter));
+                    }
+                }
+                RequiredCols::new(res, None)
+            }
             Self::Sink(_) => todo!(),
             Self::SubqueryAlias(SubqueryAlias { input, .. }) => input.required_columns(),
             Self::Window(window) => {

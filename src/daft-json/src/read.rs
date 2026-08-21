@@ -4,7 +4,7 @@ use common_error::{DaftError, DaftResult};
 use common_runtime::get_io_runtime;
 use daft_compression::CompressionCodec;
 use daft_core::prelude::*;
-use daft_dsl::{expr::bound_expr::BoundExpr, optimization::get_required_columns};
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_io::{GetRange, GetResult, IOClient, IOStatsRef, SourceType, parse_url};
 use daft_recordbatch::RecordBatch;
 use futures::{
@@ -167,27 +167,21 @@ async fn read_json_single_into_tables(
         .as_ref()
         .and_then(|opts| opts.include_columns.clone());
 
-    let convert_options_with_predicate_columns = match (convert_options, &predicate) {
-        (None, _) => None,
-        (co, None) => co,
-        (Some(mut co), Some(predicate)) => {
-            if let Some(ref mut include_columns) = co.include_columns {
-                let required_columns_for_predicate = get_required_columns(predicate);
-                for rc in required_columns_for_predicate {
-                    if include_columns.iter().all(|c| c.as_str() != rc.as_str()) {
-                        include_columns.push(rc);
-                    }
-                }
-            }
-            // if we have a limit and a predicate, remove limit for stream
+    // If we have a limit and a predicate, remove limit for the stream: rows
+    // are dropped by the filter while reading, so we cannot stop early. The
+    // columns required by the predicate are guaranteed to be part of the
+    // projection pushdown by the optimizer
+    // (https://github.com/Eventual-Inc/Daft/issues/6757).
+    let convert_options = convert_options.map(|mut co| {
+        if predicate.is_some() {
             co.limit = None;
-            Some(co)
         }
-    };
+        co
+    });
 
     let (table_stream, schema) = read_json_single_into_stream(
         uri.to_string(),
-        convert_options_with_predicate_columns.unwrap_or_default(),
+        convert_options.unwrap_or_default(),
         parse_options.unwrap_or_default(),
         read_options,
         io_client,
@@ -325,27 +319,21 @@ pub async fn stream_json(
         .as_ref()
         .and_then(|opts| opts.include_columns.clone());
 
-    let convert_options_with_predicate_columns = match (convert_options, &predicate) {
-        (None, _) => None,
-        (co, None) => co,
-        (Some(mut co), Some(predicate)) => {
-            if let Some(ref mut include_columns) = co.include_columns {
-                let required_columns_for_predicate = get_required_columns(predicate);
-                for rc in required_columns_for_predicate {
-                    if include_columns.iter().all(|c| c.as_str() != rc.as_str()) {
-                        include_columns.push(rc);
-                    }
-                }
-            }
-            // if we have a limit and a predicate, remove limit for stream
+    // If we have a limit and a predicate, remove limit for the stream: rows
+    // are dropped by the filter while reading, so we cannot stop early. The
+    // columns required by the predicate are guaranteed to be part of the
+    // projection pushdown by the optimizer
+    // (https://github.com/Eventual-Inc/Daft/issues/6757).
+    let convert_options = convert_options.map(|mut co| {
+        if predicate.is_some() {
             co.limit = None;
-            Some(co)
         }
-    };
+        co
+    });
 
     let (chunk_stream, _fields) = read_json_single_into_stream(
         uri.clone(),
-        convert_options_with_predicate_columns.unwrap_or_default(),
+        convert_options.unwrap_or_default(),
         parse_options.unwrap_or_default(),
         read_options,
         io_client,
