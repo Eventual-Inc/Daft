@@ -68,6 +68,20 @@ impl<T> RuntimeTask<T> {
         joinset.spawn_on(future, handle);
         Self { joinset }
     }
+
+    /// Non-blocking attempt to join the task.
+    ///
+    /// Returns `None` if the task has not yet completed, otherwise returns
+    /// the task's result mapped into a `DaftResult<T>` (matching the `Future`
+    /// impl on `RuntimeTask`).
+    pub fn try_join_next(&mut self) -> Option<DaftResult<T>>
+    where
+        T: 'static,
+    {
+        self.joinset
+            .try_join_next()
+            .map(|res| res.map_err(|e| DaftError::External(e.into())))
+    }
 }
 
 impl<T: Send + 'static> Future for RuntimeTask<T> {
