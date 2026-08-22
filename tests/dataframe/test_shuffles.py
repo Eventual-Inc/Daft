@@ -234,6 +234,44 @@ def test_flight_sort(flight_shuffle_ctx, descending):
     get_tests_daft_runner_name() != "ray",
     reason="distributed shuffle tests require the ray runner",
 )
+@pytest.mark.parametrize("left_partitions, right_partitions", [(4, 3), (2, 5), (3, 3)])
+def test_flight_sort_merge_join(flight_shuffle_ctx, left_partitions, right_partitions):
+    """Exercises the range-repartition path of SortMergeJoinNode under the Flight backend.
+
+    Both sides span several partitions, so the join must sample, range-repartition
+    both sides through the flight cache, and join each partition pair from two
+    flight-backed shuffle reads.
+    """
+    left_keys = list(range(0, 300))
+    right_keys = list(range(150, 450))
+    random.Random(0).shuffle(left_keys)
+    random.Random(1).shuffle(right_keys)
+    with flight_shuffle_ctx():
+        left = daft.from_pydict({"k": left_keys, "l": [k * 2 for k in left_keys]}).repartition(
+            left_partitions, "k"
+        )
+        right = daft.from_pydict({"k": right_keys, "r": [k * 3 for k in right_keys]}).repartition(
+            right_partitions, "k"
+        )
+        df = left.join(right, on="k", how="inner", strategy="sort_merge")
+
+        buf = io.StringIO()
+        df.explain(show_all=True, file=buf)
+        plan = buf.getvalue()
+        assert "SortMergeJoin(Flight)" in plan, f"expected SortMergeJoin(Flight) in plan:\n{plan}"
+        assert "SortMergeJoin(Ray)" not in plan, f"unexpected SortMergeJoin(Ray) in plan:\n{plan}"
+
+        result = df.to_pydict()
+
+    rows = sorted(zip(result["k"], result["l"], result["r"]), key=lambda t: t[0])
+    assert [k for k, _, _ in rows] == list(range(150, 300))
+    assert all(l == k * 2 and r == k * 3 for k, l, r in rows)
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="distributed shuffle tests require the ray runner",
+)
 def test_ray_random_shuffle():
     """Ensures `df.shuffle(...)` produces a permutation of the input under the Ray backend."""
     df = daft.from_pydict({"id": list(range(32))}).repartition(4, "id")
