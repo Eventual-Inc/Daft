@@ -860,6 +860,48 @@ def map_get(expr: Expression, key: Expression) -> Expression:
     return Expression._from_pyexpr(expr._expr.map_get(key_expr._expr))
 
 
+def map(*entries: Expression) -> Expression:
+    """Constructs a map from alternating key/value expressions.
+
+    This follows Spark-style map construction semantics and matches ``daft.sql``:
+    ``map('street', col('address'), 'city', col('city'))``.
+
+    Args:
+        *entries: Alternating key and value expressions.
+
+    Returns:
+        Expression: A ``Map[key_dtype: value_dtype]`` expression.
+
+    Raises:
+        ValueError: If no entries are provided, if entries are not alternating key/value pairs,
+            or if any key position is not a string literal.
+    """
+    if len(entries) == 0:
+        raise ValueError("map requires at least one key/value pair")
+    if len(entries) % 2 != 0:
+        raise ValueError("map requires alternating key/value pairs")
+
+    map_args: list[Expression] = []
+    for i in range(0, len(entries), 2):
+        key = entries[i]
+        value = entries[i + 1]
+        if not isinstance(key, str):
+            raise ValueError(f"map key at position {i} must be a string literal, got {type(key)}")
+        map_args.append(Expression._to_expression(key))
+        map_args.append(Expression._to_expression(value))
+
+    return Expression._call_builtin_scalar_fn("map", *map_args)
+
+
+def map_extract(expr: Expression, key: Expression) -> Expression:
+    """Alias for :func:`daft.functions.map_get`.
+
+    This matches SQL naming where both ``map_get`` and ``map_extract`` are supported.
+    """
+
+    return map_get(expr, key)
+
+
 def map_keys(expr: Expression) -> Expression:
     """Returns a list of all keys in the map.
 

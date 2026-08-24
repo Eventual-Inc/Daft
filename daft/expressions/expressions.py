@@ -2811,6 +2811,16 @@ class Expression:
 
         return map_get(self, key)
 
+    def map_extract(self, key: Expression) -> Expression:
+        """Alias for `Expression.map_get()` to mirror SQL naming.
+
+        Tip: See Also
+            [`daft.functions.map_extract`](https://docs.daft.ai/en/stable/api/functions/map_get/)
+        """
+        from daft.functions import map_extract
+
+        return map_extract(self, key)
+
     def map_keys(self) -> Expression:
         """Returns a list of all keys in the map.
 

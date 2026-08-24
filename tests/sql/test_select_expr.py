@@ -129,6 +129,24 @@ def test_select_map_with_expression_keys_and_values():
     assert_eq(actual, expect)
 
 
+def test_select_map_constructor_function():
+    df = daft.from_pydict({"x": [1, 2], "y": [10, 20]})
+
+    actual = daft.sql("SELECT map('a', x, 'b', y + 1) AS m FROM df").collect()
+    expect = daft.sql("SELECT MAP {'a': x, 'b': y + 1} AS m FROM df", df=df).collect()
+
+    assert_eq(actual, expect)
+
+
+def test_select_map_extract_alias():
+    df = daft.from_pydict({"x": [1, 2]})
+
+    actual = daft.sql("SELECT map_extract(map('a', x), 'a') AS a FROM df").collect()
+    expect = daft.sql("SELECT map_get(map('a', x), 'a') AS a FROM df").collect()
+
+    assert_eq(actual, expect)
+
+
 def test_select_struct_wildcard():
     df = daft.from_pydict(
         {"person": [{"name": "Alice", "age": 30}, {"name": "Bob", "age": 25}, {"name": "Charlie", "age": 35}]}
