@@ -1449,6 +1449,7 @@ def depth_frames(
     cameras_: Sequence[str] | str,
     *,
     frame_indices: Sequence[int] | int = 0,
+    strict: bool = False,
 ) -> DataFrame:
     r"""Read depth maps from an RGBD camera's ``aligned_depth`` dataset.
 
@@ -1481,21 +1482,38 @@ def depth_frames(
             colour/left/right sub-stream.
         frame_indices: Which frames to read, as a single index or a sequence.
             Frames are returned in the order requested. Defaults to ``0``.
+        strict: If True, fail when an episode does not contain every requested
+            frame. Defaults to False, which reads whatever is available and
+            reports it in ``"{camera}.depth_frame_indices"``. The check happens
+            per episode during the read, so the failure surfaces as a Daft
+            execution error rather than a plain ``IndexError``; when *every*
+            episode is short, Daft reports its own error instead of the one
+            naming the camera. Prefer the default and inspect
+            ``"{camera}.depth_frame_indices"``.
 
     Returns:
         The input DataFrame with, per requested camera:
 
         - `"{camera}.depth"`: `Tensor[UInt16]` of shape
-          `(len(frame_indices), height, width)`.
+          `(frames_read, height, width)`.
         - `"{camera}.depth_frame_indices"`: the indices actually read.
 
-        Cameras without an ``aligned_depth`` dataset yield nulls.
+        Episode length varies across a release, so an index present in one
+        episode may be absent from another. Rather than making the whole call
+        fail, each episode reads the frames it has and reports them in
+        ``"{camera}.depth_frame_indices"`` -- always check that column instead
+        of assuming it matches ``frame_indices``. Pass ``strict=True`` to turn
+        a short episode into an error.
+
+        Cameras without an ``aligned_depth`` dataset yield an empty tensor and a
+        null index list.
 
     Raises:
         ValueError: If ``cameras_`` is empty or ``frame_indices`` is empty.
-        IndexError: If an index is negative or beyond the stored frame count.
-            Negative indices are rejected rather than wrapping around, so a
-            stale index cannot silently read a different frame.
+        IndexError: If an index is negative. Negative indices are rejected
+            rather than wrapping around, so a stale index cannot silently read a
+            different frame. This is checked before any file is opened, since it
+            is a caller error rather than a property of the data.
 
     Examples:
         >>> from daft.datasets import omnisharing
@@ -1521,11 +1539,6 @@ def depth_frames(
             "Negative indices are rejected rather than wrapping around."
         )
 
-    # Bounds are checked here rather than inside the UDF: an exception raised
-    # during execution surfaces as an opaque Daft error, losing the message that
-    # says which camera and which bound were involved.
-    _check_depth_bounds(episodes, names, wanted)
-
     return_fields: dict[str, DataType] = {}
     for name in names:
         return_fields[f"{name}.depth"] = DataType.tensor(DataType.uint16())
@@ -1548,9 +1561,17 @@ def depth_frames(
                     continue
 
                 available = int(node.shape[0])
-                # Clamp instead of raising: bounds were already validated up
-                # front, and a mid-execution raise would surface opaquely.
+                # Episode length varies across a release, so bounds are decided
+                # per episode. Checking them up front against a single probed
+                # episode would make the result depend on which episode happened
+                # to be scanned first.
                 usable = [i for i in wanted if i < available]
+                if len(usable) < len(wanted) and strict:
+                    out_of_range = [i for i in wanted if i >= available]
+                    raise IndexError(
+                        f"{name}/aligned_depth has {available} frames; "
+                        f"requested index/indices {out_of_range} out of range."
+                    )
                 if not usable:
                     out[f"{name}.depth"] = np.empty((0,), dtype="uint16")
                     out[f"{name}.depth_frame_indices"] = None
@@ -1563,39 +1584,6 @@ def depth_frames(
         return out
 
     return _append_unnested(episodes, _read_depth(col("episode")))
-
-
-def _check_depth_bounds(episodes: DataFrame, names: tuple[str, ...], wanted: tuple[int, ...]) -> None:
-    """Raise IndexError up front if any requested frame is out of range.
-
-    Probes frame counts from the first episode. A camera with no depth, or with
-    a zero-length depth dataset, is skipped rather than treated as a bound: both
-    mean "nothing to read here", which is reported as an empty result rather
-    than an error.
-    """
-    probe_fields = {name: DataType.int64() for name in names}
-
-    @daft.func(return_dtype=DataType.struct(probe_fields), use_process=False, unnest=True)
-    def _depth_lengths(file: Hdf5File) -> dict[str, Any]:
-        lengths: dict[str, Any] = {}
-        with _open_for_scan(file) as h5:
-            for name in names:
-                node = _get(h5, _h5path("observation", "image", name, "aligned_depth"))
-                lengths[name] = int(node.shape[0]) if node is not None and node.shape else None
-        return lengths
-
-    rows = _append_unnested(episodes.limit(1), _depth_lengths(col("episode"))).to_pylist()
-    if not rows:
-        return
-
-    highest = max(wanted)
-    for name in names:
-        available = rows[0].get(name)
-        if available and highest >= available:
-            out_of_range = [i for i in wanted if i >= available]
-            raise IndexError(
-                f"{name}/aligned_depth has {available} frames; requested index/indices {out_of_range} out of range."
-            )
 
 
 # ---------------------------------------------------------------------------

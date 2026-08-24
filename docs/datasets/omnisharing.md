@@ -207,6 +207,8 @@ depth.select("RGBD_0.depth", "RGBD_0.depth_frame_indices").show()
 
 A single frame is about 1.8 MB and a whole episode roughly 380 MB per camera, so `frame_indices` defaults to frame `0` and each requested frame is read individually.
 
+Episode length varies across a release, so an index present in one episode may be absent from another. Rather than failing the whole call, each episode reads the frames it has — so check `depth_frame_indices` instead of assuming it matches what you asked for. Pass `strict=True` to turn a short episode into an error instead.
+
 ## Stereo calibration
 
 Each RGBD group stores an `inner_extrinsic` JSON blob, which `cameras()` passes through as an opaque string. `stereo_extrinsics()` parses out the part most people want:

@@ -19,6 +19,7 @@ Details taken from the real file, several of which the published layout omits:
 
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 
@@ -140,8 +141,8 @@ def encode_playable_stream(kind: str) -> np.ndarray:
     can fall back to non-decodable placeholder payloads. libx265 in particular
     is absent from some PyAV wheels.
     """
-    import io
-
+    # av and h5py come from optional extras, so they stay function-local: this
+    # module is imported by tests that guard on those extras being present.
     import av
 
     fmt, codec = ("hevc", "libx265") if kind == "hevc" else ("matroska", "libx264")

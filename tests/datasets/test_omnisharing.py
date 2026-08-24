@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 import numpy as np
 import pytest
@@ -14,6 +15,7 @@ from daft.datasets.omnisharing import (
     _normalize_dataset_root,
     _sniff_codec,
 )
+from daft.exceptions import DaftCoreException
 from tests.datasets.omnisharing_datagen import (
     JOINT_NAMES,
     N_JOINTS,
@@ -30,6 +32,10 @@ from tests.datasets.omnisharing_datagen import (
 )
 
 pytest.importorskip("h5py", reason="daft[hdf5] extra is required for OmniSharing tests")
+
+# Imported after importorskip so a missing extra skips the module rather than
+# raising ImportError at collection time.
+import h5py
 
 N_FRAMES = 8
 
@@ -103,8 +109,6 @@ def test_normalize_dataset_root_rejects_empty():
 
 @pytest.mark.parametrize("extension", ["hdf5", "h5"])
 def test_episode_filename_regex_matches_both_extensions(extension):
-    import re
-
     assert re.search(_EPISODE_FILENAME_RE, f"episode_1_212953_93_110056_glove.{extension}")
 
 
@@ -406,8 +410,6 @@ def test_audio_mono_downmix_is_exact(tmp_path):
     path = root / episode_filename(1, "212953", 93, 110056)
     write_df2_episode(path, n_frames=4)
 
-    import h5py
-
     with h5py.File(path, "a") as h5:
         samplerate = h5["dataset/observation/audio"].attrs["samplerate"]
         del h5["dataset/observation/audio"]
@@ -425,8 +427,6 @@ def test_audio_mono_handles_waveform_without_channel_axis(tmp_path):
     root = tmp_path / "flat"
     path = root / episode_filename(1, "212953", 93, 110056)
     write_df2_episode(path, n_frames=4)
-
-    import h5py
 
     with h5py.File(path, "a") as h5:
         samplerate = h5["dataset/observation/audio"].attrs["samplerate"]
@@ -498,8 +498,6 @@ def test_audio_zero_length_dataset_reports_zero_samples(tmp_path):
     path = root / episode_filename(1, "212953", 93, 110056)
     write_df2_episode(path, n_frames=4)
 
-    import h5py
-
     with h5py.File(path, "a") as h5:
         del h5["dataset/observation/audio"]
         dataset = h5["dataset/observation"].create_dataset("audio", data=np.empty((0, 1), dtype="float64"))
@@ -514,8 +512,6 @@ def test_audio_without_samplerate_ignores_max_seconds(tmp_path):
     root = tmp_path / "nosr"
     path = root / episode_filename(1, "212953", 93, 110056)
     write_df2_episode(path, n_frames=4)
-
-    import h5py
 
     with h5py.File(path, "a") as h5:
         del h5["dataset/observation/audio"].attrs["samplerate"]
@@ -801,8 +797,6 @@ def test_camera_payloads_still_works_for_undecodable_payload(df2_episodes):
 @pytest.fixture
 def depth_truth(df2_root):
     """The stored aligned_depth array, read directly with h5py."""
-    import h5py
-
     (path,) = df2_root.rglob("*.hdf5")
     with h5py.File(path, "r") as h5:
         return np.asarray(h5["dataset/observation/image/RGBD_0/aligned_depth"][()])
@@ -875,8 +869,6 @@ def test_depth_frames_zero_length_depth_yields_empty(tmp_path):
     path = root / episode_filename(1, "212953", 93, 110056)
     write_df2_episode(path, n_frames=4)
 
-    import h5py
-
     with h5py.File(path, "a") as h5:
         del h5["dataset/observation/image/RGBD_0/aligned_depth"]
         h5["dataset/observation/image/RGBD_0"].create_dataset(
@@ -889,19 +881,34 @@ def test_depth_frames_zero_length_depth_yields_empty(tmp_path):
     assert row["RGBD_0.depth_frame_indices"] is None
 
 
-def test_depth_frames_out_of_range_raises_with_camera_and_bound(df2_episodes):
-    with pytest.raises(IndexError, match=rf"RGBD_0/aligned_depth has {N_FRAMES} frames"):
-        omnisharing.depth_frames(df2_episodes, "RGBD_0", frame_indices=[0, N_FRAMES])
+def test_depth_frames_reads_what_is_available_by_default(df2_episodes, depth_truth):
+    # An index past the end is dropped rather than failing the call, because
+    # episode length varies across a release.
+    (row,) = omnisharing.depth_frames(df2_episodes, "RGBD_0", frame_indices=[0, N_FRAMES]).to_pylist()
+    assert row["RGBD_0.depth_frame_indices"] == [0]
+    np.testing.assert_array_equal(np.asarray(row["RGBD_0.depth"])[0], depth_truth[0])
 
 
-def test_depth_frames_ghost_camera_does_not_mask_a_real_bound(df2_episodes):
-    # A camera with unknown depth length must not suppress the real error.
-    with pytest.raises(IndexError, match="RGBD_0"):
-        omnisharing.depth_frames(df2_episodes, ["RGBD_99", "RGBD_0"], frame_indices=[N_FRAMES + 10])
+def test_depth_frames_strict_fails_the_read(df2_episodes):
+    # strict validates per episode during the read, so the failure surfaces as a
+    # Daft execution error. When every row raises, Daft reports its own
+    # "Need at least 1 series to perform concat" instead of the original
+    # message, so only the failure itself can be asserted here.
+    with pytest.raises(DaftCoreException):
+        omnisharing.depth_frames(df2_episodes, "RGBD_0", frame_indices=[0, N_FRAMES], strict=True).collect()
+
+
+def test_depth_frames_strict_ignores_cameras_without_depth(df2_episodes):
+    # RGBD_99 has no depth at all, which is reported as empty rather than as an
+    # out-of-range error even under strict.
+    (row,) = omnisharing.depth_frames(df2_episodes, "RGBD_99", strict=True).to_pylist()
+    assert np.asarray(row["RGBD_99.depth"]).size == 0
 
 
 @pytest.mark.parametrize("frame_indices", [-1, [-1], [0, -2]])
 def test_depth_frames_rejects_negative_indices(df2_episodes, frame_indices):
+    # Negative indices are a caller error regardless of episode contents, so
+    # they are rejected before any file is opened.
     with pytest.raises(IndexError, match="non-negative"):
         omnisharing.depth_frames(df2_episodes, "RGBD_0", frame_indices=frame_indices)
 
@@ -913,20 +920,35 @@ def test_depth_frames_rejects_empty_arguments(df2_episodes):
         omnisharing.depth_frames(df2_episodes, "RGBD_0", frame_indices=[])
 
 
-def test_depth_frames_shorter_episode_degrades_gracefully(tmp_path):
+@pytest.fixture
+def uneven_episodes(tmp_path):
+    """Two episodes of differing length: 8 frames and 3 frames."""
     root = tmp_path / "uneven"
     write_df2_episode(root / episode_filename(1, "212953", 93, 110056), n_frames=8)
     write_df2_episode(root / episode_filename(2, "213630", 115, 110092), n_frames=3)
+    return omnisharing.raw(str(root))
 
-    # Bounds are probed from the first episode, so a shorter one must clamp
-    # rather than fail mid-execution.
-    rows = (
-        omnisharing.depth_frames(omnisharing.raw(str(root)), "RGBD_0", frame_indices=[0, 5])
-        .sort("episode_key")
-        .to_pylist()
-    )
+
+def test_depth_frames_shorter_episode_degrades_gracefully(uneven_episodes):
+    rows = omnisharing.depth_frames(uneven_episodes, "RGBD_0", frame_indices=[0, 5]).sort("episode_key").to_pylist()
+    # Each episode reads the frames it actually has.
     assert [np.asarray(r["RGBD_0.depth"]).shape[0] for r in rows] == [2, 1]
     assert [r["RGBD_0.depth_frame_indices"] for r in rows] == [[0, 5], [0]]
+
+
+@pytest.mark.parametrize("descending", [False, True])
+def test_depth_frames_result_is_independent_of_episode_order(uneven_episodes, descending):
+    # Regression: bounds were once probed from whichever episode happened to be
+    # scanned first, so the same call succeeded or raised depending on file
+    # discovery order -- which differs between platforms.
+    ordered = uneven_episodes.sort("episode_key", desc=descending)
+    rows = omnisharing.depth_frames(ordered, "RGBD_0", frame_indices=[0, 5]).sort("episode_key").to_pylist()
+    assert [r["RGBD_0.depth_frame_indices"] for r in rows] == [[0, 5], [0]]
+
+
+def test_depth_frames_strict_raises_on_the_shorter_episode(uneven_episodes):
+    with pytest.raises(DaftCoreException, match="RGBD_0/aligned_depth has 3 frames"):
+        omnisharing.depth_frames(uneven_episodes, "RGBD_0", frame_indices=[0, 5], strict=True).collect()
 
 
 def test_depth_frames_deduplicates_camera_names(df2_episodes):
@@ -960,8 +982,6 @@ def test_stereo_extrinsics_parses_the_transform(df2_episodes):
 
 
 def test_stereo_extrinsics_matches_the_bytes_on_disk(df2_root):
-    import h5py
-
     (path,) = df2_root.rglob("*.hdf5")
     with h5py.File(path, "r") as h5:
         blob = h5["dataset/observation/image/RGBD_0/inner_extrinsic"][()][0]
@@ -994,8 +1014,6 @@ def test_stereo_extrinsics_missing_dataset_yields_empty(tmp_path):
     path = root / episode_filename(1, "212953", 93, 110056)
     write_df2_episode(path, n_frames=4)
 
-    import h5py
-
     with h5py.File(path, "a") as h5:
         del h5["dataset/observation/image/RGBD_0/inner_extrinsic"]
 
@@ -1024,8 +1042,6 @@ def test_stereo_extrinsics_malformed_json_yields_empty(tmp_path, label, payload)
     path = root / episode_filename(1, "212953", 93, 110056)
     write_df2_episode(path, n_frames=4)
 
-    import h5py
-
     with h5py.File(path, "a") as h5:
         del h5["dataset/observation/image/RGBD_0/inner_extrinsic"]
         h5["dataset/observation/image/RGBD_0"].create_dataset("inner_extrinsic", data=np.array([payload]))
@@ -1039,8 +1055,6 @@ def test_stereo_extrinsics_recovers_calib_date_without_a_matrix(tmp_path):
     root = tmp_path / "partial"
     path = root / episode_filename(1, "212953", 93, 110056)
     write_df2_episode(path, n_frames=4)
-
-    import h5py
 
     with h5py.File(path, "a") as h5:
         del h5["dataset/observation/image/RGBD_0/inner_extrinsic"]
@@ -1175,8 +1189,6 @@ def test_frames_tolerates_absent_camera(df2_episodes):
 
 
 def test_frames_aligns_rgbd_eyes_on_their_own_clocks(df2_root):
-    import h5py
-
     (path,) = df2_root.rglob("*.hdf5")
     with h5py.File(path, "r") as h5:
         group = h5["dataset/observation/image/RGBD_0"]
@@ -1234,8 +1246,6 @@ def test_frames_falls_back_to_camera_clock_when_eye_clock_is_absent(tmp_path):
     path = root / episode_filename(1, "212953", 93, 110056)
     write_df2_episode(path, n_frames=8)
 
-    import h5py
-
     with h5py.File(path, "a") as h5:
         del h5["dataset/observation/image/RGBD_0/left_timestamp"]
 
@@ -1257,8 +1267,6 @@ def test_cameras_falls_back_to_camera_clock_when_eye_clock_is_absent(tmp_path):
     root = tmp_path / "noeye_cameras"
     path = root / episode_filename(1, "212953", 93, 110056)
     write_df2_episode(path, n_frames=8)
-
-    import h5py
 
     with h5py.File(path, "a") as h5:
         del h5["dataset/observation/image/RGBD_0/left_timestamp"]
