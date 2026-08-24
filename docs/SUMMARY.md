@@ -34,6 +34,7 @@
         * [Common Crawl](datasets/common-crawl.md)
         * [LeRobot](datasets/lerobot.md)
         * [DROID](datasets/droid.md)
+        * [PX OmniSharing](datasets/omnisharing.md)
     * Data Connectors
         * [Overview](connectors/index.md)
         * Object Storage
