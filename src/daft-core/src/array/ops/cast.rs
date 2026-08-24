@@ -1012,6 +1012,10 @@ impl TensorArray {
                 let mut heights = Vec::<u32>::with_capacity(num_rows);
                 let mut widths = Vec::<u32>::with_capacity(num_rows);
                 let mut modes = Vec::<u8>::with_capacity(num_rows);
+                // Track whether all images share the same mode, so that the type-level
+                // mode can be inferred for a mode-agnostic cast target.
+                let mut uniform_mode = *mode;
+                let mut modes_mixed = false;
                 let da = self.data_array();
                 let nulls = da.nulls();
                 for i in 0..num_rows {
@@ -1056,11 +1060,26 @@ impl TensorArray {
                             .expect("Number of channels should fit into a uint8"),
                     );
 
-                    modes.push(mode.unwrap_or(ImageMode::try_from_num_channels(
+                    let row_mode = mode.unwrap_or(ImageMode::try_from_num_channels(
                         shape[2].try_into().unwrap(),
-                        &DataType::UInt8,
-                    )?) as u8);
+                        inner_dtype,
+                    )?);
+                    if !modes_mixed {
+                        match uniform_mode {
+                            Some(prev) if prev != row_mode => modes_mixed = true,
+                            None => uniform_mode = Some(row_mode),
+                            _ => {}
+                        }
+                    }
+                    modes.push(row_mode as u8);
                 }
+                // Infer the type-level mode if all images share the same mode.
+                let inferred_dtype = DataType::Image(uniform_mode);
+                let dtype = if mode.is_none() && !modes_mixed {
+                    &inferred_dtype
+                } else {
+                    dtype
+                };
                 Ok(ImageArray::from_list_array(
                     self.name(),
                     dtype.clone(),
