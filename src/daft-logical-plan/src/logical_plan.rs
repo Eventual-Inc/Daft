@@ -621,9 +621,12 @@ impl LogicalPlan {
                 Self::Limit(Limit {
                     limit,
                     offset,
+                    local,
                     eager,
                     ..
-                }) => Self::Limit(Limit::new(input.clone(), *limit, *offset, *eager)),
+                }) => Self::Limit(
+                    Limit::new(input.clone(), *limit, *offset, *eager).with_local(*local),
+                ),
                 Self::Offset(Offset { offset, .. }) => {
                     Self::Offset(Offset::new(input.clone(), *offset))
                 }

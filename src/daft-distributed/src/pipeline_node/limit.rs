@@ -86,6 +86,12 @@ pub(crate) struct LimitNode {
     context: PipelineNodeContext,
     limit: u64,
     offset: Option<u64>,
+    // When true this is a "local" (per-partition) limit that sits below a
+    // row-preserving operator with a global limit strictly above it. It is
+    // lowered to a plain per-partition local limit instead of the coordinated
+    // DistributedLimit, which would deadlock when a shuffle sits directly above
+    // it. The outer global limit performs the exact final cut.
+    is_local: bool,
     child: DistributedPipelineNode,
 }
 
@@ -97,6 +103,7 @@ impl LimitNode {
         plan_config: &PlanConfig,
         limit: usize,
         offset: Option<usize>,
+        is_local: bool,
         schema: SchemaRef,
         child: DistributedPipelineNode,
     ) -> Self {
@@ -118,6 +125,7 @@ impl LimitNode {
             context,
             limit: limit as u64,
             offset: offset.map(|o| o as u64),
+            is_local,
             child,
         }
     }
@@ -225,6 +233,26 @@ impl PipelineNodeImpl for LimitNode {
         plan_context: &mut PlanExecutionContext,
     ) -> TaskBuilderStream {
         let input_stream = self.child.clone().produce_tasks(plan_context);
+
+        // Local (per-partition) limit: no cross-partition coordination needed,
+        // so lower to a plain per-partition limit like Filter does. This is both
+        // sufficient (a global limit sits strictly above us and makes the exact
+        // cut) and necessary (the coordinated DistributedLimit deadlocks when a
+        // shuffle is scheduled directly above it).
+        if self.is_local {
+            let limit = self.limit;
+            let offset = self.offset;
+            let node_id = self.node_id();
+            return input_stream.pipeline_instruction(self, move |input| {
+                LocalPhysicalPlan::limit(
+                    input,
+                    limit,
+                    offset,
+                    StatsState::NotMaterialized,
+                    LocalNodeContext::new(Some(node_id as usize)),
+                )
+            });
+        }
 
         #[cfg(feature = "python")]
         {
