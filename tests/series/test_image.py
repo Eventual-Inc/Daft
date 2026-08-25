@@ -105,6 +105,18 @@ def test_image_round_trip(give_mode):
     np.testing.assert_equal(t_copy.to_pylist(), t.to_pylist())
 
 
+def test_cast_image_with_unknown_mode_keeps_type_unknown():
+    # Casting a uniform tensor column to Image(None) keeps the type-level mode
+    # unknown: refining it to Image(mode) would violate the plan-time/runtime
+    # dtype equality invariant enforced during expression evaluation.
+    arr = np.arange(12, dtype=np.uint8).reshape((3, 2, 2))
+    s = Series.from_pylist([arr, arr, None])
+
+    t = s.cast(DataType.image())
+
+    assert t.datatype() == DataType.image()
+
+
 def test_fixed_shape_image_round_trip():
     height = 2
     width = 2
@@ -271,12 +283,7 @@ def test_image_encode_pil(fixed_shape, mode, file_format):
 
     s = Series.from_pylist(arrs)
     t = s.cast(dtype)
-    if fixed_shape:
-        assert t.datatype() == dtype
-    else:
-        # The mode is inferred at the type level when all images share the same mode,
-        # even if their shapes differ.
-        assert t.datatype() == DataType.image(mode)
+    assert t.datatype() == dtype
 
     u = t.image.encode(file_format.upper())
     pil_imgs = [Image.open(io.BytesIO(bytes_)) if bytes_ is not None else None for bytes_ in u.to_pylist()]
@@ -471,10 +478,12 @@ def test_image_encode_opencv(mode, file_format):
     arrs = [arr, arr, arr]
 
     s = Series.from_pylist(arrs)
-    # The mode can be left unknown at construction time and is inferred from the
-    # known pixel dtype when all images share the same mode.
-    t = s.cast(DataType.image())
+    t = s.cast(DataType.image(mode))
     assert t.datatype() == DataType.image(mode)
+    # TODO(Clark): Support constructing an Image type with an unknown mode by known dtype.
+    if np_dtype == np.uint8:
+        # TODO(Clark): Infer type-leve mode if all images are the same mode.
+        assert t.datatype() == DataType.image(mode)
 
     u = t.image.encode(file_format.upper())
     opencv_decoded_imgs = [
