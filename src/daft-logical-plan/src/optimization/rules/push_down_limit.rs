@@ -198,8 +198,61 @@ impl PushDownLimit {
 
                         Ok(Transformed::yes(new_plan))
                     }
-                    LogicalPlan::Join(_)
-                    | LogicalPlan::AsofJoin(_)
+                    // Push limit onto the row-preserving side(s) of a join.
+                    //
+                    // For a Left/Outer join every left row produces at least one
+                    // output row, so a limit can be pushed onto the left input; for
+                    // a Right/Outer join the same holds for the right input. The
+                    // outer Limit is kept to perform the final trim. Inner/Anti/Semi
+                    // joins are not row-preserving on either side, so they are no-ops.
+                    LogicalPlan::Join(join) => {
+                        // The number of rows that could be relevant to the output is
+                        // limit + offset (rows that are skipped still need to exist).
+                        let pushdown_limit = (limit + offset.unwrap_or(0) as usize) as u64;
+                        let push_left = join.join_type.right_produces_nulls();
+                        let push_right = join.join_type.left_produces_nulls();
+                        if !push_left && !push_right {
+                            return Ok(Transformed::no(plan));
+                        }
+                        // Wrap `child` in a Limit unless it is already limited to an
+                        // equal-or-smaller number of rows (guards against re-pushing
+                        // on subsequent optimizer passes).
+                        let make_limited = |child: &Arc<LogicalPlan>| -> Option<Arc<LogicalPlan>> {
+                            if let LogicalPlan::Limit(LogicalLimit {
+                                limit: child_limit,
+                                offset: None,
+                                ..
+                            }) = child.as_ref()
+                                && *child_limit <= pushdown_limit
+                            {
+                                return None;
+                            }
+                            Some(Arc::new(LogicalPlan::Limit(LogicalLimit::new(
+                                child.clone(),
+                                pushdown_limit,
+                                None,
+                                *eager,
+                            ))))
+                        };
+                        let new_left = if push_left {
+                            make_limited(&join.left)
+                        } else {
+                            None
+                        };
+                        let new_right = if push_right {
+                            make_limited(&join.right)
+                        } else {
+                            None
+                        };
+                        if new_left.is_none() && new_right.is_none() {
+                            return Ok(Transformed::no(plan));
+                        }
+                        let left_child = new_left.unwrap_or_else(|| join.left.clone());
+                        let right_child = new_right.unwrap_or_else(|| join.right.clone());
+                        let new_join = input.with_new_children(&[left_child, right_child]).into();
+                        Ok(Transformed::yes(plan.with_new_children(&[new_join]).into()))
+                    }
+                    LogicalPlan::AsofJoin(_)
                     | LogicalPlan::Filter(_)
                     | LogicalPlan::Distinct(_)
                     | LogicalPlan::Offset(_)
@@ -473,6 +526,269 @@ mod tests {
         .into_batches(batch_size)?
         .build();
         assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// Tests that Limit pushes onto the (preserved) left side of a Left join.
+    ///
+    /// Limit-LeftJoin(l, r) -> Limit-LeftJoin(Limit-l, r)
+    #[test]
+    fn limit_pushes_into_left_side_of_left_join() -> DaftResult<()> {
+        let limit = 5;
+        let left_scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ]);
+        let right_scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("c", DataType::Utf8),
+        ]);
+        let plan = dummy_scan_node(left_scan_op.clone())
+            .join(
+                dummy_scan_node(right_scan_op.clone()),
+                None,
+                vec!["a".to_string()],
+                JoinType::Left,
+                None,
+                Default::default(),
+            )?
+            .limit(limit, false)?
+            .build();
+        let expected = dummy_scan_node_with_pushdowns(
+            left_scan_op,
+            Pushdowns::default().with_limit(Some(limit as usize)),
+        )
+        .limit(limit, false)?
+        .join(
+            dummy_scan_node(right_scan_op),
+            None,
+            vec!["a".to_string()],
+            JoinType::Left,
+            None,
+            Default::default(),
+        )?
+        .limit(limit, false)?
+        .build();
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// Tests that Limit pushes onto the (preserved) right side of a Right join.
+    ///
+    /// Limit-RightJoin(l, r) -> Limit-RightJoin(l, Limit-r)
+    #[test]
+    fn limit_pushes_into_right_side_of_right_join() -> DaftResult<()> {
+        let limit = 5;
+        let left_scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ]);
+        let right_scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("c", DataType::Utf8),
+        ]);
+        let plan = dummy_scan_node(left_scan_op.clone())
+            .join(
+                dummy_scan_node(right_scan_op.clone()),
+                None,
+                vec!["a".to_string()],
+                JoinType::Right,
+                None,
+                Default::default(),
+            )?
+            .limit(limit, false)?
+            .build();
+        let expected = dummy_scan_node(left_scan_op)
+            .join(
+                dummy_scan_node_with_pushdowns(
+                    right_scan_op,
+                    Pushdowns::default().with_limit(Some(limit as usize)),
+                )
+                .limit(limit, false)?,
+                None,
+                vec!["a".to_string()],
+                JoinType::Right,
+                None,
+                Default::default(),
+            )?
+            .limit(limit, false)?
+            .build();
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// Tests that Limit pushes onto both (preserved) sides of an Outer join.
+    ///
+    /// Limit-OuterJoin(l, r) -> Limit-OuterJoin(Limit-l, Limit-r)
+    #[test]
+    fn limit_pushes_into_both_sides_of_outer_join() -> DaftResult<()> {
+        let limit = 5;
+        let left_scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ]);
+        let right_scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("c", DataType::Utf8),
+        ]);
+        let plan = dummy_scan_node(left_scan_op.clone())
+            .join(
+                dummy_scan_node(right_scan_op.clone()),
+                None,
+                vec!["a".to_string()],
+                JoinType::Outer,
+                None,
+                Default::default(),
+            )?
+            .limit(limit, false)?
+            .build();
+        let expected = dummy_scan_node_with_pushdowns(
+            left_scan_op,
+            Pushdowns::default().with_limit(Some(limit as usize)),
+        )
+        .limit(limit, false)?
+        .join(
+            dummy_scan_node_with_pushdowns(
+                right_scan_op,
+                Pushdowns::default().with_limit(Some(limit as usize)),
+            )
+            .limit(limit, false)?,
+            None,
+            vec!["a".to_string()],
+            JoinType::Outer,
+            None,
+            Default::default(),
+        )?
+        .limit(limit, false)?
+        .build();
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// Tests that Limit with an offset pushes `limit + offset` onto the preserved
+    /// side while retaining the original offset on the outer Limit.
+    ///
+    /// Limit[l, o]-LeftJoin(l, r) -> Limit[l, o]-LeftJoin(Limit[l+o]-l, r)
+    #[test]
+    fn limit_with_offset_pushes_limit_plus_offset_through_left_join() -> DaftResult<()> {
+        let limit = 5;
+        let offset = 3;
+        let pushed = limit + offset;
+        let left_scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ]);
+        let right_scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("c", DataType::Utf8),
+        ]);
+        let plan = dummy_scan_node(left_scan_op.clone())
+            .join(
+                dummy_scan_node(right_scan_op.clone()),
+                None,
+                vec!["a".to_string()],
+                JoinType::Left,
+                None,
+                Default::default(),
+            )?
+            .limit_with_offset(limit, Some(offset), false)?
+            .build();
+        let expected = dummy_scan_node_with_pushdowns(
+            left_scan_op,
+            Pushdowns::default().with_limit(Some(pushed as usize)),
+        )
+        .limit(pushed, false)?
+        .join(
+            dummy_scan_node(right_scan_op),
+            None,
+            vec!["a".to_string()],
+            JoinType::Left,
+            None,
+            Default::default(),
+        )?
+        .limit_with_offset(limit, Some(offset), false)?
+        .build();
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// Tests that Limit does not re-wrap a preserved side that is already limited
+    /// to an equal-or-smaller number of rows (idempotency guard).
+    #[test]
+    fn limit_does_not_rewrap_already_smaller_limit_on_left_join() -> DaftResult<()> {
+        let limit = 5;
+        let existing_limit = 2;
+        let left_scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ]);
+        let right_scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("c", DataType::Utf8),
+        ]);
+        let plan = dummy_scan_node(left_scan_op.clone())
+            .limit(existing_limit, false)?
+            .join(
+                dummy_scan_node(right_scan_op.clone()),
+                None,
+                vec!["a".to_string()],
+                JoinType::Left,
+                None,
+                Default::default(),
+            )?
+            .limit(limit, false)?
+            .build();
+        // The existing (smaller) limit is preserved and merely pushed into the
+        // source; no additional Limit is added around the left input.
+        let expected = dummy_scan_node_with_pushdowns(
+            left_scan_op,
+            Pushdowns::default().with_limit(Some(existing_limit as usize)),
+        )
+        .limit(existing_limit, false)?
+        .join(
+            dummy_scan_node(right_scan_op),
+            None,
+            vec!["a".to_string()],
+            JoinType::Left,
+            None,
+            Default::default(),
+        )?
+        .limit(limit, false)?
+        .build();
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// Tests that Limit does not push through joins that are not row-preserving on
+    /// either side (Inner/Anti/Semi).
+    #[rstest]
+    #[case(JoinType::Inner)]
+    #[case(JoinType::Anti)]
+    #[case(JoinType::Semi)]
+    fn limit_does_not_push_through_non_preserving_join(
+        #[case] join_type: JoinType,
+    ) -> DaftResult<()> {
+        let limit = 5;
+        let left_scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ]);
+        let right_scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("c", DataType::Utf8),
+        ]);
+        let plan = dummy_scan_node(left_scan_op)
+            .join(
+                dummy_scan_node(right_scan_op),
+                None,
+                vec!["a".to_string()],
+                join_type,
+                None,
+                Default::default(),
+            )?
+            .limit(limit, false)?
+            .build();
+        assert_optimized_plan_eq(plan.clone(), plan)?;
         Ok(())
     }
 }
