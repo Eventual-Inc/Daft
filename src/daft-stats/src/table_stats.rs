@@ -11,6 +11,7 @@ use daft_core::prelude::*;
 use daft_dsl::{
     Column, Expr, ExprRef,
     expr::{BoundColumn, bound_expr::BoundExpr},
+    functions::scalar::ScalarFn,
     null_lit, resolved_col,
 };
 use daft_recordbatch::RecordBatch;
@@ -157,6 +158,45 @@ impl TableStatistics {
                     stats.cast(dtype)
                 }
             }
+            // `starts_with(col, prefix)` is exactly equivalent to the half-open
+            // lexicographic range `prefix <= col < increment(prefix)`, so we can
+            // use min/max column statistics to prune row groups / scan tasks whose
+            // range does not overlap the prefix. This mirrors how mature engines
+            // (e.g. Spark's `StringStartsWith`) push prefix predicates into
+            // column-statistics-based data skipping.
+            Expr::ScalarFn(ScalarFn::Builtin(func)) if func.name() == "starts_with" => {
+                let args: Vec<&ExprRef> = func.inputs.iter().map(|arg| arg.inner()).collect();
+                // Expect exactly `starts_with(input, prefix)`.
+                if args.len() != 2 {
+                    return Ok(ColumnRangeStatistics::Missing);
+                }
+                // The prefix must be a non-empty Utf8 literal; anything else
+                // (column, non-string literal, empty prefix) yields no useful
+                // bound, so we conservatively return Missing (never prune).
+                let prefix = match args[1].as_ref() {
+                    Expr::Literal(Literal::Utf8(s)) if !s.is_empty() => s.clone(),
+                    _ => return Ok(ColumnRangeStatistics::Missing),
+                };
+
+                let col_stats = self.eval_expression(&BoundExpr::new_unchecked(args[0].clone()))?;
+
+                // Lower bound: col >= prefix
+                let lower: ColumnRangeStatistics = Literal::Utf8(prefix.clone()).try_into()?;
+                let ge = col_stats.gte(&lower)?;
+
+                match increment_utf8_prefix(&prefix) {
+                    // Upper bound exists: col < increment(prefix)
+                    Some(upper) => {
+                        let upper: ColumnRangeStatistics = Literal::Utf8(upper).try_into()?;
+                        let lt = col_stats.lt(&upper)?;
+                        ge.bitand(&lt)
+                    }
+                    // Prefix is all max-value characters: no valid exclusive upper
+                    // bound exists, so fall back to the lower-bound-only test. This
+                    // is still sound (it just prunes less).
+                    None => Ok(ge),
+                }
+            }
             _ => Ok(ColumnRangeStatistics::Missing),
         }
     }
@@ -208,6 +248,53 @@ impl TableStatistics {
     }
 }
 
+/// Compute the lexicographically-next string prefix, used as the exclusive upper
+/// bound when pruning with `starts_with(col, prefix)`:
+/// `prefix <= col < increment_utf8_prefix(prefix)`.
+///
+/// It increments the right-most Unicode scalar value that can be incremented
+/// (walking right to left), dropping any trailing characters already at their
+/// maximum. Returns `None` when every character is at the maximum scalar value,
+/// in which case the caller should fall back to a lower-bound-only range.
+///
+/// # UTF-8 / Unicode ordering
+///
+/// This operates on Unicode scalar values (chars), not bytes. Because UTF-8 byte
+/// ordering matches Unicode code point ordering, incrementing a char's code point
+/// produces the correct lexicographic successor for byte-wise string comparison.
+///
+/// Examples:
+/// - `"abc"`  -> `Some("abd")`
+/// - `"café"` -> `Some("cafê")`  (é U+00E9 -> ê U+00EA)
+/// - `"az"` with a max last char is handled by carrying to the previous char.
+fn increment_utf8_prefix(prefix: &str) -> Option<String> {
+    let chars: Vec<char> = prefix.chars().collect();
+    for i in (0..chars.len()).rev() {
+        if let Some(next) = next_unicode_scalar(chars[i]) {
+            let mut result: String = chars[..i].iter().collect();
+            result.push(next);
+            return Some(result);
+        }
+        // chars[i] is at the maximum scalar value; drop it and carry left.
+    }
+    // Every character was at the maximum scalar value.
+    None
+}
+
+/// Return the next valid Unicode scalar value after `c`, skipping the surrogate
+/// range (U+D800..=U+DFFF) which is not valid in UTF-8. Returns `None` when `c`
+/// is already the maximum scalar value (U+10FFFF).
+fn next_unicode_scalar(c: char) -> Option<char> {
+    let next = (c as u32).checked_add(1)?;
+    // Skip the surrogate range, which does not contain valid `char`s.
+    let next = if (0xD800..=0xDFFF).contains(&next) {
+        0xE000
+    } else {
+        next
+    };
+    char::from_u32(next)
+}
+
 impl Display for TableStatistics {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let columns = self
@@ -245,6 +332,7 @@ mod test {
 
     use daft_core::prelude::*;
     use daft_dsl::{Expr, expr::bound_expr::BoundExpr, lit, null_lit, resolved_col};
+    use daft_functions_utf8::{endswith, startswith};
     use daft_recordbatch::RecordBatch;
     use snafu::ResultExt;
 
@@ -391,6 +479,104 @@ mod test {
 
         // col > 12 → Maybe (12 is within [10, 20], some values satisfy, some don't)
         let expr = BoundExpr::try_new(resolved_col("a").gt(lit(12i64)), &table.schema)
+            .context(DaftCoreComputeSnafu)?;
+        let result = table_stats.eval_expression(&expr)?;
+        assert_eq!(result.to_truth_value(), TruthValue::Maybe);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_startswith_prunes_when_prefix_outside_range() -> crate::Result<()> {
+        // Stats: min="apple", max="avocado". Predicate: starts_with(col, "b")
+        // is equivalent to "b" <= col < "c"; the entire [apple, avocado] range
+        // is below "b", so the row group must be pruned (False).
+        let table = RecordBatch::from_nonempty_columns(vec![
+            Utf8Array::from_slice("s", &["apple", "avocado"]).into_series(),
+        ])
+        .unwrap();
+        let table_stats = TableStatistics::from_table(&table);
+
+        let expr = BoundExpr::try_new(startswith(resolved_col("s"), lit("b")), &table.schema)
+            .context(DaftCoreComputeSnafu)?;
+        let result = table_stats.eval_expression(&expr)?;
+        assert_eq!(result.to_truth_value(), TruthValue::False);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_startswith_maybe_when_prefix_in_range() -> crate::Result<()> {
+        // Stats: min="apple", max="cherry". starts_with(col, "b") maps to the
+        // range ["b", "c"), which overlaps [apple, cherry], so we cannot prune
+        // and must return Maybe (some row groups may contain matches).
+        let table = RecordBatch::from_nonempty_columns(vec![
+            Utf8Array::from_slice("s", &["apple", "banana", "cherry"]).into_series(),
+        ])
+        .unwrap();
+        let table_stats = TableStatistics::from_table(&table);
+
+        let expr = BoundExpr::try_new(startswith(resolved_col("s"), lit("b")), &table.schema)
+            .context(DaftCoreComputeSnafu)?;
+        let result = table_stats.eval_expression(&expr)?;
+        assert_eq!(result.to_truth_value(), TruthValue::Maybe);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_startswith_all_max_prefix_falls_back_to_lower_bound() -> crate::Result<()> {
+        // A prefix consisting solely of the maximum Unicode scalar has no valid
+        // exclusive upper bound, so we degrade to the lower-bound-only test
+        // (col >= prefix). Here max="z" < prefix, so the lower-bound test alone
+        // is enough to soundly prune the group (False).
+        let table = RecordBatch::from_nonempty_columns(vec![
+            Utf8Array::from_slice("s", &["a", "z"]).into_series(),
+        ])
+        .unwrap();
+        let table_stats = TableStatistics::from_table(&table);
+
+        let expr = BoundExpr::try_new(
+            startswith(resolved_col("s"), lit("\u{10FFFF}")),
+            &table.schema,
+        )
+        .context(DaftCoreComputeSnafu)?;
+        let result = table_stats.eval_expression(&expr)?;
+        assert_eq!(result.to_truth_value(), TruthValue::False);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_startswith_empty_prefix_never_prunes() -> crate::Result<()> {
+        // An empty prefix matches everything, so it yields no useful bound and
+        // must return Missing (Maybe) rather than pruning anything.
+        let table = RecordBatch::from_nonempty_columns(vec![
+            Utf8Array::from_slice("s", &["apple", "avocado"]).into_series(),
+        ])
+        .unwrap();
+        let table_stats = TableStatistics::from_table(&table);
+
+        let expr = BoundExpr::try_new(startswith(resolved_col("s"), lit("")), &table.schema)
+            .context(DaftCoreComputeSnafu)?;
+        let result = table_stats.eval_expression(&expr)?;
+        assert_eq!(result.to_truth_value(), TruthValue::Maybe);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_endswith_is_not_handled_and_stays_maybe() -> crate::Result<()> {
+        // Only starts_with has a sound range mapping. ends_with (and other
+        // string predicates) must fall through to Missing/Maybe so they never
+        // incorrectly prune a row group.
+        let table = RecordBatch::from_nonempty_columns(vec![
+            Utf8Array::from_slice("s", &["apple", "avocado"]).into_series(),
+        ])
+        .unwrap();
+        let table_stats = TableStatistics::from_table(&table);
+
+        let expr = BoundExpr::try_new(endswith(resolved_col("s"), lit("b")), &table.schema)
             .context(DaftCoreComputeSnafu)?;
         let result = table_stats.eval_expression(&expr)?;
         assert_eq!(result.to_truth_value(), TruthValue::Maybe);
