@@ -24,8 +24,9 @@ hf-xet = "1.5"
 home = "0.5.12"
 itertools = {workspace = true}
 log = {workspace = true}
-opendal = {version = "0.57", default-features = false, features = [
+opendal = {version = "0.58", default-features = false, features = [
   "executors-tokio",  # Use tokio for async execution
+  "http-transport-reqwest",  # Reqwest HTTP transport (required for cloud services in 0.58+)
   "services-oss",  # Alibaba Cloud Object Storage Service
   "services-cos",  # Tencent Cloud Object Storage
   "services-obs",  # Huawei Cloud Object Storage
@@ -59,6 +60,7 @@ md5 = "0.8.0"
 tempfile = "3.23.0"
 
 [features]
+hdfs = ["opendal/services-hdfs"]
 python = [
   "dep:pyo3",
   "common-error/python",

@@ -2,6 +2,7 @@
 mod tests {
     use std::{
         any::Any,
+        collections::VecDeque,
         sync::{Arc, Mutex},
     };
 
@@ -9,10 +10,10 @@ mod tests {
     use async_trait::async_trait;
     use bytes::Bytes;
     use common_file_formats::FileFormat;
-    use futures::{StreamExt, stream::BoxStream};
+    use futures::{StreamExt, TryStreamExt, stream::BoxStream};
 
     use crate::{
-        Error, FileMetadata, GetRange, GetResult, IOStatsRef, ObjectSource, Result,
+        Error, FileMetadata, FileType, GetRange, GetResult, IOStatsRef, ObjectSource, Result,
         object_io::{LSResult, StreamingRetryParams},
     };
 
@@ -37,6 +38,10 @@ mod tests {
         fail_get_remaining: Mutex<usize>,
         // the total received get requests
         requests: Arc<Mutex<Vec<Option<GetRange>>>>,
+        // Predetermined listing pages returned by ls().
+        ls_pages: Mutex<VecDeque<LSResult>>,
+        // The continuation token supplied to each ls() request.
+        ls_requests: Arc<Mutex<Vec<Option<String>>>>,
     }
 
     impl MockSource {
@@ -48,7 +53,14 @@ mod tests {
                 fail_error: MockFailError::UnableToReadBytes,
                 fail_get_remaining: Mutex::new(0),
                 requests: Arc::new(Mutex::new(Vec::new())),
+                ls_pages: Mutex::new(VecDeque::new()),
+                ls_requests: Arc::new(Mutex::new(Vec::new())),
             }
+        }
+
+        fn with_ls_pages(self, pages: Vec<LSResult>) -> Self {
+            *self.ls_pages.lock().unwrap() = pages.into();
+            self
         }
 
         fn with_fail_error(mut self, err: MockFailError) -> Self {
@@ -164,18 +176,113 @@ mod tests {
             &self,
             _path: &str,
             _posix: bool,
-            _continuation_token: Option<&str>,
+            continuation_token: Option<&str>,
             _page_size: Option<i32>,
             _io_stats: Option<IOStatsRef>,
         ) -> Result<LSResult> {
-            Err(Error::NotImplementedSource {
-                store: "mock".to_string(),
+            self.ls_requests
+                .lock()
+                .unwrap()
+                .push(continuation_token.map(str::to_owned));
+
+            let page = self.ls_pages.lock().unwrap().pop_front();
+            page.ok_or_else(|| Error::NotImplementedSource {
+                store: "mock ls page was not configured".to_string(),
             })
         }
 
         fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
             self
         }
+    }
+
+    fn mock_ls_result(
+        files: Vec<FileMetadata>,
+        continuation_token: Option<&str>,
+        not_found_if_empty: bool,
+    ) -> LSResult {
+        LSResult {
+            files,
+            continuation_token: continuation_token.map(str::to_owned),
+            not_found_if_empty,
+        }
+    }
+
+    fn mock_file(path: &str) -> FileMetadata {
+        FileMetadata {
+            filepath: path.to_string(),
+            size: Some(10),
+            filetype: FileType::File,
+        }
+    }
+
+    async fn collect_iter_dir(source: &MockSource) -> Result<Vec<FileMetadata>> {
+        let stream = source
+            .iter_dir("mock://bucket/directory", true, None, None)
+            .await?;
+        stream.try_collect().await
+    }
+
+    #[tokio::test]
+    async fn test_iter_dir_follows_token_after_empty_page() {
+        let expected_file = mock_file("mock://bucket/directory/file.parquet");
+        let source = MockSource::new(Vec::new(), 1, None).with_ls_pages(vec![
+            mock_ls_result(Vec::new(), Some("page-2"), true),
+            mock_ls_result(vec![expected_file.clone()], None, true),
+        ]);
+
+        let files = collect_iter_dir(&source).await.unwrap();
+
+        assert_eq!(files, vec![expected_file]);
+        assert_eq!(
+            *source.ls_requests.lock().unwrap(),
+            vec![None, Some("page-2".to_string())]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_iter_dir_remembers_files_from_earlier_pages() {
+        let expected_file = mock_file("mock://bucket/directory/file.parquet");
+        let source = MockSource::new(Vec::new(), 1, None).with_ls_pages(vec![
+            mock_ls_result(vec![expected_file.clone()], Some("page-2"), true),
+            mock_ls_result(Vec::new(), None, true),
+        ]);
+
+        let files = collect_iter_dir(&source).await.unwrap();
+
+        assert_eq!(files, vec![expected_file]);
+    }
+
+    #[tokio::test]
+    async fn test_iter_dir_returns_not_found_after_all_pages_are_empty() {
+        let source = MockSource::new(Vec::new(), 1, None).with_ls_pages(vec![
+            mock_ls_result(Vec::new(), Some("page-2"), true),
+            mock_ls_result(Vec::new(), None, true),
+        ]);
+
+        let result = collect_iter_dir(&source).await;
+
+        assert!(matches!(result, Err(Error::NotFound { .. })));
+        assert_eq!(
+            *source.ls_requests.lock().unwrap(),
+            vec![None, Some("page-2".to_string())]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_iter_dir_allows_empty_result_when_source_policy_allows_it() {
+        let source = MockSource::new(Vec::new(), 1, None).with_ls_pages(vec![
+            mock_ls_result(Vec::new(), Some("page-2"), false),
+            mock_ls_result(Vec::new(), None, false),
+        ]);
+
+        let files = collect_iter_dir(&source).await.unwrap();
+
+        assert!(files.is_empty());
+        assert_eq!(
+            *source.ls_requests.lock().unwrap(),
+            vec![None, Some("page-2".to_string())]
+        );
     }
 
     #[tokio::test]

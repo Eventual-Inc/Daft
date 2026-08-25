@@ -227,6 +227,7 @@ from .numeric import (
     between,
     bin,
     conv,
+    try_divide,
     is_nan,
     is_inf,
     not_nan,
@@ -305,6 +306,7 @@ from .str import (
     ascii_func,
     chr_func,
     space,
+    split_part,
 )
 from .struct import unnest, to_struct
 from .url import download, upload, parse_url
@@ -578,6 +580,7 @@ __all__ = [
     "soundex",
     "space",
     "split",
+    "split_part",
     "sqrt",
     "startswith",
     "stddev",
@@ -622,6 +625,7 @@ __all__ = [
     "try_decode",
     "try_decompress",
     "try_deserialize",
+    "try_divide",
     "try_encode",
     "unix_date",
     "unnest",

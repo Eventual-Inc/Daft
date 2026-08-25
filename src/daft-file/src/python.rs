@@ -9,15 +9,82 @@ use std::{
 
 use common_error::DaftError;
 use daft_core::file::FileReference;
+use daft_schema::media_type::MediaType;
 use pyo3::{
     exceptions::{PyIOError, PyRuntimeError, PyValueError},
     prelude::*,
 };
+use tracing::{Span, instrument};
 
 use crate::file::{DaftFile, FileCursor};
 
 type ReadResult = Result<(Vec<u8>, usize, bool, FileCursor), (PyErr, FileCursor)>;
 type SeekResult = Result<(u64, FileCursor), (PyErr, FileCursor)>;
+
+#[pyclass(name = "_PyFileTracingSpan", unsendable)]
+struct PyFileTracingSpan {
+    span: Option<Span>,
+    entered: Option<tracing::span::EnteredSpan>,
+}
+
+impl PyFileTracingSpan {
+    fn new(span: Span) -> Self {
+        Self {
+            span: Some(span),
+            entered: None,
+        }
+    }
+}
+
+#[pymethods]
+impl PyFileTracingSpan {
+    #[staticmethod]
+    fn is_enabled() -> bool {
+        tracing::enabled!(tracing::Level::INFO)
+    }
+
+    #[staticmethod]
+    fn video_frames() -> Self {
+        Self::new(tracing::info_span!("VideoFile::frames"))
+    }
+
+    #[staticmethod]
+    fn video_open() -> Self {
+        Self::new(tracing::info_span!("VideoFile::open"))
+    }
+
+    #[staticmethod]
+    fn video_seek() -> Self {
+        Self::new(tracing::info_span!("VideoFile::seek"))
+    }
+
+    #[staticmethod]
+    fn video_decode() -> Self {
+        Self::new(tracing::info_span!("VideoFile::decode"))
+    }
+
+    #[staticmethod]
+    fn video_to_image() -> Self {
+        Self::new(tracing::info_span!("VideoFile::to_image"))
+    }
+
+    fn __enter__(&mut self) -> PyResult<()> {
+        let span = self.span.take().ok_or_else(|| {
+            PyRuntimeError::new_err("Tracing span cannot be entered more than once")
+        })?;
+        self.entered = Some(span.entered());
+        Ok(())
+    }
+
+    fn __exit__(
+        &mut self,
+        _exc_type: Option<Py<PyAny>>,
+        _exc_value: Option<Py<PyAny>>,
+        _traceback: Option<Py<PyAny>>,
+    ) {
+        self.entered.take();
+    }
+}
 
 #[pyclass(from_py_object)]
 #[derive(Clone)]
@@ -145,23 +212,33 @@ impl PyDaftFile {
             "File not opened inside a context manager. use `with file.open() as f:`",
         ))
     }
-}
 
-#[pymethods]
-impl PyDaftFile {
-    #[staticmethod]
-    #[pyo3(signature=(f, buffer_size=None))]
-    fn _from_file_reference(
-        py: Python<'_>,
-        f: PyFileReference,
-        buffer_size: Option<usize>,
-    ) -> PyResult<Self> {
-        let file_ref = f.inner.as_ref().clone();
-        py.detach(move || Ok(DaftFile::load_blocking(file_ref, false, buffer_size)?.into()))
+    #[instrument(skip_all, name = "File::read")]
+    fn read_file(&mut self, py: Python<'_>, size: isize) -> PyResult<Vec<u8>> {
+        self.read_impl(py, size)
     }
 
-    #[pyo3(signature=(size=-1))]
-    fn read(&mut self, py: Python<'_>, size: isize) -> PyResult<Vec<u8>> {
+    #[instrument(skip_all, name = "VideoFile::read")]
+    fn read_video(&mut self, py: Python<'_>, size: isize) -> PyResult<Vec<u8>> {
+        self.read_impl(py, size)
+    }
+
+    #[instrument(skip_all, name = "AudioFile::read")]
+    fn read_audio(&mut self, py: Python<'_>, size: isize) -> PyResult<Vec<u8>> {
+        self.read_impl(py, size)
+    }
+
+    #[instrument(skip_all, name = "ImageFile::read")]
+    fn read_image(&mut self, py: Python<'_>, size: isize) -> PyResult<Vec<u8>> {
+        self.read_impl(py, size)
+    }
+
+    #[instrument(skip_all, name = "Hdf5File::read")]
+    fn read_hdf5(&mut self, py: Python<'_>, size: isize) -> PyResult<Vec<u8>> {
+        self.read_impl(py, size)
+    }
+
+    fn read_impl(&mut self, py: Python<'_>, size: isize) -> PyResult<Vec<u8>> {
         self.check_context()?;
         let mut cursor = self
             .inner
@@ -210,6 +287,31 @@ impl PyDaftFile {
                 self.inner.cursor = Some(cursor_back);
                 Err(e)
             }
+        }
+    }
+}
+
+#[pymethods]
+impl PyDaftFile {
+    #[staticmethod]
+    #[pyo3(signature=(f, buffer_size=None))]
+    fn _from_file_reference(
+        py: Python<'_>,
+        f: PyFileReference,
+        buffer_size: Option<usize>,
+    ) -> PyResult<Self> {
+        let file_ref = f.inner.as_ref().clone();
+        py.detach(move || Ok(DaftFile::load_blocking(file_ref, false, buffer_size)?.into()))
+    }
+
+    #[pyo3(signature=(size=-1))]
+    fn read(&mut self, py: Python<'_>, size: isize) -> PyResult<Vec<u8>> {
+        match self.inner.media_type {
+            MediaType::Unknown => self.read_file(py, size),
+            MediaType::Video => self.read_video(py, size),
+            MediaType::Audio => self.read_audio(py, size),
+            MediaType::Image => self.read_image(py, size),
+            MediaType::Hdf5 => self.read_hdf5(py, size),
         }
     }
 
@@ -335,6 +437,7 @@ fn guess_mimetype_from_content(mut bytes: Vec<u8>) -> PyResult<Option<String>> {
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyDaftFile>()?;
     parent.add_class::<PyFileReference>()?;
+    parent.add_class::<PyFileTracingSpan>()?;
     parent.add_function(wrap_pyfunction!(guess_mimetype_from_content, parent)?)?;
 
     Ok(())

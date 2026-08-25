@@ -1029,6 +1029,7 @@ impl S3LikeSource {
                 Ok(LSResult {
                     files,
                     continuation_token,
+                    not_found_if_empty: false,
                 })
             }
             Err(SdkError::ServiceError(err)) => {
@@ -1438,7 +1439,7 @@ impl ObjectSource for S3LikeSource {
             } else {
                 format!("{}{S3_DELIMITER}", key.trim_end_matches(S3_DELIMITER))
             };
-            let lsr = {
+            let mut lsr = {
                 let permit = self
                     .connection_pool_sema
                     .acquire()
@@ -1457,41 +1458,36 @@ impl ObjectSource for S3LikeSource {
                 )
                 .await?
             };
+            lsr.not_found_if_empty = !key.is_empty();
             if let Some(is) = io_stats.as_ref() {
                 is.mark_list_requests(1);
             }
 
-            if lsr.files.is_empty() && key.contains(S3_DELIMITER) {
-                let permit = self
-                    .connection_pool_sema
-                    .acquire()
-                    .await
-                    .context(UnableToGrabSemaphoreSnafu)?;
-                // Might be a File
-                let key = key.trim_end_matches(S3_DELIMITER);
-                let mut lsr = self
-                    .list_impl(
-                        permit,
-                        scheme.as_str(),
-                        bucket.as_str(),
-                        key,
-                        Some(S3_DELIMITER.into()),
-                        continuation_token.map(String::from),
-                        &self.default_region,
-                        page_size,
-                    )
-                    .await?;
-                if let Some(is) = io_stats.as_ref() {
-                    is.mark_list_requests(1);
-                }
-                let target_path = format!("{scheme}://{bucket}/{key}");
-                lsr.files.retain(|f| f.filepath == target_path);
+            if lsr.files.is_empty() && continuation_token.is_none() && key.contains(S3_DELIMITER) {
+                // The directory page is empty, so check whether the requested
+                // path is an exact object. HEAD is an exact lookup and has no
+                // pagination token.
+                let exact_key = key.trim_end_matches(S3_DELIMITER);
+                let target_path = format!("{scheme}://{bucket}/{exact_key}");
 
-                if lsr.files.is_empty() {
-                    // Isn't a file or a directory
-                    return Err(Error::NotFound { path: path.into() }.into());
+                match self.get_size(&target_path, io_stats.clone()).await {
+                    Ok(size) => Ok(LSResult {
+                        files: vec![FileMetadata {
+                            filepath: target_path,
+                            size: Some(size as u64),
+                            filetype: FileType::File,
+                        }],
+                        // The outer operation is still walking the directory
+                        // listing, so only its token may leave this function.
+                        continuation_token: lsr.continuation_token,
+                        not_found_if_empty: lsr.not_found_if_empty,
+                    }),
+                    // The exact file does not exist. This is not yet enough to
+                    // conclude that the requested path is missing: later
+                    // directory pages may still contain entries.
+                    Err(super::Error::NotFound { .. }) => Ok(lsr),
+                    Err(error) => Err(error),
                 }
-                Ok(lsr)
             } else {
                 Ok(lsr)
             }
