@@ -264,7 +264,7 @@ impl TableStatistics {
 /// produces the correct lexicographic successor for byte-wise string comparison.
 ///
 /// Examples:
-/// - `"abc"`  -> `Some("abd")`
+/// - `"foo"`  -> `Some("fop")`
 /// - `"café"` -> `Some("cafê")`  (é U+00E9 -> ê U+00EA)
 /// - `"az"` with a max last char is handled by carrying to the previous char.
 fn increment_utf8_prefix(prefix: &str) -> Option<String> {
