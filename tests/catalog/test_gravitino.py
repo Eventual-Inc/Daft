@@ -712,9 +712,37 @@ class TestGravitinoTable:
                 "s3.endpoint": "http://localhost:9000",
                 "s3.session-token": "test-token",
                 "s3.region": "us-west-2",
+                "auth": {"type": "noop"},
             },
         )
         mock_load_catalog.return_value.load_table.assert_called_once_with("schema1.test_table")
+
+    @pytest.mark.parametrize(
+        "configured_auth",
+        [
+            {"token": "abc123"},
+            {"credential": "client:secret"},
+            {"auth": {"type": "oauth2"}},
+        ],
+    )
+    def test_open_iceberg_table_via_rest_keeps_configured_auth(self, mock_inner_table, configured_auth):
+        """A catalog that configures its own auth must not be overridden with noop."""
+        mock_inner_table.table_info.catalog = "catalog1"
+        mock_inner_table.table_info.schema = "schema1"
+        mock_inner_table.table_info.properties = {
+            "catalog-backend": "rest",
+            "uri": "http://localhost:8181",
+            **configured_auth,
+        }
+
+        with patch("pyiceberg.catalog.load_catalog") as mock_load_catalog:
+            _open_iceberg_table_via_rest(mock_inner_table.table_info, None)
+
+        passed = mock_load_catalog.call_args.kwargs
+        for key, value in configured_auth.items():
+            assert passed[key] == value
+        if "auth" not in configured_auth:
+            assert "auth" not in passed
 
     def test_append_with_invalid_option(self, gravitino_table):
         """Test append with invalid option raises error."""

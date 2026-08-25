@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeType};
-use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, ShuffleBackend};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::TryStreamExt;
@@ -11,8 +11,7 @@ use crate::{
     pipeline_node::{
         ClusteringStrategy, DistributedPipelineNode, MaterializedOutput, NodeID,
         PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
-        clustering::BoundClusteringSpec,
-        shuffles::backends::{DistributedShuffleBackend, ShuffleBackend},
+        clustering::BoundClusteringSpec, shuffles::backends::ShuffleContext,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -25,7 +24,7 @@ use crate::{
 pub(crate) struct GatherNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
-    shuffle_backend: ShuffleBackend,
+    shuffle_context: ShuffleContext,
     child: DistributedPipelineNode,
 }
 
@@ -36,7 +35,7 @@ impl GatherNode {
         node_id: NodeID,
         plan_config: &PlanConfig,
         schema: SchemaRef,
-        backend: DistributedShuffleBackend,
+        backend: ShuffleBackend,
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
@@ -52,11 +51,11 @@ impl GatherNode {
             plan_config.config.clone(),
             ClusteringStrategy::Explicit(BoundClusteringSpec::unknown(1)),
         );
-        let shuffle_backend = ShuffleBackend::new(&context, schema, backend);
+        let shuffle_context = ShuffleContext::new(&context, schema, backend);
         Self {
             config,
             context,
-            shuffle_backend,
+            shuffle_context,
             child,
         }
     }
@@ -84,7 +83,7 @@ impl GatherNode {
             .flat_map(|output| output.into_inner().0)
             .collect();
         let task = self
-            .shuffle_backend
+            .shuffle_context
             .build_refs_task_builder(refs, self.as_ref(), |plan| plan)?;
         let _ = result_tx.send(task).await;
         Ok(())
@@ -105,11 +104,7 @@ impl PipelineNodeImpl for GatherNode {
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
-        let backend_name = match self.shuffle_backend.backend() {
-            DistributedShuffleBackend::Ray => "RayGather",
-            DistributedShuffleBackend::Flight(_) => "FlightGather",
-        };
-        vec![backend_name.to_string()]
+        vec![format!("{}Gather", self.shuffle_context.backend().name())]
     }
 
     fn produce_tasks(
@@ -117,16 +112,16 @@ impl PipelineNodeImpl for GatherNode {
         plan_context: &mut PlanExecutionContext,
     ) -> TaskBuilderStream {
         let input_node = self.child.clone().produce_tasks(plan_context);
-        self.shuffle_backend.register_cleanup(plan_context);
+        self.shuffle_context.register_cleanup(plan_context);
 
-        let schema = self.shuffle_backend.schema().clone();
-        let node_id = self.shuffle_backend.node_id();
-        let local_shuffle_backend = self.shuffle_backend.local_shuffle_backend();
+        let schema = self.shuffle_context.schema().clone();
+        let node_id = self.shuffle_context.node_id();
+        let shuffle_backend = self.shuffle_context.backend().clone();
         let local_gather_write_node = input_node.pipeline_instruction(self.clone(), move |input| {
             LocalPhysicalPlan::gather_write(
                 input,
                 schema.clone(),
-                local_shuffle_backend.clone(),
+                shuffle_backend.clone(),
                 StatsState::NotMaterialized,
                 LocalNodeContext::new(Some(node_id as usize)),
             )

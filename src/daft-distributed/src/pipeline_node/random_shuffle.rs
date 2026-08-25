@@ -7,7 +7,7 @@ use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeType};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_functions::random::random_int_expr;
-use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, ShuffleBackend};
 use daft_logical_plan::{partitioning::RandomShuffleConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 
@@ -15,8 +15,7 @@ use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
         ClusteringStrategy, DistributedPipelineNode, MaterializedOutput, NodeID,
-        PipelineNodeConfig, PipelineNodeContext,
-        shuffles::backends::{DistributedShuffleBackend, ShuffleBackend},
+        PipelineNodeConfig, PipelineNodeContext, shuffles::backends::ShuffleContext,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -33,7 +32,7 @@ pub(crate) struct RandomShuffleNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     seed: Option<u64>,
-    shuffle_backend: ShuffleBackend,
+    shuffle_context: ShuffleContext,
     child: DistributedPipelineNode,
 }
 
@@ -45,7 +44,7 @@ impl RandomShuffleNode {
         plan_config: &PlanConfig,
         seed: Option<u64>,
         output_schema: SchemaRef,
-        backend: DistributedShuffleBackend,
+        backend: ShuffleBackend,
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
@@ -62,12 +61,12 @@ impl RandomShuffleNode {
             plan_config.config.clone(),
             ClusteringStrategy::Passthrough { child: &child },
         );
-        let shuffle_backend = ShuffleBackend::new(&context, output_schema, backend);
+        let shuffle_context = ShuffleContext::new(&context, output_schema, backend);
         Self {
             config,
             context,
             seed,
-            shuffle_backend,
+            shuffle_context,
             child,
         }
     }
@@ -95,7 +94,7 @@ impl RandomShuffleNode {
         )?;
         let node_id = self.node_id();
         self
-            .shuffle_backend
+            .shuffle_context
             .build_refs_task_builder(partition_refs, self, |input| {
                 LocalPhysicalPlan::sort(
                     input,
@@ -147,10 +146,7 @@ impl PipelineNodeImpl for RandomShuffleNode {
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
-        let backend_name = match self.shuffle_backend.backend() {
-            DistributedShuffleBackend::Ray => "Ray",
-            DistributedShuffleBackend::Flight(_) => "Flight",
-        };
+        let backend_name = self.shuffle_context.backend().name();
         vec![
             format!(
                 "RandomShuffle({}): random row order (via random repartition + random_int + sort)",
@@ -165,20 +161,20 @@ impl PipelineNodeImpl for RandomShuffleNode {
         plan_context: &mut PlanExecutionContext,
     ) -> TaskBuilderStream {
         let input_node = self.child.clone().produce_tasks(plan_context);
-        self.shuffle_backend.register_cleanup(plan_context);
+        self.shuffle_context.register_cleanup(plan_context);
 
         let num_partitions = self.child.config().clustering_spec.num_partitions();
         let node_id = self.node_id();
         let schema = self.config.schema.clone();
         let seed = self.seed;
-        let local_shuffle_backend = self.shuffle_backend.local_shuffle_backend();
+        let shuffle_backend = self.shuffle_context.backend().clone();
 
         let partitioned_input = input_node.pipeline_instruction(self.clone(), move |input| {
             LocalPhysicalPlan::repartition_write(
                 input,
                 num_partitions,
                 schema.clone(),
-                local_shuffle_backend.clone(),
+                shuffle_backend.clone(),
                 daft_logical_plan::partitioning::RepartitionSpec::Random(
                     RandomShuffleConfig::new_with_seed(Some(num_partitions), seed),
                 ),

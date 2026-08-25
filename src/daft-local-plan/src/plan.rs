@@ -2590,6 +2590,15 @@ pub enum ShuffleBackend {
     },
 }
 
+impl ShuffleBackend {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Ray => "Ray",
+            Self::Flight { .. } => "Flight",
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct VLLMProject {
