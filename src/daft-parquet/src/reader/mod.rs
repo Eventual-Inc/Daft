@@ -595,6 +595,7 @@ pub async fn stream_parquet(
         opts.row_groups.as_deref(),
         opts.start_offset.unwrap_or(0),
         opts.num_rows,
+        opts.delete_rows.as_deref(),
         opts.predicate.as_ref(),
         &plan.read_daft_schema,
         source.label(),

@@ -64,6 +64,31 @@ pub fn build_offset_row_selection(offset: usize, total_rows: usize) -> RowSelect
     }
 }
 
+/// Sorted, deduplicated view of positional delete indices.
+///
+/// Callers typically pass sorted data, in which case this borrows.
+fn normalize_deletes(delete_rows: &[i64]) -> Cow<'_, [i64]> {
+    if delete_rows.windows(2).any(|w| w[0] >= w[1]) {
+        let mut sorted = delete_rows.to_vec();
+        sorted.sort_unstable();
+        sorted.dedup();
+        Cow::Owned(sorted)
+    } else {
+        Cow::Borrowed(delete_rows)
+    }
+}
+
+/// Number of deleted rows within the file-global range `[lo, hi)`.
+pub fn count_deletes_in_range(delete_rows: &[i64], lo: usize, hi: usize) -> usize {
+    if delete_rows.is_empty() || hi <= lo {
+        return 0;
+    }
+    let normalized = normalize_deletes(delete_rows);
+    let start = normalized.partition_point(|&r| (r as usize) < lo);
+    let end = normalized.partition_point(|&r| (r as usize) < hi);
+    end - start
+}
+
 /// Build a `RowSelection` for a single row group from Iceberg positional
 /// delete indices.
 pub fn build_single_rg_delete_selection(
@@ -75,15 +100,7 @@ pub fn build_single_rg_delete_selection(
         delete_rows.iter().all(|&r| r >= 0),
         "delete_rows contains negative values"
     );
-    // Normalize: ensure sorted+unique (callers typically pass sorted data).
-    let normalized: Cow<'_, [i64]> = if delete_rows.windows(2).any(|w| w[0] >= w[1]) {
-        let mut sorted = delete_rows.to_vec();
-        sorted.sort_unstable();
-        sorted.dedup();
-        Cow::Owned(sorted)
-    } else {
-        Cow::Borrowed(delete_rows)
-    };
+    let normalized = normalize_deletes(delete_rows);
 
     let rg_end = rg_global_start + rg_rows;
     let lo = normalized.partition_point(|&r| (r as usize) < rg_global_start);
@@ -236,6 +253,11 @@ pub fn validate_requested_row_groups(
 ///   limit only after filtering, so later RGs may still be needed)
 /// - `predicate` stats: drop RGs the min/max stats prove can't match
 ///
+/// `delete_rows` holds Iceberg positional deletes. Those rows never reach the
+/// consumer, so they must not count against the `num_rows` budget — otherwise a
+/// heavily-deleted RG exhausts the budget and later RGs are dropped, returning
+/// fewer rows than requested.
+///
 /// Returns RG indices in original (file) order.
 #[allow(clippy::too_many_arguments)]
 pub fn prune_row_groups(
@@ -243,6 +265,7 @@ pub fn prune_row_groups(
     requested_row_groups: Option<&[i64]>,
     start_offset: usize,
     num_rows: Option<usize>,
+    delete_rows: Option<&[i64]>,
     predicate: Option<&ExprRef>,
     schema: &Schema,
     uri: &str,
@@ -303,12 +326,49 @@ pub fn prune_row_groups(
             }
         }
         result.push(rg_idx);
-        let contrib = if rg_start < start_offset {
-            rg_end - start_offset
-        } else {
-            rg_rows
-        };
+        let visible_start = rg_start.max(start_offset);
+        let contrib = (rg_end - visible_start).saturating_sub(count_deletes_in_range(
+            delete_rows.unwrap_or(&[]),
+            visible_start,
+            rg_end,
+        ));
         rows_remaining = rows_remaining.saturating_sub(contrib as i64);
     }
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::count_deletes_in_range;
+
+    #[test]
+    fn counts_deletes_inside_range_only() {
+        let deletes = [0i64, 1, 2, 50, 51, 199];
+        assert_eq!(count_deletes_in_range(&deletes, 0, 50), 3);
+        assert_eq!(count_deletes_in_range(&deletes, 50, 100), 2);
+        assert_eq!(count_deletes_in_range(&deletes, 100, 150), 0);
+        assert_eq!(count_deletes_in_range(&deletes, 150, 200), 1);
+    }
+
+    #[test]
+    fn range_bounds_are_half_open() {
+        let deletes = [10i64];
+        assert_eq!(count_deletes_in_range(&deletes, 10, 11), 1);
+        assert_eq!(count_deletes_in_range(&deletes, 11, 20), 0);
+        assert_eq!(count_deletes_in_range(&deletes, 0, 10), 0);
+    }
+
+    #[test]
+    fn empty_or_inverted_range_counts_nothing() {
+        assert_eq!(count_deletes_in_range(&[], 0, 100), 0);
+        assert_eq!(count_deletes_in_range(&[5i64], 10, 10), 0);
+        assert_eq!(count_deletes_in_range(&[5i64], 10, 5), 0);
+    }
+
+    #[test]
+    fn unsorted_and_duplicate_deletes_are_normalized() {
+        let deletes = [51i64, 0, 50, 0, 2, 1];
+        assert_eq!(count_deletes_in_range(&deletes, 0, 50), 3);
+        assert_eq!(count_deletes_in_range(&deletes, 50, 100), 2);
+    }
 }
