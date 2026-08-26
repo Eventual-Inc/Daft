@@ -213,7 +213,7 @@ impl BlockingSink for RepartitionSink {
                             let partition_caches = write_partitions_one_shot(
                                 input_id,
                                 ctx.shuffle_id,
-                                &ctx.shuffle_dirs,
+                                ctx.oneshot_target()?,
                                 schema,
                                 compression,
                                 per_partition,

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import glob
 import io
+import os
 import random
 import tempfile
 import threading
@@ -16,6 +18,22 @@ import daft
 from daft.io._generator import read_generator
 from daft.recordbatch.recordbatch import RecordBatch
 from tests.conftest import get_tests_daft_runner_name
+
+
+def _ray_has_multiple_nodes() -> bool:
+    """Whether the active Ray cluster has more than one node.
+
+    Routing only has a remote branch to take when map output can land on a
+    different worker than the reduce task, which needs a real multi-node cluster.
+    """
+    if get_tests_daft_runner_name() != "ray":
+        return False
+
+    import ray
+
+    if not ray.is_initialized():
+        return False
+    return sum(1 for node in ray.nodes() if node.get("Alive")) > 1
 
 
 def generate(partition_id: int, num_rows: int, bytes_per_row: int):
@@ -62,6 +80,34 @@ def flight_shuffle_ctx():
             # Use the temporary directory for flight shuffle
             with daft.execution_config_ctx(shuffle_algorithm="flight_shuffle", flight_shuffle_dirs=[temp_dir]) as ctx:
                 yield ctx
+
+    return _ctx
+
+
+@pytest.fixture(scope="function")
+def shared_flight_shuffle_ctx():
+    """Flight shuffle writing to a "shared" directory.
+
+    A local temporary directory stands in for a cluster-shared mount. On a
+    single-node test cluster that exercises the shared write path and the shared
+    reader; the cross-node routing it enables needs a multi-node cluster.
+    """
+
+    @contextmanager
+    def _ctx(read_source="auto", durability="background"):
+        with (
+            tempfile.TemporaryDirectory() as local_dir,
+            tempfile.TemporaryDirectory() as shared_dir,
+            daft.execution_config_ctx(
+                shuffle_algorithm="flight_shuffle",
+                flight_shuffle_dirs=[local_dir],
+                flight_shuffle_placement="shared_only",
+                flight_shuffle_shared_dir=shared_dir,
+                flight_shuffle_shared_durability=durability,
+                flight_shuffle_read_source=read_source,
+            ),
+        ):
+            yield shared_dir
 
     return _ctx
 
@@ -605,3 +651,107 @@ def test_high_fanout_shuffle_hints_user_to_use_flight_shuffle():
         'flight_shuffle_dirs=["/path/to/fast/ssd"])  # defaults to ["/tmp"].'
     )
     assert expected_hint in output, output
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="distributed shuffle tests require the ray runner",
+)
+@pytest.mark.parametrize("read_source", ["auto", "rpc", "shared"])
+def test_flight_shuffle_shared_placement(shared_flight_shuffle_ctx, read_source):
+    """Shared placement returns the same rows as node-local placement, on every route."""
+    expected = {"g": list(range(97)), "s": [sum(i for i in range(2000) if i % 97 == g) for g in range(97)]}
+
+    with shared_flight_shuffle_ctx(read_source=read_source):
+        df = daft.from_pydict({"id": list(range(2000)), "g": [i % 97 for i in range(2000)]})
+        got = (
+            df.into_partitions(8)
+            .repartition(16, "g")
+            .groupby("g")
+            .agg(daft.col("id").sum().alias("s"))
+            .sort("g")
+            .to_pydict()
+        )
+
+    assert got == expected
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="distributed shuffle tests require the ray runner",
+)
+@pytest.mark.parametrize("durability", ["none", "background", "sync"])
+def test_flight_shuffle_shared_durability_levels(shared_flight_shuffle_ctx, durability):
+    """Every durability level publishes a readable map file; they differ only in fsync."""
+    with shared_flight_shuffle_ctx(durability=durability):
+        df = daft.from_pydict({"id": list(range(1000))}).into_partitions(4).repartition(8, "id")
+        got = sorted(df.to_pydict()["id"])
+
+    assert got == list(range(1000))
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="distributed shuffle tests require the ray runner",
+)
+def test_flight_shuffle_shared_leaves_no_files_behind(shared_flight_shuffle_ctx):
+    """A finished query removes its shuffle tree from the shared mount.
+
+    Shared trees are removed once for the whole cluster rather than by every
+    node, so this also covers that the single cleanup task actually ran.
+
+    (The on-disk layout and index format themselves are asserted in the
+    `daft-shuffles` Rust tests, where they can be checked without racing the
+    cleanup that fires as soon as the plan completes.)
+    """
+    with shared_flight_shuffle_ctx() as shared_root:
+        df = daft.from_pydict({"id": list(range(500))}).into_partitions(4).repartition(8, "id")
+        assert len(df.collect()) == 500
+
+        leftover = glob.glob(os.path.join(shared_root, "daft_shuffle", "*"))
+        assert leftover == [], f"shuffle trees left on the shared mount: {leftover}"
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="distributed shuffle tests require the ray runner",
+)
+@pytest.mark.skipif(
+    not _ray_has_multiple_nodes(),
+    reason="every read is served in-process on a single-node cluster, so the remote route is never taken",
+)
+def test_flight_shuffle_read_source_shared_requires_shared_placement():
+    """Asking for shared reads of node-local data is a clear error, not a wrong answer."""
+    with (
+        tempfile.TemporaryDirectory() as local_dir,
+        daft.execution_config_ctx(
+            shuffle_algorithm="flight_shuffle",
+            flight_shuffle_dirs=[local_dir],
+            flight_shuffle_read_source="shared",
+        ),
+    ):
+        df = daft.from_pydict({"id": list(range(2000)), "g": [i % 97 for i in range(2000)]})
+        df = df.into_partitions(8).repartition(16, "g")
+        with pytest.raises(Exception, match="was not written to a shared directory"):
+            df.groupby("g").agg(daft.col("id").sum()).collect()
+
+
+def test_flight_shuffle_shared_config_validation():
+    """The config layer rejects combinations that cannot be honored."""
+    with pytest.raises(ValueError, match="requires flight_shuffle_shared_dir"):
+        daft.set_execution_config(flight_shuffle_placement="shared_only")
+
+    with pytest.raises(ValueError, match="flight_shuffle_placement must be"):
+        daft.set_execution_config(flight_shuffle_placement="both")
+
+    with pytest.raises(ValueError, match="flight_shuffle_shared_durability must be"):
+        daft.set_execution_config(flight_shuffle_shared_durability="fsync")
+
+    with pytest.raises(ValueError, match="flight_shuffle_read_source must be"):
+        daft.set_execution_config(flight_shuffle_read_source="hedge")
+
+    with pytest.raises(ValueError, match="must be greater than 0"):
+        daft.set_execution_config(flight_shuffle_shared_read_concurrency=0)
+
+    with pytest.raises(ValueError, match="must not be empty"):
+        daft.set_execution_config(flight_shuffle_shared_dir="   ")

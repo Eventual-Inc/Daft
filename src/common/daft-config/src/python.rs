@@ -123,6 +123,11 @@ impl PyDaftExecutionConfig {
         dynamic_batching_strategy=None,
         flight_shuffle_dirs=None,
         flight_shuffle_compression=None,
+        flight_shuffle_shared_dir=None,
+        flight_shuffle_placement=None,
+        flight_shuffle_shared_durability=None,
+        flight_shuffle_read_source=None,
+        flight_shuffle_shared_read_concurrency=None,
         enable_multi_glob_path_tasks=None,
     ))]
     fn with_config_values(
@@ -161,6 +166,11 @@ impl PyDaftExecutionConfig {
         dynamic_batching_strategy: Option<&str>,
         flight_shuffle_dirs: Option<Vec<String>>,
         flight_shuffle_compression: Option<&str>,
+        flight_shuffle_shared_dir: Option<String>,
+        flight_shuffle_placement: Option<&str>,
+        flight_shuffle_shared_durability: Option<&str>,
+        flight_shuffle_read_source: Option<&str>,
+        flight_shuffle_shared_read_concurrency: Option<usize>,
         enable_multi_glob_path_tasks: Option<bool>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
@@ -311,6 +321,69 @@ impl PyDaftExecutionConfig {
                     )));
                 }
             };
+        }
+
+        if let Some(flight_shuffle_shared_dir) = flight_shuffle_shared_dir {
+            if flight_shuffle_shared_dir.trim().is_empty() {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                    "flight_shuffle_shared_dir must not be empty",
+                ));
+            }
+            config.flight_shuffle_shared_dir = Some(flight_shuffle_shared_dir);
+        }
+
+        if let Some(flight_shuffle_placement) = flight_shuffle_placement {
+            if !matches!(flight_shuffle_placement, "local_only" | "shared_only") {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                    "flight_shuffle_placement must be 'local_only' or 'shared_only' (got '{}')",
+                    flight_shuffle_placement
+                )));
+            }
+            config.flight_shuffle_placement = flight_shuffle_placement.to_string();
+        }
+
+        if let Some(flight_shuffle_shared_durability) = flight_shuffle_shared_durability {
+            if !matches!(
+                flight_shuffle_shared_durability,
+                "none" | "background" | "sync"
+            ) {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                    "flight_shuffle_shared_durability must be 'none', 'background', or 'sync' (got '{}')",
+                    flight_shuffle_shared_durability
+                )));
+            }
+            config.flight_shuffle_shared_durability = flight_shuffle_shared_durability.to_string();
+        }
+
+        if let Some(flight_shuffle_read_source) = flight_shuffle_read_source {
+            if !matches!(flight_shuffle_read_source, "auto" | "rpc" | "shared") {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                    "flight_shuffle_read_source must be 'auto', 'rpc', or 'shared' (got '{}')",
+                    flight_shuffle_read_source
+                )));
+            }
+            config.flight_shuffle_read_source = flight_shuffle_read_source.to_string();
+        }
+
+        if let Some(flight_shuffle_shared_read_concurrency) = flight_shuffle_shared_read_concurrency
+        {
+            if flight_shuffle_shared_read_concurrency == 0 {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                    "flight_shuffle_shared_read_concurrency must be greater than 0",
+                ));
+            }
+            config.flight_shuffle_shared_read_concurrency = flight_shuffle_shared_read_concurrency;
+        }
+
+        // Checked on the assembled config rather than per-argument: the pair is
+        // only meaningful together, so both must arrive in the same call.
+        if config.flight_shuffle_placement == "shared_only"
+            && config.flight_shuffle_shared_dir.is_none()
+        {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                "flight_shuffle_placement='shared_only' requires flight_shuffle_shared_dir; \
+                 set both in the same set_execution_config call",
+            ));
         }
 
         if let Some(enable_multi_glob_path_tasks) = enable_multi_glob_path_tasks {
@@ -483,6 +556,31 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn flight_shuffle_compression(&self) -> PyResult<Option<&str>> {
         Ok(self.config.flight_shuffle_compression.as_deref())
+    }
+
+    #[getter]
+    fn flight_shuffle_shared_dir(&self) -> PyResult<Option<&str>> {
+        Ok(self.config.flight_shuffle_shared_dir.as_deref())
+    }
+
+    #[getter]
+    fn flight_shuffle_placement(&self) -> PyResult<&str> {
+        Ok(&self.config.flight_shuffle_placement)
+    }
+
+    #[getter]
+    fn flight_shuffle_shared_durability(&self) -> PyResult<&str> {
+        Ok(&self.config.flight_shuffle_shared_durability)
+    }
+
+    #[getter]
+    fn flight_shuffle_read_source(&self) -> PyResult<&str> {
+        Ok(&self.config.flight_shuffle_read_source)
+    }
+
+    #[getter]
+    fn flight_shuffle_shared_read_concurrency(&self) -> PyResult<usize> {
+        Ok(self.config.flight_shuffle_shared_read_concurrency)
     }
 }
 

@@ -2769,6 +2769,7 @@ dependencies = [
  "daft-recordbatch",
  "daft-scan",
  "daft-schema",
+ "daft-shuffles",
  "futures",
  "itertools 0.14.0",
  "opentelemetry",
@@ -3180,6 +3181,7 @@ dependencies = [
  "arrow-buffer 59.0.0",
  "arrow-ipc",
  "arrow-schema 59.0.0",
+ "async-stream",
  "async-trait",
  "common-checkpoint-config",
  "common-daft-config",
@@ -3547,6 +3549,7 @@ dependencies = [
  "futures",
  "tokio",
  "tonic",
+ "tracing",
 ]
 
 [[package]]

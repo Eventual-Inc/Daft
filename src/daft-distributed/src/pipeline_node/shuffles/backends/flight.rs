@@ -20,6 +20,7 @@ use crate::{
 pub(crate) fn register_cleanup(
     shuffle_id: u64,
     shuffle_dirs: &[String],
+    shared_root: Option<&str>,
     plan_context: &mut PlanExecutionContext,
 ) {
     let shuffle_dirs_to_register: Vec<String> = shuffle_dirs
@@ -27,6 +28,16 @@ pub(crate) fn register_cleanup(
         .map(|base_dir| format!("{}/daft_shuffle/{}", base_dir, shuffle_id))
         .collect();
     plan_context.register_shuffle_dirs(shuffle_dirs_to_register);
+
+    // Registered separately because a shared directory is one tree visible to
+    // every node, not one tree per node: fanning the same delete out to the whole
+    // cluster would have every worker racing to remove the same files.
+    if let Some(shared_root) = shared_root {
+        plan_context.register_shared_shuffle_dirs(vec![daft_shuffles::store::shared_shuffle_dir(
+            shared_root,
+            shuffle_id,
+        )]);
+    }
 }
 
 /// `partition_ref_id` layout: `(input_id << 32) | partition_idx`.
@@ -54,6 +65,7 @@ pub(crate) async fn fold_outputs_from_stream(
     mut materialized_stream: impl Stream<Item = DaftResult<MaterializedOutput>> + Send + Unpin,
     num_partitions: usize,
     shuffle_id: u64,
+    shared_root: Option<&str>,
 ) -> DaftResult<Vec<FlightShuffleReadInput>> {
     let mut inputs_by_server: BTreeMap<String, Vec<u32>> = BTreeMap::new();
 
@@ -75,11 +87,13 @@ pub(crate) async fn fold_outputs_from_stream(
     }
 
     let inputs_by_server = Arc::new(inputs_by_server);
+    let shared_root: Option<Arc<str>> = shared_root.map(Arc::from);
     Ok((0..num_partitions)
         .map(|partition_idx| FlightShuffleReadInput {
             shuffle_id,
             partition_idx: partition_idx as u32,
             inputs_by_server: inputs_by_server.clone(),
+            shared_root: shared_root.clone(),
         })
         .collect())
 }
@@ -88,6 +102,7 @@ pub(crate) async fn fold_outputs_from_stream(
 /// (shuffle, partition idx).
 pub(crate) fn read_inputs_from_refs(
     partition_refs: Vec<PartitionRef>,
+    shared_root: Option<&str>,
 ) -> Vec<FlightShuffleReadInput> {
     let mut groups: BTreeMap<(u64, u32), BTreeMap<String, Vec<u32>>> = BTreeMap::new();
     for partition in partition_refs {
@@ -103,6 +118,7 @@ pub(crate) fn read_inputs_from_refs(
             .push(input_id_from_ref(flight_ref));
     }
 
+    let shared_root: Option<Arc<str>> = shared_root.map(Arc::from);
     groups
         .into_iter()
         .map(
@@ -110,6 +126,7 @@ pub(crate) fn read_inputs_from_refs(
                 shuffle_id,
                 partition_idx,
                 inputs_by_server: Arc::new(inputs_by_server),
+                shared_root: shared_root.clone(),
             },
         )
         .collect()

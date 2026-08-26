@@ -76,17 +76,21 @@ def _clear_flight_shuffle_dirs(shuffle_dirs: list[str]) -> None:
                 logger.warning("Failed to clear flight shuffle directory %s: %s", shuffle_dir, e)
 
 
-async def clear_flight_shuffle_dirs_on_all_nodes(shuffle_dirs: list[str]) -> None:
-    """Clear flight shuffle directories on all Ray nodes with CPU resources.
+async def clear_flight_shuffle_dirs_on_all_nodes(shuffle_dirs: list[str], shared_dirs: list[str] | None = None) -> None:
+    """Clear flight shuffle directories.
 
     Args:
-        shuffle_dirs: List of shuffle directories to clear (full paths)
+        shuffle_dirs: Node-local shuffle directories to clear (full paths). Every
+            node holds its own copy, so the delete runs on all nodes with CPU
+            resources.
+        shared_dirs: Shuffle directories on a cluster-shared mount (full paths).
+            Only one copy exists, so a single unpinned task removes them rather
+            than having every node race to delete the same files.
     """
-    if not shuffle_dirs:
-        return
+    tasks = []
 
-    await asyncio.gather(
-        *[
+    if shuffle_dirs:
+        tasks.extend(
             _clear_flight_shuffle_dirs.options(
                 scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                     node_id=node["NodeID"],
@@ -95,8 +99,15 @@ async def clear_flight_shuffle_dirs_on_all_nodes(shuffle_dirs: list[str]) -> Non
             ).remote(shuffle_dirs)
             for node in ray.nodes()
             if "Resources" in node and "CPU" in node["Resources"] and node["Resources"]["CPU"] > 0
-        ]
-    )
+        )
+
+    if shared_dirs:
+        tasks.append(_clear_flight_shuffle_dirs.remote(shared_dirs))
+
+    if not tasks:
+        return
+
+    await asyncio.gather(*tasks)
 
 
 def _load_extensions_from_env() -> None:

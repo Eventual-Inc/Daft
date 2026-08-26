@@ -115,16 +115,20 @@ impl ShuffleFlightServer {
     ) -> Option<(Vec<FileReadSpec>, SchemaRef)> {
         let partitions = self.shuffle_partitions.lock().await;
 
-        let schema = partitions
-            .get(&FlightPartitionKey {
-                shuffle_id,
-                partition_ref_id: *partition_ref_ids
-                    .first()
-                    .expect("Expected at least one partition"),
+        // Any registered ref carries the shuffle's schema. Scan rather than trust
+        // the first one: a caller can legitimately ask for refs this server never
+        // wrote, and an unknown ref is a `not_found` for the caller to handle (by
+        // falling back to shared storage, say), not a reason to take the server
+        // down.
+        let schema = partition_ref_ids
+            .iter()
+            .find_map(|partition_ref_id| {
+                partitions.get(&FlightPartitionKey {
+                    shuffle_id,
+                    partition_ref_id: *partition_ref_id,
+                })
             })
-            .expect("No partitions found")
-            .schema
-            .clone();
+            .map(|cache| cache.schema.clone())?;
 
         // Group ranged reads by file path so each physical file is read from a single FD.
         let mut specs: Vec<FileReadSpec> = Vec::new();

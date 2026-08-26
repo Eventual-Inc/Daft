@@ -12,7 +12,8 @@ use super::{PipelineNodeImpl, TaskBuilderStream, clustering::BoundClusteringSpec
 use crate::{
     pipeline_node::{
         ClusteringStrategy, DistributedPipelineNode, NodeID, PipelineNodeConfig,
-        PipelineNodeContext, shuffles::backends::ShuffleContext,
+        PipelineNodeContext,
+        shuffles::backends::{ShuffleContext, ShuffleWriteKind},
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -55,7 +56,8 @@ impl IntoPartitionsNode {
             plan_config.config.clone(),
             ClusteringStrategy::Explicit(BoundClusteringSpec::unknown(num_partitions)),
         );
-        let shuffle_context = ShuffleContext::new(&context, schema, backend);
+        let shuffle_context =
+            ShuffleContext::new(&context, schema, backend, ShuffleWriteKind::PerPartition);
 
         Self {
             config,

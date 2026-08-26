@@ -12,8 +12,8 @@ pub use plan::{
     GatherWrite, GlobScan, HashAggregate, HashJoin, InMemoryScan, IntoBatches, IntoPartitions,
     Limit, LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef, MonotonicallyIncreasingId,
     PhysicalScan, PhysicalWrite, Pivot, PlaceholderScan, Project, RepartitionWrite, Sample,
-    SamplingMethod, ShuffleBackend, ShuffleRead, ShuffleReadBackend, Sort, SortMergeJoin,
-    StageCheckpointKeys, TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject,
+    SamplingMethod, SharedShuffleSpec, ShuffleBackend, ShuffleRead, ShuffleReadBackend, Sort,
+    SortMergeJoin, StageCheckpointKeys, TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject,
     WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
     WindowPartitionOnly,
 };

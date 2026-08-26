@@ -2424,7 +2424,23 @@ pub enum ShuffleBackend {
         shuffle_id: u64,
         shuffle_dirs: Vec<String>,
         compression: Option<String>,
+        /// Set when map output goes to a cluster-shared mount instead of the
+        /// node-local `shuffle_dirs`.
+        shared: Option<SharedShuffleSpec>,
     },
+}
+
+/// Shared-mount placement for a Flight shuffle.
+///
+/// Its presence, rather than a separate mode flag, is what marks a shuffle as
+/// shared-placed — the config layer rejects "shared placement with no directory",
+/// so that combination cannot reach a plan.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SharedShuffleSpec {
+    /// Mount root; map files live under `{root}/daft_shuffle/{shuffle_id}/`.
+    pub root: String,
+    /// `"none"`, `"background"`, or `"sync"`.
+    pub durability: String,
 }
 
 impl ShuffleBackend {
@@ -2432,6 +2448,14 @@ impl ShuffleBackend {
         match self {
             Self::Ray => "Ray",
             Self::Flight { .. } => "Flight",
+        }
+    }
+
+    /// Shared-mount root, when this shuffle writes to one.
+    pub fn shared_root(&self) -> Option<&str> {
+        match self {
+            Self::Ray => None,
+            Self::Flight { shared, .. } => shared.as_ref().map(|s| s.root.as_str()),
         }
     }
 }
@@ -2494,6 +2518,10 @@ pub struct FlightShuffleReadInput {
     pub shuffle_id: u64,
     pub partition_idx: u32,
     pub inputs_by_server: Arc<BTreeMap<String, Vec<u32>>>,
+    /// Shared mount holding this shuffle's map files, when it was written with
+    /// shared placement. A per-shuffle constant, shared by `Arc` across every
+    /// reduce task so the coordinator holds one copy rather than one per input.
+    pub shared_root: Option<Arc<str>>,
 }
 
 #[cfg(test)]

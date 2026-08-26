@@ -20,6 +20,21 @@ fn make_shuffle_id(context: &PipelineNodeContext) -> u64 {
     ((context.query_idx as u64) << 32) | (context.node_id as u64)
 }
 
+/// Which map-side writer a shuffle node uses.
+///
+/// This decides whether shared placement is available, because only the combined
+/// file carries an index a peer can resolve byte ranges from. The per-partition
+/// layout is addressable only through the writing worker's in-memory cache, so
+/// putting it on a shared mount would buy nothing and would leave the read side
+/// looking for files in the wrong place.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ShuffleWriteKind {
+    /// One combined, self-indexing file per map task (`RepartitionWrite`).
+    CombinedFile,
+    /// One directory per output partition (`GatherWrite`, `IntoPartitions`).
+    PerPartition,
+}
+
 /// A shuffle node's resolved backend: the plan-level [`ShuffleBackend`] with this
 /// node's `shuffle_id` stamped in, plus the node handles task building needs.
 #[derive(Clone)]
@@ -34,6 +49,7 @@ impl ShuffleContext {
         context: &PipelineNodeContext,
         schema: SchemaRef,
         backend: ShuffleBackend,
+        write_kind: ShuffleWriteKind,
     ) -> Self {
         Self {
             schema,
@@ -43,11 +59,19 @@ impl ShuffleContext {
                 ShuffleBackend::Flight {
                     shuffle_dirs,
                     compression,
+                    shared,
                     ..
                 } => ShuffleBackend::Flight {
                     shuffle_id: make_shuffle_id(context),
                     shuffle_dirs,
                     compression,
+                    // Dropped here rather than at each call site so the write and
+                    // read halves cannot disagree: both read `shared` back off
+                    // this one resolved backend.
+                    shared: match write_kind {
+                        ShuffleWriteKind::CombinedFile => shared,
+                        ShuffleWriteKind::PerPartition => None,
+                    },
                 },
             },
         }
@@ -71,9 +95,15 @@ impl ShuffleContext {
             ShuffleBackend::Flight {
                 shuffle_id,
                 shuffle_dirs,
+                shared,
                 ..
             } => {
-                flight::register_cleanup(*shuffle_id, shuffle_dirs, plan_context);
+                flight::register_cleanup(
+                    *shuffle_id,
+                    shuffle_dirs,
+                    shared.as_ref().map(|s| s.root.as_str()),
+                    plan_context,
+                );
             }
         }
     }
@@ -107,7 +137,8 @@ impl ShuffleContext {
                 SwordfishTaskBuilder::new(plan, node, node_id).with_psets(node_id, partition_refs)
             }
             ShuffleBackend::Flight { .. } => {
-                let read_inputs = flight::read_inputs_from_refs(partition_refs);
+                let read_inputs =
+                    flight::read_inputs_from_refs(partition_refs, self.backend.shared_root());
                 let shuffle_read = LocalPhysicalPlan::shuffle_read(
                     node_id,
                     self.schema.clone(),
@@ -157,6 +188,7 @@ impl ShuffleContext {
                     materialized_stream,
                     num_partitions,
                     *shuffle_id,
+                    self.backend.shared_root(),
                 )
                 .await?;
                 flight::emit_read_tasks(

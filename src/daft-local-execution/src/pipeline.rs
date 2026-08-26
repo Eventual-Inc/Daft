@@ -1679,7 +1679,10 @@ fn physical_plan_to_pipeline(
                     "Flight shuffle server must be initialized for Flight shuffle read plans",
                 );
                 let source =
-                    ShuffleReadSource::new(rx, local_server, local_address, schema.clone(), cfg);
+                    ShuffleReadSource::new(rx, local_server, local_address, schema.clone(), cfg)
+                        .with_context(|_| PipelineCreationSnafu {
+                            plan_name: physical_plan.name(),
+                        })?;
                 SourceNode::new(Box::new(source), stats_state.clone(), ctx, context).boxed()
             }
         },

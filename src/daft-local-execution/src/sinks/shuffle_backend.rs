@@ -1,6 +1,11 @@
 use std::sync::Arc;
 
-use daft_shuffles::server::flight_server::ShuffleFlightServer;
+use common_error::DaftResult;
+use daft_local_plan::SharedShuffleSpec;
+use daft_shuffles::{
+    oneshot_writer::OneShotTarget, server::flight_server::ShuffleFlightServer,
+    store::ShuffleDurability,
+};
 
 /// Transport handles shared by all Flight-backed states of a single shuffle sink.
 ///
@@ -14,6 +19,24 @@ pub(crate) struct FlightShuffleContext {
     pub(crate) compression: Option<String>,
     pub(crate) local_server: Arc<ShuffleFlightServer>,
     pub(crate) shuffle_address: String,
+    /// Present when this shuffle writes to a cluster-shared mount rather than
+    /// the node-local `shuffle_dirs`.
+    pub(crate) shared: Option<SharedShuffleSpec>,
+}
+
+impl FlightShuffleContext {
+    /// Destination for this shuffle's combined map files.
+    pub(crate) fn oneshot_target(&self) -> DaftResult<OneShotTarget> {
+        match &self.shared {
+            Some(spec) => Ok(OneShotTarget::Shared {
+                shared_root: spec.root.clone(),
+                durability: ShuffleDurability::parse(Some(&spec.durability))?,
+            }),
+            None => Ok(OneShotTarget::Local {
+                shuffle_dirs: self.shuffle_dirs.clone(),
+            }),
+        }
+    }
 }
 
 /// Picks between the Ray path and the Flight path for local shuffle operators
@@ -39,6 +62,7 @@ impl LocalShuffleBackend {
                 shuffle_id,
                 shuffle_dirs,
                 compression,
+                shared,
             } => {
                 let (local_server, shuffle_address) = shuffle_server.expect(
                     "Flight shuffle server must be initialized for Flight shuffle plans when using flight_shuffle algorithm",
@@ -49,6 +73,7 @@ impl LocalShuffleBackend {
                     compression: compression.clone(),
                     local_server,
                     shuffle_address,
+                    shared: shared.clone(),
                 }))
             }
         }

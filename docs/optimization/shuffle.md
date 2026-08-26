@@ -11,6 +11,7 @@ If you're picking a partition count for `repartition` or thinking about batch si
 > - Stay on the default `shuffle_algorithm="auto"` for most queries. Daft picks between `map_reduce` and `pre_shuffle_merge` based on partition count.
 > - If your shuffle is **>10 GB of data** or **>500K partition slots** (`input_partitions × output_partitions`), switch to `flight_shuffle`. Daft prints a hint in the query plan when it sees one.
 > - When you enable `flight_shuffle`, point `flight_shuffle_dirs` at a fast local disk. The default is `["/tmp"]`. Spill files are `lz4`-compressed by default; set `flight_shuffle_compression="zstd"` on EBS or other networked volumes.
+> - If your cluster has a shared POSIX filesystem and you are losing workers mid-query, set `flight_shuffle_placement="shared_only"` so a lost worker's partitions stay readable.
 
 ## Shuffle algorithms
 
@@ -84,6 +85,67 @@ Arrow IPC compression for the spill files. One of `"lz4"` (the default), `"zstd"
 
 Set `"none"` only if you're CPU-bound on very fast storage — for example, several local NVMe drives whose aggregate bandwidth outruns what the CPU can compress through.
 
+## Writing shuffle data to a shared filesystem
+
+By default `flight_shuffle` keeps map output on node-local disks and serves it to other workers over gRPC. That makes a partition reachable only while the worker that wrote it is alive: if that worker dies after finishing its map task, the data and the in-memory index describing it are both gone, and the query fails.
+
+If your cluster has a POSIX filesystem every node can see — Lustre, NFS, FSx, GPFS, a shared EBS-backed volume — you can write shuffle data there instead:
+
+```python
+daft.context.set_execution_config(
+    shuffle_algorithm="flight_shuffle",
+    flight_shuffle_placement="shared_only",
+    flight_shuffle_shared_dir="/mnt/shared",   # must be set in the same call
+)
+```
+
+This buys two things:
+
+- **Any node can read any partition directly**, without proxying through the writing worker. That removes a network hop and the writer's CPU from the read path.
+- **Losing a worker stops being fatal.** If a gRPC fetch fails before returning data, the reduce task finishes the read from the shared copy instead.
+
+The trade is write bandwidth: every node now writes to one filesystem, so the shared mount's aggregate write throughput becomes a cluster-wide ceiling rather than a per-node one. Measure that ceiling before moving a large shuffle onto it.
+
+!!! note "Applies to repartition-style shuffles"
+
+    Shared placement covers the shuffles that dominate large queries — `repartition`, `df.shuffle()`, and the exchanges inside joins, sorts, and aggregations. Gather and `into_partitions` always write node-locally, because their per-partition layout has no on-disk index for a peer to resolve.
+
+### `flight_shuffle_shared_durability`
+
+How hard the map side works to make a shared write survive losing its writer. One of `"background"` (the default), `"none"`, or `"sync"`.
+
+This knob exists because `fsync` on a shared filesystem is often far more expensive than its local equivalent, and frequently *size-independent* — on the Lustre deployment this was developed against, a single `fsync` cost about a second whether the file was 0 B or 64 MiB, and only ~25 completed per second even at 32-way concurrency. Paying that on the map task's critical path cut write throughput from ~610 MiB/s to 140–340 MiB/s.
+
+The way out is that visibility and durability are separable. A reduce task reading from a *live* writer needs only visibility, which the filesystem's close-to-open coherency already provides for free. `fsync` only matters for the narrower case where the writer node dies with data still in its page cache.
+
+| Value | Behavior | Use when |
+|---|---|---|
+| `"background"` (default) | Publishes the file immediately, then `fsync`s off the critical path | Almost always. Full write throughput, with durability following shortly behind. |
+| `"none"` | Never `fsync`s | You would rather re-run the query than pay for durability at all. A shared copy can be lost if its writer node dies. |
+| `"sync"` | `fsync`s before publishing, so a visible file is a durable one | A filesystem with cheap `fsync`, or a job where losing a worker mid-query is expensive enough to justify several-fold slower writes. |
+
+### `flight_shuffle_read_source`
+
+How *this worker* fetches partitions written by others. One of `"auto"` (the default), `"rpc"`, or `"shared"`. Unlike placement, this is a per-worker setting: which route is faster depends on the reader's own link to its peers versus to the shared mount.
+
+- `"auto"` reads the shared mount directly when the data is there, and uses gRPC otherwise.
+- `"rpc"` always tries gRPC first.
+- `"shared"` always reads the shared mount, and errors if the shuffle was not written to one.
+
+`"auto"` and `"rpc"` both fall back to the shared mount when a gRPC fetch fails before returning any data — this is the path that keeps a lost worker from failing the query. Once batches have been handed downstream the fallback is unsafe (they would be delivered twice), so a mid-stream failure surfaces as an error.
+
+### `flight_shuffle_shared_read_concurrency`
+
+How many map files a reduce task reads from the shared mount at once. Defaults to 16.
+
+This is deliberately higher than `scantask_max_parallel` (8). Shared-mount reads are dominated by per-file round trips rather than by bytes: opening a file and reading its index costs a few milliseconds regardless of how much data follows. A reduce task with thousands of map inputs will sit on that latency floor unless it keeps many reads in flight. Raise it further on high-latency mounts.
+
+### Sizing check: keep per-partition reads large
+
+Each reduce task reads one byte range per map file, averaging roughly `total_shuffle_bytes ÷ (input_partitions × output_partitions)`. Shared filesystems fall off a cliff when that range gets small — on the reference Lustre mount, 4 MiB ranges read at 430 MiB/s per stream but 64 KiB ranges managed only 22.8 MiB/s.
+
+Before moving a large shuffle to shared placement, check that figure. A 1 TB shuffle with 10,000 input and 8,192 output partitions gives ~13 KiB per range, which will read badly. Reduce the partition product — usually by lowering the output partition count — until the average range is comfortably above 1 MiB.
+
 ## Choosing between algorithms
 
 For most queries, leave `shuffle_algorithm="auto"`. Override when:
@@ -91,6 +153,7 @@ For most queries, leave `shuffle_algorithm="auto"`. Override when:
 - **`auto` printed a `flight_shuffle` hint in your query plan.** Enable `flight_shuffle` and set `flight_shuffle_dirs` to a fast local disk.
 - **A large shuffle is OOMing the head node or stalling the scheduler, with no hint shown.** The hint thresholds are conservative; switch to `flight_shuffle` anyway.
 - **You want to compare the object-store paths directly.** Set `shuffle_algorithm="map_reduce"` for small partition counts, or `"pre_shuffle_merge"` when the partition product is large but total bytes are moderate. These are mainly useful for benchmarking.
+- **Workers are being lost mid-query, or you have a fast shared filesystem.** Add `flight_shuffle_placement="shared_only"` on top of `flight_shuffle`. See [Writing shuffle data to a shared filesystem](#writing-shuffle-data-to-a-shared-filesystem).
 
 If you're unsure whether your shuffle has crossed the thresholds, run it once with `auto` and read the hint in the query plan.
 

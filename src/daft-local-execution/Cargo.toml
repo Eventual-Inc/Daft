@@ -1,4 +1,5 @@
 [dependencies]
+async-stream = {workspace = true}
 arc-swap = {workspace = true}
 arrow = {workspace = true}
 arrow-array = {workspace = true}

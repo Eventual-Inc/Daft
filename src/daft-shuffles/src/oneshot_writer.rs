@@ -4,6 +4,10 @@
 //!   [ schema header ] [ partition 0 batches ] ... [ partition N-1 batches ] [ EOS ]
 //! Per-partition (start, end) byte ranges let the Flight server serve a single
 //! output partition without scanning neighbours.
+//!
+//! With [`OneShotTarget::Shared`] the same stream is preceded by an index region
+//! recording those ranges (see [`crate::store::index`]) and published by atomic
+//! rename, so a node that never saw the writer can resolve the ranges itself.
 
 use std::{
     fs::File,
@@ -17,14 +21,22 @@ use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use daft_schema::schema::SchemaRef;
 
-use crate::shuffle_cache::{CHUNK_TARGET_BYTES, PartitionCache, partition_ref_id};
+use crate::{
+    shuffle_cache::{CHUNK_TARGET_BYTES, PartitionCache, partition_ref_id},
+    store::{ShuffleDurability, shared_map_file, writer::SharedMapFileCommit},
+};
 
-/// 1 MiB BufWriter capacity — amortizes syscall cost across multiple
+/// 4 MiB BufWriter capacity — amortizes syscall cost across multiple
 /// small IPC writes per stripe. `StreamWriter::write` issues several
 /// `write` calls per batch (continuation marker, metadata flatbuffer,
 /// padding, then each column buffer); at sub-256-KiB stripes these
 /// were going straight to the kernel as separate syscalls.
-const FILE_BUF_BYTES: usize = 1024 * 1024;
+///
+/// Sized to match [`CHUNK_TARGET_BYTES`] rather than the 1 MiB it used to be:
+/// shared mounts reward larger writes disproportionately (measured on Lustre,
+/// 1 MiB chunks sustained ~320-460 MiB/s against ~610 MiB/s for 4 MiB), and
+/// node-local disks are indifferent.
+const FILE_BUF_BYTES: usize = CHUNK_TARGET_BYTES;
 
 struct CountingFile {
     inner: BufWriter<File>,
@@ -32,11 +44,20 @@ struct CountingFile {
 }
 
 impl CountingFile {
-    fn new(inner: File) -> Self {
+    /// `start_offset` is where the IPC stream begins in the file, so that the
+    /// byte counter — and therefore every recorded range — is an absolute file
+    /// offset even when an index region precedes the stream.
+    fn new_at(inner: File, start_offset: u64) -> Self {
         Self {
             inner: BufWriter::with_capacity(FILE_BUF_BYTES, inner),
-            bytes_written: 0,
+            bytes_written: start_offset,
         }
+    }
+
+    fn into_file(self) -> DaftResult<File> {
+        self.inner
+            .into_inner()
+            .map_err(|e| DaftError::InternalError(format!("IPC writer flush failed: {}", e)))
     }
 }
 
@@ -53,19 +74,31 @@ impl Write for CountingFile {
 
 type ShuffleWriter = arrow_ipc::writer::StreamWriter<CountingFile>;
 
+/// Where one map task's combined file goes.
+#[derive(Clone, Debug)]
+pub enum OneShotTarget {
+    /// Node-local disk, round-robined across `shuffle_dirs`. Reachable only via
+    /// the writing worker's Flight server, which holds the byte ranges in memory.
+    Local { shuffle_dirs: Vec<String> },
+    /// A cluster-shared mount. The file carries its own index and is published by
+    /// atomic rename, so any node can read it without consulting the writer.
+    Shared {
+        shared_root: String,
+        durability: ShuffleDurability,
+    },
+}
+
 /// Write `partitions` to a single combined IPC file. Returns one
 /// `PartitionCache` per output partition with the byte range to read.
 pub async fn write_partitions_one_shot(
     input_id: u32,
     shuffle_id: u64,
-    shuffle_dirs: &[String],
+    target: OneShotTarget,
     schema: SchemaRef,
     compression: Option<arrow_ipc::CompressionType>,
     partitions: Vec<MicroPartition>,
 ) -> DaftResult<Vec<PartitionCache>> {
     let num_partitions = partitions.len();
-    let dir_idx = (input_id as usize) % shuffle_dirs.len();
-    let shuffle_dir = format!("{}/daft_shuffle/{}", shuffle_dirs[dir_idx], shuffle_id);
 
     // IPC encode + disk write all run on a single spawn_blocking thread.
     // Previously we fanned out per-partition `tokio::spawn` calls, but at
@@ -73,8 +106,9 @@ pub async fn write_partitions_one_shot(
     // scheduling overhead exceeded the actual work.
     get_io_runtime(true)
         .spawn_blocking(move || -> DaftResult<Vec<PartitionCache>> {
-            std::fs::create_dir_all(&shuffle_dir)?;
-            let file_path = format!("{}/map_{}.arrow", shuffle_dir, input_id);
+            let (mut commit, file, base_offset, file_path) =
+                open_target(&target, shuffle_id, input_id, num_partitions)?;
+
             let arrow_schema = Arc::new(schema.to_arrow()?);
             let write_options = arrow_ipc::writer::IpcWriteOptions::default()
                 .try_with_compression(compression)
@@ -82,14 +116,19 @@ pub async fn write_partitions_one_shot(
                     DaftError::InternalError(format!("IPC compression init failed: {}", e))
                 })?;
             let mut writer = arrow_ipc::writer::StreamWriter::try_new_with_options(
-                CountingFile::new(File::create(&file_path)?),
+                CountingFile::new_at(file, base_offset),
                 arrow_schema.as_ref(),
                 write_options,
             )
             .map_err(|e| DaftError::InternalError(format!("IPC writer init failed: {}", e)))?;
 
+            // Partition boundaries double as the on-disk index for the shared
+            // target: `offsets[p]..offsets[p + 1]` is partition `p`, and an empty
+            // partition is a zero-length range rather than a gap.
+            let mut offsets: Vec<u64> = Vec::with_capacity(num_partitions + 1);
             let mut caches: Vec<PartitionCache> = Vec::with_capacity(num_partitions);
             for (idx, partition) in partitions.into_iter().enumerate() {
+                offsets.push(writer.get_ref().bytes_written);
                 caches.push(write_one_partition(
                     partition,
                     partition_ref_id(input_id, idx),
@@ -99,6 +138,9 @@ pub async fn write_partitions_one_shot(
                     &file_path,
                 )?);
             }
+            // Closing bound of the last partition, taken before `finish` so the
+            // EOS marker falls outside every range.
+            offsets.push(writer.get_ref().bytes_written);
 
             writer.finish().map_err(|e| {
                 DaftError::InternalError(format!("IPC writer finish failed: {}", e))
@@ -107,9 +149,55 @@ pub async fn write_partitions_one_shot(
             writer
                 .flush()
                 .map_err(|e| DaftError::InternalError(format!("IPC writer flush failed: {}", e)))?;
+
+            if let Some(commit) = commit.take() {
+                let durability = match &target {
+                    OneShotTarget::Shared { durability, .. } => *durability,
+                    OneShotTarget::Local { .. } => {
+                        unreachable!("commit only exists for shared targets")
+                    }
+                };
+                let file = writer
+                    .into_inner()
+                    .map_err(|e| {
+                        DaftError::InternalError(format!("IPC writer into_inner failed: {}", e))
+                    })?
+                    .into_file()?;
+                commit.commit(file, &offsets, durability)?;
+            }
+
             Ok(caches)
         })
         .await?
+}
+
+/// Create the destination file and report where the IPC stream starts within it.
+///
+/// The returned path is the one recorded in each `PartitionCache`, i.e. the path
+/// readers will use — for the shared target that is the post-rename path, not the
+/// temporary actually being written.
+fn open_target(
+    target: &OneShotTarget,
+    shuffle_id: u64,
+    input_id: u32,
+    num_partitions: usize,
+) -> DaftResult<(Option<SharedMapFileCommit>, File, u64, String)> {
+    match target {
+        OneShotTarget::Local { shuffle_dirs } => {
+            let dir_idx = (input_id as usize) % shuffle_dirs.len();
+            let shuffle_dir = format!("{}/daft_shuffle/{}", shuffle_dirs[dir_idx], shuffle_id);
+            std::fs::create_dir_all(&shuffle_dir)?;
+            let file_path = format!("{}/map_{}.arrow", shuffle_dir, input_id);
+            let file = File::create(&file_path)?;
+            Ok((None, file, 0, file_path))
+        }
+        OneShotTarget::Shared { shared_root, .. } => {
+            let (commit, file, base_offset) =
+                SharedMapFileCommit::begin(shared_root, shuffle_id, input_id, num_partitions)?;
+            let file_path = shared_map_file(shared_root, shuffle_id, input_id);
+            Ok((Some(commit), file, base_offset, file_path))
+        }
+    }
 }
 
 /// Write one output partition to `writer`, coalescing small Daft record batches

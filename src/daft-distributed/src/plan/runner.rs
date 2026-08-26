@@ -51,6 +51,9 @@ pub(crate) struct PlanExecutionContext {
     joinset: JoinSet<DaftResult<()>>,
     task_id_counter: TaskIDCounter,
     shuffle_dirs: Vec<String>,
+    /// Trees on a cluster-shared mount: one copy exists for the whole cluster, so
+    /// these are removed once rather than by every node.
+    shared_shuffle_dirs: Vec<String>,
     statistics_manager: StatisticsManagerRef,
 }
 
@@ -67,6 +70,7 @@ impl PlanExecutionContext {
             joinset,
             task_id_counter: TaskIDCounter::new(),
             shuffle_dirs: Vec::new(),
+            shared_shuffle_dirs: Vec::new(),
             statistics_manager,
         }
     }
@@ -87,9 +91,14 @@ impl PlanExecutionContext {
         self.task_id_counter.clone()
     }
 
-    /// Register shuffle directories for cleanup when the plan completes
+    /// Register node-local shuffle directories for cleanup when the plan completes
     pub fn register_shuffle_dirs(&mut self, dirs: Vec<String>) {
         self.shuffle_dirs.extend(dirs);
+    }
+
+    /// Register shared-mount shuffle directories for cleanup when the plan completes
+    pub fn register_shared_shuffle_dirs(&mut self, dirs: Vec<String>) {
+        self.shared_shuffle_dirs.extend(dirs);
     }
 }
 
@@ -201,6 +210,7 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
 
         let running_node = pipeline_node.produce_tasks(&mut plan_context);
         let shuffle_dirs = std::mem::take(&mut plan_context.shuffle_dirs);
+        let shared_shuffle_dirs = std::mem::take(&mut plan_context.shared_shuffle_dirs);
         let running_stage = RunningPlan::new(running_node, plan_context);
 
         let mut materialized_result_stream = running_stage.materialize(scheduler_handle);
@@ -210,8 +220,11 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
             }
         }
 
-        if !shuffle_dirs.is_empty()
-            && let Err(e) = self.worker_manager.cleanup_shuffle_dirs(shuffle_dirs).await
+        if (!shuffle_dirs.is_empty() || !shared_shuffle_dirs.is_empty())
+            && let Err(e) = self
+                .worker_manager
+                .cleanup_shuffle_dirs(shuffle_dirs, shared_shuffle_dirs)
+                .await
         {
             tracing::warn!("Failed to clear flight shuffle directories: {}", e);
         }

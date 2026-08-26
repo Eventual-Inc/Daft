@@ -244,6 +244,11 @@ def set_execution_config(
     dynamic_batching_strategy: str | None = None,
     flight_shuffle_dirs: list[str] | None = None,
     flight_shuffle_compression: str | None = None,
+    flight_shuffle_shared_dir: str | None = None,
+    flight_shuffle_placement: str | None = None,
+    flight_shuffle_shared_durability: str | None = None,
+    flight_shuffle_read_source: str | None = None,
+    flight_shuffle_shared_read_concurrency: int | None = None,
     enable_multi_glob_path_tasks: bool | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
@@ -294,6 +299,11 @@ def set_execution_config(
         dynamic_batching_strategy: The strategy to use for dynamic batching. Defaults to 'auto'.
         flight_shuffle_dirs: Directories to use for flight shuffle. Defaults to ["/tmp"]. Must not be empty.
         flight_shuffle_compression: Arrow IPC compression for flight shuffle spill files. One of "lz4", "zstd", or "none". Defaults to "lz4". Pass "none" to disable compression; passing Python None leaves the current config unchanged.
+        flight_shuffle_shared_dir: A cluster-shared POSIX directory (Lustre, NFS, FSx, ...) to write flight shuffle data to. Required when `flight_shuffle_placement` is "shared_only", and must be set in the same call. Defaults to None.
+        flight_shuffle_placement: Where flight shuffle map output is written. "local_only" (the default) uses the node-local `flight_shuffle_dirs` and serves partitions over gRPC only. "shared_only" writes to `flight_shuffle_shared_dir`, letting any node read a partition directly and letting a query survive losing the worker that wrote it. Only applies to repartition-style shuffles; gather and into_partitions always write node-locally.
+        flight_shuffle_shared_durability: How shared-directory writes are fsynced. "background" (the default) publishes the file immediately and fsyncs off the critical path; "none" never fsyncs, so a shared copy can be lost if its writer node dies; "sync" fsyncs before publishing, which is the strongest but can cut write throughput several-fold on filesystems with expensive fsync.
+        flight_shuffle_read_source: How this worker fetches shuffle partitions written by other workers. "auto" (the default) reads the shared directory directly when the data is there and otherwise uses gRPC; "rpc" always tries gRPC first; "shared" always reads the shared directory. "auto" and "rpc" both fall back to the shared directory if the gRPC fetch fails before returning data.
+        flight_shuffle_shared_read_concurrency: How many map files a reduce task reads from the shared directory at once. Defaults to 16, above `scantask_max_parallel` because shared-mount reads are dominated by per-file round trips rather than bytes.
         enable_multi_glob_path_tasks: Whether to create multiple glob path tasks in Ray Runner to achieve parallel glob. Defaults to False.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
@@ -344,6 +354,11 @@ def set_execution_config(
             dynamic_batching_strategy=dynamic_batching_strategy,
             flight_shuffle_dirs=flight_shuffle_dirs,
             flight_shuffle_compression=flight_shuffle_compression,
+            flight_shuffle_shared_dir=flight_shuffle_shared_dir,
+            flight_shuffle_placement=flight_shuffle_placement,
+            flight_shuffle_shared_durability=flight_shuffle_shared_durability,
+            flight_shuffle_read_source=flight_shuffle_read_source,
+            flight_shuffle_shared_read_concurrency=flight_shuffle_shared_read_concurrency,
             enable_multi_glob_path_tasks=enable_multi_glob_path_tasks,
         )
 

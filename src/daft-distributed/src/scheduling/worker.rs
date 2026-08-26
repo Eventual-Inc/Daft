@@ -43,9 +43,14 @@ pub(crate) trait WorkerManager: Send + Sync {
     fn mark_worker_died(&self, worker_id: WorkerId);
     fn worker_snapshots(&self) -> DaftResult<Vec<WorkerSnapshot>>;
     fn try_autoscale(&self, resource_requests: Vec<TaskResourceRequest>) -> DaftResult<()>;
+    /// Remove a completed shuffle's spill trees.
+    ///
+    /// `dirs` are node-local and must be removed on every node; `shared_dirs`
+    /// live on a mount all nodes see, so they are removed exactly once.
     fn cleanup_shuffle_dirs(
         &self,
         _dirs: Vec<String>,
+        _shared_dirs: Vec<String>,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = DaftResult<()>> + Send + '_>> {
         Box::pin(async { Ok(()) })
     }

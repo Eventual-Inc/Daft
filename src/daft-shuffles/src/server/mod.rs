@@ -1,2 +1,2 @@
 pub mod flight_server;
-mod stream;
+pub(crate) mod stream;

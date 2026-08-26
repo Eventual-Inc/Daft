@@ -9,14 +9,18 @@ pub(crate) use task::{RaySwordfishTask, RayTaskResult};
 pub(crate) use worker::RaySwordfishWorker;
 pub(crate) use worker_manager::RayWorkerManager;
 
-/// Call Python to clear shuffle directories on all Ray nodes
-pub(super) async fn clear_shuffle_dirs_on_all_nodes(shuffle_dirs: Vec<String>) -> DaftResult<()> {
+/// Call Python to clear shuffle directories: `shuffle_dirs` on every Ray node,
+/// `shared_dirs` exactly once.
+pub(super) async fn clear_shuffle_dirs_on_all_nodes(
+    shuffle_dirs: Vec<String>,
+    shared_dirs: Vec<String>,
+) -> DaftResult<()> {
     common_runtime::python::execute_python_coroutine_noreturn(move |py| {
         let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
 
         let coroutine = flotilla_module.call_method1(
             pyo3::intern!(py, "clear_flight_shuffle_dirs_on_all_nodes"),
-            (shuffle_dirs,),
+            (shuffle_dirs, shared_dirs),
         )?;
 
         Ok(coroutine)
