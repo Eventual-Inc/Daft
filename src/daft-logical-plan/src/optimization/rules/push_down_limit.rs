@@ -89,7 +89,11 @@ impl PushDownLimit {
                     // Limit-Source -> Limit-Source[with_limit]
                     LogicalPlan::Source(source) => {
                         let LogicalSource { source_info, .. } = source;
-                        let pushdown_limit = limit + offset.unwrap_or(0) as usize;
+                        // Do the arithmetic in u64 so a large offset cannot overflow.
+                        let pushdown_limit: usize = (limit as u64)
+                            .saturating_add(offset.unwrap_or(0))
+                            .try_into()
+                            .unwrap_or(usize::MAX);
                         match source_info.as_ref() {
                             // Limit pushdown is not supported for in-memory sources.
                             SourceInfo::InMemory(_) => Ok(Transformed::no(plan)),
@@ -225,16 +229,41 @@ impl PushDownLimit {
                         };
                         // The number of rows that could be relevant to the output is
                         // limit + offset (rows that are skipped still need to exist).
-                        let pushdown_limit = (limit + offset.unwrap_or(0) as usize) as u64;
+                        // Compute in u64 so that a large offset cannot overflow.
+                        let pushdown_limit = (limit as u64).saturating_add(offset.unwrap_or(0));
                         // Wrap `child` in a Limit unless it already emits an
                         // equal-or-smaller number of rows (guards against re-pushing on
                         // subsequent optimizer passes). A child Limit emits at most
                         // `limit` rows regardless of its offset, so the offset is
-                        // irrelevant here.
+                        // irrelevant here. Look through the operators that this rule
+                        // commutes with, because a Limit pushed down by an earlier pass
+                        // may have since commuted below them.
                         let make_limited = |child: &Arc<LogicalPlan>| -> Option<Arc<LogicalPlan>> {
+                            let mut node = child.as_ref();
+                            loop {
+                                node = match node {
+                                    LogicalPlan::Project(LogicalProject {
+                                        input,
+                                        projection,
+                                        ..
+                                    }) if !projection.iter().any(Self::contains_explode) => {
+                                        input.as_ref()
+                                    }
+                                    LogicalPlan::Repartition(repartition) => {
+                                        repartition.input.as_ref()
+                                    }
+                                    LogicalPlan::IntoBatches(into_batches) => {
+                                        into_batches.input.as_ref()
+                                    }
+                                    LogicalPlan::IntoPartitions(into_partitions) => {
+                                        into_partitions.input.as_ref()
+                                    }
+                                    _ => break,
+                                };
+                            }
                             if let LogicalPlan::Limit(LogicalLimit {
                                 limit: child_limit, ..
-                            }) = child.as_ref()
+                            }) = node
                                 && *child_limit <= pushdown_limit
                             {
                                 return None;
@@ -307,7 +336,7 @@ mod tests {
         LogicalPlan, LogicalPlanBuilder,
         optimization::{
             optimizer::{RuleBatch, RuleExecutionStrategy},
-            rules::PushDownLimit,
+            rules::{OptimizerRule, PushDownLimit},
             test::assert_optimized_plan_with_rules_eq,
         },
         test::{dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator},
@@ -803,6 +832,131 @@ mod tests {
             .limit(limit, false)?
             .build();
         assert_optimized_plan_eq(plan.clone(), plan)?;
+        Ok(())
+    }
+
+    /// Tests that the join-side idempotency guard looks through the operators
+    /// that this rule commutes with. After an earlier pass pushes a Limit onto
+    /// the outer side, that Limit commutes below the Project/Repartition/
+    /// IntoBatches/IntoPartitions node, and the rule must still recognize it
+    /// and reach a fixed point instead of re-wrapping on every pass.
+    #[rstest]
+    #[case::project("project")]
+    #[case::repartition("repartition")]
+    #[case::into_batches("into_batches")]
+    #[case::into_partitions("into_partitions")]
+    fn limit_does_not_rewrap_smaller_limit_below_commuting_op_on_left_join(
+        #[case] commuting_op: &str,
+    ) -> DaftResult<()> {
+        let limit = 5;
+        let existing_limit = 2;
+        let left_scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ]);
+        let right_scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("c", DataType::Utf8),
+        ]);
+        // The outer side as left behind by an earlier pass: a small Limit
+        // (already pushed into the source) sitting below a commuting operator.
+        let left_side = dummy_scan_node_with_pushdowns(
+            left_scan_op,
+            Pushdowns::default().with_limit(Some(existing_limit as usize)),
+        )
+        .limit(existing_limit, false)?;
+        let left_side = match commuting_op {
+            "project" => left_side.select(vec![unresolved_col("a")])?,
+            "repartition" => left_side.hash_repartition(Some(1), vec![unresolved_col("a")])?,
+            "into_batches" => left_side.into_batches(10)?,
+            _ => left_side.into_partitions(2)?,
+        };
+        let plan = left_side
+            .join(
+                dummy_scan_node(right_scan_op),
+                None,
+                vec!["a".to_string()],
+                JoinType::Left,
+                None,
+                Default::default(),
+            )?
+            .limit(limit, false)?
+            .build();
+        // The rule must be a fixed point on this plan: re-wrapping the outer
+        // side would ping-pong on every optimizer pass.
+        let result = PushDownLimit::new().try_optimize(plan.clone())?;
+        assert!(!result.transformed);
+        assert_eq!(result.data, plan);
+        Ok(())
+    }
+
+    /// Tests that `limit + offset` is computed in u64 when pushed through a
+    /// join, so a huge offset saturates instead of overflowing usize (which
+    /// would panic in debug builds).
+    #[test]
+    fn limit_plus_offset_does_not_overflow_through_left_join() -> DaftResult<()> {
+        let limit = u64::MAX;
+        let offset = 1;
+        let left_scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ]);
+        let right_scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("c", DataType::Utf8),
+        ]);
+        let plan = dummy_scan_node(left_scan_op.clone())
+            .join(
+                dummy_scan_node(right_scan_op.clone()),
+                None,
+                vec!["a".to_string()],
+                JoinType::Left,
+                None,
+                Default::default(),
+            )?
+            .limit_with_offset(limit, Some(offset), false)?
+            .build();
+        // limit + offset saturates at u64::MAX, which is usize::MAX on 64-bit
+        // platforms.
+        let expected = dummy_scan_node_with_pushdowns(
+            left_scan_op,
+            Pushdowns::default().with_limit(Some(usize::MAX)),
+        )
+        .limit(u64::MAX, false)?
+        .join(
+            dummy_scan_node(right_scan_op),
+            None,
+            vec!["a".to_string()],
+            JoinType::Left,
+            None,
+            Default::default(),
+        )?
+        .limit_with_offset(limit, Some(offset), false)?
+        .build();
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// Tests that `limit + offset` is computed in u64 when pushed into a
+    /// source, so a huge offset saturates instead of overflowing usize.
+    #[test]
+    fn limit_plus_offset_does_not_overflow_into_source() -> DaftResult<()> {
+        let limit = u64::MAX;
+        let offset = 1;
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ]);
+        let plan = dummy_scan_node(scan_op.clone())
+            .limit_with_offset(limit, Some(offset), false)?
+            .build();
+        let expected = dummy_scan_node_with_pushdowns(
+            scan_op,
+            Pushdowns::default().with_limit(Some(usize::MAX)),
+        )
+        .limit_with_offset(limit, Some(offset), false)?
+        .build();
+        assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
 }
