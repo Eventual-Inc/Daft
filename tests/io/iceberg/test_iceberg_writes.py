@@ -803,3 +803,11 @@ def test_write_iceberg_identity_partitioned_by_timestamptz(local_catalog):
     assert daft.read_iceberg(table).sort("x").to_pydict()["x"] == [1, 2]
     partitions = sorted(task.file.partition[0] for task in table.scan().plan_files())
     assert partitions == [1704110400000000, 1704196800000000]
+
+    # Read back through pyiceberg so a Daft-only writer/reader agreement cannot hide an
+    # interoperability regression.
+    read_back = table.scan().to_arrow().sort_by("x").to_pydict()
+    assert read_back["ts"] == [
+        datetime.datetime(2024, 1, 1, 12, 0, 0, tzinfo=tz),
+        datetime.datetime(2024, 1, 2, 12, 0, 0, tzinfo=tz),
+    ]
