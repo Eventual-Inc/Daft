@@ -705,3 +705,17 @@ def test_multiple_limits():
 
     df = df.to_pydict()
     assert df["id"] == [i for i in range(901, 1000)]
+
+
+def test_limit_below_and_above_multipartition_join():
+    # Regression test for a panic in the distributed shuffle: a Limit below a
+    # join cuts some upstream tasks down to zero rows, so those tasks emit a
+    # materialized output with no partitions at all. Transposing the shuffle
+    # outputs used to require every output to carry exactly `num_partitions`
+    # partitions and indexed into them unconditionally, which panicked with
+    # "Expected all outputs to have 8 partitions, got 0, 8, 0, ...".
+    left = daft.range(0, 1000, partitions=8).with_column("k", col("id") % 100)
+    right = daft.range(0, 100, partitions=8).select(col("id").alias("k"))
+    joined = left.limit(20).join(right, on="k", how="left").limit(20)
+    result = joined.to_pydict()
+    assert len(next(iter(result.values()))) == 20
