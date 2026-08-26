@@ -100,3 +100,11 @@ def test_empty_env_override_falls_back_to_autodetection(monkeypatch, fake_ray):
     monkeypatch.setenv("DAFT_RAY_DASHBOARD_URL", "")
 
     assert ray_runner._resolve_ray_dashboard_url() == "http://127.0.0.1:8265/#/jobs/job-1"
+
+
+def test_override_hostname_starting_with_http_still_gets_a_scheme(monkeypatch, fake_ray):
+    """A bare hostname like `http-proxy.internal` must not be mistaken for a full URL."""
+    fake_ray(job_id=None)
+    monkeypatch.setenv("DAFT_RAY_DASHBOARD_URL", "http-proxy.example.com")
+
+    assert ray_runner._resolve_ray_dashboard_url() == "http://http-proxy.example.com"

@@ -559,7 +559,9 @@ def _resolve_ray_dashboard_url() -> str | None:
         if not url:
             return None
 
-    if not url.startswith("http"):
+    # Match the scheme check the dashboard frontend does when rendering the link, so a
+    # hostname that merely starts with "http" (e.g. "http-proxy.internal") still gets one.
+    if not url.startswith(("http://", "https://")):
         url = f"http://{url}"
 
     # Try to append Job ID, unless the configured URL already points at a specific route.
