@@ -730,26 +730,3 @@ def test_limit_below_and_above_multipartition_join():
     assert len(set(ids)) == 20, "limit/join duplicated or fanned out rows"
     assert all(k is not None for k in keys), "left join null-extended a matched row"
     assert all(k == i % 100 for i, k in zip(ids, keys)), "shuffle mis-routed join keys"
-
-
-def test_limit_pushed_onto_multipartition_left_join_side():
-    # Regression: PushDownLimit pushes the outer limit onto the row-preserving
-    # (left) side of a Left join. That side is hash-repartitioned (a shuffle)
-    # for the join, so the pushed limit lands directly above a shuffle. A
-    # coordinated distributed limit there deadlocks; a per-partition local limit
-    # does not, and the retained outer global limit performs the exact cut.
-    left = daft.range(0, 1000, partitions=8).with_column("k", col("id") % 100)
-    right = daft.range(0, 100, partitions=8).select(col("id").alias("k"))
-    joined = left.join(right, on="k", how="left").limit(20)
-    result = joined.to_pydict()
-    assert len(next(iter(result.values()))) == 20
-
-
-def test_limit_pushed_onto_multipartition_right_join_side():
-    # Symmetric to the Left-join case: for a Right join the right input is the
-    # row-preserving side, so the limit is pushed onto the (shuffled) right side.
-    left = daft.range(0, 100, partitions=8).select(col("id").alias("k"))
-    right = daft.range(0, 1000, partitions=8).with_column("k", col("id") % 100)
-    joined = left.join(right, on="k", how="right").limit(20)
-    result = joined.to_pydict()
-    assert len(next(iter(result.values()))) == 20

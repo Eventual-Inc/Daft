@@ -52,7 +52,6 @@ impl PushDownLimit {
                 input,
                 limit,
                 offset,
-                local,
                 eager,
                 ..
             }) => {
@@ -166,10 +165,12 @@ impl PushDownLimit {
                         let new_limit =
                             (limit as u64).min(child_limit.saturating_sub(offset.unwrap_or(0)));
                         let new_eager = eager | child_eager;
-                        let new_plan = Arc::new(LogicalPlan::Limit(
-                            LogicalLimit::new(input.clone(), new_limit, new_offset, new_eager)
-                                .with_local(*local),
-                        ));
+                        let new_plan = Arc::new(LogicalPlan::Limit(LogicalLimit::new(
+                            input.clone(),
+                            new_limit,
+                            new_offset,
+                            new_eager,
+                        )));
                         // we rerun the optimizer, ideally when we move to a visitor pattern this should go away
                         let optimized = self
                             .try_optimize_node(new_plan.clone())?
@@ -238,10 +239,12 @@ impl PushDownLimit {
                             {
                                 return None;
                             }
-                            Some(Arc::new(LogicalPlan::Limit(
-                                LogicalLimit::new(child.clone(), pushdown_limit, None, *eager)
-                                    .with_local(true),
-                            )))
+                            Some(Arc::new(LogicalPlan::Limit(LogicalLimit::new(
+                                child.clone(),
+                                pushdown_limit,
+                                None,
+                                *eager,
+                            ))))
                         };
                         let (outer_side, other_side) = if push_left {
                             (&join.left, &join.right)
@@ -565,7 +568,7 @@ mod tests {
             left_scan_op,
             Pushdowns::default().with_limit(Some(limit as usize)),
         )
-        .limit_local(limit, false)?
+        .limit(limit, false)?
         .join(
             dummy_scan_node(right_scan_op),
             None,
@@ -611,7 +614,7 @@ mod tests {
                     right_scan_op,
                     Pushdowns::default().with_limit(Some(limit as usize)),
                 )
-                .limit_local(limit, false)?,
+                .limit(limit, false)?,
                 None,
                 vec!["a".to_string()],
                 JoinType::Right,
@@ -656,7 +659,7 @@ mod tests {
             left_scan_op,
             Pushdowns::default().with_limit(Some(pushed as usize)),
         )
-        .limit_local(pushed, false)?
+        .limit(pushed, false)?
         .join(
             dummy_scan_node(right_scan_op),
             None,

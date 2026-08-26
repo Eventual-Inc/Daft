@@ -267,7 +267,6 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     &self.plan_config,
                     limit.limit as usize,
                     limit.offset.map(|x| x as usize),
-                    limit.local,
                     node.schema(),
                     self.curr_node.pop().unwrap(),
                 )),

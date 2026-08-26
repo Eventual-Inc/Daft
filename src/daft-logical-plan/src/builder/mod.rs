@@ -467,16 +467,6 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
-    /// Test-only helper that builds a "local" (per-partition) Limit, matching what
-    /// `PushDownLimit` produces when pushing a limit onto a row-preserving join input.
-    #[cfg(test)]
-    pub(crate) fn limit_local(&self, limit: u64, eager: bool) -> DaftResult<Self> {
-        let logical_plan: LogicalPlan = Limit::new(self.plan.clone(), limit, None, eager)
-            .with_local(true)
-            .into();
-        Ok(self.with_new_plan(logical_plan))
-    }
-
     pub fn offset(&self, offset: u64) -> DaftResult<Self> {
         let logical_plan: LogicalPlan = Offset::new(self.plan.clone(), offset).into();
         Ok(self.with_new_plan(logical_plan))

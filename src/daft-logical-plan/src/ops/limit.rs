@@ -18,15 +18,6 @@ pub struct Limit {
     pub limit: u64,
     // Offset on number of rows. This is optional, it's equivalent to offset = 0 if not passed.
     pub offset: Option<u64>,
-    // Whether this limit is a "local" (per-partition) limit that sits below a
-    // row-preserving operator with a global limit strictly above it (e.g. a
-    // limit pushed onto a join input). When true the distributed executor
-    // lowers it to a plain per-partition local limit instead of a coordinated
-    // DistributedLimit, which would deadlock when a shuffle sits directly above
-    // it. Correctness is preserved because the outer global limit performs the
-    // exact final cut.
-    #[serde(default)]
-    pub local: bool,
     // Whether to send tasks in waves (maximize throughput) or
     // eagerly one-at-a-time (maximize time-to-first-result)
     pub eager: bool,
@@ -46,18 +37,9 @@ impl Limit {
             input,
             limit,
             offset,
-            local: false,
             eager,
             stats_state: StatsState::NotMaterialized,
         }
-    }
-
-    /// Marks this limit as a "local" (per-partition) limit. Used when the limit
-    /// is pushed below a row-preserving operator (e.g. onto a join input) and a
-    /// global limit still exists strictly above it.
-    pub fn with_local(mut self, local: bool) -> Self {
-        self.local = local;
-        self
     }
 
     pub fn with_plan_id(mut self, plan_id: usize) -> Self {
