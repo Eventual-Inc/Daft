@@ -11,6 +11,7 @@ use std::{
 };
 
 use common_error::DaftResult;
+use common_io_config::IOConfig;
 use daft_dsl::{Expr, ExprRef};
 use daft_logical_plan::LogicalPlanBuilder;
 use read_csv::ReadCsvFunction;
@@ -22,7 +23,7 @@ use sqlparser::ast::TableFunctionArgs;
 
 use crate::{
     error::{PlannerError, SQLPlannerResult},
-    functions::SQLLiteral,
+    functions::{SQLFunctionArguments, SQLLiteral},
     invalid_operation_err,
     modules::config::expr_to_iocfg,
     planner::SQLPlanner,
@@ -118,5 +119,21 @@ where
     #[cfg(not(feature = "python"))]
     {
         runtime.block_within_async_context(future)
+    }
+}
+
+/// Resolve a reader's `io_config` argument, falling back to the context default.
+///
+/// Mirrors the Python readers, which do
+/// `io_config = get_context().daft_planning_config.default_io_config if io_config is None`:
+/// an explicit argument wins, otherwise the globally-configured default applies. Without
+/// this fallback `daft.sql("... read_parquet('s3://...')")` silently ignores credentials
+/// that the equivalent `daft.read_parquet` call would pick up.
+pub(crate) fn resolve_io_config(
+    args: &SQLFunctionArguments,
+) -> Result<Option<IOConfig>, PlannerError> {
+    match args.get_named("io_config") {
+        Some(expr) => Ok(Some(expr_to_iocfg(expr)?)),
+        None => Ok(Some(daft_context::get_context().io_config())),
     }
 }

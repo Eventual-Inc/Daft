@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use daft_logical_plan::scan_builder::JsonScanBuilder;
 
-use super::{SQLTableFunction, expr_to_iocfg, try_coerce_list};
+use super::{SQLTableFunction, try_coerce_list};
 use crate::{
     error::PlannerError, functions::SQLFunctionArguments, invalid_operation_err,
     schema::try_parse_schema,
@@ -61,7 +61,7 @@ impl TryFrom<SQLFunctionArguments> for JsonScanBuilder {
             .map(try_parse_schema)
             .transpose()?
             .map(Arc::new);
-        let io_config = args.get_named("io_config").map(expr_to_iocfg).transpose()?;
+        let io_config = super::resolve_io_config(&args)?;
         let skip_empty_files = args.try_get_named("skip_empty_files")?.unwrap_or(false);
 
         Ok(Self {
