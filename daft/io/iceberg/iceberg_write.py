@@ -129,8 +129,14 @@ def to_partition_representation(value: Any) -> Any:
         return None
 
     if isinstance(value, datetime.datetime):
-        # Convert to microseconds since epoch
-        return (value - datetime.datetime(1970, 1, 1)) // datetime.timedelta(microseconds=1)
+        # Convert to microseconds since epoch. A timezone-aware value has to be measured
+        # against an aware epoch, otherwise subtracting the naive epoch raises TypeError.
+        epoch = (
+            datetime.datetime(1970, 1, 1, tzinfo=datetime.timezone.utc)
+            if value.tzinfo is not None
+            else datetime.datetime(1970, 1, 1)
+        )
+        return (value - epoch) // datetime.timedelta(microseconds=1)
     elif isinstance(value, datetime.date):
         # Convert to days since epoch
         return (value - datetime.date(1970, 1, 1)) // datetime.timedelta(days=1)

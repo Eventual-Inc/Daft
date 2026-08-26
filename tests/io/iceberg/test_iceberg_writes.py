@@ -42,10 +42,12 @@ from pyiceberg.types import (
     StringType,
     StructType,
     TimestampType,
+    TimestamptzType,
 )
 from pyiceberg.types import NestedField as _NestedField
 
 import daft
+from daft.io.iceberg.iceberg_write import to_partition_representation
 from daft.io.writer import IcebergWriter
 from daft.recordbatch.micropartition import MicroPartition
 
@@ -752,3 +754,52 @@ def test_protocol_alias_unknown_scheme_raises_without_alias():
     """Without a matching protocol alias, Daft raises NotImplementedError for an unknown URI scheme."""
     with pytest.raises(NotImplementedError, match="Cannot infer PyArrow filesystem"):
         _resolve_paths_and_filesystem("unknownscheme://bucket/path")
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        # Naive timestamps keep working against the naive epoch.
+        (datetime.datetime(2024, 1, 1, 12, 0, 0), 1704110400000000),
+        # Timezone-aware timestamps have to be measured against an aware epoch.
+        (datetime.datetime(2024, 1, 1, 12, 0, 0, tzinfo=datetime.timezone.utc), 1704110400000000),
+        (
+            datetime.datetime(2024, 1, 1, 12, 0, 0, tzinfo=datetime.timezone(datetime.timedelta(hours=8))),
+            1704081600000000,
+        ),
+        (datetime.date(2024, 1, 1), 19723),
+        (datetime.time(1, 2, 3, 4), 3723000004),
+        (None, None),
+        ("passthrough", "passthrough"),
+    ],
+)
+def test_to_partition_representation_matches_pyiceberg(value, expected):
+    """``to_partition_representation`` agrees with pyiceberg's own conversion table."""
+    assert to_partition_representation(value) == expected
+
+
+def test_write_iceberg_identity_partitioned_by_timestamptz(local_catalog):
+    """Writing to a table partitioned by identity(timestamptz) round-trips the values."""
+    schema = Schema(
+        NestedField(field_id=1, name="ts", type=TimestamptzType(), required=False),
+        NestedField(field_id=2, name="x", type=LongType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="ts_identity"))
+    table = local_catalog.create_table("default.ts_identity", schema, partition_spec=spec)
+
+    tz = datetime.timezone.utc
+    df = daft.from_pydict(
+        {
+            "ts": [
+                datetime.datetime(2024, 1, 1, 12, 0, 0, tzinfo=tz),
+                datetime.datetime(2024, 1, 2, 12, 0, 0, tzinfo=tz),
+            ],
+            "x": [1, 2],
+        }
+    )
+    df.write_iceberg(table)
+    table.refresh()
+
+    assert daft.read_iceberg(table).sort("x").to_pydict()["x"] == [1, 2]
+    partitions = sorted(task.file.partition[0] for task in table.scan().plan_files())
+    assert partitions == [1704110400000000, 1704196800000000]
