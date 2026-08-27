@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
 use daft_core::{count_mode::CountMode, prelude::Schema};
-use daft_dsl::{AggExpr, Expr, ExprRef};
+use daft_dsl::{AggExpr, Expr, ExprRef, resolved_col};
 
 use crate::{
     LogicalPlan, logical_plan::Aggregate, optimization::rules::OptimizerRule,
@@ -72,6 +72,7 @@ impl OptimizerRule for PushDownAggregation {
                                             .with_aggregation(Some(agg_expr.clone()));
 
                                         let field = agg_expr.to_field(&input.schema())?;
+                                        let count_field_name = field.name.clone();
                                         let new_schema = Arc::new(Schema::new(vec![field]));
 
                                         let new_external_info =
@@ -83,8 +84,14 @@ impl OptimizerRule for PushDownAggregation {
                                         let new_source =
                                             LogicalPlan::Source(new_source_node).into();
                                         // Scan operators may produce partial counts over multiple scan tasks (e.g., distributed parquet reads), so we still need to sum them.
+                                        //
+                                        // Sum the single column the scan emits, not the count's own argument.
+                                        // They coincide only when the argument is a bare column; for anything
+                                        // else the argument would be evaluated against the post-pushdown
+                                        // schema, e.g. `count(lit(1))` would sum the literal once per scan
+                                        // task and return the scan task count instead of the row count.
                                         let mut sum_expr: ExprRef = Arc::new(Expr::Agg(
-                                            AggExpr::Sum(count_expr(&agg_expr)?),
+                                            AggExpr::Sum(resolved_col(count_field_name)),
                                         ));
                                         // Preserve the original output name so the rewrite is schema-preserving.
                                         if let Some(name) = agg_alias {
@@ -131,15 +138,6 @@ fn as_count_agg(expr: &ExprRef) -> Option<(ExprRef, Option<Arc<str>>, CountMode)
     }
 }
 
-fn count_expr(expr: &ExprRef) -> DaftResult<ExprRef> {
-    match expr.as_ref() {
-        Expr::Agg(AggExpr::Count(expr, _)) => Ok(expr.clone()),
-        _ => Err(DaftError::InternalError(
-            "Tried to get count expression from non-count expression".to_string(),
-        )),
-    }
-}
-
 // Check if the count mode is supported for pushdown
 // Currently only CountMode::All is fully supported
 fn is_count_mode_supported(count_mode: &CountMode) -> bool {
@@ -160,7 +158,7 @@ mod tests {
         optimization::{
             optimizer::{RuleBatch, RuleExecutionStrategy},
             rules::PushDownAggregation,
-            test::assert_optimized_plan_with_rules_eq,
+            test::{assert_optimized_plan_with_rules_eq, optimize_with_rules},
         },
         test::{
             dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator_for_aggregation,
@@ -234,6 +232,43 @@ mod tests {
 
         assert_eq!(plan.schema(), expected.schema());
         assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// The rewritten `Sum` must read the column the scan emits, not the count's own
+    /// argument. Those differ whenever the argument is not a bare column: summing
+    /// `lit(1)` over one partial-count row per scan task yields the scan task count,
+    /// not the row count.
+    #[test]
+    fn agg_count_literal_sums_scan_count_column() -> DaftResult<()> {
+        let scan_op =
+            dummy_scan_operator_for_aggregation(vec![Field::new("a", DataType::UInt64)], true);
+        let count = Arc::new(Expr::Agg(AggExpr::Count(lit(1), CountMode::All)));
+        let plan = dummy_scan_node(scan_op)
+            .aggregate(vec![count.clone()], vec![])?
+            .build();
+
+        let optimized = optimize_with_rules(
+            plan,
+            vec![RuleBatch::new(
+                vec![Box::new(PushDownAggregation::new(true))],
+                RuleExecutionStrategy::Once,
+            )],
+        )?;
+
+        let LogicalPlan::Aggregate(agg) = optimized.as_ref() else {
+            panic!(
+                "expected the count to be pushed down, got:\n{}",
+                optimized.repr_ascii(false)
+            );
+        };
+        // The scan emits one column, named after the pushed-down aggregate; the outer
+        // Sum has to reference that column rather than re-evaluating `lit(1)`.
+        let scan_col = agg.input.schema()[0].name.clone();
+        assert_eq!(
+            agg.aggregations,
+            vec![Arc::new(Expr::Agg(AggExpr::Sum(resolved_col(scan_col))))]
+        );
         Ok(())
     }
 
