@@ -10,6 +10,8 @@ mod local;
 pub mod multipart;
 mod object_io;
 mod object_store_glob;
+#[cfg(feature = "python")]
+mod opendal_python;
 mod opendal_source;
 mod range_expansion;
 mod retry;
@@ -130,6 +132,12 @@ pub enum Error {
 
     #[snafu(display("Failed to load credentials for IO backend `{store}`"))]
     UnableToCreateClient { store: SourceType, source: DynError },
+
+    #[snafu(display("OpenDAL service '{scheme}' is not compiled into this build"))]
+    UnsupportedOpenDALService { scheme: String },
+
+    #[snafu(display("The `opendal` Python package is not installed"))]
+    OpenDALPythonPackageMissing,
 
     #[snafu(display(
         "Unauthorized to access store: {store} for file: {path}\nYou may need to set valid Credentials\n{source}"
@@ -314,7 +322,7 @@ impl IOClient {
                         };
                         self.config.goosefs.to_opendal_config(&authority)
                     }
-                    #[cfg(feature = "hdfs")]
+                    #[cfg(feature = "native-hdfs")]
                     "hdfs" => {
                         // Extract name_node (scheme + authority) from URL,
                         // e.g. "hdfs://namenode:9000" from "hdfs://namenode:9000/path".
@@ -324,11 +332,11 @@ impl IOClient {
                             format!("{}://{}", parsed_url.scheme(), parsed_url.authority());
                         self.config.hdfs.to_opendal_config(&name_node)
                     }
-                    #[cfg(not(feature = "hdfs"))]
+                    #[cfg(not(feature = "native-hdfs"))]
                     "hdfs" => {
                         log::warn!(
                             "HDFS support is not compiled in. \
-                             Rebuild with `--features hdfs` to enable it."
+                             Rebuild with `--features native-hdfs` to enable it."
                         );
                         self.config
                             .opendal_backends
@@ -348,7 +356,64 @@ impl IOClient {
                         backend_config.insert(k.clone(), v.clone());
                     }
                 }
-                OpenDALSource::get_client(scheme, &backend_config).await? as Arc<dyn ObjectSource>
+
+                // Test/dev hook: prefer the Python OpenDAL backend over the
+                // native one, when the `opendal` package is importable. This
+                // lets the fallback path be exercised without cloud
+                // credentials.
+                #[cfg(feature = "python")]
+                let python_source = {
+                    let force_python = std::env::var("DAFT_FORCE_PYTHON_OPENDAL")
+                        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                        .unwrap_or(false);
+                    if force_python {
+                        opendal_python::PythonOpenDALSource::get_client(scheme, &backend_config)
+                            .await
+                            .ok()
+                    } else {
+                        None
+                    }
+                };
+                #[cfg(not(feature = "python"))]
+                let python_source = None::<Arc<dyn ObjectSource>>;
+
+                if let Some(source) = python_source {
+                    source
+                } else {
+                    match OpenDALSource::get_client(scheme, &backend_config).await {
+                        Ok(source) => source as Arc<dyn ObjectSource>,
+                        // Service is not compiled into this build: fall back to
+                        // the Python OpenDAL backend (`daft[extra-fs]`).
+                        Err(Error::UnsupportedOpenDALService { scheme: s }) => {
+                            #[cfg(feature = "python")]
+                            {
+                                match opendal_python::PythonOpenDALSource::get_client(
+                                    &s,
+                                    &backend_config,
+                                )
+                                .await
+                                {
+                                    Ok(source) => source as Arc<dyn ObjectSource>,
+                                    Err(py_err) => {
+                                        return Err(python_fallback_error(&s, py_err));
+                                    }
+                                }
+                            }
+                            #[cfg(not(feature = "python"))]
+                            {
+                                return Err(Error::UnableToCreateClient {
+                                    store: SourceType::OpenDAL { scheme: s.clone() },
+                                    source: format!(
+                                        "OpenDAL service '{s}' is not compiled into this build. \
+                                         Rebuild with `--features {s}` to enable it."
+                                    )
+                                    .into(),
+                                });
+                            }
+                        }
+                        Err(e) => return Err(e),
+                    }
+                }
             }
         };
 
@@ -698,6 +763,72 @@ pub fn resolve_url_alias<'a>(input: &'a str, config: &IOConfig) -> Cow<'a, str> 
         }
     }
     Cow::Borrowed(input)
+}
+
+/// Rebuild hint suffix for schemes that have a corresponding `native-*`
+/// feature; empty for schemes that are Python-wheel-only.
+#[cfg(feature = "python")]
+fn native_rebuild_hint(scheme: &str) -> String {
+    // Only suggest a rebuild when a corresponding `native-*` feature exists.
+    match scheme {
+        "oss" | "cos" | "obs" | "tos" | "goosefs" | "github" | "hdfs" => {
+            format!(", or rebuild with `--features native-{scheme}`")
+        }
+        _ => String::new(),
+    }
+}
+
+/// Build the error reported when the Python OpenDAL fallback itself fails.
+///
+/// The hint depends on why the fallback failed: the `opendal` wheel does not
+/// ship every service (goosefs, github, hdfs), the package may be missing
+/// entirely, or the operator may simply be unconfigured.
+#[cfg(feature = "python")]
+fn python_fallback_error(s: &str, py_err: Error) -> Error {
+    // snafu's display omits `source`, so extract the root Python error text
+    // to keep the cause visible.
+    let detail = match &py_err {
+        Error::UnableToCreateClient { source, .. } | Error::Generic { source, .. } => {
+            source.to_string()
+        }
+        other => other.to_string(),
+    };
+    let hint = if matches!(s, "goosefs" | "github" | "hdfs") {
+        format!(
+            "OpenDAL service '{s}' is not compiled into this build, \
+             and the `opendal` Python package does not ship it. \
+             Rebuild with `--features native-{s}` to enable it."
+        )
+    } else if matches!(py_err, Error::OpenDALPythonPackageMissing) {
+        format!(
+            "OpenDAL service '{s}' is not compiled into this build. \
+             Install the Python backend with `pip install \"daft[extra-fs]\"`{}.",
+            native_rebuild_hint(s)
+        )
+    } else if detail.contains("scheme is not registered") {
+        // The package is installed but does not know this scheme (e.g. sftp,
+        // ftps), and no native feature provides it.
+        format!(
+            "OpenDAL service '{s}' is not compiled into this build, \
+             and the `opendal` Python package does not ship it either. \
+             It is not supported by this Daft build."
+        )
+    } else {
+        // The package is installed but the operator could not be created
+        // (typically missing credentials/config).
+        format!(
+            "OpenDAL service '{s}' is not compiled into this build and the \
+             Python backend (`daft[extra-fs]`) could not create a client. \
+             Configure it via IOConfig(opendal_backends={{\"{s}\": {{...}}}}){}.",
+            native_rebuild_hint(s)
+        )
+    };
+    Error::UnableToCreateClient {
+        store: SourceType::OpenDAL {
+            scheme: s.to_string(),
+        },
+        source: format!("{hint} Error: {detail}").into(),
+    }
 }
 
 type CacheKey = (bool, Arc<IOConfig>);

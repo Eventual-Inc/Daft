@@ -130,6 +130,26 @@ def canonicalize_protocol(protocol: str) -> str:
     return _CANONICAL_PROTOCOLS.get(protocol, protocol)
 
 
+# Protocols handled by the `opendal` Python package (see daft/io/opendal_filesystem.py).
+# The scheme names mirror the schemes actually shipped in the OpenDAL Python wheel;
+# goosefs, github, hdfs, sftp and ftps are intentionally absent because the wheel
+# does not ship them (verified against opendal 0.47.5). Keep this list in sync with
+# the wheel's scheme set when bumping the opendal dependency.
+_OPEN_DAL_PROTOCOLS = frozenset(
+    {
+        "oss",
+        "cos",
+        "obs",
+        "tos",
+        "webhdfs",
+        "webdav",
+        "ftp",
+        "dropbox",
+        "gdrive",
+    }
+)
+
+
 def _apply_protocol_alias(path: str, aliases: dict[str, str]) -> str:
     """Rewrite the URI scheme of *path* if it matches an entry in *aliases*."""
     sep = path.find("://")
@@ -308,6 +328,16 @@ def _build_filesystem(
         from daft.io.gravitino_filesystem import GravitinoFileSystem
 
         return GravitinoFileSystem(io_config=io_config), None
+
+    ###
+    # OpenDAL-backed protocols (e.g. oss, cos, obs, tos): PyArrow and fsspec
+    # have no native implementation, so fall back to the `opendal` Python
+    # package (installed via `daft[extra-fs]`).
+    ###
+    if protocol in _OPEN_DAL_PROTOCOLS:
+        from daft.io.opendal_filesystem import OpenDALFileSystem
+
+        return OpenDALFileSystem(protocol=protocol, io_config=io_config), None
 
     raise NotImplementedError(f"Cannot infer PyArrow filesystem for protocol {protocol}: please file an issue!")
 

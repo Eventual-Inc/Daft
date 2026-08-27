@@ -72,9 +72,9 @@ def test_opendal_fs_glob_parquet(tmp_path):
     assert result.to_pydict() == {"val": [0, 1, 2]}
 
 
-def test_opendal_unconfigured_scheme_error():
-    """Test that an unconfigured scheme gives a helpful error message."""
-    with pytest.raises(Exception, match="IOConfig\\(opendal_backends="):
+def test_opendal_unknown_scheme_error():
+    """Test that an unknown scheme gives a helpful error message."""
+    with pytest.raises(Exception, match="does not ship it"):
         daft.read_parquet("unknownscheme://bucket/data.parquet").collect()
 
 

@@ -23,11 +23,25 @@ pub(crate) struct OpenDALSource {
 impl OpenDALSource {
     /// List the OpenDAL service schemes that are compiled into this build.
     fn available_schemes() -> Vec<&'static str> {
-        #[cfg_attr(not(feature = "hdfs"), allow(unused_mut))]
-        let mut schemes = vec![
-            "oss", "cos", "obs", "tos", "goosefs", "memory", "fs", "github",
-        ];
-        #[cfg(feature = "hdfs")]
+        // `memory` and `fs` are always compiled (used by tests and local IO).
+        #[allow(unused_mut)] // No `native-*` feature enabled => no pushes below.
+        let mut schemes = vec!["memory", "fs"];
+        // Cloud service schemes are opt-in via `native-*` features; they are
+        // also available at runtime through the Python OpenDAL backend
+        // (`daft[extra-fs]`), which is the preferred path.
+        #[cfg(feature = "native-oss")]
+        schemes.push("oss");
+        #[cfg(feature = "native-cos")]
+        schemes.push("cos");
+        #[cfg(feature = "native-obs")]
+        schemes.push("obs");
+        #[cfg(feature = "native-tos")]
+        schemes.push("tos");
+        #[cfg(feature = "native-goosefs")]
+        schemes.push("goosefs");
+        #[cfg(feature = "native-github")]
+        schemes.push("github");
+        #[cfg(feature = "native-hdfs")]
         schemes.push("hdfs");
         schemes
     }
@@ -44,20 +58,38 @@ impl OpenDALSource {
 
         let operator =
             Operator::via_iter(scheme, config.clone()).map_err(|e: opendal::Error| {
-                super::Error::UnableToCreateClient {
-                    store: super::SourceType::OpenDAL {
+                if e.kind() == opendal::ErrorKind::Unsupported {
+                    // Service not compiled into this build; the caller may fall
+                    // back to the Python OpenDAL backend.
+                    super::Error::UnsupportedOpenDALService {
                         scheme: scheme.to_string(),
-                    },
-                    source: format!(
-                        "Failed to create OpenDAL operator for '{}'. \
-                         You may need to configure it via IOConfig(opendal_backends={{\"{}\": {{...}}}}). \
-                         Available OpenDAL schemes: [{}]. \
-                         Error: {}",
-                        scheme, scheme, Self::available_schemes().join(", "), e
-                    )
-                    .into(),
+                    }
+                } else {
+                    super::Error::UnableToCreateClient {
+                        store: super::SourceType::OpenDAL {
+                            scheme: scheme.to_string(),
+                        },
+                        source: format!(
+                            "Failed to create OpenDAL operator for '{}'. \
+                             You may need to configure it via IOConfig(opendal_backends={{\"{}\": {{...}}}}). \
+                             Available OpenDAL schemes: [{}]. \
+                             Error: {}",
+                            scheme, scheme, Self::available_schemes().join(", "), e
+                        )
+                        .into(),
+                    }
                 }
             })?;
+
+        // Deprecated as a built-in backend: cloud services should go through
+        // the Python OpenDAL backend (daft[extra-fs]) instead.
+        if matches!(scheme, "oss" | "cos" | "obs" | "tos" | "goosefs" | "github") {
+            log::warn!(
+                "Built-in '{scheme}' OpenDAL support is deprecated and will be removed \
+                 in a future release. Install `daft[extra-fs]` to use the Python-based \
+                 OpenDAL backend instead."
+            );
+        }
 
         Ok(Arc::new(Self {
             operator,
@@ -69,13 +101,26 @@ impl OpenDALSource {
 /// Extract the path component from a URL like `oss://bucket/path/to/file`.
 /// OpenDAL operators are already configured with the root/bucket, so we only
 /// need the path portion.
-fn url_to_opendal_path(uri: &str) -> super::Result<String> {
+pub(crate) fn url_to_opendal_path(uri: &str) -> super::Result<String> {
     let parsed = url::Url::parse(uri).context(super::InvalidUrlSnafu { path: uri })?;
     // url::Url::path() returns the path component, e.g. "/path/to/file"
     // We strip the leading "/" since OpenDAL paths are relative to the operator root.
     let path = parsed.path();
     let path = path.strip_prefix('/').unwrap_or(path);
     Ok(path.to_string())
+}
+
+/// Reconstruct the URL prefix (scheme + authority) for a given path.
+/// Use authority (host:port) rather than host_str so schemes like HDFS
+/// (hdfs://host:port) generate correct URLs.
+pub(crate) fn url_prefix(path: &str) -> super::Result<String> {
+    let parsed = url::Url::parse(path).context(super::InvalidUrlSnafu { path })?;
+    let base_url = if !parsed.authority().is_empty() {
+        format!("{}://{}", parsed.scheme(), parsed.authority())
+    } else {
+        format!("{}://", parsed.scheme())
+    };
+    Ok(base_url)
 }
 
 pub struct OpenDALMultipartWriter {
@@ -308,14 +353,7 @@ impl ObjectSource for OpenDALSource {
             .map_err(|e| opendal_err_to_daft_err(e, path, &self.scheme))?;
 
         // Reconstruct the URL prefix for file paths.
-        // Use authority (host:port) rather than host_str so schemes like HDFS
-        // (hdfs://host:port) generate correct URLs.
-        let parsed = url::Url::parse(path).context(super::InvalidUrlSnafu { path })?;
-        let base_url = if !parsed.authority().is_empty() {
-            format!("{}://{}", parsed.scheme(), parsed.authority())
-        } else {
-            format!("{}://", parsed.scheme())
-        };
+        let base_url = url_prefix(path)?;
 
         let files = entries
             .into_iter()
