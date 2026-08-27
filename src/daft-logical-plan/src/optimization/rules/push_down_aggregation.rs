@@ -34,7 +34,7 @@ impl OptimizerRule for PushDownAggregation {
             {
                 if groupby.is_empty()
                     && aggregations.len() == 1
-                    && let Some(count_mode) = is_count_expr(&aggregations[0])
+                    && let Some((agg_expr, agg_alias, count_mode)) = as_count_agg(&aggregations[0])
                 {
                     // Only handle global aggregation with no GROUP BY and a single aggregation expression
                     match input.as_ref() {
@@ -61,7 +61,7 @@ impl OptimizerRule for PushDownAggregation {
                                         external_info.pushdowns.filters.is_none()
                                     };
                                     let can_pushdown = scan_op.supports_count_pushdown()
-                                        && is_count_mode_supported(count_mode)
+                                        && is_count_mode_supported(&count_mode)
                                         && is_remaining_filters
                                         && external_info.pushdowns.limit.is_none();
 
@@ -69,9 +69,9 @@ impl OptimizerRule for PushDownAggregation {
                                         // Create new pushdown info with count aggregation
                                         let new_pushdowns = external_info
                                             .pushdowns
-                                            .with_aggregation(Some(aggregations[0].clone()));
+                                            .with_aggregation(Some(agg_expr.clone()));
 
-                                        let field = aggregations[0].to_field(&input.schema())?;
+                                        let field = agg_expr.to_field(&input.schema())?;
                                         let new_schema = Arc::new(Schema::new(vec![field]));
 
                                         let new_external_info =
@@ -83,11 +83,16 @@ impl OptimizerRule for PushDownAggregation {
                                         let new_source =
                                             LogicalPlan::Source(new_source_node).into();
                                         // Scan operators may produce partial counts over multiple scan tasks (e.g., distributed parquet reads), so we still need to sum them.
+                                        let mut sum_expr: ExprRef = Arc::new(Expr::Agg(
+                                            AggExpr::Sum(count_expr(&agg_expr)?),
+                                        ));
+                                        // Preserve the original output name so the rewrite is schema-preserving.
+                                        if let Some(name) = agg_alias {
+                                            sum_expr = sum_expr.alias(name);
+                                        }
                                         let new_aggregate = Aggregate::try_new(
                                             new_source,
-                                            vec![Arc::new(Expr::Agg(AggExpr::Sum(count_expr(
-                                                &aggregations[0],
-                                            )?)))],
+                                            vec![sum_expr],
                                             groupby.clone(),
                                         )?
                                         .into();
@@ -111,10 +116,17 @@ impl OptimizerRule for PushDownAggregation {
     }
 }
 
-// Check if expression is count aggregation
-fn is_count_expr(expr: &ExprRef) -> Option<&CountMode> {
-    match expr.as_ref() {
-        Expr::Agg(AggExpr::Count(_, count_mode)) => Some(count_mode),
+/// Match a (possibly aliased) count aggregation.
+///
+/// Returns the count expression with any alias stripped, the alias name if there was
+/// one, and the count mode. The alias has to be peeled off here because the SQL
+/// frontend always emits `count(*)` as `count(<narrowest col>, All) as "count"`, and
+/// `df.agg(col("x").count("all").alias("n"))` produces the same shape; matching only
+/// the bare `Expr::Agg` would skip pushdown for all of them.
+fn as_count_agg(expr: &ExprRef) -> Option<(ExprRef, Option<Arc<str>>, CountMode)> {
+    let (unaliased, alias) = expr.unwrap_alias();
+    match unaliased.as_ref() {
+        Expr::Agg(AggExpr::Count(_, count_mode)) => Some((unaliased.clone(), alias, *count_mode)),
         _ => None,
     }
 }
@@ -188,6 +200,39 @@ mod tests {
         .aggregate(vec![unresolved_col("a").sum()], vec![])?
         .build();
 
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// `count(*)` from the SQL frontend, and `df.agg(col("a").count("all").alias(..))`,
+    /// arrive as an aliased count. The alias must not block pushdown, and the rewritten
+    /// plan has to keep the original output name.
+    #[test]
+    fn agg_count_all_aliased() -> DaftResult<()> {
+        let scan_op =
+            dummy_scan_operator_for_aggregation(vec![Field::new("a", DataType::UInt64)], true);
+
+        let plan = dummy_scan_node(scan_op.clone())
+            .aggregate(
+                vec![unresolved_col("a").count(CountMode::All).alias("n")],
+                vec![],
+            )?
+            .build();
+
+        let expected = dummy_scan_node_with_pushdowns(
+            scan_op,
+            // The pushed-down expression is the bare count: the scan readers match on
+            // `Expr::Agg(AggExpr::Count(..))` and would silently fall back to a full
+            // column read if handed an alias.
+            Pushdowns::default().with_aggregation(Some(Arc::new(Expr::Agg(AggExpr::Count(
+                resolved_col("a"),
+                CountMode::All,
+            ))))),
+        )
+        .aggregate(vec![unresolved_col("a").sum().alias("n")], vec![])?
+        .build();
+
+        assert_eq!(plan.schema(), expected.schema());
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
     }
