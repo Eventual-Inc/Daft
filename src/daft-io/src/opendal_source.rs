@@ -23,9 +23,11 @@ pub(crate) struct OpenDALSource {
 impl OpenDALSource {
     /// List the OpenDAL service schemes that are compiled into this build.
     fn available_schemes() -> Vec<&'static str> {
+        // Pushing the always-compiled schemes first keeps `schemes` mutated
+        // under every feature combination, so no `unused_mut` allow is needed.
+        let mut schemes = Vec::with_capacity(2);
         // `memory` and `fs` are always compiled (used by tests and local IO).
-        #[allow(unused_mut)] // No `native-*` feature enabled => no pushes below.
-        let mut schemes = vec!["memory", "fs"];
+        schemes.extend(["memory", "fs"]);
         // Cloud service schemes are opt-in via `native-*` features; they are
         // also available at runtime through the Python OpenDAL backend
         // (`daft[extra-fs]`), which is the preferred path.

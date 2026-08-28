@@ -112,6 +112,23 @@ def test_python_fallback_get_range(tmp_path, forced_python_fallback):
     assert df.collect().to_pydict() == {"x": [42]}
 
 
+def test_python_fallback_concrete_dir_read(tmp_path, forced_python_fallback):
+    """A concrete directory path is expanded, not read as a file.
+
+    Glob discovery probes a patternless path with `get_size` first; a
+    directory must surface `NotAFile` so the path is retried as a directory,
+    matching the native backend.
+    """
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    for i in range(2):
+        papq.write_table(pa.table({"val": [i]}), str(sub / f"part_{i}.parquet"))
+
+    io_config = _fs_io_config(tmp_path)
+    df = daft.read_parquet("fs://localhost/sub", io_config=io_config)
+    assert df.sort("val").collect().to_pydict() == {"val": [0, 1]}
+
+
 def test_opendal_pyarrow_filesystem_memory_roundtrip():
     """The pyarrow wrapper (OpenDALFileSystem) works against the memory backend."""
     from daft.io.opendal_filesystem import OpenDALFileSystem

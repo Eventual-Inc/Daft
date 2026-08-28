@@ -175,7 +175,7 @@ impl PythonOpenDALSource {
         .await
     }
 
-    async fn stat_content_length(&self, uri: &str, path: &str) -> super::Result<u64> {
+    async fn stat_metadata(&self, uri: &str, path: &str) -> super::Result<(bool, u64)> {
         let path_owned = path.to_string();
         self.run_op(
             uri,
@@ -184,7 +184,11 @@ impl PythonOpenDALSource {
                 let args = PyTuple::new(py, [path_owned.as_str()])?;
                 Ok((args.unbind(), PyDict::new(py).unbind()))
             },
-            |_py, result| result.getattr("content_length")?.extract(),
+            |_py, result| {
+                let is_dir = result.getattr("mode")?.call_method0("is_dir")?.extract()?;
+                let content_length = result.getattr("content_length")?.extract()?;
+                Ok((is_dir, content_length))
+            },
         )
         .await
     }
@@ -311,7 +315,7 @@ impl ObjectSource for PythonOpenDALSource {
             Some(GetRange::Bounded(r)) => (Some(r.start as u64), Some((r.end - r.start) as u64)),
             Some(GetRange::Offset(offset)) => (Some(offset as u64), None),
             Some(GetRange::Suffix(n)) => {
-                let file_size = self.stat_content_length(uri, &path).await?;
+                let file_size = self.stat_metadata(uri, &path).await?.1;
                 let start = file_size.saturating_sub(n as u64);
                 (Some(start), Some(file_size - start))
             }
@@ -370,7 +374,12 @@ impl ObjectSource for PythonOpenDALSource {
 
     async fn get_size(&self, uri: &str, _io_stats: Option<IOStatsRef>) -> super::Result<usize> {
         let path = url_to_opendal_path(uri)?;
-        let size = self.stat_content_length(uri, &path).await?;
+        let (is_dir, size) = self.stat_metadata(uri, &path).await?;
+        if is_dir {
+            return Err(super::Error::NotAFile {
+                path: uri.to_string(),
+            });
+        }
         Ok(size as usize)
     }
 
