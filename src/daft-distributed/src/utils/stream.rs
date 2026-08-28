@@ -73,43 +73,29 @@ where
                         Poll::Pending => {}
                     }
 
-                    let mut joinset_complete = false;
-                    let mut background_error = None;
-                    if let Some(active_joinset) = joinset.as_mut() {
-                        loop {
-                            match active_joinset.poll_join_next(cx) {
-                                // Keep polling after successful completions so the remaining
-                                // tasks register this stream's waker before we return Pending.
-                                Poll::Ready(Some(Ok(Ok(())))) => {}
-                                Poll::Ready(Some(Ok(Err(e)))) => {
-                                    background_error = Some(e);
-                                    break;
-                                }
-                                Poll::Ready(Some(Err(e))) => {
-                                    background_error = Some(e);
-                                    break;
-                                }
-                                Poll::Ready(None) => {
-                                    joinset_complete = true;
-                                    break;
-                                }
-                                Poll::Pending => break,
+                    loop {
+                        let Some(active_joinset) = joinset.as_mut() else {
+                            return Some(Poll::Pending);
+                        };
+
+                        match active_joinset.poll_join_next(cx) {
+                            // Keep polling after successful completions so the remaining
+                            // tasks register this stream's waker before we return Pending.
+                            Poll::Ready(Some(Ok(Ok(())))) => {}
+                            Poll::Ready(Some(Ok(Err(e)) | Err(e))) => {
+                                // Stop forwarding input, but retain the remaining tasks so they
+                                // can observe the closed input channel and complete cleanup.
+                                let joinset = joinset.take().expect("JoinSet should exist");
+                                *state = ForwardingStreamState::AwaitingTasks(joinset);
+                                return Some(Poll::Ready(Some(Err(e))));
                             }
+                            Poll::Ready(None) => {
+                                *joinset = None;
+                                return Some(Poll::Pending);
+                            }
+                            Poll::Pending => return Some(Poll::Pending),
                         }
                     }
-
-                    if let Some(error) = background_error {
-                        // Stop forwarding input, but retain the remaining tasks so they can
-                        // observe the closed input channel and complete their cleanup paths.
-                        let joinset = joinset.take().expect("JoinSet should exist");
-                        *state = ForwardingStreamState::AwaitingTasks(joinset);
-                        return Some(Poll::Ready(Some(Err(error))));
-                    }
-
-                    if joinset_complete {
-                        *joinset = None;
-                    }
-                    Some(Poll::Pending)
                 }
                 // AwaitingTasks: Input stream is done, awaiting background tasks to complete
                 ForwardingStreamState::AwaitingTasks(joinset) => match joinset.poll_join_next(cx) {
