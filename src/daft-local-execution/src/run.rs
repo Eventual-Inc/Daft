@@ -57,11 +57,6 @@ use crate::{
 enum ExecutionEngineResultItem {
     Partition(MicroPartition),
     FlightPartitionRef(FlightPartitionRef),
-    /// Terminal error for an input whose pipeline output was torn down before
-    /// it received its completing `Flush`. Delivered by [`MessageRouter`]'s
-    /// `Drop` so the consuming task fails loudly instead of seeing a clean EOF
-    /// and reporting success on partial (or missing) output.
-    Error(String),
 }
 
 /// Global tokio runtime shared by all NativeExecutor instances
@@ -161,28 +156,6 @@ impl MessageRouter {
 
 impl Drop for MessageRouter {
     fn drop(&mut self) {
-        // Any input_id still registered here never received its terminating
-        // `Flush` (which `route_message` removes the sender on): its pipeline
-        // output was torn down mid-flight — cancel, shutdown, or a source whose
-        // in-flight read was aborted before delivering. Dropping the sender now
-        // would close the channel with a *clean* EOF, and the consuming task
-        // would report success on partial/missing output. This is exactly how
-        // the Celeborn reduce empty-output bug manifested: slow data-bearing
-        // reads were aborted at teardown, their inputs closed without a Flush,
-        // and the tasks "succeeded" with zero rows. Deliver a terminal error
-        // instead so the task fails loudly and is retried rather than silently
-        // succeeding. (In a *normal* completion every input is Flushed before
-        // the run loop exits, so `output_senders` is empty here and no error is
-        // sent — this fires only on abnormal teardown.)
-        for (input_id, sender) in std::mem::take(&mut self.output_senders) {
-            let elapsed = self.input_start_times.remove(&input_id);
-            let _ = sender.send(ExecutionEngineResultItem::Error(format!(
-                "input_id={input_id} pipeline output ended without completion \
-                 (torn down after {:?}); the read did not finish, refusing to \
-                 report partial output as success",
-                elapsed.map(|s| s.elapsed())
-            )));
-        }
         for (input_id, started) in self.input_start_times.drain() {
             log::debug!(
                 "NativeExecutor: input_id={input_id} ended without Flush after {:?} (cancel/shutdown?)",
@@ -1038,28 +1011,19 @@ impl PyResultReceiver {
                 .expect("PyResultReceiver.__anext__() should not be called after try_finish().")
                 .next()
                 .await;
-            Python::attach(|py| {
-                match part {
-                    None => Ok(py.None()),
-                    Some(ExecutionEngineResultItem::Partition(partition)) => {
-                        Ok(PyMicroPartition::from(partition)
-                            .into_pyobject(py)?
-                            .unbind()
-                            .into_any())
-                    }
-                    Some(ExecutionEngineResultItem::FlightPartitionRef(partition_ref)) => {
-                        Ok(PyFlightPartitionRef::from(partition_ref)
-                            .into_pyobject(py)?
-                            .unbind()
-                            .into_any())
-                    }
-                    // The pipeline was torn down before this input completed:
-                    // raise so the task fails and is retried instead of ending
-                    // the async iterator on a clean EOF (which would report the
-                    // partial/empty output as success).
-                    Some(ExecutionEngineResultItem::Error(msg)) => {
-                        Err(pyo3::exceptions::PyRuntimeError::new_err(msg))
-                    }
+            Python::attach(|py| match part {
+                None => Ok(py.None()),
+                Some(ExecutionEngineResultItem::Partition(partition)) => {
+                    Ok(PyMicroPartition::from(partition)
+                        .into_pyobject(py)?
+                        .unbind()
+                        .into_any())
+                }
+                Some(ExecutionEngineResultItem::FlightPartitionRef(partition_ref)) => {
+                    Ok(PyFlightPartitionRef::from(partition_ref)
+                        .into_pyobject(py)?
+                        .unbind()
+                        .into_any())
                 }
             })
         })

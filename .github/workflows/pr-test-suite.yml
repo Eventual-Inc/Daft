@@ -1530,7 +1530,7 @@ jobs:
     - name: Run Rust tests with the celeborn feature
       env:
         LD_LIBRARY_PATH: ${{ github.workspace }}/tools/celeborn-stub/lib
-      run: cargo test --no-default-features --workspace --exclude common-arrow-ffi --features celeborn
+      run: cargo test --no-default-features --workspace --exclude common-arrow-ffi --features celeborn --lib --tests
 
   rust-tests:
     runs-on: ubuntu-latest
