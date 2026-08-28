@@ -14,10 +14,11 @@ Each function is synchronous: it creates an event loop owned by the calling
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 
-def _run(awaitable_factory):
+def _run(awaitable_factory: Callable[[], Awaitable[Any]]) -> Any:
     loop = asyncio.new_event_loop()
     try:
         return loop.run_until_complete(awaitable_factory())
@@ -25,20 +26,20 @@ def _run(awaitable_factory):
         loop.close()
 
 
-def call(operator: Any, method: str, args: tuple, kwargs: dict) -> Any:
+def call(operator: Any, method: str, args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
     """Run `await getattr(operator, method)(*args, **kwargs)` and return the result."""
 
-    async def _inner():
+    async def _inner() -> Any:
         return await getattr(operator, method)(*args, **kwargs)
 
     return _run(_inner)
 
 
-def list_entries(operator: Any, path: str, recursive: bool) -> list:
+def list_entries(operator: Any, path: str, recursive: bool) -> list[tuple[str, bool, int | None]]:
     """Fully drain `operator.list(...)` into a list of (path, is_dir, size)."""
 
-    async def _inner():
-        entries = []
+    async def _inner() -> list[tuple[str, bool, int | None]]:
+        entries: list[tuple[str, bool, int | None]] = []
         async for entry in await operator.list(path, recursive=recursive):
             meta = entry.metadata
             is_dir = meta.mode.is_dir()
