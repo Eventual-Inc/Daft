@@ -93,10 +93,7 @@ impl ExpandDataFrameSources {
 
         let mut inner = logical_plan_from_py_dataframe(&py_df, source_name)?;
 
-        let predicate = match (
-            pushdowns.filters.clone(),
-            pushdowns.partition_filters.clone(),
-        ) {
+        let predicate = match (pushdowns.filters, pushdowns.partition_filters) {
             (Some(f), Some(p)) => Some(f.and(p)),
             (Some(f), None) => Some(f),
             (None, Some(p)) => Some(p),
@@ -132,7 +129,7 @@ impl ExpandDataFrameSources {
                     }
                 }
             }
-            inner = Project::new_from_schema(inner, output_schema.clone())
+            inner = Project::new_from_schema(inner, output_schema)
                 .map_err(|e| {
                     DaftError::ValueError(format!(
                         "Failed to project DataFrameSource '{source_name}' to source schema: {e}"
