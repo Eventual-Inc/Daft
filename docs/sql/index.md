@@ -85,6 +85,74 @@ In the above example, we query the DataFrame called `"my_special_df"` by simply 
     daft.sql("SELECT * FROM read_iceberg('s3://.../metadata.json')")
     ```
 
+### Table Function Options
+
+Table functions take the path as the first positional argument, plus any of the options
+below. Named arguments use either `=>` or `:=`:
+
+=== "🐍 Python"
+    ```python
+    daft.sql("SELECT * FROM read_csv('data.csv', has_headers => false)")
+    daft.sql("SELECT * FROM read_csv('data.csv', has_headers := false)")
+    ```
+
+`read_parquet`, `read_csv`, `read_json`, and `read_deltalake` also accept the path itself
+as a named `path` argument:
+
+=== "🐍 Python"
+    ```python
+    daft.sql("SELECT * FROM read_csv(path => 'data.csv')")
+    ```
+
+A list of paths is written as a SQL array:
+
+=== "🐍 Python"
+    ```python
+    daft.sql("SELECT * FROM read_parquet(['a.parquet', 'b.parquet'])")
+    ```
+
+| Function | Options |
+|---|---|
+| `read_parquet` | `infer_schema`, `schema`, `coerce_int96_timestamp_unit`, `chunk_size`, `multithreaded`, `io_config`, `file_path_column`, `hive_partitioning`, `ignore_corrupt_files` |
+| `read_csv` | `infer_schema`, `schema`, `has_headers`, `delimiter`, `double_quote`, `quote`, `escape_char`, `comment`, `allow_variable_columns`, `io_config`, `file_path_column`, `hive_partitioning`, `buffer_size`, `chunk_size`, `ignore_corrupt_files` |
+| `read_json` | `infer_schema`, `schema`, `io_config`, `file_path_column`, `hive_partitioning`, `buffer_size`, `chunk_size`, `skip_empty_files` |
+| `read_iceberg` | `snapshot_id`, `branch`, `tag`, `io_config`, `ignore_corrupt_files` |
+| `read_deltalake` | `io_config` |
+
+These mirror the corresponding Python reader arguments — see
+[`read_parquet`][daft.read_parquet], [`read_csv`][daft.read_csv],
+[`read_json`][daft.read_json], [`read_iceberg`][daft.read_iceberg], and
+[`read_deltalake`][daft.read_deltalake] for what each one does, and
+[Generic File Source Options](../connectors/generic-file-source-options.md)
+for `ignore_corrupt_files` in depth.
+
+A `schema` is given as a struct literal mapping column names to type names:
+
+=== "🐍 Python"
+    ```python
+    daft.sql("""
+        SELECT * FROM read_csv('data.csv', schema := {'a': 'int64', 'b': 'string'})
+    """)
+    ```
+
+For Iceberg, `snapshot_id`, `branch`, and `tag` select which version to read and are
+mutually exclusive:
+
+=== "🐍 Python"
+    ```python
+    daft.sql("SELECT * FROM read_iceberg('/warehouse/db/t/metadata/v3.metadata.json', branch => 'audit')")
+    ```
+
+`ignore_corrupt_files` skips unreadable files instead of failing the query, and
+`df.skipped_corrupt_files` reports what was skipped once the DataFrame is materialized:
+
+=== "🐍 Python"
+    ```python
+    df = daft.sql("SELECT * FROM read_csv('s3://my-bucket/data/**/*.csv', ignore_corrupt_files => true)")
+    df.collect()
+    print(df.skipped_corrupt_files)
+    ```
+
 ### SQL Expressions
 
 SQL has the concept of expressions as well. Here is an example of a simple addition expression, adding columns `A` and `B` in SQL to produce a new column `C`.
