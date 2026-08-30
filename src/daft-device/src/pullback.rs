@@ -70,14 +70,19 @@ struct ReasonCounters {
     bytes: AtomicU64,
 }
 
-/// Counters of implicit device-to-host pullbacks, per [`PullbackReason`].
+/// Counters of implicit device-to-host pullbacks, per [`PullbackReason`],
+/// plus explicit user-requested exits tracked separately.
 ///
 /// A process-wide instance ([`pullback_stats`]) is fed by
-/// [`materialize_to_host`]; explain/analyze surfaces read it via
-/// [`Self::snapshot`].
+/// [`materialize_to_host`] (implicit, per-reason) and by
+/// [`crate::DeviceBuffer::copy_to_host`] (explicit); explain/analyze surfaces
+/// read it via [`Self::snapshot`]. Together the two account for all
+/// device-to-host traffic, so an unexplained gap in a profile has nowhere to
+/// hide.
 #[derive(Debug, Default)]
 pub struct PullbackStats {
     counters: [ReasonCounters; PullbackReason::ALL.len()],
+    explicit: ReasonCounters,
 }
 
 impl PullbackStats {
@@ -93,6 +98,15 @@ impl PullbackStats {
         counters.bytes.fetch_add(bytes, Ordering::Relaxed);
     }
 
+    /// Records one *explicit* user-requested exit of `bytes` bytes
+    /// (`to_cupy()` / `__dlpack__` style). Not a pullback: tracked separately
+    /// so explicit traffic never pollutes the kernel-arm priority list while
+    /// total device-to-host volume stays observable.
+    pub fn record_explicit(&self, bytes: u64) {
+        self.explicit.count.fetch_add(1, Ordering::Relaxed);
+        self.explicit.bytes.fetch_add(bytes, Ordering::Relaxed);
+    }
+
     /// A point-in-time copy of all counters.
     pub fn snapshot(&self) -> PullbackSnapshot {
         PullbackSnapshot {
@@ -104,6 +118,8 @@ impl PullbackStats {
                     counters.bytes.load(Ordering::Relaxed),
                 )
             }),
+            explicit_count: self.explicit.count.load(Ordering::Relaxed),
+            explicit_bytes: self.explicit.bytes.load(Ordering::Relaxed),
         }
     }
 
@@ -113,14 +129,18 @@ impl PullbackStats {
             counters.count.store(0, Ordering::Relaxed);
             counters.bytes.store(0, Ordering::Relaxed);
         }
+        self.explicit.count.store(0, Ordering::Relaxed);
+        self.explicit.bytes.store(0, Ordering::Relaxed);
     }
 }
 
 /// A point-in-time copy of [`PullbackStats`] counters: `(reason, count,
-/// bytes)` per reason.
+/// bytes)` per implicit reason, plus the explicit-exit totals.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PullbackSnapshot {
     entries: [(PullbackReason, u64, u64); PullbackReason::ALL.len()],
+    explicit_count: u64,
+    explicit_bytes: u64,
 }
 
 impl PullbackSnapshot {
@@ -139,14 +159,25 @@ impl PullbackSnapshot {
         self.entries[reason.index()].2
     }
 
-    /// Total pullbacks across all reasons.
+    /// Total *implicit* pullbacks across all reasons (explicit exits are not
+    /// pullbacks; see [`Self::explicit_count`]).
     pub fn total_count(&self) -> u64 {
         self.entries.iter().map(|(_, count, _)| count).sum()
     }
 
-    /// Total bytes pulled back across all reasons.
+    /// Total bytes pulled back implicitly across all reasons.
     pub fn total_bytes(&self) -> u64 {
         self.entries.iter().map(|(_, _, bytes)| bytes).sum()
+    }
+
+    /// Number of explicit user-requested exits recorded.
+    pub fn explicit_count(&self) -> u64 {
+        self.explicit_count
+    }
+
+    /// Bytes copied out through explicit user-requested exits.
+    pub fn explicit_bytes(&self) -> u64 {
+        self.explicit_bytes
     }
 }
 
@@ -157,6 +188,12 @@ pub fn pullback_stats() -> &'static PullbackStats {
     &GLOBAL_PULLBACK_STATS
 }
 
+/// Records an explicit user-requested exit in the process-wide counters.
+/// Called by [`crate::DeviceBuffer::copy_to_host`].
+pub(crate) fn record_explicit_exit(bytes: u64) {
+    GLOBAL_PULLBACK_STATS.record_explicit(bytes);
+}
+
 /// The one governed implicit device-to-host materialization.
 ///
 /// Every engine code path that needs host bytes from a possibly
@@ -165,14 +202,15 @@ pub fn pullback_stats() -> &'static PullbackStats {
 /// than [`DeviceBuffer::copy_to_host`], so that every implicit pullback is
 /// counted in [`pullback_stats`] and can be surfaced in explain/analyze.
 /// (Explicit user-requested exits like `to_cupy()` / `__dlpack__` use
-/// [`DeviceBuffer::copy_to_host`] directly and are not pullbacks.)
+/// [`DeviceBuffer::copy_to_host`] directly; those are not pullbacks and are
+/// tracked in the separate explicit-exit counters.)
 ///
 /// Buffers in host-accessible memory (CPU, pinned host, managed) are copied
 /// out without being counted: there is no discrete device-to-host round trip
 /// to attribute (managed-memory page migration is the device backend's cost,
 /// not a pullback).
 pub fn materialize_to_host(buffer: &DeviceBuffer, reason: PullbackReason) -> DaftResult<Vec<u8>> {
-    let data = buffer.copy_to_host()?;
+    let data = buffer.copy_to_host_uncounted()?;
     if !buffer.device().is_host_accessible() {
         pullback_stats().record(reason, data.len() as u64);
     }
@@ -180,6 +218,9 @@ pub fn materialize_to_host(buffer: &DeviceBuffer, reason: PullbackReason) -> Daf
 }
 
 #[cfg(test)]
+// Tests exercise the explicit exit path (`copy_to_host`) directly; engine
+// code must use `materialize_to_host` instead (enforced via clippy.toml).
+#[allow(clippy::disallowed_methods)]
 mod tests {
     use std::sync::Arc;
 
@@ -208,6 +249,27 @@ mod tests {
         stats.reset();
         assert_eq!(stats.snapshot().total_count(), 0);
         assert_eq!(stats.snapshot().total_bytes(), 0);
+    }
+
+    #[test]
+    fn explicit_exits_are_tracked_separately_from_pullbacks() {
+        let stats = PullbackStats::new();
+        stats.record(PullbackReason::MissingDeviceKernel, 100);
+        stats.record_explicit(64);
+        stats.record_explicit(36);
+
+        let snapshot = stats.snapshot();
+        assert_eq!(snapshot.explicit_count(), 2);
+        assert_eq!(snapshot.explicit_bytes(), 100);
+        // Explicit exits never pollute the implicit (kernel-arm priority)
+        // counters.
+        assert_eq!(snapshot.total_count(), 1);
+        assert_eq!(snapshot.total_bytes(), 100);
+
+        stats.reset();
+        let snapshot = stats.snapshot();
+        assert_eq!(snapshot.explicit_count(), 0);
+        assert_eq!(snapshot.explicit_bytes(), 0);
     }
 
     #[test]
@@ -242,7 +304,9 @@ mod tests {
         let out = materialize_to_host(&host_buffer, PullbackReason::Serialization).unwrap();
         assert_eq!(out, data);
 
-        // An explicit exit is never counted.
+        // An explicit exit is never counted as a pullback (it lands in the
+        // explicit counters, which parallel-running buffer tests also feed,
+        // so only the pullback deltas are asserted exactly here).
         let _ = device_buffer.copy_to_host().unwrap();
 
         let after = pullback_stats().snapshot();

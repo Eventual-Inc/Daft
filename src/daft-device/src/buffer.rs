@@ -19,6 +19,9 @@ struct DeviceBufferInner {
     stream: DeviceStream,
     /// Event guarding the most recent producer of this buffer's contents.
     sync_event: Mutex<Arc<dyn SyncEvent>>,
+    /// Events guarding asynchronous device *reads* of this buffer (see
+    /// [`DeviceBuffer::guard_read`]); the final release waits on these too.
+    read_guards: Mutex<Vec<Arc<dyn SyncEvent>>>,
 }
 
 impl fmt::Debug for DeviceBufferInner {
@@ -54,11 +57,23 @@ impl Drop for DeviceBufferInner {
                 // does not free the memory).
                 return;
             }
+            // Same policy for registered async readers: an in-flight read we
+            // cannot prove finished may still be walking this memory.
+            let read_guards = std::mem::take(
+                self.read_guards
+                    .get_mut()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner),
+            );
+            if read_guards.iter().any(|guard| guard.synchronize().is_err()) {
+                return;
+            }
             // SAFETY: `allocation` was produced by `self.allocator` at
             // construction and this is the last owner, so it is never used
-            // again. All producing work was synchronized above; consumers are
-            // responsible for ordering their reads before dropping their
-            // reference (see `DeviceBuffer::synchronize`).
+            // again. All producing work and every registered async read were
+            // synchronized above; host-synchronous reads (`copy_to_host`)
+            // complete before returning, and asynchronous device readers are
+            // required to register their completion events via
+            // `DeviceBuffer::guard_read`.
             unsafe { self.allocator.deallocate(allocation, self.stream) };
         }
     }
@@ -101,6 +116,7 @@ impl DeviceBuffer {
                 allocator,
                 stream,
                 sync_event: Mutex::new(Arc::new(ReadySyncEvent)),
+                read_guards: Mutex::new(Vec::new()),
             }),
             offset: 0,
             len,
@@ -138,6 +154,12 @@ impl DeviceBuffer {
                     .allocator
                     .copy_host_to_device(data, buffer.data_ptr(), stream)?
             };
+            // Install the copy's event as the buffer's producer guard *before*
+            // waiting on it: if the wait fails, the error propagates and the
+            // buffer drops, and the drop path must see the failing event (and
+            // leak) rather than the initial always-ready event (and free under
+            // a possibly still-running copy).
+            buffer.set_sync_event(event.clone());
             event.synchronize()?;
         }
         Ok(buffer)
@@ -240,7 +262,10 @@ impl DeviceBuffer {
     /// must return an event ordered after both it and the newly enqueued work
     /// (e.g. by making the producing stream wait on the current event before
     /// enqueueing). Keep `chain` short — every clone/slice of the buffer
-    /// blocks on this lock while it runs.
+    /// blocks on this lock while it runs — and do not call back into this
+    /// buffer's sync-event methods from inside it: the lock is held, so
+    /// [`Self::sync_event`], [`Self::set_sync_event`], [`Self::synchronize`],
+    /// or a nested `update_sync_event` would deadlock.
     pub fn update_sync_event(&self, chain: impl FnOnce(Arc<dyn SyncEvent>) -> Arc<dyn SyncEvent>) {
         let mut guard = self
             .inner
@@ -257,13 +282,65 @@ impl DeviceBuffer {
         self.sync_event().synchronize()
     }
 
+    /// Registers `event` as the guard for an asynchronous device *read* of
+    /// this buffer, so the final release cannot free the memory while that
+    /// read is still in flight.
+    ///
+    /// This is the stamp-it-every-time pattern for consumers that enqueue
+    /// device work *reading* the buffer on a stream not ordered with the
+    /// buffer's own stream (e.g. a device-to-device gather feeding another
+    /// buffer): enqueue the read, then hand its completion event here.
+    /// Writers use [`Self::update_sync_event`] instead. Read guards are
+    /// consulted only at final release — never by [`Self::synchronize`] or
+    /// [`Self::copy_to_host`] — so readers do not wait on other readers.
+    ///
+    /// Events already reporting [`SyncEvent::is_complete`] are pruned
+    /// opportunistically, so long-lived buffers do not accumulate guards for
+    /// finished reads.
+    pub fn guard_read(&self, event: Arc<dyn SyncEvent>) {
+        let mut guards = self
+            .inner
+            .read_guards
+            .lock()
+            .expect("read_guards lock poisoned");
+        guards.retain(|guard| !guard.is_complete());
+        if !event.is_complete() {
+            guards.push(event);
+        }
+    }
+
+    /// Number of read guards currently registered (pending async reads).
+    pub fn read_guard_count(&self) -> usize {
+        self.inner
+            .read_guards
+            .lock()
+            .expect("read_guards lock poisoned")
+            .len()
+    }
+
     /// Copies this buffer's contents to host memory, synchronizing on the
     /// buffer's sync event first.
     ///
     /// This is the *explicit* exit path (behind `to_cupy()` / `__dlpack__` /
-    /// user-requested host conversion). Implicit engine-driven pullbacks must
-    /// go through [`crate::materialize_to_host`] instead so they are counted.
+    /// user-requested host conversion), tracked in the explicit-exit counters
+    /// of [`crate::pullback_stats`]. Implicit engine-driven pullbacks must go
+    /// through [`crate::materialize_to_host`] instead so they are attributed
+    /// a [`crate::PullbackReason`] — the workspace `clippy.toml`
+    /// disallowed-methods rule enforces this, and legitimate explicit exit
+    /// sites carry an `#[allow(clippy::disallowed_methods)]` with a
+    /// justification.
     pub fn copy_to_host(&self) -> DaftResult<Vec<u8>> {
+        let data = self.copy_to_host_uncounted()?;
+        if !self.device().is_host_accessible() {
+            crate::pullback::record_explicit_exit(data.len() as u64);
+        }
+        Ok(data)
+    }
+
+    /// [`Self::copy_to_host`] without exit accounting: the shared primitive
+    /// behind the explicit exit path and [`crate::materialize_to_host`],
+    /// which each record their own counter.
+    pub(crate) fn copy_to_host_uncounted(&self) -> DaftResult<Vec<u8>> {
         self.synchronize()?;
         let mut out = Vec::with_capacity(self.len);
         if self.len > 0 {
@@ -304,6 +381,9 @@ impl DeviceBuffer {
 }
 
 #[cfg(test)]
+// Tests exercise the explicit exit path (`copy_to_host`) directly; engine
+// code must use `materialize_to_host` instead (enforced via clippy.toml).
+#[allow(clippy::disallowed_methods)]
 mod tests {
     use super::*;
     use crate::{HostAllocator, MIN_DEVICE_ALIGNMENT, testing::EmulatedDeviceAllocator};
@@ -426,5 +506,99 @@ mod tests {
         buffer.set_sync_event(event.clone());
         assert!(Arc::ptr_eq(&slice.sync_event(), &event));
         assert!(buffer.synchronize().is_ok());
+    }
+
+    /// Emulated allocator whose H2D copies return an event that can never
+    /// prove completion — as if the device were lost mid-copy.
+    #[derive(Debug, Default)]
+    struct FailingCopyAllocator {
+        inner: EmulatedDeviceAllocator,
+    }
+
+    // SAFETY: storage and copies delegate to `EmulatedDeviceAllocator`; only
+    // the H2D completion event differs, and returning a never-provable event
+    // is contract-legal (events may fail to synchronize).
+    unsafe impl DeviceAllocator for FailingCopyAllocator {
+        fn device(&self) -> Device {
+            self.inner.device()
+        }
+
+        fn allocate(&self, len: usize, stream: DeviceStream) -> DaftResult<DeviceAllocation> {
+            self.inner.allocate(len, stream)
+        }
+
+        unsafe fn deallocate(&self, allocation: DeviceAllocation, stream: DeviceStream) {
+            // SAFETY: forwarded contract; storage came from `self.inner`.
+            unsafe { self.inner.deallocate(allocation, stream) }
+        }
+
+        unsafe fn copy_host_to_device(
+            &self,
+            src: &[u8],
+            dst: NonNull<u8>,
+            stream: DeviceStream,
+        ) -> DaftResult<Arc<dyn SyncEvent>> {
+            // SAFETY: forwarded contract; `dst` points into host-backed storage.
+            unsafe { self.inner.copy_host_to_device(src, dst, stream)? };
+            Ok(Arc::new(FailingSyncEvent))
+        }
+
+        unsafe fn copy_device_to_host(
+            &self,
+            src: NonNull<u8>,
+            dst: NonNull<u8>,
+            len: usize,
+            stream: DeviceStream,
+        ) -> DaftResult<()> {
+            // SAFETY: forwarded contract; `src` points into host-backed storage.
+            unsafe { self.inner.copy_device_to_host(src, dst, len, stream) }
+        }
+
+        unsafe fn copy_device_to_device(
+            &self,
+            src: NonNull<u8>,
+            dst: NonNull<u8>,
+            len: usize,
+            stream: DeviceStream,
+        ) -> DaftResult<Arc<dyn SyncEvent>> {
+            // SAFETY: forwarded contract; both pointers reference host-backed
+            // storage.
+            unsafe { self.inner.copy_device_to_device(src, dst, len, stream) }
+        }
+    }
+
+    #[test]
+    fn from_host_failure_leaks_instead_of_freeing() {
+        let allocator = Arc::new(FailingCopyAllocator::default());
+        let as_dyn: Arc<dyn DeviceAllocator> = allocator.clone();
+        let result = DeviceBuffer::from_host(as_dyn, &[1u8; 8], DeviceStream::DEFAULT);
+        assert!(result.is_err());
+        // The copy's own event is the buffer's producer guard by the time the
+        // wait fails, so the drop path leaks rather than freeing memory a
+        // possibly still-running copy is writing.
+        assert_eq!(allocator.inner.host().live_allocations(), 1);
+    }
+
+    #[test]
+    fn pending_read_guard_blocks_release() {
+        let (emulated, allocator) = host_backed();
+        let buffer = DeviceBuffer::from_host(allocator, &[1u8; 8], DeviceStream::DEFAULT).unwrap();
+        buffer.guard_read(Arc::new(FailingSyncEvent));
+        assert_eq!(buffer.read_guard_count(), 1);
+        // Producers are fully synchronized; the unproven *read* alone must
+        // block the free.
+        assert!(buffer.synchronize().is_ok());
+        drop(buffer);
+        assert_eq!(emulated.host().live_allocations(), 1);
+    }
+
+    #[test]
+    fn completed_read_guards_are_pruned_and_do_not_block_release() {
+        let (emulated, allocator) = host_backed();
+        let buffer = DeviceBuffer::from_host(allocator, &[1u8; 8], DeviceStream::DEFAULT).unwrap();
+        buffer.guard_read(Arc::new(ReadySyncEvent));
+        assert_eq!(buffer.read_guard_count(), 0);
+        drop(buffer);
+        assert_eq!(emulated.host().live_allocations(), 0);
     }
 }

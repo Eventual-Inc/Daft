@@ -26,7 +26,10 @@
 //!   kernel arms.
 //!
 //! Explicit user-requested exits (`to_cupy()` / `__dlpack__` style) use
-//! [`DeviceBuffer::copy_to_host`] directly and are not counted as pullbacks.
+//! [`DeviceBuffer::copy_to_host`] directly; they are not pullbacks and are
+//! tracked in separate explicit-exit counters, so all device-to-host traffic
+//! is accounted for. A workspace `clippy.toml` disallowed-methods rule keeps
+//! engine code from bypassing [`materialize_to_host`].
 
 mod allocator;
 mod buffer;

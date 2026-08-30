@@ -184,6 +184,13 @@ pub struct DeviceStream(u64);
 
 impl DeviceStream {
     /// The backend's default stream (raw handle 0).
+    ///
+    /// On CUDA, handle 0 is the *legacy default stream*, which implicitly
+    /// synchronizes with every other blocking stream in the process — a
+    /// global convoy lane. Fine for tests and one-off transfers; pipelines
+    /// that want copy/compute overlap should create their own streams (e.g.
+    /// `cudaStreamCreateWithFlags(cudaStreamNonBlocking)`) and wrap the raw
+    /// handles with [`Self::from_raw`].
     pub const DEFAULT: Self = Self(0);
 
     /// Wraps a raw backend stream handle.

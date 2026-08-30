@@ -89,6 +89,12 @@ struct PoolState {
 /// to 1 MiB, then 64 KiB granules so large chunks waste at most one granule —
 /// and reused only within their exact class; freed blocks above the configured
 /// capacity are released to the backing allocator immediately.
+///
+/// Wrap only backends that expose *raw* allocation (`cuMemAlloc`-style APIs
+/// with no internal cache). A backend already implemented over a self-pooling
+/// allocator such as `cudaMallocAsync`/`cudaFreeAsync` should be registered
+/// bare: stacking two pools with independent capacities and eviction policies
+/// doubles retained memory and makes both caches fight each other.
 pub struct PooledDeviceAllocator {
     inner: Arc<dyn DeviceAllocator>,
     max_pool_bytes: usize,
@@ -179,7 +185,21 @@ unsafe impl DeviceAllocator for PooledDeviceAllocator {
             }
             state.stats.misses += 1;
         }
-        self.inner.allocate(class, stream)
+        match self.inner.allocate(class, stream) {
+            Ok(allocation) => Ok(allocation),
+            Err(err) => {
+                // The failure may be memory pressure we caused ourselves: the
+                // backing allocator cannot see blocks retained on our free
+                // lists. Release everything and retry once — the same
+                // release-and-retry discipline device pools such as
+                // `cudaMallocAsync` apply internally — before surfacing OOM.
+                if self.stats().pooled_blocks == 0 {
+                    return Err(err);
+                }
+                self.trim();
+                self.inner.allocate(class, stream)
+            }
+        }
     }
 
     unsafe fn deallocate(&self, allocation: DeviceAllocation, stream: DeviceStream) {
@@ -272,9 +292,14 @@ unsafe impl DeviceAllocator for PooledDeviceAllocator {
 }
 
 #[cfg(test)]
+// Tests exercise the explicit exit path (`copy_to_host`) directly; engine
+// code must use `materialize_to_host` instead (enforced via clippy.toml).
+#[allow(clippy::disallowed_methods)]
 mod tests {
+    use common_error::DaftError;
+
     use super::*;
-    use crate::{DeviceBuffer, HostAllocator, testing::EmulatedDeviceAllocator};
+    use crate::{DeviceBuffer, HostAllocator, SyncEvent, testing::EmulatedDeviceAllocator};
 
     fn pooled(max_pool_bytes: usize) -> (Arc<EmulatedDeviceAllocator>, PooledDeviceAllocator) {
         let emulated = Arc::new(EmulatedDeviceAllocator::default());
@@ -521,6 +546,97 @@ mod tests {
         assert_eq!(stats.hits + stats.misses, 800);
         pool.trim();
         assert_eq!(emulated.host().live_allocations(), 0);
+    }
+
+    /// Fails allocations that would push the backing store past `budget`,
+    /// emulating device OOM so the trim-and-retry path is testable.
+    #[derive(Debug)]
+    struct BudgetAllocator {
+        inner: EmulatedDeviceAllocator,
+        budget: usize,
+    }
+
+    // SAFETY: storage, copies, and events delegate to
+    // `EmulatedDeviceAllocator`; the budget check only decides whether to
+    // allocate at all.
+    unsafe impl DeviceAllocator for BudgetAllocator {
+        fn device(&self) -> Device {
+            self.inner.device()
+        }
+
+        fn allocate(&self, len: usize, stream: DeviceStream) -> DaftResult<DeviceAllocation> {
+            if self.inner.host().live_bytes() + len > self.budget {
+                return Err(DaftError::InternalError(format!(
+                    "emulated device OOM: {len} bytes over budget"
+                )));
+            }
+            self.inner.allocate(len, stream)
+        }
+
+        unsafe fn deallocate(&self, allocation: DeviceAllocation, stream: DeviceStream) {
+            // SAFETY: forwarded contract; storage came from `self.inner`.
+            unsafe { self.inner.deallocate(allocation, stream) }
+        }
+
+        unsafe fn copy_host_to_device(
+            &self,
+            src: &[u8],
+            dst: NonNull<u8>,
+            stream: DeviceStream,
+        ) -> DaftResult<Arc<dyn SyncEvent>> {
+            // SAFETY: forwarded contract.
+            unsafe { self.inner.copy_host_to_device(src, dst, stream) }
+        }
+
+        unsafe fn copy_device_to_host(
+            &self,
+            src: NonNull<u8>,
+            dst: NonNull<u8>,
+            len: usize,
+            stream: DeviceStream,
+        ) -> DaftResult<()> {
+            // SAFETY: forwarded contract.
+            unsafe { self.inner.copy_device_to_host(src, dst, len, stream) }
+        }
+
+        unsafe fn copy_device_to_device(
+            &self,
+            src: NonNull<u8>,
+            dst: NonNull<u8>,
+            len: usize,
+            stream: DeviceStream,
+        ) -> DaftResult<Arc<dyn SyncEvent>> {
+            // SAFETY: forwarded contract.
+            unsafe { self.inner.copy_device_to_device(src, dst, len, stream) }
+        }
+    }
+
+    #[test]
+    fn allocation_failure_trims_and_retries() {
+        let inner = Arc::new(BudgetAllocator {
+            inner: EmulatedDeviceAllocator::default(),
+            budget: 1024,
+        });
+        let pool = PooledDeviceAllocator::new(inner, 1 << 20);
+        let stream = DeviceStream::DEFAULT;
+
+        let a = pool.allocate(512, stream).unwrap();
+        // SAFETY: `a` came from `pool.allocate` and is not used afterwards.
+        unsafe { pool.deallocate(a, stream) };
+        assert_eq!(pool.stats().pooled_bytes, 512);
+
+        // The backing allocator sees 512 retained + 1024 requested > budget
+        // and reports OOM; the pool must release its free lists and retry
+        // rather than surface the failure.
+        let b = pool.allocate(1024, stream).unwrap();
+        assert!(b.len() >= 1024);
+        assert_eq!(pool.stats().pooled_bytes, 0);
+        // SAFETY: `b` came from `pool.allocate` and is not used afterwards.
+        unsafe { pool.deallocate(b, stream) };
+
+        // A request over budget even after trimming still fails.
+        assert!(pool.allocate(4096, stream).is_err());
+        assert_eq!(pool.stats().pooled_bytes, 0);
     }
 
     #[test]
