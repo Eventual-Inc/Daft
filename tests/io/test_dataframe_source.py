@@ -149,6 +149,25 @@ def test_nested_dataframe_source(files: dict[str, str]):
     assert inner.seen
 
 
+def test_sibling_same_source(files: dict[str, str]):
+    inner_schema = Schema.from_pydict({"id": DataType.int64(), "y": DataType.string()})
+
+    class Inner(_Unfold):
+        def __init__(self, path: str) -> None:
+            super().__init__("Inner", inner_schema)
+            self.path = path
+            self.seen: list = []
+
+        def get_dataframe(self, pushdowns):
+            self.seen.append(pushdowns)
+            return daft.read_parquet(self.path)
+
+    inner = Inner(files["right"])
+    df = inner.read().concat(inner.read())
+    assert len(inner.seen) == 2
+    assert df.count_rows() == 10
+
+
 def test_wrong_dtype():
     class Wrong(_Unfold):
         def get_dataframe(self, pushdowns):

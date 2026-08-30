@@ -7,7 +7,7 @@ use common_error::DaftError;
 use common_error::DaftResult;
 use common_treenode::Transformed;
 #[cfg(feature = "python")]
-use common_treenode::TreeNode;
+use common_treenode::{TreeNode, TreeNodeRecursion};
 #[cfg(feature = "python")]
 use daft_scan::ScanState;
 
@@ -62,24 +62,40 @@ impl ExpandDataFrameSources {
             return Ok(Transformed::no(plan));
         };
 
-        if !self
-            .expanding
-            .borrow_mut()
-            .insert(expander.python_object_id())
-        {
+        let id = expander.python_object_id();
+        if !self.expanding.borrow_mut().insert(id) {
             return Ok(Transformed::no(plan));
         }
 
-        let Some(py_df) = expander.expand_dataframe(&physical.pushdowns)? else {
+        // Keep `id` in the set while we walk the spliced plan so `self.read()` is
+        // still a cycle. Remove it before returning so a sibling `.read()` on the
+        // same object can expand. Walk here (then Jump) so the id is still present
+        // for children; Transformed::yes would pop too early.
+        let source_name = scan_op.0.name().to_string();
+        let output_schema = source.output_schema.clone();
+        let pushdowns = physical.pushdowns.clone();
+        let result = self.expand_and_walk(plan.clone(), output_schema, pushdowns, expander, &source_name);
+        self.expanding.borrow_mut().remove(&id);
+        result
+    }
+
+    fn expand_and_walk(
+        &self,
+        plan: Arc<LogicalPlan>,
+        output_schema: daft_schema::schema::SchemaRef,
+        pushdowns: daft_scan::Pushdowns,
+        expander: &dyn daft_scan::ExpandsToDataFrame,
+        source_name: &str,
+    ) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
+        let Some(py_df) = expander.expand_dataframe(&pushdowns)? else {
             return Ok(Transformed::no(plan));
         };
 
-        let source_name = scan_op.0.name().to_string();
-        let mut inner = logical_plan_from_py_dataframe(&py_df, &source_name)?;
+        let mut inner = logical_plan_from_py_dataframe(&py_df, source_name)?;
 
         let predicate = match (
-            physical.pushdowns.filters.clone(),
-            physical.pushdowns.partition_filters.clone(),
+            pushdowns.filters.clone(),
+            pushdowns.partition_filters.clone(),
         ) {
             (Some(f), Some(p)) => Some(f.and(p)),
             (Some(f), None) => Some(f),
@@ -96,10 +112,10 @@ impl ExpandDataFrameSources {
                 .into();
         }
 
-        if inner.schema() != source.output_schema {
+        if inner.schema() != output_schema {
             let inner_schema = inner.schema();
-            for name in source.output_schema.names() {
-                let expected = source.output_schema.get_field(&name)?;
+            for name in output_schema.names() {
+                let expected = output_schema.get_field(&name)?;
                 match inner_schema.get_field(&name) {
                     Ok(got) if got.dtype == expected.dtype => {}
                     Ok(got) => {
@@ -116,7 +132,7 @@ impl ExpandDataFrameSources {
                     }
                 }
             }
-            inner = Project::new_from_schema(inner, source.output_schema.clone())
+            inner = Project::new_from_schema(inner, output_schema.clone())
                 .map_err(|e| {
                     DaftError::ValueError(format!(
                         "Failed to project DataFrameSource '{source_name}' to source schema: {e}"
@@ -125,7 +141,8 @@ impl ExpandDataFrameSources {
                 .into();
         }
 
-        Ok(Transformed::yes(inner))
+        let walked = inner.transform_down(|node| self.try_optimize_node(node))?;
+        Ok(Transformed::new(walked.data, true, TreeNodeRecursion::Jump))
     }
 }
 
