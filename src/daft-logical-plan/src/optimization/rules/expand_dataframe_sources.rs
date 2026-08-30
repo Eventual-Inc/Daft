@@ -74,7 +74,13 @@ impl ExpandDataFrameSources {
         let source_name = scan_op.0.name().to_string();
         let output_schema = source.output_schema.clone();
         let pushdowns = physical.pushdowns.clone();
-        let result = self.expand_and_walk(plan.clone(), output_schema, pushdowns, expander, &source_name);
+        let result = self.expand_and_walk(
+            plan.clone(),
+            output_schema,
+            pushdowns,
+            expander,
+            &source_name,
+        );
         self.expanding.borrow_mut().remove(&id);
         result
     }
