@@ -164,8 +164,8 @@ def test_sibling_same_source(files: dict[str, str]):
 
     inner = Inner(files["right"])
     df = inner.read().concat(inner.read())
-    assert len(inner.seen) == 2
     assert df.count_rows() == 10
+    assert len(inner.seen) == 2
 
 
 def test_wrong_dtype():
