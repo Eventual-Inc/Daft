@@ -613,6 +613,7 @@ impl ObjectSource for HFSource {
         Ok(LSResult {
             files,
             continuation_token,
+            not_found_if_empty: false,
         })
     }
 

@@ -2,6 +2,7 @@ import builtins
 import datetime
 from collections.abc import AsyncIterator, Callable
 from enum import Enum
+from types import TracebackType
 from typing import TYPE_CHECKING, Any, Concatenate, Literal, TypeVar
 
 from daft.dataframe.display import MermaidOptions
@@ -1293,6 +1294,7 @@ class PyDataSourceTask:
         partition_values: PyRecordBatch | None = None,
         stats: PyRecordBatch | None = None,
         storage_config: StorageConfig | None = None,
+        iceberg_delete_files: list[str] | None = None,
     ) -> PyDataSourceTask: ...
 
 class ScanOperatorHandle:
@@ -2939,6 +2941,27 @@ class PyScalarFunction:
 
 def get_function_from_registry(name: str) -> PyScalarFunction: ...
 def to_from_proto(builder: LogicalPlanBuilder) -> LogicalPlanBuilder: ...
+
+class _PyFileTracingSpan:
+    @staticmethod
+    def is_enabled() -> bool: ...
+    @staticmethod
+    def video_frames() -> _PyFileTracingSpan: ...
+    @staticmethod
+    def video_open() -> _PyFileTracingSpan: ...
+    @staticmethod
+    def video_seek() -> _PyFileTracingSpan: ...
+    @staticmethod
+    def video_decode() -> _PyFileTracingSpan: ...
+    @staticmethod
+    def video_to_image() -> _PyFileTracingSpan: ...
+    def __enter__(self) -> None: ...
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None: ...
 
 class PyFileReference:
     @staticmethod

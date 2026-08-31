@@ -32,7 +32,7 @@
         * [Batch Inference](use-case/batch-inference.md)
     * Datasets
         * [Common Crawl](datasets/common-crawl.md)
-        * [LeRobot v3](datasets/lerobot.md)
+        * [LeRobot](datasets/lerobot.md)
         * [DROID](datasets/droid.md)
     * Data Connectors
         * [Overview](connectors/index.md)
@@ -62,6 +62,7 @@
         * Files
             * [Files](connectors/files.md)
             * [Text Files](connectors/text.md)
+            * [Blob Files](connectors/blob.md)
             * [Generic File Source Options](connectors/generic-file-source-options.md)
         * Other Sources
             * [Apache Kafka](connectors/kafka.md)
@@ -103,6 +104,7 @@
     * [Examples](examples/index.md)
     * [Hand Tracking for Physical AI](examples/hand-tracking-physical-ai.md)
     * [Reward Scoring for Physical AI](examples/reward-scoring-physical-ai.md)
+    * [Motion Trimming for Physical AI](examples/motion-trimming-physical-ai.md)
     * [Multimodal Structured Outputs: Evaluating Image Understanding](examples/mm_structured_outputs.md)
     * [Voice AI Analytics with Faster-Whisper and embed_text](examples/voice-ai-analytics.md)
     * [Web Text Deduplication](examples/minhash-dedupe.md)

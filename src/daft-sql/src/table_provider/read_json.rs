@@ -31,8 +31,7 @@ impl SQLTableFunction for ReadJsonFunction {
             ],
             1, // (path)
         )?;
-        let runtime = common_runtime::get_io_runtime(true);
-        let result = runtime.block_within_async_context(builder.finish())??;
+        let result = super::block_on_io_runtime(builder.finish())??;
         Ok(result)
     }
 }
