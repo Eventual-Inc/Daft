@@ -21,9 +21,9 @@ Function names are identical across Rust, Python, and SQL. Import from Python as
 
 | Surface | Count |
 |---|---|
-| Rust `SpatialFunctions` module | **40** |
-| Python bindings (`daft.functions`) | **39** |
-| SQL (`ST_*`) | **38** |
+| Rust `SpatialFunctions` module | **41** |
+| Python bindings (`daft.functions`) | **40** |
+| SQL (`ST_*`) | **39** |
 
 ### Functions NOT exposed everywhere
 
@@ -32,7 +32,7 @@ Function names are identical across Rust, Python, and SQL. Import from Python as
 | `great_circle_distance` | ✅ | ❌ | Great-circle distance in meters from lat/lon scalars. No SQL binding. |
 | `st_geohash_covers` | ❌ | ❌ | **Rust-only.** Internal optimizer helper for geohash partition pruning — not a user-facing function. |
 
-Everything else (38 functions) is available identically in both Python and SQL.
+Everything else (39 functions) is available identically in both Python and SQL.
 
 ## Function catalog
 
@@ -94,6 +94,7 @@ Legend: **P** = Python, **S** = SQL.
 | `st_simplify` | `st_simplify(geom, tolerance)` | ✅ | ✅ | Ramer–Douglas–Peucker simplification. |
 | `st_buffer` | `st_buffer(geom, distance)` | ✅ | ✅ | Planar buffer by `distance`. |
 | `st_makevalid` | `st_makevalid(geom)` | ✅ | ✅ | Repairs invalid polygonal geometries → valid MultiPolygon; non-polygonal types pass through. |
+| `st_normalize` | `st_normalize(geom)` | ✅ | ✅ | Canonical form: consistent ring winding, ring start-vertex, and part ordering. Useful before hashing for change detection. |
 
 ### Collection expansion
 
@@ -141,6 +142,23 @@ df = df.with_column("area", st_area(df["geom"]))
 
 # geodesic distance
 df.with_column("dist", st_distance(df["geom"], df["geom"], use_spheroid=True))
+```
+
+### Canonical hashing with `st_normalize`
+
+Hashing raw geometry representations can flag spatially-identical shapes as changed
+when only their ring orientation, ring starting vertex, or part order differs.
+Normalize before hashing to avoid these false positives:
+
+```python
+import daft
+from daft.functions import st_geomfromtext, st_astext, st_normalize
+from daft.functions import md5
+
+df = daft.from_pydict({"wkt": ["POLYGON((0 0, 0 10, 10 10, 10 0, 0 0))"]})
+df = df.with_column("geom", st_geomfromtext(df["wkt"]))
+df = df.with_column("canonical_wkt", st_astext(st_normalize(df["geom"])))
+df = df.with_column("geom_hash", md5(df["canonical_wkt"]))
 ```
 
 ### WKT to geometry with `rtree_*` bbox columns

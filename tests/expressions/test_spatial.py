@@ -1064,6 +1064,118 @@ def test_st_makevalid_passes_through_non_polygon():
     assert "1" in out["w"][0] and "2" in out["w"][0]
 
 
+def test_st_normalize_ring_orientation_and_start_vertex_invariant():
+    """st_normalize produces identical WKT for polygons differing only in ring winding/start vertex."""
+    from daft.functions import st_normalize, st_astext
+    cw = "POLYGON((0 0, 0 10, 10 10, 10 0, 0 0))"
+    ccw_diff_start = "POLYGON((10 10, 0 10, 0 0, 10 0, 10 10))"
+    df = daft.from_pydict({"g": [cw, ccw_diff_start]})
+    out = df.select(st_astext(st_normalize(st_geomfromtext(daft.col("g")))).alias("n")).to_pydict()
+    assert out["n"][0] == out["n"][1]
+
+
+def test_st_normalize_multipolygon_part_order_invariant():
+    """st_normalize sorts multi-part members so ordering differences don't affect output."""
+    from daft.functions import st_normalize, st_astext
+    a = "MULTIPOLYGON(((0 0,0 1,1 1,1 0,0 0)),((10 10,10 11,11 11,11 10,10 10)))"
+    b = "MULTIPOLYGON(((10 10,10 11,11 11,11 10,10 10)),((0 0,0 1,1 1,1 0,0 0)))"
+    df = daft.from_pydict({"g": [a, b]})
+    out = df.select(st_astext(st_normalize(st_geomfromtext(daft.col("g")))).alias("n")).to_pydict()
+    assert out["n"][0] == out["n"][1]
+
+
+def test_st_normalize_detects_actual_change():
+    """st_normalize still produces different output for genuinely different geometries."""
+    from daft.functions import st_normalize, st_astext
+    a = "POLYGON((0 0, 0 10, 10 10, 10 0, 0 0))"
+    b = "POLYGON((0 0, 0 5, 10 10, 10 0, 0 0))"
+    df = daft.from_pydict({"g": [a, b]})
+    out = df.select(st_astext(st_normalize(st_geomfromtext(daft.col("g")))).alias("n")).to_pydict()
+    assert out["n"][0] != out["n"][1]
+
+
+def test_st_normalize_enables_stable_hash_across_representations():
+    """Hashing the normalized WKT is stable across orientation/start-vertex variants."""
+    from daft.functions import st_normalize, st_astext, md5
+    variants = [
+        "POLYGON((0 0, 0 10, 10 10, 10 0, 0 0))",
+        "POLYGON((0 0, 10 0, 10 10, 0 10, 0 0))",
+        "POLYGON((10 10, 0 10, 0 0, 10 0, 10 10))",
+    ]
+    df = daft.from_pydict({"g": variants})
+    out = df.select(md5(st_astext(st_normalize(st_geomfromtext(daft.col("g"))))).alias("h")).to_pydict()
+    assert out["h"][0] == out["h"][1] == out["h"][2]
+
+
+def test_st_normalize_sql_parity():
+    """SQL st_normalize should match Python."""
+    from daft.functions import st_normalize, st_astext
+    df = daft.from_pydict({"g": ["POLYGON((10 10, 0 10, 0 0, 10 0, 10 10))"]})
+    py_result = df.select(st_astext(st_normalize(st_geomfromtext(daft.col("g")))).alias("n")).to_pydict()
+    sql_result = daft.sql("SELECT st_astext(st_normalize(st_geomfromtext(g))) AS n FROM df").to_pydict()
+    assert py_result["n"][0] == sql_result["n"][0]
+
+
+def _geom_hash(wkt_a, wkt_b, *, normalize):
+    """md5 hash of (optionally normalized) geometry WKT for a pair of WKT strings."""
+    from daft.functions import st_normalize, st_astext, md5
+    df = daft.from_pydict({"g": [wkt_a, wkt_b]})
+    geom = st_geomfromtext(daft.col("g"))
+    if normalize:
+        geom = st_normalize(geom)
+    out = df.select(md5(st_astext(geom)).alias("h")).to_pydict()
+    return out["h"][0], out["h"][1]
+
+
+# Regression coverage for a real bug: a downstream pipeline (e.g. Regrid parcel
+# ingestion) derives an entity_id/entity_fields_hash from a parcel's geometry
+# column. Re-serializing the *same* polygon starting from a different vertex /
+# ring order (no coordinate change) used to change the hash, so entity-id joins
+# treated it as "old entity removed + new entity added" instead of a no-op.
+def test_st_normalize_fixes_entity_hash_instability_on_pure_ring_rotation():
+    """Without st_normalize, hashing a rotated-ring duplicate is unstable; with it, stable."""
+    v1 = "MULTIPOLYGON(((0 0, 1 0, 1 1, 0 1, 0 0)))"
+    v2 = "MULTIPOLYGON(((1 1, 0 1, 0 0, 1 0, 1 1)))"  # same square, different start vertex
+
+    raw_a, raw_b = _geom_hash(v1, v2, normalize=False)
+    assert raw_a != raw_b, "sanity check: raw WKT hashing is expected to be rotation-sensitive"
+
+    norm_a, norm_b = _geom_hash(v1, v2, normalize=True)
+    assert norm_a == norm_b, "st_normalize should make entity hashing invariant to ring rotation"
+
+
+def test_st_normalize_does_not_paper_over_a_genuine_extra_vertex():
+    """A real-world vintage pair with rotation *and* a genuine extra vertex still hashes
+    differently after st_normalize - normalization is not a substitute for tolerance-based
+    geometry matching, which is tracked as a separate, harder problem."""
+    v_old = (
+        "MULTIPOLYGON(((-100.00307149999999 35.204668999999996,-100.00022249999999 35.2046925,"
+        "-100.000248 35.2191475,-100.0055555 35.2192175,-100.0056575 35.219181999999996,"
+        "-100.005755 35.219063999999996,-100.00588549999999 35.212011,-100.005952 35.211921499999995,"
+        "-100.005952 35.211845,-100.0059465 35.2046455,-100.00307149999999 35.204668999999996)),"
+        "((-100.005746 35.219271,-100.00558149999999 35.2193275,-100.000247 35.2192575,"
+        "-100.000197 35.222915,-100.001307 35.223853999999996,-100.0030285 35.225123499999995,"
+        "-100.0036375 35.225532,-100.003909 35.2257035,-100.0042175 35.225871999999995,"
+        "-100.00446649999999 35.225974,-100.0045765 35.226014,-100.004849 35.2261245,"
+        "-100.0048365 35.226431999999996,-100.005665 35.2267475,-100.00567 35.226077499999995,"
+        "-100.00567249999999 35.2257435,-100.005746 35.219271)))"
+    )
+    v_new = (
+        "MULTIPOLYGON(((-100.005952 35.211845,-100.0059465 35.2046455,-100.00307149999999 35.204668999999996,"
+        "-100.00022249999999 35.2046925,-100.000248 35.2191475,-100.0055555 35.2192175,"
+        "-100.0056575 35.219181999999996,-100.005755 35.219063999999996,-100.00588549999999 35.212011,"
+        "-100.005952 35.211921499999995,-100.005952 35.211845)),"
+        "((-100.00567249999999 35.2257435,-100.00581799999999 35.2191835,-100.005746 35.219271,"
+        "-100.00558149999999 35.2193275,-100.000247 35.2192575,-100.000197 35.222915,"
+        "-100.001307 35.223853999999996,-100.0030285 35.225123499999995,-100.0036375 35.225532,"
+        "-100.003909 35.2257035,-100.0042175 35.225871999999995,-100.00446649999999 35.225974,"
+        "-100.0045765 35.226014,-100.004849 35.2261245,-100.0048365 35.226431999999996,"
+        "-100.005665 35.2267475,-100.00567 35.226077499999995,-100.00567249999999 35.2257435)))"
+    )
+    norm_a, norm_b = _geom_hash(v_old, v_new, normalize=True)
+    assert norm_a != norm_b
+
+
 def test_convexhull_triangle():
     """Convex hull of a concave set of points should be the outer triangle."""
     from daft.functions import st_convexhull, st_astext, st_geometrytype

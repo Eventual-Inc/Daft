@@ -34,6 +34,7 @@ pub mod st_isvalid;
 pub mod st_length;
 pub mod st_makeline;
 pub mod st_makevalid;
+pub mod st_normalize;
 pub mod st_overlaps;
 pub mod st_perimeter;
 pub mod st_point;
@@ -86,6 +87,7 @@ pub use st_isvalid::StIsValid;
 pub use st_length::StLength;
 pub use st_makeline::StMakeLine;
 pub use st_makevalid::StMakeValid;
+pub use st_normalize::StNormalize;
 pub use st_overlaps::StOverlaps;
 pub use st_perimeter::StPerimeter;
 pub use st_point::StPoint;
@@ -147,5 +149,6 @@ impl FunctionModule for SpatialFunctions {
         parent.add_fn(StPerimeter);
         parent.add_fn(StPointOnSurface);
         parent.add_fn(StMakeValid);
+        parent.add_fn(StNormalize);
     }
 }

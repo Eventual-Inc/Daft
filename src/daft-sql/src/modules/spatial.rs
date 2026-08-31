@@ -9,8 +9,8 @@ use daft_geo::{
     StCovers, StCrosses, StDifference, StDisjoint, StDistance, StDump, StDumpRings, StDwithin,
     StEnvelope, StEquals, StGeoJsonFromGeom, StGeohash, StGeomFromGeoJson, StGeomFromText,
     StGeometryType, StIntersection, StIntersects, StIsValid, StLength, StMakeLine, StMakeValid,
-    StOverlaps, StPerimeter, StPoint, StPointOnSurface, StSimplify, StSymDifference, StTouches,
-    StUnion, StWithin, StX, StY,
+    StNormalize, StOverlaps, StPerimeter, StPoint, StPointOnSurface, StSimplify, StSymDifference,
+    StTouches, StUnion, StWithin, StX, StY,
 };
 use sqlparser::ast;
 
@@ -39,6 +39,7 @@ impl SQLModule for SQLModuleSpatial {
             SQLSpatialUnary(Arc::new(StPointOnSurface)),
         );
         parent.add_fn("st_makevalid", SQLSpatialUnary(Arc::new(StMakeValid)));
+        parent.add_fn("st_normalize", SQLSpatialUnary(Arc::new(StNormalize)));
         parent.add_fn("st_contains", SQLSpatialBinary(Arc::new(StContains)));
         parent.add_fn("st_intersects", SQLSpatialBinary(Arc::new(StIntersects)));
         parent.add_fn("st_within", SQLSpatialBinary(Arc::new(StWithin)));
