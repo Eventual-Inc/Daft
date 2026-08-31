@@ -701,11 +701,10 @@ class DataFrame:
             >>>
             >>> daft.set_runner_ray()  # doctest: +SKIP
             >>>
-            >>> df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]}).into_partitions(2)
+            >>> df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]})
             >>> for part in df.iter_partitions():
             ...     print(part)  # doctest: +SKIP
             MicroPartition with 3 rows:
-            TableState: Loaded. 1 tables
             ╭───────┬────────╮
             │ foo   ┆ bar    │
             │ ---   ┆ ---    │
