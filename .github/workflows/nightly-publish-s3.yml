@@ -56,7 +56,7 @@ jobs:
       contents: read
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
       with:
         submodules: true
     - uses: actions/download-artifact@v8
@@ -127,7 +127,7 @@ jobs:
         runner-name: [ubuntu-latest, ubuntu-24.04-arm]
         daft-runner: [ray, native]
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
       with:
         submodules: true
         fetch-depth: 0
@@ -157,7 +157,7 @@ jobs:
           uv sync --no-install-project --all-extras --all-groups
           uv pip install daft --pre --extra-index-url https://ds0gqyebztuyf.cloudfront.net/builds/nightly --force-reinstall
           rm -rf daft
-    - uses: actions/cache@v5
+    - uses: actions/cache@v6
       env:
         cache-name: cache-tpch-data
       with:
@@ -224,7 +224,7 @@ jobs:
         sudo rm -rf /opt/hostedtoolcache/go || true
         sudo rm -rf /opt/hostedtoolcache/Ruby || true
         sudo rm -rf /opt/hostedtoolcache/node || true
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
       with:
         submodules: true
         fetch-depth: 0
@@ -264,7 +264,7 @@ jobs:
         role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
         role-session-name: DaftPythonPackageGitHubWorkflow
     - name: Spin up IO services
-      uses: isbang/compose-action@v2.6.0
+      uses: isbang/compose-action@v3.0.0
       with:
         compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
         down-flags: --volumes

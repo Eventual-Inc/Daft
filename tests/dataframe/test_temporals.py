@@ -12,6 +12,7 @@ import daft
 from daft import DataType, col
 from daft.functions import (
     add_months,
+    convert_timezone,
     current_date,
     current_timestamp,
     current_timezone,
@@ -27,6 +28,7 @@ from daft.functions import (
     dayofmonth,
     dayofyear,
     from_unixtime,
+    from_utc_timestamp,
     last_day,
     make_date,
     make_timestamp,
@@ -36,6 +38,7 @@ from daft.functions import (
     timestamp_micros,
     timestamp_millis,
     timestamp_seconds,
+    to_utc_timestamp,
     trunc,
     weekofyear,
 )
@@ -1294,3 +1297,96 @@ def test_add_months_months_between_sql() -> None:
     between_result = daft.sql('SELECT months_between("end", ref) as diff FROM df').to_pydict()
     # Pure-date inputs: 4 + (28 - 30) / 31 = 3.93548387
     assert between_result["diff"][0] == pytest.approx(3.93548387, abs=1e-8)
+
+
+# --- from_utc_timestamp / to_utc_timestamp / convert_timezone ---
+
+
+def test_from_utc_timestamp_basic() -> None:
+    # 2017-07-14 02:40 UTC -> 03:40 in Europe/London (BST = UTC+1 in July).
+    df = daft.from_pydict({"ts": [datetime(2017, 7, 14, 2, 40)]})
+    df = df.with_column("local", from_utc_timestamp(col("ts"), "Europe/London"))
+    assert df.schema()["local"].dtype == DataType.timestamp("us")
+    assert df.to_pydict()["local"] == [datetime(2017, 7, 14, 3, 40)]
+
+
+def test_from_utc_timestamp_fixed_offset() -> None:
+    df = daft.from_pydict({"ts": [datetime(2021, 1, 1, 0, 0)]})
+    df = df.with_column("local", from_utc_timestamp(col("ts"), "+05:30"))
+    assert df.to_pydict()["local"] == [datetime(2021, 1, 1, 5, 30)]
+
+
+def test_from_utc_timestamp_tz_aware_input() -> None:
+    # Input has a tz label; from_utc_timestamp still treats the i64 as UTC and shifts.
+    ts_utc = datetime(2017, 7, 14, 2, 40, tzinfo=timezone.utc)
+    df = daft.from_pydict({"ts": [ts_utc]})
+    df = df.with_column("local", from_utc_timestamp(col("ts"), "Europe/London"))
+    assert df.to_pydict()["local"] == [datetime(2017, 7, 14, 3, 40)]
+
+
+def test_to_utc_timestamp_basic() -> None:
+    # 2017-07-14 03:40 in Europe/London (BST) -> 02:40 UTC.
+    df = daft.from_pydict({"ts": [datetime(2017, 7, 14, 3, 40)]})
+    df = df.with_column("utc", to_utc_timestamp(col("ts"), "Europe/London"))
+    assert df.schema()["utc"].dtype == DataType.timestamp("us")
+    assert df.to_pydict()["utc"] == [datetime(2017, 7, 14, 2, 40)]
+
+
+def test_to_utc_timestamp_dst_gap_raises() -> None:
+    # US/Eastern spring-forward: 2021-03-14 02:30 doesn't exist (clocks jump 02:00 -> 03:00).
+    # Documented contract is that nonexistent local times raise rather than silently resolve.
+    df = daft.from_pydict({"ts": [datetime(2021, 3, 14, 2, 30)]})
+    with pytest.raises(Exception, match="(?i)ambiguous|nonexistent|local"):
+        df.with_column("utc", to_utc_timestamp(col("ts"), "America/New_York")).collect()
+
+
+def test_utc_round_trip_identity() -> None:
+    # from_utc_timestamp(to_utc_timestamp(ts, tz), tz) == ts for non-DST instants.
+    df = daft.from_pydict({"ts": [datetime(2021, 6, 15, 14, 30)]})
+    df = df.with_column(
+        "round_trip", from_utc_timestamp(to_utc_timestamp(col("ts"), "America/New_York"), "America/New_York")
+    )
+    assert df.to_pydict()["round_trip"] == [datetime(2021, 6, 15, 14, 30)]
+
+
+def test_utc_timestamp_null_propagation() -> None:
+    df = daft.from_pydict({"ts": [datetime(2021, 1, 1), None]})
+    df = df.with_column("from_utc", from_utc_timestamp(col("ts"), "UTC"))
+    df = df.with_column("to_utc", to_utc_timestamp(col("ts"), "UTC"))
+    result = df.to_pydict()
+    assert result["from_utc"] == [datetime(2021, 1, 1), None]
+    assert result["to_utc"] == [datetime(2021, 1, 1), None]
+
+
+def test_utc_timestamp_invalid_tz_errors() -> None:
+    df = daft.from_pydict({"ts": [datetime(2021, 1, 1)]})
+    with pytest.raises(Exception, match="timezone"):
+        df.with_column("bad", from_utc_timestamp(col("ts"), "Not/A/Zone")).collect()
+
+
+def test_convert_timezone_spark_alias() -> None:
+    # Source carries tz label; convert_timezone reverses Daft's argument order.
+    df = daft.from_pydict({"ts": [datetime(2021, 1, 1, 12, 0, tzinfo=timezone.utc)]})
+    df = df.with_column("ny", convert_timezone("America/New_York", col("ts")))
+    # 12:00 UTC -> 07:00 EST on 2021-01-01.
+    expected = datetime(2021, 1, 1, 7, 0, tzinfo=timezone(timedelta(hours=-5)))
+    assert df.to_pydict()["ny"] == [expected]
+
+
+def test_utc_timestamp_sql() -> None:
+    df = daft.from_pydict({"ts": [datetime(2017, 7, 14, 2, 40)]})  # noqa: F841
+    from_result = daft.sql("SELECT from_utc_timestamp(ts, 'Europe/London') AS local FROM df").to_pydict()
+    assert from_result["local"] == [datetime(2017, 7, 14, 3, 40)]
+
+    to_result = daft.sql("SELECT to_utc_timestamp(ts, 'Europe/London') AS utc FROM df").to_pydict()
+    # The naive wall-clock 02:40 interpreted in BST is 01:40 UTC.
+    assert to_result["utc"] == [datetime(2017, 7, 14, 1, 40)]
+
+
+def test_convert_timezone_sql() -> None:
+    # Spark-style argument order: convert_timezone(target_tz, source_ts).
+    # Source carries a UTC label; 12:00 UTC == 07:00 EST on 2021-01-01.
+    df = daft.from_pydict({"ts": [datetime(2021, 1, 1, 12, 0, tzinfo=timezone.utc)]})  # noqa: F841
+    result = daft.sql("SELECT convert_timezone('America/New_York', ts) AS ny FROM df").to_pydict()
+    expected = datetime(2021, 1, 1, 7, 0, tzinfo=timezone(timedelta(hours=-5)))
+    assert result["ny"] == [expected]

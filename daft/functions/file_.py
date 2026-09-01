@@ -13,7 +13,7 @@ def file(url: Expression, io_config: IOConfig | None = None) -> Expression:
     """Converts a string containing a file reference to a `daft.File` reference.
 
     Args:
-        url (StringExpression): the url of the file
+        url (String Expression): the url of the file
         io_config (IOConfig, default=None): The IO configuration to use.
 
     Returns:
@@ -77,6 +77,24 @@ def image_file(url: Expression, verify: bool = False, io_config: IOConfig | None
     return url._eval_expressions("image_file", verify=verify, io_config=io_config)
 
 
+def hdf5_file(url: Expression, verify: bool = False, io_config: IOConfig | None = None) -> Expression:
+    """Converts a string containing a file reference to a `daft.Hdf5File` reference.
+
+    Args:
+        url (String Expression): the url of the file
+        verify:
+            If True, verify that the file exists and is an HDF5 file.
+            If **ANY** files are not HDF5 files, this will produce an error.
+
+        io_config (IOConfig, default=None): The IO configuration to use.
+
+    Returns:
+        Expression (File[Hdf5] Expression): An expression containing the file reference.
+
+    """
+    return url._eval_expressions("hdf5_file", verify=verify, io_config=io_config)
+
+
 def file_path(file: Expression) -> Expression:
     """Returns the path (URL) of the file as a string.
 
@@ -101,12 +119,28 @@ def file_size(file: Expression) -> Expression:
     return file._eval_expressions("file_size")
 
 
+def file_exists(file: Expression) -> Expression:
+    """Returns whether the file exists.
+
+    Args:
+        file (File Expression): expression to evaluate.
+
+    Returns:
+        Expression (Boolean Expression): expression indicating whether the file exists
+    """
+    return file._eval_expressions("file_exists")
+
+
 def guess_mime_type(bytes_expr: Expression) -> Expression:
     r"""Guess the MIME type of binary data by inspecting magic bytes.
 
     Detects common file formats including: PNG, JPEG, GIF, WEBP, PDF, ZIP,
-    MP3, WAV, OGG, MP4, MPEG, and HTML. Returns None if the format cannot
-    be determined.
+    MP3, WAV, OGG, MP4, MPEG, HDF5, and HTML.
+
+    Note: HDF5 detection follows the registered media type and signature documented by IANA:
+    https://www.iana.org/assignments/media-types/application/vnd.hdfgroup.hdf5.
+
+    Returns None if the format cannot be determined.
 
     Args:
         bytes_expr: Binary expression containing raw bytes.

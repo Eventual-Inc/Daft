@@ -2711,6 +2711,56 @@ class Expression:
 
         return find(self, substr)
 
+    def translate(self, from_str: builtins.str | Expression, to_str: builtins.str | Expression) -> Expression:
+        """Translates characters in the string by replacing characters in 'from_str' with corresponding characters in 'to_str'.
+
+        Tip: See Also
+            [`daft.functions.translate`](https://docs.daft.ai/en/stable/api/functions/translate/)
+        """
+        from daft.functions import translate
+
+        return translate(self, from_str, to_str)
+
+    def substring_index(self, delim: builtins.str | Expression, count: builtins.int | Expression) -> Expression:
+        """Returns the substring from string before count occurrences of the delimiter.
+
+        Tip: See Also
+            [`daft.functions.substring_index`](https://docs.daft.ai/en/stable/api/functions/substring_index/)
+        """
+        from daft.functions import substring_index
+
+        return substring_index(self, delim, count)
+
+    def split_part(self, delim: builtins.str | Expression, part: builtins.int | Expression) -> Expression:
+        """Splits the string on occurrences of the delimiter and returns the requested part (1-based).
+
+        Tip: See Also
+            [`daft.functions.split_part`](https://docs.daft.ai/en/stable/api/functions/split_part/)
+        """
+        from daft.functions import split_part
+
+        return split_part(self, delim, part)
+
+    def soundex(self) -> Expression:
+        """Returns the Soundex code of the string.
+
+        Tip: See Also
+            [`daft.functions.soundex`](https://docs.daft.ai/en/stable/api/functions/soundex/)
+        """
+        from daft.functions import soundex
+
+        return soundex(self)
+
+    def ascii(self) -> Expression:
+        """Returns the ASCII numeric value of the first character of the string.
+
+        Tip: See Also
+            [`daft.functions.ascii_func`](https://docs.daft.ai/en/stable/api/functions/ascii_func/)
+        """
+        from daft.functions import ascii_func
+
+        return ascii_func(self)
+
     def convert_image(self, mode: builtins.str | ImageMode) -> Expression:
         """Convert an image expression to the specified mode.
 
@@ -2986,6 +3036,16 @@ class Expression:
 
         return file_size(self)
 
+    def file_exists(self) -> Expression:
+        """Checks whether a file exists.
+
+        Tip: See Also
+            [`daft.functions.file_exists`](https://docs.daft.ai/en/stable/api/functions/file_exists/)
+        """
+        from daft.functions import file_exists
+
+        return file_exists(self)
+
     def video_metadata(self) -> Expression:
         """Gets metadata for a video file.
 
@@ -3045,6 +3105,36 @@ class Expression:
         from daft.functions import decode_image_file
 
         return decode_image_file(self)
+
+    def hdf5_keys(self, group: str = "/") -> Expression:
+        """List member names directly under an HDF5 group.
+
+        Tip: See Also
+            [`daft.functions.hdf5_keys`](https://docs.daft.ai/en/stable/api/functions/hdf5_keys/)
+        """
+        from daft.functions import hdf5_keys
+
+        return hdf5_keys(self, group=group)
+
+    def hdf5_metadata(self, group: str = "/") -> Expression:
+        """Collect metadata for groups and datasets under an HDF5 group.
+
+        Tip: See Also
+            [`daft.functions.hdf5_metadata`](https://docs.daft.ai/en/stable/api/functions/hdf5_metadata/)
+        """
+        from daft.functions import hdf5_metadata
+
+        return hdf5_metadata(self, group=group)
+
+    def hdf5_attrs(self, h5path: str = "/") -> Expression:
+        """Read HDF5 attributes for a group or dataset.
+
+        Tip: See Also
+            [`daft.functions.hdf5_attrs`](https://docs.daft.ai/en/stable/api/functions/hdf5_attrs/)
+        """
+        from daft.functions import hdf5_attrs
+
+        return hdf5_attrs(self, h5path=h5path)
 
 
 class WhenExpr(Expression):

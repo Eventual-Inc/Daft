@@ -32,7 +32,10 @@ impl MicroPartition {
         Ok(Self {
             schema,
             chunks: Arc::new(all_tables),
-            metadata: TableMetadata { length: new_len },
+            metadata: TableMetadata {
+                length: new_len,
+                column_sizes: None,
+            },
             statistics: all_stats,
         })
     }

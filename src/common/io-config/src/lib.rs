@@ -5,7 +5,9 @@ mod azure;
 mod config;
 mod cos;
 mod gcs;
+mod goosefs;
 mod gravitino;
+mod hdfs;
 mod http;
 mod huggingface;
 mod s3;
@@ -22,10 +24,12 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 pub use crate::{
     azure::AzureConfig,
-    config::IOConfig,
+    config::{IOConfig, IoBackendKind},
     cos::CosConfig,
     gcs::GCSConfig,
+    goosefs::GooseFSConfig,
     gravitino::GravitinoConfig,
+    hdfs::HdfsConfig,
     http::HTTPConfig,
     huggingface::HuggingFaceConfig,
     s3::{S3Config, S3Credentials},

@@ -257,8 +257,9 @@ fn search_floor(
 ///
 /// The range covers the floor (last left ≤ right) and ceil (first left ≥ right),
 /// each extended through any adjacent duplicates sharing the same on_key.
-/// Left rows outside this range either have a strictly closer right candidate
-/// elsewhere in the bucket, or will be covered by `nearest_fill`.
+/// Left rows outside this range get their candidates from `nearest_fill`, which
+/// propagates the gap-endpoint matches held by the floor/ceil rows to every row
+/// in between and keeps the nearer one.
 ///
 /// `on_key_cmp(pos, right_idx)` — sorted_left[pos] vs right[right_idx]
 /// `self_cmp(i, j)`             — sorted_left[i]   vs sorted_left[j]
@@ -568,45 +569,92 @@ fn backward_fill(global_best: &mut [Option<(u32, u32)>], grouped_sorted_indices:
     }
 }
 
-/// For left rows that received no direct probe assignment, fill from both directions and keep
-/// whichever candidate is closer to the left row's on_key. Ties prefer the larger (forward)
-/// right value, matching the `is_nearer` tie-break convention.
+/// Reconciles every left row's match against its neighbors' direct matches.
+///
+/// `search_nearest` offers each right row only to its floor/ceil left rows, so a left row
+/// strictly inside a gap between two right values holds at most one side's candidate (the
+/// first row in a gap holds the backward endpoint, the last holds the forward endpoint, and
+/// middle rows hold none). Propagating the original matches from both directions surfaces
+/// both gap endpoints to every row; `is_nearer` picks the winner (ties prefer the larger,
+/// i.e. forward, right value).
 fn nearest_fill(
     global_best: &mut [Option<(u32, u32)>],
     grouped_sorted_indices: &GroupIndices,
     left_on_arr: &dyn Array,
     global_right_on_key_arrs: &[Arc<dyn Array>],
 ) {
-    let mut fwd = global_best.to_owned();
-    forward_fill(&mut fwd, grouped_sorted_indices);
-    let mut bwd = global_best.to_owned();
-    backward_fill(&mut bwd, grouped_sorted_indices);
-
-    for i in 0..global_best.len() {
-        if global_best[i].is_some() {
-            continue;
-        }
-        global_best[i] = match (fwd[i], bwd[i]) {
-            (None, None) => continue,
-            (Some(_), None) => fwd[i],
-            (None, Some(_)) => bwd[i],
-            (Some((fwd_rb, fwd_row)), Some((bwd_rb, bwd_row))) => {
-                let fwd_arr = global_right_on_key_arrs[fwd_rb as usize].as_ref();
-                let bwd_arr = global_right_on_key_arrs[bwd_rb as usize].as_ref();
+    let nearer_of =
+        |best: Option<(u32, u32)>, candidate: Option<(u32, u32)>, left_idx: usize| match (
+            best, candidate,
+        ) {
+            (best, None) => best,
+            (None, candidate) => candidate,
+            (Some((b_rb, b_row)), Some((c_rb, c_row))) => {
                 if is_nearer(
-                    fwd_arr,
-                    fwd_row as usize,
-                    bwd_arr,
-                    bwd_row as usize,
+                    global_right_on_key_arrs[c_rb as usize].as_ref(),
+                    c_row as usize,
+                    global_right_on_key_arrs[b_rb as usize].as_ref(),
+                    b_row as usize,
                     left_on_arr,
-                    i,
+                    left_idx,
                 ) {
-                    fwd[i]
+                    candidate
                 } else {
-                    bwd[i]
+                    best
                 }
             }
         };
+
+    // A run of equal left on-keys receives the same direct match, so the nearest neighboring
+    // match can be the row's own match mirrored by a duplicate, shadowing the other gap
+    // endpoint. Track the two nearest *distinct* matches per direction and skip the candidate
+    // when it is the row's own.
+    let pick = |first: Option<(u32, u32)>, second: Option<(u32, u32)>, own: Option<(u32, u32)>| {
+        if own.is_some() && first == own {
+            second
+        } else {
+            first
+        }
+    };
+
+    for bucket in grouped_sorted_indices {
+        let mut prev1 = Vec::with_capacity(bucket.len());
+        let mut prev2 = Vec::with_capacity(bucket.len());
+        let (mut r1, mut r2) = (None, None);
+        for &idx in bucket {
+            prev1.push(r1);
+            prev2.push(r2);
+            if let Some(m) = global_best[idx as usize]
+                && r1 != Some(m)
+            {
+                r2 = r1;
+                r1 = Some(m);
+            }
+        }
+        let mut next1 = vec![None; bucket.len()];
+        let mut next2 = vec![None; bucket.len()];
+        let (mut r1, mut r2) = (None, None);
+        for (pos, &idx) in bucket.iter().enumerate().rev() {
+            next1[pos] = r1;
+            next2[pos] = r2;
+            if let Some(m) = global_best[idx as usize]
+                && r1 != Some(m)
+            {
+                r2 = r1;
+                r1 = Some(m);
+            }
+        }
+
+        for (pos, &idx) in bucket.iter().enumerate() {
+            let idx = idx as usize;
+            let own = global_best[idx];
+            let reconciled = nearer_of(
+                nearer_of(own, pick(prev1[pos], prev2[pos], own), idx),
+                pick(next1[pos], next2[pos], own),
+                idx,
+            );
+            global_best[idx] = reconciled;
+        }
     }
 }
 

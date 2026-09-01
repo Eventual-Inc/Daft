@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING, Literal, TypedDict
 
 if TYPE_CHECKING:
     import PIL
@@ -39,3 +39,12 @@ class ImageMetadata(TypedDict):
     height: int | None
     format: str | None
     mode: str | None
+
+
+class Hdf5ObjectMetadata(TypedDict):
+    h5path: str
+    kind: Literal["dataset", "group"]
+    shape: list[int]
+    dtype: str
+    chunks: list[int]
+    compression: str

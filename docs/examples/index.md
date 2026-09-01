@@ -2,6 +2,18 @@
 
 <div class="grid cards" markdown>
 
+- [Hand Tracking for Physical AI](hand-tracking-physical-ai.md)
+
+    Read a LeRobot dataset, run hand tracking as a Daft UDF, and score the results against EgoDex ground truth.
+
+- [Reward Scoring for Physical AI](reward-scoring-physical-ai.md)
+
+    Read LIBERO episodes with Daft's LeRobot reader and score each one with a reward model - per-frame task progress plus success probability - then filter low-quality episodes with a Daft query.
+
+- [Motion Trimming for Physical AI](motion-trimming-physical-ai.md)
+
+    Read DROID episodes with Daft's LeRobot reader, score per-frame motion from the robot's own joint positions - no video decode - and reduce it to one trim window per episode.
+
 - [Multimodal Structured Outputs: Evaluating Image Understanding](mm_structured_outputs.md)
 
     Leverage image ablation to analyze textual bias in image understanding datasets.

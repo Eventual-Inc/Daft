@@ -144,6 +144,7 @@ impl ProvideCredentials for S3CredentialsProviderWrapper {
 impl S3Config {
     #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
+        let defaults = Self::default();
         let mut res = vec![];
         if let Some(region_name) = &self.region_name {
             res.push(format!("Region name = {region_name}"));
@@ -166,31 +167,64 @@ impl S3Config {
         if let Some(buffer_time) = &self.buffer_time {
             res.push(format!("Buffer time = {buffer_time}"));
         }
-        res.push(format!(
-            "Max connections = {}",
-            self.max_connections_per_io_thread
-        ));
-        res.push(format!(
-            "Retry initial backoff ms = {}",
-            self.retry_initial_backoff_ms
-        ));
-        res.push(format!("Connect timeout ms = {}", self.connect_timeout_ms));
-        res.push(format!("Read timeout ms = {}", self.read_timeout_ms));
-        res.push(format!("Max retries = {}", self.num_tries));
-        if let Some(retry_mode) = &self.retry_mode {
+        if self.max_connections_per_io_thread != defaults.max_connections_per_io_thread {
+            res.push(format!(
+                "Max connections = {}",
+                self.max_connections_per_io_thread
+            ));
+        }
+        if self.retry_initial_backoff_ms != defaults.retry_initial_backoff_ms {
+            res.push(format!(
+                "Retry initial backoff ms = {}",
+                self.retry_initial_backoff_ms
+            ));
+        }
+        if self.connect_timeout_ms != defaults.connect_timeout_ms {
+            res.push(format!("Connect timeout ms = {}", self.connect_timeout_ms));
+        }
+        if self.read_timeout_ms != defaults.read_timeout_ms {
+            res.push(format!("Read timeout ms = {}", self.read_timeout_ms));
+        }
+        if self.num_tries != defaults.num_tries {
+            res.push(format!("Max retries = {}", self.num_tries));
+        }
+        if self.retry_mode != defaults.retry_mode
+            && let Some(retry_mode) = &self.retry_mode
+        {
             res.push(format!("Retry mode = {retry_mode}"));
         }
-        res.push(format!("Anonymous = {}", self.anonymous));
-        res.push(format!("Use SSL = {}", self.use_ssl));
-        res.push(format!("Verify SSL = {}", self.verify_ssl));
-        res.push(format!("Check hostname SSL = {}", self.check_hostname_ssl));
-        res.push(format!("Requester pays = {}", self.requester_pays));
-        res.push(format!(
-            "Force Virtual Addressing = {}",
-            self.force_virtual_addressing
-        ));
+        if self.anonymous != defaults.anonymous {
+            res.push(format!("Anonymous = {}", self.anonymous));
+        }
+        if self.use_ssl != defaults.use_ssl {
+            res.push(format!("Use SSL = {}", self.use_ssl));
+        }
+        if self.verify_ssl != defaults.verify_ssl {
+            res.push(format!("Verify SSL = {}", self.verify_ssl));
+        }
+        if self.check_hostname_ssl != defaults.check_hostname_ssl {
+            res.push(format!("Check hostname SSL = {}", self.check_hostname_ssl));
+        }
+        if self.requester_pays != defaults.requester_pays {
+            res.push(format!("Requester pays = {}", self.requester_pays));
+        }
+        if self.force_virtual_addressing != defaults.force_virtual_addressing {
+            res.push(format!(
+                "Force Virtual Addressing = {}",
+                self.force_virtual_addressing
+            ));
+        }
         if let Some(name) = &self.profile_name {
             res.push(format!("Profile Name = {name}"));
+        }
+        if self.multipart_size != defaults.multipart_size {
+            res.push(format!("Multipart size = {}", self.multipart_size));
+        }
+        if self.multipart_max_concurrency != defaults.multipart_max_concurrency {
+            res.push(format!(
+                "Multipart max concurrency = {}",
+                self.multipart_max_concurrency
+            ));
         }
         if !self.custom_retry_msgs.is_empty() {
             res.push(format!(
@@ -236,55 +270,12 @@ impl Default for S3Config {
 
 impl Display for S3Config {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-        write!(
-            f,
-            "S3Config
-    region_name: {:?}
-    endpoint_url: {:?}
-    key_id: {:?}
-    session_token: {:?}
-    access_key: {:?}
-    credentials_provider: {:?}
-    buffer_time: {:?}
-    max_connections: {}
-    retry_initial_backoff_ms: {}
-    connect_timeout_ms: {}
-    read_timeout_ms: {}
-    num_tries: {:?}
-    retry_mode: {:?}
-    anonymous: {}
-    use_ssl: {}
-    verify_ssl: {}
-    check_hostname_ssl: {}
-    requester_pays: {}
-    force_virtual_addressing: {}
-    multipart_size: {:?}
-    multipart_max_concurrency: {:?}
-    custom_retry_msgs: {:?}",
-            self.region_name,
-            self.endpoint_url,
-            self.key_id,
-            self.session_token,
-            self.access_key,
-            self.credentials_provider,
-            self.buffer_time,
-            self.max_connections_per_io_thread,
-            self.retry_initial_backoff_ms,
-            self.connect_timeout_ms,
-            self.read_timeout_ms,
-            self.num_tries,
-            self.retry_mode,
-            self.anonymous,
-            self.use_ssl,
-            self.verify_ssl,
-            self.check_hostname_ssl,
-            self.requester_pays,
-            self.force_virtual_addressing,
-            self.multipart_size,
-            self.multipart_max_concurrency,
-            self.custom_retry_msgs
-        )?;
-        Ok(())
+        let lines = self.multiline_display();
+        if lines.is_empty() {
+            write!(f, "S3Config {{}}")
+        } else {
+            write!(f, "S3Config\n    {}", lines.join("\n    "))
+        }
     }
 }
 

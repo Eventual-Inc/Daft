@@ -51,6 +51,11 @@ class MediaType:
         """Represents an image media type."""
         return cls._from_pyfileformat(PyMediaType.image())
 
+    @classmethod
+    def hdf5(cls) -> MediaType:
+        """Represents an HDF5 media type."""
+        return cls._from_pyfileformat(PyMediaType.hdf5())
+
 
 class TimeUnit:
     _timeunit: PyTimeUnit
@@ -252,6 +257,8 @@ class DataType:
             return cls.file(MediaType.audio())
         elif check_type(daft.file.ImageFile):
             return cls.file(MediaType.image())
+        elif check_type(daft.file.Hdf5File):
+            return cls.file(MediaType.hdf5())
         elif check_type(daft.file.File):
             return cls.file(MediaType.unknown())
         elif check_type(list):

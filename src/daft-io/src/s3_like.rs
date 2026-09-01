@@ -472,6 +472,34 @@ async fn provide_credentials_with_retry(
     Ok(creds)
 }
 
+/// Normalize an S3-compatible endpoint URL: default the scheme to `https` when
+/// absent (a bare host otherwise fails URI parsing and the AWS SDK rejects it),
+/// and ensure a trailing slash for correct path construction.
+fn normalize_endpoint_url(url_str: &str) -> String {
+    // Default to https before parsing so a bare host also gets the trailing slash.
+    let url_str = if url_str.contains("://") {
+        url_str.to_string()
+    } else {
+        format!("https://{url_str}")
+    };
+    match url::Url::parse(&url_str) {
+        Ok(mut parsed_url) => {
+            if !parsed_url.path().ends_with('/') {
+                parsed_url.set_path(&format!("{}/", parsed_url.path()));
+            }
+            parsed_url.to_string()
+        }
+        // Fall back to a simple trailing-slash append if parsing still fails.
+        Err(_) => {
+            if url_str.ends_with('/') {
+                url_str
+            } else {
+                format!("{url_str}/")
+            }
+        }
+    }
+}
+
 async fn build_s3_conf(config: &S3Config) -> super::Result<s3::Config> {
     const DEFAULT_REGION: Region = Region::from_static("us-east-1");
 
@@ -626,29 +654,12 @@ async fn build_s3_conf(config: &S3Config) -> super::Result<s3::Config> {
 
         maybe_set_loader_value!(profile_name, &config.profile_name);
 
-        // Ensure endpoint URL has trailing slash for proper path construction with S3-compatible services.
-        // E.g., Supabase provides https://[project_ref].storage.supabase.co/storage/v1/s3
-        // but we need to add a trailing slash to the endpoint url so that the path is properly constructed.
-        let endpoint_url = config.endpoint_url.as_ref().map(|url_str| {
-            // Parse the URL to properly handle query strings and fragments
-            match url::Url::parse(url_str) {
-                Ok(mut parsed_url) => {
-                    // Only add trailing slash if the path doesn't already have one
-                    if !parsed_url.path().ends_with('/') {
-                        parsed_url.set_path(&format!("{}/", parsed_url.path()));
-                    }
-                    parsed_url.to_string()
-                }
-                // If parsing fails, fall back to simple string append for backwards compatibility
-                Err(_) => {
-                    if url_str.ends_with('/') {
-                        url_str.clone()
-                    } else {
-                        format!("{}/", url_str)
-                    }
-                }
-            }
-        });
+        // Normalize the endpoint URL (default scheme to https, ensure trailing slash)
+        // so the AWS SDK receives a valid URI for S3-compatible services.
+        let endpoint_url = config
+            .endpoint_url
+            .as_ref()
+            .map(|url_str| normalize_endpoint_url(url_str));
         maybe_set_loader_value!(endpoint_url, &endpoint_url);
 
         maybe_set_loader_value!(identity_cache, identity_cache);
@@ -1018,6 +1029,7 @@ impl S3LikeSource {
                 Ok(LSResult {
                     files,
                     continuation_token,
+                    not_found_if_empty: false,
                 })
             }
             Err(SdkError::ServiceError(err)) => {
@@ -1427,7 +1439,7 @@ impl ObjectSource for S3LikeSource {
             } else {
                 format!("{}{S3_DELIMITER}", key.trim_end_matches(S3_DELIMITER))
             };
-            let lsr = {
+            let mut lsr = {
                 let permit = self
                     .connection_pool_sema
                     .acquire()
@@ -1446,41 +1458,36 @@ impl ObjectSource for S3LikeSource {
                 )
                 .await?
             };
+            lsr.not_found_if_empty = !key.is_empty();
             if let Some(is) = io_stats.as_ref() {
                 is.mark_list_requests(1);
             }
 
-            if lsr.files.is_empty() && key.contains(S3_DELIMITER) {
-                let permit = self
-                    .connection_pool_sema
-                    .acquire()
-                    .await
-                    .context(UnableToGrabSemaphoreSnafu)?;
-                // Might be a File
-                let key = key.trim_end_matches(S3_DELIMITER);
-                let mut lsr = self
-                    .list_impl(
-                        permit,
-                        scheme.as_str(),
-                        bucket.as_str(),
-                        key,
-                        Some(S3_DELIMITER.into()),
-                        continuation_token.map(String::from),
-                        &self.default_region,
-                        page_size,
-                    )
-                    .await?;
-                if let Some(is) = io_stats.as_ref() {
-                    is.mark_list_requests(1);
-                }
-                let target_path = format!("{scheme}://{bucket}/{key}");
-                lsr.files.retain(|f| f.filepath == target_path);
+            if lsr.files.is_empty() && continuation_token.is_none() && key.contains(S3_DELIMITER) {
+                // The directory page is empty, so check whether the requested
+                // path is an exact object. HEAD is an exact lookup and has no
+                // pagination token.
+                let exact_key = key.trim_end_matches(S3_DELIMITER);
+                let target_path = format!("{scheme}://{bucket}/{exact_key}");
 
-                if lsr.files.is_empty() {
-                    // Isn't a file or a directory
-                    return Err(Error::NotFound { path: path.into() }.into());
+                match self.get_size(&target_path, io_stats.clone()).await {
+                    Ok(size) => Ok(LSResult {
+                        files: vec![FileMetadata {
+                            filepath: target_path,
+                            size: Some(size as u64),
+                            filetype: FileType::File,
+                        }],
+                        // The outer operation is still walking the directory
+                        // listing, so only its token may leave this function.
+                        continuation_token: lsr.continuation_token,
+                        not_found_if_empty: lsr.not_found_if_empty,
+                    }),
+                    // The exact file does not exist. This is not yet enough to
+                    // conclude that the requested path is missing: later
+                    // directory pages may still contain entries.
+                    Err(super::Error::NotFound { .. }) => Ok(lsr),
+                    Err(error) => Err(error),
                 }
-                Ok(lsr)
             } else {
                 Ok(lsr)
             }
@@ -1816,7 +1823,70 @@ mod tests {
 
     use common_io_config::S3Config;
 
-    use crate::{Result, S3LikeSource, integrations::test_full_get, object_io::ObjectSource};
+    use crate::{
+        Result, S3LikeSource, integrations::test_full_get, object_io::ObjectSource,
+        s3_like::normalize_endpoint_url,
+    };
+
+    #[test]
+    fn test_normalize_endpoint_url_defaults_https_scheme() {
+        // A bare host (e.g. vended by an Iceberg REST catalog) gets an https scheme.
+        assert_eq!(
+            normalize_endpoint_url("s3.example.com"),
+            "https://s3.example.com/"
+        );
+    }
+
+    #[test]
+    fn test_normalize_endpoint_url_bare_host_with_trailing_slash() {
+        assert_eq!(
+            normalize_endpoint_url("s3.example.com/"),
+            "https://s3.example.com/"
+        );
+    }
+
+    #[test]
+    fn test_normalize_endpoint_url_bare_host_with_port() {
+        assert_eq!(
+            normalize_endpoint_url("minio.example.com:9000"),
+            "https://minio.example.com:9000/"
+        );
+    }
+
+    #[test]
+    fn test_normalize_endpoint_url_preserves_scheme() {
+        // An explicit http scheme is kept (the trailing slash is still added).
+        assert_eq!(
+            normalize_endpoint_url("http://minio.example.com:9000"),
+            "http://minio.example.com:9000/"
+        );
+    }
+
+    #[test]
+    fn test_normalize_endpoint_url_keeps_existing_trailing_slash() {
+        // Supabase-style endpoint already ending in a slash is left as-is (#5575).
+        assert_eq!(
+            normalize_endpoint_url("https://abc.storage.supabase.co/storage/v1/s3/"),
+            "https://abc.storage.supabase.co/storage/v1/s3/"
+        );
+    }
+
+    #[test]
+    fn test_normalize_endpoint_url_adds_trailing_slash_to_path() {
+        // Supabase-style endpoint without the trailing slash gets one (#5575).
+        assert_eq!(
+            normalize_endpoint_url("https://abc.storage.supabase.co/storage/v1/s3"),
+            "https://abc.storage.supabase.co/storage/v1/s3/"
+        );
+    }
+
+    #[test]
+    fn test_normalize_endpoint_url_malformed_falls_back() {
+        // Even with the scheme prepended, an empty or invalid host still fails
+        // `Url::parse`, so the `Err(_)` fallback is exercised (and must not panic).
+        assert_eq!(normalize_endpoint_url(""), "https://");
+        assert_eq!(normalize_endpoint_url("a b.com"), "https://a b.com/");
+    }
 
     #[tokio::test]
     async fn test_full_get_from_s3() -> Result<()> {

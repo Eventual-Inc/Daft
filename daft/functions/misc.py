@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Iterable
 from typing import Any, Literal
 
@@ -54,8 +55,12 @@ def uuid(version: Literal["v4", "v7"] = "v4") -> Expression:
     """Generates a column of UUID strings.
 
     Each call to `uuid()` generates a fresh UUID per row. Multiple calls in the same query
-    (e.g. two separate columns) are independent and will produce different values. By default,
-    this generates UUIDv4 values. Pass ``version="v7"`` to generate time-ordered UUIDv7 values.
+    (e.g. two separate columns) are independent and will produce different values.
+
+    Use the ``version`` argument to choose the UUID version:
+
+    - ``uuid()`` or ``uuid(version="v4")`` generates random UUIDv4 values.
+    - ``uuid(version="v7")`` generates time-ordered UUIDv7 values.
 
     Args:
         version: UUID version to generate. Supported values are ``"v4"`` and ``"v7"``.
@@ -66,12 +71,19 @@ def uuid(version: Literal["v4", "v7"] = "v4") -> Expression:
     Examples:
         >>> import daft
         >>> from daft.functions import uuid
-        >>> df = daft.from_pydict({"foo": [1, 2, 3]})
-        >>> df = df.with_column("u1", uuid()).with_column("u2", uuid())
-        >>> df.schema()["u1"].dtype == daft.DataType.uuid()
-        True
-        >>> df.schema()["u2"].dtype == daft.DataType.uuid()
-        True
+        >>> df = daft.from_pydict({"row": [1, 2]}).select(uuid_v4=uuid(), uuid_v7=uuid(version="v7"))
+        >>> df.show()  # doctest: +SKIP
+        ╭────────────────────────────────┬────────────────────────────────╮
+        │ uuid_v4                        ┆ uuid_v7                        │
+        │ ---                            ┆ ---                            │
+        │ UUID                           ┆ UUID                           │
+        ╞════════════════════════════════╪════════════════════════════════╡
+        │ 06b4460f-d44e-4f37-bb71-edb3b… ┆ 019eb73f-58c8-7f50-b31d-46f02… │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 74648614-aebf-41f3-9591-781d5… ┆ 019eb73f-58c8-7f50-b31d-47002… │
+        ╰────────────────────────────────┴────────────────────────────────╯
+        <BLANKLINE>
+        (Showing first 2 of 2 rows)
     """
     if version == "v4":
         return Expression._call_builtin_scalar_fn("uuid")
@@ -609,7 +621,7 @@ def coalesce(*args: Expression) -> Expression:
     """Returns the first non-null value in a list of expressions. If all inputs are null, returns null.
 
     Args:
-        *args: Two or more expressions to coalesce
+        *args: One or more expressions to coalesce
 
     Returns:
         Expression: Expression containing first non-null value encountered when evaluating arguments in order
@@ -635,12 +647,10 @@ def coalesce(*args: Expression) -> Expression:
         (Showing first 3 of 3 rows)
 
     """
-    return Expression._from_pyexpr(native.coalesce([arg._expr for arg in args]))
-
     if len(args) == 0:
         raise ValueError("coalesce requires at least one argument")
     if len(args) == 1:
-        return args[0]
+        warnings.warn("coalesce with a single argument is a no-op; it returns the argument unchanged", stacklevel=2)
     return Expression._from_pyexpr(native.coalesce([arg._expr for arg in args]))
 
 

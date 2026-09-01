@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 import daft
+from daft.ai.provider import Provider as DaftProvider
 from daft.catalog import Catalog, Identifier, NotFoundError, Table
 from daft.session import Session
 
@@ -93,6 +94,125 @@ def test_attach_table():
     # error!
     with pytest.raises(Exception, match="already exists"):
         sess.attach_table(view1, alias="tbl1")
+
+
+def test_list_tables_returns_identifiers():
+    # Regression: the Rust layer used to return Vec<String>, breaking `_from_pyidentifier`.
+    sess = Session()
+    sess.attach_table(Table.from_df("v", daft.from_pydict({"x": [1]})), alias="tbl")
+
+    tables = sess.list_tables()
+
+    assert len(tables) == 1
+    assert all(isinstance(t, Identifier) for t in tables)
+    assert tables[0] == Identifier("tbl")
+
+
+def test_list_tables_with_attached_catalog():
+    sess = Session()
+    cat = Catalog.from_pydict({"a": {"x": [1]}, "b": {"y": [2]}}, name="cat1")
+    sess.attach_catalog(cat, alias="cat1")
+
+    tables = sorted(sess.list_tables(), key=str)
+
+    assert tables == [Identifier("cat1", "a"), Identifier("cat1", "b")]
+
+
+def test_list_tables_temp_plus_catalog():
+    sess = Session()
+    sess.attach_table(Table.from_df("v", daft.from_pydict({"x": [1]})), alias="my_tmp")
+    cat = Catalog.from_pydict({"a": {"x": [1]}, "b": {"y": [2]}}, name="cat1")
+    sess.attach_catalog(cat, alias="cat1")
+
+    tables = sorted(sess.list_tables(), key=str)
+
+    assert tables == [Identifier("cat1", "a"), Identifier("cat1", "b"), Identifier("my_tmp")]
+
+
+def test_list_tables_catalog_qualified_pattern():
+    sess = Session()
+    sess.attach_catalog(Catalog.from_pydict({"x": {"v": [1]}}, name="cat1"), alias="cat1")
+    sess.attach_catalog(Catalog.from_pydict({"y": {"v": [2]}}, name="cat2"), alias="cat2")
+
+    assert sess.list_tables("cat2.%") == [Identifier("cat2", "y")]
+
+
+def test_list_tables_narrows_to_current_namespace():
+    sess = Session()
+    cat = Catalog.from_pydict(
+        {"ns1.t1": {"x": [1]}, "ns1.t2": {"x": [2]}, "ns2.t3": {"x": [3]}},
+        name="cat1",
+    )
+    sess.attach_catalog(cat, alias="cat1")
+    sess.set_namespace("ns1")
+
+    tables = sorted(sess.list_tables(), key=str)
+
+    assert tables == [Identifier("cat1", "ns1", "t1"), Identifier("cat1", "ns1", "t2")]
+
+
+def test_list_tables_only_current_catalog_without_pattern():
+    sess = Session()
+    sess.attach_catalog(Catalog.from_pydict({"a": {"v": [1]}}, name="cat1"), alias="cat1")
+    sess.attach_catalog(Catalog.from_pydict({"b": {"v": [2]}}, name="cat2"), alias="cat2")
+
+    # cat1 is auto-set as current; cat2 is only reachable via `cat2.%` pattern.
+    assert sess.list_tables() == [Identifier("cat1", "a")]
+
+
+def test_list_namespaces_with_attached_catalog():
+    sess = Session()
+    cat = Catalog.from_pydict({"ns1.t1": {"x": [1]}, "ns2.t2": {"y": [2]}}, name="cat1")
+    sess.attach_catalog(cat, alias="cat1")
+
+    namespaces = sorted(sess.list_namespaces(), key=str)
+
+    # Qualified with the session alias so results round-trip through other APIs.
+    assert namespaces == [Identifier("cat1", "ns1"), Identifier("cat1", "ns2")]
+
+
+def test_list_namespaces_catalog_qualified_pattern():
+    sess = Session()
+    sess.attach_catalog(Catalog.from_pydict({"ns_a.t": {"v": [1]}}, name="cat1"), alias="cat1")
+    sess.attach_catalog(Catalog.from_pydict({"ns_b.t": {"v": [2]}}, name="cat2"), alias="cat2")
+
+    assert sess.list_namespaces("cat2.%") == [Identifier("cat2", "ns_b")]
+
+
+def test_list_namespaces_only_current_catalog_without_pattern():
+    sess = Session()
+    sess.attach_catalog(Catalog.from_pydict({"ns_a.t": {"v": [1]}}, name="cat1"), alias="cat1")
+    sess.attach_catalog(Catalog.from_pydict({"ns_b.t": {"v": [2]}}, name="cat2"), alias="cat2")
+
+    # cat1 is auto-set as current; cat2 is only reachable via `cat2.%` pattern.
+    assert sess.list_namespaces() == [Identifier("cat1", "ns_a")]
+
+
+def test_list_namespaces_returns_empty_without_current_catalog():
+    sess = Session()
+    assert sess.list_namespaces() == []
+
+    # Rule 3 dispatch still works even without a current catalog.
+    sess.attach_catalog(Catalog.from_pydict({"ns_a.t": {"v": [1]}}, name="cat1"), alias="cat1")
+    sess.set_catalog(None)
+    assert sess.list_namespaces("cat1.%") == [Identifier("cat1", "ns_a")]
+
+
+def test_list_namespaces_round_trips_with_list_tables():
+    sess = Session()
+    sess.attach_catalog(
+        Catalog.from_pydict({"sandbox.scratch": {"x": [1]}, "ops.metrics": {"y": [2]}}, name="dev"),
+        alias="dev",
+    )
+
+    tables = []
+    for ns in sorted(sess.list_namespaces("dev.%"), key=str):
+        tables.extend(sess.list_tables(f"{ns}.%"))
+
+    assert sorted(tables, key=str) == [
+        Identifier("dev", "ops", "metrics"),
+        Identifier("dev", "sandbox", "scratch"),
+    ]
 
 
 def test_attach_view():
@@ -301,7 +421,7 @@ def test_exception_surfacing():
 #
 
 
-class MockProvider:
+class MockProvider(DaftProvider):
     def __init__(self, name):
         self._name = name
 
@@ -349,6 +469,77 @@ def test_set_provider_and_current_provider(monkeypatch):
     sess.attach_provider(mock_provider)
     sess.set_provider("mock_provider")
     assert sess.current_provider() is mock_provider
+
+
+def test_set_provider_with_provider_instance():
+    """set_provider should accept a Provider instance, auto-attach it, and set it as current."""
+    sess = Session()
+    provider = MockProvider("my_provider")
+    sess.set_provider(provider)
+    assert sess.current_provider() is provider
+    assert sess.get_provider("my_provider") is provider
+
+
+def test_set_provider_with_provider_instance_toplevel():
+    """daft.set_provider() should accept a Provider instance, auto-attach it, and set it as current."""
+    sess = Session()
+    provider = MockProvider("top_level_provider")
+    daft.set_session(sess)
+    daft.set_provider(provider)
+    assert sess.current_provider() is provider
+    assert sess.get_provider("top_level_provider") is provider
+
+
+def test_set_provider_none():
+    """set_provider(None) should clear the current provider without error."""
+    sess = Session()
+    sess.set_provider(None)
+    assert sess.current_provider() is None
+
+
+def test_set_provider_with_provider_instance_replaces_existing():
+    """set_provider with a Provider instance should correctly switch the current provider."""
+    sess = Session()
+    provider_a = MockProvider("provider_a")
+    provider_b = MockProvider("provider_b")
+
+    sess.set_provider(provider_a)
+    assert sess.current_provider() is provider_a
+
+    sess.set_provider(provider_b)
+    assert sess.current_provider() is provider_b
+
+
+def test_set_provider_with_provider_instance_twice_raises():
+    """Calling set_provider twice with the same provider instance should raise."""
+    sess = Session()
+    provider = MockProvider("same_provider")
+    sess.set_provider(provider)
+    assert sess.current_provider() is provider
+    # Calling set_provider again with the same instance should fail
+    # because the provider is already attached
+    with pytest.raises(Exception, match="already exists"):
+        sess.set_provider(provider)
+
+
+def test_set_provider_with_provider_instance_and_options_raises():
+    """Passing **options alongside a Provider instance should raise TypeError."""
+    sess = Session()
+    provider = MockProvider("no_options")
+    with pytest.raises(TypeError, match="Cannot pass"):
+        sess.set_provider(provider, api_key="sk-test", timeout=30)
+
+
+def test_set_provider_with_provider_instance_then_string():
+    """After using set_provider with a Provider instance, switching by string name should work."""
+    sess = Session()
+    provider = MockProvider("hybrid_provider")
+    sess.set_provider(provider)
+    assert sess.current_provider() is provider
+
+    # Switch to a provider by string name
+    sess.set_provider("hybrid_provider")
+    assert sess.current_provider() is provider
 
 
 def test_current_session_drop_table():

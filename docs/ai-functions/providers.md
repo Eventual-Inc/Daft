@@ -43,6 +43,8 @@ Daft supports the following [AI Providers](../api/ai.md#providers):
 
 For more control, you can create named providers within a session. This is useful when working with OpenAI-compatible APIs like OpenRouter, or when you need to switch between different configurations.
 
+You can pass a `Provider` instance directly to `set_provider()`, which will automatically attach it to the session:
+
 ```python
 import os
 import daft
@@ -54,11 +56,18 @@ openrouter_provider = OpenAIProvider(
     base_url="https://openrouter.ai/api/v1",
     api_key=os.environ.get("OPENROUTER_API_KEY")
 )
-sess.attach_provider(openrouter_provider)  # Register the provider
-sess.set_provider("OpenRouter")  # Set as default for the session
+sess.set_provider(openrouter_provider)  # Auto-attaches and sets as current
 
 # Retrieve Provider for an AI Function
 provider = sess.get_provider("OpenRouter")
+```
+
+This is equivalent to the two-step approach of calling `attach_provider()` followed by `set_provider()`:
+
+```python
+# The two-step approach (still supported):
+sess.attach_provider(openrouter_provider)
+sess.set_provider("OpenRouter")
 ```
 
 ## Using the Google Provider
@@ -137,9 +146,8 @@ openrouter_provider = OpenAIProvider(
 
 # Create a session and register both providers
 sess = Session()
-sess.attach_provider(openai_provider)
-sess.attach_provider(openrouter_provider)
-sess.set_provider("OpenRouter")  # Set OpenRouter as default
+sess.attach_provider(openai_provider)           # Explicit attach for non-default
+sess.set_provider(openrouter_provider)          # Auto-attaches and sets as default
 
 # Create a dataframe with the quotes
 df = daft.from_pydict({

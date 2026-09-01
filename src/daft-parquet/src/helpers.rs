@@ -199,6 +199,36 @@ pub fn refine_selection(base: &RowSelection, predicate_sel: &RowSelection) -> Ro
     result.into()
 }
 
+/// Validate & resolve user/ChunkSpec-requested row group indices to positional
+/// indices into `metadata`. Preserves order and duplicates (`[1, 1, 1]` → three
+/// entries), empty input → empty output, out-of-bounds/negative index → error.
+///
+/// Shared by the normal read path ([`prune_row_groups`]) and the count-pushdown
+/// shortcut so both validate identically.
+pub fn validate_requested_row_groups(
+    metadata: &ParquetMetaData,
+    requested_row_groups: &[i64],
+    uri: &str,
+) -> DaftResult<Vec<usize>> {
+    let num_row_groups = metadata.num_row_groups();
+    requested_row_groups
+        .iter()
+        .map(|&i| {
+            // A negative `i` wraps to a large `usize` and is caught by the
+            // bounds check below, matching the prior behavior of this path.
+            let idx = i as usize;
+            if idx >= num_row_groups {
+                Err(common_error::DaftError::ValueError(format!(
+                    "Row group index {} out of bounds for '{}' (has {} row groups)",
+                    i, uri, num_row_groups
+                )))
+            } else {
+                Ok(idx)
+            }
+        })
+        .collect()
+}
+
 /// Single-source-of-truth RG-level pruning. Applies, in order:
 /// - user-supplied `requested_row_groups` (validated against metadata)
 /// - positional `start_offset`: drop RGs whose last row is at/before the offset
@@ -218,22 +248,9 @@ pub fn prune_row_groups(
     uri: &str,
 ) -> DaftResult<Vec<usize>> {
     let num_row_groups = metadata.num_row_groups();
-    let candidates: Vec<usize> = if let Some(rgs) = requested_row_groups {
-        rgs.iter()
-            .map(|&i| {
-                let idx = i as usize;
-                if idx >= num_row_groups {
-                    Err(common_error::DaftError::ValueError(format!(
-                        "Row group index {} out of bounds for '{}' (has {} row groups)",
-                        i, uri, num_row_groups
-                    )))
-                } else {
-                    Ok(idx)
-                }
-            })
-            .collect::<DaftResult<Vec<_>>>()?
-    } else {
-        (0..num_row_groups).collect()
+    let candidates: Vec<usize> = match requested_row_groups {
+        Some(rgs) => validate_requested_row_groups(metadata, rgs, uri)?,
+        None => (0..num_row_groups).collect(),
     };
 
     // File-relative row starts for ALL RGs — start_offset is a file-level

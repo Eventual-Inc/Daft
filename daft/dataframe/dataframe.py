@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from functools import partial, reduce
 from typing import TYPE_CHECKING, Any, Concatenate, Literal, ParamSpec, TypeVar, Union, overload
 
+from packaging.version import parse
+
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
@@ -45,9 +47,10 @@ from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
 from daft.execution.native_executor import NativeExecutor
 from daft.expressions import Expression, ExpressionsProjection, col, lit
+from daft.filesystem import get_protocol_from_path
 from daft.logical.builder import LogicalPlanBuilder
 from daft.recordbatch import MicroPartition, RecordBatch
-from daft.runners import get_or_create_runner
+from daft.runners import get_or_create_runner, get_or_infer_runner_type
 from daft.runners.partitioning import (
     LocalPartitionSet,
     MaterializedResult,
@@ -77,6 +80,7 @@ if TYPE_CHECKING:
     from daft.catalog.__unity._client import UnityCatalogTable
     from daft.checkpoint import IdempotentCommit
     from daft.convert import ArrowStreamExportable
+    from daft.dataframe.to_torch import DaftTorchDataLoader
     from daft.execution.metadata import ExecutionMetadata
     from daft.io import DataSink
     from daft.io.sink import WriteResultType
@@ -129,6 +133,47 @@ def _create_delta_metadata_param(metadata: dict[str, str] | None) -> Any:
     return CommitProperties(custom_metadata=metadata)
 
 
+def _configure_deltalake_storage_options(
+    table_uri: str,
+    storage_options: dict[str, str],
+    dynamo_table_name: str | None,
+    allow_unsafe_rename: bool,
+    deltalake_version: str,
+) -> bool:
+    """Apply Delta Lake commit options that depend on the destination URI."""
+    changed = False
+
+    def set_storage_option(key: str, value: str) -> None:
+        nonlocal changed
+        if storage_options.get(key) != value:
+            changed = True
+        storage_options[key] = value
+
+    scheme = get_protocol_from_path(table_uri)
+    if scheme == "s3" or scheme == "s3a":
+        if dynamo_table_name is not None:
+            set_storage_option("AWS_S3_LOCKING_PROVIDER", "dynamodb")
+            set_storage_option("DELTA_DYNAMO_TABLE_NAME", dynamo_table_name)
+        elif allow_unsafe_rename:
+            set_storage_option("AWS_S3_ALLOW_UNSAFE_RENAME", "true")
+        elif parse(deltalake_version) < parse("0.23.0"):
+            import warnings
+
+            warnings.warn(
+                "Writing to S3 without DynamoDB or explicit unsafe rename on deltalake<0.23.0 "
+                "defaults to AWS_S3_ALLOW_UNSAFE_RENAME=true. This fallback will be removed in "
+                "Daft v0.8.0. Upgrade deltalake>=0.23.0, pass dynamo_table_name, or set "
+                "allow_unsafe_rename=True explicitly.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            set_storage_option("AWS_S3_ALLOW_UNSAFE_RENAME", "true")
+    elif scheme == "file" and allow_unsafe_rename:
+        set_storage_option("MOUNT_ALLOW_UNSAFE_RENAME", "true")
+
+    return changed
+
+
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -163,6 +208,7 @@ class DataFrame:
         self._preview = Preview(partition=None, total_rows=None)
         self._metadata: ExecutionMetadata | None = None
         self._num_preview_rows = get_context().daft_execution_config.num_preview_rows
+        self._source_builder: LogicalPlanBuilder | None = None
 
     @property
     def _builder(self) -> LogicalPlanBuilder:
@@ -319,7 +365,9 @@ class DataFrame:
             from daft.dataframe.display import MermaidFormatter
             from daft.utils import in_notebook
 
-            instance = MermaidFormatter(self.__builder, show_all, simple, is_cached)
+            instance = MermaidFormatter(
+                self._source_builder or self.__builder, show_all, simple, is_cached or self._source_builder is not None
+            )
             if file is not None:
                 # if we are printing to a file, we print the markdown representation of the plan
                 text = instance._repr_markdown_()
@@ -339,7 +387,12 @@ class DataFrame:
 
             print_to_file("However here is the logical plan used to produce this result:\n", file=file)
 
-        builder = self.__builder
+        if self._source_builder is not None:
+            builder = self._source_builder
+            if self._result_cache is None:
+                print_to_file("However here is the logical plan used to produce this result:\n", file=file)
+        else:
+            builder = self.__builder
         print_to_file("== Unoptimized Logical Plan ==\n")
         print_to_file(builder.pretty_print(simple, format=format))
         if show_all:
@@ -621,7 +674,7 @@ class DataFrame:
     ) -> Iterator[Union[MicroPartition, "ray.ObjectRef"]]:
         """Begin executing this dataframe and return an iterator over the partitions.
 
-        Each partition will be returned as a daft.recordbatch object (if using Python runner backend)
+        Each partition will be returned as a daft.MicroPartition object (if using Python runner backend)
         or a ray ObjectRef (if using Ray runner backend).
 
         Args:
@@ -971,19 +1024,21 @@ class DataFrame:
         partition_cols: list[ColumnInputType] | None = None,
         io_config: IOConfig | None = None,
         column_compression: dict[str, str] | None = None,
+        single_file: bool = False,
     ) -> "DataFrame":
         """Writes the DataFrame as parquet files, returning a new DataFrame with paths to the files that were written.
 
         Files will be written to `<root_dir>/*` with randomly generated UUIDs as the file names.
 
         Args:
-            root_dir (str): root file path to write parquet files to.
+            root_dir (str): root file path to write parquet files to. When `single_file=True`, this is the exact file path to write to.
             compression (str, optional): default compression codec applied to every column. Defaults to "snappy". Accepts "snappy", "gzip", "zstd", "lz4", "lz4_raw", "brotli", "uncompressed", or "none" (case-insensitive).
             write_mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace the contents of the root directory with new data. `overwrite-partitions` will replace only the contents in the partitions that are being written to. Defaults to "append".
-            write_success_file (bool, optional): Whether to write a `_SUCCESS` file upon successful completion. Defaults to False.
+            write_success_file (bool, optional): Whether to write a `_SUCCESS` file upon successful completion. When `single_file=True`, writes `_SUCCESS` to the output file's parent directory. Defaults to False.
             partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
             io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
             column_compression (Optional[Dict[str, str]], optional): per-column compression overrides. Keys are dot-separated column paths (e.g. `"user.name"` for a nested struct field); values are codec names accepted by `compression`. Columns not listed fall back to `compression`. Defaults to None.
+            single_file (bool, optional): If True, coalesce all data into a single parquet file at `root_dir` (treated as the exact file path). Cannot be combined with `partition_cols` or `overwrite-partitions`. Only supported on the native runner. Defaults to False.
 
         Returns:
             DataFrame: The filenames that were written out as strings.
@@ -995,6 +1050,7 @@ class DataFrame:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
             >>> df.write_parquet("output_dir", write_mode="overwrite")  # doctest: +SKIP
+            >>> df.write_parquet("output.parquet", single_file=True)  # doctest: +SKIP
 
         Tip:
             See also [`df.write_csv()`][daft.DataFrame.write_csv] and [`df.write_json()`][daft.DataFrame.write_json]
@@ -1004,8 +1060,16 @@ class DataFrame:
             raise ValueError(
                 f"Only support `append`, `overwrite`, or `overwrite-partitions` mode. {write_mode} is unsupported"
             )
+        if single_file and write_mode == "overwrite-partitions":
+            raise ValueError("`single_file=True` cannot be combined with `write_mode='overwrite-partitions'`.")
         if write_mode == "overwrite-partitions" and partition_cols is None:
             raise ValueError("Partition columns must be specified to use `overwrite-partitions` mode.")
+        if single_file and partition_cols is not None:
+            raise ValueError("`single_file=True` cannot be combined with `partition_cols`.")
+        if single_file:
+            runner_type = get_or_infer_runner_type()
+            if runner_type != "native":
+                raise ValueError(f"`single_file=True` is only supported on the native runner, got '{runner_type}'.")
 
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
@@ -1028,6 +1092,7 @@ class DataFrame:
             file_format_option=file_format_option,
             compression=compression,
             io_config=io_config,
+            single_file=single_file,
         )
         # Block and write, then retrieve data
         write_df = DataFrame(builder)
@@ -1274,6 +1339,8 @@ class DataFrame:
 
         Can be run in either `append` or `overwrite` mode which will either appends the rows in the DataFrame or will delete the existing rows and then append the DataFrame rows respectively.
 
+        ``write_iceberg`` supports checkpointing via the ``checkpoint=`` parameter. For the conceptual overview, see the [Checkpointing guide](../use-case/checkpointing.md).
+
         Args:
             table (pyiceberg.table.Table): Destination [PyIceberg Table](https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table) to write dataframe to.
             mode (str, optional): Operation mode of the write. `append` or `overwrite` Iceberg Table. Defaults to `append`.
@@ -1323,6 +1390,16 @@ class DataFrame:
             >>> table = pyiceberg.Table(...)  # doctest: +SKIP
             >>> df = daft.from_pydict({"user_id": [1, 2, 3], "name": ["Alice", "Bob", "Charlie"]})
             >>> df = df.write_iceberg(table, mode="overwrite")  # doctest: +SKIP
+            >>>
+            >>> store = daft.CheckpointStore("s3://my-bucket/ckpt/")  # doctest: +SKIP
+            >>> df = daft.read_parquet(
+            ...     "s3://my-bucket/input/",
+            ...     checkpoint=daft.CheckpointConfig(store, on="file_id"),
+            ... )  # doctest: +SKIP
+            >>> df.write_iceberg(
+            ...     table,
+            ...     checkpoint=daft.IdempotentCommit(store, idempotence_key="run-2026-05-21"),
+            ... )  # doctest: +SKIP
 
         """
         import pyarrow as pa
@@ -1475,10 +1552,9 @@ class DataFrame:
 
         from daft import from_pydict
 
-        # NOTE: We are losing the history of the plan here.
-        # This is due to the fact that the logical plan of the write_iceberg returns datafiles but we want to return the above data
         df = from_pydict(with_operations)
         df._metadata = write_df._metadata
+        df._source_builder = write_df._get_current_builder()
         return df
 
     def _write_iceberg_with_checkpoint(
@@ -1573,6 +1649,7 @@ class DataFrame:
                 )
             result = from_pydict(with_operations)
             result._metadata = write_df._metadata
+            result._source_builder = write_df._get_current_builder()
             return result
 
         # ── 1. Check-first: did a previous attempt already land?
@@ -1704,6 +1781,8 @@ class DataFrame:
     ) -> "DataFrame":
         """Writes the DataFrame to a [Delta Lake](https://docs.delta.io/latest/index.html) table, returning a new DataFrame with the operations that occurred.
 
+        ``write_deltalake`` supports checkpointing via the ``checkpoint=`` parameter. For the conceptual overview, see the [Checkpointing guide](../use-case/checkpointing.md).
+
         Args:
             table (Union[str, pathlib.Path, deltalake.DeltaTable, UnityCatalogTable]): Destination [Delta Lake Table](https://delta-io.github.io/delta-rs/api/delta_table/) or table URI to write dataframe to.
             partition_cols (List[str], optional): How to subpartition each partition further. If table exists, expected to match table's existing partitioning scheme, otherwise creates the table with specified partition columns. Defaults to None.
@@ -1713,8 +1792,11 @@ class DataFrame:
             description (str, optional): User-provided description for this table.
             configuration (Mapping[str, Optional[str]], optional): A map containing configuration options for the metadata action.
             custom_metadata (Dict[str, str], optional): Custom metadata to add to the commit info. Keys with prefix ``daft.idempotence-`` are reserved.
-            dynamo_table_name (str, optional): Name of the DynamoDB table to be used as the locking provider if writing to S3.
-            allow_unsafe_rename (bool, optional): Whether to allow unsafe rename when writing to S3 or local disk. Defaults to False.
+            dynamo_table_name (str, optional): Name of the DynamoDB table to use when explicitly opting into
+                DynamoDB locking for S3 writes. Modern supported ``deltalake`` versions use S3 conditional
+                writes by default.
+            allow_unsafe_rename (bool, optional): Whether to explicitly allow unsafe rename when writing to S3
+                or local disk. Defaults to False.
             io_config (IOConfig, optional): configurations to use when interacting with remote storage.
             checkpoint (IdempotentCommit, optional): Bundled checkpoint store + idempotence key for an idempotent commit. When provided, the Delta commit's ``custom_metadata`` is tagged with ``daft.idempotence-key`` and retries with the same key recognize the prior attempt without producing a duplicate commit. Only ``mode='append'`` is supported. Requires the Ray runner.
 
@@ -1758,6 +1840,16 @@ class DataFrame:
             >>> import deltalake
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
             >>> df.write_deltalake("s3://my-bucket/my-deltalake-table")  # doctest: +SKIP
+            >>>
+            >>> store = daft.CheckpointStore("s3://my-bucket/ckpt/")  # doctest: +SKIP
+            >>> df = daft.read_parquet(
+            ...     "s3://my-bucket/input/",
+            ...     checkpoint=daft.CheckpointConfig(store, on="file_id"),
+            ... )  # doctest: +SKIP
+            >>> df.write_deltalake(
+            ...     "s3://my-bucket/my-deltalake-table",
+            ...     checkpoint=daft.IdempotentCommit(store, idempotence_key="run-2026-05-21"),
+            ... )  # doctest: +SKIP
         """
         import json
 
@@ -1768,7 +1860,6 @@ class DataFrame:
 
         from daft import from_pydict
         from daft.dependencies import unity_catalog
-        from daft.filesystem import get_protocol_from_path
         from daft.io.delta_lake._deltalake import delta_schema_to_pyarrow
         from daft.io.delta_lake.delta_lake_write import (
             AddAction,
@@ -1806,9 +1897,18 @@ class DataFrame:
 
         if isinstance(table, deltalake.DeltaTable):
             table_uri = table.table_uri
-            storage_options = table._storage_options or {}
+            storage_options = dict(table._storage_options or {})
             new_storage_options = io_config_to_storage_options(io_config, table_uri)
             storage_options.update(new_storage_options or {})
+            storage_options_changed = _configure_deltalake_storage_options(
+                table_uri,
+                storage_options,
+                dynamo_table_name,
+                allow_unsafe_rename,
+                deltalake.__version__,
+            )
+            if storage_options_changed:
+                table = deltalake.DeltaTable(table_uri, storage_options=storage_options)
         else:
             if isinstance(table, str):
                 table_uri = os.path.expanduser(table)
@@ -1826,24 +1926,17 @@ class DataFrame:
                 )
 
             storage_options = io_config_to_storage_options(io_config, table_uri) or {}
+            _configure_deltalake_storage_options(
+                table_uri,
+                storage_options,
+                dynamo_table_name,
+                allow_unsafe_rename,
+                deltalake.__version__,
+            )
             try:
                 table = deltalake.DeltaTable(table_uri, storage_options=storage_options)
             except TableNotFoundError:
                 table = None
-
-        # see: https://delta-io.github.io/delta-rs/usage/writing/writing-to-s3-with-locking-provider/
-        scheme = get_protocol_from_path(table_uri)
-        if scheme == "s3" or scheme == "s3a":
-            if dynamo_table_name is not None:
-                storage_options["AWS_S3_LOCKING_PROVIDER"] = "dynamodb"
-                storage_options["DELTA_DYNAMO_TABLE_NAME"] = dynamo_table_name
-            else:
-                storage_options["AWS_S3_ALLOW_UNSAFE_RENAME"] = "true"
-
-                if not allow_unsafe_rename:
-                    warnings.warn("No DynamoDB table specified for Delta Lake locking. Defaulting to unsafe writes.")
-        elif scheme == "file" and allow_unsafe_rename:
-            storage_options["MOUNT_ALLOW_UNSAFE_RENAME"] = "true"
 
         pyarrow_schema = pa.schema((f.name, f.dtype.to_arrow_dtype()) for f in self.schema())
 
@@ -1981,6 +2074,7 @@ class DataFrame:
             }
         )
         with_operations._metadata = write_df._metadata
+        with_operations._source_builder = write_df._get_current_builder()
         return with_operations
 
     def _write_deltalake_with_checkpoint(
@@ -2112,6 +2206,7 @@ class DataFrame:
                 }
             )
             result._metadata = write_df._metadata
+            result._source_builder = write_df._get_current_builder()
             return result
 
         # Defensive retry — parity with iceberg's max_retries = 2. We narrow
@@ -2194,11 +2289,9 @@ class DataFrame:
             raise ValueError(
                 f"Schema mismatch between the data sink's schema and the result's schema:\nSink schema:\n{sink.schema()}\nResult schema:\n{micropartition.schema()}"
             )
-        # TODO(desmond): Connect the old and new logical plan builders so that a .explain() shows the
-        # plan from the source all the way to the sink to the sink's results. In theory we can do this
-        # for all other sinks too.
         df = DataFrame._from_micropartitions(micropartition)
         df._metadata = write_df._metadata
+        df._source_builder = write_df._get_current_builder()
         return df
 
     @DataframePublicAPI
@@ -2388,7 +2481,7 @@ class DataFrame:
         from daft.dependencies import pa as _pa
         from daft.recordbatch import MicroPartition
 
-        return DataFrame._from_micropartitions(
+        result_df = DataFrame._from_micropartitions(
             MicroPartition.from_pydict(
                 {
                     "num_fragments": _pa.array([stats["num_fragments"]], type=_pa.int64()),
@@ -2398,6 +2491,9 @@ class DataFrame:
                 }
             )
         )
+        # No Sink node in the plan (merge bypasses Daft's planner), but show the source plan
+        result_df._source_builder = self._get_current_builder()
+        return result_df
 
     @DataframePublicAPI
     def write_turbopuffer(
@@ -5860,6 +5956,58 @@ class DataFrame:
         return DaftTorchIterableDataset(df)
 
     @DataframePublicAPI
+    def to_torch_dataloader(
+        self,
+        batch_size: int = 1,
+        *,
+        pin_memory: bool = False,
+        pin_memory_device: str = "",
+        prefetch_count: int = 0,
+    ) -> "DaftTorchDataLoader":
+        """Return a DataLoader-like iterator that streams batched partitions for PyTorch training.
+
+        Begins execution of the DataFrame when iterated. Each yielded batch is a dict mapping column
+        names to `torch.Tensor` values (or Python lists for non-numeric columns).
+
+        For row-level shuffling, use [``shuffle``][daft.DataFrame.shuffle] or
+        [``sample``][daft.DataFrame.sample] on the DataFrame before calling this method.
+
+        Note:
+            Batch sizing is best-effort. Batches may be smaller than `batch_size`.
+
+        Args:
+            batch_size: Target number of rows per batch.
+            pin_memory: If `True`, pin memory on returned tensors for faster GPU transfer.
+            pin_memory_device: Optional device for pinned memory (PyTorch 2.x).
+            prefetch_count: Number of batches loaded in advance. This will increase memory usage, but can
+            improve throughput.
+
+        Returns:
+            DaftTorchDataLoader: Iterable over batch dicts for use as
+            `for batch in df.to_torch_dataloader(batch_size): ...`
+
+        Examples:
+            >>> import daft
+            >>> import torch  # doctest: +SKIP
+            >>> df = daft.from_pydict({"x": [1, 2, 3, 4], "y": [5, 6, 7, 8]})
+            >>> for batch in df.to_torch_dataloader(batch_size=2):  # doctest: +SKIP
+            ...     assert batch["x"].shape == (2,)
+
+        Tip:
+            For the PyTorch `IterableDataset` + `DataLoader` composition, see
+            [``to_torch_iter_dataset``][daft.DataFrame.to_torch_iter_dataset].
+        """
+        from daft.dataframe.to_torch import DaftTorchDataLoader
+
+        return DaftTorchDataLoader(
+            self,
+            batch_size,
+            pin_memory=pin_memory,
+            pin_memory_device=pin_memory_device,
+            prefetch_count=prefetch_count,
+        )
+
+    @DataframePublicAPI
     def to_ray_dataset(self) -> "ray.data.dataset.DataSet":
         """Converts the current DataFrame to a [Ray Dataset](https://docs.ray.io/en/latest/data/api/dataset.html#ray.data.Dataset) which is useful for running distributed ML model training in Ray.
 
@@ -6358,7 +6506,7 @@ class GroupedDataFrame:
             >>>
             >>> df = daft.from_pydict({"group": ["a", "a", "a", "b", "b", "b"], "data": [1, 20, 30, 4, 50, 600]})
             >>>
-            >>> @daft.udf(return_dtype=daft.DataType.float64())
+            >>> @daft.func.batch(return_dtype=daft.DataType.float64())
             ... def std_dev(data):
             ...     return [statistics.stdev(data)]
             >>>

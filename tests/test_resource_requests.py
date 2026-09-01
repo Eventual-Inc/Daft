@@ -289,13 +289,13 @@ def test_with_column_max_resources_rayrunner_gpu():
 
 
 def test_improper_num_gpus():
-    with pytest.raises(ValueError, match="DaftError::ValueError"):
+    with pytest.raises(ValueError):
 
         @udf(return_dtype=daft.DataType.int64(), num_gpus=-1)
         def foo(c):
             return c
 
-    with pytest.raises(ValueError, match="DaftError::ValueError"):
+    with pytest.raises(ValueError):
 
         @udf(return_dtype=daft.DataType.int64(), num_gpus=1.5)
         def foo(c):
@@ -305,8 +305,8 @@ def test_improper_num_gpus():
     def foo(c):
         return c
 
-    with pytest.raises(ValueError, match="DaftError::ValueError"):
+    with pytest.raises(ValueError):
         foo = foo.override_options(num_gpus=-1)
 
-    with pytest.raises(ValueError, match="DaftError::ValueError"):
+    with pytest.raises(ValueError):
         foo = foo.override_options(num_gpus=1.5)

@@ -1,8 +1,16 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct TableMetadata {
     pub length: usize,
+    /// Estimated in-memory (materialized) size in bytes per top-level column, when known
+    /// from file metadata (e.g. derived from Parquet row-group value counts and column
+    /// types). Keyed by column name so that size estimates can respect column-projection
+    /// pushdown. `None` when the source does not expose per-column sizes.
+    #[serde(default)]
+    pub column_sizes: Option<BTreeMap<String, u64>>,
 }
 
 impl TableMetadata {

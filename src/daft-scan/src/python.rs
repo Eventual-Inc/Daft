@@ -78,22 +78,26 @@ impl PyDataSourceTask {
         path,
         schema,
         *,
+        parquet_config = None,
         pushdowns = None,
         num_rows = None,
         size_bytes = None,
         partition_values = None,
         stats = None,
         storage_config = None,
+        iceberg_delete_files = None,
     ))]
     fn parquet(
         path: String,
         schema: PySchema,
+        parquet_config: Option<ParquetSourceConfig>,
         pushdowns: Option<pylib_scan_info::PyPushdowns>,
         num_rows: Option<i64>,
         size_bytes: Option<u64>,
         partition_values: Option<PyRecordBatch>,
         stats: Option<PyRecordBatch>,
         storage_config: Option<StorageConfig>,
+        iceberg_delete_files: Option<Vec<String>>,
     ) -> PyResult<Self> {
         let storage_config = storage_config.unwrap_or_default().into();
 
@@ -116,13 +120,16 @@ impl PyDataSourceTask {
 
         let source = ScanSource {
             size_bytes,
-            metadata: num_rows.map(|n| TableMetadata { length: n as usize }),
+            metadata: num_rows.map(|n| TableMetadata {
+                length: n as usize,
+                column_sizes: None,
+            }),
             statistics,
             partition_spec: Some(pspec),
             kind: ScanSourceKind::File {
                 path,
                 chunk_spec: None,
-                iceberg_delete_files: None,
+                iceberg_delete_files,
                 parquet_metadata: None,
             },
         };
@@ -130,7 +137,7 @@ impl PyDataSourceTask {
         let scan_task = Arc::new(ScanTask::new(
             vec![source],
             Arc::new(SourceConfig::File(FileFormatConfig::Parquet(
-                ParquetSourceConfig::default(),
+                parquet_config.unwrap_or_default(),
             ))),
             schema.schema,
             storage_config,
@@ -739,7 +746,10 @@ pub mod pylib {
                 .map(|s| TableStatistics::from_stats_table(&s.record_batch))
                 .transpose()?;
 
-            let metadata = num_rows.map(|n| TableMetadata { length: n as usize });
+            let metadata = num_rows.map(|n| TableMetadata {
+                length: n as usize,
+                column_sizes: None,
+            });
 
             let data_source = ScanSource {
                 size_bytes,
@@ -793,7 +803,10 @@ pub mod pylib {
                 .transpose()?;
             let data_source = ScanSource {
                 size_bytes,
-                metadata: num_rows.map(|n| TableMetadata { length: n as usize }),
+                metadata: num_rows.map(|n| TableMetadata {
+                    length: n as usize,
+                    column_sizes: None,
+                }),
                 statistics,
                 partition_spec: None,
                 kind: ScanSourceKind::Database { path: url },
@@ -841,6 +854,7 @@ pub mod pylib {
                 size_bytes,
                 metadata: num_rows.map(|num_rows| TableMetadata {
                     length: num_rows as usize,
+                    column_sizes: None,
                 }),
                 statistics,
                 partition_spec: None,
@@ -932,6 +946,7 @@ pub mod pylib {
             metadata: if has_metadata.unwrap_or(false) {
                 Some(TableMetadata {
                     length: metadata.num_rows(),
+                    column_sizes: None,
                 })
             } else {
                 None

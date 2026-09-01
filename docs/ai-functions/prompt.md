@@ -69,6 +69,7 @@ df.show()
 1. **OpenAI** (Default) - Leverage models from OpenAI or any OpenAI-compatible provider.
 2. **Google** - Take advantage of Google's latests models like *Gemini 3 Pro*.
 3. **vLLM Prefix Caching** (Beta) - Distributed batch inference on vLLM [built by the Daft Cloud team](https://www.daft.ai/blog/cutting-llm-batch-inference-time-in-half-dynamic-prefix-bucketing-at-scale).
+4. **Transformers** - Run open-weight instruction-tuned models locally via [HuggingFace Transformers](https://huggingface.co/docs/transformers).
 
 
 ## Prompt Basics
@@ -134,6 +135,49 @@ df.show(format="fancy", max_width=120)
 ```
 
 For more details on how to use OpenAI-compatible providers with the `prompt` function like OpenRouter, Hugging Face Inference Providers, Databricks, and more, check out the [Prompting OpenAI-Compatible Providers](providers.md#prompting-with-openai-compatible-providers) section. Additionally, check out the [Prompting with vLLM Online Serving](providers.md#prompting-with-vllm-online-serving) section for more details on how to use vLLM Online Serving.
+
+### Running models locally with the Transformers provider
+
+The `transformers` provider runs open-weight instruction-tuned models locally via HuggingFace [`pipeline("text-generation")`](https://huggingface.co/docs/transformers/main/en/main_classes/pipelines#transformers.TextGenerationPipeline). Useful for offline batch inference without standing up a separate inference service.
+
+```bash
+pip install 'daft[transformers]'
+```
+
+```python
+import daft
+from daft.functions import prompt
+
+df = daft.from_pydict({"quote": ["I am going to be the king of the pirates!"]})
+
+df = df.with_column(
+    "response",
+    prompt(
+        daft.col("quote"),
+        provider="transformers",
+        model="HuggingFaceTB/SmolLM2-360M-Instruct",
+        system_message="Classify the anime from the quote in one short sentence.",
+        max_new_tokens=100,
+    ),
+)
+df.show()
+```
+
+Generation kwargs (`max_new_tokens`, `temperature`, `top_p`, ...) are forwarded to the pipeline call. Constructor-time options (`dtype`, `device_map`, `trust_remote_code`, `device`, ...) go through `pipeline_kwargs`. The provider auto-selects `cuda` > `mps` > `cpu`.
+
+You can also pass text-file columns (`daft.File` or raw `bytes` with a `text/*` MIME type) directly. The file contents are read and inlined into the prompt wrapped in a `<file_*>...</file_*>` tag derived from the MIME type, so the model can distinguish file content from your instructions:
+
+```python
+df = daft.from_files("s3://my-bucket/docs/*.md")
+df = df.with_column(
+    "summary",
+    prompt(
+        [daft.col("file"), "Summarize this document in 3 bullets."],
+        provider="transformers",
+        model="HuggingFaceTB/SmolLM2-360M-Instruct",
+    ),
+)
+```
 
 ### Building Prompt Templates with the `format` function
 

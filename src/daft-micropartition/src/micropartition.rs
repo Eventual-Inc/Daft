@@ -93,7 +93,10 @@ impl MicroPartition {
         Self {
             schema,
             chunks: record_batches,
-            metadata: TableMetadata { length },
+            metadata: TableMetadata {
+                length,
+                column_sizes: None,
+            },
             statistics,
         }
     }

@@ -254,3 +254,59 @@ def from_dask_dataframe(ddf: "dask.DataFrame") -> "DataFrame":
     from daft import DataFrame
 
     return DataFrame._from_dask_dataframe(ddf)
+
+
+@PublicAPI
+def concat(dfs: Iterable["DataFrame"]) -> "DataFrame":
+    """Concatenates multiple DataFrames into a single DataFrame.
+
+    All DataFrames must have exactly the same schema.
+
+    Args:
+        dfs: DataFrames to concatenate.
+
+    Returns:
+        DataFrame: DataFrame with rows from each input DataFrame in order.
+
+    Raises:
+        ValueError: If ``dfs`` is empty or if schemas do not match.
+
+    Examples:
+        >>> import daft
+        >>> df1 = daft.from_pydict({"a": [1, 2], "b": [3, 4]})
+        >>> df2 = daft.from_pydict({"a": [5, 6], "b": [7, 8]})
+        >>> df3 = daft.from_pydict({"a": [9, 10], "b": [11, 12]})
+        >>> daft.concat([df1, df2, df3]).show()
+        ╭───────┬───────╮
+        │ a     ┆ b     │
+        │ ---   ┆ ---   │
+        │ Int64 ┆ Int64 │
+        ╞═══════╪═══════╡
+        │ 1     ┆ 3     │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 2     ┆ 4     │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 5     ┆ 7     │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 6     ┆ 8     │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 9     ┆ 11    │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 10    ┆ 12    │
+        ╰───────┴───────╯
+        <BLANKLINE>
+        (Showing first 6 of 6 rows)
+    """
+    dfs_list = list(dfs)
+    if not dfs_list:
+        raise ValueError("daft.concat requires at least one DataFrame")
+    expected_schema = dfs_list[0].schema()
+    for i, df in enumerate(dfs_list[1:], start=1):
+        if df.schema() != expected_schema:
+            raise ValueError(
+                f"DataFrame at index {i} has a different schema.\nExpected:\n{expected_schema}\n\nReceived:\n{df.schema()}"
+            )
+    result = dfs_list[0]
+    for df in dfs_list[1:]:
+        result = result.concat(df)
+    return result
