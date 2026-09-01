@@ -115,6 +115,10 @@ This pattern — **errors visible, impact contained, tooling to fix** — lets a
 | CSV (`read_csv`) | Yes (unreadable file, truncated) | Yes (bad encoding, wrong field count in chunk) |
 | Iceberg (`read_iceberg`) | Yes (data files go through the Rust Parquet reader) | Yes |
 
+All three are supported from both the Python API and the SQL table functions. See
+[Table Function Options](../sql/index.md#table-function-options) for the full list of
+named arguments each SQL reader accepts.
+
 !!! note "Iceberg delete files"
     Corruption in Iceberg *delete files* is not covered. If a delete file is unreadable, Daft will raise an error regardless of `ignore_corrupt_files`. Delete files are small metadata structures and corruption there generally indicates a more serious catalog inconsistency.
 
