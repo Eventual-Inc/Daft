@@ -8,7 +8,9 @@ from datasets import load_dataset
 
 import daft
 from daft import DataType as dt
+from daft import IOConfig
 from daft.exceptions import DaftCoreException
+from daft.io import HuggingFaceConfig
 from tests._hf_retry import call_with_hf_retry
 from tests.conftest import assert_df_equals
 
@@ -106,3 +108,30 @@ def test_read_huggingface_multi_split_dataset():
 
     # Both paths should return the same data
     assert_df_equals(main_result, fallback_result, sort_key=["text", "label"])
+
+
+@pytest.mark.integration()
+def test_read_huggingface_bucket_file():
+    """Read a public WARC file from a Hugging Face storage bucket."""
+    test_file_path = (
+        "hf://buckets/commoncrawl/commoncrawl/crawl-data/CC-MAIN-2026-17/"
+        "segments/1775805908305.14/warc/CC-MAIN-20260410081153-20260410111153-00000.warc.gz"
+    )
+
+    file = daft.File(test_file_path)
+    with call_with_hf_retry(file.open) as f:
+        header = f.read(2)
+
+    assert header == b"\x1f\x8b"
+
+
+@pytest.mark.integration()
+@pytest.mark.parametrize("use_xet", [True, False])
+def test_read_xet_backed_parquet_file(use_xet):
+    """Read a public dataset file known to be stored on the Xet backend."""
+    test_file_path = "hf://datasets/google-research-datasets/mbpp/full/train-00000-of-00001.parquet"
+    io_config = IOConfig(hf=HuggingFaceConfig(use_xet=use_xet))
+
+    df = call_with_hf_retry(lambda path: daft.read_parquet(path, io_config=io_config), test_file_path)
+    assert df.count_rows() > 0
+    assert len(df.limit(10).collect()) == 10

@@ -17,6 +17,7 @@
         * [Documents](modalities/documents.md)
         * [JSON and Nested Data](modalities/json.md)
         * [Files and URLs](modalities/files.md)
+        * [Tensors](modalities/tensors.md)
         * [Embeddings](modalities/embeddings.md)
         * [Custom Modalities](modalities/custom.md)
     * User Defined Functions
@@ -31,6 +32,8 @@
         * [Batch Inference](use-case/batch-inference.md)
     * Datasets
         * [Common Crawl](datasets/common-crawl.md)
+        * [LeRobot](datasets/lerobot.md)
+        * [DROID](datasets/droid.md)
     * Data Connectors
         * [Overview](connectors/index.md)
         * Object Storage
@@ -38,6 +41,7 @@
             * [Azure Blob Store](connectors/azure.md)
             * [Google Cloud Storage](connectors/gcs.md)
             * [COS (Tencent Cloud)](connectors/cos.md)
+            * [GooseFS](connectors/goosefs.md)
         * Table Formats
             * [Apache Hudi](connectors/hudi.md)
             * [Apache Iceberg](connectors/iceberg.md)
@@ -58,6 +62,7 @@
         * Files
             * [Files](connectors/files.md)
             * [Text Files](connectors/text.md)
+            * [Blob Files](connectors/blob.md)
             * [Generic File Source Options](connectors/generic-file-source-options.md)
         * Other Sources
             * [Apache Kafka](connectors/kafka.md)
@@ -82,6 +87,7 @@
             * [Partitioning and Batching](optimization/partitioning.md)
             * [Shuffle Algorithms](optimization/shuffle.md)
             * [Join Strategies](optimization/join-strategies.md)
+    * [Checkpointing](use-case/checkpointing.md)
     * Observability
         * [Dashboard](observability/dashboard.md)
         * [Progress Indicators](observability/progress-indicators.md)
@@ -96,6 +102,9 @@
         * [Usage Telemetry](telemetry.md)
 * Examples
     * [Examples](examples/index.md)
+    * [Hand Tracking for Physical AI](examples/hand-tracking-physical-ai.md)
+    * [Reward Scoring for Physical AI](examples/reward-scoring-physical-ai.md)
+    * [Motion Trimming for Physical AI](examples/motion-trimming-physical-ai.md)
     * [Multimodal Structured Outputs: Evaluating Image Understanding](examples/mm_structured_outputs.md)
     * [Voice AI Analytics with Faster-Whisper and embed_text](examples/voice-ai-analytics.md)
     * [Web Text Deduplication](examples/minhash-dedupe.md)

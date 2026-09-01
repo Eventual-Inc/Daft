@@ -1,6 +1,6 @@
 //! Convenience helpers for converting between `daft-ext` FFI types and arrow-rs types.
 //!
-//! Requires one of the `arrow-56`, `arrow-57`, or `arrow-58` feature flags.
+//! Requires one of the `arrow-56`, `arrow-57`, `arrow-58`, or `arrow-59` feature flags.
 
 #[allow(unused_macros)]
 macro_rules! impl_helpers {
@@ -97,15 +97,23 @@ macro_rules! impl_helpers {
 
 // When multiple arrow features are enabled (e.g. --all-features), pick exactly one.
 // Prefer the highest version.
-#[cfg(feature = "arrow-58")]
+#[cfg(feature = "arrow-59")]
+impl_helpers!(arrow_schema_59, arrow_data_59, arrow_array_59);
+
+#[cfg(all(feature = "arrow-58", not(feature = "arrow-59")))]
 impl_helpers!(arrow_schema_58, arrow_data_58, arrow_array_58);
 
-#[cfg(all(feature = "arrow-57", not(feature = "arrow-58")))]
+#[cfg(all(
+    feature = "arrow-57",
+    not(feature = "arrow-58"),
+    not(feature = "arrow-59")
+))]
 impl_helpers!(arrow_schema_57, arrow_data_57, arrow_array_57);
 
 #[cfg(all(
     feature = "arrow-56",
     not(feature = "arrow-57"),
-    not(feature = "arrow-58")
+    not(feature = "arrow-58"),
+    not(feature = "arrow-59")
 ))]
 impl_helpers!(arrow_schema_56, arrow_data_56, arrow_array_56);

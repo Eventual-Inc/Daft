@@ -67,6 +67,9 @@ from .datetime import (
     to_date,
     to_datetime,
     convert_time_zone,
+    convert_timezone,
+    from_utc_timestamp,
+    to_utc_timestamp,
     replace_time_zone,
     date_trunc,
     trunc,
@@ -102,7 +105,22 @@ from .similarity import (
 )
 
 from .image_file_ import image_file_metadata, decode_image_file
-from .file_ import file, file_path, file_size, file_exists, video_file, audio_file, image_file, guess_mime_type
+from .hdf5 import (
+    hdf5_attrs,
+    hdf5_keys,
+    hdf5_metadata,
+)
+from .file_ import (
+    file,
+    file_path,
+    file_size,
+    file_exists,
+    video_file,
+    audio_file,
+    image_file,
+    hdf5_file,
+    guess_mime_type,
+)
 
 from .image import (
     resize,
@@ -209,6 +227,7 @@ from .numeric import (
     between,
     bin,
     conv,
+    try_divide,
     is_nan,
     is_inf,
     not_nan,
@@ -287,6 +306,7 @@ from .str import (
     ascii_func,
     chr_func,
     space,
+    split_part,
 )
 from .struct import unnest, to_struct
 from .url import download, upload, parse_url
@@ -349,6 +369,7 @@ __all__ = [
     "conv",
     "convert_image",
     "convert_time_zone",
+    "convert_timezone",
     "cos",
     "cosh",
     "cosine_distance",
@@ -415,12 +436,17 @@ __all__ = [
     "floor",
     "format",
     "from_unixtime",
+    "from_utc_timestamp",
     "get",
     "great_circle_distance",
     "guess_mime_type",
     "hamming_distance",
     "hamming_distance_str",
     "hash",
+    "hdf5_attrs",
+    "hdf5_file",
+    "hdf5_keys",
+    "hdf5_metadata",
     "hour",
     "hypot",
     "ilike",
@@ -554,6 +580,7 @@ __all__ = [
     "soundex",
     "space",
     "split",
+    "split_part",
     "sqrt",
     "startswith",
     "stddev",
@@ -581,6 +608,7 @@ __all__ = [
     "to_upper_camel_case",
     "to_upper_kebab_case",
     "to_upper_snake_case",
+    "to_utc_timestamp",
     "tokenize_decode",
     "tokenize_encode",
     "total_days",
@@ -597,6 +625,7 @@ __all__ = [
     "try_decode",
     "try_decompress",
     "try_deserialize",
+    "try_divide",
     "try_encode",
     "unix_date",
     "unnest",

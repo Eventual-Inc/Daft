@@ -396,6 +396,34 @@ impl Session {
         Ok(self.state().catalogs.list(pattern))
     }
 
+    /// Lists all namespaces visible to the session, mirroring [`Self::list_tables`]'s resolution:
+    /// - Rule 3: `<catalog>.<rest>` dispatches exclusively to that attached catalog.
+    /// - Otherwise: namespaces in the current catalog (none if no catalog is set).
+    pub fn list_namespaces(&self, pattern: Option<&str>) -> CatalogResult<Vec<Identifier>> {
+        if let Some(p) = pattern
+            && let Some((head, rest)) = p.split_once('.')
+            && self.has_catalog(head)
+        {
+            let inner = (!rest.is_empty()).then_some(rest);
+            return Ok(self
+                .get_catalog(head)?
+                .list_namespaces(inner)?
+                .into_iter()
+                .map(|id| id.qualify([head.to_string()]))
+                .collect());
+        }
+
+        let Some(alias) = self.state().options.curr_catalog.clone() else {
+            return Ok(vec![]);
+        };
+        Ok(self
+            .get_catalog(&alias)?
+            .list_namespaces(pattern)?
+            .into_iter()
+            .map(|id| id.qualify([alias.clone()]))
+            .collect())
+    }
+
     /// Lists all tables visible to the session, mirroring [`Self::get_table`]'s resolution rules:
     /// - Rule 0: session-level temp tables.
     /// - Rules 1+2: current catalog, narrowed to the current namespace when set.

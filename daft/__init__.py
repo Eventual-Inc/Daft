@@ -142,6 +142,7 @@ from daft.io import (
     IOConfig,
     from_files,
     from_glob_path,
+    read_blob,
     read_csv,
     read_deltalake,
     read_hudi,
@@ -161,7 +162,7 @@ from daft.runners import get_or_create_runner, get_or_infer_runner_type, set_run
 from daft.sql import sql, sql_expr
 from daft.viz import register_viz_hook
 from daft.window import Window
-from daft.file import File, VideoFile, AudioFile, ImageFile, open_file
+from daft.file import File, VideoFile, AudioFile, ImageFile, Hdf5File, open_file
 
 range = _range  # type: ignore[no-redef,unused-ignore]
 
@@ -192,6 +193,7 @@ __all__ = [
     "DataType",
     "Expression",
     "File",
+    "Hdf5File",
     "IOConfig",
     "IdempotentCommit",
     "Identifier",
@@ -276,6 +278,7 @@ __all__ = [
     "open_file",
     "planning_config_ctx",
     "range",
+    "read_blob",
     "read_csv",
     "read_deltalake",
     "read_hudi",

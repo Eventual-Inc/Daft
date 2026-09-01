@@ -15,6 +15,7 @@ use daft_functions_temporal::{
     epoch_conversions::{
         DateFromUnixDate, FromUnixtime, TimestampMicros, TimestampMillis, TimestampSeconds,
     },
+    time::{ConvertTimeZone, FromUtcTimestamp, ToUtcTimestamp},
     truncate::Truncate,
 };
 use sqlparser::ast;
@@ -58,6 +59,9 @@ impl SQLModule for SQLModuleTemporal {
         parent.add_fn("make_timestamp_ltz", SQLMakeTimestampLtz);
         parent.add_fn("last_day", SQLLastDay);
         parent.add_fn("next_day", SQLNextDay);
+        parent.add_fn("from_utc_timestamp", SQLFromUtcTimestamp);
+        parent.add_fn("to_utc_timestamp", SQLToUtcTimestamp);
+        parent.add_fn("convert_timezone", SQLConvertTimezone);
     }
 }
 
@@ -912,5 +916,139 @@ impl SQLFunction for SQLMonthsBetween {
 
     fn arg_names(&self) -> &'static [&'static str] {
         &["end_date", "start_date"]
+    }
+}
+
+// --- Timezone conversion SQL functions ---
+
+pub struct SQLFromUtcTimestamp;
+
+impl SQLFunction for SQLFromUtcTimestamp {
+    fn to_expr(
+        &self,
+        inputs: &[ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        if inputs.len() != 2 {
+            invalid_operation_err!(
+                "from_utc_timestamp expects 2 arguments, got {}",
+                inputs.len()
+            );
+        }
+        let input = planner.plan_function_arg(&inputs[0])?.into_inner();
+        let tz_expr = planner.plan_function_arg(&inputs[1])?.into_inner();
+        let tz_str = tz_expr
+            .as_literal()
+            .and_then(|l| l.as_str())
+            .ok_or_else(|| {
+                crate::error::PlannerError::invalid_operation(
+                    "from_utc_timestamp timezone argument must be a string literal",
+                )
+            })?;
+
+        Ok(BuiltinScalarFn {
+            func: BuiltinScalarFnVariant::Sync(Arc::new(FromUtcTimestamp)),
+            inputs: FunctionArgs::new_unchecked(vec![
+                FunctionArg::unnamed(input),
+                FunctionArg::named("timezone".to_string(), lit(tz_str.to_string())),
+            ]),
+        }
+        .into())
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Interprets a UTC timestamp and returns the wall-clock time in the given timezone."
+            .to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input", "timezone"]
+    }
+}
+
+pub struct SQLToUtcTimestamp;
+
+impl SQLFunction for SQLToUtcTimestamp {
+    fn to_expr(
+        &self,
+        inputs: &[ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        if inputs.len() != 2 {
+            invalid_operation_err!("to_utc_timestamp expects 2 arguments, got {}", inputs.len());
+        }
+        let input = planner.plan_function_arg(&inputs[0])?.into_inner();
+        let tz_expr = planner.plan_function_arg(&inputs[1])?.into_inner();
+        let tz_str = tz_expr
+            .as_literal()
+            .and_then(|l| l.as_str())
+            .ok_or_else(|| {
+                crate::error::PlannerError::invalid_operation(
+                    "to_utc_timestamp timezone argument must be a string literal",
+                )
+            })?;
+
+        Ok(BuiltinScalarFn {
+            func: BuiltinScalarFnVariant::Sync(Arc::new(ToUtcTimestamp)),
+            inputs: FunctionArgs::new_unchecked(vec![
+                FunctionArg::unnamed(input),
+                FunctionArg::named("timezone".to_string(), lit(tz_str.to_string())),
+            ]),
+        }
+        .into())
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Interprets the wall-clock timestamp as being in the given timezone and returns the UTC instant."
+            .to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["input", "timezone"]
+    }
+}
+
+pub struct SQLConvertTimezone;
+
+impl SQLFunction for SQLConvertTimezone {
+    fn to_expr(
+        &self,
+        inputs: &[ast::FunctionArg],
+        planner: &crate::planner::SQLPlanner,
+    ) -> SQLPlannerResult<ExprRef> {
+        // Spark argument order: convert_timezone(target_tz, source_ts).
+        if inputs.len() != 2 {
+            invalid_operation_err!("convert_timezone expects 2 arguments, got {}", inputs.len());
+        }
+        let target_expr = planner.plan_function_arg(&inputs[0])?.into_inner();
+        let target_str = target_expr
+            .as_literal()
+            .and_then(|l| l.as_str())
+            .ok_or_else(|| {
+                crate::error::PlannerError::invalid_operation(
+                    "convert_timezone target timezone argument must be a string literal",
+                )
+            })?;
+        let source = planner.plan_function_arg(&inputs[1])?.into_inner();
+
+        let args = vec![
+            FunctionArg::unnamed(source),
+            FunctionArg::named("to_timezone".to_string(), lit(target_str.to_string())),
+        ];
+
+        Ok(BuiltinScalarFn {
+            func: BuiltinScalarFnVariant::Sync(Arc::new(ConvertTimeZone)),
+            inputs: FunctionArgs::new_unchecked(args),
+        }
+        .into())
+    }
+
+    fn docstrings(&self, _alias: &str) -> String {
+        "Spark-style alias for convert_time_zone with reversed argument order: convert_timezone(target_tz, source_ts)."
+            .to_string()
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["target_timezone", "source_timestamp"]
     }
 }

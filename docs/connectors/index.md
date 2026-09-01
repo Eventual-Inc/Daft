@@ -12,6 +12,7 @@ Daft natively supports reading and writing data to major cloud object storage pr
 | [Azure Blob Storage](azure.md) | `az://`, `abfs://` | [`AzureConfig`][daft.io.AzureConfig] |
 | [Google Cloud Storage](gcs.md) | `gs://`, `gcs://` | [`GCSConfig`][daft.io.GCSConfig] |
 | [Tencent Cloud COS](cos.md) | `cos://`, `cosn://` | [`CosConfig`][daft.io.CosConfig] |
+| [GooseFS](goosefs.md) | `goosefs://` | [`GooseFSConfig`][daft.io.GooseFSConfig] |
 
 ## Table Formats
 
@@ -315,13 +316,14 @@ See also [Files](files.md) for detailed usage.
 | [`read_parquet`][daft.io.read_parquet]                    | Read a Parquet file or multiple Parquet files into a DataFrame |
 | [`write_parquet`][daft.dataframe.DataFrame.write_parquet] | Write a DataFrame to Parquet files                             |
 
-### Text
+### Text and Blob
 
-| Function                           | Description                                    |
-|------------------------------------|------------------------------------------------|
-| [`read_text`][daft.io.read_text]   | Read text files into a DataFrame               |
+| Function                         | Description                                                        |
+|----------------------------------|--------------------------------------------------------------------|
+| [`read_text`][daft.io.read_text] | Read text files into a DataFrame as strings, with one row per line |
+| [`read_blob`][daft.io.read_blob] | Read files into a DataFrame as raw bytes, with one row per file    |
 
-See also [Text Files](text.md) for detailed usage.
+See also [Text Files](text.md) and [Blob Files](blob.md) for detailed usage.
 
 ### WARC
 

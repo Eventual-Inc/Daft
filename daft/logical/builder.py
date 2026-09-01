@@ -380,6 +380,7 @@ class LogicalPlanBuilder:
         file_format_option: PyFormatSinkOption | None = None,
         partition_cols: list[Expression] | None = None,
         compression: str | None = None,
+        single_file: bool = False,
     ) -> LogicalPlanBuilder:
         part_cols_pyexprs = [expr._expr for expr in partition_cols] if partition_cols is not None else None
         builder = self._builder.table_write(
@@ -391,6 +392,7 @@ class LogicalPlanBuilder:
             part_cols_pyexprs,
             compression,
             io_config,
+            single_file,
         )
         return LogicalPlanBuilder(builder)
 

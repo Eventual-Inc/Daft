@@ -92,6 +92,16 @@ def get_filesystem(protocol: str, **kwargs: Any) -> fsspec.AbstractFileSystem:
     return fs
 
 
+def _ensure_fsspec(protocol: str, extra: str) -> None:
+    """Ensure fsspec is importable, raising a helpful error pointing at the right extra."""
+    if not fsspec.module_available():
+        raise ImportError(
+            f"Accessing '{protocol}://' paths requires the optional 'fsspec' dependency, which is not installed. "
+            f"Install it with the appropriate Daft extra, e.g. `pip install 'daft[{extra}]'` "
+            "(https://docs.daft.ai/en/latest/install)."
+        )
+
+
 def get_protocol_from_path(path: str) -> str:
     parsed_scheme = urllib.parse.urlparse(path, allow_fragments=False).scheme
     parsed_scheme = parsed_scheme.lower()
@@ -248,6 +258,7 @@ def _build_filesystem(
     ###
     if protocol == "http":
         # "https" canonicalizes to "http"; fsspec's HTTPFileSystem handles both schemes.
+        _ensure_fsspec(protocol, "http")
         fsspec_fs = fsspec.get_filesystem_class("http")()
         return pafs.PyFileSystem(pafs.FSSpecHandler(fsspec_fs)), None
 
@@ -255,6 +266,7 @@ def _build_filesystem(
     # Azure: Use FSSpec as a fallback
     ###
     if protocol == "abfs":
+        _ensure_fsspec(protocol, "azure")
         fsspec_fs_cls = fsspec.get_filesystem_class("abfs")
         if io_config is not None:
             # TODO: look into support for other AzureConfig parameters
@@ -269,6 +281,22 @@ def _build_filesystem(
             )
         else:
             fsspec_fs = fsspec_fs_cls()
+        return pafs.PyFileSystem(pafs.FSSpecHandler(fsspec_fs)), None
+
+    ###
+    # HF (Hugging Face): Use FSSpec as a fallback
+    ###
+    if protocol == "hf":
+        _ensure_fsspec(protocol, "huggingface")
+        fsspec_fs_cls = fsspec.get_filesystem_class("hf")
+        hf_kwargs: dict[str, Any] = {}
+        if io_config is not None and io_config.hf is not None:
+            hf_config = io_config.hf
+            if hf_config.token is not None:
+                hf_kwargs["token"] = hf_config.token
+            if hf_config.anonymous:
+                hf_kwargs["token"] = None
+        fsspec_fs = fsspec_fs_cls(**hf_kwargs)
         return pafs.PyFileSystem(pafs.FSSpecHandler(fsspec_fs)), None
 
     ###

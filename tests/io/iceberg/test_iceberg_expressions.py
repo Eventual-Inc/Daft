@@ -13,13 +13,16 @@ from pyiceberg.expressions import (
     GreaterThan,
     GreaterThanOrEqual,
     In,
+    IsNaN,
     IsNull,
     LessThan,
     LessThanOrEqual,
     Not,
     NotEqualTo,
+    NotNaN,
     NotNull,
     Or,
+    StartsWith,
 )
 from pyiceberg.expressions.literals import DateLiteral, StringLiteral
 from pyiceberg.schema import Schema
@@ -146,6 +149,32 @@ def test_not_null() -> None:
 def test_is_in() -> None:
     result = convert_expression_to_iceberg(daft.col("x").is_in([1, 2, 3]))
     assert isinstance(result, In)
+    assert result.term.name == "x"
+
+
+def test_starts_with() -> None:
+    result = convert_expression_to_iceberg(daft.col("name").startswith("foo"))
+    assert isinstance(result, StartsWith)
+    assert result.term.name == "name"
+    assert result.literal.value == "foo"
+
+
+def test_not_starts_with() -> None:
+    result = convert_expression_to_iceberg(~daft.col("name").startswith("foo"))
+    assert isinstance(result, Not)
+    assert isinstance(result.child, StartsWith)
+    assert result.child.term.name == "name"
+
+
+def test_is_nan() -> None:
+    result = convert_expression_to_iceberg(daft.col("x").is_nan())
+    assert isinstance(result, IsNaN)
+    assert result.term.name == "x"
+
+
+def test_not_nan() -> None:
+    result = convert_expression_to_iceberg(daft.col("x").not_nan())
+    assert isinstance(result, NotNaN)
     assert result.term.name == "x"
 
 

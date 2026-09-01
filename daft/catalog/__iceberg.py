@@ -247,7 +247,7 @@ class IcebergCatalog(Catalog):
 class IcebergTable(Table):
     _inner: InnerTable
 
-    _read_options = {"snapshot_id", "branch", "tag"}
+    _read_options = {"snapshot_id", "branch", "tag", "ignore_corrupt_files"}
     _write_options: set[str] = set()
 
     def __init__(self) -> None:
@@ -269,13 +269,15 @@ class IcebergTable(Table):
             return t
         raise ValueError(f"Unsupported iceberg table type: {type(obj)}")
 
-    def read(self, **options: Any | None) -> DataFrame:
+    def read(self, **options: Any) -> DataFrame:
         Table._validate_options("Iceberg read", options, IcebergTable._read_options)
+        ignore_corrupt_files: bool = options.get("ignore_corrupt_files", False)
         return read_iceberg(
             self._inner,
             snapshot_id=options.get("snapshot_id"),
             branch=options.get("branch"),
             tag=options.get("tag"),
+            ignore_corrupt_files=ignore_corrupt_files,
         )
 
     def append(self, df: DataFrame, **options: Any) -> None:

@@ -20,6 +20,7 @@ impl LogicalPlanToPipelineNodeTranslator {
         left_on: BoundExpr,
         right_on: BoundExpr,
         strategy: AsofJoinStrategy,
+        assume_aligned: bool,
         output_schema: SchemaRef,
     ) -> DaftResult<DistributedPipelineNode> {
         let num_left_partitions = left.config().clustering_spec.num_partitions();
@@ -38,6 +39,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                 right_on,
                 strategy,
                 num_partitions,
+                assume_aligned,
                 left,
                 right,
                 output_schema,
@@ -76,9 +78,6 @@ impl LogicalPlanToPipelineNodeTranslator {
             &right_node.config().schema,
         )?;
 
-        // TODO: dispatch to an execution path that skips the range shuffle when
-        // `assume_sorted_and_aligned` is set. For now both paths run the regular
-        // shuffle-based asof join, which is correct regardless of input alignment.
         if asof_join.assume_sorted_and_aligned
             && self.plan_config.config.enable_scan_task_split_and_merge
         {
@@ -96,6 +95,7 @@ impl LogicalPlanToPipelineNodeTranslator {
             left_on,
             right_on,
             asof_join.strategy,
+            asof_join.assume_sorted_and_aligned,
             asof_join.output_schema.clone(),
         )
     }

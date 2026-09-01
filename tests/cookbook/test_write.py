@@ -10,7 +10,7 @@ import pytest
 from pyarrow import dataset as pads
 
 import daft
-from tests.conftest import assert_df_equals
+from tests.conftest import assert_df_equals, get_tests_daft_runner_name
 from tests.cookbook.assets import COOKBOOK_DATA_CSV
 
 
@@ -25,6 +25,139 @@ def test_parquet_write(tmp_path, with_morsel_size):
     assert pd_df._preview.partition is None
     pd_df.__repr__()
     assert len(pd_df._preview.partition) == 1
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native",
+    reason="single_file is only supported on the native runner",
+)
+def test_parquet_write_single_file(tmp_path, with_morsel_size):
+    df = daft.read_csv(COOKBOOK_DATA_CSV)
+
+    out_path = tmp_path / "out.parquet"
+    result = df.write_parquet(out_path.as_posix(), single_file=True)
+
+    assert out_path.is_file()
+    assert result.to_pydict()["path"] == [out_path.as_posix()]
+
+    read_back = daft.read_parquet(out_path.as_posix()).to_pandas()
+    assert_df_equals(df.to_pandas(), read_back)
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native",
+    reason="single_file is only supported on the native runner",
+)
+def test_parquet_write_single_file_creates_parent_dirs(tmp_path, with_morsel_size):
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    out_path = tmp_path / "nested" / "subdir" / "out.parquet"
+
+    df.write_parquet(out_path.as_posix(), single_file=True)
+
+    assert out_path.is_file()
+    assert daft.read_parquet(out_path.as_posix()).to_pydict() == {"x": [1, 2, 3]}
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native",
+    reason="single_file is only supported on the native runner",
+)
+def test_parquet_write_single_file_large_does_not_split(tmp_path, with_morsel_size):
+    # Shrink target_filesize so a small df still exceeds it and exercises the no-split path.
+    rows = 1_000
+    df = daft.from_pydict({"x": list(range(rows)), "y": ["hello" * 100] * rows})
+
+    out_path = tmp_path / "big.parquet"
+    with daft.execution_config_ctx(parquet_target_filesize=1024):
+        df.write_parquet(out_path.as_posix(), single_file=True)
+
+    assert out_path.is_file()
+    assert daft.read_parquet(out_path.as_posix()).count_rows() == rows
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native",
+    reason="single_file is only supported on the native runner",
+)
+def test_parquet_write_single_file_empty(tmp_path, with_morsel_size):
+    # Empty DataFrame must not panic when single_file=True. CommitWriteSink emits an
+    # empty parquet file at the exact path so reads round-trip.
+    df = daft.from_pydict({"x": [], "y": []})
+
+    out_path = tmp_path / "empty.parquet"
+    df.write_parquet(out_path.as_posix(), single_file=True)
+
+    assert out_path.is_file()
+    assert daft.read_parquet(out_path.as_posix()).count_rows() == 0
+
+
+def test_parquet_write_single_file_rejects_partition_cols(tmp_path):
+    df = daft.from_pydict({"x": [1, 2], "y": ["a", "b"]})
+    with pytest.raises(ValueError, match="single_file=True.*partition_cols"):
+        df.write_parquet(
+            (tmp_path / "out.parquet").as_posix(),
+            single_file=True,
+            partition_cols=["y"],
+        )
+
+
+def test_parquet_write_single_file_rejects_overwrite_partitions(tmp_path):
+    df = daft.from_pydict({"x": [1, 2], "y": ["a", "b"]})
+    with pytest.raises(ValueError, match="single_file=True.*overwrite-partitions"):
+        df.write_parquet(
+            (tmp_path / "out.parquet").as_posix(),
+            single_file=True,
+            write_mode="overwrite-partitions",
+            partition_cols=["y"],
+        )
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native",
+    reason="single_file is only supported on the native runner",
+)
+def test_parquet_write_single_file_overwrite(tmp_path, with_morsel_size):
+    out_path = tmp_path / "out.parquet"
+    daft.from_pydict({"x": [1, 2, 3]}).write_parquet(out_path.as_posix(), single_file=True)
+    daft.from_pydict({"x": [10, 20, 30, 40, 50]}).write_parquet(
+        out_path.as_posix(), single_file=True, write_mode="overwrite"
+    )
+    assert daft.read_parquet(out_path.as_posix()).to_pydict() == {"x": [10, 20, 30, 40, 50]}
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native",
+    reason="single_file is only supported on the native runner",
+)
+def test_parquet_write_single_file_overwrite_replaces_directory(tmp_path, with_morsel_size):
+    out_path = tmp_path / "out.parquet"
+    out_path.mkdir()
+    (out_path / "stale.parquet").write_bytes(b"stale")
+
+    daft.from_pydict({"x": [10, 20, 30]}).write_parquet(out_path.as_posix(), single_file=True, write_mode="overwrite")
+
+    assert out_path.is_file()
+    assert daft.read_parquet(out_path.as_posix()).to_pydict() == {"x": [10, 20, 30]}
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native",
+    reason="single_file is only supported on the native runner",
+)
+def test_parquet_write_single_file_success_file(tmp_path, with_morsel_size):
+    df = daft.from_pydict({"x": [1, 2]})
+    out_path = tmp_path / "out.parquet"
+
+    df.write_parquet(
+        out_path.as_posix(),
+        single_file=True,
+        write_success_file=True,
+    )
+
+    success_file_path = tmp_path / "_SUCCESS"
+    assert out_path.is_file()
+    assert success_file_path.is_file()
+    assert success_file_path.stat().st_size == 0
 
 
 def test_parquet_write_with_partitioning(tmp_path, with_morsel_size):

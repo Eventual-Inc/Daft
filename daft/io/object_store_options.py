@@ -20,7 +20,10 @@ def io_config_to_storage_options(io_config: IOConfig, table_uri: str | pathlib.P
         table_uri = str(table_uri)
     parsed = urlparse(table_uri)
     scheme = parsed.scheme
-    if scheme == "s3" or scheme == "s3a":
+    if scheme == "s3" or scheme == "s3a" or scheme == "oss":
+        # alibaba oss is s3-compatible - reuse the s3 storage options. oss just needs
+        # a custom endpoint and virtual-hosted-style addressing, both already handled
+        # by the s3 helper via S3Config.
         bucket = parsed.netloc
         return _s3_config_to_storage_options(io_config.s3, bucket)
     elif scheme == "gcs" or scheme == "gs":

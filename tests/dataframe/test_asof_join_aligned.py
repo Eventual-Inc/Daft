@@ -431,23 +431,7 @@ def reference_asof_match(left_ts: int, right_ts: list[int], strategy: str) -> in
     return forward if forward - left_ts <= left_ts - backward else backward
 
 
-@pytest.mark.parametrize(
-    "strategy",
-    [
-        "backward",
-        "forward",
-        pytest.param(
-            "nearest",
-            marks=pytest.mark.xfail(
-                reason="local nearest asof join: a left row that gets a one-sided direct offer "
-                "(search_nearest floor/ceil) is skipped by nearest_fill and never sees its "
-                "other-side candidate. Repro: left=[593, 597], right=[577, 608] -> 593 matches "
-                "577 (dist 16) instead of 608 (dist 15).",
-                strict=False,
-            ),
-        ),
-    ],
-)
+@pytest.mark.parametrize("strategy", STRATEGIES)
 @pytest.mark.parametrize("by", [None, "entity"], ids=["no_by", "by"])
 @pytest.mark.parametrize("num_partitions", [1, 3, 5])
 def test_matches_reference_implementation(strategy, by, num_partitions):
@@ -513,9 +497,6 @@ def test_matches_reference_implementation(strategy, by, num_partitions):
 
 
 class TestAlignedAsofJoinValidation:
-    @pytest.mark.skip(
-        reason="the shuffle-based fallback silently equalises partition counts; enable once the aligned execution path lands"
-    )
     def test_mismatched_partition_counts_raises(self):
         """Left and right with different partition counts raise at execution time."""
         left = value_aligned(pa.table({"ts": [1, 2, 3, 4], "v": [1, 2, 3, 4]}), "ts", [3], name="left")

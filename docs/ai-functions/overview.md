@@ -19,3 +19,4 @@ For more detailed information on the Providers, see [AI Providers Overview](prov
 - [Embeddings](../modalities/embeddings.md) - Vector representations for RAG and search
 - [Custom Code with `@daft.func`](../custom-code/func.md) - Write custom Python functions for specialized processing
 - [Batch Inference](../use-case/batch-inference.md) - End-to-end batch inference patterns
+- [Checkpointing](../use-case/checkpointing.md) - Resume expensive AI pipelines without redoing completed work

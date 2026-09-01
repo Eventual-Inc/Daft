@@ -7,6 +7,11 @@ pub mod session;
 
 mod ffi;
 
-#[cfg(any(feature = "arrow-56", feature = "arrow-57", feature = "arrow-58"))]
+#[cfg(any(
+    feature = "arrow-56",
+    feature = "arrow-57",
+    feature = "arrow-58",
+    feature = "arrow-59"
+))]
 pub mod helpers;
 pub use daft_ext_macros::*;

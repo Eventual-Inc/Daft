@@ -331,6 +331,9 @@ async fn build_rg_inputs(
     path: &Arc<str>,
 ) -> DaftResult<Vec<RgInputs>> {
     let base_selections = build_base_selections(metadata, rg_indices, opts);
+
+    // If no predicate, then we can just return the base selections for the whole RG immediately.
+    // Otherwise, we can pre-filter based on the predicate
     let Some(prefilter_predicate) = opts
         .predicate
         .as_ref()

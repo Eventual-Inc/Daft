@@ -10,6 +10,7 @@ import pyarrow.parquet as papq
 import pytest
 
 import daft
+from daft.catalog import Table
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -386,6 +387,37 @@ def test_iceberg_ignore_corrupt_skips_and_reports(local_iceberg_catalog):
         f.write(b"PAR1" + b"\x00" * 20 + b"PAR1")
 
     df = daft.read_iceberg(table, ignore_corrupt_files=True)
+    df.collect()
+
+    result = sorted(df.to_pydict()["id"])
+    assert len(result) == 3
+    assert set(result).issubset({1, 2, 3, 4, 5, 6})
+
+    skipped = df.skipped_corrupt_files
+    assert len(skipped) == 1
+    _, reason, partial = skipped[0]
+    assert reason
+    assert not partial
+
+
+def test_iceberg_table_read_ignore_corrupt_skips_and_reports(local_iceberg_catalog):
+    """Table.read forwards ignore_corrupt_files to read_iceberg."""
+    from pyiceberg.schema import Schema
+    from pyiceberg.types import LongType, NestedField
+
+    schema = Schema(NestedField(1, "id", LongType(), required=False))
+    iceberg_table = local_iceberg_catalog.create_table("default.test_table_corrupt", schema=schema)
+
+    iceberg_table.append(pa.table({"id": pa.array([1, 2, 3], type=pa.int64())}))
+    iceberg_table.append(pa.table({"id": pa.array([4, 5, 6], type=pa.int64())}))
+
+    data_files = _iceberg_data_file_local_paths(iceberg_table)
+    assert len(data_files) == 2, f"Expected 2 data files, got {len(data_files)}"
+
+    with open(data_files[0], "wb") as f:
+        f.write(b"PAR1" + b"\x00" * 20 + b"PAR1")
+
+    df = Table.from_iceberg(iceberg_table).read(ignore_corrupt_files=True)
     df.collect()
 
     result = sorted(df.to_pydict()["id"])
