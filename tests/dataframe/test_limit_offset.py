@@ -718,4 +718,9 @@ def test_limit_below_and_above_multipartition_join():
     right = daft.range(0, 100, partitions=8).select(col("id").alias("k"))
     joined = left.limit(20).join(right, on="k", how="left").limit(20)
     result = joined.to_pydict()
-    assert len(next(iter(result.values()))) == 20
+    # Each left row (id 0..19, k = id % 100) matches exactly one right row with
+    # the same key, so the join must pair every id i with key i. Asserting the
+    # exact set of (id, key) pairs -- rather than only the row count -- catches
+    # mis-routed, duplicated, or null-extended rows leaking through the shuffle.
+    # Sorting keeps the check independent of distributed row ordering.
+    assert sorted(zip(result["id"], result["k"])) == [(i, i) for i in range(20)]
