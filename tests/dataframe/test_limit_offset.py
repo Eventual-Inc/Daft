@@ -718,9 +718,15 @@ def test_limit_below_and_above_multipartition_join():
     right = daft.range(0, 100, partitions=8).select(col("id").alias("k"))
     joined = left.limit(20).join(right, on="k", how="left").limit(20)
     result = joined.to_pydict()
-    # Each left row (id 0..19, k = id % 100) matches exactly one right row with
-    # the same key, so the join must pair every id i with key i. Asserting the
-    # exact set of (id, key) pairs -- rather than only the row count -- catches
-    # mis-routed, duplicated, or null-extended rows leaking through the shuffle.
-    # Sorting keeps the check independent of distributed row ordering.
-    assert sorted(zip(result["id"], result["k"])) == [(i, i) for i in range(20)]
+    # Daft's LIMIT is unordered: which 20 rows survive depends on partition
+    # scheduling, so the surviving ids are not deterministic across runners.
+    # What must hold regardless is that the shuffle neither lost, duplicated,
+    # mis-routed, nor null-extended a row: exactly 20 distinct ids come back and
+    # each keeps the key it was assigned (k == id % 100), proving the join paired
+    # every surviving left row with its one matching right row.
+    ids = result["id"]
+    keys = result["k"]
+    assert len(ids) == 20, "shuffle dropped rows produced by the limit"
+    assert len(set(ids)) == 20, "limit/join duplicated or fanned out rows"
+    assert all(k is not None for k in keys), "left join null-extended a matched row"
+    assert all(k == i % 100 for i, k in zip(ids, keys)), "shuffle mis-routed join keys"
