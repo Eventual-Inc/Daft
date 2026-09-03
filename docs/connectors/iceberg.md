@@ -118,19 +118,16 @@ deleted, and the delete and the append land in a single Iceberg transaction.
     written_df = df.write_iceberg(table, mode="overwrite", overwrite_filter="dt = '2024-01-01'")
     ```
 
-The filter accepts an Iceberg predicate string, a Daft expression, or a PyIceberg
-`BooleanExpression`, so these are equivalent:
+The filter accepts an Iceberg predicate string or a Daft expression, so these are
+equivalent:
 
 === "🐍 Python"
 
     ```python
-    from pyiceberg.expressions import EqualTo
-
     from daft import col
 
     df.write_iceberg(table, mode="overwrite", overwrite_filter="dt = '2024-01-01'")
     df.write_iceberg(table, mode="overwrite", overwrite_filter=col("dt") == "2024-01-01")
-    df.write_iceberg(table, mode="overwrite", overwrite_filter=EqualTo("dt", "2024-01-01"))
     ```
 
 Daft checks that the rows being written fall inside the filter, so an overwrite cannot

@@ -1334,7 +1334,7 @@ class DataFrame:
         io_config: IOConfig | None = None,
         snapshot_properties: dict[str, str] | None = None,
         checkpoint: "IdempotentCommit | None" = None,
-        overwrite_filter: "str | Expression | pyiceberg.expressions.BooleanExpression | None" = None,
+        overwrite_filter: "str | Expression | None" = None,
         validate_overwrite_filter: bool = True,
     ) -> "DataFrame":
         """Writes the DataFrame to an [Iceberg](https://iceberg.apache.org/docs/nightly/) table, returning a new DataFrame with the operations that occurred.
@@ -1351,7 +1351,7 @@ class DataFrame:
             io_config (IOConfig, optional): A custom IOConfig to use when accessing Iceberg object storage data. If provided, configurations set in `table` are ignored.
             snapshot_properties (dict[str, str], optional): Optional snapshot properties to set while writing to the table. Keys with prefix ``daft.idempotence-`` are reserved.
             checkpoint (IdempotentCommit, optional): Bundled checkpoint store + idempotence key for an idempotent commit. When provided, the snapshot summary is tagged with ``daft.idempotence-key`` and retries with the same key recognize the prior attempt without producing a duplicate snapshot. Only ``mode='append'`` is supported. Requires the Ray runner.
-            overwrite_filter (str | Expression | pyiceberg.expressions.BooleanExpression, optional): Only valid with ``mode='overwrite'``. Restricts the delete to the rows matching the predicate instead of replacing the whole table. Accepts a Daft expression (e.g. ``col("dt") == "2024-01-01"``), an Iceberg predicate string (e.g. ``"dt = '2024-01-01'"``), or a PyIceberg ``BooleanExpression``. Requires pyiceberg>=0.7.0. Defaults to None.
+            overwrite_filter (str | Expression, optional): Only valid with ``mode='overwrite'``. Restricts the delete to the rows matching the predicate instead of replacing the whole table. Accepts a Daft expression (e.g. ``col("dt") == "2024-01-01"``) or an Iceberg predicate string (e.g. ``"dt = '2024-01-01'"``). Requires pyiceberg>=0.7.0. Defaults to None.
             validate_overwrite_filter (bool, optional): Only used alongside ``overwrite_filter``. When True, the write fails if any data file it produces may hold rows outside the filter. Defaults to True.
 
         Returns:

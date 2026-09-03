@@ -5,6 +5,17 @@ import uuid
 import warnings
 from typing import TYPE_CHECKING, Any
 
+from pyiceberg.expressions import AlwaysFalse
+
+# `_StrictMetricsEvaluator` is private to pyiceberg, but it is stable across the supported
+# versions (>=0.7.0, <=0.11.1) and has no public equivalent.
+from pyiceberg.expressions.visitors import (
+    _StrictMetricsEvaluator,
+    expression_evaluator,
+    strict_projection,
+)
+from pyiceberg.schema import Schema as IcebergSchema
+
 from daft import Expression, col, lit
 from daft.datatype import DataType
 from daft.expressions.expressions import ExpressionsProjection
@@ -19,7 +30,6 @@ if TYPE_CHECKING:
     from pyiceberg.manifest import DataFile
     from pyiceberg.partitioning import PartitionField as IcebergPartitionField
     from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
-    from pyiceberg.schema import Schema as IcebergSchema
     from pyiceberg.table import TableProperties as IcebergTableProperties
     from pyiceberg.typedef import Record as IcebergRecord
 
@@ -319,16 +329,6 @@ def validate_data_files_match_filter(
     truncated (16 bytes by default), so a long partition value only passes the partition
     test, and a predicate over a non-partition column only passes the metrics test.
     """
-    # `_StrictMetricsEvaluator` is private to pyiceberg, but it is stable across the
-    # supported versions (>=0.7.0, <=0.11.1) and has no public equivalent.
-    from pyiceberg.expressions import AlwaysFalse
-    from pyiceberg.expressions.visitors import (
-        _StrictMetricsEvaluator,
-        expression_evaluator,
-        strict_projection,
-    )
-    from pyiceberg.schema import Schema
-
     # `strict_projection` gives the partitions that contain only matching rows. It returns
     # AlwaysFalse when the predicate cannot be projected onto the spec at all, e.g. an
     # unpartitioned table or a predicate over non-partition columns.
@@ -336,7 +336,7 @@ def validate_data_files_match_filter(
     projected = strict_projection(schema, spec)(overwrite_filter)
     if not isinstance(projected, AlwaysFalse):
         partition_evaluator = expression_evaluator(
-            Schema(*spec.partition_type(schema).fields), projected, case_sensitive=True
+            IcebergSchema(*spec.partition_type(schema).fields), projected, case_sensitive=True
         )
 
     metrics_evaluator = _StrictMetricsEvaluator(schema, overwrite_filter)

@@ -775,15 +775,12 @@ def _rows(table):
     return sorted(zip(as_dict["dt"], as_dict["x"]))
 
 
-@pytest.mark.parametrize("filter_kind", ["string", "daft_expression", "iceberg_expression"])
+@pytest.mark.parametrize("filter_kind", ["string", "daft_expression"])
 def test_overwrite_filter_replaces_only_matching_partition(dt_partitioned_table, filter_kind):
-    from pyiceberg.expressions import EqualTo
-
     table = dt_partitioned_table
     overwrite_filter = {
         "string": "dt = '2024-01-01'",
         "daft_expression": daft.col("dt") == "2024-01-01",
-        "iceberg_expression": EqualTo("dt", "2024-01-01"),
     }[filter_kind]
 
     daft.from_pydict({"dt": ["2024-01-01"], "x": [99]}).write_iceberg(
@@ -885,6 +882,18 @@ def test_overwrite_filter_bad_type_raises(dt_partitioned_table):
 
     with pytest.raises(TypeError, match="overwrite_filter must be"):
         daft.from_pydict({"dt": ["2024-01-01"], "x": [99]}).write_iceberg(table, mode="overwrite", overwrite_filter=123)
+
+
+def test_overwrite_filter_rejects_pyiceberg_expressions(dt_partitioned_table):
+    """The filter is a Daft-level API: predicates come in as Daft expressions or strings."""
+    from pyiceberg.expressions import EqualTo
+
+    table = dt_partitioned_table
+
+    with pytest.raises(TypeError, match="overwrite_filter must be"):
+        daft.from_pydict({"dt": ["2024-01-01"], "x": [99]}).write_iceberg(
+            table, mode="overwrite", overwrite_filter=EqualTo("dt", "2024-01-01")
+        )
 
 
 def test_catalog_table_overwrite_accepts_overwrite_filter(dt_partitioned_table):

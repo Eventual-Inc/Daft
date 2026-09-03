@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING
 
 from pyiceberg.expressions import AlwaysTrue
 from pyiceberg.expressions import BooleanExpression as IcebergBooleanExpression
+from pyiceberg.expressions.parser import parse as parse_iceberg_predicate
+from pyiceberg.expressions.visitors import bind
 
 from daft.daft import PyExpr
 from daft.expressions.expressions import Expression
@@ -121,7 +123,7 @@ def convert_filter(filter: PyExpr | None, schema: IcebergSchema) -> IcebergBoole
 
 
 def convert_overwrite_filter(
-    overwrite_filter: Expression | PyExpr | str | IcebergBooleanExpression,
+    overwrite_filter: Expression | PyExpr | str,
     schema: IcebergSchema,
 ) -> IcebergBooleanExpression:
     """Normalize a user-provided overwrite filter into an unbound Iceberg BooleanExpression.
@@ -133,19 +135,14 @@ def convert_overwrite_filter(
     The expression is also bound against ``schema`` so that unknown column references are
     reported before any data files are written.
     """
-    from pyiceberg.expressions.parser import parse as parse_iceberg_predicate
-    from pyiceberg.expressions.visitors import bind
-
-    if isinstance(overwrite_filter, IcebergBooleanExpression):
-        expr = overwrite_filter
-    elif isinstance(overwrite_filter, str):
+    if isinstance(overwrite_filter, str):
         expr = parse_iceberg_predicate(overwrite_filter)
     elif isinstance(overwrite_filter, (Expression, PyExpr)):
         expr = convert_expression_to_iceberg(overwrite_filter, schema)
     else:
         raise TypeError(
-            "overwrite_filter must be a Daft Expression, an Iceberg predicate string, or a "
-            f"pyiceberg BooleanExpression, got {type(overwrite_filter).__name__}"
+            "overwrite_filter must be a Daft Expression or an Iceberg predicate string, "
+            f"got {type(overwrite_filter).__name__}"
         )
 
     # Raises if the predicate references fields that are not in the table schema.
