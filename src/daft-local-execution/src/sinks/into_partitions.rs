@@ -5,7 +5,10 @@ use common_metrics::ops::NodeType;
 use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartition;
 use daft_partition_refs::FlightPartitionRef;
-use daft_shuffles::shuffle_cache::{InProgressShuffleCache, partition_ref_id};
+use daft_shuffles::{
+    shuffle_cache::{InProgressShuffleCache, partition_ref_id},
+    store::new_attempt_token,
+};
 use tracing::{Span, instrument};
 
 use super::{
@@ -56,6 +59,8 @@ impl RayIntoPartitionsState {
 
 pub(crate) struct FlightIntoPartitionsState {
     shared: Arc<FlightShuffleContext>,
+    /// Token for this execution of the task; see `new_attempt_token`.
+    attempt: u64,
     caches: Vec<InProgressShuffleCache>,
     rotation_offset: usize,
 }
@@ -75,11 +80,13 @@ impl FlightIntoPartitionsState {
             / num_partitions.max(1))
         .clamp(1024 * 1024 * 8, 1024 * 1024 * 128);
 
+        let attempt = new_attempt_token();
         let mut caches = Vec::with_capacity(num_partitions);
         for partition_idx in 0..num_partitions {
             let partition_ref_id = partition_ref_id(input_id, partition_idx);
             let cache = InProgressShuffleCache::try_new(
                 partition_ref_id,
+                attempt,
                 schema.clone(),
                 &shared.shuffle_dirs,
                 shared.shuffle_id,
@@ -90,6 +97,7 @@ impl FlightIntoPartitionsState {
         }
         Ok(Self {
             shared,
+            attempt,
             caches,
             rotation_offset: 0,
         })
@@ -121,7 +129,12 @@ impl FlightIntoPartitionsState {
     }
 
     async fn finalize(self) -> DaftResult<Vec<FlightPartitionRef>> {
-        let Self { shared, caches, .. } = self;
+        let Self {
+            shared,
+            attempt,
+            caches,
+            ..
+        } = self;
 
         let closed_list = futures::future::try_join_all(
             caches.into_iter().map(|c| async move { c.close().await }),
@@ -134,6 +147,7 @@ impl FlightIntoPartitionsState {
                 shuffle_id: shared.shuffle_id,
                 server_address: shared.shuffle_address.clone(),
                 partition_ref_id: closed.partition_ref_id,
+                attempt,
                 num_rows: closed.num_rows,
                 size_bytes: closed.size_bytes,
             })
@@ -141,7 +155,7 @@ impl FlightIntoPartitionsState {
 
         shared
             .local_server
-            .register_shuffle_partitions(shared.shuffle_id, closed_list)
+            .register_shuffle_partitions(shared.shuffle_id, attempt, closed_list)
             .await?;
 
         Ok(refs)

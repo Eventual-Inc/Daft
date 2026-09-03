@@ -8,6 +8,10 @@ pub struct FlightPartitionRef {
     pub shuffle_id: u64,
     pub server_address: String,
     pub partition_ref_id: u64,
+    /// Which execution of the map task produced this output. A retried task
+    /// keeps its `partition_ref_id`s, so readers address `(attempt, ref)`
+    /// together; see `daft_shuffles::store::new_attempt_token`.
+    pub attempt: u64,
     pub num_rows: usize,
     pub size_bytes: usize,
 }
@@ -59,6 +63,7 @@ mod python {
             shuffle_id: u64,
             server_address: String,
             partition_ref_id: u64,
+            attempt: u64,
             num_rows: usize,
             size_bytes: usize,
         ) -> Self {
@@ -67,6 +72,7 @@ mod python {
                     shuffle_id,
                     server_address,
                     partition_ref_id,
+                    attempt,
                     num_rows,
                     size_bytes,
                 },
@@ -86,6 +92,11 @@ mod python {
         #[getter]
         pub fn partition_ref_id(&self) -> u64 {
             self.inner.partition_ref_id
+        }
+
+        #[getter]
+        pub fn attempt(&self) -> u64 {
+            self.inner.attempt
         }
 
         #[getter]

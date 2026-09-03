@@ -20,22 +20,6 @@ from daft.recordbatch.recordbatch import RecordBatch
 from tests.conftest import get_tests_daft_runner_name
 
 
-def _ray_has_multiple_nodes() -> bool:
-    """Whether the active Ray cluster has more than one node.
-
-    Routing only has a remote branch to take when map output can land on a
-    different worker than the reduce task, which needs a real multi-node cluster.
-    """
-    if get_tests_daft_runner_name() != "ray":
-        return False
-
-    import ray
-
-    if not ray.is_initialized():
-        return False
-    return sum(1 for node in ray.nodes() if node.get("Alive")) > 1
-
-
 def generate(partition_id: int, num_rows: int, bytes_per_row: int):
     data = {
         "ids": np.arange(num_rows) + partition_id * num_rows,
@@ -716,30 +700,61 @@ def test_flight_shuffle_shared_leaves_no_files_behind(shared_flight_shuffle_ctx)
     get_tests_daft_runner_name() != "ray",
     reason="distributed shuffle tests require the ray runner",
 )
+def test_flight_shuffle_shared_route_still_reads_node_local_shuffles(shared_flight_shuffle_ctx):
+    """`read_source="shared"` must not break shuffles that are always node-local.
+
+    Gather and into_partitions use the per-partition writer, which has no on-disk
+    index for another node to resolve, so they are written node-locally even
+    under shared placement. A strict shared route would make every query with a
+    gather fail; instead such shuffles simply take the only route they have.
+
+    `shuffle(seed)` rather than `repartition` feeds the coalesce: the optimizer
+    folds `repartition(n).into_partitions(m)` into one repartition, so only a
+    non-repartition child actually exercises the into_partitions read path.
+    """
+    with shared_flight_shuffle_ctx(read_source="shared"):
+        df = daft.from_pydict({"id": list(range(1000))}).into_partitions(8)
+        got = sorted(df.shuffle(seed=3).into_partitions(2).to_pydict()["id"])
+
+    assert got == list(range(1000))
+
+
 @pytest.mark.skipif(
-    not _ray_has_multiple_nodes(),
-    reason="every read is served in-process on a single-node cluster, so the remote route is never taken",
+    get_tests_daft_runner_name() != "ray",
+    reason="distributed shuffle tests require the ray runner",
 )
-def test_flight_shuffle_read_source_shared_requires_shared_placement():
-    """Asking for shared reads of node-local data is a clear error, not a wrong answer."""
-    with (
-        tempfile.TemporaryDirectory() as local_dir,
-        daft.execution_config_ctx(
-            shuffle_algorithm="flight_shuffle",
-            flight_shuffle_dirs=[local_dir],
-            flight_shuffle_read_source="shared",
-        ),
-    ):
-        df = daft.from_pydict({"id": list(range(2000)), "g": [i % 97 for i in range(2000)]})
-        df = df.into_partitions(8).repartition(16, "g")
-        with pytest.raises(Exception, match="was not written to a shared directory"):
-            df.groupby("g").agg(daft.col("id").sum()).collect()
+@pytest.mark.parametrize(
+    "child",
+    [
+        pytest.param(lambda df: df.sort("id"), id="sort"),
+        pytest.param(lambda df: df.shuffle(seed=5), id="random_shuffle"),
+    ],
+)
+def test_flight_shuffle_into_partitions_coalesces_in_memory_children(flight_shuffle_ctx, child):
+    """`into_partitions` coalescing under flight_shuffle must accept in-memory refs.
+
+    The read task for a coalesce is built from whatever the child tasks produced.
+    A sort's output — or a random shuffle's sorted reduce output — is a plain
+    in-memory partition regardless of the configured shuffle algorithm, so the
+    read path has to be chosen by the refs' actual type, not by the algorithm.
+    Choosing by algorithm used to panic here with "expected flight partition ref".
+    """
+    with flight_shuffle_ctx():
+        df = daft.from_pydict({"id": list(range(3000))}).into_partitions(12)
+        got = sorted(child(df).into_partitions(5).to_pydict()["id"])
+
+    assert got == list(range(3000))
 
 
 def test_flight_shuffle_shared_config_validation():
     """The config layer rejects combinations that cannot be honored."""
     with pytest.raises(ValueError, match="requires flight_shuffle_shared_dir"):
         daft.set_execution_config(flight_shuffle_placement="shared_only")
+
+    # A shared-route preference with nothing on a shared mount would be silently
+    # ignored on every read.
+    with pytest.raises(ValueError, match="requires flight_shuffle_placement='shared_only'"):
+        daft.set_execution_config(flight_shuffle_read_source="shared")
 
     with pytest.raises(ValueError, match="flight_shuffle_placement must be"):
         daft.set_execution_config(flight_shuffle_placement="both")

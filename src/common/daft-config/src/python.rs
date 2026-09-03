@@ -375,13 +375,24 @@ impl PyDaftExecutionConfig {
             config.flight_shuffle_shared_read_concurrency = flight_shuffle_shared_read_concurrency;
         }
 
-        // Checked on the assembled config rather than per-argument: the pair is
-        // only meaningful together, so both must arrive in the same call.
+        // Checked on the assembled config rather than per-argument: these pairs
+        // are only meaningful together, so both halves must arrive in the same call.
         if config.flight_shuffle_placement == "shared_only"
             && config.flight_shuffle_shared_dir.is_none()
         {
             return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
                 "flight_shuffle_placement='shared_only' requires flight_shuffle_shared_dir; \
+                 set both in the same set_execution_config call",
+            ));
+        }
+        // `shared` is a route preference for data that has a shared copy. With
+        // local placement nothing does, so the setting would be silently ignored
+        // on every read; refuse it here rather than let that pass.
+        if config.flight_shuffle_read_source == "shared"
+            && config.flight_shuffle_placement != "shared_only"
+        {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                "flight_shuffle_read_source='shared' requires flight_shuffle_placement='shared_only'; \
                  set both in the same set_execution_config call",
             ));
         }

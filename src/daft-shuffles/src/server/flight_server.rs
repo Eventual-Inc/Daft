@@ -25,47 +25,77 @@ use crate::{
     shuffle_cache::PartitionCache,
 };
 
+/// A `do_get` request: which shuffle, and which `(attempt, partition_ref_id)`
+/// pairs. Refs are addressed together with the attempt that produced them so a
+/// registration left behind by a superseded attempt of the same task can never
+/// satisfy a request meant for the attempt the coordinator selected.
 struct ParsedTicket {
     shuffle_id: u64,
-    partition_ref_ids: Vec<u64>,
+    refs: Vec<(u64, u64)>,
 }
 
 impl ParsedTicket {
+    /// Ticket format: `"{shuffle_id}:{attempt_hex}={ref},{ref};{attempt_hex}={ref}"`.
+    /// Refs are grouped by attempt because a reducer's request typically spans
+    /// many map inputs (each its own attempt) but one partition per input.
     fn from_ticket(ticket: &Ticket) -> Result<Self, Status> {
         let ticket_str = String::from_utf8(ticket.ticket.to_vec())
             .map_err(|e| Status::invalid_argument(e.to_string()))?;
 
-        // Ticket format: "shuffle_id:partition_ref_ids" where partition_ref_ids is comma-separated list of u64s
-        let parts: Vec<&str> = ticket_str.splitn(2, ':').collect();
-        if parts.len() < 2 {
+        let Some((shuffle_part, groups_part)) = ticket_str.split_once(':') else {
             return Err(Status::invalid_argument(
-                "Invalid ticket format. Expected 'shuffle_id:partition_ref_ids'",
+                "Invalid ticket format. Expected 'shuffle_id:attempt=refs;attempt=refs'",
             ));
-        }
+        };
 
-        let shuffle_id = parts[0]
+        let shuffle_id = shuffle_part
             .parse::<u64>()
             .map_err(|e| Status::invalid_argument(format!("Invalid shuffle id: {}", e)))?;
-        let partition_ref_ids = parts[1]
-            .split(',')
-            .filter(|id| !id.is_empty())
-            .map(|id| {
-                id.parse::<u64>().map_err(|e| {
-                    Status::invalid_argument(format!("Invalid partition ref id: {}", e))
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(Self {
-            shuffle_id,
-            partition_ref_ids,
-        })
+        let mut refs = Vec::new();
+        for group in groups_part.split(';').filter(|g| !g.is_empty()) {
+            let Some((attempt_part, refs_part)) = group.split_once('=') else {
+                return Err(Status::invalid_argument(format!(
+                    "Invalid ticket group '{}'. Expected 'attempt=ref,ref'",
+                    group
+                )));
+            };
+            let attempt = u64::from_str_radix(attempt_part, 16)
+                .map_err(|e| Status::invalid_argument(format!("Invalid attempt: {}", e)))?;
+            for id in refs_part.split(',').filter(|id| !id.is_empty()) {
+                let ref_id = id.parse::<u64>().map_err(|e| {
+                    Status::invalid_argument(format!("Invalid partition ref id: {}", e))
+                })?;
+                refs.push((attempt, ref_id));
+            }
+        }
+
+        Ok(Self { shuffle_id, refs })
     }
+}
+
+/// Encode a request in the form [`ParsedTicket::from_ticket`] reads.
+pub fn encode_ticket(shuffle_id: u64, refs: &[(u64, u64)]) -> String {
+    let mut by_attempt: std::collections::BTreeMap<u64, Vec<u64>> =
+        std::collections::BTreeMap::new();
+    for (attempt, ref_id) in refs {
+        by_attempt.entry(*attempt).or_default().push(*ref_id);
+    }
+    let groups = by_attempt
+        .into_iter()
+        .map(|(attempt, ids)| {
+            let ids = ids.iter().map(u64::to_string).collect::<Vec<_>>().join(",");
+            format!("{:x}={}", attempt, ids)
+        })
+        .collect::<Vec<_>>()
+        .join(";");
+    format!("{}:{}", shuffle_id, groups)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct FlightPartitionKey {
     shuffle_id: u64,
+    attempt: u64,
     partition_ref_id: u64,
 }
 
@@ -90,9 +120,15 @@ impl ShuffleFlightServer {
         Self::default()
     }
 
+    /// Register one attempt's output partitions.
+    ///
+    /// Keyed by attempt as well as ref: two attempts of one map task can both
+    /// run to completion in this process, and a reader that asks for one must
+    /// not be served the other.
     pub async fn register_shuffle_partitions(
         &self,
         shuffle_id: u64,
+        attempt: u64,
         partitions: Vec<PartitionCache>,
     ) -> DaftResult<()> {
         let mut shuffle_partitions = self.shuffle_partitions.lock().await;
@@ -100,6 +136,7 @@ impl ShuffleFlightServer {
             shuffle_partitions.insert(
                 FlightPartitionKey {
                     shuffle_id,
+                    attempt,
                     partition_ref_id: partition.partition_ref_id,
                 },
                 partition,
@@ -108,40 +145,50 @@ impl ShuffleFlightServer {
         Ok(())
     }
 
+    /// Resolve every requested `(attempt, ref)` to file reads.
+    ///
+    /// All-or-nothing: if any ref is not registered here, the whole request is
+    /// refused with the missing refs (`Err`). Serving the ones that are present
+    /// would hand the caller a stream that looks complete and is not — the caller
+    /// has no way to tell which inputs were skipped. Refusing lets it fall back
+    /// to shared storage or fail loudly.
     async fn get_shuffle_file_specs(
         &self,
         shuffle_id: u64,
-        partition_ref_ids: &[u64],
-    ) -> Option<(Vec<FileReadSpec>, SchemaRef)> {
+        refs: &[(u64, u64)],
+    ) -> Result<(Vec<FileReadSpec>, SchemaRef), Vec<(u64, u64)>> {
         let partitions = self.shuffle_partitions.lock().await;
 
-        // Any registered ref carries the shuffle's schema. Scan rather than trust
-        // the first one: a caller can legitimately ask for refs this server never
-        // wrote, and an unknown ref is a `not_found` for the caller to handle (by
-        // falling back to shared storage, say), not a reason to take the server
-        // down.
-        let schema = partition_ref_ids
-            .iter()
-            .find_map(|partition_ref_id| {
-                partitions.get(&FlightPartitionKey {
-                    shuffle_id,
-                    partition_ref_id: *partition_ref_id,
-                })
-            })
-            .map(|cache| cache.schema.clone())?;
+        let mut missing = Vec::new();
+        let mut schema: Option<SchemaRef> = None;
+        let mut caches = Vec::with_capacity(refs.len());
+        for (attempt, partition_ref_id) in refs {
+            match partitions.get(&FlightPartitionKey {
+                shuffle_id,
+                attempt: *attempt,
+                partition_ref_id: *partition_ref_id,
+            }) {
+                Some(cache) => {
+                    schema.get_or_insert_with(|| cache.schema.clone());
+                    caches.push(cache);
+                }
+                None => missing.push((*attempt, *partition_ref_id)),
+            }
+        }
+        if !missing.is_empty() {
+            return Err(missing);
+        }
+        let Some(schema) = schema else {
+            // An empty request has nothing to serve and no schema to serve it with.
+            return Err(Vec::new());
+        };
 
         // Group ranged reads by file path so each physical file is read from a single FD.
         let mut specs: Vec<FileReadSpec> = Vec::new();
         let mut ranges_by_path: HashMap<String, Vec<(u64, u64)>> = HashMap::new();
         let mut order: Vec<String> = Vec::new();
 
-        for partition_ref_id in partition_ref_ids {
-            let Some(cache) = partitions.get(&FlightPartitionKey {
-                shuffle_id,
-                partition_ref_id: *partition_ref_id,
-            }) else {
-                continue;
-            };
+        for cache in caches {
             match &cache.byte_ranges {
                 Some(ranges) => {
                     for (path, (start, end)) in cache.file_paths.iter().zip(ranges.iter()) {
@@ -167,7 +214,7 @@ impl ShuffleFlightServer {
             specs.push(FileReadSpec::Ranges { path, ranges });
         }
 
-        Some((specs, schema))
+        Ok((specs, schema))
     }
 
     /// Get partition data in-process (no gRPC). Returns a stream of Daft RecordBatches.
@@ -175,15 +222,15 @@ impl ShuffleFlightServer {
     pub async fn get_partition_local(
         &self,
         shuffle_id: u64,
-        partition_ref_ids: &[u64],
+        refs: &[(u64, u64)],
     ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
         let (specs, schema) = self
-            .get_shuffle_file_specs(shuffle_id, partition_ref_ids)
+            .get_shuffle_file_specs(shuffle_id, refs)
             .await
-            .ok_or_else(|| {
+            .map_err(|missing| {
                 DaftError::ValueError(format!(
-                    "Shuffle partitions not found for shuffle {} refs {:?}",
-                    shuffle_id, partition_ref_ids
+                    "Shuffle partitions not registered on this worker for shuffle {}: (attempt, ref) {:?}",
+                    shuffle_id, missing
                 ))
             })?;
 
@@ -275,12 +322,12 @@ impl FlightService for ShuffleFlightServer {
         let ticket = ParsedTicket::from_ticket(&ticket)?;
 
         let (specs, schema) = self
-            .get_shuffle_file_specs(ticket.shuffle_id, &ticket.partition_ref_ids)
+            .get_shuffle_file_specs(ticket.shuffle_id, &ticket.refs)
             .await
-            .ok_or_else(|| {
+            .map_err(|missing| {
                 Status::not_found(format!(
-                    "Shuffle partitions not found for shuffle {} refs {:?}",
-                    ticket.shuffle_id, ticket.partition_ref_ids
+                    "Shuffle partitions not registered for shuffle {}: (attempt, ref) {:?}",
+                    ticket.shuffle_id, missing
                 ))
             })?;
 

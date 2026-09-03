@@ -99,8 +99,7 @@ impl RandomShuffleNode {
             &self.config.schema,
         )?;
         let node_id = self.node_id();
-        Ok(self
-            .shuffle_context
+        self.shuffle_context
             .build_refs_task_builder(partition_refs, self, |input| {
                 LocalPhysicalPlan::sort(
                     input,
@@ -110,7 +109,7 @@ impl RandomShuffleNode {
                     StatsState::NotMaterialized,
                     LocalNodeContext::new(Some(node_id as usize)),
                 )
-            }))
+            })
     }
 
     async fn execution_loop(

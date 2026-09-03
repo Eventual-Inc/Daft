@@ -80,19 +80,23 @@ pub async fn skip_stream_metadata<R: AsyncRead + AsyncSeek + Unpin>(
     Ok(())
 }
 
-/// Process next IPC message into FlightData
-async fn process_next<R: AsyncRead + Unpin>(mut state: ReadState<R>) -> DaftResult<StreamState<R>> {
-    let mut meta_len = match state.reader.read_i32_le().await {
+/// Read the next IPC message from `reader` as `FlightData`, or `None` at a clean
+/// end of stream (EOF at a message boundary, or an explicit zero-length marker).
+///
+/// Callers that know how many bytes the stream should span must check that
+/// themselves: a clean `None` only says the parser found no further message, not
+/// that it consumed everything it was given.
+pub(crate) async fn next_flight_data<R: AsyncRead + Unpin>(
+    reader: &mut R,
+) -> DaftResult<Option<FlightData>> {
+    let mut meta_len = match reader.read_i32_le().await {
         Ok(meta_len) => meta_len,
-        Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
-            // TODO: Should we return an error here?
-            return Ok(StreamState::Done);
-        }
+        Err(e) if e.kind() == ErrorKind::UnexpectedEof => return Ok(None),
         Err(e) => return Err(DaftError::from(e)),
     };
 
     if meta_len == CONTINUATION_MARKER {
-        meta_len = state.reader.read_i32_le().await?;
+        meta_len = reader.read_i32_le().await?;
     }
 
     let meta_len: usize = meta_len
@@ -100,12 +104,12 @@ async fn process_next<R: AsyncRead + Unpin>(mut state: ReadState<R>) -> DaftResu
         .map_err(|_| ArrowError::IpcError("NegativeFooterLength".to_string()))?;
 
     if meta_len == 0 {
-        return Ok(StreamState::Done);
+        return Ok(None);
     }
 
     // Read message header
     let mut message_buffer = vec![0; meta_len];
-    state.reader.read_exact(&mut message_buffer).await?;
+    reader.read_exact(&mut message_buffer).await?;
 
     // Read message body length
     let message = root_as_message(&message_buffer)
@@ -118,13 +122,19 @@ async fn process_next<R: AsyncRead + Unpin>(mut state: ReadState<R>) -> DaftResu
 
     // Read message body
     let mut data_buffer = vec![0; body_length];
-    state.reader.read_exact(&mut data_buffer).await?;
+    reader.read_exact(&mut data_buffer).await?;
 
-    let flight_data = FlightData {
+    Ok(Some(FlightData {
         data_header: message_buffer.into(),
         data_body: data_buffer.into(),
         ..Default::default()
-    };
+    }))
+}
 
-    Ok(StreamState::Ready((state, flight_data)))
+/// Process next IPC message into FlightData
+async fn process_next<R: AsyncRead + Unpin>(mut state: ReadState<R>) -> DaftResult<StreamState<R>> {
+    match next_flight_data(&mut state.reader).await? {
+        Some(flight_data) => Ok(StreamState::Ready((state, flight_data))),
+        None => Ok(StreamState::Done),
+    }
 }

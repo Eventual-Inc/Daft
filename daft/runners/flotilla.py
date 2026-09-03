@@ -84,9 +84,21 @@ async def clear_flight_shuffle_dirs_on_all_nodes(shuffle_dirs: list[str], shared
             node holds its own copy, so the delete runs on all nodes with CPU
             resources.
         shared_dirs: Shuffle directories on a cluster-shared mount (full paths).
-            Only one copy exists, so a single unpinned task removes them rather
-            than having every node race to delete the same files.
+            Only one copy exists, so a single task removes them rather than having
+            every node race to delete the same files. It is pinned to a node that
+            runs workers: those nodes must have the mount (they wrote to it),
+            whereas a head node with no worker slots may not, and a delete there
+            would silently find nothing to remove.
     """
+    worker_nodes = [
+        node
+        for node in ray.nodes()
+        if node.get("Alive", True)
+        and "Resources" in node
+        and "CPU" in node["Resources"]
+        and node["Resources"]["CPU"] > 0
+    ]
+
     tasks = []
 
     if shuffle_dirs:
@@ -97,12 +109,21 @@ async def clear_flight_shuffle_dirs_on_all_nodes(shuffle_dirs: list[str], shared
                     soft=False,
                 )
             ).remote(shuffle_dirs)
-            for node in ray.nodes()
-            if "Resources" in node and "CPU" in node["Resources"] and node["Resources"]["CPU"] > 0
+            for node in worker_nodes
         )
 
     if shared_dirs:
-        tasks.append(_clear_flight_shuffle_dirs.remote(shared_dirs))
+        if worker_nodes:
+            tasks.append(
+                _clear_flight_shuffle_dirs.options(
+                    scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+                        node_id=worker_nodes[0]["NodeID"],
+                        soft=True,
+                    )
+                ).remote(shared_dirs)
+            )
+        else:
+            tasks.append(_clear_flight_shuffle_dirs.remote(shared_dirs))
 
     if not tasks:
         return

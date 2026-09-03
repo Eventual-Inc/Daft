@@ -16,7 +16,10 @@ use daft_shuffles::{
     client::FlightClientManager,
     server::flight_server::ShuffleFlightServer,
     shuffle_cache::partition_ref_id,
-    store::{ShuffleReadSource as ReadRoute, reader::read_partition_stream},
+    store::{
+        ShuffleReadSource as ReadRoute,
+        reader::{MapInput, read_partition_stream},
+    },
 };
 use futures::{FutureExt, StreamExt, stream::BoxStream};
 use tracing::instrument;
@@ -26,6 +29,10 @@ use crate::{
     channel::{Sender, UnboundedReceiver, create_channel},
     pipeline::{NodeName, PipelineMessage},
 };
+
+/// One server's share of a reduce task's reads: `(shuffle_id, server_address,
+/// [(attempt, partition_ref_id)])`.
+type ServerRequest = (u64, String, Vec<(u64, u64)>);
 
 pub struct ShuffleReadSource {
     receiver: UnboundedReceiver<(InputId, Vec<FlightShuffleReadInput>)>,
@@ -66,25 +73,27 @@ impl ShuffleReadSource {
         })
     }
 
-    /// Resolve read inputs to the exact `(shuffle_id, server_address, partition_ref_ids)`
-    /// requests to issue, merged so each server is contacted once.
-    fn to_server_requests(inputs: &[FlightShuffleReadInput]) -> Vec<(u64, String, Vec<u64>)> {
-        let mut refs_by_server: HashMap<(u64, String), Vec<u64>> = HashMap::new();
+    /// Resolve read inputs to the exact `(shuffle_id, server_address, refs)` requests
+    /// to issue, merged so each server is contacted once. Each ref is paired with
+    /// the attempt that produced it.
+    fn to_server_requests(inputs: &[FlightShuffleReadInput]) -> Vec<ServerRequest> {
+        let mut refs_by_server: HashMap<(u64, String), Vec<(u64, u64)>> = HashMap::new();
         for input in inputs {
-            for (address, input_ids) in input.inputs_by_server.iter() {
+            for (address, map_outputs) in input.inputs_by_server.iter() {
                 refs_by_server
                     .entry((input.shuffle_id, address.clone()))
                     .or_default()
-                    .extend(
-                        input_ids
-                            .iter()
-                            .map(|id| partition_ref_id(*id, input.partition_idx as usize)),
-                    );
+                    .extend(map_outputs.iter().map(|out| {
+                        (
+                            out.attempt,
+                            partition_ref_id(out.input_id, input.partition_idx as usize),
+                        )
+                    }));
             }
         }
         refs_by_server
             .into_iter()
-            .map(|((shuffle_id, address), ref_ids)| (shuffle_id, address, ref_ids))
+            .map(|((shuffle_id, address), refs)| (shuffle_id, address, refs))
             .collect()
     }
 
@@ -115,32 +124,26 @@ impl ShuffleReadSource {
 
         let mut streams: Vec<BoxStream<'static, DaftResult<RecordBatch>>> =
             Vec::with_capacity(requests.len());
-        for (shuffle_id, address, partition_ref_ids) in requests {
+        for (shuffle_id, address, refs) in requests {
             let shared_root = shared_roots.get(&shuffle_id).cloned();
 
             // This worker wrote it: serve in-process and skip both the network and
-            // the on-disk index, since the byte ranges are already in memory.
+            // the on-disk index, since the byte ranges are already in memory. The
+            // registry is keyed by attempt, so this returns exactly the attempt the
+            // coordinator selected even if another attempt of the same task also
+            // registered here.
             if address == local_address {
-                streams.push(
-                    local_server
-                        .get_partition_local(shuffle_id, &partition_ref_ids)
-                        .await?,
-                );
+                streams.push(local_server.get_partition_local(shuffle_id, &refs).await?);
                 continue;
             }
 
-            let use_shared = match (read_route, shared_root.is_some()) {
-                (ReadRoute::Shared, false) => {
-                    return Err(DaftError::ValueError(format!(
-                        "flight_shuffle_read_source='shared' but shuffle {} was not written to a \
-                         shared directory; set flight_shuffle_placement='shared_only'",
-                        shuffle_id
-                    )));
-                }
-                (ReadRoute::Rpc, _) => false,
-                // Reading the mount directly beats proxying through the writer: it
-                // is the same storage either way, minus a hop and the writer's CPU.
-                (ReadRoute::Auto, has_shared) | (ReadRoute::Shared, has_shared) => has_shared,
+            // Reading the mount directly beats proxying through the writer: it is
+            // the same storage either way, minus a hop and the writer's CPU. A
+            // shuffle with no shared copy — gather and into_partitions always write
+            // node-locally — has only the RPC route, whatever the preference.
+            let use_shared = match read_route {
+                ReadRoute::Rpc => false,
+                ReadRoute::Auto | ReadRoute::Shared => shared_root.is_some(),
             };
 
             if use_shared {
@@ -148,7 +151,7 @@ impl ShuffleReadSource {
                 streams.push(shared_stream_for_refs(
                     &root,
                     shuffle_id,
-                    &partition_ref_ids,
+                    &refs,
                     schema.clone(),
                     shared_read_concurrency,
                 )?);
@@ -157,7 +160,7 @@ impl ShuffleReadSource {
                     client_manager.clone(),
                     shuffle_id,
                     address,
-                    partition_ref_ids,
+                    refs,
                     schema.clone(),
                     shared_root,
                     shared_read_concurrency,
@@ -232,20 +235,23 @@ impl ShuffleReadSource {
     }
 }
 
-/// Group `partition_ref_ids` back into the `(partition_idx, input_ids)` shape the
-/// shared reader addresses files by.
+/// Group `(attempt, partition_ref_id)` pairs back into the `(partition_idx, map
+/// inputs)` shape the shared reader addresses files by.
 ///
 /// `partition_ref_id` packs both halves as `(input_id << 32) | partition_idx`, so
 /// nothing is lost by having merged them into one request earlier.
-fn refs_by_partition_idx(partition_ref_ids: &[u64]) -> HashMap<u32, Vec<u32>> {
-    let mut by_partition: HashMap<u32, Vec<u32>> = HashMap::new();
-    for ref_id in partition_ref_ids {
+fn refs_by_partition_idx(refs: &[(u64, u64)]) -> HashMap<u32, Vec<MapInput>> {
+    let mut by_partition: HashMap<u32, Vec<MapInput>> = HashMap::new();
+    for (attempt, ref_id) in refs {
         let input_id = (ref_id >> 32) as u32;
         let partition_idx = (ref_id & 0xFFFF_FFFF) as u32;
         by_partition
             .entry(partition_idx)
             .or_default()
-            .push(input_id);
+            .push(MapInput {
+                input_id,
+                attempt: *attempt,
+            });
     }
     by_partition
 }
@@ -254,16 +260,16 @@ fn refs_by_partition_idx(partition_ref_ids: &[u64]) -> HashMap<u32, Vec<u32>> {
 fn shared_stream_for_refs(
     shared_root: &str,
     shuffle_id: u64,
-    partition_ref_ids: &[u64],
+    refs: &[(u64, u64)],
     schema: SchemaRef,
     concurrency: usize,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let mut streams = Vec::new();
-    for (partition_idx, input_ids) in refs_by_partition_idx(partition_ref_ids) {
+    for (partition_idx, inputs) in refs_by_partition_idx(refs) {
         streams.push(read_partition_stream(
             shared_root,
             shuffle_id,
-            &input_ids,
+            &inputs,
             partition_idx,
             schema.clone(),
             concurrency,
@@ -285,7 +291,7 @@ fn rpc_stream_with_shared_fallback(
     client_manager: FlightClientManager,
     shuffle_id: u64,
     server_address: String,
-    partition_ref_ids: Vec<u64>,
+    refs: Vec<(u64, u64)>,
     schema: SchemaRef,
     shared_root: Option<Arc<str>>,
     shared_read_concurrency: usize,
@@ -295,7 +301,7 @@ fn rpc_stream_with_shared_fallback(
         let mut failure: Option<DaftError> = None;
 
         match client_manager
-            .fetch_partition(shuffle_id, &server_address, &partition_ref_ids, schema.clone())
+            .fetch_partition(shuffle_id, &server_address, &refs, schema.clone())
             .await
         {
             Ok(mut stream) => {
@@ -329,7 +335,7 @@ fn rpc_stream_with_shared_fallback(
             let mut fallback = shared_stream_for_refs(
                 &shared_root,
                 shuffle_id,
-                &partition_ref_ids,
+                &refs,
                 schema,
                 shared_read_concurrency,
             )?;
@@ -429,14 +435,36 @@ mod tests {
     }
 
     #[test]
-    fn refs_regroup_into_partition_and_input_ids() {
-        // (input_id << 32) | partition_idx
-        let refs = vec![(7u64 << 32) | 1, (8u64 << 32) | 1, (7u64 << 32) | 2];
+    fn refs_regroup_into_partition_and_map_inputs() {
+        // (attempt, (input_id << 32) | partition_idx)
+        let refs = vec![
+            (0xa, (7u64 << 32) | 1),
+            (0xb, (8u64 << 32) | 1),
+            (0xa, (7u64 << 32) | 2),
+        ];
         let grouped = refs_by_partition_idx(&refs);
         let mut p1 = grouped[&1].clone();
-        p1.sort_unstable();
-        assert_eq!(p1, vec![7, 8]);
-        assert_eq!(grouped[&2], vec![7]);
+        p1.sort_unstable_by_key(|m| m.input_id);
+        assert_eq!(
+            p1,
+            vec![
+                MapInput {
+                    input_id: 7,
+                    attempt: 0xa
+                },
+                MapInput {
+                    input_id: 8,
+                    attempt: 0xb
+                }
+            ]
+        );
+        assert_eq!(
+            grouped[&2],
+            vec![MapInput {
+                input_id: 7,
+                attempt: 0xa
+            }]
+        );
     }
 
     /// A worker that has gone away shows up as an RPC that fails before yielding
@@ -448,11 +476,12 @@ mod tests {
         std::fs::create_dir_all(&dir)?;
         let root = dir.to_str().unwrap().to_string();
         let schema = dummy_schema();
-        let (shuffle_id, input_id) = (11u64, 3u32);
+        let (shuffle_id, input_id, attempt) = (11u64, 3u32, 0x5eed_u64);
 
         write_partitions_one_shot(
             input_id,
             shuffle_id,
+            attempt,
             OneShotTarget::Shared {
                 shared_root: root.clone(),
                 durability: ShuffleDurability::None,
@@ -471,7 +500,7 @@ mod tests {
             FlightClientManager::new(),
             shuffle_id,
             "grpc://127.0.0.1:1".to_string(),
-            vec![partition_ref_id(input_id, 0)],
+            vec![(attempt, partition_ref_id(input_id, 0))],
             schema,
             Some(Arc::from(root.as_str())),
             4,
@@ -492,7 +521,7 @@ mod tests {
             FlightClientManager::new(),
             12,
             "grpc://127.0.0.1:1".to_string(),
-            vec![partition_ref_id(0, 0)],
+            vec![(0, partition_ref_id(0, 0))],
             dummy_schema(),
             None,
             4,

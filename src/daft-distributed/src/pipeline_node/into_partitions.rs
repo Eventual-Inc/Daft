@@ -133,7 +133,12 @@ impl IntoPartitionsNode {
                 .collect::<Vec<_>>();
 
             let node_id = self.node_id();
-            let shuffle_backend = self.shuffle_context.backend().clone();
+            // Concatenating a task's inputs into one partition is an in-memory step
+            // whose output is this node's *result*, consumed by the parent node or
+            // the driver as ordinary partitions. It must therefore always run on the
+            // Ray path: under the Flight backend the sink would instead spill to disk
+            // and emit Flight refs, which only this node's own read side could
+            // consume — the driver panics on them.
             let builder = self.shuffle_context.build_refs_task_builder(
                 partition_refs,
                 self.as_ref(),
@@ -141,12 +146,12 @@ impl IntoPartitionsNode {
                     LocalPhysicalPlan::into_partitions(
                         input,
                         1,
-                        shuffle_backend,
+                        ShuffleBackend::Ray,
                         StatsState::NotMaterialized,
                         LocalNodeContext::new(Some(node_id as usize)),
                     )
                 },
-            );
+            )?;
             if result_tx.send(builder).await.is_err() {
                 break;
             }
@@ -218,7 +223,7 @@ impl IntoPartitionsNode {
                         partition_refs,
                         self.as_ref(),
                         |input| input,
-                    );
+                    )?;
                     if result_tx.send(builder).await.is_err() {
                         break;
                     }
@@ -249,11 +254,13 @@ impl IntoPartitionsNode {
                 {
                     let node_id = self.node_id();
                     for builder in input_builders {
+                        // Same as the coalesce case: a one-partition concat is the
+                        // node's in-memory result, not a shuffle write.
                         let builder = builder.map_plan(self.as_ref(), |plan| {
                             LocalPhysicalPlan::into_partitions(
                                 plan,
                                 1,
-                                self.shuffle_context.backend().clone(),
+                                ShuffleBackend::Ray,
                                 StatsState::NotMaterialized,
                                 LocalNodeContext::new(Some(node_id as usize)),
                             )

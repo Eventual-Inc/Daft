@@ -7,6 +7,7 @@ async-channel = "2.5.0"
 async-stream = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 common-runtime = {path = "../common/runtime", default-features = false}
+crc32fast = {workspace = true}
 daft-core = {path = "../daft-core", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
 daft-micropartition = {path = "../daft-micropartition", default-features = false}
@@ -14,6 +15,7 @@ daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 daft-schema = {path = "../daft-schema", default-features = false}
 daft-writers = {path = "../daft-writers", default-features = false}
 futures = {workspace = true}
+rand = {workspace = true}
 tokio = {workspace = true, features = ["fs", "io-util"]}
 tonic = {workspace = true}
 tracing = {workspace = true}

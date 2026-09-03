@@ -2507,17 +2507,30 @@ pub struct ShuffleRead {
     pub context: LocalNodeContext,
 }
 
+/// One map task's output as selected by the coordinator: the task (`input_id`)
+/// and the specific execution of it (`attempt`) whose refs were folded in.
+///
+/// Both are needed to address the data. A retried task keeps its `input_id`, and
+/// the attempt it replaced may still be running and may still publish; carrying
+/// the attempt lets every reader ask for exactly the output the coordinator saw,
+/// never the other one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FlightMapOutput {
+    pub input_id: u32,
+    pub attempt: u64,
+}
+
 /// Fetch one output partition of a shuffle.
 ///
 /// The exact refs to fetch (`(input_id << 32) | partition_idx`) are reconstructed
-/// from the map input ids that wrote data on each server. The map is shared (`Arc`)
-/// by all of a shuffle's reduce tasks, so the coordinator holds it once instead of
-/// one ref per (map input, partition).
+/// from the map outputs on each server. The map is shared (`Arc`) by all of a
+/// shuffle's reduce tasks, so the coordinator holds it once instead of one ref per
+/// (map input, partition).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlightShuffleReadInput {
     pub shuffle_id: u64,
     pub partition_idx: u32,
-    pub inputs_by_server: Arc<BTreeMap<String, Vec<u32>>>,
+    pub inputs_by_server: Arc<BTreeMap<String, Vec<FlightMapOutput>>>,
     /// Shared mount holding this shuffle's map files, when it was written with
     /// shared placement. A per-shuffle constant, shared by `Arc` across every
     /// reduce task so the coordinator holds one copy rather than one per input.

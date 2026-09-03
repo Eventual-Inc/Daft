@@ -1,9 +1,10 @@
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_partitioning::PartitionRef;
 use daft_local_plan::{
     LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef, ShuffleBackend, ShuffleReadBackend,
 };
 use daft_logical_plan::stats::StatsState;
+use daft_partition_refs::FlightPartitionRef;
 use daft_schema::schema::SchemaRef;
 
 use crate::{
@@ -16,8 +17,23 @@ use crate::{
 mod flight;
 mod ray;
 
+/// Mint the identity under which one shuffle's files and registrations live.
+///
+/// Random rather than derived from `(query_idx, node_id)`: those counters are
+/// local to one driver process, so two drivers sharing a cluster — or a shared
+/// filesystem — would produce the same id for their first query's first shuffle
+/// and then write into, and clean up, each other's directories. Sixty-four random
+/// bits make that collision negligible. The id is logged against the plan
+/// coordinates it stands for so a directory on disk can still be traced back.
 fn make_shuffle_id(context: &PipelineNodeContext) -> u64 {
-    ((context.query_idx as u64) << 32) | (context.node_id as u64)
+    let shuffle_id = rand::random::<u64>();
+    tracing::info!(
+        shuffle_id = shuffle_id,
+        query_idx = context.query_idx,
+        node_id = context.node_id,
+        "Assigned flight shuffle id"
+    );
+    shuffle_id
 }
 
 /// Which map-side writer a shuffle node uses.
@@ -109,47 +125,66 @@ impl ShuffleContext {
     }
 
     /// Build a `SwordfishTaskBuilder` whose plan reads from already-materialized
-    /// partition refs (`in_memory_scan` for Ray, `shuffle_read(Flight)` for Flight)
-    /// and then applies `wrap_plan` on top. The partition refs are attached to
-    /// the task via the backend-appropriate API (`with_psets` /
+    /// partition refs (`in_memory_scan` for Ray refs, `shuffle_read(Flight)` for
+    /// Flight refs) and then applies `wrap_plan` on top. The partition refs are
+    /// attached to the task via the ref-appropriate API (`with_psets` /
     /// `with_flight_shuffle_reads`).
+    ///
+    /// The choice follows the refs themselves, not this node's configured
+    /// backend. A node configured for Flight is only guaranteed Flight refs from
+    /// its *own* map side; refs handed in from a child task — a sort's output,
+    /// say, or a random shuffle's reduce output — are ordinary in-memory
+    /// partitions no matter what the shuffle algorithm is, and reading them
+    /// through the Flight path would be a type confusion.
     pub(crate) fn build_refs_task_builder<F>(
         &self,
         partition_refs: Vec<PartitionRef>,
         node: &dyn PipelineNodeImpl,
         wrap_plan: F,
-    ) -> SwordfishTaskBuilder
+    ) -> DaftResult<SwordfishTaskBuilder>
     where
         F: FnOnce(LocalPhysicalPlanRef) -> LocalPhysicalPlanRef,
     {
         let node_id = self.node_id;
-        match &self.backend {
-            ShuffleBackend::Ray => {
-                let total_size_bytes = partition_refs.iter().map(|p| p.size_bytes()).sum::<usize>();
-                let in_memory_scan = LocalPhysicalPlan::in_memory_scan(
-                    node_id,
-                    self.schema.clone(),
-                    total_size_bytes,
-                    StatsState::NotMaterialized,
-                    LocalNodeContext::new(Some(node_id as usize)),
-                );
-                let plan = wrap_plan(in_memory_scan);
-                SwordfishTaskBuilder::new(plan, node, node_id).with_psets(node_id, partition_refs)
-            }
-            ShuffleBackend::Flight { .. } => {
-                let read_inputs =
-                    flight::read_inputs_from_refs(partition_refs, self.backend.shared_root());
-                let shuffle_read = LocalPhysicalPlan::shuffle_read(
-                    node_id,
-                    self.schema.clone(),
-                    ShuffleReadBackend::Flight,
-                    StatsState::NotMaterialized,
-                    LocalNodeContext::new(Some(node_id as usize)),
-                );
-                let plan = wrap_plan(shuffle_read);
-                SwordfishTaskBuilder::new(plan, node, node_id)
-                    .with_flight_shuffle_reads(node_id, read_inputs)
-            }
+        let num_flight = partition_refs
+            .iter()
+            .filter(|p| p.as_any().is::<FlightPartitionRef>())
+            .count();
+        if num_flight != 0 && num_flight != partition_refs.len() {
+            return Err(DaftError::InternalError(format!(
+                "shuffle node {} was handed {} Flight refs mixed with {} in-memory refs; \
+                 a read task can only consume one kind",
+                node_id,
+                num_flight,
+                partition_refs.len() - num_flight
+            )));
+        }
+        let all_flight = num_flight != 0 && num_flight == partition_refs.len();
+
+        if all_flight {
+            let read_inputs =
+                flight::read_inputs_from_refs(partition_refs, self.backend.shared_root());
+            let shuffle_read = LocalPhysicalPlan::shuffle_read(
+                node_id,
+                self.schema.clone(),
+                ShuffleReadBackend::Flight,
+                StatsState::NotMaterialized,
+                LocalNodeContext::new(Some(node_id as usize)),
+            );
+            let plan = wrap_plan(shuffle_read);
+            Ok(SwordfishTaskBuilder::new(plan, node, node_id)
+                .with_flight_shuffle_reads(node_id, read_inputs))
+        } else {
+            let total_size_bytes = partition_refs.iter().map(|p| p.size_bytes()).sum::<usize>();
+            let in_memory_scan = LocalPhysicalPlan::in_memory_scan(
+                node_id,
+                self.schema.clone(),
+                total_size_bytes,
+                StatsState::NotMaterialized,
+                LocalNodeContext::new(Some(node_id as usize)),
+            );
+            let plan = wrap_plan(in_memory_scan);
+            Ok(SwordfishTaskBuilder::new(plan, node, node_id).with_psets(node_id, partition_refs))
         }
     }
 

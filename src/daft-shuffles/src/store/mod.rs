@@ -142,20 +142,47 @@ pub fn shared_shard_dir(shared_root: &str, shuffle_id: u64, input_id: u32) -> St
     )
 }
 
-/// Committed combined map file for one map task.
+/// Committed combined map file for one *attempt* of one map task.
 ///
-/// No attempt number appears here on purpose. A retried map task reuses its
-/// `task_id`, so two attempts can target this same path; they are kept from
-/// corrupting each other by writing to distinct temporaries and committing with
-/// an atomic `rename`, which makes the final path either absent or a complete
-/// file, never a half-written one. A reader that already has the file open keeps
-/// reading the attempt it opened.
-pub fn shared_map_file(shared_root: &str, shuffle_id: u64, input_id: u32) -> String {
+/// The attempt token is part of the name because a retried map task keeps its
+/// `task_id` (and so its `input_id`) while the attempt it replaces may still be
+/// running: Ray reports a worker as unavailable on a transient error, the
+/// scheduler re-dispatches, and the original keeps executing on an actor that is
+/// alive and may even be the same process. Two live attempts of one task are
+/// therefore a normal event, not a corner case.
+///
+/// Without the token they would share a path. Each would commit a complete file,
+/// but reducers that opened before and after the second rename would see
+/// different attempts — and attempts are not byte-identical or even row-identical
+/// (random repartitioning assigns rows by arrival position, and upstream
+/// operators may be nondeterministic). Rows could then land in one partition
+/// under attempt A and another under attempt B, and be read twice or not at all.
+///
+/// With the token, the coordinator hands reducers exactly one attempt per input
+/// and every reader opens that attempt's file. A losing attempt's file is simply
+/// never addressed and is removed with the shuffle directory.
+pub fn shared_map_file(shared_root: &str, shuffle_id: u64, input_id: u32, attempt: u64) -> String {
     format!(
-        "{}/map_{}.arrow",
+        "{}/{}",
         shared_shard_dir(shared_root, shuffle_id, input_id),
-        input_id
+        map_file_name(input_id, attempt)
     )
+}
+
+/// File name of one attempt's combined map file, shared by the local and shared
+/// layouts so the same fencing applies to both.
+pub fn map_file_name(input_id: u32, attempt: u64) -> String {
+    format!("map_{}_{:016x}.arrow", input_id, attempt)
+}
+
+/// Fresh token identifying one attempt of one map task.
+///
+/// Random rather than a counter because attempts of the same task can run in
+/// different processes on different nodes with no shared sequence between them;
+/// 64 random bits make an accidental collision between two attempts of the same
+/// input negligible.
+pub fn new_attempt_token() -> u64 {
+    rand::random::<u64>()
 }
 
 #[cfg(test)]
@@ -202,15 +229,30 @@ mod tests {
     }
 
     #[test]
-    fn map_files_shard_by_input_id() {
-        let a = shared_map_file("/mnt/shared", 7, 1);
-        let b = shared_map_file("/mnt/shared/", 7, 257);
-        assert_eq!(a, "/mnt/shared/daft_shuffle/7/shard_1/map_1.arrow");
+    fn map_files_shard_by_input_id_and_name_the_attempt() {
+        let a = shared_map_file("/mnt/shared", 7, 1, 0xabc);
+        let b = shared_map_file("/mnt/shared/", 7, 257, 0xabc);
+        assert_eq!(
+            a,
+            "/mnt/shared/daft_shuffle/7/shard_1/map_1_0000000000000abc.arrow"
+        );
         // 257 % 256 == 1, so it lands in the same shard as input 1.
-        assert_eq!(b, "/mnt/shared/daft_shuffle/7/shard_1/map_257.arrow");
+        assert_eq!(
+            b,
+            "/mnt/shared/daft_shuffle/7/shard_1/map_257_0000000000000abc.arrow"
+        );
+        // Two attempts of one input never share a path.
+        assert_ne!(a, shared_map_file("/mnt/shared", 7, 1, 0xabd));
         assert_eq!(
             shared_shuffle_dir("/mnt/shared", 7),
             "/mnt/shared/daft_shuffle/7"
         );
+    }
+
+    #[test]
+    fn attempt_tokens_are_distinct() {
+        let a = new_attempt_token();
+        let b = new_attempt_token();
+        assert_ne!(a, b);
     }
 }

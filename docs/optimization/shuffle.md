@@ -89,7 +89,7 @@ Set `"none"` only if you're CPU-bound on very fast storage — for example, seve
 
 By default `flight_shuffle` keeps map output on node-local disks and serves it to other workers over gRPC. That makes a partition reachable only while the worker that wrote it is alive: if that worker dies after finishing its map task, the data and the in-memory index describing it are both gone, and the query fails.
 
-If your cluster has a POSIX filesystem every node can see — Lustre, NFS, FSx, GPFS, a shared EBS-backed volume — you can write shuffle data there instead:
+If your cluster has a cache-coherent POSIX filesystem every node can see — Lustre (including FSx for Lustre), GPFS, BeeGFS, CephFS — you can write shuffle data there instead:
 
 ```python
 daft.context.set_execution_config(
@@ -106,9 +106,24 @@ This buys two things:
 
 The trade is write bandwidth: every node now writes to one filesystem, so the shared mount's aggregate write throughput becomes a cluster-wide ceiling rather than a per-node one. Measure that ceiling before moving a large shuffle onto it.
 
+!!! warning "NFS needs mount options"
+
+    Plain NFS is not cache-coherent: a file another node just created can stay invisible for up to `acdirmax` (60 s by default) because of negative directory-entry caching, and a reduce task that opens it in that window fails with "file not found". If you must use NFS, mount the shuffle directory with `lookupcache=positive` (or `actimeo=0`). Data visibility itself is safe — Daft closes every file before publishing its name, which is what NFS's close-to-open semantics require.
+
 !!! note "Applies to repartition-style shuffles"
 
     Shared placement covers the shuffles that dominate large queries — `repartition`, `df.shuffle()`, and the exchanges inside joins, sorts, and aggregations. Gather and `into_partitions` always write node-locally, because their per-partition layout has no on-disk index for a peer to resolve.
+
+### What the format guarantees
+
+Distributed shuffles are correct only if every row is read exactly once, and the shared layout is built so that nothing short of that can pass silently:
+
+- **Each attempt of a map task writes its own file.** Ray reports a worker as unavailable on a transient error and Daft re-dispatches the task, but the original attempt may still be running — even in the same process. The two attempts are not interchangeable: random repartitioning assigns rows by arrival order, and upstream operators may be nondeterministic. So every file name carries an attempt token, the coordinator records which attempt's output it accepted, and every reader — shared mount, gRPC, or in-process — asks for exactly that attempt. A superseded attempt's output is never addressed.
+- **Every partition range is checksummed.** With the default background durability the file is published before it is `fsync`ed. If the writer node dies in that window, the filesystem keeps whichever pages reached it; a hole in a record batch decodes as zeros, and a hole on a message boundary looks like end-of-stream. Both would be wrong answers, not errors. The index therefore stores a CRC-32 per partition, and a reader that finds a short, holed, or altered range fails the task instead of returning what it has.
+- **Requests are all-or-nothing.** A gRPC request for refs a worker does not hold is refused outright rather than answered with the subset it does hold, so a reader can never mistake a partial response for a complete one.
+- **Shuffle identities are unique across drivers.** Two Daft processes sharing a cluster and a mount would otherwise generate the same shuffle directory for their first query and overwrite — and clean up — each other's data.
+
+What is *not* covered: a map attempt that dies before its file is published has left no copy anywhere, so the query fails; recomputing it from lineage is future work.
 
 ### `flight_shuffle_shared_durability`
 
@@ -128,11 +143,11 @@ The way out is that visibility and durability are separable. A reduce task readi
 
 How *this worker* fetches partitions written by others. One of `"auto"` (the default), `"rpc"`, or `"shared"`. Unlike placement, this is a per-worker setting: which route is faster depends on the reader's own link to its peers versus to the shared mount.
 
-- `"auto"` reads the shared mount directly when the data is there, and uses gRPC otherwise.
+- `"auto"` reads the shared mount directly when the data is there, and uses gRPC otherwise. Today this is the same as `"shared"`; it is the mode that will grow adaptive routing (measuring gRPC against the mount per worker).
 - `"rpc"` always tries gRPC first.
-- `"shared"` always reads the shared mount, and errors if the shuffle was not written to one.
+- `"shared"` always reads the shared mount for shuffles written there. It requires `flight_shuffle_placement="shared_only"`. Shuffles that are always node-local (gather, `into_partitions`) are read over gRPC regardless, since they have no shared copy.
 
-`"auto"` and `"rpc"` both fall back to the shared mount when a gRPC fetch fails before returning any data — this is the path that keeps a lost worker from failing the query. Once batches have been handed downstream the fallback is unsafe (they would be delivered twice), so a mid-stream failure surfaces as an error.
+`"auto"` and `"rpc"` both fall back to the shared mount when a gRPC fetch fails before returning any data — this is the path that keeps a lost worker from failing the query. Once batches have been handed downstream the fallback is unsafe (they would be delivered twice), so a mid-stream failure surfaces as an error. Under `"auto"` with shared placement, remote reads never touch gRPC in the first place, so a lost worker cannot interrupt a reduce task at all.
 
 ### `flight_shuffle_shared_read_concurrency`
 

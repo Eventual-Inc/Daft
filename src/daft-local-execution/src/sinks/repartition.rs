@@ -9,7 +9,10 @@ use daft_logical_plan::partitioning::RepartitionSpec;
 use daft_micropartition::MicroPartition;
 use daft_partition_refs::FlightPartitionRef;
 use daft_recordbatch::RecordBatch;
-use daft_shuffles::{oneshot_writer::write_partitions_one_shot, shuffle_cache::CHUNK_TARGET_BYTES};
+use daft_shuffles::{
+    oneshot_writer::write_partitions_one_shot, shuffle_cache::CHUNK_TARGET_BYTES,
+    store::new_attempt_token,
+};
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
@@ -210,9 +213,14 @@ impl BlockingSink for RepartitionSink {
                         }
                         LocalShuffleBackend::Flight(ctx) => {
                             let compression = parse_compression(ctx.compression.as_deref())?;
+                            // One token per execution of this map task: it names the
+                            // file, keys the registration, and travels in the refs, so
+                            // readers can tell this attempt's output from any other's.
+                            let attempt = new_attempt_token();
                             let partition_caches = write_partitions_one_shot(
                                 input_id,
                                 ctx.shuffle_id,
+                                attempt,
                                 ctx.oneshot_target()?,
                                 schema,
                                 compression,
@@ -223,6 +231,7 @@ impl BlockingSink for RepartitionSink {
                             ctx.local_server
                                 .register_shuffle_partitions(
                                     ctx.shuffle_id,
+                                    attempt,
                                     partition_caches.clone(),
                                 )
                                 .await?;
@@ -233,6 +242,7 @@ impl BlockingSink for RepartitionSink {
                                         shuffle_id: ctx.shuffle_id,
                                         server_address: ctx.shuffle_address.clone(),
                                         partition_ref_id: partition.partition_ref_id,
+                                        attempt,
                                         num_rows: partition.num_rows,
                                         size_bytes: partition.size_bytes,
                                     })

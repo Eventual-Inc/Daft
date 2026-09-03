@@ -5,7 +5,10 @@ use common_metrics::ops::NodeType;
 use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartition;
 use daft_partition_refs::FlightPartitionRef;
-use daft_shuffles::shuffle_cache::{InProgressShuffleCache, partition_ref_id};
+use daft_shuffles::{
+    shuffle_cache::{InProgressShuffleCache, partition_ref_id},
+    store::new_attempt_token,
+};
 use tracing::{Span, instrument};
 
 use super::{
@@ -38,6 +41,8 @@ pub(crate) struct FlightGatherState {
     shared: Arc<FlightShuffleContext>,
     schema: SchemaRef,
     input_id: InputId,
+    /// Token for this execution of the task; see `new_attempt_token`.
+    attempt: u64,
     refs: Vec<FlightPartitionRef>,
 }
 
@@ -47,6 +52,7 @@ impl FlightGatherState {
         let partition_ref_id = partition_ref_id(self.input_id, self.refs.len());
         let cache = InProgressShuffleCache::try_new(
             partition_ref_id,
+            self.attempt,
             self.schema.clone(),
             &shared.shuffle_dirs,
             shared.shuffle_id,
@@ -59,12 +65,13 @@ impl FlightGatherState {
             shuffle_id: shared.shuffle_id,
             server_address: shared.shuffle_address.clone(),
             partition_ref_id: closed.partition_ref_id,
+            attempt: self.attempt,
             num_rows: closed.num_rows,
             size_bytes: closed.size_bytes,
         };
         shared
             .local_server
-            .register_shuffle_partitions(shared.shuffle_id, vec![closed])
+            .register_shuffle_partitions(shared.shuffle_id, self.attempt, vec![closed])
             .await?;
         self.refs.push(flight_ref);
         Ok(())
@@ -183,6 +190,7 @@ impl BlockingSink for GatherSink {
                 shared: shared.clone(),
                 schema: self.schema.clone(),
                 input_id,
+                attempt: new_attempt_token(),
                 refs: Vec::new(),
             })),
         }

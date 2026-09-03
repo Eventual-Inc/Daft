@@ -8,14 +8,14 @@ mod translate;
 use daft_micropartition::MicroPartitionRef;
 use daft_scan::ScanTaskRef;
 pub use plan::{
-    AsofJoin, CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleReadInput,
-    GatherWrite, GlobScan, HashAggregate, HashJoin, InMemoryScan, IntoBatches, IntoPartitions,
-    Limit, LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef, MonotonicallyIncreasingId,
-    PhysicalScan, PhysicalWrite, Pivot, PlaceholderScan, Project, RepartitionWrite, Sample,
-    SamplingMethod, SharedShuffleSpec, ShuffleBackend, ShuffleRead, ShuffleReadBackend, Sort,
-    SortMergeJoin, StageCheckpointKeys, TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject,
-    WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
-    WindowPartitionOnly,
+    AsofJoin, CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightMapOutput,
+    FlightShuffleReadInput, GatherWrite, GlobScan, HashAggregate, HashJoin, InMemoryScan,
+    IntoBatches, IntoPartitions, Limit, LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef,
+    MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, PlaceholderScan, Project,
+    RepartitionWrite, Sample, SamplingMethod, SharedShuffleSpec, ShuffleBackend, ShuffleRead,
+    ShuffleReadBackend, Sort, SortMergeJoin, StageCheckpointKeys, TopN, UDFProject,
+    UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly, WindowPartitionAndDynamicFrame,
+    WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 #[cfg(feature = "python")]
 pub use plan::{CatalogWrite, DataSink, DistributedActorPoolProject, DistributedLimit, LanceWrite};

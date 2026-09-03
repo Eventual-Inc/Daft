@@ -12,6 +12,8 @@ use daft_schema::field::FieldRef;
 use futures::{FutureExt, Stream, StreamExt};
 use tonic::transport::Endpoint;
 
+use crate::server::flight_server::encode_ticket;
+
 #[allow(clippy::large_enum_variant)]
 enum ClientState {
     // The address of the flight server
@@ -52,29 +54,28 @@ impl ShuffleFlightClient {
         }
     }
 
-    /// Get a stream of RecordBatches from a remote shuffle server
+    /// Get a stream of RecordBatches from a remote shuffle server.
+    ///
+    /// `refs` are `(attempt, partition_ref_id)` pairs; the server only serves a
+    /// ref from the attempt named alongside it.
+    ///
     /// Note, this function should not take long, since the actual data transfer is done in the stream.
     pub async fn get_partition(
         &mut self,
         shuffle_id: u64,
-        partition_ref_ids: &[u64],
+        refs: &[(u64, u64)],
         schema: SchemaRef,
     ) -> DaftResult<FlightRecordBatchStreamToDaftRecordBatchStream> {
-        let ticket = Ticket::new(format!(
-            "{}:{}",
-            shuffle_id,
-            partition_ref_ids
-                .iter()
-                .map(|partition_ref_id| partition_ref_id.to_string())
-                .collect::<Vec<_>>()
-                .join(",")
-        ));
+        let ticket = Ticket::new(encode_ticket(shuffle_id, refs));
         let (address, client) = self.connect().await?;
         let stream = client.do_get(ticket).await.map_err(|e| {
             DaftError::External(
                 format!(
-                    "Error fetching partition refs {:?} from shuffle {} at {}. {}",
-                    partition_ref_ids, shuffle_id, address, e
+                    "Error fetching {} partition refs from shuffle {} at {}. {}",
+                    refs.len(),
+                    shuffle_id,
+                    address,
+                    e
                 )
                 .into(),
             )
