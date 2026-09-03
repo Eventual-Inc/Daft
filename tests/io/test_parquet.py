@@ -639,6 +639,35 @@ def test_parquet_count(tmp_path_factory):
     assert result == {"count": [10]}
 
 
+@pytest.mark.parametrize("query", ["select count(*) as n from tbl", "select count(1) as n from tbl"])
+def test_parquet_count_sql_reaches_pushdown(tmp_path_factory, query):
+    # Regression: the SQL frontend emits count(*) as an aliased aggregate
+    # (`count(<narrowest col>, All) as "count"`), and the pushdown rule only matched the
+    # bare Expr::Agg shape, so every SQL count read a full column instead of the footer.
+    path = str(tmp_path_factory.mktemp("parquet_count_sql"))
+    daft.from_pydict({"string_content": ["a"] * 10, "int_id": [1] * 10}).write_parquet(path, write_mode="overwrite")
+
+    df = daft.sql(query, tbl=daft.read_parquet(path))
+    plan = io.StringIO()
+    df.explain(True, file=plan)
+    assert "aggregation: count(col(int_id), All)" in plan.getvalue()
+
+    assert df.to_pydict() == {"n": [10]}
+
+
+def test_parquet_count_literal_arg_counts_rows(tmp_path_factory):
+    # Regression: the pushdown rewrote `count(<expr>)` into `sum(<expr>)`, which only
+    # happens to be right when <expr> is a bare column matching the scan's output name.
+    # With a literal it summed lit(1) over one partial-count row per scan task and
+    # returned the scan task count instead of the row count.
+    path = str(tmp_path_factory.mktemp("parquet_count_literal"))
+    daft.from_pydict({"a": list(range(10))}).write_parquet(path, write_mode="overwrite")
+
+    df = daft.read_parquet(path)
+    assert df.agg(daft.lit(1).count("all").alias("n")).to_pydict() == {"n": [10]}
+    assert df.agg(daft.lit(1).count("all")).to_pydict()["literal"] == [10]
+
+
 def test_write_and_read_empty_parquet(tmp_path_factory):
     empty_parquet_files = str(tmp_path_factory.mktemp("empty_parquet"))
     df = daft.from_pydict({"a": []})
