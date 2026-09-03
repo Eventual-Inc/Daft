@@ -1,17 +1,10 @@
 use std::{
-    fmt,
     hash::{Hash, Hasher},
     io::Write,
-    sync::Arc,
 };
 
 #[cfg(feature = "python")]
 use pyo3::{Bound, Py, PyAny, PyResult, Python, types::PyAnyMethods};
-use serde::{
-    Deserialize, Deserializer, Serialize, Serializer,
-    de::{Error as DeError, Visitor},
-    ser::Error as SerError,
-};
 
 #[cfg(feature = "python")]
 pub fn pickle_dumps(py: Python, obj: &Py<PyAny>) -> PyResult<Vec<u8>> {
