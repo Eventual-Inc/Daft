@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import os
 
 import pyarrow as pa
@@ -8,6 +10,7 @@ import pytest
 
 import daft
 from daft import DataType as dt
+from daft.io import IOConfig, S3Config
 
 # TODO chore: make an asset fixture for all tests (beyond just sql).
 
@@ -266,10 +269,7 @@ def test_sql_read_csv_ignore_corrupt_files(tmp_path):
 
 def _plan_io_config_line(df) -> str | None:
     """Return the plan's ``IO config`` line, or None when the plan carries none."""
-    import contextlib
-    import io as _io
-
-    buf = _io.StringIO()
+    buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
         df.explain(show_all=False)
     for line in buf.getvalue().splitlines():
@@ -281,8 +281,6 @@ def _plan_io_config_line(df) -> str | None:
 @pytest.fixture
 def default_io_config():
     """Set a recognizable context default_io_config for the duration of a test."""
-    from daft.io import IOConfig, S3Config
-
     previous = daft.context.get_context().daft_planning_config.default_io_config
     daft.context.set_planning_config(default_io_config=IOConfig(s3=S3Config(region_name="us-west-2")))
     try:
@@ -320,3 +318,29 @@ def test_sql_reader_uses_default_io_config(default_io_config, io_config_sample_f
     assert sql_line is not None
     assert "us-west-2" in sql_line
     assert sql_line == python_line
+
+
+@pytest.mark.parametrize("function", ["read_parquet", "read_csv", "read_json"])
+def test_sql_reader_explicit_io_config_wins(default_io_config, io_config_sample_files, function):
+    """An explicit io_config argument overrides the context default."""
+    path = io_config_sample_files[function]
+    query = f"SELECT * FROM {function}('{path}', io_config := S3Config(region_name => 'eu-central-1'))"
+
+    sql_line = _plan_io_config_line(daft.sql(query))
+
+    assert sql_line is not None
+    assert "eu-central-1" in sql_line
+
+
+@pytest.mark.parametrize(
+    "spelling", ["S3Config", "s3config", "S3CONFIG"], ids=["mixed_case", "lower_case", "upper_case"]
+)
+def test_sql_config_constructors_are_case_insensitive(io_config_sample_files, spelling):
+    """Config constructors resolve under any casing, like every other SQL function."""
+    path = io_config_sample_files["read_parquet"]
+    query = f"SELECT * FROM read_parquet('{path}', io_config := {spelling}(region_name => 'eu-central-1'))"
+
+    sql_line = _plan_io_config_line(daft.sql(query))
+
+    assert sql_line is not None
+    assert "eu-central-1" in sql_line

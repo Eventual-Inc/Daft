@@ -13,11 +13,13 @@ pub struct SQLModuleConfig;
 
 impl SQLModule for SQLModuleConfig {
     fn register(parent: &mut SQLFunctions) {
-        parent.add_fn("S3Config", S3ConfigFunction);
-        parent.add_fn("HTTPConfig", HTTPConfigFunction);
-        parent.add_fn("AzureConfig", AzureConfigFunction);
-        parent.add_fn("GCSConfig", GCSConfigFunction);
-        parent.add_fn("TosConfig", TosConfigFunction);
+        // Names must be registered lowercase: lookup lowercases the parsed function name
+        // before hitting the registry, so a mixed-case key can never be found.
+        parent.add_fn("s3config", S3ConfigFunction);
+        parent.add_fn("httpconfig", HTTPConfigFunction);
+        parent.add_fn("azureconfig", AzureConfigFunction);
+        parent.add_fn("gcsconfig", GCSConfigFunction);
+        parent.add_fn("tosconfig", TosConfigFunction);
     }
 }
 
