@@ -8,10 +8,10 @@ use super::{
     logical_plan_tracker::LogicalPlanTracker,
     rules::{
         DetectMonotonicId, DropIntoBatches, DropRepartition, EliminateCrossJoin, EliminateOffsets,
-        EliminateSubqueryAliasRule, EnrichWithStats, ExtractWindowFunction, FilterNullJoinKey,
-        LiftProjectFromAgg, MaterializeScans, OptimizerRule, PushDownAggregation,
-        PushDownAntiSemiJoin, PushDownFilter, PushDownJoinPredicate, PushDownLimit,
-        PushDownProjection, PushDownShard, ReorderJoins, RewriteCheckpointSource,
+        EliminateSubqueryAliasRule, EnrichWithStats, ExpandDataFrameSources, ExtractWindowFunction,
+        FilterNullJoinKey, LiftProjectFromAgg, MaterializeScans, OptimizerRule,
+        PushDownAggregation, PushDownAntiSemiJoin, PushDownFilter, PushDownJoinPredicate,
+        PushDownLimit, PushDownProjection, PushDownShard, ReorderJoins, RewriteCheckpointSource,
         RewriteCountDistinct, RewriteOffset, ShardScans, SimplifyExpressionsRule,
         SimplifyNullFilteredJoin, SplitExplodeFromProject, SplitGranularProjection, SplitUDFs,
         SplitUDFsFromFilters, UnnestPredicateSubquery, UnnestScalarSubquery,
@@ -223,6 +223,20 @@ impl OptimizerBuilder {
             // --- Simplify expressions before scans are materialized ---
             RuleBatch::new(
                 vec![Box::new(SimplifyExpressionsRule::new())],
+                RuleExecutionStrategy::FixedPoint(None),
+            ),
+            // --- Expand DataFrame sources ---
+            RuleBatch::new(
+                vec![Box::new(ExpandDataFrameSources::new())],
+                RuleExecutionStrategy::Once,
+            ),
+            // --- Pushdowns after expand ---
+            RuleBatch::new(
+                vec![
+                    Box::new(PushDownFilter::new(self.config.strict_pushdown)),
+                    Box::new(PushDownProjection::new()),
+                    Box::new(PushDownLimit::new()),
+                ],
                 RuleExecutionStrategy::FixedPoint(None),
             ),
             // --- Materialize scan nodes ---
