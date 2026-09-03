@@ -2638,7 +2638,6 @@ class PyDaftExecutionConfig:
         pre_shuffle_merge_partition_threshold: int | None = None,
         scantask_max_parallel: int | None = None,
         native_parquet_writer: bool | None = None,
-        min_cpu_per_task: float | None = None,
         actor_udf_ready_timeout: int | None = None,
         maintain_order: bool | None = None,
         enable_dynamic_batching: bool | None = None,
@@ -2697,8 +2696,6 @@ class PyDaftExecutionConfig:
     def pre_shuffle_merge_threshold(self) -> int: ...
     @property
     def pre_shuffle_merge_partition_threshold(self) -> int: ...
-    @property
-    def min_cpu_per_task(self) -> float: ...
     @property
     def actor_udf_ready_timeout(self) -> int: ...
     @property
