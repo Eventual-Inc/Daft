@@ -19,7 +19,7 @@ use parquet::{
         ArrowSchemaConverter, add_encoded_arrow_schema_to_metadata,
         arrow_writer::{ArrowColumnChunk, ArrowLeafColumn, compute_leaves, get_column_writers},
     },
-    basic::Compression,
+    basic::{BrotliLevel, Compression, GzipLevel, ZstdLevel},
     file::{
         properties::{WriterProperties, WriterVersion},
         writer::SerializedFileWriter,
@@ -37,22 +37,99 @@ type ColumnWriterFuture = dyn Future<Output = DaftResult<ArrowColumnChunk>> + Se
 
 /// Parse a user-supplied compression name into a `parquet::basic::Compression` codec.
 ///
-/// Codec strings are case-insensitive. Levels (e.g. `zstd:9`) are not yet supported — defaults
-/// are used for codecs that take a level.
-pub(crate) fn parse_compression(s: &str) -> DaftResult<Compression> {
-    match s.to_ascii_lowercase().as_str() {
+/// Codec strings are case-insensitive. `level` is applied to codecs that take one (`zstd`,
+/// `gzip`, `brotli`) and ignored by codecs that do not; `None` selects the codec's default level
+/// (zstd 1, gzip 6, brotli 1). Out-of-range levels are rejected with a `ValueError`.
+pub(crate) fn parse_compression(s: &str, level: Option<i32>) -> DaftResult<Compression> {
+    let codec = s.to_ascii_lowercase();
+    // parquet-rs reports the valid range in its error, so surface that directly. Negative levels
+    // for the unsigned codecs are mapped to `u32::MAX` so they fail the same range check.
+    let level_err = |err: parquet::errors::ParquetError| {
+        DaftError::ValueError(format!(
+            "invalid compression level {} for parquet codec {codec}: {err}",
+            level.unwrap_or_default()
+        ))
+    };
+    let unsigned_level = || level.map(|l| u32::try_from(l).unwrap_or(u32::MAX));
+    match codec.as_str() {
         "none" | "uncompressed" => Ok(Compression::UNCOMPRESSED),
         "snappy" => Ok(Compression::SNAPPY),
-        "gzip" => Ok(Compression::GZIP(Default::default())),
+        "gzip" => Ok(Compression::GZIP(match unsigned_level() {
+            Some(l) => GzipLevel::try_new(l).map_err(level_err)?,
+            None => GzipLevel::default(),
+        })),
         "lzo" => Ok(Compression::LZO),
-        "brotli" => Ok(Compression::BROTLI(Default::default())),
+        "brotli" => Ok(Compression::BROTLI(match unsigned_level() {
+            Some(l) => BrotliLevel::try_new(l).map_err(level_err)?,
+            None => BrotliLevel::default(),
+        })),
         "lz4" => Ok(Compression::LZ4),
         "lz4_raw" => Ok(Compression::LZ4_RAW),
-        "zstd" => Ok(Compression::ZSTD(Default::default())),
+        "zstd" => Ok(Compression::ZSTD(match level {
+            Some(l) => ZstdLevel::try_new(l).map_err(level_err)?,
+            None => ZstdLevel::default(),
+        })),
         other => Err(DaftError::ValueError(format!(
             "unsupported parquet compression codec: {other}"
         ))),
     }
+}
+
+/// Whether a parsed codec carries a compression level.
+fn compression_has_level(compression: Compression) -> bool {
+    matches!(
+        compression,
+        Compression::ZSTD(_) | Compression::GZIP(_) | Compression::BROTLI(_)
+    )
+}
+
+/// Resolve the default codec and the per-column overrides for a Parquet write.
+///
+/// `compression_level` is applied to every codec in use that supports a level (`zstd`, `gzip`,
+/// `brotli`), so it reaches both the default codec and any `column_compression` override. It is
+/// an error to supply a level when none of the requested codecs can honor it, so a
+/// misconfiguration such as `compression="snappy", compression_level=6` is never silently ignored.
+///
+/// Returns `(default_compression, [(dot-separated column path, compression)])`.
+pub(crate) fn resolve_parquet_compression(
+    compression: Option<&str>,
+    column_compression: Option<&[(String, String)]>,
+    compression_level: Option<i32>,
+) -> DaftResult<(Compression, Vec<(String, Compression)>)> {
+    let default_compression = match compression {
+        Some(name) => parse_compression(name, compression_level)?,
+        None => Compression::SNAPPY,
+    };
+    let parsed_column_compression: Vec<(String, Compression)> = column_compression
+        .unwrap_or(&[])
+        .iter()
+        .map(|(path, name)| Ok((path.clone(), parse_compression(name, compression_level)?)))
+        .collect::<DaftResult<_>>()?;
+
+    if let Some(level) = compression_level
+        && !compression_has_level(default_compression)
+        && !parsed_column_compression
+            .iter()
+            .any(|(_, c)| compression_has_level(*c))
+    {
+        let mut codecs: Vec<String> = std::iter::once(compression.unwrap_or("snappy"))
+            .chain(
+                column_compression
+                    .unwrap_or(&[])
+                    .iter()
+                    .map(|(_, name)| name.as_str()),
+            )
+            .map(str::to_ascii_lowercase)
+            .collect();
+        codecs.sort();
+        codecs.dedup();
+        return Err(DaftError::ValueError(format!(
+            "compression_level={level} requires a codec that supports compression levels (zstd, gzip, brotli), but only {} requested",
+            codecs.join(", ")
+        )));
+    }
+
+    Ok((default_compression, parsed_column_compression))
 }
 
 /// Construct writer properties for the native Parquet writer.
@@ -108,6 +185,7 @@ pub(crate) fn create_native_parquet_writer(
     io_config: Option<IOConfig>,
     compression: Option<&str>,
     column_compression: Option<&[(String, String)]>,
+    compression_level: Option<i32>,
     single_file: bool,
     overwrite_single_file_target: bool,
 ) -> DaftResult<Box<dyn AsyncFileWriter<Input = MicroPartition, Result = Option<RecordBatch>>>> {
@@ -125,15 +203,8 @@ pub(crate) fn create_native_parquet_writer(
         )?
     };
 
-    let default_compression = match compression {
-        Some(name) => parse_compression(name)?,
-        None => Compression::SNAPPY,
-    };
-    let parsed_column_compression: Vec<(String, Compression)> = column_compression
-        .unwrap_or(&[])
-        .iter()
-        .map(|(path, name)| Ok((path.clone(), parse_compression(name)?)))
-        .collect::<DaftResult<_>>()?;
+    let (default_compression, parsed_column_compression) =
+        resolve_parquet_compression(compression, column_compression, compression_level)?;
 
     // TODO(desmond): Explore configurations such data page size limit, writer version, etc. Parquet format v2
     // could be interesting but has much less support in the ecosystem (including ourselves).
@@ -507,17 +578,157 @@ mod tests {
             ("lz4", Compression::LZ4),
             ("lz4_raw", Compression::LZ4_RAW),
         ] {
-            assert_eq!(parse_compression(input).unwrap(), expected);
+            assert_eq!(parse_compression(input, None).unwrap(), expected);
         }
         assert!(matches!(
-            parse_compression("zstd").unwrap(),
+            parse_compression("zstd", None).unwrap(),
             Compression::ZSTD(_)
         ));
         assert!(matches!(
-            parse_compression("gzip").unwrap(),
+            parse_compression("gzip", None).unwrap(),
             Compression::GZIP(_)
         ));
-        assert!(parse_compression("bogus").is_err());
+        assert!(parse_compression("bogus", None).is_err());
+    }
+
+    #[test]
+    fn parse_compression_default_levels_match_parquet_rs_defaults() {
+        assert_eq!(
+            parse_compression("zstd", None).unwrap(),
+            Compression::ZSTD(ZstdLevel::default())
+        );
+        assert_eq!(ZstdLevel::default().compression_level(), 1);
+        assert_eq!(
+            parse_compression("gzip", None).unwrap(),
+            Compression::GZIP(GzipLevel::default())
+        );
+        assert_eq!(
+            parse_compression("brotli", None).unwrap(),
+            Compression::BROTLI(BrotliLevel::default())
+        );
+    }
+
+    #[test]
+    fn parse_compression_applies_level_to_leveled_codecs() {
+        assert_eq!(
+            parse_compression("zstd", Some(9)).unwrap(),
+            Compression::ZSTD(ZstdLevel::try_new(9).unwrap())
+        );
+        assert_eq!(
+            parse_compression("ZSTD", Some(22)).unwrap(),
+            Compression::ZSTD(ZstdLevel::try_new(22).unwrap())
+        );
+        assert_eq!(
+            parse_compression("gzip", Some(9)).unwrap(),
+            Compression::GZIP(GzipLevel::try_new(9).unwrap())
+        );
+        assert_eq!(
+            parse_compression("brotli", Some(11)).unwrap(),
+            Compression::BROTLI(BrotliLevel::try_new(11).unwrap())
+        );
+        // Codecs without a level ignore it; `resolve_parquet_compression` decides whether
+        // that is acceptable for the write as a whole.
+        assert_eq!(
+            parse_compression("snappy", Some(9)).unwrap(),
+            Compression::SNAPPY
+        );
+        assert_eq!(
+            parse_compression("none", Some(9)).unwrap(),
+            Compression::UNCOMPRESSED
+        );
+    }
+
+    #[test]
+    fn parse_compression_rejects_out_of_range_levels() {
+        for (codec, level) in [
+            ("zstd", 0),
+            ("zstd", 23),
+            ("zstd", -1),
+            ("gzip", 10),
+            ("gzip", -1),
+            ("brotli", 12),
+            ("brotli", -3),
+        ] {
+            let err = parse_compression(codec, Some(level))
+                .unwrap_err()
+                .to_string();
+            assert!(
+                err.contains(&format!(
+                    "invalid compression level {level} for parquet codec {codec}"
+                )),
+                "unexpected error for {codec}/{level}: {err}"
+            );
+            assert!(
+                err.contains("valid compression range"),
+                "error should carry the valid range: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn resolve_parquet_compression_applies_level_to_default_and_overrides() {
+        let overrides = vec![
+            ("a".to_string(), "snappy".to_string()),
+            ("b".to_string(), "gzip".to_string()),
+        ];
+        let (default, columns) =
+            resolve_parquet_compression(Some("zstd"), Some(&overrides), Some(6)).unwrap();
+        assert_eq!(default, Compression::ZSTD(ZstdLevel::try_new(6).unwrap()));
+        assert_eq!(
+            columns,
+            vec![
+                ("a".to_string(), Compression::SNAPPY),
+                (
+                    "b".to_string(),
+                    Compression::GZIP(GzipLevel::try_new(6).unwrap())
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn resolve_parquet_compression_level_reaches_override_when_default_has_no_level() {
+        let overrides = vec![("text".to_string(), "zstd".to_string())];
+        let (default, columns) =
+            resolve_parquet_compression(Some("snappy"), Some(&overrides), Some(9)).unwrap();
+        assert_eq!(default, Compression::SNAPPY);
+        assert_eq!(
+            columns,
+            vec![(
+                "text".to_string(),
+                Compression::ZSTD(ZstdLevel::try_new(9).unwrap())
+            )]
+        );
+    }
+
+    #[test]
+    fn resolve_parquet_compression_rejects_level_without_leveled_codec() {
+        let err = resolve_parquet_compression(Some("snappy"), None, Some(6))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("compression_level=6"), "{err}");
+        assert!(err.contains("only snappy requested"), "{err}");
+
+        let overrides = vec![("a".to_string(), "lz4_raw".to_string())];
+        let err = resolve_parquet_compression(None, Some(&overrides), Some(6))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("only lz4_raw, snappy requested"), "{err}");
+
+        // No level: nothing to complain about.
+        let (default, _) = resolve_parquet_compression(Some("snappy"), None, None).unwrap();
+        assert_eq!(default, Compression::SNAPPY);
+    }
+
+    #[test]
+    fn resolve_parquet_compression_surfaces_unknown_codec_before_level_check() {
+        let err = resolve_parquet_compression(Some("bogus"), None, Some(6))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("unsupported parquet compression codec: bogus"),
+            "{err}"
+        );
     }
 
     #[test]
@@ -543,6 +754,29 @@ mod tests {
             props.compression(&ColumnPath::from("b")),
             Compression::ZSTD(_),
         ));
+    }
+
+    #[test]
+    fn native_parquet_writer_properties_carries_compression_level() {
+        let daft_schema = Arc::new(Schema::new(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ]));
+        let arrow_schema = daft_schema.to_arrow().unwrap();
+
+        let overrides = vec![("a".to_string(), "snappy".to_string())];
+        let (default, columns) =
+            resolve_parquet_compression(Some("zstd"), Some(&overrides), Some(19)).unwrap();
+        let props = native_parquet_writer_properties(&arrow_schema, default, &columns);
+
+        assert_eq!(
+            props.compression(&ColumnPath::from("a")),
+            Compression::SNAPPY,
+        );
+        assert_eq!(
+            props.compression(&ColumnPath::from("b")),
+            Compression::ZSTD(ZstdLevel::try_new(19).unwrap()),
+        );
     }
 
     #[test]

@@ -4,6 +4,7 @@ import contextlib
 import datetime
 import io
 import os
+import random
 import tempfile
 import uuid
 
@@ -858,3 +859,131 @@ def test_resolve_column_compression_unknown_key_raises(tmp_path):
     schema = pa.schema([("a", pa.int64())])
     with pytest.raises(ValueError, match="does_not_exist"):
         writer._resolve_column_compression(schema)
+
+
+###
+# Compression level
+###
+
+
+def _compressible_df(num_rows: int = 20_000) -> daft.DataFrame:
+    # Deterministic word salad: too many distinct values for dictionary encoding to absorb, so
+    # the pages are PLAIN-encoded text and the compression level visibly changes the file size.
+    rng = random.Random(0)
+    words = ["daft", "parquet", "zstd", "compression", "level", "benchmark", "text", "column", "row", "group"]
+    text = [" ".join(rng.choices(words, k=40)) for _ in range(num_rows)]
+    return daft.from_pydict({"id": list(range(num_rows)), "text": text})
+
+
+def _write_and_measure(df: daft.DataFrame, root: str, **kwargs) -> tuple[int, dict[str, str]]:
+    df.write_parquet(root, **kwargs)
+    files = [os.path.join(dp, f) for dp, _, fs in os.walk(root) for f in fs if f.endswith(".parquet")]
+    assert len(files) == 1, files
+    return os.path.getsize(files[0]), _column_codecs(files[0])
+
+
+@pytest.mark.parametrize("native_parquet_writer", [True, False])
+def test_write_parquet_zstd_compression_level_is_honored(tmp_path, native_parquet_writer):
+    df = _compressible_df()
+    with daft.context.execution_config_ctx(native_parquet_writer=native_parquet_writer):
+        default_size, default_codecs = _write_and_measure(df, str(tmp_path / "default"), compression="zstd")
+        level1_size, _ = _write_and_measure(df, str(tmp_path / "l1"), compression="zstd", compression_level=1)
+        level9_size, level9_codecs = _write_and_measure(
+            df, str(tmp_path / "l9"), compression="zstd", compression_level=9
+        )
+
+    assert default_codecs == {"id": "ZSTD", "text": "ZSTD"}
+    assert level9_codecs == {"id": "ZSTD", "text": "ZSTD"}
+    # Both writers default to zstd level 1, so an explicit level 1 is byte-identical.
+    assert level1_size == default_size
+    # A higher level must actually change the encoded output.
+    assert level9_size < default_size * 0.95, (level9_size, default_size)
+
+
+@pytest.mark.parametrize("native_parquet_writer", [True, False])
+@pytest.mark.parametrize("codec", ["gzip", "brotli"])
+def test_write_parquet_compression_level_other_leveled_codecs(tmp_path, native_parquet_writer, codec):
+    df = _compressible_df()
+    with daft.context.execution_config_ctx(native_parquet_writer=native_parquet_writer):
+        low_size, low_codecs = _write_and_measure(df, str(tmp_path / "low"), compression=codec, compression_level=1)
+        high_size, _ = _write_and_measure(df, str(tmp_path / "high"), compression=codec, compression_level=9)
+
+    assert low_codecs == {"id": codec.upper(), "text": codec.upper()}
+    assert high_size < low_size, (high_size, low_size)
+
+
+@pytest.mark.parametrize("native_parquet_writer", [True, False])
+def test_write_parquet_compression_level_applies_to_column_override(tmp_path, native_parquet_writer):
+    # The default codec (snappy) has no level; the level must still reach the zstd override.
+    df = _compressible_df()
+    with daft.context.execution_config_ctx(native_parquet_writer=native_parquet_writer):
+        base_size, base_codecs = _write_and_measure(
+            df, str(tmp_path / "base"), compression="snappy", column_compression={"text": "zstd"}
+        )
+        level9_size, level9_codecs = _write_and_measure(
+            df,
+            str(tmp_path / "l9"),
+            compression="snappy",
+            column_compression={"text": "zstd"},
+            compression_level=9,
+        )
+
+    assert base_codecs == {"id": "SNAPPY", "text": "ZSTD"}
+    assert level9_codecs == {"id": "SNAPPY", "text": "ZSTD"}
+    assert level9_size < base_size * 0.95, (level9_size, base_size)
+
+
+@pytest.mark.parametrize("native_parquet_writer", [True, False])
+def test_write_parquet_compression_level_without_leveled_codec_raises(tmp_path, native_parquet_writer):
+    df = daft.from_pydict({"a": [1, 2, 3]})
+    with (
+        daft.context.execution_config_ctx(native_parquet_writer=native_parquet_writer),
+        pytest.raises(Exception, match="compression_level=6 requires a codec that supports compression levels"),
+    ):
+        df.write_parquet(str(tmp_path), compression="snappy", compression_level=6)
+    assert list(tmp_path.rglob("*.parquet")) == []
+
+
+@pytest.mark.parametrize("native_parquet_writer", [True, False])
+@pytest.mark.parametrize(
+    "codec, level",
+    [("zstd", 0), ("zstd", 23), ("zstd", -1), ("gzip", 10), ("gzip", -1), ("brotli", 12)],
+)
+def test_write_parquet_compression_level_out_of_range_raises(tmp_path, native_parquet_writer, codec, level):
+    df = daft.from_pydict({"a": [1, 2, 3]})
+    with (
+        daft.context.execution_config_ctx(native_parquet_writer=native_parquet_writer),
+        pytest.raises(Exception, match=f"invalid compression level {level} for parquet codec {codec}"),
+    ):
+        df.write_parquet(str(tmp_path), compression=codec, compression_level=level)
+    assert list(tmp_path.rglob("*.parquet")) == []
+
+
+def test_write_parquet_compression_level_is_not_required(tmp_path):
+    # Omitting the level keeps the pre-existing behaviour (no format option is needed at all).
+    df = daft.from_pydict({"a": [1, 2, 3]})
+    df.write_parquet(str(tmp_path), compression="zstd")
+    assert _column_codecs(str(next(tmp_path.glob("*.parquet"))))["a"] == "ZSTD"
+
+
+@pytest.mark.parametrize(
+    "compression, level, expected",
+    [
+        ("zstd", 6, 6),
+        ("ZSTD", 6, 6),
+        ("gzip", 9, 9),
+        ("snappy", 6, None),
+        ("zstd", None, None),
+        ({"a": "snappy", "b": "zstd", "c": "gzip"}, 4, {"b": 4, "c": 4}),
+        ({"a": "snappy", "b": "none"}, 4, None),
+        ({"a": "zstd"}, None, None),
+    ],
+)
+def test_pyarrow_writer_resolve_compression_level(tmp_path, compression, level, expected):
+    writer = ParquetFileWriter(
+        root_dir=str(tmp_path),
+        file_idx=0,
+        compression=compression if isinstance(compression, str) else "snappy",
+        compression_level=level,
+    )
+    assert writer._resolve_compression_level(compression) == expected
