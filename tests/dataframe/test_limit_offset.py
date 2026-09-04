@@ -705,3 +705,28 @@ def test_multiple_limits():
 
     df = df.to_pydict()
     assert df["id"] == [i for i in range(901, 1000)]
+
+
+def test_limit_below_and_above_multipartition_join():
+    # Regression test for a panic in the distributed shuffle: a Limit below a
+    # join cuts some upstream tasks down to zero rows, so those tasks emit a
+    # materialized output with no partitions at all. Transposing the shuffle
+    # outputs used to require every output to carry exactly `num_partitions`
+    # partitions and indexed into them unconditionally, which panicked with
+    # "Expected all outputs to have 8 partitions, got 0, 8, 0, ...".
+    left = daft.range(0, 1000, partitions=8).with_column("k", col("id") % 100)
+    right = daft.range(0, 100, partitions=8).select(col("id").alias("k"))
+    joined = left.limit(20).join(right, on="k", how="left").limit(20)
+    result = joined.to_pydict()
+    # Daft's LIMIT is unordered: which 20 rows survive depends on partition
+    # scheduling, so the surviving ids are not deterministic across runners.
+    # What must hold regardless is that the shuffle neither lost, duplicated,
+    # mis-routed, nor null-extended a row: exactly 20 distinct ids come back and
+    # each keeps the key it was assigned (k == id % 100), proving the join paired
+    # every surviving left row with its one matching right row.
+    ids = result["id"]
+    keys = result["k"]
+    assert len(ids) == 20, "shuffle dropped rows produced by the limit"
+    assert len(set(ids)) == 20, "limit/join duplicated or fanned out rows"
+    assert all(k is not None for k in keys), "left join null-extended a matched row"
+    assert all(k == i % 100 for i, k in zip(ids, keys)), "shuffle mis-routed join keys"
