@@ -9,7 +9,16 @@ from typing import TYPE_CHECKING, Any
 import psycopg
 from pgvector.psycopg import register_vector
 
-from daft.catalog import Catalog, Function, Identifier, NotFoundError, Properties, Schema, Table
+from daft.catalog import (
+    Catalog,
+    Function,
+    Identifier,
+    NotFoundError,
+    Properties,
+    Schema,
+    Table,
+    TableAlreadyExistsError,
+)
 from daft.datatype import DataType
 from daft.io._sql import read_sql
 from daft.logical.schema import Field
@@ -289,7 +298,7 @@ class PostgresCatalog(Catalog):
 
                     conn.commit()
                 except psycopg.errors.DuplicateTable:
-                    raise ValueError(f"Table {identifier} already exists")
+                    raise TableAlreadyExistsError(f"Table {identifier} already exists")
                 except psycopg.Error as e:
                     raise ValueError(f"Failed to create table {identifier}: {e}") from e
 
