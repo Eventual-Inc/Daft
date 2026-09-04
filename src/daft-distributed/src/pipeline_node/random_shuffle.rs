@@ -15,7 +15,8 @@ use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
         ClusteringStrategy, DistributedPipelineNode, MaterializedOutput, NodeID,
-        PipelineNodeConfig, PipelineNodeContext, shuffles::backends::ShuffleContext,
+        PipelineNodeConfig, PipelineNodeContext,
+        shuffles::backends::{ShuffleContext, ShuffleWriteKind},
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -61,7 +62,12 @@ impl RandomShuffleNode {
             plan_config.config.clone(),
             ClusteringStrategy::Passthrough { child: &child },
         );
-        let shuffle_context = ShuffleContext::new(&context, output_schema, backend);
+        let shuffle_context = ShuffleContext::new(
+            &context,
+            output_schema,
+            backend,
+            ShuffleWriteKind::CombinedFile,
+        );
         Self {
             config,
             context,
@@ -93,8 +99,7 @@ impl RandomShuffleNode {
             &self.config.schema,
         )?;
         let node_id = self.node_id();
-        Ok(self
-            .shuffle_context
+        self.shuffle_context
             .build_refs_task_builder(partition_refs, self, |input| {
                 LocalPhysicalPlan::sort(
                     input,
@@ -104,7 +109,7 @@ impl RandomShuffleNode {
                     StatsState::NotMaterialized,
                     LocalNodeContext::new(Some(node_id as usize)),
                 )
-            }))
+            })
     }
 
     async fn execution_loop(

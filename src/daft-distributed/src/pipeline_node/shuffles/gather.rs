@@ -11,7 +11,8 @@ use crate::{
     pipeline_node::{
         ClusteringStrategy, DistributedPipelineNode, MaterializedOutput, NodeID,
         PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
-        clustering::BoundClusteringSpec, shuffles::backends::ShuffleContext,
+        clustering::BoundClusteringSpec,
+        shuffles::backends::{ShuffleContext, ShuffleWriteKind},
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -51,7 +52,8 @@ impl GatherNode {
             plan_config.config.clone(),
             ClusteringStrategy::Explicit(BoundClusteringSpec::unknown(1)),
         );
-        let shuffle_context = ShuffleContext::new(&context, schema, backend);
+        let shuffle_context =
+            ShuffleContext::new(&context, schema, backend, ShuffleWriteKind::PerPartition);
         Self {
             config,
             context,
@@ -84,7 +86,7 @@ impl GatherNode {
             .collect();
         let task = self
             .shuffle_context
-            .build_refs_task_builder(refs, self.as_ref(), |plan| plan);
+            .build_refs_task_builder(refs, self.as_ref(), |plan| plan)?;
         let _ = result_tx.send(task).await;
         Ok(())
     }

@@ -1,9 +1,13 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashSet},
+    sync::Arc,
+};
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_partitioning::PartitionRef;
 use daft_local_plan::{
-    FlightShuffleReadInput, LocalNodeContext, LocalPhysicalPlan, ShuffleReadBackend,
+    FlightMapOutput, FlightShuffleReadInput, LocalNodeContext, LocalPhysicalPlan,
+    ShuffleReadBackend,
 };
 use daft_logical_plan::stats::StatsState;
 use daft_partition_refs::FlightPartitionRef;
@@ -20,6 +24,7 @@ use crate::{
 pub(crate) fn register_cleanup(
     shuffle_id: u64,
     shuffle_dirs: &[String],
+    shared_root: Option<&str>,
     plan_context: &mut PlanExecutionContext,
 ) {
     let shuffle_dirs_to_register: Vec<String> = shuffle_dirs
@@ -27,6 +32,17 @@ pub(crate) fn register_cleanup(
         .map(|base_dir| format!("{}/daft_shuffle/{}", base_dir, shuffle_id))
         .collect();
     plan_context.register_shuffle_dirs(shuffle_dirs_to_register);
+    plan_context.register_shuffle_id(shuffle_id);
+
+    // Registered separately because a shared directory is one tree visible to
+    // every node, not one tree per node: fanning the same delete out to the whole
+    // cluster would have every worker racing to remove the same files.
+    if let Some(shared_root) = shared_root {
+        plan_context.register_shared_shuffle_dirs(vec![daft_shuffles::store::shared_shuffle_dir(
+            shared_root,
+            shuffle_id,
+        )]);
+    }
 }
 
 /// `partition_ref_id` layout: `(input_id << 32) | partition_idx`.
@@ -39,6 +55,13 @@ fn partition_idx_from_ref(flight_ref: &FlightPartitionRef) -> u32 {
     (flight_ref.partition_ref_id & 0xFFFF_FFFF) as u32
 }
 
+fn map_output_from_ref(flight_ref: &FlightPartitionRef) -> FlightMapOutput {
+    FlightMapOutput {
+        input_id: input_id_from_ref(flight_ref),
+        attempt: flight_ref.attempt,
+    }
+}
+
 /// Fold a stream of flight-shuffle map outputs into one read input per partition.
 ///
 /// Each map task emits one `FlightPartitionRef` per output partition, so collecting them
@@ -48,19 +71,27 @@ fn partition_idx_from_ref(flight_ref: &FlightPartitionRef) -> u32 {
 /// one per partition per map input), so the matrix is recoverable from just the set of
 /// input ids per server — O(map_tasks) total, shared across all partitions via `Arc`.
 /// The reduce side reconstructs the exact refs, issuing the same requests as if the
-/// full matrix had been kept, so retried map tasks' stale registrations are never
-/// addressed.
+/// full matrix had been kept. Each output is recorded with the attempt that
+/// produced it, so a stale registration or file left by another attempt of the
+/// same task is never addressed.
+///
+/// Exactly one output per map input is accepted. The dispatcher delivers one
+/// result per task, so a second output for an input cannot happen in normal
+/// operation; if it ever did, folding both in would have every reducer read that
+/// input twice. That is a wrong answer, so it is refused rather than tolerated.
 pub(crate) async fn fold_outputs_from_stream(
     mut materialized_stream: impl Stream<Item = DaftResult<MaterializedOutput>> + Send + Unpin,
     num_partitions: usize,
     shuffle_id: u64,
+    shared_root: Option<&str>,
 ) -> DaftResult<Vec<FlightShuffleReadInput>> {
-    let mut inputs_by_server: BTreeMap<String, Vec<u32>> = BTreeMap::new();
+    let mut inputs_by_server: BTreeMap<String, Vec<FlightMapOutput>> = BTreeMap::new();
+    let mut seen_inputs: HashSet<u32> = HashSet::new();
 
     while let Some(output) = materialized_stream.next().await {
         // A map output is one input's writes on one server: its refs all share
-        // (server_address, input_id), one ref per partition. So the first ref
-        // identifies the whole output.
+        // (server_address, input_id, attempt), one ref per partition. So the
+        // first ref identifies the whole output.
         let Some(partition) = output?.into_inner().0.into_iter().next() else {
             continue;
         };
@@ -68,18 +99,28 @@ pub(crate) async fn fold_outputs_from_stream(
             .as_any()
             .downcast_ref::<FlightPartitionRef>()
             .expect("expected flight partition ref");
+        let map_output = map_output_from_ref(flight_ref);
+        if !seen_inputs.insert(map_output.input_id) {
+            return Err(DaftError::InternalError(format!(
+                "shuffle {} received two outputs for map input {} (second from {} attempt {:#x}); \
+                 refusing to fold both, which would read that input twice",
+                shuffle_id, map_output.input_id, flight_ref.server_address, map_output.attempt
+            )));
+        }
         inputs_by_server
             .entry(flight_ref.server_address.clone())
             .or_default()
-            .push(input_id_from_ref(flight_ref));
+            .push(map_output);
     }
 
     let inputs_by_server = Arc::new(inputs_by_server);
+    let shared_root: Option<Arc<str>> = shared_root.map(Arc::from);
     Ok((0..num_partitions)
         .map(|partition_idx| FlightShuffleReadInput {
             shuffle_id,
             partition_idx: partition_idx as u32,
             inputs_by_server: inputs_by_server.clone(),
+            shared_root: shared_root.clone(),
         })
         .collect())
 }
@@ -88,8 +129,9 @@ pub(crate) async fn fold_outputs_from_stream(
 /// (shuffle, partition idx).
 pub(crate) fn read_inputs_from_refs(
     partition_refs: Vec<PartitionRef>,
+    shared_root: Option<&str>,
 ) -> Vec<FlightShuffleReadInput> {
-    let mut groups: BTreeMap<(u64, u32), BTreeMap<String, Vec<u32>>> = BTreeMap::new();
+    let mut groups: BTreeMap<(u64, u32), BTreeMap<String, Vec<FlightMapOutput>>> = BTreeMap::new();
     for partition in partition_refs {
         let flight_ref = partition
             .as_any()
@@ -100,9 +142,10 @@ pub(crate) fn read_inputs_from_refs(
             .or_default()
             .entry(flight_ref.server_address.clone())
             .or_default()
-            .push(input_id_from_ref(flight_ref));
+            .push(map_output_from_ref(flight_ref));
     }
 
+    let shared_root: Option<Arc<str>> = shared_root.map(Arc::from);
     groups
         .into_iter()
         .map(
@@ -110,6 +153,7 @@ pub(crate) fn read_inputs_from_refs(
                 shuffle_id,
                 partition_idx,
                 inputs_by_server: Arc::new(inputs_by_server),
+                shared_root: shared_root.clone(),
             },
         )
         .collect()

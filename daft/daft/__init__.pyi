@@ -2510,6 +2510,7 @@ class FlightPartitionRef:
     shuffle_id: int
     server_address: str
     partition_ref_id: int
+    attempt: int
     num_rows: int
     size_bytes: int
 
@@ -2518,6 +2519,7 @@ class FlightPartitionRef:
         shuffle_id: int,
         server_address: str,
         partition_ref_id: int,
+        attempt: int,
         num_rows: int,
         size_bytes: int,
     ): ...
@@ -2588,6 +2590,7 @@ class Input:
 class NativeExecutor:
     def __init__(self, is_flotilla_worker: bool, ip: str) -> None: ...
     def shuffle_address(self) -> str | None: ...
+    def unregister_shuffles(self, shuffle_ids: list[int]) -> int: ...
     async def run(
         self,
         plan: LocalPhysicalPlan,
@@ -2645,6 +2648,11 @@ class PyDaftExecutionConfig:
         dynamic_batching_strategy: str | None = None,
         flight_shuffle_dirs: list[str] | None = None,
         flight_shuffle_compression: str | None = None,
+        flight_shuffle_shared_dir: str | None = None,
+        flight_shuffle_placement: str | None = None,
+        flight_shuffle_shared_durability: str | None = None,
+        flight_shuffle_read_source: str | None = None,
+        flight_shuffle_shared_read_concurrency: int | None = None,
         enable_multi_glob_path_tasks: bool | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
@@ -2711,6 +2719,16 @@ class PyDaftExecutionConfig:
     def flight_shuffle_dirs(self) -> list[str]: ...
     @property
     def flight_shuffle_compression(self) -> str | None: ...
+    @property
+    def flight_shuffle_shared_dir(self) -> str | None: ...
+    @property
+    def flight_shuffle_placement(self) -> str: ...
+    @property
+    def flight_shuffle_shared_durability(self) -> str: ...
+    @property
+    def flight_shuffle_read_source(self) -> str: ...
+    @property
+    def flight_shuffle_shared_read_concurrency(self) -> int: ...
     @property
     def enable_multi_glob_path_tasks(self) -> bool: ...
     @property

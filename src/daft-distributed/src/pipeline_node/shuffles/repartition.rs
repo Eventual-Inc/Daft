@@ -10,7 +10,8 @@ use crate::{
     pipeline_node::{
         ClusteringStrategy, DistributedPipelineNode, NodeID, PipelineNodeConfig,
         PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
-        clustering::clustering_from_repartition_spec, shuffles::backends::ShuffleContext,
+        clustering::clustering_from_repartition_spec,
+        shuffles::backends::{ShuffleContext, ShuffleWriteKind},
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -67,7 +68,12 @@ impl RepartitionNode {
             config,
             context: context.clone(),
             repartition_spec,
-            shuffle_context: ShuffleContext::new(&context, schema, backend),
+            shuffle_context: ShuffleContext::new(
+                &context,
+                schema,
+                backend,
+                ShuffleWriteKind::CombinedFile,
+            ),
             num_partitions,
             child,
         })

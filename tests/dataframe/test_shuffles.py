@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import glob
 import io
+import os
 import random
 import tempfile
 import threading
@@ -62,6 +64,34 @@ def flight_shuffle_ctx():
             # Use the temporary directory for flight shuffle
             with daft.execution_config_ctx(shuffle_algorithm="flight_shuffle", flight_shuffle_dirs=[temp_dir]) as ctx:
                 yield ctx
+
+    return _ctx
+
+
+@pytest.fixture(scope="function")
+def shared_flight_shuffle_ctx():
+    """Flight shuffle writing to a "shared" directory.
+
+    A local temporary directory stands in for a cluster-shared mount. On a
+    single-node test cluster that exercises the shared write path and the shared
+    reader; the cross-node routing it enables needs a multi-node cluster.
+    """
+
+    @contextmanager
+    def _ctx(read_source="auto", durability="background"):
+        with (
+            tempfile.TemporaryDirectory() as local_dir,
+            tempfile.TemporaryDirectory() as shared_dir,
+            daft.execution_config_ctx(
+                shuffle_algorithm="flight_shuffle",
+                flight_shuffle_dirs=[local_dir],
+                flight_shuffle_placement="shared_only",
+                flight_shuffle_shared_dir=shared_dir,
+                flight_shuffle_shared_durability=durability,
+                flight_shuffle_read_source=read_source,
+            ),
+        ):
+            yield shared_dir
 
     return _ctx
 
@@ -605,3 +635,164 @@ def test_high_fanout_shuffle_hints_user_to_use_flight_shuffle():
         'flight_shuffle_dirs=["/path/to/fast/ssd"])  # defaults to ["/tmp"].'
     )
     assert expected_hint in output, output
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="distributed shuffle tests require the ray runner",
+)
+@pytest.mark.parametrize("read_source", ["auto", "rpc", "shared"])
+def test_flight_shuffle_shared_placement(shared_flight_shuffle_ctx, read_source):
+    """Shared placement returns the same rows as node-local placement, on every route."""
+    expected = {"g": list(range(97)), "s": [sum(i for i in range(2000) if i % 97 == g) for g in range(97)]}
+
+    with shared_flight_shuffle_ctx(read_source=read_source):
+        df = daft.from_pydict({"id": list(range(2000)), "g": [i % 97 for i in range(2000)]})
+        got = (
+            df.into_partitions(8)
+            .repartition(16, "g")
+            .groupby("g")
+            .agg(daft.col("id").sum().alias("s"))
+            .sort("g")
+            .to_pydict()
+        )
+
+    assert got == expected
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="distributed shuffle tests require the ray runner",
+)
+@pytest.mark.parametrize("durability", ["none", "background", "sync"])
+def test_flight_shuffle_shared_durability_levels(shared_flight_shuffle_ctx, durability):
+    """Every durability level publishes a readable map file; they differ only in fsync."""
+    with shared_flight_shuffle_ctx(durability=durability):
+        df = daft.from_pydict({"id": list(range(1000))}).into_partitions(4).repartition(8, "id")
+        got = sorted(df.to_pydict()["id"])
+
+    assert got == list(range(1000))
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="distributed shuffle tests require the ray runner",
+)
+def test_flight_shuffle_shared_leaves_no_files_behind(shared_flight_shuffle_ctx):
+    """A finished query removes its shuffle tree from the shared mount.
+
+    Shared trees are removed once for the whole cluster rather than by every
+    node, so this also covers that the single cleanup task actually ran.
+
+    (The on-disk layout and index format themselves are asserted in the
+    `daft-shuffles` Rust tests, where they can be checked without racing the
+    cleanup that fires as soon as the plan completes.)
+    """
+    with shared_flight_shuffle_ctx() as shared_root:
+        df = daft.from_pydict({"id": list(range(500))}).into_partitions(4).repartition(8, "id")
+        assert len(df.collect()) == 500
+
+        leftover = glob.glob(os.path.join(shared_root, "daft_shuffle", "*"))
+        assert leftover == [], f"shuffle trees left on the shared mount: {leftover}"
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="distributed shuffle tests require the ray runner",
+)
+def test_flight_shuffle_shared_cleans_up_after_a_failed_query(shared_flight_shuffle_ctx):
+    """A query that fails after the map side wrote still has its tree removed.
+
+    A failed query is the one whose shuffle output most needs deleting -- it can be
+    the largest thing on the mount and nothing will ever read it -- so the cleanup
+    must not be reachable only along the success path.
+    """
+    from daft import DataType, col, udf
+
+    @udf(return_dtype=DataType.int64())
+    def explode_on_read(values):
+        raise RuntimeError("intentional reduce-side failure")
+
+    with shared_flight_shuffle_ctx() as shared_root:
+        df = daft.from_pydict({"id": list(range(500))}).into_partitions(4).repartition(8, "id")
+        with pytest.raises(Exception, match="intentional reduce-side failure"):
+            df.with_column("boom", explode_on_read(col("id"))).collect()
+
+        leftover = glob.glob(os.path.join(shared_root, "daft_shuffle", "*"))
+        assert leftover == [], f"failed query left shuffle trees on the shared mount: {leftover}"
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="distributed shuffle tests require the ray runner",
+)
+def test_flight_shuffle_shared_route_still_reads_node_local_shuffles(shared_flight_shuffle_ctx):
+    """`read_source="shared"` must not break shuffles that are always node-local.
+
+    Gather and into_partitions use the per-partition writer, which has no on-disk
+    index for another node to resolve, so they are written node-locally even
+    under shared placement. A strict shared route would make every query with a
+    gather fail; instead such shuffles simply take the only route they have.
+
+    `shuffle(seed)` rather than `repartition` feeds the coalesce: the optimizer
+    folds `repartition(n).into_partitions(m)` into one repartition, so only a
+    non-repartition child actually exercises the into_partitions read path.
+    """
+    with shared_flight_shuffle_ctx(read_source="shared"):
+        df = daft.from_pydict({"id": list(range(1000))}).into_partitions(8)
+        got = sorted(df.shuffle(seed=3).into_partitions(2).to_pydict()["id"])
+
+    assert got == list(range(1000))
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="distributed shuffle tests require the ray runner",
+)
+@pytest.mark.parametrize(
+    "child",
+    [
+        pytest.param(lambda df: df.sort("id"), id="sort"),
+        pytest.param(lambda df: df.shuffle(seed=5), id="random_shuffle"),
+    ],
+)
+def test_flight_shuffle_into_partitions_coalesces_in_memory_children(flight_shuffle_ctx, child):
+    """`into_partitions` coalescing under flight_shuffle must accept in-memory refs.
+
+    The read task for a coalesce is built from whatever the child tasks produced.
+    A sort's output — or a random shuffle's sorted reduce output — is a plain
+    in-memory partition regardless of the configured shuffle algorithm, so the
+    read path has to be chosen by the refs' actual type, not by the algorithm.
+    Choosing by algorithm used to panic here with "expected flight partition ref".
+    """
+    with flight_shuffle_ctx():
+        df = daft.from_pydict({"id": list(range(3000))}).into_partitions(12)
+        got = sorted(child(df).into_partitions(5).to_pydict()["id"])
+
+    assert got == list(range(3000))
+
+
+def test_flight_shuffle_shared_config_validation():
+    """The config layer rejects combinations that cannot be honored."""
+    with pytest.raises(ValueError, match="requires flight_shuffle_shared_dir"):
+        daft.set_execution_config(flight_shuffle_placement="shared_only")
+
+    # A shared-route preference with nothing on a shared mount would be silently
+    # ignored on every read.
+    with pytest.raises(ValueError, match="requires flight_shuffle_placement='shared_only'"):
+        daft.set_execution_config(flight_shuffle_read_source="shared")
+
+    with pytest.raises(ValueError, match="flight_shuffle_placement must be"):
+        daft.set_execution_config(flight_shuffle_placement="both")
+
+    with pytest.raises(ValueError, match="flight_shuffle_shared_durability must be"):
+        daft.set_execution_config(flight_shuffle_shared_durability="fsync")
+
+    with pytest.raises(ValueError, match="flight_shuffle_read_source must be"):
+        daft.set_execution_config(flight_shuffle_read_source="hedge")
+
+    with pytest.raises(ValueError, match="must be greater than 0"):
+        daft.set_execution_config(flight_shuffle_shared_read_concurrency=0)
+
+    with pytest.raises(ValueError, match="must not be empty"):
+        daft.set_execution_config(flight_shuffle_shared_dir="   ")

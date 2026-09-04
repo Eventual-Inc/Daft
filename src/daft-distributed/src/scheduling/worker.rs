@@ -43,9 +43,18 @@ pub(crate) trait WorkerManager: Send + Sync {
     fn mark_worker_died(&self, worker_id: WorkerId);
     fn worker_snapshots(&self) -> DaftResult<Vec<WorkerSnapshot>>;
     fn try_autoscale(&self, resource_requests: Vec<TaskResourceRequest>) -> DaftResult<()>;
-    fn cleanup_shuffle_dirs(
+    /// Release everything a completed shuffle is still holding.
+    ///
+    /// `dirs` are node-local and must be removed on every node; `shared_dirs`
+    /// live on a mount all nodes see, so they are removed exactly once.
+    /// `shuffle_ids` names the same shuffles again, for the registrations each
+    /// worker's Flight server keeps in memory — those are not on any of these
+    /// paths and would otherwise outlive the query that created them.
+    fn cleanup_shuffles(
         &self,
         _dirs: Vec<String>,
+        _shared_dirs: Vec<String>,
+        _shuffle_ids: Vec<u64>,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = DaftResult<()>> + Send + '_>> {
         Box::pin(async { Ok(()) })
     }

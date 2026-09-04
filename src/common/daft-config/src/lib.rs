@@ -152,6 +152,17 @@ pub struct DaftExecutionConfig {
     pub dynamic_batching_strategy: String,
     pub flight_shuffle_dirs: Vec<String>,
     pub flight_shuffle_compression: Option<String>,
+    /// Cluster-shared POSIX mount to write shuffle data to. Required by, and only
+    /// used with, `flight_shuffle_placement = "shared_only"`.
+    pub flight_shuffle_shared_dir: Option<String>,
+    /// `"local_only"` (node-local disks, gRPC-only reads) or `"shared_only"`.
+    pub flight_shuffle_placement: String,
+    /// `"none"`, `"background"`, or `"sync"` — how shared writes are fsynced.
+    pub flight_shuffle_shared_durability: String,
+    /// `"auto"`, `"rpc"`, or `"shared"` — how this worker fetches remote map output.
+    pub flight_shuffle_read_source: String,
+    /// Map files a reduce task reads from the shared mount at once.
+    pub flight_shuffle_shared_read_concurrency: usize,
     pub enable_multi_glob_path_tasks: bool,
 }
 
@@ -199,6 +210,15 @@ impl Default for DaftExecutionConfig {
             dynamic_batching_strategy: "auto".to_string(),
             flight_shuffle_dirs: vec!["/tmp".to_string()],
             flight_shuffle_compression: Some("lz4".to_string()),
+            flight_shuffle_shared_dir: None,
+            flight_shuffle_placement: "local_only".to_string(),
+            flight_shuffle_shared_durability: "background".to_string(),
+            flight_shuffle_read_source: "auto".to_string(),
+            // Above `scantask_max_parallel`'s 8 on purpose: shared-mount reads are
+            // dominated by per-file round trips rather than bytes, so a reduce task
+            // with many map inputs needs the extra fan-out to stay off the latency
+            // floor.
+            flight_shuffle_shared_read_concurrency: 16,
             enable_multi_glob_path_tasks: false,
         }
     }

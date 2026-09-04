@@ -76,27 +76,79 @@ def _clear_flight_shuffle_dirs(shuffle_dirs: list[str]) -> None:
                 logger.warning("Failed to clear flight shuffle directory %s: %s", shuffle_dir, e)
 
 
-async def clear_flight_shuffle_dirs_on_all_nodes(shuffle_dirs: list[str]) -> None:
-    """Clear flight shuffle directories on all Ray nodes with CPU resources.
+async def clear_flight_shuffle_dirs_on_all_nodes(shuffle_dirs: list[str], shared_dirs: list[str] | None = None) -> None:
+    """Clear flight shuffle directories.
 
     Args:
-        shuffle_dirs: List of shuffle directories to clear (full paths)
+        shuffle_dirs: Node-local shuffle directories to clear (full paths). Every
+            node holds its own copy, so the delete runs on all nodes with CPU
+            resources.
+        shared_dirs: Shuffle directories on a cluster-shared mount (full paths).
+            Only one copy exists, so a single task removes them rather than having
+            every node race to delete the same files. It is pinned to a node that
+            runs workers: those nodes must have the mount (they wrote to it),
+            whereas a head node with no worker slots may not, and a delete there
+            would silently find nothing to remove.
     """
-    if not shuffle_dirs:
-        return
+    worker_nodes = [
+        node
+        for node in ray.nodes()
+        if node.get("Alive", True)
+        and "Resources" in node
+        and "CPU" in node["Resources"]
+        and node["Resources"]["CPU"] > 0
+    ]
 
-    await asyncio.gather(
-        *[
+    tasks = []
+
+    if shuffle_dirs:
+        tasks.extend(
             _clear_flight_shuffle_dirs.options(
                 scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                     node_id=node["NodeID"],
                     soft=False,
                 )
             ).remote(shuffle_dirs)
-            for node in ray.nodes()
-            if "Resources" in node and "CPU" in node["Resources"] and node["Resources"]["CPU"] > 0
-        ]
-    )
+            for node in worker_nodes
+        )
+
+    if shared_dirs:
+        if worker_nodes:
+            tasks.append(
+                _clear_flight_shuffle_dirs.options(
+                    scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+                        node_id=worker_nodes[0]["NodeID"],
+                        soft=True,
+                    )
+                ).remote(shared_dirs)
+            )
+        else:
+            tasks.append(_clear_flight_shuffle_dirs.remote(shared_dirs))
+
+    if not tasks:
+        return
+
+    await asyncio.gather(*tasks)
+
+
+async def await_flight_shuffle_unregistrations(refs: list[ray.ObjectRef]) -> None:
+    """Wait for the workers to drop a finished shuffle's Flight registrations.
+
+    Failures are logged, not raised. The call only reclaims memory on a worker
+    that has finished its part in the query, and the commonest way for it to fail
+    is the worker being gone -- which already took the registry with it.
+    """
+    if not refs:
+        return
+
+    results = await asyncio.gather(*refs, return_exceptions=True)
+    dropped = 0
+    for result in results:
+        if isinstance(result, BaseException):
+            logger.warning("Failed to drop flight shuffle registrations on a worker: %s", result)
+        else:
+            dropped += result
+    logger.debug("Dropped %d flight shuffle registration(s) across %d worker(s)", dropped, len(refs))
 
 
 def _load_extensions_from_env() -> None:
@@ -189,6 +241,16 @@ class RaySwordfishActor:
         if address is None:
             raise RuntimeError("Flotilla worker should have started a Flight shuffle server")
         return address
+
+    async def unregister_shuffles(self, shuffle_ids: list[int]) -> int:
+        """Forget the Flight registrations for shuffles whose files have been deleted.
+
+        The registry is keyed per map-task attempt and nothing else ever removes
+        from it, so without this call a long-lived worker accumulates one entry per
+        output partition per attempt for every query it ever ran -- and keeps
+        answering for refs whose files are already gone.
+        """
+        return self.native_executor.unregister_shuffles(shuffle_ids)
 
     async def _resolve_inputs(
         self,
@@ -400,6 +462,14 @@ class RaySwordfishActorHandle:
             **inputs,
         )
         return RaySwordfishTaskHandle(result_handle)
+
+    def unregister_shuffles(self, shuffle_ids: list[int]) -> ray.ObjectRef:
+        """Start dropping this worker's registrations for `shuffle_ids`.
+
+        Returns the pending call rather than awaiting it, so the coordinator can
+        fan out to every worker and wait once.
+        """
+        return self.actor_handle.unregister_shuffles.remote(shuffle_ids)
 
     def shutdown(self) -> None:
         ray.kill(self.actor_handle)

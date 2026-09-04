@@ -14,9 +14,18 @@ fn get_shuffle_dirs(shuffle_dirs: &[String], shuffle_id: u64) -> Vec<String> {
         .collect()
 }
 
-fn get_partition_dir(shuffle_dirs: &[String], partition_ref_id: u64) -> String {
+/// Directory for one attempt's spill files of one output partition.
+///
+/// The attempt is part of the path because two attempts of the same task can be
+/// alive on one node at once (see `store::shared_map_file`); the IPC writer names
+/// its files by sequence number, so a shared directory would have them overwrite
+/// each other.
+fn get_partition_dir(shuffle_dirs: &[String], partition_ref_id: u64, attempt: u64) -> String {
     let dir = &shuffle_dirs[(partition_ref_id as usize) % shuffle_dirs.len()];
-    format!("{}/partition_ref_{}", dir, partition_ref_id)
+    format!(
+        "{}/partition_ref_{}_{:016x}",
+        dir, partition_ref_id, attempt
+    )
 }
 
 pub fn partition_ref_id(input_id: u32, partition_idx: usize) -> u64 {
@@ -54,6 +63,7 @@ pub struct InProgressShuffleCache {
 impl InProgressShuffleCache {
     pub fn try_new(
         partition_ref_id: u64,
+        attempt: u64,
         schema: SchemaRef,
         dirs: &[String],
         shuffle_id: u64,
@@ -81,7 +91,7 @@ impl InProgressShuffleCache {
         }
 
         // Create the partition writer
-        let partition_dir = get_partition_dir(&shuffle_dirs, partition_ref_id);
+        let partition_dir = get_partition_dir(&shuffle_dirs, partition_ref_id, attempt);
         std::fs::create_dir_all(&partition_dir)?;
 
         let writer = make_ipc_writer(&partition_dir, target_filesize, compression)?;
@@ -158,6 +168,7 @@ impl InProgressShuffleCache {
                 num_rows: result.total_rows_written,
                 size_bytes: result.total_bytes_written,
                 byte_ranges: None,
+                crc32s: None,
             }),
             None => Err(DaftError::InternalError(
                 "No writer result found".to_string(),
@@ -238,6 +249,13 @@ pub struct PartitionCache {
     /// `(start, end)` per file. Set when one file holds multiple output partitions
     /// (combined-file shuffle); `None` means read the whole file.
     pub byte_ranges: Option<Vec<(u64, u64)>>,
+    /// CRC-32 of each entry of `byte_ranges`, so a reader can tell a range that is
+    /// merely the right length from one that is also the right bytes.
+    ///
+    /// `None` for the per-partition layout, whose writer records no checksum. Those
+    /// files are read whole, where a truncated stream is caught by the absence of
+    /// the writer's end-of-stream marker instead.
+    pub crc32s: Option<Vec<u32>>,
 }
 
 #[cfg(test)]

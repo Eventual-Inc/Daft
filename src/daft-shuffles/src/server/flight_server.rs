@@ -1,4 +1,9 @@
-use std::{collections::HashMap, io::SeekFrom, pin::Pin, sync::Arc};
+use std::{
+    collections::HashMap,
+    io::SeekFrom,
+    pin::Pin,
+    sync::{Arc, Mutex},
+};
 
 use arrow_flight::{
     Action, ActionType, Criteria, Empty, FlightData, FlightDescriptor, FlightInfo,
@@ -13,76 +18,120 @@ use common_runtime::RuntimeTask;
 use daft_core::prelude::SchemaRef;
 use daft_recordbatch::RecordBatch;
 use futures::{Stream, StreamExt, TryStreamExt, stream::BoxStream};
-use tokio::{
-    io::{AsyncReadExt, AsyncSeekExt, BufReader},
-    sync::Mutex,
-};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, BufReader};
 use tonic::{Request, Response, Status, transport::Server};
 
-use super::stream::FlightDataStreamReader;
+use super::stream::{FlightMessage, next_flight_data, skip_stream_metadata};
 use crate::{
     client::flight_client::FlightRecordBatchStreamToDaftRecordBatchStream,
-    shuffle_cache::PartitionCache,
+    shuffle_cache::PartitionCache, store::verify::CheckedRange,
 };
 
+/// A `do_get` request: which shuffle, and which `(attempt, partition_ref_id)`
+/// pairs. Refs are addressed together with the attempt that produced them so a
+/// registration left behind by a superseded attempt of the same task can never
+/// satisfy a request meant for the attempt the coordinator selected.
 struct ParsedTicket {
     shuffle_id: u64,
-    partition_ref_ids: Vec<u64>,
+    refs: Vec<(u64, u64)>,
 }
 
 impl ParsedTicket {
+    /// Ticket format: `"{shuffle_id}:{attempt_hex}={ref},{ref};{attempt_hex}={ref}"`.
+    /// Refs are grouped by attempt because a reducer's request typically spans
+    /// many map inputs (each its own attempt) but one partition per input.
     fn from_ticket(ticket: &Ticket) -> Result<Self, Status> {
         let ticket_str = String::from_utf8(ticket.ticket.to_vec())
             .map_err(|e| Status::invalid_argument(e.to_string()))?;
 
-        // Ticket format: "shuffle_id:partition_ref_ids" where partition_ref_ids is comma-separated list of u64s
-        let parts: Vec<&str> = ticket_str.splitn(2, ':').collect();
-        if parts.len() < 2 {
+        let Some((shuffle_part, groups_part)) = ticket_str.split_once(':') else {
             return Err(Status::invalid_argument(
-                "Invalid ticket format. Expected 'shuffle_id:partition_ref_ids'",
+                "Invalid ticket format. Expected 'shuffle_id:attempt=refs;attempt=refs'",
             ));
-        }
+        };
 
-        let shuffle_id = parts[0]
+        let shuffle_id = shuffle_part
             .parse::<u64>()
             .map_err(|e| Status::invalid_argument(format!("Invalid shuffle id: {}", e)))?;
-        let partition_ref_ids = parts[1]
-            .split(',')
-            .filter(|id| !id.is_empty())
-            .map(|id| {
-                id.parse::<u64>().map_err(|e| {
-                    Status::invalid_argument(format!("Invalid partition ref id: {}", e))
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(Self {
-            shuffle_id,
-            partition_ref_ids,
-        })
+        let mut refs = Vec::new();
+        for group in groups_part.split(';').filter(|g| !g.is_empty()) {
+            let Some((attempt_part, refs_part)) = group.split_once('=') else {
+                return Err(Status::invalid_argument(format!(
+                    "Invalid ticket group '{}'. Expected 'attempt=ref,ref'",
+                    group
+                )));
+            };
+            let attempt = u64::from_str_radix(attempt_part, 16)
+                .map_err(|e| Status::invalid_argument(format!("Invalid attempt: {}", e)))?;
+            for id in refs_part.split(',').filter(|id| !id.is_empty()) {
+                let ref_id = id.parse::<u64>().map_err(|e| {
+                    Status::invalid_argument(format!("Invalid partition ref id: {}", e))
+                })?;
+                refs.push((attempt, ref_id));
+            }
+        }
+
+        Ok(Self { shuffle_id, refs })
     }
+}
+
+/// Encode a request in the form [`ParsedTicket::from_ticket`] reads.
+pub fn encode_ticket(shuffle_id: u64, refs: &[(u64, u64)]) -> String {
+    let mut by_attempt: std::collections::BTreeMap<u64, Vec<u64>> =
+        std::collections::BTreeMap::new();
+    for (attempt, ref_id) in refs {
+        by_attempt.entry(*attempt).or_default().push(*ref_id);
+    }
+    let groups = by_attempt
+        .into_iter()
+        .map(|(attempt, ids)| {
+            let ids = ids.iter().map(u64::to_string).collect::<Vec<_>>().join(",");
+            format!("{:x}={}", attempt, ids)
+        })
+        .collect::<Vec<_>>()
+        .join(";");
+    format!("{}:{}", shuffle_id, groups)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct FlightPartitionKey {
     shuffle_id: u64,
+    attempt: u64,
     partition_ref_id: u64,
+}
+
+/// One range of a combined map file, and what it should turn out to be.
+struct RangeSpec {
+    start: u64,
+    end: u64,
+    /// The writer's checksum for these bytes, when it recorded one.
+    crc32: Option<u32>,
 }
 
 /// How to read one file's contribution to a Flight response.
 enum FileReadSpec {
     /// Read the entire IPC stream file (per-partition cache).
     Whole { path: String },
-    /// Read one or more `(start, end)` ranges from a single file (combined-file shuffle).
+    /// Read one or more ranges from a single file (combined-file shuffle).
     Ranges {
         path: String,
-        ranges: Vec<(u64, u64)>,
+        ranges: Vec<RangeSpec>,
     },
 }
 
+/// Every output partition this worker has written and can still serve.
+///
+/// A plain `std::sync::Mutex` rather than an async one: nothing under this lock
+/// awaits — registration inserts, lookup resolves paths and ranges and hands
+/// them back — so an async mutex would only add scheduling to an uncontended
+/// critical section, and a synchronous one can also be taken from the Python
+/// thread that drops a finished shuffle's entries.
+type PartitionRegistry = Mutex<HashMap<FlightPartitionKey, PartitionCache>>;
+
 #[derive(Clone, Default)]
 pub struct ShuffleFlightServer {
-    shuffle_partitions: Arc<Mutex<HashMap<FlightPartitionKey, PartitionCache>>>,
+    shuffle_partitions: Arc<PartitionRegistry>,
 }
 
 impl ShuffleFlightServer {
@@ -90,16 +139,64 @@ impl ShuffleFlightServer {
         Self::default()
     }
 
-    pub async fn register_shuffle_partitions(
+    fn lock_partitions(
+        &self,
+    ) -> std::sync::MutexGuard<'_, HashMap<FlightPartitionKey, PartitionCache>> {
+        self.shuffle_partitions
+            .lock()
+            .expect("shuffle partition registry poisoned")
+    }
+
+    /// Forget every registration belonging to `shuffle_ids`.
+    ///
+    /// Registrations are per map task attempt and never expire on their own, so
+    /// without this a worker's registry is a monotonically growing map: one entry
+    /// per output partition per attempt per query, each holding a schema, the file
+    /// paths and the byte ranges. That is memory the worker keeps for the rest of
+    /// its life, and — worse on the local-placement path — it keeps refs from
+    /// finished queries answerable long after the files behind them are gone.
+    ///
+    /// Called when the query that owns the shuffle drops its spill trees, so the
+    /// registry and the files it points at disappear together. Also drops what
+    /// this process memoized about those shuffles' layout on disk — the
+    /// directories it created and the partition counts it learned — since the
+    /// paths behind both have just been removed.
+    ///
+    /// Returns how many entries were dropped, which is what the caller logs; a
+    /// worker that took no part in a shuffle correctly reports zero.
+    pub fn unregister_shuffles(&self, shuffle_ids: &[u64]) -> usize {
+        if shuffle_ids.is_empty() {
+            return 0;
+        }
+        let dropped = {
+            let mut partitions = self.lock_partitions();
+            let before = partitions.len();
+            partitions.retain(|key, _| !shuffle_ids.contains(&key.shuffle_id));
+            before - partitions.len()
+        };
+        for shuffle_id in shuffle_ids {
+            crate::store::forget_shuffle(*shuffle_id);
+        }
+        dropped
+    }
+
+    /// Register one attempt's output partitions.
+    ///
+    /// Keyed by attempt as well as ref: two attempts of one map task can both
+    /// run to completion in this process, and a reader that asks for one must
+    /// not be served the other.
+    pub fn register_shuffle_partitions(
         &self,
         shuffle_id: u64,
+        attempt: u64,
         partitions: Vec<PartitionCache>,
     ) -> DaftResult<()> {
-        let mut shuffle_partitions = self.shuffle_partitions.lock().await;
+        let mut shuffle_partitions = self.lock_partitions();
         for partition in partitions {
             shuffle_partitions.insert(
                 FlightPartitionKey {
                     shuffle_id,
+                    attempt,
                     partition_ref_id: partition.partition_ref_id,
                 },
                 partition,
@@ -108,44 +205,64 @@ impl ShuffleFlightServer {
         Ok(())
     }
 
-    async fn get_shuffle_file_specs(
+    /// Resolve every requested `(attempt, ref)` to file reads.
+    ///
+    /// All-or-nothing: if any ref is not registered here, the whole request is
+    /// refused with the missing refs (`Err`). Serving the ones that are present
+    /// would hand the caller a stream that looks complete and is not — the caller
+    /// has no way to tell which inputs were skipped. Refusing lets it fall back
+    /// to shared storage or fail loudly.
+    fn get_shuffle_file_specs(
         &self,
         shuffle_id: u64,
-        partition_ref_ids: &[u64],
-    ) -> Option<(Vec<FileReadSpec>, SchemaRef)> {
-        let partitions = self.shuffle_partitions.lock().await;
+        refs: &[(u64, u64)],
+    ) -> Result<(Vec<FileReadSpec>, SchemaRef), Vec<(u64, u64)>> {
+        let partitions = self.lock_partitions();
 
-        let schema = partitions
-            .get(&FlightPartitionKey {
+        let mut missing = Vec::new();
+        let mut schema: Option<SchemaRef> = None;
+        let mut caches = Vec::with_capacity(refs.len());
+        for (attempt, partition_ref_id) in refs {
+            match partitions.get(&FlightPartitionKey {
                 shuffle_id,
-                partition_ref_id: *partition_ref_ids
-                    .first()
-                    .expect("Expected at least one partition"),
-            })
-            .expect("No partitions found")
-            .schema
-            .clone();
+                attempt: *attempt,
+                partition_ref_id: *partition_ref_id,
+            }) {
+                Some(cache) => {
+                    schema.get_or_insert_with(|| cache.schema.clone());
+                    caches.push(cache);
+                }
+                None => missing.push((*attempt, *partition_ref_id)),
+            }
+        }
+        if !missing.is_empty() {
+            return Err(missing);
+        }
+        let Some(schema) = schema else {
+            // An empty request has nothing to serve and no schema to serve it with.
+            return Err(Vec::new());
+        };
 
         // Group ranged reads by file path so each physical file is read from a single FD.
         let mut specs: Vec<FileReadSpec> = Vec::new();
-        let mut ranges_by_path: HashMap<String, Vec<(u64, u64)>> = HashMap::new();
+        let mut ranges_by_path: HashMap<String, Vec<RangeSpec>> = HashMap::new();
         let mut order: Vec<String> = Vec::new();
 
-        for partition_ref_id in partition_ref_ids {
-            let Some(cache) = partitions.get(&FlightPartitionKey {
-                shuffle_id,
-                partition_ref_id: *partition_ref_id,
-            }) else {
-                continue;
-            };
+        for cache in caches {
             match &cache.byte_ranges {
                 Some(ranges) => {
-                    for (path, (start, end)) in cache.file_paths.iter().zip(ranges.iter()) {
+                    for (idx, (path, (start, end))) in
+                        cache.file_paths.iter().zip(ranges.iter()).enumerate()
+                    {
                         let entry = ranges_by_path.entry(path.clone()).or_insert_with(|| {
                             order.push(path.clone());
                             Vec::new()
                         });
-                        entry.push((*start, *end));
+                        entry.push(RangeSpec {
+                            start: *start,
+                            end: *end,
+                            crc32: cache.crc32s.as_ref().and_then(|c| c.get(idx).copied()),
+                        });
                     }
                 }
                 None => {
@@ -159,11 +276,11 @@ impl ShuffleFlightServer {
         for path in order {
             let mut ranges = ranges_by_path.remove(&path).unwrap_or_default();
             // Sort by start so sequential reads stay forward-going (kind to readahead).
-            ranges.sort_unstable_by_key(|r| r.0);
+            ranges.sort_unstable_by_key(|r| r.start);
             specs.push(FileReadSpec::Ranges { path, ranges });
         }
 
-        Some((specs, schema))
+        Ok((specs, schema))
     }
 
     /// Get partition data in-process (no gRPC). Returns a stream of Daft RecordBatches.
@@ -171,15 +288,14 @@ impl ShuffleFlightServer {
     pub async fn get_partition_local(
         &self,
         shuffle_id: u64,
-        partition_ref_ids: &[u64],
+        refs: &[(u64, u64)],
     ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
         let (specs, schema) = self
-            .get_shuffle_file_specs(shuffle_id, partition_ref_ids)
-            .await
-            .ok_or_else(|| {
+            .get_shuffle_file_specs(shuffle_id, refs)
+            .map_err(|missing| {
                 DaftError::ValueError(format!(
-                    "Shuffle partitions not found for shuffle {} refs {:?}",
-                    shuffle_id, partition_ref_ids
+                    "Shuffle partitions not registered on this worker for shuffle {}: (attempt, ref) {:?}",
+                    shuffle_id, missing
                 ))
             })?;
 
@@ -271,12 +387,11 @@ impl FlightService for ShuffleFlightServer {
         let ticket = ParsedTicket::from_ticket(&ticket)?;
 
         let (specs, schema) = self
-            .get_shuffle_file_specs(ticket.shuffle_id, &ticket.partition_ref_ids)
-            .await
-            .ok_or_else(|| {
+            .get_shuffle_file_specs(ticket.shuffle_id, &ticket.refs)
+            .map_err(|missing| {
                 Status::not_found(format!(
-                    "Shuffle partitions not found for shuffle {} refs {:?}",
-                    ticket.shuffle_id, ticket.partition_ref_ids
+                    "Shuffle partitions not registered for shuffle {}: (attempt, ref) {:?}",
+                    ticket.shuffle_id, missing
                 ))
             })?;
 
@@ -325,25 +440,38 @@ fn open_spec_as_flight_stream(spec: FileReadSpec) -> BoxStream<'static, DaftResu
     Box::pin(async_stream::try_stream! {
         match spec {
             FileReadSpec::Whole { path } => {
+                // The per-partition layout records neither a length nor a checksum,
+                // so the only thing that distinguishes "this stream had few batches"
+                // from "this file was cut short" is the writer's end-of-stream
+                // marker. Requiring it turns a silently short answer into an error.
                 let file = tokio::fs::File::open(&path).await.map_err(DaftError::IoError)?;
-                let reader = FlightDataStreamReader::try_new(BufReader::new(file)).await?;
-                let inner = reader.into_stream();
-                futures::pin_mut!(inner);
-                while let Some(item) = inner.next().await {
-                    yield item?;
+                let mut reader = BufReader::new(file);
+                skip_stream_metadata(&mut reader).await?;
+                loop {
+                    match next_flight_data(&mut reader).await? {
+                        FlightMessage::Data(data) => yield data,
+                        FlightMessage::EndOfStream => break,
+                        FlightMessage::EndOfInput => Err(DaftError::InternalError(format!(
+                            "shuffle file {} ends without an end-of-stream marker;                              it was not completely written",
+                            path
+                        )))?,
+                    }
                 }
             }
             FileReadSpec::Ranges { path, ranges } => {
                 let mut file = tokio::fs::File::open(&path).await.map_err(DaftError::IoError)?;
-                for (start, end) in ranges {
-                    file.seek(SeekFrom::Start(start)).await.map_err(DaftError::IoError)?;
-                    let limited = (&mut file).take(end - start);
-                    let reader = FlightDataStreamReader::from_skipped(BufReader::new(limited));
-                    let inner = reader.into_stream();
-                    futures::pin_mut!(inner);
-                    while let Some(item) = inner.next().await {
-                        yield item?;
+                for range in ranges {
+                    file.seek(SeekFrom::Start(range.start)).await.map_err(DaftError::IoError)?;
+                    let mut checked = CheckedRange::new(
+                        &mut file,
+                        range.end - range.start,
+                        range.crc32,
+                        format!("shuffle file {} range {}..{}", path, range.start, range.end),
+                    );
+                    while let Some(data) = checked.next().await? {
+                        yield data;
                     }
+                    checked.finish()?;
                 }
             }
         }
@@ -423,5 +551,258 @@ pub fn start_server_loop(
         port,
         shutdown_signal: Some(shutdown_tx),
         server_task: Some(server_task),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use daft_micropartition::MicroPartition;
+    use daft_schema::{dtype::DataType, field::Field, schema::Schema};
+    use daft_writers::test::make_dummy_mp;
+    use futures::TryStreamExt;
+
+    use super::*;
+    use crate::{
+        oneshot_writer::{OneShotTarget, write_partitions_one_shot},
+        shuffle_cache::partition_ref_id,
+    };
+
+    fn cache(partition_ref_id: u64) -> PartitionCache {
+        PartitionCache {
+            partition_ref_id,
+            schema: Arc::new(Schema::new(vec![Field::new("a", DataType::Int64)])),
+            bytes_per_file: vec![4],
+            file_paths: vec!["/tmp/does-not-need-to-exist".to_string()],
+            num_rows: 1,
+            size_bytes: 4,
+            byte_ranges: Some(vec![(0, 4)]),
+            crc32s: None,
+        }
+    }
+
+    #[test]
+    fn unregistering_drops_only_the_named_shuffles() {
+        let server = ShuffleFlightServer::new();
+        server
+            .register_shuffle_partitions(1, 0xaa, vec![cache(10), cache(11)])
+            .unwrap();
+        // A superseded attempt of the same shuffle leaves entries behind too.
+        server
+            .register_shuffle_partitions(1, 0xbb, vec![cache(10)])
+            .unwrap();
+        server
+            .register_shuffle_partitions(2, 0xcc, vec![cache(20)])
+            .unwrap();
+
+        assert_eq!(server.unregister_shuffles(&[1]), 3);
+        assert!(server.get_shuffle_file_specs(1, &[(0xaa, 10)]).is_err());
+        // The shuffle that is still running is untouched.
+        assert!(server.get_shuffle_file_specs(2, &[(0xcc, 20)]).is_ok());
+
+        // Idempotent: a second cleanup pass, or a worker that held nothing, is a no-op.
+        assert_eq!(server.unregister_shuffles(&[1]), 0);
+        assert_eq!(server.unregister_shuffles(&[]), 0);
+        assert_eq!(server.unregister_shuffles(&[2]), 1);
+    }
+
+    fn tempdir(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "daft_flight_verify_{}_{}_{}",
+            tag,
+            std::process::id(),
+            crate::store::new_attempt_token()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn u8_schema() -> SchemaRef {
+        Arc::new(Schema::new(vec![Field::new("ints", DataType::UInt8)]))
+    }
+
+    /// Write one combined map file to node-local disk — the layout the gRPC and
+    /// in-process routes serve — and register it.
+    async fn local_map_file(
+        server: &ShuffleFlightServer,
+        dir: &std::path::Path,
+        shuffle_id: u64,
+        attempt: u64,
+        rows: usize,
+    ) -> (String, Vec<PartitionCache>) {
+        let schema = u8_schema();
+        let caches = write_partitions_one_shot(
+            0,
+            shuffle_id,
+            attempt,
+            OneShotTarget::Local {
+                shuffle_dirs: vec![dir.to_str().unwrap().to_string()],
+            },
+            schema.clone(),
+            None,
+            vec![make_dummy_mp(rows), make_dummy_mp(rows)],
+        )
+        .await
+        .unwrap();
+        server
+            .register_shuffle_partitions(shuffle_id, attempt, caches.clone())
+            .unwrap();
+        (caches[1].file_paths[0].clone(), caches)
+    }
+
+    async fn read_local(
+        server: &ShuffleFlightServer,
+        shuffle_id: u64,
+        attempt: u64,
+        partition_idx: usize,
+    ) -> DaftResult<usize> {
+        let stream = server
+            .get_partition_local(shuffle_id, &[(attempt, partition_ref_id(0, partition_idx))])
+            .await?;
+        let batches: Vec<RecordBatch> = stream.try_collect().await?;
+        Ok(batches.iter().map(RecordBatch::len).sum())
+    }
+
+    /// The silent case: a hole on a message boundary reads back as a zero-length
+    /// message, which the parser takes for a clean end of stream. Nothing but the
+    /// range's recorded length says the read stopped in the wrong place — and
+    /// until now the gRPC and in-process routes did not consult it, so this
+    /// returned *no rows and no error*.
+    #[tokio::test]
+    async fn a_hole_at_a_message_boundary_is_incomplete_not_fewer_rows() {
+        use std::io::{Seek, SeekFrom, Write};
+
+        let dir = tempdir("boundary");
+        let server = ShuffleFlightServer::new();
+        let (path, caches) = local_map_file(&server, &dir, 5, 0xaa, 400).await;
+        assert_eq!(read_local(&server, 5, 0xaa, 1).await.unwrap(), 400);
+
+        // Zero the second partition's first message framing.
+        let (start, _) = caches[1].byte_ranges.as_ref().unwrap()[0];
+        let mut f = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+        f.seek(SeekFrom::Start(start)).unwrap();
+        f.write_all(&[0u8; 8]).unwrap();
+        drop(f);
+
+        let err = read_local(&server, 5, 0xaa, 1)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("incomplete"),
+            "a range that stopped early must be rejected, got: {err}"
+        );
+        // The partition before the hole is untouched.
+        assert_eq!(read_local(&server, 5, 0xaa, 0).await.unwrap(), 400);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Truncation mid-message is caught too, though by the parser running out of
+    /// bytes rather than by the length check. Either way it is an error and not a
+    /// short answer, which is the property that matters.
+    #[tokio::test]
+    async fn a_truncated_range_fails_the_read() {
+        let dir = tempdir("truncated");
+        let server = ShuffleFlightServer::new();
+        let (path, caches) = local_map_file(&server, &dir, 8, 0xdd, 400).await;
+
+        let (start, end) = caches[1].byte_ranges.as_ref().unwrap()[0];
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_len(start + (end - start) / 2)
+            .unwrap();
+
+        let err = read_local(&server, 8, 0xdd, 1)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("incomplete") || err.contains("early eof"),
+            "truncation must surface as an error, got: {err}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A hole where data should be decodes as zeros into a valid-looking record
+    /// batch: right row count, wrong values. Only the checksum catches it, and the
+    /// checksum is only available because the writer now keeps it in the registry.
+    #[tokio::test]
+    async fn a_zeroed_hole_in_a_range_fails_the_checksum() {
+        use std::io::{Read, Seek, SeekFrom, Write};
+
+        let dir = tempdir("hole");
+        let server = ShuffleFlightServer::new();
+        let (path, caches) = local_map_file(&server, &dir, 6, 0xbb, 400).await;
+        let (start, end) = caches[1].byte_ranges.as_ref().unwrap()[0];
+
+        // Zero the last non-zero byte in the range: IPC alignment padding is
+        // already zero, so a fixed offset would land on padding and change nothing.
+        let mut bytes = Vec::new();
+        std::fs::File::open(&path)
+            .unwrap()
+            .read_to_end(&mut bytes)
+            .unwrap();
+        let at = (start as usize..end as usize)
+            .rfind(|i| bytes[*i] != 0)
+            .expect("range should hold non-zero bytes");
+
+        let mut f = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+        f.seek(SeekFrom::Start(at as u64)).unwrap();
+        f.write_all(&[0]).unwrap();
+        drop(f);
+
+        let err = read_local(&server, 6, 0xbb, 1)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("checksum"),
+            "an altered range must fail its checksum, got: {err}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The per-partition layout records no length and no checksum, so the only
+    /// thing separating "few batches" from "cut short" is the writer's
+    /// end-of-stream marker.
+    #[tokio::test]
+    async fn a_whole_file_without_its_end_of_stream_marker_is_rejected() {
+        let dir = tempdir("eos");
+        let server = ShuffleFlightServer::new();
+        let (path, caches) = local_map_file(&server, &dir, 7, 0xcc, 128).await;
+
+        // Re-register the same file the way the per-partition writer would: no
+        // ranges, no checksums, read the file whole.
+        let whole = PartitionCache {
+            byte_ranges: None,
+            crc32s: None,
+            file_paths: vec![path.clone()],
+            ..caches[0].clone()
+        };
+        server
+            .register_shuffle_partitions(7, 0xcc, vec![whole])
+            .unwrap();
+        // Both partitions live in this file, so reading it whole yields both.
+        assert_eq!(read_local(&server, 7, 0xcc, 0).await.unwrap(), 256);
+
+        // Drop the 8-byte end-of-stream marker `finish()` wrote.
+        let len = std::fs::metadata(&path).unwrap().len();
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_len(len - 8)
+            .unwrap();
+
+        let err = read_local(&server, 7, 0xcc, 0)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("end-of-stream marker"),
+            "a file that was never finished must be rejected, got: {err}"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

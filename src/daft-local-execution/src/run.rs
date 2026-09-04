@@ -207,6 +207,19 @@ impl PyNativeExecutor {
         self.address.clone()
     }
 
+    /// Called by the coordinator once a query's shuffle files have been removed.
+    ///
+    /// Takes the executor lock only to reach the shuffle server; the registry has
+    /// its own lock and nothing under it blocks, so this cannot stall a worker
+    /// that is mid-query.
+    pub fn unregister_shuffles(&self, py: Python<'_>, shuffle_ids: Vec<u64>) -> PyResult<usize> {
+        Ok(self
+            .executor
+            .lock_py_attached(py)
+            .unwrap()
+            .unregister_shuffles(&shuffle_ids))
+    }
+
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (local_physical_plan, daft_ctx, input_id, inputs, context=None, maintain_order=true))]
     pub fn run<'py>(
@@ -442,6 +455,14 @@ impl NativeExecutor {
         self.shuffle_server_connection
             .as_ref()
             .map(|conn| conn.shuffle_address())
+    }
+
+    /// Drop this worker's Flight registrations for shuffles whose data has been
+    /// deleted. See [`ShuffleFlightServer::unregister_shuffles`].
+    pub fn unregister_shuffles(&self, shuffle_ids: &[u64]) -> usize {
+        self.shuffle_server
+            .as_ref()
+            .map_or(0, |server| server.unregister_shuffles(shuffle_ids))
     }
 
     #[allow(clippy::too_many_arguments)]

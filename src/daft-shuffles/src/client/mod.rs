@@ -20,11 +20,12 @@ impl FlightClientManager {
         Self::default()
     }
 
+    /// Fetch `(attempt, partition_ref_id)` pairs from one server as a single stream.
     pub async fn fetch_partition(
         &self,
         shuffle_id: u64,
         server_address: &str,
-        partition_ref_ids: &[u64],
+        refs: &[(u64, u64)],
         schema: SchemaRef,
     ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
         let client = {
@@ -42,7 +43,7 @@ impl FlightClientManager {
         let stream = client
             .lock()
             .await
-            .get_partition(shuffle_id, partition_ref_ids, schema)
+            .get_partition(shuffle_id, refs, schema)
             .await?
             .boxed();
         Ok(stream)
