@@ -3597,6 +3597,7 @@ dependencies = [
  "common-error",
  "daft-core",
  "daft-dsl",
+ "daft-functions-utf8",
  "daft-recordbatch",
  "serde",
  "snafu",
