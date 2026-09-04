@@ -1,14 +1,6 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
-use daft_dsl::{
-    AggExpr,
-    expr::{
-        MapGroupsFn,
-        bound_expr::{BoundAggExpr, BoundExpr},
-    },
-    operator_metrics::NoopMetricsCollector,
-    python_udf::PyScalarFn,
-};
+use daft_dsl::expr::bound_expr::{BoundAggExpr, BoundExpr};
 use daft_groupby::{IntoGroups, IntoUniqueIdxs};
 
 use super::inline_agg::can_inline_agg;

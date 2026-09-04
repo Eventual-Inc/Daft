@@ -34,7 +34,7 @@ def read_csv(
     allow_variable_columns: bool = False,
     io_config: IOConfig | None = None,
     file_path_column: str | None = None,
-    hive_partitioning: bool = False,
+    hive_partitioning: bool | None = None,
     ignore_corrupt_files: bool = False,
     _buffer_size: int | None = None,
     _chunk_size: int | None = None,
@@ -54,7 +54,10 @@ def read_csv(
         allow_variable_columns (bool): Whether to allow for variable number of columns in the CSV, defaults to False. If set to True, Daft will append nulls to rows with less columns than the schema, and ignore extra columns in rows with more columns
         io_config (IOConfig): Config to be used with the native downloader
         file_path_column: Include the source path(s) as a column with this name. Defaults to None.
-        hive_partitioning: Whether to infer hive_style partitions from file paths and include them as columns in the Dataframe. Defaults to False.
+        hive_partitioning: Whether to infer Hive-style partitions from file paths and
+        include them as columns in the DataFrame. If None, automatically detects
+        Hive partitioning from the expanded file paths. True forces Hive
+        partitioning and False disables it. Defaults to None.
         checkpoint: Optional :class:`daft.CheckpointConfig` for progress tracking across runs. Bundles the
             checkpoint store, the source key column (``on=``), and optional anti-join tuning. Rows whose key
             already exists in the store are skipped on re-run. Requires the Ray runner.

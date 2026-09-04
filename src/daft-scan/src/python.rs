@@ -378,7 +378,7 @@ pub mod pylib {
             glob_path: Vec<String>,
             file_format_config: PyFileFormatConfig,
             storage_config: StorageConfig,
-            hive_partitioning: bool,
+            hive_partitioning: Option<bool>,
             infer_schema: bool,
             schema: Option<PySchema>,
             file_path_column: Option<String>,

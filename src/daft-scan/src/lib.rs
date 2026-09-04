@@ -997,7 +997,7 @@ mod test {
             infer_schema,
             Some(Arc::new(Schema::empty())),
             None,
-            false,
+            Some(false),
             false,
         )
         .await
@@ -1593,5 +1593,68 @@ mod test {
             assert!(estimate_val <= REASONABLE_SIZE_BYTES);
             assert!(estimate_val > 0);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use common_error::DaftResult;
+    use common_file_formats::FileFormat;
+
+    use super::*;
+    use crate::glob::detect_hive_partitioning;
+
+    #[tokio::test]
+    async fn test_detect_hive_partitioning_consistent_keys() -> DaftResult<()> {
+        let paths = vec![
+            "file:///data/year=2024/month=01/file1.parquet".to_string(),
+            "file:///data/year=2024/month=02/file2.parquet".to_string(),
+        ];
+
+        let (_, io_client) =
+            StorageConfig::new_internal(false, None).get_io_client_and_runtime()?;
+
+        let result =
+            detect_hive_partitioning(&paths, io_client, None, FileFormat::Parquet, true).await?;
+
+        assert!(result);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_detect_hive_partitioning_inconsistent_keys() -> DaftResult<()> {
+        let paths = vec![
+            "file:///data/year=2024/month=01/file1.parquet".to_string(),
+            "file:///data/year=2024/day=01/file2.parquet".to_string(),
+        ];
+
+        let (_, io_client) =
+            StorageConfig::new_internal(false, None).get_io_client_and_runtime()?;
+
+        let result =
+            detect_hive_partitioning(&paths, io_client, None, FileFormat::Parquet, true).await?;
+
+        assert!(!result);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_detect_hive_partitioning_without_partitions() -> DaftResult<()> {
+        let paths = vec![
+            "file:///data/file1.parquet".to_string(),
+            "file:///data/file2.parquet".to_string(),
+        ];
+
+        let (_, io_client) =
+            StorageConfig::new_internal(false, None).get_io_client_and_runtime()?;
+
+        let result =
+            detect_hive_partitioning(&paths, io_client, None, FileFormat::Parquet, true).await?;
+
+        assert!(!result);
+
+        Ok(())
     }
 }
