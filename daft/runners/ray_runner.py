@@ -535,6 +535,47 @@ def _ray_num_cpus_provider(ttl_seconds: int = 1) -> Generator[int, None, None]:
             yield last_num_cpus_queried
 
 
+def _resolve_ray_dashboard_url() -> str | None:
+    """Resolve the Ray dashboard URL to surface in query metadata.
+
+    This is display-only: the result is rendered as a link in the Daft dashboard and is
+    never used for HTTP calls or Ray communication.
+
+    `DAFT_RAY_DASHBOARD_URL` takes precedence over Ray's own discovery so that hosted
+    environments can point at an authenticated ingress proxy. It is honored even when
+    `RAY_DISABLE_DASHBOARD=1`, since disabling Ray's built-in dashboard says nothing
+    about whether an externally hosted one exists.
+    """
+    url: str | None = os.environ.get("DAFT_RAY_DASHBOARD_URL")
+    if not url:
+        if os.environ.get("RAY_DISABLE_DASHBOARD") == "1":
+            return None
+        try:
+            if not ray.is_initialized():
+                return None
+            url = ray.worker.get_dashboard_url()
+        except Exception:
+            return None
+        if not url:
+            return None
+
+    # Match the scheme check the dashboard frontend does when rendering the link, so a
+    # hostname that merely starts with "http" (e.g. "http-proxy.internal") still gets one.
+    if not url.startswith(("http://", "https://")):
+        url = f"http://{url}"
+
+    # Try to append Job ID, unless the configured URL already points at a specific route.
+    if "#" not in url:
+        try:
+            job_id = ray.get_runtime_context().get_job_id()
+            if job_id:
+                url = f"{url.rstrip('/')}/#/jobs/{job_id}"
+        except Exception:
+            pass
+
+    return url
+
+
 class RayRunner(Runner[ray.ObjectRef]):
     name = "ray"
 
@@ -585,24 +626,7 @@ class RayRunner(Runner[ray.ObjectRef]):
         unoptimized_plan_json = builder.repr_json()
 
         # Notify query start
-        ray_dashboard_url = None
-        if os.environ.get("RAY_DISABLE_DASHBOARD") != "1":
-            try:
-                if ray.is_initialized():
-                    ray_dashboard_url = ray.worker.get_dashboard_url()
-                    if ray_dashboard_url:
-                        if not ray_dashboard_url.startswith("http"):
-                            ray_dashboard_url = f"http://{ray_dashboard_url}"
-
-                        # Try to append Job ID
-                        try:
-                            job_id = ray.get_runtime_context().get_job_id()
-                            if job_id:
-                                ray_dashboard_url = f"{ray_dashboard_url}/#/jobs/{job_id}"
-                        except Exception:
-                            pass
-            except Exception:
-                pass
+        ray_dashboard_url = _resolve_ray_dashboard_url()
 
         entrypoint = "python " + " ".join(sys.argv)
         dashboard_url = os.environ.get("DAFT_DASHBOARD_URL")
