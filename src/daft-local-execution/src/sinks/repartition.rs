@@ -228,13 +228,11 @@ impl BlockingSink for RepartitionSink {
                             )
                             .await?;
 
-                            ctx.local_server
-                                .register_shuffle_partitions(
-                                    ctx.shuffle_id,
-                                    attempt,
-                                    partition_caches.clone(),
-                                )
-                                .await?;
+                            ctx.local_server.register_shuffle_partitions(
+                                ctx.shuffle_id,
+                                attempt,
+                                partition_caches.clone(),
+                            )?;
                             Ok(BlockingSinkOutput::FlightPartitionRefs(
                                 partition_caches
                                     .into_iter()

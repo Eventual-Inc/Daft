@@ -1,4 +1,9 @@
-use std::{collections::HashMap, io::SeekFrom, pin::Pin, sync::Arc};
+use std::{
+    collections::HashMap,
+    io::SeekFrom,
+    pin::Pin,
+    sync::{Arc, Mutex},
+};
 
 use arrow_flight::{
     Action, ActionType, Criteria, Empty, FlightData, FlightDescriptor, FlightInfo,
@@ -13,10 +18,7 @@ use common_runtime::RuntimeTask;
 use daft_core::prelude::SchemaRef;
 use daft_recordbatch::RecordBatch;
 use futures::{Stream, StreamExt, TryStreamExt, stream::BoxStream};
-use tokio::{
-    io::{AsyncReadExt, AsyncSeekExt, BufReader},
-    sync::Mutex,
-};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, BufReader};
 use tonic::{Request, Response, Status, transport::Server};
 
 use super::stream::FlightDataStreamReader;
@@ -110,9 +112,18 @@ enum FileReadSpec {
     },
 }
 
+/// Every output partition this worker has written and can still serve.
+///
+/// A plain `std::sync::Mutex` rather than an async one: nothing under this lock
+/// awaits — registration inserts, lookup resolves paths and ranges and hands
+/// them back — so an async mutex would only add scheduling to an uncontended
+/// critical section, and a synchronous one can also be taken from the Python
+/// thread that drops a finished shuffle's entries.
+type PartitionRegistry = Mutex<HashMap<FlightPartitionKey, PartitionCache>>;
+
 #[derive(Clone, Default)]
 pub struct ShuffleFlightServer {
-    shuffle_partitions: Arc<Mutex<HashMap<FlightPartitionKey, PartitionCache>>>,
+    shuffle_partitions: Arc<PartitionRegistry>,
 }
 
 impl ShuffleFlightServer {
@@ -120,18 +131,57 @@ impl ShuffleFlightServer {
         Self::default()
     }
 
+    fn lock_partitions(
+        &self,
+    ) -> std::sync::MutexGuard<'_, HashMap<FlightPartitionKey, PartitionCache>> {
+        self.shuffle_partitions
+            .lock()
+            .expect("shuffle partition registry poisoned")
+    }
+
+    /// Forget every registration belonging to `shuffle_ids`.
+    ///
+    /// Registrations are per map task attempt and never expire on their own, so
+    /// without this a worker's registry is a monotonically growing map: one entry
+    /// per output partition per attempt per query, each holding a schema, the file
+    /// paths and the byte ranges. That is memory the worker keeps for the rest of
+    /// its life, and — worse on the local-placement path — it keeps refs from
+    /// finished queries answerable long after the files behind them are gone.
+    ///
+    /// Called when the query that owns the shuffle drops its spill trees, so the
+    /// registry and the files it points at disappear together. Also drops the
+    /// directory memo for those shuffles, whose paths have just been removed.
+    ///
+    /// Returns how many entries were dropped, which is what the caller logs; a
+    /// worker that took no part in a shuffle correctly reports zero.
+    pub fn unregister_shuffles(&self, shuffle_ids: &[u64]) -> usize {
+        if shuffle_ids.is_empty() {
+            return 0;
+        }
+        let dropped = {
+            let mut partitions = self.lock_partitions();
+            let before = partitions.len();
+            partitions.retain(|key, _| !shuffle_ids.contains(&key.shuffle_id));
+            before - partitions.len()
+        };
+        for shuffle_id in shuffle_ids {
+            crate::store::forget_created_dirs(*shuffle_id);
+        }
+        dropped
+    }
+
     /// Register one attempt's output partitions.
     ///
     /// Keyed by attempt as well as ref: two attempts of one map task can both
     /// run to completion in this process, and a reader that asks for one must
     /// not be served the other.
-    pub async fn register_shuffle_partitions(
+    pub fn register_shuffle_partitions(
         &self,
         shuffle_id: u64,
         attempt: u64,
         partitions: Vec<PartitionCache>,
     ) -> DaftResult<()> {
-        let mut shuffle_partitions = self.shuffle_partitions.lock().await;
+        let mut shuffle_partitions = self.lock_partitions();
         for partition in partitions {
             shuffle_partitions.insert(
                 FlightPartitionKey {
@@ -152,12 +202,12 @@ impl ShuffleFlightServer {
     /// would hand the caller a stream that looks complete and is not — the caller
     /// has no way to tell which inputs were skipped. Refusing lets it fall back
     /// to shared storage or fail loudly.
-    async fn get_shuffle_file_specs(
+    fn get_shuffle_file_specs(
         &self,
         shuffle_id: u64,
         refs: &[(u64, u64)],
     ) -> Result<(Vec<FileReadSpec>, SchemaRef), Vec<(u64, u64)>> {
-        let partitions = self.shuffle_partitions.lock().await;
+        let partitions = self.lock_partitions();
 
         let mut missing = Vec::new();
         let mut schema: Option<SchemaRef> = None;
@@ -226,7 +276,6 @@ impl ShuffleFlightServer {
     ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
         let (specs, schema) = self
             .get_shuffle_file_specs(shuffle_id, refs)
-            .await
             .map_err(|missing| {
                 DaftError::ValueError(format!(
                     "Shuffle partitions not registered on this worker for shuffle {}: (attempt, ref) {:?}",
@@ -323,7 +372,6 @@ impl FlightService for ShuffleFlightServer {
 
         let (specs, schema) = self
             .get_shuffle_file_specs(ticket.shuffle_id, &ticket.refs)
-            .await
             .map_err(|missing| {
                 Status::not_found(format!(
                     "Shuffle partitions not registered for shuffle {}: (attempt, ref) {:?}",
@@ -474,5 +522,49 @@ pub fn start_server_loop(
         port,
         shutdown_signal: Some(shutdown_tx),
         server_task: Some(server_task),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use daft_schema::{dtype::DataType, field::Field, schema::Schema};
+
+    use super::*;
+
+    fn cache(partition_ref_id: u64) -> PartitionCache {
+        PartitionCache {
+            partition_ref_id,
+            schema: Arc::new(Schema::new(vec![Field::new("a", DataType::Int64)])),
+            bytes_per_file: vec![4],
+            file_paths: vec!["/tmp/does-not-need-to-exist".to_string()],
+            num_rows: 1,
+            size_bytes: 4,
+            byte_ranges: Some(vec![(0, 4)]),
+        }
+    }
+
+    #[test]
+    fn unregistering_drops_only_the_named_shuffles() {
+        let server = ShuffleFlightServer::new();
+        server
+            .register_shuffle_partitions(1, 0xaa, vec![cache(10), cache(11)])
+            .unwrap();
+        // A superseded attempt of the same shuffle leaves entries behind too.
+        server
+            .register_shuffle_partitions(1, 0xbb, vec![cache(10)])
+            .unwrap();
+        server
+            .register_shuffle_partitions(2, 0xcc, vec![cache(20)])
+            .unwrap();
+
+        assert_eq!(server.unregister_shuffles(&[1]), 3);
+        assert!(server.get_shuffle_file_specs(1, &[(0xaa, 10)]).is_err());
+        // The shuffle that is still running is untouched.
+        assert!(server.get_shuffle_file_specs(2, &[(0xcc, 20)]).is_ok());
+
+        // Idempotent: a second cleanup pass, or a worker that held nothing, is a no-op.
+        assert_eq!(server.unregister_shuffles(&[1]), 0);
+        assert_eq!(server.unregister_shuffles(&[]), 0);
+        assert_eq!(server.unregister_shuffles(&[2]), 1);
     }
 }

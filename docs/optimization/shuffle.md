@@ -139,21 +139,27 @@ The way out is that visibility and durability are separable. A reduce task readi
 | `"none"` | Never `fsync`s | You would rather re-run the query than pay for durability at all. A shared copy can be lost if its writer node dies. |
 | `"sync"` | `fsync`s before publishing, so a visible file is a durable one | A filesystem with cheap `fsync`, or a job where losing a worker mid-query is expensive enough to justify several-fold slower writes. |
 
+Both levels that promise anything sync twice: once for the file's bytes, and once for the directory that names it. A map file is published by renaming it into place, and syncing a file commits its data and inode but not the directory entry pointing at them — so without the second sync a crash could leave durable bytes with nothing reaching them, which is indistinguishable from never having written the file. `"sync"` pays for both before the map task returns; `"background"` pays for both on the background thread.
+
 ### `flight_shuffle_read_source`
 
 How *this worker* fetches partitions written by others. One of `"auto"` (the default), `"rpc"`, or `"shared"`. Unlike placement, this is a per-worker setting: which route is faster depends on the reader's own link to its peers versus to the shared mount.
 
-- `"auto"` reads the shared mount directly when the data is there, and uses gRPC otherwise. Today this is the same as `"shared"`; it is the mode that will grow adaptive routing (measuring gRPC against the mount per worker).
+- `"auto"` reads the shared mount directly when the data is there, and uses gRPC otherwise — falling back to whichever route it did not pick if the first one fails. Which route it *prefers* is still fixed rather than measured; this is the mode that will grow adaptive routing (weighing gRPC against the mount per worker).
 - `"rpc"` always tries gRPC first.
 - `"shared"` always reads the shared mount for shuffles written there. It requires `flight_shuffle_placement="shared_only"`. Shuffles that are always node-local (gather, `into_partitions`) are read over gRPC regardless, since they have no shared copy.
 
-`"auto"` and `"rpc"` both fall back to the shared mount when a gRPC fetch fails before returning any data — this is the path that keeps a lost worker from failing the query. Once batches have been handed downstream the fallback is unsafe (they would be delivered twice), so a mid-stream failure surfaces as an error. Under `"auto"` with shared placement, remote reads never touch gRPC in the first place, so a lost worker cannot interrupt a reduce task at all.
+`"auto"` falls back in both directions: to the shared mount when a gRPC fetch fails, and to gRPC when the mount fails. Either route holds the same bytes, so a route being unavailable is not a reason to fail a query — a lost worker cannot interrupt a reduce task, and neither can a mount that will not serve a file while its writer is alive. `"rpc"` falls back to the mount but not the reverse (it never reads the mount first), and `"shared"` does not fall back at all, since its whole purpose is to say whether the mount can do the job.
+
+Fallback only applies before the first batch of a read. Once batches have been handed downstream, re-reading the same refs by another route would deliver them twice, so a mid-stream failure surfaces as an error and the task is retried instead.
 
 ### `flight_shuffle_shared_read_concurrency`
 
 How many map files a reduce task reads from the shared mount at once. Defaults to 16.
 
 This is deliberately higher than `scantask_max_parallel` (8). Shared-mount reads are dominated by per-file round trips rather than by bytes: opening a file and reading its index costs a few milliseconds regardless of how much data follows. A reduce task with thousands of map inputs will sit on that latency floor unless it keeps many reads in flight. Raise it further on high-latency mounts.
+
+It bounds one reduce task's reads for one shuffle, and does so regardless of how many workers wrote the files — the mount does not care who the writer was. A process-wide ceiling sits above it so that several concurrent reduce tasks cannot multiply into an open-file count that exhausts the node or buries the mount's metadata server; that ceiling is set well clear of any sensible value here and is not configurable.
 
 ### Sizing check: keep per-partition reads large
 

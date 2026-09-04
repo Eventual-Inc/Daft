@@ -155,8 +155,7 @@ impl FlightIntoPartitionsState {
 
         shared
             .local_server
-            .register_shuffle_partitions(shared.shuffle_id, attempt, closed_list)
-            .await?;
+            .register_shuffle_partitions(shared.shuffle_id, attempt, closed_list)?;
 
         Ok(refs)
     }

@@ -54,6 +54,10 @@ pub(crate) struct PlanExecutionContext {
     /// Trees on a cluster-shared mount: one copy exists for the whole cluster, so
     /// these are removed once rather than by every node.
     shared_shuffle_dirs: Vec<String>,
+    /// Shuffles whose Flight registrations the workers should forget once those
+    /// trees are gone. Tracked separately from the directories because the
+    /// registrations live in worker memory, not on any of these paths.
+    shuffle_ids: Vec<u64>,
     statistics_manager: StatisticsManagerRef,
 }
 
@@ -71,6 +75,7 @@ impl PlanExecutionContext {
             task_id_counter: TaskIDCounter::new(),
             shuffle_dirs: Vec::new(),
             shared_shuffle_dirs: Vec::new(),
+            shuffle_ids: Vec::new(),
             statistics_manager,
         }
     }
@@ -99,6 +104,12 @@ impl PlanExecutionContext {
     /// Register shared-mount shuffle directories for cleanup when the plan completes
     pub fn register_shared_shuffle_dirs(&mut self, dirs: Vec<String>) {
         self.shared_shuffle_dirs.extend(dirs);
+    }
+
+    /// Register a shuffle whose worker-side Flight registrations should be dropped
+    /// when the plan completes
+    pub fn register_shuffle_id(&mut self, shuffle_id: u64) {
+        self.shuffle_ids.push(shuffle_id);
     }
 }
 
@@ -211,24 +222,43 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         let running_node = pipeline_node.produce_tasks(&mut plan_context);
         let shuffle_dirs = std::mem::take(&mut plan_context.shuffle_dirs);
         let shared_shuffle_dirs = std::mem::take(&mut plan_context.shared_shuffle_dirs);
+        let shuffle_ids = std::mem::take(&mut plan_context.shuffle_ids);
         let running_stage = RunningPlan::new(running_node, plan_context);
 
         let mut materialized_result_stream = running_stage.materialize(scheduler_handle);
+        // Held rather than propagated with `?`: a failed plan is exactly the one
+        // whose shuffle output most needs removing, and returning here would skip
+        // the cleanup below — leaving the trees on every node's disk and on the
+        // shared mount, and the registrations in every worker's memory, for the
+        // lifetime of the cluster.
+        let mut plan_result = Ok(());
         while let Some(result) = materialized_result_stream.next().await {
-            if sender.send(result?).await.is_err() {
-                break;
+            match result {
+                Ok(output) => {
+                    if sender.send(output).await.is_err() {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    plan_result = Err(e);
+                    break;
+                }
             }
         }
+        // The stream owns the plan's `JoinSet`, so dropping it stops the
+        // coordinator dispatching further tasks before their output directories
+        // are deleted.
+        drop(materialized_result_stream);
 
-        if (!shuffle_dirs.is_empty() || !shared_shuffle_dirs.is_empty())
+        if (!shuffle_dirs.is_empty() || !shared_shuffle_dirs.is_empty() || !shuffle_ids.is_empty())
             && let Err(e) = self
                 .worker_manager
-                .cleanup_shuffle_dirs(shuffle_dirs, shared_shuffle_dirs)
+                .cleanup_shuffles(shuffle_dirs, shared_shuffle_dirs, shuffle_ids)
                 .await
         {
-            tracing::warn!("Failed to clear flight shuffle directories: {}", e);
+            tracing::warn!("Failed to clean up after flight shuffles: {}", e);
         }
 
-        Ok(())
+        plan_result
     }
 }

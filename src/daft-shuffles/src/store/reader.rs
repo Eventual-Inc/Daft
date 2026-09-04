@@ -70,6 +70,20 @@ impl<R: AsyncRead + Unpin> AsyncRead for HashingReader<R> {
     }
 }
 
+/// Process-wide ceiling on map files being read off the shared mount at once.
+///
+/// Each reduce task already limits its own fan-out
+/// (`flight_shuffle_shared_read_concurrency`), but a worker runs several reduce
+/// tasks at once and can host more than one shuffle-read source, so the per-task
+/// budgets multiply. This is the backstop that keeps that product from becoming
+/// the process's open-file count: set well above any sensible per-task budget, so
+/// it never shapes normal execution, and low enough that a large cluster cannot
+/// push a node into fd exhaustion or bury the mount's metadata server.
+const MAX_CONCURRENT_SHARED_READS: usize = 512;
+
+static SHARED_READ_SLOTS: std::sync::LazyLock<tokio::sync::Semaphore> =
+    std::sync::LazyLock::new(|| tokio::sync::Semaphore::new(MAX_CONCURRENT_SHARED_READS));
+
 /// Read the index region of an already-open map file.
 ///
 /// Takes one speculative read sized to cover the common case and only issues a
@@ -105,6 +119,13 @@ fn read_one_map_file(
     partition_idx: usize,
 ) -> BoxStream<'static, DaftResult<FlightData>> {
     Box::pin(async_stream::try_stream! {
+        // Held for the whole file — open, index, and data — because the file
+        // handle is what the cap is about. Acquired before the open so a caller
+        // waits here rather than in the kernel's descriptor table.
+        let _slot = SHARED_READ_SLOTS.acquire().await.map_err(|e| {
+            DaftError::InternalError(format!("shared read semaphore closed: {}", e))
+        })?;
+
         // TODO: recompute from lineage instead of failing. A missing file here
         // means the selected map attempt died before its commit rename landed, so
         // there is no copy anywhere and the only correct recovery is to re-run

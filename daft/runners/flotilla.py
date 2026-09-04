@@ -131,6 +131,26 @@ async def clear_flight_shuffle_dirs_on_all_nodes(shuffle_dirs: list[str], shared
     await asyncio.gather(*tasks)
 
 
+async def await_flight_shuffle_unregistrations(refs: list[ray.ObjectRef]) -> None:
+    """Wait for the workers to drop a finished shuffle's Flight registrations.
+
+    Failures are logged, not raised. The call only reclaims memory on a worker
+    that has finished its part in the query, and the commonest way for it to fail
+    is the worker being gone -- which already took the registry with it.
+    """
+    if not refs:
+        return
+
+    results = await asyncio.gather(*refs, return_exceptions=True)
+    dropped = 0
+    for result in results:
+        if isinstance(result, BaseException):
+            logger.warning("Failed to drop flight shuffle registrations on a worker: %s", result)
+        else:
+            dropped += result
+    logger.debug("Dropped %d flight shuffle registration(s) across %d worker(s)", dropped, len(refs))
+
+
 def _load_extensions_from_env() -> None:
     """Load every extension listed in the `DAFT_EXTENSION_PATHS` env var.
 
@@ -221,6 +241,16 @@ class RaySwordfishActor:
         if address is None:
             raise RuntimeError("Flotilla worker should have started a Flight shuffle server")
         return address
+
+    async def unregister_shuffles(self, shuffle_ids: list[int]) -> int:
+        """Forget the Flight registrations for shuffles whose files have been deleted.
+
+        The registry is keyed per map-task attempt and nothing else ever removes
+        from it, so without this call a long-lived worker accumulates one entry per
+        output partition per attempt for every query it ever ran -- and keeps
+        answering for refs whose files are already gone.
+        """
+        return self.native_executor.unregister_shuffles(shuffle_ids)
 
     async def _resolve_inputs(
         self,
@@ -432,6 +462,14 @@ class RaySwordfishActorHandle:
             **inputs,
         )
         return RaySwordfishTaskHandle(result_handle)
+
+    def unregister_shuffles(self, shuffle_ids: list[int]) -> ray.ObjectRef:
+        """Start dropping this worker's registrations for `shuffle_ids`.
+
+        Returns the pending call rather than awaiting it, so the coordinator can
+        fan out to every worker and wait once.
+        """
+        return self.actor_handle.unregister_shuffles.remote(shuffle_ids)
 
     def shutdown(self) -> None:
         ray.kill(self.actor_handle)

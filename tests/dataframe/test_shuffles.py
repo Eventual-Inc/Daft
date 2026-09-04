@@ -700,6 +700,32 @@ def test_flight_shuffle_shared_leaves_no_files_behind(shared_flight_shuffle_ctx)
     get_tests_daft_runner_name() != "ray",
     reason="distributed shuffle tests require the ray runner",
 )
+def test_flight_shuffle_shared_cleans_up_after_a_failed_query(shared_flight_shuffle_ctx):
+    """A query that fails after the map side wrote still has its tree removed.
+
+    A failed query is the one whose shuffle output most needs deleting -- it can be
+    the largest thing on the mount and nothing will ever read it -- so the cleanup
+    must not be reachable only along the success path.
+    """
+    from daft import DataType, col, udf
+
+    @udf(return_dtype=DataType.int64())
+    def explode_on_read(values):
+        raise RuntimeError("intentional reduce-side failure")
+
+    with shared_flight_shuffle_ctx() as shared_root:
+        df = daft.from_pydict({"id": list(range(500))}).into_partitions(4).repartition(8, "id")
+        with pytest.raises(Exception, match="intentional reduce-side failure"):
+            df.with_column("boom", explode_on_read(col("id"))).collect()
+
+        leftover = glob.glob(os.path.join(shared_root, "daft_shuffle", "*"))
+        assert leftover == [], f"failed query left shuffle trees on the shared mount: {leftover}"
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="distributed shuffle tests require the ray runner",
+)
 def test_flight_shuffle_shared_route_still_reads_node_local_shuffles(shared_flight_shuffle_ctx):
     """`read_source="shared"` must not break shuffles that are always node-local.
 

@@ -23,7 +23,10 @@ use daft_schema::schema::SchemaRef;
 
 use crate::{
     shuffle_cache::{CHUNK_TARGET_BYTES, PartitionCache, partition_ref_id},
-    store::{ShuffleDurability, map_file_name, shared_map_file, writer::SharedMapFileCommit},
+    store::{
+        ShuffleDurability, create_file_under, map_file_name, shared_map_file,
+        writer::SharedMapFileCommit,
+    },
 };
 
 /// 4 MiB BufWriter capacity — amortizes syscall cost across multiple
@@ -210,9 +213,11 @@ fn open_target(
         OneShotTarget::Local { shuffle_dirs } => {
             let dir_idx = (input_id as usize) % shuffle_dirs.len();
             let shuffle_dir = format!("{}/daft_shuffle/{}", shuffle_dirs[dir_idx], shuffle_id);
-            std::fs::create_dir_all(&shuffle_dir)?;
             let file_path = format!("{}/{}", shuffle_dir, map_file_name(input_id, attempt));
-            let file = File::create(&file_path)?;
+            // Local files are written under their final name — the attempt token
+            // already fences concurrent attempts — so there is no rename to make
+            // durable and the directory sync state goes unused.
+            let (file, _dir_sync) = create_file_under(shuffle_id, &shuffle_dir, &file_path)?;
             Ok((None, file, 0, file_path))
         }
         OneShotTarget::Shared { shared_root, .. } => {

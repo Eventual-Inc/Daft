@@ -69,10 +69,11 @@ impl FlightGatherState {
             num_rows: closed.num_rows,
             size_bytes: closed.size_bytes,
         };
-        shared
-            .local_server
-            .register_shuffle_partitions(shared.shuffle_id, self.attempt, vec![closed])
-            .await?;
+        shared.local_server.register_shuffle_partitions(
+            shared.shuffle_id,
+            self.attempt,
+            vec![closed],
+        )?;
         self.refs.push(flight_ref);
         Ok(())
     }

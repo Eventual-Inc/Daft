@@ -122,8 +122,16 @@ impl ShuffleReadSource {
         let shared_roots = Self::shared_roots(&inputs);
         let requests = Self::to_server_requests(&inputs);
 
-        let mut streams: Vec<BoxStream<'static, DaftResult<RecordBatch>>> =
-            Vec::with_capacity(requests.len());
+        let mut streams: Vec<BoxStream<'static, DaftResult<RecordBatch>>> = Vec::new();
+        // Shared-route reads are accumulated per shuffle rather than issued per
+        // server: on a shared mount a map file's path depends on the shuffle, the
+        // input and the attempt, never on which worker wrote it. Splitting them by
+        // writer would hand each split its own `shared_read_concurrency` budget and
+        // poll them all at once, so a reduce task's real fan-out would be
+        // `servers x concurrency` — thousands of concurrent opens on a large
+        // cluster, for a grouping that buys nothing.
+        let mut shared_by_shuffle: HashMap<u64, SharedReadGroup> = HashMap::new();
+
         for (shuffle_id, address, refs) in requests {
             let shared_root = shared_roots.get(&shuffle_id).cloned();
 
@@ -148,13 +156,10 @@ impl ShuffleReadSource {
 
             if use_shared {
                 let root = shared_root.expect("checked above");
-                streams.push(shared_stream_for_refs(
-                    &root,
-                    shuffle_id,
-                    &refs,
-                    schema.clone(),
-                    shared_read_concurrency,
-                )?);
+                let group = shared_by_shuffle
+                    .entry(shuffle_id)
+                    .or_insert_with(|| SharedReadGroup::new(root));
+                group.push(address, refs);
             } else {
                 streams.push(rpc_stream_with_shared_fallback(
                     client_manager.clone(),
@@ -166,6 +171,20 @@ impl ShuffleReadSource {
                     shared_read_concurrency,
                 ));
             }
+        }
+
+        for (shuffle_id, group) in shared_by_shuffle {
+            streams.push(shared_stream_with_rpc_fallback(
+                client_manager.clone(),
+                shuffle_id,
+                group,
+                schema.clone(),
+                shared_read_concurrency,
+                // `shared` is the explicit "use the mount, tell me if it can't be
+                // done" mode, so it stays strict; `auto` only promises the fastest
+                // working route.
+                read_route == ReadRoute::Auto,
+            ));
         }
 
         Ok(futures::stream::select_all(streams).boxed())
@@ -254,6 +273,112 @@ fn refs_by_partition_idx(refs: &[(u64, u64)]) -> HashMap<u32, Vec<MapInput>> {
             });
     }
     by_partition
+}
+
+/// Every shared-mount read one reduce task owes for one shuffle.
+///
+/// The refs are held both merged (what the shared reader needs — a flat set of
+/// files, since the mount does not care who wrote them) and grouped by the worker
+/// that wrote them (what the RPC fallback needs, because gRPC does).
+struct SharedReadGroup {
+    shared_root: Arc<str>,
+    merged_refs: Vec<(u64, u64)>,
+    by_server: Vec<(String, Vec<(u64, u64)>)>,
+}
+
+impl SharedReadGroup {
+    fn new(shared_root: Arc<str>) -> Self {
+        Self {
+            shared_root,
+            merged_refs: Vec::new(),
+            by_server: Vec::new(),
+        }
+    }
+
+    fn push(&mut self, server_address: String, refs: Vec<(u64, u64)>) {
+        self.merged_refs.extend(refs.iter().copied());
+        self.by_server.push((server_address, refs));
+    }
+}
+
+/// Read one shuffle's remote refs off the shared mount, falling back to gRPC if
+/// the mount fails before yielding anything.
+///
+/// The mirror of [`rpc_stream_with_shared_fallback`], and needed for the same
+/// reason: a route that is unavailable is not a reason to fail a query when the
+/// other route holds the same bytes. Under `auto` with shared placement the RPC
+/// route is otherwise never attempted at all, so a transient unreadable file on
+/// the mount would kill a query whose writers are alive and able to serve it.
+///
+/// Bounded the same way, too: once batches have gone downstream, re-reading the
+/// same refs over gRPC would deliver them twice, so a mid-stream failure has to
+/// propagate.
+fn shared_stream_with_rpc_fallback(
+    client_manager: FlightClientManager,
+    shuffle_id: u64,
+    group: SharedReadGroup,
+    schema: SchemaRef,
+    concurrency: usize,
+    allow_rpc_fallback: bool,
+) -> BoxStream<'static, DaftResult<RecordBatch>> {
+    Box::pin(async_stream::try_stream! {
+        let mut emitted_any = false;
+        let mut failure: Option<DaftError> = None;
+
+        match shared_stream_for_refs(
+            &group.shared_root,
+            shuffle_id,
+            &group.merged_refs,
+            schema.clone(),
+            concurrency,
+        ) {
+            Ok(mut stream) => {
+                while let Some(batch) = stream.next().await {
+                    match batch {
+                        Ok(batch) => {
+                            emitted_any = true;
+                            yield batch;
+                        }
+                        Err(e) => {
+                            failure = Some(e);
+                            break;
+                        }
+                    }
+                }
+            }
+            Err(e) => failure = Some(e),
+        }
+
+        if let Some(e) = failure {
+            if emitted_any || !allow_rpc_fallback {
+                Err(e)?;
+                return;
+            }
+            tracing::warn!(
+                "Shared-storage read of shuffle {} at {} failed ({}); falling back to gRPC",
+                shuffle_id,
+                group.shared_root,
+                e,
+            );
+            let mut rpc = futures::stream::select_all(group.by_server.into_iter().map(
+                |(address, refs)| {
+                    rpc_stream_with_shared_fallback(
+                        client_manager.clone(),
+                        shuffle_id,
+                        address,
+                        refs,
+                        schema.clone(),
+                        // No second bite at the mount: it is what just failed.
+                        None,
+                        concurrency,
+                    )
+                },
+            ));
+            while let Some(batch) = rpc.next().await {
+                yield batch?;
+            }
+        }
+    })
 }
 
 /// Read a set of refs straight off the shared mount.
@@ -511,6 +636,78 @@ mod tests {
 
         std::fs::remove_dir_all(&dir)?;
         Ok(())
+    }
+
+    /// The shared mount holds the same bytes whoever wrote them, so refs from
+    /// different writers belong in one read set: one concurrency budget, one
+    /// unordered fan-out, instead of one of each per writer.
+    #[test]
+    fn shared_reads_merge_across_writers_but_stay_grouped_for_rpc() {
+        let mut group = SharedReadGroup::new(Arc::from("/mnt/shared"));
+        group.push("grpc://a:1".to_string(), vec![(0xa, 1), (0xa, 2)]);
+        group.push("grpc://b:1".to_string(), vec![(0xb, 3)]);
+
+        assert_eq!(group.merged_refs, vec![(0xa, 1), (0xa, 2), (0xb, 3)]);
+        assert_eq!(
+            group.by_server.len(),
+            2,
+            "the RPC fallback still needs writers"
+        );
+        assert_eq!(
+            group.by_server[1],
+            ("grpc://b:1".to_string(), vec![(0xb, 3)])
+        );
+    }
+
+    /// A shared mount that cannot serve a file must not fail a query whose writers
+    /// are alive: `auto` falls through to gRPC, mirroring the gRPC-to-shared path.
+    #[tokio::test]
+    async fn shared_failure_falls_back_to_rpc_only_under_auto() {
+        let schema = dummy_schema();
+        // Nothing was ever written under this root, so every shared read fails at
+        // open time.
+        let missing_root: Arc<str> = Arc::from("/nonexistent/daft-shared-root");
+        let refs = vec![(0x1234u64, partition_ref_id(0, 0))];
+
+        let make_group = || {
+            let mut group = SharedReadGroup::new(missing_root.clone());
+            // Port 1 is never listening, so the fallback fails too — but it must be
+            // *attempted*, which is what distinguishes the two modes here.
+            group.push("grpc://127.0.0.1:1".to_string(), refs.clone());
+            group
+        };
+
+        let strict: DaftResult<Vec<RecordBatch>> = shared_stream_with_rpc_fallback(
+            FlightClientManager::new(),
+            9,
+            make_group(),
+            schema.clone(),
+            4,
+            false,
+        )
+        .try_collect()
+        .await;
+        let strict = strict.expect_err("shared-only must surface the mount's error");
+        assert!(
+            strict.to_string().contains("daft-shared-root"),
+            "expected the shared read error, got: {strict}"
+        );
+
+        let auto: DaftResult<Vec<RecordBatch>> = shared_stream_with_rpc_fallback(
+            FlightClientManager::new(),
+            9,
+            make_group(),
+            schema,
+            4,
+            true,
+        )
+        .try_collect()
+        .await;
+        let auto = auto.expect_err("both routes are down in this test");
+        assert!(
+            !auto.to_string().contains("daft-shared-root"),
+            "auto should have moved on to gRPC, but reported the mount: {auto}"
+        );
     }
 
     /// Without a shared copy there is nothing to fall back to, so the RPC error

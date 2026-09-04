@@ -32,6 +32,7 @@ pub(crate) fn register_cleanup(
         .map(|base_dir| format!("{}/daft_shuffle/{}", base_dir, shuffle_id))
         .collect();
     plan_context.register_shuffle_dirs(shuffle_dirs_to_register);
+    plan_context.register_shuffle_id(shuffle_id);
 
     // Registered separately because a shared directory is one tree visible to
     // every node, not one tree per node: fanning the same delete out to the whole

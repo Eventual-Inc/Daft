@@ -11,12 +11,17 @@ use std::{
     fs::File,
     io::{Seek, SeekFrom, Write},
     process,
-    sync::atomic::{AtomicU64, AtomicUsize, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicU64, AtomicUsize, Ordering},
+    },
 };
 
 use common_error::{DaftError, DaftResult};
 
-use super::{ShuffleDurability, index, shared_map_file, shared_shard_dir};
+use super::{
+    DirSync, ShuffleDurability, create_file_under, index, shared_map_file, shared_shard_dir,
+};
 
 /// Background `fsync`s allowed in flight per process before the map side starts
 /// paying for them inline.
@@ -37,22 +42,25 @@ static BACKGROUND_FSYNCS_IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
 /// that close is what makes the data visible to other nodes, and publication
 /// must not precede it. `fsync` acts on the inode, so a fresh read-only handle
 /// flushes exactly the pages the writer left dirty.
-fn fsync_in_background(path: String) -> DaftResult<()> {
+fn fsync_in_background(published: PublishedFile) -> DaftResult<()> {
     let prior = BACKGROUND_FSYNCS_IN_FLIGHT.fetch_add(1, Ordering::AcqRel);
     if prior >= MAX_BACKGROUND_FSYNCS {
         BACKGROUND_FSYNCS_IN_FLIGHT.fetch_sub(1, Ordering::AcqRel);
-        return File::open(&path)?.sync_all().map_err(DaftError::IoError);
+        return published.fsync();
     }
 
     let spawned = std::thread::Builder::new()
         .name("daft-shuffle-fsync".to_string())
         .spawn(move || {
-            let result = File::open(&path).and_then(|f| f.sync_all());
-            if let Err(e) = result {
+            if let Err(e) = published.fsync() {
                 // A file that vanished was cleaned up by a finished query; anything
                 // else means the durability we promised did not happen.
-                if e.kind() != std::io::ErrorKind::NotFound {
-                    tracing::warn!("Background shuffle fsync of {} failed: {}", path, e);
+                if !is_not_found(&e) {
+                    tracing::warn!(
+                        "Background shuffle fsync of {} failed: {}",
+                        published.path,
+                        e
+                    );
                 }
             }
             BACKGROUND_FSYNCS_IN_FLIGHT.fetch_sub(1, Ordering::AcqRel);
@@ -62,6 +70,33 @@ fn fsync_in_background(path: String) -> DaftResult<()> {
         return Err(DaftError::IoError(e));
     }
     Ok(())
+}
+
+fn is_not_found(e: &DaftError) -> bool {
+    matches!(e, DaftError::IoError(io) if io.kind() == std::io::ErrorKind::NotFound)
+}
+
+/// A map file that has been renamed into place, and what it takes to make that
+/// state durable.
+///
+/// Both halves are needed. Syncing the file commits its data and its inode, not
+/// the directory entry pointing at them — so after a crash the bytes can be
+/// durable with nothing naming them, which loses the map output exactly as if it
+/// had never been written. Since publication here *is* a rename, the directory is
+/// half of what "this file is durable" means.
+struct PublishedFile {
+    path: String,
+    dir: String,
+    dir_sync: Arc<DirSync>,
+    /// Ticket covering this file's rename; see [`DirSync::sync_through`].
+    ticket: u64,
+}
+
+impl PublishedFile {
+    fn fsync(&self) -> DaftResult<()> {
+        File::open(&self.path)?.sync_all()?;
+        self.dir_sync.sync_through(&self.dir, self.ticket)
+    }
 }
 
 fn next_temp_suffix() -> u64 {
@@ -74,6 +109,8 @@ fn next_temp_suffix() -> u64 {
 pub struct SharedMapFileCommit {
     final_path: String,
     temp_path: String,
+    shard_dir: String,
+    dir_sync: Arc<DirSync>,
     committed: bool,
 }
 
@@ -84,6 +121,12 @@ impl SharedMapFileCommit {
     /// region, and that region's offset — which the caller must use as the base
     /// for the byte offsets it records, so that the ranges it reports are
     /// absolute file offsets.
+    ///
+    /// The region is reserved by seeking past it, not by writing it: [`Self::commit`]
+    /// overwrites `[0, region_bytes)` in full, so filling it here would send the
+    /// region over the wire twice — ~96 KiB per map task at 8k output partitions,
+    /// for bytes no reader ever sees. A file that never reaches commit is deleted,
+    /// so the hole the seek leaves is never observable either.
     pub fn begin(
         shared_root: &str,
         shuffle_id: u64,
@@ -92,7 +135,6 @@ impl SharedMapFileCommit {
         num_partitions: usize,
     ) -> DaftResult<(Self, File, u64)> {
         let shard_dir = shared_shard_dir(shared_root, shuffle_id, input_id);
-        std::fs::create_dir_all(&shard_dir)?;
 
         let final_path = shared_map_file(shared_root, shuffle_id, input_id, attempt);
         let temp_path = format!(
@@ -103,14 +145,15 @@ impl SharedMapFileCommit {
         );
 
         let region_bytes = index::index_region_bytes(num_partitions);
-        let mut file = File::create(&temp_path)?;
-        // Reserve the region; the real index is written back at commit time.
-        file.write_all(&vec![0u8; region_bytes])?;
+        let (mut file, dir_sync) = create_file_under(shuffle_id, &shard_dir, &temp_path)?;
+        file.seek(SeekFrom::Start(region_bytes as u64))?;
 
         Ok((
             Self {
                 final_path,
                 temp_path,
+                shard_dir,
+                dir_sync,
                 committed: false,
             },
             file,
@@ -129,6 +172,12 @@ impl SharedMapFileCommit {
     /// `fsync` happens relative to publication: [`ShuffleDurability::Sync`] before
     /// (a visible file is a durable one), [`ShuffleDurability::Background`] after
     /// and off the critical path, [`ShuffleDurability::None`] never.
+    ///
+    /// `Sync` syncs twice, either side of the rename, because the two syncs commit
+    /// different things: the file's bytes before, the directory entry that names
+    /// them after (see [`PublishedFile`]). Only the pair makes the level's promise
+    /// true — and the second one is usually free, since map tasks sharing a shard
+    /// share its directory commit.
     pub fn commit(
         mut self,
         mut file: File,
@@ -148,8 +197,22 @@ impl SharedMapFileCommit {
         std::fs::rename(&self.temp_path, &self.final_path)?;
         self.committed = true;
 
-        if durability == ShuffleDurability::Background {
-            fsync_in_background(self.final_path.clone())?;
+        if durability == ShuffleDurability::None {
+            return Ok(());
+        }
+        // Ticketed after the rename returns, so the entry it stands for already
+        // exists and any directory sync from here on commits it.
+        let ticket = self.dir_sync.published();
+        match durability {
+            // The file itself was synced before the rename; only the name is left.
+            ShuffleDurability::Sync => self.dir_sync.sync_through(&self.shard_dir, ticket)?,
+            ShuffleDurability::Background => fsync_in_background(PublishedFile {
+                path: self.final_path.clone(),
+                dir: self.shard_dir.clone(),
+                dir_sync: self.dir_sync.clone(),
+                ticket,
+            })?,
+            ShuffleDurability::None => unreachable!("returned above"),
         }
         Ok(())
     }
@@ -254,6 +317,70 @@ mod tests {
         drop(commit);
         assert!(!std::path::Path::new(&temp_path).exists());
         assert!(!std::path::Path::new(&shared_map_file(root, 1, 2, 5)).exists());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn published_file_is_exactly_index_region_plus_data() {
+        // `begin` seeks past the index region instead of writing it, so this is
+        // what proves `commit` leaves no hole where the seek was: every byte of
+        // the region is the real index, and the file is not one byte longer than
+        // the region plus the stream.
+        let dir = tempdir();
+        let root = dir.to_str().unwrap();
+        let (commit, mut file, base) = SharedMapFileCommit::begin(root, 42, 0, 0x7, 3).unwrap();
+        file.write_all(b"abcdefgh").unwrap();
+        let offsets = [base, base + 3, base + 3, base + 8];
+        let crcs = [
+            crc32fast::hash(b"abc"),
+            crc32fast::hash(b""),
+            crc32fast::hash(b"defgh"),
+        ];
+        commit
+            .commit(file, &offsets, &crcs, ShuffleDurability::None)
+            .unwrap();
+
+        let published = read_all(&shared_map_file(root, 42, 0, 0x7));
+        assert_eq!(published.len(), base as usize + 8);
+        assert_eq!(
+            &published[..base as usize],
+            &index::encode(&offsets, &crcs).unwrap()[..]
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn begin_recreates_a_shard_directory_that_was_removed() {
+        // The directory memo lets a second map task skip `create_dir_all`. If the
+        // tree is gone by then the skip would turn into a `NotFound` on create, so
+        // `begin` has to notice and rebuild rather than fail the map task.
+        let dir = tempdir();
+        let root = dir.to_str().unwrap();
+        let (commit, mut file, base) = SharedMapFileCommit::begin(root, 77, 4, 0x1, 1).unwrap();
+        file.write_all(b"x").unwrap();
+        commit
+            .commit(
+                file,
+                &[base, base + 1],
+                &[crc32fast::hash(b"x")],
+                ShuffleDurability::None,
+            )
+            .unwrap();
+
+        std::fs::remove_dir_all(crate::store::shared_shuffle_dir(root, 77)).unwrap();
+
+        let (commit, mut file, base) = SharedMapFileCommit::begin(root, 77, 4, 0x2, 1).unwrap();
+        file.write_all(b"y").unwrap();
+        commit
+            .commit(
+                file,
+                &[base, base + 1],
+                &[crc32fast::hash(b"y")],
+                ShuffleDurability::None,
+            )
+            .unwrap();
+        let published = read_all(&shared_map_file(root, 77, 4, 0x2));
+        assert_eq!(&published[base as usize..], b"y");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
