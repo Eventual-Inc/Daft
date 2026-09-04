@@ -36,6 +36,12 @@ class SampleSink(DataSink[None]):
         return result_table
 
 
+def test_datasink_checkpoint_file_format_defaults_to_none():
+    sink = SampleSink()
+
+    assert sink.checkpoint_file_format() is None
+
+
 def test_sink_raises_unserializable_exception():
     df = daft.from_pydict({"id": [1, 2, 3]})
     sink = SampleSink()
