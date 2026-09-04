@@ -13,7 +13,7 @@ pub enum Value<'value> {
     /// string type
     String(Cow<'value, str>),
     /// array type
-    Array(Vec<Value<'value>>),
+    Array(Vec<Self>),
     /// object type
     Object(Object<'value>),
 }

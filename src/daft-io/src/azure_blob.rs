@@ -342,10 +342,8 @@ impl AzureBlobSource {
             prefix.trim_end_matches(&AZURE_DELIMITER)
         );
         let full_path = format!("{protocol}://{container_name}{prefix}");
-        let full_path_with_trailing_delimiter = format!(
-            "{}://{}{}",
-            protocol, container_name, &prefix_with_delimiter
-        );
+        let full_path_with_trailing_delimiter =
+            format!("{}://{}{}", protocol, container_name, prefix_with_delimiter);
 
         let mut unchecked_results = self
             .list_directory_delimiter_stream(
@@ -490,7 +488,7 @@ impl AzureBlobSource {
                 }
                 Err(error) => {
                     let error = Err(Error::RequestFailedForPath {
-                        path: format!("{}://{}{}", &protocol, &container_name, &prefix),
+                        path: format!("{}://{}{}", protocol, container_name, prefix),
                         source: error,
                     }
                     .into());
@@ -504,7 +502,7 @@ impl AzureBlobSource {
         // NB: Cannot pass through to Azure client's .url() methods here
         // because they return URIs of a very different format (https://.../container/path).
         FileMetadata {
-            filepath: format!("{protocol}://{}/", &container.name),
+            filepath: format!("{protocol}://{}/", container.name),
             size: None,
             filetype: FileType::Directory,
         }
@@ -518,12 +516,12 @@ impl AzureBlobSource {
     ) -> FileMetadata {
         match blob_item {
             BlobItem::Blob(blob) => FileMetadata {
-                filepath: format!("{protocol}://{}/{}", container_name, &blob.name),
+                filepath: format!("{protocol}://{}/{}", container_name, blob.name),
                 size: Some(blob.properties.content_length),
                 filetype: FileType::File,
             },
             BlobItem::BlobPrefix(prefix) => FileMetadata {
-                filepath: format!("{protocol}://{}/{}", container_name, &prefix.name),
+                filepath: format!("{protocol}://{}/{}", container_name, prefix.name),
                 size: None,
                 filetype: FileType::Directory,
             },

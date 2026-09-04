@@ -19,8 +19,8 @@ fn haversine_meters(lat1_deg: f64, lon1_deg: f64, lat2_deg: f64, lon2_deg: f64) 
     let sin_half_delta_lat = (delta_lat * 0.5).sin();
     let sin_half_delta_lon = (delta_lon * 0.5).sin();
 
-    let a = (sin_half_delta_lat * sin_half_delta_lat
-        + lat1_rad.cos() * lat2_rad.cos() * sin_half_delta_lon * sin_half_delta_lon)
+    let a = (lat1_rad.cos() * lat2_rad.cos() * sin_half_delta_lon)
+        .mul_add(sin_half_delta_lon, sin_half_delta_lat * sin_half_delta_lat)
         .clamp(0.0, 1.0);
 
     let central_angle = 2.0 * a.sqrt().asin();

@@ -91,7 +91,7 @@ impl ScalarFunctionHandle {
     /// Returns the inner FFI handle, or an error if deserialized without a loaded extension.
     fn inner(&self) -> DaftResult<&Inner> {
         self.inner.as_deref().ok_or_else(|| {
-            DaftError::InternalError(format!("extension function '{}' is not loaded", self.name,))
+            DaftError::InternalError(format!("extension function '{}' is not loaded", self.name))
         })
     }
 }

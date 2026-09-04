@@ -345,7 +345,7 @@ impl RecordBatch {
             if array.len() != num_rows {
                 return Err(DaftError::ValueError(format!(
                     "While building a RecordBatch with RecordBatch::from_arrow(), we found that the array for field `{}` had length `{}` whereas the expected length is {}",
-                    &field.name,
+                    field.name,
                     array.len(),
                     num_rows
                 )));
