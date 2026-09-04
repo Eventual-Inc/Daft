@@ -43,7 +43,7 @@ def _make_query_metadata() -> PyQueryMetadata:
         df.schema()._schema,
         df._builder.repr_json(),
         "Native (Swordfish)",
-        ray_dashboard_url=None,
+        dashboard_url=None,
         entrypoint="pytest",
     )
 
