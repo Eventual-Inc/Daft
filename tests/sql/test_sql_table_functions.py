@@ -262,3 +262,24 @@ def test_sql_read_csv_ignore_corrupt_files(tmp_path):
     path, reason, _partial = skipped[0]
     assert path.endswith("zzz_bad.csv")
     assert reason
+
+
+@pytest.mark.parametrize(
+    ("function", "path", "option"),
+    [
+        ("read_parquet", "tests/assets/parquet-data/mvp.parquet", "chunk_size"),
+        ("read_csv", "tests/assets/mvp.csv", "buffer_size"),
+        ("read_csv", "tests/assets/mvp.csv", "chunk_size"),
+        ("read_json", "tests/assets/json-data/sample1.jsonl", "buffer_size"),
+        ("read_json", "tests/assets/json-data/sample1.jsonl", "chunk_size"),
+    ],
+)
+def test_sql_read_negative_size_option_rejected(function, path, option):
+    """Negative literals for unsigned options are rejected instead of wrapping around.
+
+    These options are parsed as `usize`, so a negative value used to be cast into a huge
+    positive one (e.g. -1 became 18446744073709551615) rather than reported to the user.
+    """
+    with pytest.raises(Exception, match="Expected a non-negative integer literal") as exc_info:
+        daft.sql(f"SELECT * FROM {function}('{path}', {option} => -1)").collect()
+    assert exc_info.type.__name__ == "InvalidSQLException"
