@@ -4,6 +4,7 @@
 )]
 pub mod coalesce;
 pub mod concat_ws;
+pub mod crypto;
 pub mod distance;
 pub mod float;
 pub mod hash;
@@ -22,6 +23,7 @@ pub mod uuid;
 pub mod vector_utils;
 
 use common_error::DaftError;
+use crypto::{Crc32Function, Md5Function, Sha1Function, Sha2Function};
 use daft_dsl::functions::{FunctionModule, FunctionRegistry};
 use hash::HashFunction;
 use length::Length;
@@ -81,5 +83,10 @@ impl FunctionModule for MiscFunctions {
         parent.add_fn(ExtractHourUuid7);
         parent.add_fn(ExtractDayUuid7);
         parent.add_fn(ExtractMonthUuid7);
+        // Crypto/hash functions
+        parent.add_fn(Md5Function);
+        parent.add_fn(Sha1Function);
+        parent.add_fn(Sha2Function);
+        parent.add_fn(Crc32Function);
     }
 }
