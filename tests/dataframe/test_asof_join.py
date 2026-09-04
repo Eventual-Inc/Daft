@@ -282,13 +282,11 @@ class TestAsofJoinBackwardMatchCorrectness:
         assert result.to_pydict() == {"ts": [6, 6, 11], "v": [1, 2, 3], "w": [40, 40, 80]}
 
     def test_duplicate_right_timestamps(self):
-        """Multiple right rows at same timestamp -- one is picked."""
+        """Multiple right rows at the same timestamp -- backward deterministically keeps the greatest."""
         left = daft.from_pydict({"ts": [7], "v": [1]})
         right = daft.from_pydict({"ts": [7, 7], "w": [70, 77]})
         result = left.join_asof(right, on="ts")
-        assert result.to_pydict()["ts"] == [7]
-        assert result.to_pydict()["v"] == [1]
-        assert result.to_pydict()["w"][0] in [70, 77]
+        assert result.to_pydict() == {"ts": [7], "v": [1], "w": [77]}
 
     @pytest.mark.parametrize("n_partitions", get_n_partitions())
     def test_trades_quotes_with_by(self, make_df, n_partitions, with_default_morsel_size):
@@ -955,3 +953,74 @@ class TestAsofJoinDistributed:
             # GOOG@10: right GOOG@7=70; GOOG@20: right GOOG@18=180
             "w": [80, 150, 70, 180],
         }
+
+
+# ---------------------------------------------------------------------------
+# 12. Deterministic tie-break on equal (by, on) right rows
+# ---------------------------------------------------------------------------
+
+
+class TestAsofJoinDeterministicTieBreak:
+    """Equal (by, on) right rows resolve deterministically regardless of partitioning.
+
+    Backward/nearest keep the greatest right row, forward the least.
+    """
+
+    @pytest.mark.parametrize("n_partitions", get_n_partitions())
+    def test_backward_keeps_greatest_with_by(self, make_df, n_partitions, with_default_morsel_size):
+        left = make_df({"ticker": ["A", "A", "B"], "ts": [10, 20, 10]}, repartition=n_partitions)
+        right = make_df(
+            {
+                "ticker": ["A", "A", "A", "B", "B"],
+                "ts": [5, 5, 15, 5, 5],
+                "w": [1, 3, 99, 7, 4],
+            },
+            repartition=n_partitions,
+        )
+        result = left.join_asof(right, on="ts", by="ticker").sort(["ticker", "ts"])
+        # A@10: right A ts<=10 is ts=5 (w in {1,3}) -> greatest 3; A@20: max ts=15 -> 99.
+        # B@10: right B ts<=10 is ts=5 (w in {7,4}) -> greatest 7.
+        assert result.to_pydict() == {"ticker": ["A", "A", "B"], "ts": [10, 20, 10], "w": [3, 99, 7]}
+
+    @pytest.mark.parametrize("n_partitions", get_n_partitions())
+    def test_forward_keeps_least_with_by(self, make_df, n_partitions, with_default_morsel_size):
+        left = make_df({"ticker": ["A", "B"], "ts": [10, 10]}, repartition=n_partitions)
+        right = make_df(
+            {"ticker": ["A", "A", "B", "B"], "ts": [15, 15, 12, 12], "w": [8, 2, 6, 4]},
+            repartition=n_partitions,
+        )
+        result = left.join_asof(right, on="ts", by="ticker", strategy="forward").sort(["ticker", "ts"])
+        # forward from @10: A -> ts=15 (w in {8,2}) least 2; B -> ts=12 (w in {6,4}) least 4.
+        assert result.to_pydict() == {"ticker": ["A", "B"], "ts": [10, 10], "w": [2, 4]}
+
+    @pytest.mark.parametrize("n_partitions", get_n_partitions())
+    def test_nearest_exact_key_tie_keeps_greatest(self, make_df, n_partitions, with_default_morsel_size):
+        left = make_df({"ticker": ["A", "B"], "ts": [10, 10]}, repartition=n_partitions)
+        right = make_df(
+            {"ticker": ["A", "A", "B", "B"], "ts": [10, 10, 10, 10], "w": [5, 9, 1, 3]},
+            repartition=n_partitions,
+        )
+        result = left.join_asof(right, on="ts", by="ticker", strategy="nearest").sort(["ticker", "ts"])
+        # exact-key tie (distance 0, same on-key) -> greatest w: A -> 9, B -> 3.
+        assert result.to_pydict() == {"ticker": ["A", "B"], "ts": [10, 10], "w": [9, 3]}
+
+    @pytest.mark.parametrize("strategy", ["backward", "forward", "nearest"])
+    @pytest.mark.parametrize("n_partitions", get_n_partitions())
+    def test_no_by_duplicate_keys_partition_invariant(self, make_df, strategy, n_partitions, with_default_morsel_size):
+        # Duplicate right on-keys with distinct payloads; some fall on partition boundaries, so this
+        # also exercises the no-by carryover tie-break. Result must match the single-partition run.
+        left_data = {"ts": list(range(0, 40, 2)), "v": list(range(20))}
+        right_data = {"ts": [5, 5, 15, 15, 25, 25, 35, 35], "w": [1, 2, 3, 4, 5, 6, 7, 8]}
+        result = (
+            make_df(left_data, repartition=n_partitions)
+            .join_asof(make_df(right_data, repartition=n_partitions), on="ts", strategy=strategy)
+            .sort("ts")
+            .to_pydict()
+        )
+        expected = (
+            daft.from_pydict(left_data)
+            .join_asof(daft.from_pydict(right_data), on="ts", strategy=strategy)
+            .sort("ts")
+            .to_pydict()
+        )
+        assert result == expected
