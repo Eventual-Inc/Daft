@@ -17,7 +17,7 @@ use crate::{
     },
     plan::{QueryIdx, TaskIDCounter},
     scheduling::scheduler::SubmittableTask,
-    utils::channel::{OneshotReceiver, OneshotSender, create_oneshot_channel},
+    utils::channel::{UnboundedReceiver, UnboundedSender, create_unbounded_channel},
 };
 
 #[derive(Debug, Clone)]
@@ -306,6 +306,76 @@ impl Task for SwordfishTask {
     }
 }
 
+/// A pipeline node's handle on the tasks derived from a builder it emitted.
+///
+/// Cloned along with the builder — including by [`SwordfishTaskBuilder::combine_with`],
+/// which fans one builder out into several tasks — so every derived task reports
+/// its `TaskID` back through the same channel. The channel closes only once every
+/// clone is gone: every derived task has finished *and* no builder that could
+/// derive another one is still alive. That is what lets a node distinguish "no
+/// tasks running right now" from "no tasks will ever run again", which it needs
+/// before tearing down resources those tasks reference.
+#[derive(Debug, Clone)]
+pub(crate) struct TaskNotifyToken(UnboundedSender<TaskID>);
+
+impl TaskNotifyToken {
+    pub fn new() -> (Self, TaskNotifyReceiver) {
+        let (tx, rx) = create_unbounded_channel();
+        (Self(tx), TaskNotifyReceiver(rx))
+    }
+
+    /// Report a completed (or cancelled) task to whoever registered this token.
+    pub fn notify(&self, task_id: TaskID) {
+        let _ = self.0.send(task_id);
+    }
+}
+
+/// Receiving end of a [`TaskNotifyToken`].
+#[derive(Debug)]
+pub(crate) struct TaskNotifyReceiver(UnboundedReceiver<TaskID>);
+
+impl TaskNotifyReceiver {
+    /// The next derived task to finish, or `None` once every task that could
+    /// report has finished and no builder holding the token remains.
+    pub async fn recv(&mut self) -> Option<TaskID> {
+        self.0.recv().await
+    }
+
+    /// Wait until every task derived from the builder has finished.
+    /// For nodes that only need the "all done" edge, not the individual IDs.
+    pub async fn wait_for_all(mut self) {
+        while self.0.recv().await.is_some() {}
+    }
+}
+
+/// Build the cancellation token for a task derived from `parents`.
+///
+/// Each parent contributes a *child* token rather than being shared directly, so
+/// cancelling one derived task never cancels its siblings or the builder it was
+/// derived from. With more than one parent — a combined task whose two sides are
+/// each cancellable — a watcher forwards whichever parent fires first.
+fn derive_cancel_token(parents: &[&CancellationToken]) -> Option<CancellationToken> {
+    match parents {
+        [] => None,
+        [parent] => Some(parent.child_token()),
+        parents => {
+            let merged = CancellationToken::new();
+            let cancelled = parents
+                .iter()
+                .map(|parent| Box::pin((*parent).clone().cancelled_owned()))
+                .collect::<Vec<_>>();
+            let to_cancel = merged.clone();
+            // Combining only ever happens inside a node's execution loop, so a
+            // runtime is always present here.
+            tokio::spawn(async move {
+                futures::future::select_all(cancelled).await;
+                to_cancel.cancel();
+            });
+            Some(merged)
+        }
+    }
+}
+
 /// Hash multiple u32 values into a PlanFingerprint.
 pub(crate) fn hash_fingerprint(parts: &[u32]) -> PlanFingerprint {
     use std::hash::{DefaultHasher, Hash, Hasher};
@@ -327,7 +397,7 @@ pub(crate) struct SwordfishTaskBuilder {
     context: HashMap<String, String>,
     node_context: Option<PipelineNodeContext>,
     pending_node_ids: Vec<NodeID>,
-    notify_tokens: Vec<OneshotSender<TaskID>>,
+    notify_tokens: Vec<TaskNotifyToken>,
     cancel_token: Option<CancellationToken>,
     /// Fingerprint identifying tasks with functionally identical plans.
     /// Assigned by pipeline nodes: tasks with the same fingerprint can share a pipeline.
@@ -417,6 +487,22 @@ impl SwordfishTaskBuilder {
             node.node_id(),
         ]);
 
+        // Both sides' tokens carry over: this builder produces a task that both
+        // sides' nodes are waiting on, and a side may be combined again — the
+        // caller keeps the inputs around as templates to cross with later
+        // arrivals. Dropping them here strands the nodes that registered them,
+        // which is how a `LIMIT` under a cross join used to hang forever.
+        let mut notify_tokens = left.notify_tokens.clone();
+        notify_tokens.extend(right.notify_tokens.clone());
+
+        let cancel_token = derive_cancel_token(
+            &left
+                .cancel_token
+                .iter()
+                .chain(right.cancel_token.iter())
+                .collect::<Vec<_>>(),
+        );
+
         Self {
             plan: combined_plan,
             config: left.config.clone(),
@@ -426,8 +512,8 @@ impl SwordfishTaskBuilder {
             context: left.context.clone(),
             node_context: left.node_context.clone(),
             pending_node_ids,
-            notify_tokens: vec![],
-            cancel_token: None,
+            notify_tokens,
+            cancel_token,
             plan_fingerprint,
         }
     }
@@ -466,12 +552,19 @@ impl SwordfishTaskBuilder {
         self
     }
 
-    /// Add a notify token to the builder. The receiver fires when the task
-    /// completes (or is cancelled) with the assigned `TaskID`.
-    pub fn add_notify_token(mut self) -> (Self, OneshotReceiver<TaskID>) {
-        let (notify_token, notify_rx) = create_oneshot_channel();
+    /// Add a notify token to the builder. The receiver reports the `TaskID` of
+    /// every task derived from this builder as it completes (or is cancelled),
+    /// and closes once no more can be derived. See [`TaskNotifyToken`].
+    pub fn add_notify_token(self) -> (Self, TaskNotifyReceiver) {
+        let (notify_token, notify_rx) = TaskNotifyToken::new();
+        (self.with_notify_token(notify_token), notify_rx)
+    }
+
+    /// Register an existing notify token, so one receiver can cover every
+    /// builder a node emits rather than one channel per builder.
+    pub fn with_notify_token(mut self, notify_token: TaskNotifyToken) -> Self {
         self.notify_tokens.push(notify_token);
-        (self, notify_rx)
+        self
     }
 
     pub fn with_cancel_token(mut self, cancel_token: CancellationToken) -> Self {
@@ -970,5 +1063,71 @@ pub(super) mod tests {
             }
         );
         assert!(heap.pop().is_none()); // Heap should be empty
+    }
+
+    /// `CrossJoinNode` keeps the builders it receives as templates and crosses
+    /// each one with every builder from the other side, so a combined builder's
+    /// task is the only thing either side's node ever gets to observe. Dropping
+    /// the tokens here left `LimitNode` waiting on tasks that could no longer
+    /// report, which hung the query.
+    #[tokio::test]
+    async fn combine_with_keeps_both_sides_notify_tokens() {
+        use crate::pipeline_node::tests::{MockNode, make_builder};
+
+        let (left_node, right_node, join_node) =
+            (MockNode::new(10), MockNode::new(20), MockNode::new(30));
+        let (left, mut left_rx) = make_builder(&left_node, 1).add_notify_token();
+        let (right, mut right_rx) = make_builder(&right_node, 2).add_notify_token();
+
+        let combined = SwordfishTaskBuilder::combine_with(&left, &right, &join_node, |l, _| l);
+
+        assert_eq!(combined.notify_tokens.len(), 2);
+        for token in &combined.notify_tokens {
+            token.notify(7);
+        }
+        assert_eq!(left_rx.recv().await, Some(7));
+        assert_eq!(right_rx.recv().await, Some(7));
+
+        // The templates still hold a clone each, so neither channel has closed:
+        // more tasks can still be derived from them.
+        drop(combined);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), left_rx.recv())
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn combine_with_derives_a_cancel_token_from_both_sides() {
+        use crate::pipeline_node::tests::{MockNode, make_builder};
+
+        let (left_node, right_node, join_node) =
+            (MockNode::new(10), MockNode::new(20), MockNode::new(30));
+        let (left_cancel, right_cancel) = (CancellationToken::new(), CancellationToken::new());
+        let left = make_builder(&left_node, 1).with_cancel_token(left_cancel.clone());
+        let right = make_builder(&right_node, 2).with_cancel_token(right_cancel.clone());
+
+        let combined = SwordfishTaskBuilder::combine_with(&left, &right, &join_node, |l, _| l);
+        let derived = combined
+            .cancel_token
+            .clone()
+            .expect("a combined task is cancellable if either side is");
+
+        // Cancelling the derived task is scoped to it: a cross join derives many
+        // tasks from the same pair of templates.
+        derived.cancel();
+        assert!(!left_cancel.is_cancelled());
+        assert!(!right_cancel.is_cancelled());
+
+        // Either side reaches the task it was combined into.
+        for parent in [&left_cancel, &right_cancel] {
+            let combined = SwordfishTaskBuilder::combine_with(&left, &right, &join_node, |l, _| l);
+            let derived = combined.cancel_token.clone().unwrap();
+            parent.cancel();
+            tokio::time::timeout(Duration::from_secs(5), derived.cancelled())
+                .await
+                .expect("cancelling either side must cancel the combined task");
+        }
     }
 }

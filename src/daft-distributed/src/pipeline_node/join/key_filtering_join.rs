@@ -259,30 +259,20 @@ impl KeyFilteringJoinNode {
                 self.append_key_filter_to_builder(builder, filter_predicate.clone());
 
             let (builder_with_token, notify_token) = modified_builder.add_notify_token();
-            running_tasks.spawn(notify_token);
+            running_tasks.spawn(notify_token.wait_for_all());
             if result_tx.send(builder_with_token).await.is_err() {
                 break;
             }
         }
 
         // Wait for all left-side tasks to finish.
-        let mut first_error = None;
         while let Some(result) = running_tasks.join_next().await {
-            match result? {
-                Ok(_) => {}
-                Err(err) if first_error.is_none() => first_error = Some(err),
-                Err(_) => {}
-            }
+            result?;
         }
 
         // Teardown actors after all tasks are finished.
         resources.teardown();
 
-        if let Some(err) = first_error {
-            return Err(DaftError::InternalError(format!(
-                "Sender of OneShot Channel dropped before sending task completion notification: {err}"
-            )));
-        }
         Ok(())
     }
 
