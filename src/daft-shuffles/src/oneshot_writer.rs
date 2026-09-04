@@ -154,15 +154,25 @@ pub async fn write_partitions_one_shot(
             for (idx, partition) in partitions.into_iter().enumerate() {
                 offsets.push(writer.get_ref().bytes_written);
                 writer.get_mut().crc_reset();
-                caches.push(write_one_partition(
+                let mut cache = write_one_partition(
                     partition,
                     partition_ref_id(input_id, idx),
                     &mut writer,
                     &arrow_schema,
                     &schema,
                     &file_path,
-                )?);
-                crcs.push(writer.get_ref().crc_current());
+                )?;
+                let crc = writer.get_ref().crc_current();
+                crcs.push(crc);
+                // The same checksum the shared index carries, kept in memory so the
+                // gRPC and in-process routes verify what the shared route verifies:
+                // all three serve these bytes, and only one of them was checking.
+                cache.crc32s = Some(if cache.num_rows == 0 {
+                    Vec::new()
+                } else {
+                    vec![crc]
+                });
+                caches.push(cache);
             }
             // Closing bound of the last partition, taken before `finish` so the
             // EOS marker falls outside every range.
@@ -259,6 +269,7 @@ fn write_one_partition(
             num_rows: 0,
             size_bytes: 0,
             byte_ranges: Some(Vec::new()),
+            crc32s: Some(Vec::new()),
         });
     }
     let batches = partition.record_batches();
@@ -290,6 +301,8 @@ fn write_one_partition(
         num_rows,
         size_bytes,
         byte_ranges: Some(vec![(offset_before, offset_after)]),
+        // Filled in by the caller, which owns the per-partition checksum reset.
+        crc32s: None,
     })
 }
 

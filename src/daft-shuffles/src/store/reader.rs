@@ -13,9 +13,9 @@
 //! reported as an error rather than decoded into plausible-looking rows.
 
 use std::{
+    collections::HashMap,
     io::SeekFrom,
-    pin::Pin,
-    task::{Context, Poll},
+    sync::{LazyLock, Mutex},
 };
 
 use arrow_flight::{FlightData, SchemaAsIpc, decode::FlightRecordBatchStream};
@@ -26,14 +26,11 @@ use daft_recordbatch::RecordBatch;
 use futures::{StreamExt, stream::BoxStream};
 use tokio::{
     fs::File,
-    io::{AsyncRead, AsyncReadExt, AsyncSeekExt, BufReader, ReadBuf, Take},
+    io::{AsyncReadExt, AsyncSeekExt},
 };
 
-use super::{index, shared_map_file};
-use crate::{
-    client::flight_client::FlightRecordBatchStreamToDaftRecordBatchStream,
-    server::stream::next_flight_data,
-};
+use super::{index, shared_map_file, verify::CheckedRange};
+use crate::client::flight_client::FlightRecordBatchStreamToDaftRecordBatchStream;
 
 /// One map input a reducer must gather: which task wrote it, and which attempt
 /// of that task the coordinator selected.
@@ -41,33 +38,6 @@ use crate::{
 pub struct MapInput {
     pub input_id: u32,
     pub attempt: u64,
-}
-
-/// `AsyncRead` adapter that folds every byte it hands out into a CRC-32.
-///
-/// Sits *below* the `BufReader`, so it hashes what the buffer pulled from the
-/// file. That is exactly the indexed range when the parser consumed everything
-/// (the `Take` stops it there), and the completeness check rejects the read
-/// before the CRC is consulted when it did not.
-struct HashingReader<R> {
-    inner: R,
-    hasher: crc32fast::Hasher,
-}
-
-impl<R: AsyncRead + Unpin> AsyncRead for HashingReader<R> {
-    fn poll_read(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut ReadBuf<'_>,
-    ) -> Poll<std::io::Result<()>> {
-        let this = self.get_mut();
-        let before = buf.filled().len();
-        let poll = Pin::new(&mut this.inner).poll_read(cx, buf);
-        if matches!(&poll, Poll::Ready(Ok(()))) {
-            this.hasher.update(&buf.filled()[before..]);
-        }
-        poll
-    }
 }
 
 /// Process-wide ceiling on map files being read off the shared mount at once.
@@ -84,12 +54,52 @@ const MAX_CONCURRENT_SHARED_READS: usize = 512;
 static SHARED_READ_SLOTS: std::sync::LazyLock<tokio::sync::Semaphore> =
     std::sync::LazyLock::new(|| tokio::sync::Semaphore::new(MAX_CONCURRENT_SHARED_READS));
 
-/// Read the index region of an already-open map file.
+/// How many output partitions each shuffle turned out to have, learned from the
+/// first map file of that shuffle this process read.
 ///
-/// Takes one speculative read sized to cover the common case and only issues a
-/// second when the shuffle has more partitions than that covers.
-async fn read_index_region(file: &mut File, path: &str) -> DaftResult<Vec<u8>> {
-    let mut probe = vec![0u8; index::PROBE_BYTES];
+/// The count is a property of the *shuffle*, not of a file: every map task of one
+/// shuffle writes the same number of output partitions, so one file's header
+/// answers the question for all of them. That is what lets every subsequent read
+/// ask for exactly the index that is there instead of speculating.
+///
+/// Dropped with the rest of the shuffle's memoized state (see
+/// [`super::forget_shuffle`]). A stale entry costs at most one extra read, not
+/// correctness — the count is re-derived from every file's own header.
+static PARTITION_COUNTS: LazyLock<Mutex<HashMap<u64, usize>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn lock_partition_counts() -> std::sync::MutexGuard<'static, HashMap<u64, usize>> {
+    PARTITION_COUNTS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+fn remembered_partition_count(shuffle_id: u64) -> Option<usize> {
+    lock_partition_counts().get(&shuffle_id).copied()
+}
+
+pub(super) fn forget_partition_count(shuffle_id: u64) {
+    lock_partition_counts().remove(&shuffle_id);
+}
+
+/// Read the index region of an already-open map file, and report how many
+/// partitions it turned out to describe.
+///
+/// `expected` is the shuffle's partition count if this process has already seen
+/// it. With it, the read is sized to the index that is actually there; without
+/// it, one speculative [`index::PROBE_BYTES`] read covers any realistic shuffle
+/// in a single round trip.
+///
+/// The hint is checked, never trusted: the count is always re-read from this
+/// file's own header, and a hint that undershoots simply costs the second read
+/// that an uncovered probe would have cost anyway.
+pub(super) async fn read_index_region(
+    file: &mut File,
+    path: &str,
+    expected: Option<usize>,
+) -> DaftResult<(Vec<u8>, usize)> {
+    let first_read = expected.map_or(index::PROBE_BYTES, index::index_region_bytes);
+    let mut probe = vec![0u8; first_read];
     let mut filled = 0;
     while filled < probe.len() {
         let n = file.read(&mut probe[filled..]).await?;
@@ -104,17 +114,18 @@ async fn read_index_region(file: &mut File, path: &str) -> DaftResult<Vec<u8>> {
     let needed = index::index_region_bytes(num_partitions);
     if probe.len() >= needed {
         probe.truncate(needed);
-        return Ok(probe);
+        return Ok((probe, num_partitions));
     }
 
     probe.resize(needed, 0);
     file.read_exact(&mut probe[filled..]).await?;
-    Ok(probe)
+    Ok((probe, num_partitions))
 }
 
 /// Stream the raw IPC messages of one output partition out of one map file,
 /// verifying the range against the index before the stream ends.
 fn read_one_map_file(
+    shuffle_id: u64,
     path: String,
     partition_idx: usize,
 ) -> BoxStream<'static, DaftResult<FlightData>> {
@@ -136,7 +147,11 @@ fn read_one_map_file(
                 format!("Failed to open shared shuffle map file {}: {}", path, e).into(),
             )
         })?;
-        let region = read_index_region(&mut file, &path).await?;
+        let expected = remembered_partition_count(shuffle_id);
+        let (region, num_partitions) = read_index_region(&mut file, &path, expected).await?;
+        if expected != Some(num_partitions) {
+            lock_partition_counts().insert(shuffle_id, num_partitions);
+        }
         let entry = index::partition_entry(&region, partition_idx, &path)?;
 
         // An empty output partition contributes no IPC messages at all.
@@ -145,53 +160,18 @@ fn read_one_map_file(
         }
 
         file.seek(SeekFrom::Start(entry.start)).await.map_err(DaftError::IoError)?;
-        let mut reader = BufReader::new(HashingReader {
-            inner: file.take(entry.len()),
-            hasher: crc32fast::Hasher::new(),
-        });
+        let mut range = CheckedRange::new(
+            file,
+            entry.len(),
+            Some(entry.crc32),
+            format!("shuffle map file {} partition {}", path, partition_idx),
+        );
 
-        // The messages are forwarded as they are parsed, so a corrupt range can
-        // already have had earlier messages consumed downstream by the time it is
-        // detected. That is acceptable because detection fails the read — and so
-        // the task — rather than letting partial output stand as complete.
-        while let Some(message) = next_flight_data(&mut reader).await? {
+        while let Some(message) = range.next().await? {
             yield message;
         }
-
-        verify_range(&reader, &entry, partition_idx, &path)?;
+        range.finish()?;
     })
-}
-
-/// Confirm the parser consumed the whole indexed range and that its bytes match
-/// the indexed checksum.
-fn verify_range(
-    reader: &BufReader<HashingReader<Take<File>>>,
-    entry: &index::PartitionEntry,
-    partition_idx: usize,
-    path: &str,
-) -> DaftResult<()> {
-    // Bytes the file still owes plus bytes buffered but never parsed: either one
-    // means the stream ended early — a short file, or a hole read as end-of-stream.
-    let unconsumed = reader.get_ref().inner.limit() + reader.buffer().len() as u64;
-    if unconsumed != 0 {
-        return Err(DaftError::InternalError(format!(
-            "shuffle map file {} partition {} is incomplete: {} of {} bytes unread \
-             (the writer may have died before its data reached shared storage)",
-            path,
-            partition_idx,
-            unconsumed,
-            entry.len()
-        )));
-    }
-    let actual = reader.get_ref().hasher.clone().finalize();
-    if actual != entry.crc32 {
-        return Err(DaftError::InternalError(format!(
-            "shuffle map file {} partition {} failed checksum: expected {:#010x}, got {:#010x} \
-             (the file is not what its writer committed)",
-            path, partition_idx, entry.crc32, actual
-        )));
-    }
-    Ok(())
 }
 
 /// Read output partition `partition_idx` of `shuffle_id` from the shared mount,
@@ -225,7 +205,7 @@ pub fn read_partition_stream(
     let partition_idx = partition_idx as usize;
     let data = futures::stream::iter(paths)
         .flat_map_unordered(Some(concurrency.max(1)), move |path| {
-            read_one_map_file(path, partition_idx)
+            read_one_map_file(shuffle_id, path, partition_idx)
         })
         .map(|item| item.map_err(|e| arrow_flight::error::FlightError::ExternalError(Box::new(e))));
 
@@ -235,7 +215,7 @@ pub fn read_partition_stream(
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use std::{
         io::{Read, Seek, Write},
         sync::Arc,
@@ -257,7 +237,7 @@ mod tests {
         store::ShuffleDurability,
     };
 
-    fn dummy_schema() -> SchemaRef {
+    pub(in crate::store) fn dummy_schema() -> SchemaRef {
         Arc::new(Schema::new(vec![Field::new("ints", DataType::UInt8)]))
     }
 
@@ -450,6 +430,71 @@ mod tests {
 
         std::fs::remove_dir_all(&dir).unwrap();
         Ok(())
+    }
+
+    /// The partition count is a property of the shuffle, so after one file every
+    /// other file's index can be read at exactly its size instead of speculated
+    /// at. What must not change is the answer.
+    #[tokio::test]
+    async fn a_partition_count_hint_only_changes_how_much_is_read() -> DaftResult<()> {
+        let dir = tempdir("hint");
+        let root = dir.to_str().unwrap();
+        let schema = dummy_schema();
+        let (shuffle_id, input_id, attempt) = (31u64, 2u32, 0xa11ce_u64);
+        write_partitions_one_shot(
+            input_id,
+            shuffle_id,
+            attempt,
+            OneShotTarget::Shared {
+                shared_root: root.to_string(),
+                durability: ShuffleDurability::None,
+            },
+            schema.clone(),
+            None,
+            partitions(&schema, 40),
+        )
+        .await?;
+        let path = shared_map_file(root, shuffle_id, input_id, attempt);
+
+        let mut file = File::open(&path).await?;
+        let (unhinted, n) = read_index_region(&mut file, &path, None).await?;
+        assert_eq!(n, 3);
+
+        // Exact, over- and under-estimates all resolve to the same region: the
+        // count is re-read from the file's own header either way, and a hint that
+        // undershoots just pays for the second read.
+        for hint in [Some(3), Some(64), Some(1)] {
+            let mut file = File::open(&path).await?;
+            let (hinted, hinted_n) = read_index_region(&mut file, &path, hint).await?;
+            assert_eq!(hinted_n, 3, "hint {hint:?}");
+            assert_eq!(hinted, unhinted, "hint {hint:?}");
+            assert_eq!(
+                index::partition_entry(&hinted, 1, &path)?,
+                index::partition_entry(&unhinted, 1, &path)?,
+            );
+        }
+
+        // The exact hint reads exactly the index and nothing else; the default
+        // probe reads two orders of magnitude more.
+        assert_eq!(unhinted.len(), index::index_region_bytes(3));
+        assert!(index::index_region_bytes(3) < index::PROBE_BYTES / 100);
+
+        std::fs::remove_dir_all(&dir)?;
+        Ok(())
+    }
+
+    /// A count left over from a shuffle that no longer exists must not outlive it,
+    /// or a long-lived worker accumulates one entry per query it ever read.
+    #[test]
+    fn forgetting_a_shuffle_drops_its_partition_count() {
+        lock_partition_counts().insert(0xdead_beef, 128);
+        lock_partition_counts().insert(0xfeed_face, 64);
+        assert_eq!(remembered_partition_count(0xdead_beef), Some(128));
+
+        super::super::forget_shuffle(0xdead_beef);
+        assert_eq!(remembered_partition_count(0xdead_beef), None);
+        assert_eq!(remembered_partition_count(0xfeed_face), Some(64));
+        forget_partition_count(0xfeed_face);
     }
 
     #[tokio::test]

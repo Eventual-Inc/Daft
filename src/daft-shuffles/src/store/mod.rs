@@ -15,8 +15,11 @@
 //! see. So the shared layout writes those ranges into the file itself, as a
 //! fixed-size index region ahead of the IPC stream. See [`index`] for the format.
 
+#[cfg(test)]
+mod bench;
 pub mod index;
 pub mod reader;
+pub(crate) mod verify;
 pub mod writer;
 
 use std::{
@@ -218,6 +221,17 @@ fn lock_created_dirs() -> std::sync::MutexGuard<'static, HashMap<u64, HashMap<St
 /// rather than relying on `shuffle_id` never repeating.
 pub fn forget_created_dirs(shuffle_id: u64) {
     lock_created_dirs().remove(&shuffle_id);
+}
+
+/// Forget everything this process memoized about a shuffle whose files are gone.
+///
+/// One entry point rather than two calls at the call site, because the write-side
+/// memo and the read-side one are the same fact — "this shuffle still exists" —
+/// held by different halves of the same worker. A worker that only wrote, or only
+/// read, simply has nothing in the other one.
+pub fn forget_shuffle(shuffle_id: u64) {
+    forget_created_dirs(shuffle_id);
+    reader::forget_partition_count(shuffle_id);
 }
 
 /// Coalesces `fsync`s of one directory across the map tasks publishing into it.

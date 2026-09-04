@@ -168,6 +168,7 @@ impl InProgressShuffleCache {
                 num_rows: result.total_rows_written,
                 size_bytes: result.total_bytes_written,
                 byte_ranges: None,
+                crc32s: None,
             }),
             None => Err(DaftError::InternalError(
                 "No writer result found".to_string(),
@@ -248,6 +249,13 @@ pub struct PartitionCache {
     /// `(start, end)` per file. Set when one file holds multiple output partitions
     /// (combined-file shuffle); `None` means read the whole file.
     pub byte_ranges: Option<Vec<(u64, u64)>>,
+    /// CRC-32 of each entry of `byte_ranges`, so a reader can tell a range that is
+    /// merely the right length from one that is also the right bytes.
+    ///
+    /// `None` for the per-partition layout, whose writer records no checksum. Those
+    /// files are read whole, where a truncated stream is caught by the absence of
+    /// the writer's end-of-stream marker instead.
+    pub crc32s: Option<Vec<u32>>,
 }
 
 #[cfg(test)]
