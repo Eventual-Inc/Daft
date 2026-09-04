@@ -31,6 +31,11 @@ pub trait SeriesListExtension: Sized {
     fn list_distinct(&self) -> DaftResult<Self>;
     fn list_append(&self, other: &Self) -> DaftResult<Self>;
     fn list_contains(&self, item: &Self) -> DaftResult<Self>;
+    fn list_compact(&self) -> DaftResult<Self>;
+    fn list_position(&self, item: &Self) -> DaftResult<Self>;
+    fn list_except(&self, other: &Self) -> DaftResult<Self>;
+    fn list_intersect(&self, other: &Self) -> DaftResult<Self>;
+    fn list_union(&self, other: &Self) -> DaftResult<Self>;
 }
 
 impl SeriesListExtension for Series {
@@ -384,4 +389,414 @@ impl SeriesListExtension for Series {
             ))),
         }
     }
+
+    /// Removes null values from each list, preserving the order of remaining elements.
+    ///
+    /// # Example
+    /// ```txt
+    /// [[1, NULL, 2, NULL, 3], [NULL, NULL], [1, 2]] -> [[1, 2, 3], [], [1, 2]]
+    /// ```
+    fn list_compact(&self) -> DaftResult<Self> {
+        let input = if let DataType::FixedSizeList(inner_type, _) = self.data_type() {
+            self.cast(&DataType::List(inner_type.clone()))?
+        } else {
+            self.clone()
+        };
+
+        let list = input.list()?;
+        let mut offsets = Vec::with_capacity(list.len() + 1);
+        offsets.push(0i64);
+        let mut current_offset = 0i64;
+
+        // Collect indices of non-null elements from the flat child.
+        let mut take_indices = Vec::new();
+        let list_offsets = list.offsets();
+        for i in 0..list.len() {
+            let start = *list_offsets.get(i).unwrap();
+            let end = *list_offsets.get(i + 1).unwrap();
+            if list.is_valid(i) {
+                for idx in start..end {
+                    if list.flat_child.is_valid(idx as usize) {
+                        take_indices.push(idx as u64);
+                        current_offset += 1;
+                    }
+                }
+            }
+            offsets.push(current_offset);
+        }
+
+        let take_indices_array = UInt64Array::from_vec("indices", take_indices);
+        let compact_child = list.flat_child.take(&take_indices_array)?;
+
+        let list_array = ListArray::new(
+            Arc::new(Field::new(input.name(), input.data_type().clone())),
+            compact_child,
+            OffsetBuffer::new(offsets.into()),
+            input.nulls().cloned(),
+        );
+
+        Ok(list_array.into_series())
+    }
+
+    /// Returns the 1-based position of the first occurrence of `item` in each list,
+    /// or 0 if the element is not found. Returns NULL if either the list or item is NULL.
+    fn list_position(&self, item: &Self) -> DaftResult<Self> {
+        let input = if let DataType::FixedSizeList(inner_type, _) = self.data_type() {
+            self.cast(&DataType::List(inner_type.clone()))?
+        } else {
+            self.clone()
+        };
+
+        let list = input.list()?;
+
+        // If the list element type is null, no value can ever be found.
+        if list.flat_child.data_type() == &DataType::Null {
+            let mut values: Vec<i64> = Vec::with_capacity(list.len());
+            let mut validity: Vec<bool> = Vec::with_capacity(list.len());
+            for i in 0..list.len() {
+                let valid = list.is_valid(i) && item.is_valid(i);
+                values.push(0);
+                validity.push(valid);
+            }
+            let field = Field::new(self.name(), DataType::Int64);
+            let arr = Int64Array::from_iter(
+                field,
+                values
+                    .into_iter()
+                    .zip(validity)
+                    .map(|(v, ok)| if ok { Some(v) } else { None }),
+            );
+            return Ok(arr.into_series());
+        }
+
+        let item = item.cast(list.flat_child.data_type())?;
+
+        // Use the same hash + comparator approach as list_contains.
+        let item_hashes = item.hash(None)?;
+        let child_hashes = list.flat_child.hash(None)?;
+        let child_arrow = list.flat_child.to_arrow()?;
+        let item_arrow = item.to_arrow()?;
+        // Surface a typed error instead of panicking when the element type
+        // is not orderable/comparable by arrow's `make_comparator`.
+        let comparator = arrow::array::make_comparator(
+            child_arrow.as_ref(),
+            item_arrow.as_ref(),
+            Default::default(),
+        )
+        .map_err(|e| {
+            DaftError::TypeError(format!(
+                "list_position: cannot compare elements of type {}: {}",
+                list.flat_child.data_type(),
+                e
+            ))
+        })?;
+
+        let list_offsets = list.offsets();
+        let mut values: Vec<i64> = Vec::with_capacity(list.len());
+        let mut validity: Vec<bool> = Vec::with_capacity(list.len());
+        for list_idx in 0..list.len() {
+            if !list.is_valid(list_idx) || !item.is_valid(list_idx) {
+                values.push(0);
+                validity.push(false);
+                continue;
+            }
+            let item_hash = item_hashes.get(list_idx).unwrap();
+            let start = *list_offsets.get(list_idx).unwrap();
+            let end = *list_offsets.get(list_idx + 1).unwrap();
+            let mut found_pos: i64 = 0;
+            for (offset, elem_idx) in (start..end).enumerate() {
+                let elem_idx = elem_idx as usize;
+                if child_arrow.is_null(elem_idx) {
+                    continue;
+                }
+                let elem_hash = child_hashes.get(elem_idx).unwrap();
+                if elem_hash == item_hash && comparator(elem_idx, list_idx).is_eq() {
+                    found_pos = (offset as i64) + 1;
+                    break;
+                }
+            }
+            values.push(found_pos);
+            validity.push(true);
+        }
+
+        let field = Field::new(self.name(), DataType::Int64);
+        let arr = Int64Array::from_iter(
+            field,
+            values
+                .into_iter()
+                .zip(validity)
+                .map(|(v, ok)| if ok { Some(v) } else { None }),
+        );
+        Ok(arr.into_series())
+    }
+
+    /// Returns the elements in `self` that are not in `other`, with duplicates removed.
+    /// Returns the elements in `self` that are not in `other`, with duplicates removed.
+    /// Uses null-safe-equal semantics: a null element in `self` is dropped only if
+    /// `other` also contains a null. The order of first occurrence is preserved from `self`.
+    fn list_except(&self, other: &Self) -> DaftResult<Self> {
+        list_set_op(self, other, SetOp::Except)
+    }
+
+    /// Returns the elements that are in both `self` and `other`, with duplicates removed.
+    /// Uses null-safe-equal semantics: a null is kept in the result only if both
+    /// inputs contain a null. The order of first occurrence is preserved from `self`.
+    fn list_intersect(&self, other: &Self) -> DaftResult<Self> {
+        list_set_op(self, other, SetOp::Intersect)
+    }
+
+    /// Returns the union of elements in `self` and `other`, with duplicates removed.
+    /// Uses null-safe-equal semantics: if either input contains a null, the result
+    /// contains a single null. The order of first occurrence (from `self` then `other`)
+    /// is preserved.
+    fn list_union(&self, other: &Self) -> DaftResult<Self> {
+        list_set_op(self, other, SetOp::Union)
+    }
+}
+
+#[derive(Clone, Copy)]
+enum SetOp {
+    Except,
+    Intersect,
+    Union,
+}
+
+/// Common helper that performs per-row set operations between two list series.
+/// Both sides are first normalized to `List` and promoted to a common element
+/// supertype. Spark-compatible null-safe-equal semantics are used: NULL elements
+/// inside the lists participate as a regular value (e.g. NULL is equal to NULL).
+fn list_set_op(lhs: &Series, rhs: &Series, op: SetOp) -> DaftResult<Series> {
+    let lhs_norm = if let DataType::FixedSizeList(inner_type, _) = lhs.data_type() {
+        lhs.cast(&DataType::List(inner_type.clone()))?
+    } else {
+        lhs.clone()
+    };
+    let rhs_norm = if let DataType::FixedSizeList(inner_type, _) = rhs.data_type() {
+        rhs.cast(&DataType::List(inner_type.clone()))?
+    } else {
+        rhs.clone()
+    };
+
+    let lhs_list = lhs_norm.list()?;
+    let rhs_list = rhs_norm.list()?;
+
+    if lhs_list.len() != rhs_list.len() {
+        return Err(DaftError::ValueError(format!(
+            "list set operation expects equal-length inputs, got {} vs {}",
+            lhs_list.len(),
+            rhs_list.len()
+        )));
+    }
+
+    // Promote both children to a common supertype so mixed numeric inputs like
+    // `array_union(int_list, float_list)` work, matching Spark behavior.
+    let lhs_child_dtype = lhs_list.flat_child.data_type();
+    let rhs_child_dtype = rhs_list.flat_child.data_type();
+    let target_inner_dtype = if lhs_child_dtype == rhs_child_dtype {
+        lhs_child_dtype.clone()
+    } else {
+        daft_core::utils::supertype::try_get_supertype(lhs_child_dtype, rhs_child_dtype)?
+    };
+
+    let lhs_child_casted = if lhs_child_dtype == &target_inner_dtype {
+        lhs_list.flat_child.clone()
+    } else {
+        lhs_list.flat_child.cast(&target_inner_dtype)?
+    };
+    let rhs_child_casted = if rhs_child_dtype == &target_inner_dtype {
+        rhs_list.flat_child.clone()
+    } else {
+        rhs_list.flat_child.cast(&target_inner_dtype)?
+    };
+
+    // Use the concatenation of the two (promoted) flat children as the source for
+    // take indices. We append rhs_child after lhs_child, so any take index
+    // >= lhs_child.len() refers to rhs.
+    let lhs_child_len = lhs_child_casted.len();
+    let combined = Series::concat(&[&lhs_child_casted, &rhs_child_casted])?;
+
+    let lhs_offsets = lhs_list.offsets();
+    let rhs_offsets = rhs_list.offsets();
+
+    let mut take_indices: Vec<u64> = Vec::new();
+    let mut out_offsets: Vec<i64> = Vec::with_capacity(lhs_list.len() + 1);
+    out_offsets.push(0);
+    let mut current_offset: i64 = 0;
+
+    let lhs_outer_nulls = lhs_list.nulls();
+    let rhs_outer_nulls = rhs_list.nulls();
+    let mut out_validity: Vec<bool> = Vec::with_capacity(lhs_list.len());
+
+    for i in 0..lhs_list.len() {
+        let lhs_valid = lhs_outer_nulls.is_none_or(|n| n.is_valid(i));
+        let rhs_valid = rhs_outer_nulls.is_none_or(|n| n.is_valid(i));
+
+        // Spark semantics: if either list is NULL, the result is NULL.
+        if !lhs_valid || !rhs_valid {
+            out_validity.push(false);
+            out_offsets.push(current_offset);
+            continue;
+        }
+        out_validity.push(true);
+
+        let l_start = *lhs_offsets.get(i).unwrap() as usize;
+        let l_end = *lhs_offsets.get(i + 1).unwrap() as usize;
+        let r_start = *rhs_offsets.get(i).unwrap() as usize;
+        let r_end = *rhs_offsets.get(i + 1).unwrap() as usize;
+
+        let lhs_sub = lhs_child_casted.slice(l_start, l_end)?;
+        let rhs_sub = rhs_child_casted.slice(r_start, r_end)?;
+
+        // Build probe tables for both sides (these intentionally exclude nulls;
+        // null-equality is handled separately below).
+        let lhs_probe = lhs_sub.build_probe_table_without_nulls()?;
+        let rhs_probe = rhs_sub.build_probe_table_without_nulls()?;
+
+        // Track null-element presence on each side so we can preserve nulls as a
+        // first-class value (Spark null-safe-equal semantics).
+        let lhs_first_null_local: Option<usize> =
+            (0..lhs_sub.len()).find(|&j| !lhs_sub.is_valid(j));
+        let rhs_first_null_local: Option<usize> =
+            (0..rhs_sub.len()).find(|&j| !rhs_sub.is_valid(j));
+        let rhs_has_null: bool = rhs_first_null_local.is_some();
+
+        // Build an ordered list of unique lhs items (by first-occurrence local
+        // index), treating null as a regular value. Each entry is
+        // (local_idx, is_null). The probe table iteration preserves
+        // first-occurrence order for non-null elements; we splice in the null
+        // at its original position to preserve the input ordering (Spark
+        // semantics).
+        let mut lhs_unique_items: Vec<(usize, bool)> =
+            lhs_probe.keys().map(|k| (k.idx as usize, false)).collect();
+        if let Some(null_local) = lhs_first_null_local {
+            // Insert null at the position that maintains ascending local_idx
+            // order. Non-null entries are already in ascending order.
+            let insert_pos = lhs_unique_items
+                .iter()
+                .position(|&(idx, _)| idx > null_local)
+                .unwrap_or(lhs_unique_items.len());
+            lhs_unique_items.insert(insert_pos, (null_local, true));
+        }
+
+        // Determine which lhs unique items to keep based on op, preserving
+        // their original first-occurrence order.
+        let mut kept_count = 0i64;
+        for &(local_idx, is_null) in &lhs_unique_items {
+            let keep = if is_null {
+                // Null-safe-equal semantics for nulls in lhs:
+                //   - Except:    keep null only if rhs has NO null.
+                //   - Intersect: keep null only if rhs also has a null.
+                //   - Union:     always keep null from lhs.
+                match op {
+                    SetOp::Except => !rhs_has_null,
+                    SetOp::Intersect => rhs_has_null,
+                    SetOp::Union => true,
+                }
+            } else {
+                let in_rhs = probe_contains(&rhs_sub, &lhs_sub, local_idx, &rhs_probe)?;
+                match op {
+                    SetOp::Except => !in_rhs,
+                    SetOp::Intersect => in_rhs,
+                    SetOp::Union => true,
+                }
+            };
+            if keep {
+                let absolute_idx = l_start + local_idx;
+                take_indices.push(absolute_idx as u64);
+                kept_count += 1;
+            }
+        }
+
+        // For Union, append unique rhs items that are not already in lhs,
+        // preserving the rhs first-occurrence order. A null on rhs is included
+        // only when lhs had no null (otherwise it was already emitted above).
+        if matches!(op, SetOp::Union) {
+            let mut rhs_unique_items: Vec<(usize, bool)> =
+                rhs_probe.keys().map(|k| (k.idx as usize, false)).collect();
+            if lhs_first_null_local.is_none()
+                && let Some(null_local) = rhs_first_null_local
+            {
+                let insert_pos = rhs_unique_items
+                    .iter()
+                    .position(|&(idx, _)| idx > null_local)
+                    .unwrap_or(rhs_unique_items.len());
+                rhs_unique_items.insert(insert_pos, (null_local, true));
+            }
+
+            for &(local_idx, is_null) in &rhs_unique_items {
+                let absolute_idx_in_combined = lhs_child_len + r_start + local_idx;
+                if is_null {
+                    // Already filtered above: only reach here if lhs has no null.
+                    take_indices.push(absolute_idx_in_combined as u64);
+                    kept_count += 1;
+                } else {
+                    let in_lhs = probe_contains(&lhs_sub, &rhs_sub, local_idx, &lhs_probe)?;
+                    if !in_lhs {
+                        take_indices.push(absolute_idx_in_combined as u64);
+                        kept_count += 1;
+                    }
+                }
+            }
+        }
+
+        current_offset += kept_count;
+        out_offsets.push(current_offset);
+    }
+
+    let take_indices_array = UInt64Array::from_vec("indices", take_indices);
+    let result_child = combined.take(&take_indices_array)?;
+
+    let outer_nulls = if out_validity.iter().all(|v| *v) {
+        None
+    } else {
+        Some(arrow::buffer::NullBuffer::from_iter(
+            out_validity.into_iter(),
+        ))
+    };
+
+    let inner_dtype = result_child.data_type().clone();
+    let list_field = Arc::new(Field::new(
+        lhs.name(),
+        DataType::List(Box::new(inner_dtype)),
+    ));
+    let list_array = ListArray::new(
+        list_field,
+        result_child,
+        OffsetBuffer::new(out_offsets.into()),
+        outer_nulls,
+    );
+    Ok(list_array.into_series())
+}
+
+/// Returns true if the element at `query_local_idx` of `query` exists in `target`.
+/// Both `query` and `target` are sub-series (already sliced for this row).
+/// `target_probe` is the probe table built from `target` (nulls excluded).
+fn probe_contains(
+    target: &Series,
+    query: &Series,
+    query_local_idx: usize,
+    target_probe: &indexmap::IndexMap<
+        daft_core::utils::identity_hash_set::IndexHash,
+        (),
+        daft_core::utils::identity_hash_set::IdentityBuildHasher,
+    >,
+) -> DaftResult<bool> {
+    use indexmap::map::RawEntryApiV1;
+
+    // Null query elements are never "contained" (Spark drops nulls in set ops).
+    if !query.is_valid(query_local_idx) {
+        return Ok(false);
+    }
+    if target.is_empty() {
+        return Ok(false);
+    }
+    let query_hash = query.hash_with_nulls(None)?;
+    let h = match query_hash.get(query_local_idx) {
+        Some(h) => h,
+        None => return Ok(false),
+    };
+    let entry = target_probe.raw_entry_v1().from_hash(h, |other| {
+        h == other.hash && target.get_lit(other.idx as usize) == query.get_lit(query_local_idx)
+    });
+    Ok(entry.is_some())
 }
