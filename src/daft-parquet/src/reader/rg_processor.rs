@@ -15,7 +15,7 @@ use tokio::sync::mpsc;
 
 use super::{
     RgTaskCtx,
-    chunk_source::ChunkSource,
+    chunk_source::RgAccess,
     field_reader::{decode_one_streaming, leaves_for_top_fields},
     util::{
         eval_predicate_mask, filter_arrays_by_mask, project_to_schema, record_batch_from_arrow,
@@ -49,7 +49,7 @@ pub(super) async fn recv_one_chunk(receivers: &mut [ColRx]) -> DaftResult<Option
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn spawn_col_decoders(
     col_indices: &[usize],
-    chunk_source: &Arc<ChunkSource>,
+    access: &RgAccess,
     metadata: &Arc<ParquetMetaData>,
     arrow_schema: &Arc<ArrowSchema>,
     selection: Option<&RowSelection>,
@@ -58,9 +58,11 @@ pub(super) async fn spawn_col_decoders(
     path: &Arc<str>,
 ) -> DaftResult<(Vec<ColRx>, JoinSet<DaftResult<()>>)> {
     // The reader picks its own per-RG access pattern (batched pre-fetch for
-    // local, lazy per-column for remote). See `ChunkSource::open_rg`.
+    // local, lazy per-column for remote, owned resident RG). Each column
+    // task clones `rg_reader`, so a `Resident` reader keeps the RG owner
+    // (bytes + budget permit) alive until every decoder exits.
     let all_leaves: Arc<[usize]> = leaves_for_top_fields(metadata.as_ref(), col_indices).into();
-    let rg_reader = chunk_source.clone().open_rg(rg_idx, all_leaves).await?;
+    let rg_reader = access.open_rg(rg_idx, all_leaves).await?;
 
     let compute = get_compute_runtime();
     let mut rxs = Vec::with_capacity(col_indices.len());
@@ -114,6 +116,7 @@ struct StreamingState {
 
 pub(super) async fn process_rg_with_data_cols(
     ctx: Arc<RgTaskCtx>,
+    access: RgAccess,
     rg_idx: usize,
     selection: Option<RowSelection>,
     filtered_pred: Vec<ArrayRef>,
@@ -124,7 +127,7 @@ pub(super) async fn process_rg_with_data_cols(
 
     let (col_receivers, mut col_decoders) = match spawn_col_decoders(
         &ctx.plan.data_col_indices,
-        &ctx.chunk_source,
+        &access,
         &ctx.metadata,
         &ctx.arrow_schema,
         selection.as_ref(),
@@ -215,6 +218,7 @@ struct PredicateOnlyState {
 
 pub(super) async fn process_rg_predicate_only(
     ctx: Arc<RgTaskCtx>,
+    access: RgAccess,
     rg_idx: usize,
     selection: Option<RowSelection>,
 ) -> BoxStream<'static, DaftResult<RecordBatch>> {
@@ -226,7 +230,7 @@ pub(super) async fn process_rg_predicate_only(
 
     let (col_receivers, mut col_decoders) = match spawn_col_decoders(
         &plan.pred_col_indices,
-        &ctx.chunk_source,
+        &access,
         &ctx.metadata,
         &ctx.arrow_schema,
         selection.as_ref(),

@@ -274,6 +274,26 @@ impl ChunkSourceBuilder {
         }
     }
 
+    /// Owned-mode counterpart of [`Self::build`]: produce an immutable range
+    /// *plan* (no GETs spawned, no `Bytes` held) for the remote source.
+    /// Returns `Err(self)` for local sources — the caller falls back to the
+    /// legacy path (local reads are per-call `pread`s with no resident
+    /// cache, so the ownership model buys nothing there this round).
+    pub(super) fn build_plan(
+        self,
+        parquet_metadata: &Arc<ParquetMetaData>,
+        rg_indices: &[usize],
+    ) -> Result<RemoteChunkSourcePlan, Box<Self>> {
+        match self {
+            Self::Local(_) => Err(Box::new(self)),
+            Self::Remote(prep) => Ok(RemoteChunkSourcePlan::from_metadata(
+                prep,
+                parquet_metadata,
+                rg_indices,
+            )),
+        }
+    }
+
     /// Finalize the chunk source. For `Remote`, this is when byte-range fetches
     /// for `rg_indices` are spawned — call only after predicate-based pruning.
     pub(super) fn build(
@@ -359,6 +379,11 @@ pub(crate) enum RgReader {
         chunk_source: Arc<ChunkSource>,
         rg_idx: usize,
     },
+    /// Owned mode: cloning this clones the `Arc<ResidentRowGroup>` — every
+    /// column decoder task keeps the resident owner (bytes + budget permit)
+    /// alive for its entire lifetime. Type-level lifetime binding: the
+    /// permit cannot be returned while any decoder still reads the bytes.
+    Resident(Arc<ResidentRowGroup>),
 }
 
 impl RgReader {
@@ -374,6 +399,7 @@ impl RgReader {
             } => Ok(Arc::new(
                 chunk_source.read_rg_chunks(*rg_idx, col_leaves).await?,
             )),
+            Self::Resident(resident) => Ok(resident.leaves.clone()),
         }
     }
 }
@@ -544,17 +570,7 @@ impl RemoteChunkSource {
         let mut rgs = HashMap::with_capacity(active_rg_indices.len());
 
         for &rg_idx in active_rg_indices {
-            let rg = parquet_metadata.row_group(rg_idx);
-            let mut leaf_ranges: Vec<LeafRange> = Vec::with_capacity(active_col_indices.len());
-            for &col_idx in active_col_indices {
-                let (start, len) = rg.column(col_idx).byte_range();
-                leaf_ranges.push(LeafRange {
-                    leaf: col_idx,
-                    start,
-                    len,
-                });
-            }
-            let groups = Self::coalesce_and_split(leaf_ranges);
+            let groups = rg_coalesced_layout(&parquet_metadata, rg_idx, active_col_indices);
 
             let mut group_slots: Vec<GroupSlot> = Vec::with_capacity(groups.len());
             let mut leaves: HashMap<usize, LeafLoc> =
@@ -729,5 +745,244 @@ impl RemoteChunkSource {
             );
         }
         Ok(out)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Owned-mode types: immutable range plan + RAII resident row group.
+//
+// The legacy path above instantiates the whole-file range plan as whole-file
+// resident work (every GET spawned at build, bytes cached until the reader
+// drops). The owned path keeps the same coalesced layout (preserving the
+// cross-column IO merging that motivated the custom reader, see PR #6952)
+// but binds download and residency to a per-row-group owner admitted through
+// the process-wide byte budget.
+// ─────────────────────────────────────────────────────────────────────────────
+
+use super::budget::BudgetPermit;
+
+/// Shared between the legacy eager source and the owned plan so the IO
+/// layout (coalesce ≤1MiB gaps, split >24MiB at chunk boundaries) can never
+/// diverge between the two modes.
+fn rg_coalesced_layout(
+    metadata: &ParquetMetaData,
+    rg_idx: usize,
+    active_col_indices: &[usize],
+) -> Vec<RangeGroup> {
+    let rg = metadata.row_group(rg_idx);
+    let mut leaf_ranges: Vec<LeafRange> = Vec::with_capacity(active_col_indices.len());
+    for &col_idx in active_col_indices {
+        let (start, len) = rg.column(col_idx).byte_range();
+        leaf_ranges.push(LeafRange {
+            leaf: col_idx,
+            start,
+            len,
+        });
+    }
+    RemoteChunkSource::coalesce_and_split(leaf_ranges)
+}
+
+/// Immutable per-RG download plan: coalesced byte ranges and the leaf → range
+/// mapping. Holds no `Bytes` and spawns nothing.
+pub(crate) struct RgRangePlan {
+    groups: Vec<RangeGroup>,
+    /// Checked sum of group byte lengths — the budget weight for this RG.
+    total_bytes: usize,
+}
+
+/// Owned-mode replacement for `RemoteChunkSource`: the fetch context plus one
+/// [`RgRangePlan`] per active row group *occurrence position*. Keyed by
+/// position in the pruned `rg_indices` list (NOT by `rg_idx`) so duplicate
+/// row groups (`row_groups=[0, 0]`, supported since PR #6952) get fully
+/// independent plans/permits/residents.
+pub(crate) struct RemoteChunkSourcePlan {
+    pub(super) path: Arc<str>,
+    file_len: u64,
+    uri: String,
+    io_client: Arc<daft_io::IOClient>,
+    io_stats: Option<daft_io::IOStatsRef>,
+    /// Indexed by occurrence position, parallel to the pruned rg_indices.
+    per_occurrence: Vec<RgRangePlan>,
+}
+
+impl RemoteChunkSourcePlan {
+    pub(super) fn from_metadata(
+        prep: RemoteChunkSourcePrep,
+        parquet_metadata: &Arc<ParquetMetaData>,
+        rg_indices: &[usize],
+    ) -> Self {
+        let per_occurrence = rg_indices
+            .iter()
+            .map(|&rg_idx| {
+                let groups =
+                    rg_coalesced_layout(parquet_metadata, rg_idx, &prep.active_col_indices);
+                let total_bytes = groups
+                    .iter()
+                    .map(|g| usize::try_from(g.end - g.start).expect("range length exceeds usize"))
+                    .try_fold(0usize, |acc, len| acc.checked_add(len))
+                    .expect("row-group byte ranges overflow usize");
+                RgRangePlan {
+                    groups,
+                    total_bytes,
+                }
+            })
+            .collect();
+        Self {
+            path: prep.path,
+            file_len: prep.file_size as u64,
+            uri: prep.uri,
+            io_client: prep.io_client,
+            io_stats: prep.io_stats,
+            per_occurrence,
+        }
+    }
+
+    /// Budget weight of one RG occurrence: planned compressed bytes.
+    pub(super) fn occurrence_bytes(&self, occurrence: usize) -> usize {
+        self.per_occurrence[occurrence].total_bytes
+    }
+
+    /// Download every coalesced range of one RG occurrence and assemble the
+    /// RAII owner. Concurrency: all GETs of this RG run together via
+    /// `try_join_all` — actual connection concurrency is bounded by the IO
+    /// client's own pool semaphore (`max_connections_per_io_thread`, see
+    /// `s3_like.rs`), so no extra limiter here. Any failed GET cancels the
+    /// remaining futures; the permit is released by the caller dropping it.
+    pub(super) async fn download_occurrence(
+        &self,
+        occurrence: usize,
+        permit: BudgetPermit,
+    ) -> crate::Result<ResidentRowGroup> {
+        let plan = &self.per_occurrence[occurrence];
+        let fetches = plan.groups.iter().map(|g| {
+            let range = g.start as usize..g.end as usize;
+            let uri = self.uri.clone();
+            let io_client = self.io_client.clone();
+            let io_stats = self.io_stats.clone();
+            async move {
+                let expected = range.end - range.start;
+                let get_result = io_client
+                    .single_url_get(
+                        uri,
+                        Some(daft_io::range::GetRange::Bounded(range)),
+                        io_stats,
+                    )
+                    .await?;
+                let bytes = get_result.bytes().await?;
+                Ok::<_, crate::Error>((bytes, expected))
+            }
+        });
+        let results = futures::future::try_join_all(fetches).await?;
+
+        let mut group_bytes = Vec::with_capacity(results.len());
+        let mut actual_bytes = 0usize;
+        for (i, (bytes, expected)) in results.into_iter().enumerate() {
+            // A short/long body would silently corrupt slicing offsets AND
+            // the budget ledger — fail with a diagnosable error instead.
+            if bytes.len() != expected {
+                return Err(ReaderInternalSnafu {
+                    path: self.path.to_string(),
+                    message: format!(
+                        "range GET length mismatch for group {i}: expected {expected} bytes, got {}",
+                        bytes.len()
+                    ),
+                }
+                .build());
+            }
+            actual_bytes = actual_bytes
+                .checked_add(bytes.len())
+                .expect("resident byte total overflows usize");
+            group_bytes.push(bytes);
+        }
+
+        let mut leaves = HashMap::new();
+        for (group, bytes) in plan.groups.iter().zip(&group_bytes) {
+            for &LeafRange { leaf, start, len } in &group.members {
+                let local_start = (start - group.start) as usize;
+                let slice = bytes.slice(local_start..local_start + len as usize);
+                leaves.insert(
+                    leaf,
+                    OffsetBytes {
+                        base: start,
+                        file_len: self.file_len,
+                        bytes: slice,
+                    },
+                );
+            }
+        }
+
+        permit.metrics().record_resident(actual_bytes);
+        log::debug!(
+            "resident rg occurrence={} bytes={} path={}",
+            occurrence,
+            actual_bytes,
+            self.path
+        );
+        if super::budget::mem_verbose() {
+            eprintln!(
+                "[parquet-mem] +resident occurrence={} bytes={} {}",
+                occurrence,
+                actual_bytes,
+                permit.metrics().snapshot_line()
+            );
+        }
+        Ok(ResidentRowGroup {
+            group_bytes,
+            leaves: Arc::new(leaves),
+            actual_bytes,
+            permit,
+        })
+    }
+}
+
+/// RAII owner of one downloaded row group occurrence. Every decoder holds
+/// this via `RgReader::Resident(Arc<..>)`, so the compressed bytes AND the
+/// budget permit are released exactly when the last reference disappears —
+/// on success, error, panic, or abort alike. No release state machine.
+pub(crate) struct ResidentRowGroup {
+    /// Master references to the downloaded coalesced ranges. `leaves` holds
+    /// refcounted slices of these same allocations — metrics must count
+    /// `group_bytes` lengths only (leaf slices would double-count shared
+    /// coalesced regions).
+    #[allow(dead_code)]
+    group_bytes: Vec<Bytes>,
+    pub(super) leaves: Arc<HashMap<usize, OffsetBytes>>,
+    actual_bytes: usize,
+    permit: BudgetPermit,
+}
+
+impl Drop for ResidentRowGroup {
+    fn drop(&mut self) {
+        self.permit.metrics().release_resident(self.actual_bytes);
+        log::debug!("released resident rg bytes={}", self.actual_bytes);
+        if super::budget::mem_verbose() {
+            eprintln!(
+                "[parquet-mem] -resident bytes={} {}",
+                self.actual_bytes,
+                self.permit.metrics().snapshot_line()
+            );
+        }
+        // `permit` field drops after this, returning the planned bytes to
+        // the budget and waking the queue front.
+    }
+}
+
+/// Per-RG chunk access handed to the decoders: either the legacy shared
+/// source (lazy per-column reads) or an owned resident row group.
+pub(crate) enum RgAccess {
+    Source(Arc<ChunkSource>),
+    Resident(Arc<ResidentRowGroup>),
+}
+
+impl RgAccess {
+    pub(super) async fn open_rg(
+        &self,
+        rg_idx: usize,
+        all_leaves: Arc<[usize]>,
+    ) -> crate::Result<RgReader> {
+        match self {
+            Self::Source(cs) => cs.clone().open_rg(rg_idx, all_leaves).await,
+            Self::Resident(r) => Ok(RgReader::Resident(r.clone())),
+        }
     }
 }
