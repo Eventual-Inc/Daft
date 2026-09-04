@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
+use daft_dsl::{Expr, ExprRef, functions::scalar::ScalarFn};
 
 use super::OptimizerRule;
 use crate::LogicalPlan;
@@ -18,13 +19,17 @@ use crate::LogicalPlan;
 /// the multiset of rows these operators produce, and the outer sort re-orders the
 /// final result anyway. It intentionally stops at order-sensitive operators such as
 /// `Limit`, `Offset`, `TopN`, `Sample`, and `MonotonicallyIncreasingId`, where the
-/// inner ordering is observable and therefore must be preserved.
+/// inner ordering is observable and therefore must be preserved. A `Project` or
+/// `Filter` that still embeds a `monotonically_increasing_id()` expression is
+/// order-sensitive in the same way — `DetectMonotonicId` rewrites those into the
+/// operator form, but it runs after this rule — so the look-through stops there too.
 ///
 /// ```text
-/// Sort(a) <- Sort(b) <- X               => Sort(a) <- X
-/// Sort(a) <- Project <- Sort(b) <- X    => Sort(a) <- Project <- X
-/// Sort(a) <- Sort(b) <- Sort(c) <- X    => Sort(a) <- X
-/// Sort(a) <- Limit   <- Sort(b) <- X    => unchanged
+/// Sort(a) <- Sort(b) <- X                        => Sort(a) <- X
+/// Sort(a) <- Project <- Sort(b) <- X             => Sort(a) <- Project <- X
+/// Sort(a) <- Sort(b) <- Sort(c) <- X             => Sort(a) <- X
+/// Sort(a) <- Limit   <- Sort(b) <- X             => unchanged
+/// Sort(a) <- Project(monotonic_id) <- Sort(b) <- X => unchanged
 /// ```
 #[derive(Default, Debug)]
 pub struct EliminateRedundantSort {}
@@ -51,6 +56,23 @@ impl OptimizerRule for EliminateRedundantSort {
     }
 }
 
+/// Returns true if the expression contains a `monotonically_increasing_id()`
+/// call. Until `DetectMonotonicId` (which runs after this rule) rewrites such
+/// expressions into a `MonotonicallyIncreasingId` operator, they sit embedded in
+/// `Project`/`Filter` nodes, whose row order then determines the ids assigned.
+fn contains_monotonic_id(expr: &ExprRef) -> bool {
+    match expr.as_ref() {
+        Expr::ScalarFn(ScalarFn::Builtin(func)) if func.name() == "monotonically_increasing_id" => {
+            true
+        }
+        _ => expr.children().iter().any(contains_monotonic_id),
+    }
+}
+
+fn contains_monotonic_id_exprs(exprs: &[ExprRef]) -> bool {
+    exprs.iter().any(contains_monotonic_id)
+}
+
 /// Walks down from an (outer) `Sort`'s input, removing any inner `Sort`s whose
 /// ordering the outer sort makes redundant.
 ///
@@ -62,11 +84,23 @@ fn remove_redundant_sorts(plan: &Arc<LogicalPlan>) -> Option<Arc<LogicalPlan>> {
         LogicalPlan::Sort(inner) => {
             Some(remove_redundant_sorts(&inner.input).unwrap_or_else(|| inner.input.clone()))
         }
-        // Order-insensitive, row-wise operators: safe to look through.
-        LogicalPlan::Project(project) => remove_redundant_sorts(&project.input)
-            .map(|new_child| plan.with_new_children(&[new_child]).into()),
-        LogicalPlan::Filter(filter) => remove_redundant_sorts(&filter.input)
-            .map(|new_child| plan.with_new_children(&[new_child]).into()),
+        // Order-insensitive, row-wise operators: safe to look through, unless they
+        // embed a monotonically_increasing_id() expression, which observes the row
+        // order produced below (see contains_monotonic_id).
+        LogicalPlan::Project(project) => {
+            if contains_monotonic_id_exprs(&project.projection) {
+                return None;
+            }
+            remove_redundant_sorts(&project.input)
+                .map(|new_child| plan.with_new_children(&[new_child]).into())
+        }
+        LogicalPlan::Filter(filter) => {
+            if contains_monotonic_id(&filter.predicate) {
+                return None;
+            }
+            remove_redundant_sorts(&filter.input)
+                .map(|new_child| plan.with_new_children(&[new_child]).into())
+        }
         // Any other operator may depend on row order; stop here to stay conservative.
         _ => None,
     }
@@ -79,6 +113,7 @@ mod tests {
     use common_error::DaftResult;
     use daft_core::prelude::*;
     use daft_dsl::{lit, unresolved_col};
+    use daft_functions::monotonically_increasing_id::monotonically_increasing_id;
 
     use crate::{
         LogicalPlan,
@@ -197,6 +232,28 @@ mod tests {
         let plan = dummy_scan_node(scan_op)
             .sort(vec![unresolved_col("a")], vec![false], vec![false])?
             .limit(5, false)?
+            .sort(vec![unresolved_col("b")], vec![false], vec![false])?
+            .build();
+        assert_optimized_plan_eq(plan.clone(), plan)?;
+        Ok(())
+    }
+
+    /// A `Project` embedding a `monotonically_increasing_id()` expression is
+    /// order-sensitive: the ids it assigns depend on the order rows arrive in, and
+    /// `DetectMonotonicId` (which runs after this rule) rewrites the expression into
+    /// the `MonotonicallyIncreasingId` operator that this rule already stops at. The
+    /// look-through must therefore stop here and keep the inner sort.
+    ///
+    /// Sort(b) <- Project(monotonic_id) <- Sort(a) <- Source => unchanged
+    #[test]
+    fn keeps_sort_blocked_by_monotonic_id_projection() -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Int64),
+        ]);
+        let plan = dummy_scan_node(scan_op)
+            .sort(vec![unresolved_col("a")], vec![false], vec![false])?
+            .select(vec![unresolved_col("b"), monotonically_increasing_id()])?
             .sort(vec![unresolved_col("b")], vec![false], vec![false])?
             .build();
         assert_optimized_plan_eq(plan.clone(), plan)?;
