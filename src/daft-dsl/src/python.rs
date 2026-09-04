@@ -83,6 +83,24 @@ pub fn dense_rank() -> PyResult<PyExpr> {
     Ok(expr.into())
 }
 
+#[pyfunction]
+pub fn cume_dist() -> PyResult<PyExpr> {
+    let expr = Expr::WindowFunction(WindowExpr::CumeDist);
+    Ok(expr.into())
+}
+
+#[pyfunction]
+pub fn percent_rank() -> PyResult<PyExpr> {
+    let expr = Expr::WindowFunction(WindowExpr::PercentRank);
+    Ok(expr.into())
+}
+
+#[pyfunction]
+pub fn ntile(n: i64) -> PyResult<PyExpr> {
+    let expr = Expr::WindowFunction(WindowExpr::Ntile(n));
+    Ok(expr.into())
+}
+
 #[allow(clippy::too_many_arguments)]
 #[pyfunction(signature = (
     years=None,
@@ -582,6 +600,10 @@ impl PyExpr {
 
     pub fn last_value(&self, ignore_nulls: bool) -> PyResult<Self> {
         Ok(self.expr.clone().last_value(ignore_nulls).into())
+    }
+
+    pub fn nth_value(&self, n: i64, ignore_nulls: bool) -> PyResult<Self> {
+        Ok(self.expr.clone().nth_value(n, ignore_nulls).into())
     }
 
     pub fn skew(&self) -> PyResult<Self> {

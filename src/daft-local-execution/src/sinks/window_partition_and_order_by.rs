@@ -209,9 +209,17 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                                     *offset,
                                                     default.clone().map(BoundExpr::new_unchecked),
                                                 ),
+                                                WindowExpr::CumeDist => partition
+                                                    .window_cume_dist_col(name, &params.order_by),
+                                                WindowExpr::PercentRank => partition
+                                                    .window_percent_rank_col(name, &params.order_by),
+                                                WindowExpr::Ntile(n) => {
+                                                    partition.window_ntile_col(name, *n)
+                                                }
                                                 WindowExpr::FirstValue(_, _)
-                                                | WindowExpr::LastValue(_, _) => {
-                                                    unreachable!("first_value/last_value require a frame and cannot appear in a partition+order_by-only window")
+                                                | WindowExpr::LastValue(_, _)
+                                                | WindowExpr::NthValue(_, _, _) => {
+                                                    unreachable!("first_value/last_value/nth_value require a frame and cannot appear in a partition+order_by-only window")
                                                 }
                                             }
                                         })
