@@ -106,6 +106,11 @@ pub mod pylib {
         Ok(())
     }
 
+    #[pyfunction]
+    pub fn get_compute_runtime_num_worker_threads() -> usize {
+        common_runtime::get_compute_pool_num_threads()
+    }
+
     #[pymodule]
     fn daft(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         refresh_logger(py)?;
@@ -144,6 +149,7 @@ pub mod pylib {
         let testing_module = PyModule::new(m.py(), "testing")?;
         m.add_submodule(&testing_module)?;
         daft_scan::python::register_testing_modules(&testing_module)?;
+        testing_module.add_wrapped(wrap_pyfunction!(get_compute_runtime_num_worker_threads))?;
 
         m.add_wrapped(wrap_pyfunction!(version))?;
         m.add_wrapped(wrap_pyfunction!(build_type))?;
