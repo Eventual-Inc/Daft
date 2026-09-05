@@ -110,7 +110,16 @@ python = [
   "daft-recordbatch/python",
   "daft-writers/python"
 ]
-hdfs = ["daft-io/hdfs"]
+# Native OpenDAL service backends (opt-in; install `daft[extra-fs]` for the
+# Python-based fallback instead). HDFS is native-only since the `opendal`
+# Python wheel does not ship the JNI-based service.
+native-oss = ["daft-io/native-oss"]
+native-cos = ["daft-io/native-cos"]
+native-obs = ["daft-io/native-obs"]
+native-tos = ["daft-io/native-tos"]
+native-goosefs = ["daft-io/native-goosefs"]
+native-github = ["daft-io/native-github"]
+native-hdfs = ["daft-io/native-hdfs"]
 
 [lib]
 crate-type = ["cdylib"]
