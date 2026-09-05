@@ -84,10 +84,13 @@ def set_runner_ray(
         downscale_enabled: Enable/disable retiring idle Ray workers (scale-in). If not provided,
             falls back to the ``DAFT_AUTOSCALING_DOWNSCALE_ENABLED`` environment variable (default: False).
         downscale_idle_seconds: Minimum number of seconds a worker must be idle before it becomes eligible
-            for retirement. If not provided, falls back to ``DAFT_AUTOSCALING_DOWNSCALE_IDLE_SECONDS``
-            (default: 60).
+            for retirement by the background reaper (which runs across query boundaries; workers idle for
+            less than this stay warm for the next query). If not provided, falls back to
+            ``DAFT_AUTOSCALING_DOWNSCALE_IDLE_SECONDS`` (default: 60).
         min_survivor_workers: Minimum number of Ray workers to keep alive even if they are idle.
-            If not provided, falls back to ``DAFT_AUTOSCALING_MIN_SURVIVOR_WORKERS`` (default: 1).
+            These workers form a warm pool that persists across queries for the lifetime of the
+            driver process. If not provided, falls back to ``DAFT_AUTOSCALING_MIN_SURVIVOR_WORKERS``
+            (default: 1).
         pending_release_exclude_seconds: Grace period (TTL) for recently-released worker IDs during
             worker discovery, to prevent the autoscaler from immediately respawning them. If not
             provided, falls back to ``DAFT_AUTOSCALING_PENDING_RELEASE_EXCLUDE_SECONDS`` (default: 120).
