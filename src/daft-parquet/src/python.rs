@@ -324,6 +324,65 @@ pub mod pylib {
         })
     }
 
+    type PyArrowSchemaType = (PyArrowFields, std::collections::BTreeMap<String, String>);
+
+    /// Converts a raw arrow-rs `Schema` into the (fields, metadata) shape the Python side
+    /// assembles into a `pyarrow.Schema` via `pa.schema(fields, metadata=metadata)` (see
+    /// `convert_pyarrow_parquet_read_result_into_py` above for the same pattern applied to a
+    /// full read result). Every field — including struct children, list elements, and map
+    /// keys/values — round-trips through `to_pyarrow` with its Arrow metadata intact.
+    fn convert_arrow_schema_into_py(
+        py: Python,
+        schema: arrow::datatypes::SchemaRef,
+    ) -> PyResult<PyArrowSchemaType> {
+        let fields = schema
+            .fields
+            .iter()
+            .map(|f| Ok(f.to_pyarrow(py)?.unbind()))
+            .collect::<PyResult<Vec<_>>>()?;
+        Ok((fields, schema.metadata.clone().into_iter().collect()))
+    }
+
+    /// Reads a Parquet file's footer schema as a raw PyArrow schema, without going through
+    /// Daft's own `Schema`/`DataType` (unlike `read_parquet_schema` below). This is the only
+    /// way to observe Iceberg's `PARQUET:field_id` metadata on nested fields (struct children,
+    /// list elements, map keys/values): Daft's `DataType::List`/`DataType::Map` only wrap a
+    /// bare child `DataType` with no room for per-field Arrow metadata, so that information is
+    /// unrecoverable once a schema has been downcast to Daft's own type system. Still a pure
+    /// footer read — no row-group data pages are fetched.
+    #[pyfunction(signature = (
+        uri,
+        io_config=None,
+        multithreaded_io=None,
+        coerce_int96_timestamp_unit=None
+    ))]
+    pub fn read_parquet_arrow_schema(
+        py: Python,
+        uri: &str,
+        io_config: Option<IOConfig>,
+        multithreaded_io: Option<bool>,
+        coerce_int96_timestamp_unit: Option<PyTimeUnit>,
+    ) -> PyResult<PyArrowSchemaType> {
+        let schema = py.detach(|| {
+            let io_stats = IOStatsContext::new(format!("read_parquet_arrow_schema: for uri {uri}"));
+            let schema_infer = ParquetSchemaInferenceOptions::new(
+                coerce_int96_timestamp_unit.map(|tu| tu.timeunit),
+            );
+            let io_client = get_io_client(
+                multithreaded_io.unwrap_or(true),
+                io_config.unwrap_or_default().config.into(),
+            )?;
+            let runtime = common_runtime::get_io_runtime(true);
+            runtime.block_on_current_thread(crate::read::read_parquet_arrow_schema(
+                uri,
+                io_client,
+                Some(io_stats),
+                schema_infer,
+            ))
+        })?;
+        convert_arrow_schema_into_py(py, schema)
+    }
+
     #[pyfunction(signature = (uris, io_config=None, multithreaded_io=None))]
     pub fn read_parquet_statistics(
         py: Python,
@@ -359,6 +418,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     )?)?;
     parent.add_function(wrap_pyfunction!(pylib::read_parquet_bulk, parent)?)?;
     parent.add_function(wrap_pyfunction!(pylib::read_parquet_schema, parent)?)?;
+    parent.add_function(wrap_pyfunction!(pylib::read_parquet_arrow_schema, parent)?)?;
     parent.add_function(wrap_pyfunction!(pylib::read_parquet_statistics, parent)?)?;
     Ok(())
 }

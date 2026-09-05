@@ -201,3 +201,88 @@ def read_iceberg(
     builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
     builder = attach_checkpoint(builder, checkpoint)
     return DataFrame(builder)
+
+
+@PublicAPI
+def read_iceberg_changes(
+    table: Union[str, os.PathLike[str], "PyIcebergTable"],
+    start_snapshot_id: int | None = None,
+    end_snapshot_id: int | None = None,
+    start_timestamp_ms: int | None = None,
+    end_timestamp_ms: int | None = None,
+    io_config: IOConfig | None = None,
+) -> DataFrame:
+    """Create a changelog (CDC) DataFrame from a copy-on-write (COW) Iceberg table over a snapshot range.
+
+    Only pure copy-on-write snapshot ranges are supported: if any snapshot in the range has a
+    delete manifest (position/equality deletes) in its currently effective manifest list, a
+    ``NotImplementedError`` is raised rather than an incorrect result. This first release also
+    only supports tables whose metadata currently contains exactly one schema, and requires
+    every changelog data file to be strictly schema-compatible with it at every nesting level.
+
+    Every row in the returned DataFrame carries three additional columns: ``_change_type``
+    (``"INSERT"`` or ``"DELETE"``), ``_change_ordinal`` (int64, scan-relative -- not a stable
+    cross-scan identifier), and ``_commit_snapshot_id`` (int64, the Iceberg snapshot id that
+    produced the change). Carryover rows -- COW file-rewrite noise where a row's content didn't
+    actually change but still appears as a (DELETE, INSERT) pair because the whole file was
+    rewritten -- are unconditionally removed before the DataFrame is returned; this cannot be
+    disabled, matching Iceberg's own ``create_changelog_view`` procedure.
+
+    Args:
+        table (str, os.PathLike, or pyiceberg.table.Table): Same as :func:`read_iceberg`.
+        start_snapshot_id (int, optional): Snapshot ID marking the exclusive start of the range.
+            If omitted (along with ``start_timestamp_ms``), the range starts from the table's
+            first snapshot.
+        end_snapshot_id (int, optional): Snapshot ID marking the inclusive end of the range. If
+            omitted (along with ``end_timestamp_ms``), defaults to the table's current snapshot.
+        start_timestamp_ms (int, optional): UTC millisecond epoch timestamp resolved to the
+            snapshot current at or before it, then used as the exclusive start boundary. Cannot
+            be combined with ``start_snapshot_id``.
+        end_timestamp_ms (int, optional): UTC millisecond epoch timestamp resolved to the
+            snapshot current at or before it, then used as the inclusive end boundary. Cannot be
+            combined with ``end_snapshot_id``.
+        io_config (IOConfig, optional): Same as :func:`read_iceberg`.
+
+    Returns:
+        DataFrame: A DataFrame with the table's schema plus ``_change_type``, ``_change_ordinal``,
+            and ``_commit_snapshot_id`` columns.
+
+    Note:
+        This function requires the use of [PyIceberg](https://py.iceberg.apache.org/).
+
+    Examples:
+        >>> df = daft.io.iceberg.read_iceberg_changes(table, start_snapshot_id=100, end_snapshot_id=105)
+    """
+    from pyiceberg.table import StaticTable
+
+    from daft.io.iceberg.iceberg_changes_scan import IcebergChangesDataSource
+
+    if isinstance(table, (str, os.PathLike)):
+        table = StaticTable.from_metadata(metadata_location=os.fspath(table))
+
+    io_config = (
+        _convert_iceberg_file_io_properties_to_io_config(table.io.properties, table.location())
+        if io_config is None
+        else io_config
+    )
+    io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
+
+    multithreaded_io = runners.get_or_create_runner().name != "ray"
+    storage_config = StorageConfig(multithreaded_io, io_config)
+
+    changes_source = IcebergChangesDataSource(
+        table,
+        start_snapshot_id=start_snapshot_id,
+        end_snapshot_id=end_snapshot_id,
+        start_timestamp_ms=start_timestamp_ms,
+        end_timestamp_ms=end_timestamp_ms,
+        storage_config=storage_config,
+    )
+
+    handle = ScanOperatorHandle.from_data_source(changes_source)
+    builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
+    df = DataFrame(builder)
+
+    from daft.io.iceberg._changelog_postprocess import remove_carryovers
+
+    return remove_carryovers(df)
