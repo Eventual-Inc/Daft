@@ -1623,6 +1623,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "celeborn-client"
+version = "0.1.0"
+source = "git+https://github.com/apache/celeborn.git?rev=14b2cf597cc4f50a94aec4ad78657bad05559557#14b2cf597cc4f50a94aec4ad78657bad05559557"
+dependencies = [
+ "celeborn-client-sys",
+ "log",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "celeborn-client-sys"
+version = "0.1.0"
+source = "git+https://github.com/apache/celeborn.git?rev=14b2cf597cc4f50a94aec4ad78657bad05559557#14b2cf597cc4f50a94aec4ad78657bad05559557"
+
+[[package]]
 name = "cfg-if"
 version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3181,6 +3196,7 @@ dependencies = [
  "arrow-ipc",
  "arrow-schema 59.0.0",
  "async-trait",
+ "bytes",
  "common-checkpoint-config",
  "common-daft-config",
  "common-display",
@@ -3320,6 +3336,7 @@ dependencies = [
  "arrow-array 59.0.0",
  "arrow-ipc",
  "bincode",
+ "bytes",
  "common-arrow-ffi",
  "common-error",
  "common-partitioning",
@@ -3536,6 +3553,9 @@ dependencies = [
  "arrow-schema 59.0.0",
  "async-channel 2.5.0",
  "async-stream",
+ "async-trait",
+ "bytes",
+ "celeborn-client",
  "common-error",
  "common-runtime",
  "daft-core",

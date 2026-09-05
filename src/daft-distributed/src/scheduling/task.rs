@@ -4,6 +4,8 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::DaftError;
 use common_partitioning::PartitionRef;
 use common_resource_request::ResourceRequest;
+#[cfg(feature = "celeborn")]
+use daft_local_plan::CelebornShuffleReadInput;
 use daft_local_plan::{
     ExecutionStats, FlightShuffleReadInput, Input, LocalPhysicalPlanRef, SourceId,
 };
@@ -119,6 +121,12 @@ pub(crate) trait Task: Send + Sync + Clone + Debug + 'static {
     fn task_metadata(&self) -> TaskMetadata {
         TaskMetadata::default()
     }
+
+    /// Increment the per-task attempt counter carried in the task context.
+    /// Called by the dispatcher before resubmitting a failed task so the
+    /// Celeborn shuffle backend can distinguish retried attempts.
+    /// Default implementation is a no-op; only `SwordfishTask` overrides it.
+    fn increment_attempt_id(&mut self) {}
 }
 
 #[derive(Clone)]
@@ -304,6 +312,16 @@ impl Task for SwordfishTask {
     fn task_metadata(&self) -> TaskMetadata {
         self.build_metadata()
     }
+
+    fn increment_attempt_id(&mut self) {
+        let current: u32 = self
+            .context
+            .get("attempt_id")
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+        self.context
+            .insert("attempt_id".to_string(), (current + 1).to_string());
+    }
 }
 
 /// Hash multiple u32 values into a PlanFingerprint.
@@ -369,6 +387,16 @@ impl SwordfishTaskBuilder {
     /// (e.g., limit value, partition offset).
     pub fn extend_fingerprint(mut self, value: u32) -> Self {
         self.plan_fingerprint = hash_fingerprint(&[self.plan_fingerprint, value]);
+        self
+    }
+
+    /// Set a per-task context entry, delivered to the worker alongside the
+    /// existing `task_id`/`plan_fingerprint` keys. Used to carry per-task
+    /// values that must NOT alter the plan fingerprint (so same-fingerprint
+    /// tasks keep sharing a pipeline) — e.g. the Celeborn `map_id`.
+    #[cfg(feature = "celeborn")]
+    pub fn with_context_value(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.context.insert(key.into(), value.into());
         self
     }
 
@@ -463,6 +491,18 @@ impl SwordfishTaskBuilder {
         inputs: Vec<FlightShuffleReadInput>,
     ) -> Self {
         self.inputs.insert(source_id, Input::FlightShuffle(inputs));
+        self
+    }
+
+    /// Add celeborn shuffle read inputs with source_id to the builder.
+    #[cfg(feature = "celeborn")]
+    pub fn with_celeborn_shuffle_reads(
+        mut self,
+        source_id: SourceId,
+        inputs: Vec<CelebornShuffleReadInput>,
+    ) -> Self {
+        self.inputs
+            .insert(source_id, Input::CelebornShuffle(inputs));
         self
     }
 

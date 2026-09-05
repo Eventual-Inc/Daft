@@ -640,6 +640,26 @@ impl RecordBatch {
         ))
     }
 
+    /// Like [`Self::concat`], but never hands an input back untouched.
+    ///
+    /// `concat` returns a one-element input as-is, and so does
+    /// `arrow::compute::concat` under it. Callers that concat in order to *release*
+    /// a larger allocation — batches decoded zero-copy out of a shuffle transport
+    /// buffer, say — need the copy to happen even then. Concatenating two halves
+    /// goes through `MutableArrayData`, which allocates.
+    ///
+    /// Scalar columns are the exception: [`column::Column::concat`] rebuilds those
+    /// from the literal rather than materializing, so they hold no reference to the
+    /// input's allocation in the first place.
+    pub fn concat_copied<T: AsRef<Self>>(tables: &[T]) -> DaftResult<Self> {
+        if let [table] = tables {
+            let table = table.as_ref();
+            let mid = table.len() / 2;
+            return Self::concat(&[table.slice(0, mid)?, table.slice(mid, table.len())?]);
+        }
+        Self::concat(tables)
+    }
+
     pub fn union(&self, other: &Self) -> DaftResult<Self> {
         if self.num_rows != other.num_rows {
             return Err(DaftError::ValueError(format!(
@@ -2090,6 +2110,39 @@ mod test {
         let result = table.eval_expression(&BoundExpr::try_new(e2, &table.schema)?)?;
         assert_eq!(*result.data_type(), DataType::Int64);
         assert_eq!(result.len(), 3);
+
+        Ok(())
+    }
+
+    /// `concat_copied` exists so a one-batch concat still releases whatever
+    /// allocation its input borrows from. Compare buffer pointers rather than
+    /// values: a regression here is silent, and it would show up as a shuffle
+    /// morsel pinning the whole transport buffer it was decoded from.
+    #[test]
+    fn test_concat_copied_does_not_alias_input() -> DaftResult<()> {
+        fn values_ptr(table: &RecordBatch) -> DaftResult<*const u8> {
+            Ok(table.get_column(0).to_arrow()?.to_data().buffers()[0].as_ptr())
+        }
+
+        let table = RecordBatch::from_nonempty_columns(vec![
+            Int64Array::from_vec("a", vec![1, 2, 3]).into_series(),
+            Utf8Array::from_slice("b", ["x", "yy", "zzz"].as_slice()).into_series(),
+        ])?;
+
+        // `concat` is expected to alias — that is exactly why `concat_copied` is
+        // needed. If this ever stops holding, `concat_copied` can just go away.
+        let aliased = RecordBatch::concat(std::slice::from_ref(&table))?;
+        assert_eq!(values_ptr(&aliased)?, values_ptr(&table)?);
+
+        let copied = RecordBatch::concat_copied(std::slice::from_ref(&table))?;
+        assert_ne!(values_ptr(&copied)?, values_ptr(&table)?);
+        assert_eq!(copied, table);
+
+        // A single row still has to be copied out (the halves are 0 and 1 rows).
+        let one_row = table.slice(0, 1)?;
+        let copied = RecordBatch::concat_copied(std::slice::from_ref(&one_row))?;
+        assert_ne!(values_ptr(&copied)?, values_ptr(&one_row)?);
+        assert_eq!(copied, one_row);
 
         Ok(())
     }

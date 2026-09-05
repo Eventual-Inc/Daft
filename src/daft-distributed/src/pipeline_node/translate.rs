@@ -1,7 +1,8 @@
 use core::panic;
 use std::{collections::HashMap, sync::Arc};
 
-use common_error::DaftResult;
+use common_daft_config::DaftExecutionConfig;
+use common_error::{DaftError, DaftResult};
 use common_metrics::Meter;
 use common_partitioning::PartitionRef;
 use common_treenode::{TreeNode, TreeNodeRecursion, TreeNodeVisitor};
@@ -40,12 +41,54 @@ pub(crate) struct TranslationOutput {
     pub hints: Vec<String>,
 }
 
+/// Reject a `shuffle_algorithm` this build cannot honour.
+///
+/// The algorithm reaches the translator either from `set_execution_config` or
+/// from `DAFT_SHUFFLE_ALGORITHM`, and [`select_backend`] maps anything it does
+/// not recognise onto the Ray backend. Without this check a build compiled
+/// without the `celeborn` feature would quietly run a Ray shuffle for a query
+/// that explicitly asked for Celeborn.
+///
+/// [`select_backend`]: LogicalPlanToPipelineNodeTranslator::select_backend
+fn validate_shuffle_algorithm(config: &DaftExecutionConfig) -> DaftResult<()> {
+    if config.shuffle_algorithm != "celeborn" {
+        return Ok(());
+    }
+
+    #[cfg(not(feature = "celeborn"))]
+    {
+        Err(DaftError::ValueError(
+            "shuffle_algorithm=\"celeborn\" requires Daft to be built with the `celeborn` \
+             cargo feature, which this build was not."
+                .to_string(),
+        ))
+    }
+
+    #[cfg(feature = "celeborn")]
+    {
+        // `is_complete`, not `is_some`: setting only `celeborn_app_id` or
+        // `celeborn_properties` also produces a `Some(..)`, with the
+        // LifecycleManager coordinates still unset.
+        if !config.celeborn.as_ref().is_some_and(|c| c.is_complete()) {
+            return Err(DaftError::ValueError(
+                "shuffle_algorithm=\"celeborn\" requires the Celeborn LifecycleManager \
+                 coordinates. Set them with daft.context.set_execution_config(\
+                 celeborn_lm_host=..., celeborn_lm_port=...)."
+                    .to_string(),
+            ));
+        }
+        Ok(())
+    }
+}
+
 pub(crate) fn logical_plan_to_pipeline_node(
     plan_config: PlanConfig,
     plan: LogicalPlanRef,
     psets: Arc<HashMap<String, Vec<PartitionRef>>>,
     meter: &Meter,
 ) -> DaftResult<TranslationOutput> {
+    validate_shuffle_algorithm(&plan_config.config)?;
+
     let mut translator =
         LogicalPlanToPipelineNodeTranslator::new(plan_config, psets, meter.clone());
     let _ = plan.visit(&mut translator)?;

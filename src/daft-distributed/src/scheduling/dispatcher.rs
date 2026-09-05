@@ -127,12 +127,14 @@ impl<W: Worker> Dispatcher<W> {
                         // Task worker died, add the task to the failed tasks, and mark the worker as dead
                         TaskStatus::WorkerDied => {
                             worker_manager.mark_worker_died(worker_id);
-                            let schedulable_task = PendingTask::new(task, result_tx, canc);
+                            let mut schedulable_task = PendingTask::new(task, result_tx, canc);
+                            schedulable_task.increment_attempt_id();
                             failed_tasks.push(schedulable_task);
                         }
                         // Task worker unavailable, add the task to the failed tasks
                         TaskStatus::WorkerUnavailable => {
-                            let schedulable_task = PendingTask::new(task, result_tx, canc);
+                            let mut schedulable_task = PendingTask::new(task, result_tx, canc);
+                            schedulable_task.increment_attempt_id();
                             failed_tasks.push(schedulable_task);
                         }
                     },

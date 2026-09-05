@@ -1,2 +1,12 @@
 [env]
 PYO3_PYTHON = "./.venv/bin/python"
+# `cargo clippy --all-features` (and `cargo check --all-features`) enable the
+# `celeborn` feature, whose celeborn-client-sys build script links against the
+# Apache Celeborn C++ client. With no prefix to find it under, that script
+# compiles Celeborn's `cpp/` tree from source -- folly, glog, gflags, OpenSSL --
+# so a lint of unrelated Rust code would need the whole C++ toolchain.
+#
+# Point it at the stub instead (`make celeborn-stub` builds it). This is not
+# `force = true`, so CELEBORN_CPP_PREFIX in the environment still wins when
+# building against a real client.
+CELEBORN_CPP_PREFIX = {value = "tools/celeborn-stub", relative = true}

@@ -6,6 +6,7 @@ arrow-buffer = {workspace = true}
 arrow-ipc = {workspace = true}
 arrow-schema = {workspace = true}
 async-trait = {workspace = true}
+bytes = {workspace = true}
 common-checkpoint-config = {path = "../common/checkpoint-config", default-features = false}
 common-daft-config = {path = "../common/daft-config", default-features = false}
 common-display = {path = "../common/display", default-features = false}
@@ -65,6 +66,7 @@ sysinfo = {workspace = true}
 tikv-jemalloc-ctl = {version = "0.7.0", features = ["stats"]}
 
 [features]
+celeborn = ["daft-shuffles/celeborn", "daft-local-plan/celeborn"]
 python = [
   "dep:pyo3",
   "dep:pyo3-async-runtimes",

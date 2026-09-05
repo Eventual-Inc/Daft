@@ -5,6 +5,13 @@ arrow-flight = {workspace = true}
 arrow-ipc = {workspace = true}
 async-channel = "2.5.0"
 async-stream = {workspace = true}
+async-trait = {workspace = true}
+bytes = {workspace = true}
+# Pinned to a revision, not a branch: `celeborn-client` is not published to
+# crates.io, and the C++ FFI it binds to (see `client/celeborn/ffi.rs`) is not
+# API-stable, so tracking `main` would let an upstream commit break a Daft build
+# that changed nothing.
+celeborn-client = {git = "https://github.com/apache/celeborn.git", rev = "14b2cf597cc4f50a94aec4ad78657bad05559557", optional = true}
 common-error = {path = "../common/error", default-features = false}
 common-runtime = {path = "../common/runtime", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
@@ -16,6 +23,9 @@ daft-writers = {path = "../daft-writers", default-features = false}
 futures = {workspace = true}
 tokio = {workspace = true, features = ["fs", "io-util"]}
 tonic = {workspace = true}
+
+[features]
+celeborn = ["dep:celeborn-client"]
 
 [lints]
 workspace = true

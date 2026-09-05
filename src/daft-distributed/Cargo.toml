@@ -36,6 +36,7 @@ itertools = {workspace = true}
 opentelemetry = {workspace = true}
 
 [features]
+celeborn = ["daft-local-plan/celeborn", "daft-local-execution/celeborn"]
 python = [
   "dep:pyo3",
   "dep:pyo3-async-runtimes",
