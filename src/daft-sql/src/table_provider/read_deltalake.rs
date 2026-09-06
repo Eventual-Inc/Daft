@@ -22,7 +22,7 @@ impl SQLTableFunction for ReadDeltalakeFunction {
                     0,
                 )?;
                 let io_config = super::resolve_io_config(&args)?;
-                (uri, io_config)
+                (uri, Some(io_config))
             }
             _ => unsupported_sql_err!("Expected one or two arguments"),
         };

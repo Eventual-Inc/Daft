@@ -129,11 +129,16 @@ where
 /// an explicit argument wins, otherwise the globally-configured default applies. Without
 /// this fallback `daft.sql("... read_parquet('s3://...')")` silently ignores credentials
 /// that the equivalent `daft.read_parquet` call would pick up.
-pub(crate) fn resolve_io_config(
-    args: &SQLFunctionArguments,
-) -> Result<Option<IOConfig>, PlannerError> {
+///
+/// `read_iceberg` deliberately does not use this: it passes `None` so the scan can apply
+/// the table's own FileIO properties before falling back to the context default (see
+/// `resolve_iceberg_io_config` in `daft/io/iceberg/_iceberg.py`).
+///
+/// This has to live in `daft-sql` rather than in the scan builders, because
+/// `daft-context` depends on `daft-logical-plan` and the reverse dependency would cycle.
+pub(crate) fn resolve_io_config(args: &SQLFunctionArguments) -> Result<IOConfig, PlannerError> {
     match args.get_named("io_config") {
-        Some(expr) => Ok(Some(expr_to_iocfg(expr)?)),
-        None => Ok(Some(daft_context::get_context().io_config())),
+        Some(expr) => expr_to_iocfg(expr),
+        None => Ok(daft_context::get_context().io_config()),
     }
 }

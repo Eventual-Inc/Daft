@@ -49,7 +49,7 @@ impl TryFrom<SQLFunctionArguments> for CsvScanBuilder {
             .map(try_parse_schema)
             .transpose()?
             .map(Arc::new);
-        let io_config = super::resolve_io_config(&args)?;
+        let io_config = Some(super::resolve_io_config(&args)?);
 
         Ok(Self {
             glob_paths,
