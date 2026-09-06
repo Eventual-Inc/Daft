@@ -32,3 +32,29 @@ def test_series_utf8_replace(expr, data, expected) -> None:
     table = MicroPartition.from_pydict({"col": data, "emptystrings": [""] * len(data)})
     result = table.eval_expression_list([expr])
     assert result.to_pydict() == {"col": expected}
+
+
+@pytest.mark.parametrize(
+    ["replacement", "expected"],
+    [
+        # `$n` and `\n` are both group references.
+        ("[$1]", "a[b]c"),
+        (r"[\1]", "a[b]c"),
+        ("$1", "abc"),
+        # Lone backslashes are preserved literally (not silently dropped).
+        (r"a\b", r"aa\bc"),
+        ("x\\", r"ax\c"),
+        # `\\` (two backslashes) is an escaped backslash -> one backslash.
+        (r"\\", r"a\c"),
+        # Escaped backslash + literal `1`, not a group reference.
+        (r"\\1", r"a\1c"),
+        # Escaped backslash + group reference.
+        (r"\\\1", r"a\bc"),
+        ("$$", "a$c"),
+    ],
+)
+def test_series_utf8_regexp_replace_backslashes(replacement, expected) -> None:
+    # Regression test for https://github.com/Eventual-Inc/Daft/issues/7471.
+    table = MicroPartition.from_pydict({"col": ["abc"]})
+    result = table.eval_expression_list([col("col").regexp_replace("(b)", replacement)])
+    assert result.to_pydict() == {"col": [expected]}

@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, sync::LazyLock};
+use std::borrow::{Borrow, Cow};
 
 use common_error::{DaftError, DaftResult, ensure};
 use daft_core::{
@@ -163,14 +163,61 @@ fn replace_impl(
     Ok(result)
 }
 
-/// replace POSIX capture groups (like \1) with Rust Regex group (like ${1})
-/// used by regexp_replace
-fn regex_replace_posix_groups(replacement: &str) -> String {
-    static CAPTURE_GROUPS_RE_LOCK: LazyLock<regex::Regex> =
-        LazyLock::new(|| regex::Regex::new(r"(\\)(\d*)").unwrap());
-    CAPTURE_GROUPS_RE_LOCK
-        .replace_all(replacement, "$${$2}")
-        .into_owned()
+/// Translates POSIX-style capture-group references (`\1`, `\12`, ...) into the
+/// `regex` crate's `${1}` syntax so both `\n` and `$n`/`${n}` work as group
+/// references in `regexp_replace`.
+///
+/// Rules (single left-to-right pass):
+///
+/// * `\\` (two backslashes) is an escaped backslash and becomes one `\`.
+///   This takes precedence so `\\1` stays a literal `\1` instead of being
+///   misread as a group reference starting at the second backslash.
+/// * `\` followed by one or more ASCII digits is a group reference (`\1` ->
+///   `${1}`, `\12` -> `${12}`, `\0` -> `${0}`).
+/// * A `\` followed by anything else (or a trailing `\`) is preserved
+///   literally, so e.g. `a\b` stays `a\b`. The `regex` crate treats
+///   backslashes in replacements literally, so this yields a literal backslash
+///   in the output instead of silently dropping it.
+/// * Everything else, including `$`-style references (`$1`, `${1}`, `$$`),
+///   passes through untouched so `$` keeps exactly the `regex` crate's semantics.
+///
+/// Returns a borrowed `str` when no backslash is present to avoid allocating
+/// in the common case.
+fn regex_replace_posix_groups(replacement: &str) -> Cow<'_, str> {
+    if !replacement.contains('\\') {
+        return Cow::Borrowed(replacement);
+    }
+    let mut translated = String::with_capacity(replacement.len());
+    let mut chars = replacement.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            translated.push(c);
+            continue;
+        }
+        match chars.peek() {
+            // Escaped backslash: `\\` -> `\`.
+            Some('\\') => {
+                translated.push('\\');
+                chars.next();
+            }
+            // POSIX group reference: `\` + digits -> `${digits}`.
+            Some(d) if d.is_ascii_digit() => {
+                translated.push_str("${");
+                while let Some(d) = chars.peek() {
+                    if d.is_ascii_digit() {
+                        translated.push(*d);
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                translated.push('}');
+            }
+            // Lone backslash: preserve literally.
+            _ => translated.push('\\'),
+        }
+    }
+    Cow::Owned(translated)
 }
 
 fn regex_replace<'a, R: Borrow<regex::Regex>>(
@@ -185,7 +232,7 @@ fn regex_replace<'a, R: Borrow<regex::Regex>>(
         .map(|((val, re), replacement)| match (val, re, replacement) {
             (Some(val), Some(re), Some(replacement)) => {
                 let replacement = regex_replace_posix_groups(replacement);
-                Ok(Some(re?.borrow().replace_all(val, replacement.as_str())))
+                Ok(Some(re?.borrow().replace_all(val, replacement.as_ref())))
             }
             _ => Ok(None),
         })
@@ -305,5 +352,69 @@ mod tests {
         let result = replace_impl(&arr, &pattern, &replacement, true).unwrap();
 
         assert_eq!(result.get(0), Some("world hello"));
+    }
+
+    #[test]
+    fn test_regex_replace_posix_groups_translation() {
+        use std::borrow::Cow;
+
+        // No backslash: borrowed, untouched (also covers `$`-only replacements).
+        let translated = regex_replace_posix_groups("[$1]");
+        assert!(matches!(translated, Cow::Borrowed(_)));
+        assert_eq!(translated, "[$1]");
+
+        // `\n` becomes `${n}`; `$n` passes through for the regex crate.
+        assert_eq!(regex_replace_posix_groups("[\\1]"), "[${1}]");
+        assert_eq!(regex_replace_posix_groups("\\12"), "${12}");
+        assert_eq!(regex_replace_posix_groups("\\0"), "${0}");
+        assert_eq!(regex_replace_posix_groups("$1"), "$1");
+        assert_eq!(regex_replace_posix_groups("$$"), "$$");
+
+        // `\\` is an escaped backslash and collapses to one.
+        assert_eq!(regex_replace_posix_groups("\\\\"), "\\");
+        // Escaped backslash wins over group parsing: `\\1` is literal `\1`.
+        assert_eq!(regex_replace_posix_groups("\\\\1"), "\\1");
+        // `\\` + `\1` is a literal backslash followed by a group reference.
+        assert_eq!(regex_replace_posix_groups("\\\\\\1"), "\\${1}");
+
+        // Lone backslashes are preserved literally.
+        assert_eq!(regex_replace_posix_groups("a\\b"), "a\\b");
+        assert_eq!(regex_replace_posix_groups("x\\"), "x\\");
+        assert_eq!(regex_replace_posix_groups("\\"), "\\");
+        assert_eq!(regex_replace_posix_groups("\\$1"), "\\$1");
+    }
+
+    #[test]
+    fn test_regexp_replace_preserves_backslashes() {
+        // Regression test for https://github.com/Eventual-Inc/Daft/issues/7471:
+        // backslashes in the replacement must not be silently dropped.
+        let cases = vec![
+            // (replacement, expected output for input "abc" with pattern "(b)")
+            ("[$1]".to_string(), "a[b]c".to_string()),
+            ("[\\1]".to_string(), "a[b]c".to_string()),
+            ("a\\b".to_string(), "aa\\bc".to_string()),
+            // `\\` (two backslashes) is an escaped backslash -> one backslash.
+            ("\\\\".to_string(), "a\\c".to_string()),
+            ("x\\".to_string(), "ax\\c".to_string()),
+            ("\\1".to_string(), "abc".to_string()),
+            // Escaped backslash + literal `1`, not a group reference.
+            ("\\\\1".to_string(), "a\\1c".to_string()),
+            // Escaped backslash + group reference.
+            ("\\\\\\1".to_string(), "a\\bc".to_string()),
+            ("$1".to_string(), "abc".to_string()),
+            ("$$".to_string(), "a$c".to_string()),
+        ];
+        for (replacement, expected) in cases {
+            let arr = Utf8Array::from_iter("a", vec![Some("abc")].into_iter());
+            let pattern = Utf8Array::from_iter("p", vec![Some("(b)")].into_iter());
+            let replacement_arr =
+                Utf8Array::from_iter("r", vec![Some(replacement.as_str())].into_iter());
+            let result = replace_impl(&arr, &pattern, &replacement_arr, true).unwrap();
+            assert_eq!(
+                result.get(0),
+                Some(expected.as_str()),
+                "replacement {replacement:?}"
+            );
+        }
     }
 }
