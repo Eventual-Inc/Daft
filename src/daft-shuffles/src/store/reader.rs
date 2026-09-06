@@ -15,7 +15,7 @@
 use std::{
     collections::HashMap,
     io::SeekFrom,
-    sync::{LazyLock, Mutex},
+    sync::{Arc, LazyLock, Mutex},
 };
 
 use arrow_flight::{FlightData, SchemaAsIpc, decode::FlightRecordBatchStream};
@@ -80,6 +80,75 @@ fn remembered_partition_count(shuffle_id: u64) -> Option<usize> {
 
 pub(super) fn forget_partition_count(shuffle_id: u64) {
     lock_partition_counts().remove(&shuffle_id);
+    INDEX_CACHE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .forget(shuffle_id);
+}
+
+/// Index regions this process has already read, keyed by the shuffle that owns
+/// them and then by file path.
+///
+/// A reduce task reads one partition out of every map file, and a worker runs
+/// many reduce tasks, so the same handful of index regions are re-read once per
+/// (file, task) pair — 65536 times for a 16-file, 4096-partition shuffle, of
+/// which 65520 are re-reads of bytes this process already had. Map files are
+/// immutable once published and their paths carry an attempt token, so a cached
+/// region can never go stale; only its owning shuffle disappearing makes it
+/// useless, which is what [`super::forget_shuffle`] is for.
+///
+/// Regions get large at high partition counts (48 KiB at 4096 outputs), so the
+/// cache is capped by bytes rather than entries.
+static INDEX_CACHE: LazyLock<Mutex<IndexCache>> =
+    LazyLock::new(|| Mutex::new(IndexCache::default()));
+
+/// Bytes of index region held per process.
+///
+/// Sized to hold a whole shuffle's indexes at the shapes where the cache matters
+/// most — 4096 map files at 4096 outputs is 192 MiB, so this holds a third of the
+/// worst realistic case and all of the common ones — while staying small next to
+/// the data a worker is already buffering.
+const MAX_CACHED_INDEX_BYTES: usize = 64 * 1024 * 1024;
+
+#[derive(Default)]
+struct IndexCache {
+    by_shuffle: HashMap<u64, HashMap<String, Arc<[u8]>>>,
+    bytes: usize,
+}
+
+impl IndexCache {
+    fn get(&self, shuffle_id: u64, path: &str) -> Option<Arc<[u8]>> {
+        self.by_shuffle.get(&shuffle_id)?.get(path).cloned()
+    }
+
+    fn insert(&mut self, shuffle_id: u64, path: &str, region: &Arc<[u8]>) {
+        // Past the cap, keep what is already here and decline the newcomer rather
+        // than evicting to make room. Every reduce task reads the same set of map
+        // files, so with more files than budget any eviction policy is thrashing
+        // against a uniform access pattern: a stable prefix that always hits beats
+        // a churning working set that never does. Entries are released a whole
+        // shuffle at a time (`forget`), which is when the budget actually frees up.
+        if self.bytes + region.len() > MAX_CACHED_INDEX_BYTES {
+            return;
+        }
+        if self
+            .by_shuffle
+            .entry(shuffle_id)
+            .or_default()
+            .insert(path.to_string(), region.clone())
+            .is_none()
+        {
+            self.bytes += region.len();
+        }
+    }
+
+    fn forget(&mut self, shuffle_id: u64) {
+        if let Some(paths) = self.by_shuffle.remove(&shuffle_id) {
+            self.bytes = self
+                .bytes
+                .saturating_sub(paths.values().map(|r| r.len()).sum::<usize>());
+        }
+    }
 }
 
 /// Read the index region of an already-open map file, and report how many
@@ -147,11 +216,27 @@ fn read_one_map_file(
                 format!("Failed to open shared shuffle map file {}: {}", path, e).into(),
             )
         })?;
-        let expected = remembered_partition_count(shuffle_id);
-        let (region, num_partitions) = read_index_region(&mut file, &path, expected).await?;
-        if expected != Some(num_partitions) {
-            lock_partition_counts().insert(shuffle_id, num_partitions);
-        }
+        let cached = INDEX_CACHE
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(shuffle_id, &path);
+        let region = match cached {
+            Some(region) => region,
+            None => {
+                let expected = remembered_partition_count(shuffle_id);
+                let (region, num_partitions) =
+                    read_index_region(&mut file, &path, expected).await?;
+                if expected != Some(num_partitions) {
+                    lock_partition_counts().insert(shuffle_id, num_partitions);
+                }
+                let region: Arc<[u8]> = region.into();
+                INDEX_CACHE
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .insert(shuffle_id, &path, &region);
+                region
+            }
+        };
         let entry = index::partition_entry(&region, partition_idx, &path)?;
 
         // An empty output partition contributes no IPC messages at all.
@@ -478,6 +563,109 @@ pub(super) mod tests {
         // probe reads two orders of magnitude more.
         assert_eq!(unhinted.len(), index::index_region_bytes(3));
         assert!(index::index_region_bytes(3) < index::PROBE_BYTES / 100);
+
+        std::fs::remove_dir_all(&dir)?;
+        Ok(())
+    }
+
+    /// The cache is a byte-bounded map, not an unbounded one: index regions reach
+    /// 48 KiB at 4096 output partitions, so a worker that read every shuffle it
+    /// ever touched would hold hundreds of megabytes of them.
+    #[test]
+    fn index_cache_is_bounded_and_forgettable() {
+        let mut cache = IndexCache::default();
+        let small: Arc<[u8]> = vec![1u8; 1024].into();
+
+        cache.insert(1, "/a", &small);
+        cache.insert(1, "/b", &small);
+        cache.insert(2, "/c", &small);
+        assert_eq!(cache.bytes, 3 * 1024);
+        assert!(cache.get(1, "/a").is_some());
+        assert!(cache.get(2, "/c").is_some());
+        assert!(
+            cache.get(2, "/a").is_none(),
+            "shuffles must not see each other"
+        );
+
+        // Re-inserting the same path is not double-counted.
+        cache.insert(1, "/a", &small);
+        assert_eq!(cache.bytes, 3 * 1024);
+
+        // A shuffle going away takes its bytes with it.
+        cache.forget(1);
+        assert_eq!(cache.bytes, 1024);
+        assert!(cache.get(1, "/a").is_none());
+
+        // Past the cap the newcomer is declined; what is already cached stays,
+        // because a stable prefix that always hits beats a churning set that never
+        // does when every reader wants the same files.
+        let over: Arc<[u8]> = vec![0u8; MAX_CACHED_INDEX_BYTES].into();
+        cache.insert(3, "/big", &over);
+        assert!(cache.get(3, "/big").is_none(), "it does not fit");
+        assert!(
+            cache.get(2, "/c").is_some(),
+            "and must not have evicted this"
+        );
+        assert_eq!(cache.bytes, 1024);
+    }
+
+    /// Every partition of a file after the first is served from the cached region.
+    /// The risk that buys is serving the *wrong* partition's entry out of it, so
+    /// check that each one still resolves to its own rows.
+    #[tokio::test]
+    async fn cached_index_regions_still_resolve_each_partition() -> DaftResult<()> {
+        let dir = tempdir("index_cache");
+        let root = dir.to_str().unwrap();
+        let schema = dummy_schema();
+        let (shuffle_id, input) = (
+            0xCAC4E_u64,
+            MapInput {
+                input_id: 6,
+                attempt: 0x6,
+            },
+        );
+        write_shared(root, shuffle_id, input, schema.clone(), None, 40).await?;
+        super::super::forget_shuffle(shuffle_id);
+
+        // First read populates the cache; the next two must come out of it.
+        assert_eq!(
+            read_rows(root, shuffle_id, &[input], 0, schema.clone()).await?,
+            expected(40)
+        );
+        assert!(
+            INDEX_CACHE
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .get(
+                    shuffle_id,
+                    &shared_map_file(root, shuffle_id, input.input_id, input.attempt)
+                )
+                .is_some(),
+            "the first read should have cached the region"
+        );
+        // Partition 1 is empty and partition 2 has 300 rows; both are resolved from
+        // the same cached bytes as partition 0 was.
+        assert!(
+            read_rows(root, shuffle_id, &[input], 1, schema.clone())
+                .await?
+                .is_empty()
+        );
+        assert_eq!(
+            read_rows(root, shuffle_id, &[input], 2, schema.clone()).await?,
+            expected(300)
+        );
+
+        super::super::forget_shuffle(shuffle_id);
+        assert!(
+            INDEX_CACHE
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .get(
+                    shuffle_id,
+                    &shared_map_file(root, shuffle_id, input.input_id, input.attempt)
+                )
+                .is_none()
+        );
 
         std::fs::remove_dir_all(&dir)?;
         Ok(())

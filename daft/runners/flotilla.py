@@ -89,6 +89,12 @@ async def clear_flight_shuffle_dirs_on_all_nodes(shuffle_dirs: list[str], shared
             runs workers: those nodes must have the mount (they wrote to it),
             whereas a head node with no worker slots may not, and a delete there
             would silently find nothing to remove.
+
+    Neither kind of failure is raised. A node-local delete that cannot be
+    scheduled is not a problem to report -- the node it was pinned to is gone, and
+    so is the disk it was going to clear. A shared delete that fails is a problem,
+    but not one the query can do anything about, and failing the query over it
+    would be worse than logging it.
     """
     worker_nodes = [
         node
@@ -99,10 +105,11 @@ async def clear_flight_shuffle_dirs_on_all_nodes(shuffle_dirs: list[str], shared
         and node["Resources"]["CPU"] > 0
     ]
 
-    tasks = []
+    local_refs = []
+    shared_refs = []
 
     if shuffle_dirs:
-        tasks.extend(
+        local_refs = [
             _clear_flight_shuffle_dirs.options(
                 scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                     node_id=node["NodeID"],
@@ -110,25 +117,49 @@ async def clear_flight_shuffle_dirs_on_all_nodes(shuffle_dirs: list[str], shared
                 )
             ).remote(shuffle_dirs)
             for node in worker_nodes
-        )
+        ]
 
     if shared_dirs:
         if worker_nodes:
-            tasks.append(
+            shared_refs = [
                 _clear_flight_shuffle_dirs.options(
                     scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                         node_id=worker_nodes[0]["NodeID"],
                         soft=True,
                     )
                 ).remote(shared_dirs)
-            )
+            ]
         else:
-            tasks.append(_clear_flight_shuffle_dirs.remote(shared_dirs))
+            shared_refs = [_clear_flight_shuffle_dirs.remote(shared_dirs)]
 
-    if not tasks:
+    if not local_refs and not shared_refs:
         return
 
-    await asyncio.gather(*tasks)
+    # `return_exceptions=True` is the whole point of this shape. The node-local
+    # deletes are pinned hard to specific nodes, so any node that churns between
+    # the snapshot above and now makes its delete unschedulable -- and without
+    # this, that one failure would abort the gather and leave the *shared* delete
+    # merely started rather than awaited. That delete is the one that matters:
+    # there is one copy of the shared tree, nothing else will ever remove it, and
+    # if the job ends before a fire-and-forget task lands the tree survives the
+    # job. Measured, before this: a successful query leaking 59 MB and a failed
+    # 1 TiB query leaking 773 GB.
+    results = await asyncio.gather(*local_refs, *shared_refs, return_exceptions=True)
+
+    for result in results[: len(local_refs)]:
+        if isinstance(result, BaseException):
+            # A node that went away took its local disk with it, so there is
+            # nothing left there to remove. Not worth a warning.
+            logger.debug("Skipped node-local shuffle cleanup on an unreachable node: %s", result)
+    for result in results[len(local_refs) :]:
+        if isinstance(result, BaseException):
+            logger.warning(
+                "Failed to clear shared flight shuffle directories %s: %s. "
+                "One copy of this data exists and nothing else will remove it; "
+                "it must be deleted by hand.",
+                shared_dirs,
+                result,
+            )
 
 
 async def await_flight_shuffle_unregistrations(refs: list[ray.ObjectRef]) -> None:

@@ -118,6 +118,9 @@ impl PipelineNodeImpl for RepartitionNode {
         let input_node = self.child.clone().produce_tasks(plan_context);
         let self_arc = self.clone();
         self.shuffle_context.register_cleanup(plan_context);
+        // How many reduce tasks this shuffle can run at once, which is what caps
+        // how much of the cluster the plan can occupy.
+        plan_context.register_shuffle_width(self.num_partitions);
 
         let schema = self.shuffle_context.schema().clone();
         let node_id = self.shuffle_context.node_id();

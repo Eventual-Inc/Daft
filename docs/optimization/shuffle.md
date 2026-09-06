@@ -129,15 +129,17 @@ What is *not* covered: a map attempt that dies before its file is published has 
 
 How hard the map side works to make a shared write survive losing its writer. One of `"background"` (the default), `"none"`, or `"sync"`.
 
-This knob exists because `fsync` on a shared filesystem is often far more expensive than its local equivalent, and frequently *size-independent* — on the Lustre deployment this was developed against, a single `fsync` cost about a second whether the file was 0 B or 64 MiB, and only ~25 completed per second even at 32-way concurrency. Paying that on the map task's critical path cut write throughput from ~610 MiB/s to 140–340 MiB/s.
+This knob exists because `fsync` costs vary by more than two orders of magnitude across the filesystems a shuffle can land on, so no single answer is right everywhere. Measured on a 64 MiB file: ~488 ms on local ext4, ~27 ms on Lustre, ~6 ms on JuiceFS. The direction is the opposite of the usual intuition — the local disk is the expensive one, and the shared mounts measured so far are cheap. Measure your own with `bench_shared_write_durability` in `daft-shuffles` rather than assuming either way.
 
-The way out is that visibility and durability are separable. A reduce task reading from a *live* writer needs only visibility, which the filesystem's close-to-open coherency already provides for free. `fsync` only matters for the narrower case where the writer node dies with data still in its page cache.
+What the levels trade is separate from what they cost, and does hold everywhere. Visibility and durability are separable: a reduce task reading from a *live* writer needs only visibility, which the filesystem's close-to-open coherency provides without any `fsync` (verified over 60 cross-node reads each on Lustre and JuiceFS). `fsync` matters only for the narrower case where the writer node dies with data still in its page cache. So choosing a level is choosing how large a "the writer died and took the only copy" window you accept — not whether readers can see the data.
 
 | Value | Behavior | Use when |
 |---|---|---|
-| `"background"` (default) | Publishes the file immediately, then `fsync`s off the critical path | Almost always. Full write throughput, with durability following shortly behind. |
+| `"background"` (default) | Publishes the file immediately, then `fsync`s off the critical path | Almost always. It is the only level whose cost does not depend on how expensive your mount's `fsync` is, because the map task never waits for one. |
 | `"none"` | Never `fsync`s | You would rather re-run the query than pay for durability at all. A shared copy can be lost if its writer node dies. |
-| `"sync"` | `fsync`s before publishing, so a visible file is a durable one | A filesystem with cheap `fsync`, or a job where losing a worker mid-query is expensive enough to justify several-fold slower writes. |
+| `"sync"` | `fsync`s before publishing, so a visible file is a durable one | You have measured your mount and found `fsync` cheap. On Lustre and JuiceFS this costs 3–11% of map-side write time — and the map side was 2% of a 1 TiB query, so the end-to-end cost was well under 1%. On a mount backed by a local-disk-like filesystem it is 14–36×. |
+
+Losing the window that `"background"` leaves open is not catastrophic: a writer that dies before its background `fsync` lands is recovered by re-running that map task, which measured at +1–3% of a 1 TiB query. That is the number to weigh `"sync"` against, not the cost of losing the query.
 
 Both levels that promise anything sync twice: once for the file's bytes, and once for the directory that names it. A map file is published by renaming it into place, and syncing a file commits its data and inode but not the directory entry pointing at them — so without the second sync a crash could leave durable bytes with nothing reaching them, which is indistinguishable from never having written the file. `"sync"` pays for both before the map task returns; `"background"` pays for both on the background thread.
 

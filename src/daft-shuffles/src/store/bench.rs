@@ -18,6 +18,7 @@
 
 use std::{io::SeekFrom, time::Instant};
 
+use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use daft_writers::test::make_dummy_mp;
 use futures::TryStreamExt;
@@ -175,7 +176,14 @@ async fn resolve_targeted_v3(path: &str, partition_idx: usize, n: usize) -> inde
     }
 }
 
-async fn write_shape(root: &str, shuffle_id: u64, m: usize, p: usize, cell_bytes: usize) -> u64 {
+async fn write_shape(
+    root: &str,
+    shuffle_id: u64,
+    m: usize,
+    p: usize,
+    cell_bytes: usize,
+    durability: ShuffleDurability,
+) -> u64 {
     let schema = dummy_schema();
     let mut total = 0u64;
     for input_id in 0..m {
@@ -188,7 +196,7 @@ async fn write_shape(root: &str, shuffle_id: u64, m: usize, p: usize, cell_bytes
             input_id as u64,
             OneShotTarget::Shared {
                 shared_root: root.to_string(),
-                durability: ShuffleDurability::None,
+                durability,
             },
             schema.clone(),
             None,
@@ -202,13 +210,185 @@ async fn write_shape(root: &str, shuffle_id: u64, m: usize, p: usize, cell_bytes
     total
 }
 
+/// Time one map side's worth of writing at each durability level.
+///
+/// The read-side phases below deliberately write with [`ShuffleDurability::None`]
+/// so that setup cost does not pollute them. This is the other question — what
+/// each durability level costs the map task — and it has to be asked here rather
+/// than reasoned about, because the answer is a property of the filesystem and
+/// inverts between them: on the reference deployment a 64 MiB `fsync` costs
+/// 6-27 ms on a shared mount and 488 ms on local ext4.
+///
+/// Reported per level, not compared to a baseline, because `none` *is* the
+/// baseline and appears in the table.
+async fn run_write_shape(name: &str, m: usize, p: usize, cell_bytes: usize) {
+    println!("\n=== write {name}: {m} map files x {p} partitions x {cell_bytes} B/cell ===");
+    println!(
+        "{:<26} {:>10} {:>14} {:>14}",
+        "durability", "best ms", "MiB written", "ms/map file"
+    );
+
+    for durability in [
+        ShuffleDurability::None,
+        ShuffleDurability::Background,
+        ShuffleDurability::Sync,
+    ] {
+        let dir = std::env::temp_dir().join(format!(
+            "daft_bench_w_{}_{}_{}",
+            name,
+            std::process::id(),
+            crate::store::new_attempt_token()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let root = dir.to_str().unwrap().to_string();
+
+        // `Background` hands the fsync to another thread, so timing only the
+        // write would credit it with work it has merely deferred. Draining the
+        // in-flight syncs before stopping the clock is what makes the three
+        // levels comparable at all.
+        let start = Instant::now();
+        let on_disk = write_shape(&root, 0xB0, m, p, cell_bytes, durability).await;
+        drain_background_fsyncs();
+        let elapsed = start.elapsed().as_millis();
+
+        println!(
+            "{:<26} {:>10} {:>14.1} {:>14.1}",
+            format!("{durability:?}"),
+            elapsed,
+            on_disk as f64 / (1024.0 * 1024.0),
+            elapsed as f64 / m as f64,
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+}
+
+/// Wait for the writer's background fsync threads to finish.
+///
+/// Polls rather than joins because the threads are detached by design — the
+/// point of the background level is that the map task does not hold them.
+fn drain_background_fsyncs() {
+    for _ in 0..600 {
+        if crate::store::writer::background_fsyncs_in_flight() == 0 {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    eprintln!("  (warning: background fsyncs still in flight after 30s)");
+}
+
+/// What skipping empty cells could buy, as an upper bound.
+///
+/// At high partition counts most (map input, partition) cells hold little or
+/// nothing, and a reducer still pays an `open` and an index read to discover
+/// that each one is empty — the emptiness check happens after the index is read.
+/// The coordinator could ship a presence bitmap (one bit per cell, ~10 MB for
+/// 10k x 8k) so those reads never happen, but that is real plumbing through the
+/// plan, so measure the ceiling before building it: reading only the inputs that
+/// actually have rows is exactly what a perfect bitmap would achieve.
+async fn run_sparse_shape(name: &str, m: usize, p: usize, cell_bytes: usize, fill_every: usize) {
+    let dir = std::env::temp_dir().join(format!(
+        "daft_bench_sparse_{}_{}_{}",
+        name,
+        std::process::id(),
+        crate::store::new_attempt_token()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let root = dir.to_str().unwrap().to_string();
+    let shuffle_id = 0x5A;
+    let schema = dummy_schema();
+
+    // Input `i` holds rows only in partitions where `idx % fill_every == i %
+    // fill_every`, so each partition is served by 1 in `fill_every` inputs.
+    for input_id in 0..m {
+        let partitions = (0..p)
+            .map(|idx| {
+                if idx % fill_every == input_id % fill_every {
+                    make_dummy_mp(cell_bytes)
+                } else {
+                    MicroPartition::empty(Some(schema.clone()))
+                }
+            })
+            .collect::<Vec<_>>();
+        write_partitions_one_shot(
+            input_id as u32,
+            shuffle_id,
+            input_id as u64,
+            OneShotTarget::Shared {
+                shared_root: root.clone(),
+                durability: ShuffleDurability::None,
+            },
+            schema.clone(),
+            None,
+            partitions,
+        )
+        .await
+        .unwrap();
+    }
+
+    let all = (0..m)
+        .map(|i| MapInput {
+            input_id: i as u32,
+            attempt: i as u64,
+        })
+        .collect::<Vec<_>>();
+
+    println!("\n=== sparse {name}: {m} x {p}, 1 in {fill_every} cells non-empty ===");
+    println!(
+        "{:<26} {:>10} {:>14} {:>14}",
+        "phase", "best ms", "syscall MiB", "file-reads"
+    );
+
+    for (label, filtered) in [("read every input", false), ("read only non-empty", true)] {
+        let (root, all, schema) = (root.clone(), all.clone(), schema.clone());
+        let reads = if filtered { m / fill_every * p } else { m * p };
+        let phase = timed(label, false, 3, || {
+            let (root, all, schema) = (root.clone(), all.clone(), schema.clone());
+            async move {
+                for partition_idx in 0..p {
+                    let inputs: Vec<MapInput> = if filtered {
+                        all.iter()
+                            .filter(|i| {
+                                (i.input_id as usize) % fill_every == partition_idx % fill_every
+                            })
+                            .copied()
+                            .collect()
+                    } else {
+                        all.clone()
+                    };
+                    let stream = read_partition_stream(
+                        &root,
+                        shuffle_id,
+                        &inputs,
+                        partition_idx as u32,
+                        schema.clone(),
+                        16,
+                    )
+                    .unwrap();
+                    let batches: Vec<RecordBatch> = stream.try_collect().await.unwrap();
+                    std::hint::black_box(batches.len());
+                }
+            }
+        })
+        .await;
+        println!(
+            "{:<26} {:>10} {:>14.1} {:>14}",
+            phase.label,
+            phase.elapsed_ms,
+            phase.rchar as f64 / (1024.0 * 1024.0),
+            reads,
+        );
+    }
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 async fn run_shape(name: &str, m: usize, p: usize, cell_bytes: usize) {
     let dir = std::env::temp_dir().join(format!("daft_bench_{}_{}", name, std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let root = dir.to_str().unwrap().to_string();
     let shuffle_id = 0xBEEFu64;
 
-    let on_disk = write_shape(&root, shuffle_id, m, p, cell_bytes).await;
+    let on_disk = write_shape(&root, shuffle_id, m, p, cell_bytes, ShuffleDurability::None).await;
     let paths = (0..m)
         .map(|i| shared_map_file(&root, shuffle_id, i as u32, i as u64))
         .collect::<Vec<_>>();
@@ -358,4 +538,24 @@ async fn bench_shared_read_index_amplification() {
     run_shape("wide-small-cells", 32, 512, 2 * 1024).await;
     run_shape("square-medium-cells", 64, 64, 32 * 1024).await;
     run_shape("square-large-cells", 32, 32, 512 * 1024).await;
+    // Production shapes: 4096 output partitions is where the index region is
+    // 48 KiB, comparable to a cell, and where the read side actually lives.
+    run_shape("production-4096-out", 16, 4096, 59 * 1024).await;
+}
+
+/// The ceiling on skipping empty cells; see [`run_sparse_shape`].
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "benchmark; run with --ignored --nocapture --test-threads=1"]
+async fn bench_sparse_cells() {
+    run_sparse_shape("mostly-empty", 32, 256, 4 * 1024, 8).await;
+    run_sparse_shape("very-sparse", 32, 256, 4 * 1024, 32).await;
+}
+
+/// What each durability level costs the map side. Run the same way as the read
+/// benchmark; see [`run_write_shape`].
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "benchmark; run with --ignored --nocapture --test-threads=1"]
+async fn bench_shared_write_durability() {
+    run_write_shape("small-files", 64, 64, 16 * 1024).await;
+    run_write_shape("map-file-sized", 8, 64, 1024 * 1024).await;
 }

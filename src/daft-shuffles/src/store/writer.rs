@@ -26,14 +26,26 @@ use super::{
 /// Background `fsync`s allowed in flight per process before the map side starts
 /// paying for them inline.
 ///
-/// Each one is a thread parked in `fsync` for roughly the filesystem's commit
-/// latency (~1 s on the reference Lustre mount, where syncs are batched into
-/// transaction groups so latency stays flat as concurrency rises). The cap is
-/// well above any realistic map-task completion rate for one node, and inline
-/// fallback past it means durability is never silently skipped.
+/// Each one is a thread parked in `fsync` for the filesystem's commit latency,
+/// which ranges from single-digit milliseconds on the shared mounts measured so
+/// far to hundreds on a local disk (see [`ShuffleDurability`]). The cap is sized
+/// for the slow end: even at half a second per sync, 64 in flight clears more
+/// than a hundred map files a second, well past what one node produces. Falling
+/// back to an inline `fsync` past the cap means the level's promise is never
+/// silently downgraded, only slowed.
 const MAX_BACKGROUND_FSYNCS: usize = 64;
 
 static BACKGROUND_FSYNCS_IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
+
+/// Background `fsync`s that have not finished yet.
+///
+/// Exists so a benchmark can tell when the deferred half of
+/// [`ShuffleDurability::Background`] is actually done; nothing in the execution
+/// path waits on it, which is the entire point of the level.
+#[cfg(test)]
+pub(crate) fn background_fsyncs_in_flight() -> usize {
+    BACKGROUND_FSYNCS_IN_FLIGHT.load(Ordering::Acquire)
+}
 
 /// `fsync` the published file off the critical path.
 ///

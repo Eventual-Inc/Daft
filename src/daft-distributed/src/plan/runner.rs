@@ -17,7 +17,7 @@ use crate::{
     },
     plan::DistributedPhysicalPlan,
     scheduling::{
-        scheduler::{SchedulerHandle, spawn_scheduler_actor},
+        scheduler::{SchedulerHandle, WorkerSnapshot, spawn_scheduler_actor},
         task::{SwordfishTask, TaskID},
         worker::{Worker, WorkerManager},
     },
@@ -58,6 +58,9 @@ pub(crate) struct PlanExecutionContext {
     /// trees are gone. Tracked separately from the directories because the
     /// registrations live in worker memory, not on any of these paths.
     shuffle_ids: Vec<u64>,
+    /// Output partition counts of this plan's shuffles, for the width check in
+    /// [`PlanRunner::warn_if_narrower_than_cluster`].
+    shuffle_widths: Vec<usize>,
     statistics_manager: StatisticsManagerRef,
 }
 
@@ -76,6 +79,7 @@ impl PlanExecutionContext {
             shuffle_dirs: Vec::new(),
             shared_shuffle_dirs: Vec::new(),
             shuffle_ids: Vec::new(),
+            shuffle_widths: Vec::new(),
             statistics_manager,
         }
     }
@@ -110,6 +114,12 @@ impl PlanExecutionContext {
     /// when the plan completes
     pub fn register_shuffle_id(&mut self, shuffle_id: u64) {
         self.shuffle_ids.push(shuffle_id);
+    }
+
+    /// Register how many output partitions a shuffle produces, which is how many
+    /// tasks its reduce side can run at once
+    pub fn register_shuffle_width(&mut self, num_partitions: usize) {
+        self.shuffle_widths.push(num_partitions);
     }
 }
 
@@ -208,6 +218,53 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         Ok(PlanResult::new(joinset, result_receiver))
     }
 
+    /// Point out when a shuffle is too narrow to occupy the cluster it is running
+    /// on — and say what to do about it, because the obvious move is wrong.
+    ///
+    /// A shuffle's reduce side runs one task per output partition, so a plan whose
+    /// narrowest shuffle has N partitions cannot keep more than N cores busy no
+    /// matter how many are available. Measured: a 1 TiB shuffle into 4096
+    /// partitions on 20,224 cores ran with roughly a fifth of the cluster doing
+    /// anything.
+    ///
+    /// The trap is that raising the partition count to match the cluster makes it
+    /// worse, not better. The same query with 20,224 input partitions instead of
+    /// 4096 did not finish in three hours — at least 4.8x slower — because it cut
+    /// each (map, partition) cell from ~59 KiB to ~12 KiB while leaving the
+    /// per-read overhead unchanged, and that overhead lands on the reduce side,
+    /// which is ~98% of the query. Partition counts follow from bytes per
+    /// partition; cluster width should follow from the partition count.
+    fn warn_if_narrower_than_cluster(&self, shuffle_widths: &[usize]) {
+        // The narrowest shuffle is the one that caps the plan.
+        let Some(&narrowest) = shuffle_widths.iter().min() else {
+            return;
+        };
+        let Ok(snapshots) = self.worker_manager.worker_snapshots() else {
+            return;
+        };
+        let total_cpus = snapshots
+            .iter()
+            .map(WorkerSnapshot::total_num_cpus)
+            .sum::<f64>() as usize;
+
+        // Only worth saying when a large part of a large cluster is idle: half the
+        // cores unusable, and enough of them in absolute terms to matter.
+        let idle = total_cpus.saturating_sub(narrowest);
+        if narrowest == 0 || narrowest * 2 > total_cpus || idle < 64 {
+            return;
+        }
+        tracing::warn!(
+            "This plan's narrowest shuffle has {} output partitions but the cluster has {} CPUs, \
+             so at most {} of them can be busy during its reduce stage. Note that raising the \
+             partition count is usually the wrong fix: it shrinks each partition's share of every \
+             map file, and the extra per-read overhead lands on the reduce side, which dominates \
+             runtime. Size partitions by bytes, and size the cluster to the partition count.",
+            narrowest,
+            total_cpus,
+            narrowest,
+        );
+    }
+
     async fn run_plan_impl(
         &self,
         pipeline_node: DistributedPipelineNode,
@@ -223,6 +280,8 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         let shuffle_dirs = std::mem::take(&mut plan_context.shuffle_dirs);
         let shared_shuffle_dirs = std::mem::take(&mut plan_context.shared_shuffle_dirs);
         let shuffle_ids = std::mem::take(&mut plan_context.shuffle_ids);
+        let shuffle_widths = std::mem::take(&mut plan_context.shuffle_widths);
+        self.warn_if_narrower_than_cluster(&shuffle_widths);
         let running_stage = RunningPlan::new(running_node, plan_context);
 
         let mut materialized_result_stream = running_stage.materialize(scheduler_handle);

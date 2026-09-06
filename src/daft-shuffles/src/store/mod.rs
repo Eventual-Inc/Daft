@@ -71,22 +71,49 @@ impl ShufflePlacement {
 
 /// How hard the map side works to make a shared-disk write survive losing its writer.
 ///
-/// This exists because `fsync` on a shared mount can be brutally expensive and,
-/// critically, *size-independent*: on the reference Lustre deployment a single
-/// `fsync` costs ~1s whether the file is 0 B or 64 MiB, and only ~25 of them
-/// complete per second even at 32-way concurrency. Paying that on the map task's
-/// critical path cut write throughput from ~610 MiB/s to 140-340 MiB/s.
+/// This knob exists because `fsync` costs vary by more than two orders of
+/// magnitude across the filesystems a shuffle can land on, so no single answer is
+/// right everywhere. Measured, for a 64 MiB file:
 ///
-/// The way out is that *visibility* and *durability* are separate problems.
-/// Visibility to another node is already guaranteed without `fsync` by the shared
-/// filesystem's close-to-open coherency, and that is all a reduce task needs while
-/// the writer is alive. `fsync` only buys the case where the writer node dies with
-/// data still in its page cache — rare, and worth deferring off the critical path.
+/// | filesystem      | `fsync` |
+/// |-----------------|---------|
+/// | local ext4      | ~488 ms |
+/// | Lustre          | ~27 ms  |
+/// | JuiceFS         | ~6 ms   |
+///
+/// The direction is the opposite of the intuition this was first designed
+/// around: the *local* disk is where `fsync` is expensive, and the shared mounts
+/// measured so far are cheap. An earlier version of this comment claimed ~1 s per
+/// `fsync` on a shared mount, size-independent; that was one deployment's
+/// pathology and does not generalize — `store::bench`'s
+/// `bench_shared_write_durability` measures whichever mount you actually have.
+///
+/// What the levels *do* trade is separate from cost, and holds everywhere.
+/// Visibility and durability are different problems: a reduce task reading from a
+/// live writer needs only visibility, which the shared filesystem's close-to-open
+/// coherency provides without any `fsync` at all (verified across 60 cross-node
+/// reads each on Lustre and JuiceFS). `fsync` buys only the case where the writer
+/// node dies with data still in its page cache. So the choice is about how large
+/// a window of "the writer died and took the only copy" is acceptable, not about
+/// whether readers can see the data.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum ShuffleDurability {
     /// Never `fsync`. Fastest; a shared copy may be lost if its writer node dies.
     None,
     /// Return as soon as the file is visible, then `fsync` in the background.
+    ///
+    /// The default because it is the only level whose cost does not depend on how
+    /// expensive the mount's `fsync` is — the map task never waits for one. That
+    /// matters more than picking the level that happens to be cheap on the mounts
+    /// measured so far: `Sync` is within 3-11% of `None` on Lustre and JuiceFS,
+    /// but is 14-36x on local ext4, and an NFS export backed by such a disk is a
+    /// perfectly ordinary thing to point this at.
+    ///
+    /// The cost is a window: a writer node that dies between the rename and the
+    /// background `fsync` leaves nothing behind. Recovery from that is a map-task
+    /// retry, which measured at +1-3% of a 1 TiB query, so the window is not free
+    /// but it is bounded and cheap. Set `Sync` when you have measured your mount
+    /// and want the window closed.
     #[default]
     Background,
     /// `fsync` before reporting the map output. Slowest, strongest.
@@ -239,8 +266,9 @@ pub fn forget_shuffle(shuffle_id: u64) {
 /// Syncing a directory commits every entry that exists when the sync runs, not
 /// just the caller's, so concurrent map tasks publishing into the same shard need
 /// one `fsync` between them rather than one each. Without that they would each
-/// pay for the same commit — on a path whose entire design is about not paying for
-/// `fsync`s, where one costs ~1 s on the reference Lustre mount regardless of size.
+/// pay for the same commit. How much that is worth depends on the mount — see
+/// [`ShuffleDurability`] for measured costs — but it is never worth paying N times
+/// for a commit that one call makes.
 #[derive(Default)]
 pub(crate) struct DirSync {
     /// Renames into this directory that have completed. Incremented *after* the
