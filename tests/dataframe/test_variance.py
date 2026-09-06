@@ -258,7 +258,9 @@ def test_var_large_mean_matches_shifted_data(with_morsel_size):
             df.select(
                 daft.col("a").var(ddof=ddof).alias("var"),
                 daft.col("a").stddev(ddof=ddof).alias("std"),
-            ).collect().iter_rows()
+            )
+            .collect()
+            .iter_rows()
         )
         assert row["var"] == expected
         assert abs(row["std"] - expected**0.5) < 1e-12

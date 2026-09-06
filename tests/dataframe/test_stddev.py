@@ -158,7 +158,5 @@ def test_stddev_large_mean_matches_shifted_data(ddof, expected, with_morsel_size
     row = next(df.select(daft.col("a").stddev(ddof=ddof)).collect().iter_rows())
     assert abs(row["a"] - math.sqrt(expected)) < 1e-12
 
-    grouped = next(
-        df.groupby("g").agg(daft.col("a").stddev(ddof=ddof)).collect().iter_rows()
-    )
+    grouped = next(df.groupby("g").agg(daft.col("a").stddev(ddof=ddof)).collect().iter_rows())
     assert abs(grouped["a"] - math.sqrt(expected)) < 1e-12
