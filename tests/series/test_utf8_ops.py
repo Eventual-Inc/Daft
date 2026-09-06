@@ -1464,7 +1464,7 @@ def test_series_utf8_to_datetime_different_timezones(data, format, timezone, exp
             id="Microseconds",
         ),
         pytest.param(
-            ["2021-01-01 00:00:45.1234", "2021-01-02 01:07:35.12300", "2021-01-03 12:30:00.123"],
+            ["2021-01-01 00:00:45.123", "2021-01-02 01:07:35.123", "2021-01-03 12:30:00.123"],
             "%Y-%m-%d %H:%M:%S%.3f",
             [
                 datetime.datetime(2021, 1, 1, 0, 0, 45, 123000),
@@ -1519,6 +1519,60 @@ def test_series_utf8_to_bad_datetime() -> None:
     s = Series.from_arrow(pa.array(["2021-100-20"]))
     with pytest.raises(ValueError):
         s.str.to_datetime("%Y-%m-%d %H:%M:%S", "UTC")
+
+
+@pytest.mark.parametrize(
+    ["data", "format", "timezone", "expected"],
+    [
+        pytest.param(
+            ["2020-01-01", "2020-12-31", None],
+            "%Y-%m-%d",
+            None,
+            [datetime.datetime(2020, 1, 1), datetime.datetime(2020, 12, 31), None],
+            id="Date-only resolves to midnight",
+        ),
+        pytest.param(
+            ["01/02/2020"],
+            "%m/%d/%Y",
+            None,
+            [datetime.datetime(2020, 1, 2)],
+            id="Date-only non-ISO format",
+        ),
+        pytest.param(
+            ["2021-01-01 +0000"],
+            "%Y-%m-%d %z",
+            None,
+            [datetime.datetime(2021, 1, 1, tzinfo=datetime.timezone.utc)],
+            id="Date-only with offset coerces to UTC",
+        ),
+        pytest.param(
+            ["2020-01-01"],
+            "%Y-%m-%d",
+            "UTC",
+            [datetime.datetime(2020, 1, 1, tzinfo=datetime.timezone.utc)],
+            id="Date-only with explicit timezone",
+        ),
+    ],
+)
+def test_series_utf8_to_datetime_date_only(data, format, timezone, expected) -> None:
+    s = Series.from_arrow(pa.array(data, type=pa.string()))
+    result = s.str.to_datetime(format, timezone)
+    assert result.to_pylist() == expected
+
+
+@pytest.mark.parametrize(
+    ["data", "format"],
+    [
+        pytest.param(["2020-01-01T12:34:56.789"], "%Y-%m-%dT%H:%M:%S", id="Trailing fractional seconds"),
+        pytest.param(["2020-01-01 extra"], "%Y-%m-%d", id="Trailing text on date-only"),
+        pytest.param(["2020-01-01 00:00:00 trailing"], "%Y-%m-%d %H:%M:%S", id="Trailing text on datetime"),
+        pytest.param(["2021-01-01 00:00:45.123"], "%Y-%m-%d %H:%M:%S", id="Trailing fraction without format"),
+    ],
+)
+def test_series_utf8_to_datetime_rejects_trailing_input(data, format) -> None:
+    s = Series.from_arrow(pa.array(data, type=pa.string()))
+    with pytest.raises(ValueError):
+        s.str.to_datetime(format)
 
 
 # source: RedPajama

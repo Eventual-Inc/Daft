@@ -82,6 +82,41 @@ pub fn infer_timeunit_from_format_string(format: &str) -> TimeUnit {
 }
 
 #[must_use]
+pub fn format_string_has_time(format: &str) -> bool {
+    use chrono::format::{Fixed, Item, Numeric};
+
+    chrono::format::strftime::StrftimeItems::new(format).any(|item| match item {
+        Item::Numeric(numeric, _) => matches!(
+            numeric,
+            Numeric::Hour
+                | Numeric::Hour12
+                | Numeric::Minute
+                | Numeric::Second
+                | Numeric::Nanosecond
+                | Numeric::Timestamp
+        ),
+        Item::Fixed(fixed) => matches!(
+            fixed,
+            Fixed::LowerAmPm
+                | Fixed::UpperAmPm
+                | Fixed::Nanosecond
+                | Fixed::Nanosecond3
+                | Fixed::Nanosecond6
+                | Fixed::Nanosecond9
+                | Fixed::RFC2822
+                | Fixed::RFC3339
+                // `%3f`, `%6f`, `%9f` (fractional seconds without a leading dot) and `%#z`
+                // (permissive offset) map to `Fixed::Internal`, whose variants are private to
+                // chrono. Treat as time: three of the four internal variants are fractional
+                // seconds. Misclassifying `%#z` (offset) as time only misses a midnight-default
+                // for an extremely rare date-plus-offset format, which still errors as before.
+                | Fixed::Internal(_)
+        ),
+        _ => false,
+    })
+}
+
+#[must_use]
 pub fn format_string_has_offset(format: &str) -> bool {
     // These are all valid chrono formats that contain an offset
     format.contains("%Z")
@@ -297,6 +332,54 @@ mod tests {
         for (format, expected) in test_cases {
             assert_eq!(
                 format_string_has_offset(format),
+                expected,
+                "Failed for format: {}",
+                format
+            );
+        }
+    }
+
+    #[test]
+    fn test_format_string_has_time() {
+        let test_cases = vec![
+            ("%Y-%m-%d", false),
+            ("%Y/%m/%d", false),
+            ("%d-%b-%Y", false),
+            ("%F", false),
+            ("%x", false),
+            ("%v", false),
+            ("%D", false),
+            ("%Y-%m-%d %z", false),
+            ("%Y-%m-%d %:z", false),
+            ("%Y-%m-%d", false),
+            ("", false),
+            ("random text", false),
+            ("%%H %%M %%S", false),
+            ("%Y-%m-%d %H:%M:%S", true),
+            ("%Y-%m-%dT%H:%M:%S", true),
+            ("%H:%M:%S", true),
+            ("%H", true),
+            ("%k", true),
+            ("%I:%M %p", true),
+            ("%l:%M %P", true),
+            ("%R", true),
+            ("%T", true),
+            ("%X", true),
+            ("%r", true),
+            ("%c", true),
+            ("%+", true),
+            ("%s", true),
+            ("%Y-%m-%d %H", true),
+            ("%Y-%m-%d %.3f", true),
+            ("%Y-%m-%d %3f", true),
+            ("%Y-%m-%d %H:%M:%S%.3f", true),
+            ("%_H:%M", true),
+            ("%-M", true),
+        ];
+
+        for (format, expected) in test_cases {
+            assert_eq!(
+                format_string_has_time(format),
                 expected,
                 "Failed for format: {}",
                 format
