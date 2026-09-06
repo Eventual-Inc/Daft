@@ -356,7 +356,6 @@ mod tests {
 
     #[test]
     fn test_regex_replace_posix_groups_translation() {
-        use std::borrow::Cow;
 
         // No backslash: borrowed, untouched (also covers `$`-only replacements).
         let translated = regex_replace_posix_groups("[$1]");
