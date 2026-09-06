@@ -1552,6 +1552,20 @@ def test_series_utf8_to_bad_datetime() -> None:
             [datetime.datetime(2020, 1, 1, tzinfo=datetime.timezone.utc)],
             id="Date-only with explicit timezone",
         ),
+        pytest.param(
+            ["2021-01-01 +0000"],
+            "%Y-%m-%d %#z",
+            None,
+            [datetime.datetime(2021, 1, 1, tzinfo=datetime.timezone.utc)],
+            id="Date-only with permissive offset coerces to UTC",
+        ),
+        pytest.param(
+            ["2020-01-01 %z"],
+            "%Y-%m-%d %%z",
+            None,
+            [datetime.datetime(2020, 1, 1)],
+            id="Escaped percent is literal text, not an offset",
+        ),
     ],
 )
 def test_series_utf8_to_datetime_date_only(data, format, timezone, expected) -> None:

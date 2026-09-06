@@ -1,7 +1,10 @@
 use std::{fmt::Display, str::FromStr};
 
 use arrow_schema::TimeUnit as ArrowTimeUnit;
-use chrono::{LocalResult, TimeZone};
+use chrono::{
+    LocalResult, TimeZone,
+    format::{Fixed, Item, Numeric, strftime::StrftimeItems},
+};
 use common_error::DaftError;
 use serde::{Deserialize, Serialize};
 
@@ -81,50 +84,74 @@ pub fn infer_timeunit_from_format_string(format: &str) -> TimeUnit {
     }
 }
 
-#[must_use]
-pub fn format_string_has_time(format: &str) -> bool {
-    use chrono::format::{Fixed, Item, Numeric};
-
-    chrono::format::strftime::StrftimeItems::new(format).any(|item| match item {
-        Item::Numeric(numeric, _) => matches!(
-            numeric,
-            Numeric::Hour
+/// Classifies a strftime format string in a single tokenized pass.
+///
+/// Returns `(has_time, has_offset)`. Tokenizing (instead of substring matching) correctly
+/// handles escaped literals (`%%z` is text, not an offset) and padding modifiers
+/// (`%_H` is an hour). `Fixed::Internal` variants are private to chrono (`%3f`/`%6f`/`%9f`
+/// fractional seconds vs `%#z` permissive offset), so they are distinguished via their debug
+/// representation.
+fn format_time_and_offset_flags(format: &str) -> (bool, bool) {
+    let mut has_time = false;
+    let mut has_offset = false;
+    for item in StrftimeItems::new(format) {
+        match item {
+            Item::Numeric(
+                Numeric::Hour
                 | Numeric::Hour12
                 | Numeric::Minute
                 | Numeric::Second
                 | Numeric::Nanosecond
-                | Numeric::Timestamp
-        ),
-        Item::Fixed(fixed) => matches!(
-            fixed,
-            Fixed::LowerAmPm
+                | Numeric::Timestamp,
+                _,
+            ) => has_time = true,
+            Item::Fixed(
+                Fixed::LowerAmPm
                 | Fixed::UpperAmPm
                 | Fixed::Nanosecond
                 | Fixed::Nanosecond3
                 | Fixed::Nanosecond6
-                | Fixed::Nanosecond9
-                | Fixed::RFC2822
-                | Fixed::RFC3339
-                // `%3f`, `%6f`, `%9f` (fractional seconds without a leading dot) and `%#z`
-                // (permissive offset) map to `Fixed::Internal`, whose variants are private to
-                // chrono. Treat as time: three of the four internal variants are fractional
-                // seconds. Misclassifying `%#z` (offset) as time only misses a midnight-default
-                // for an extremely rare date-plus-offset format, which still errors as before.
-                | Fixed::Internal(_)
-        ),
-        _ => false,
-    })
+                | Fixed::Nanosecond9,
+            ) => has_time = true,
+            // Full datetime directives carry both a time and an offset.
+            Item::Fixed(Fixed::RFC2822 | Fixed::RFC3339) => {
+                has_time = true;
+                has_offset = true;
+            }
+            Item::Fixed(
+                Fixed::TimezoneName
+                | Fixed::TimezoneOffset
+                | Fixed::TimezoneOffsetColon
+                | Fixed::TimezoneOffsetDoubleColon
+                | Fixed::TimezoneOffsetTripleColon
+                | Fixed::TimezoneOffsetColonZ
+                | Fixed::TimezoneOffsetZ,
+            ) => has_offset = true,
+            Item::Fixed(Fixed::Internal(inner)) => {
+                if format!("{inner:?}").contains("Nanosecond") {
+                    has_time = true;
+                } else {
+                    // `TimezoneOffsetPermissive` (`%#z`).
+                    has_offset = true;
+                }
+            }
+            _ => {}
+        }
+        if has_time && has_offset {
+            break;
+        }
+    }
+    (has_time, has_offset)
+}
+
+#[must_use]
+pub fn format_string_has_time(format: &str) -> bool {
+    format_time_and_offset_flags(format).0
 }
 
 #[must_use]
 pub fn format_string_has_offset(format: &str) -> bool {
-    // These are all valid chrono formats that contain an offset
-    format.contains("%Z")
-        || format.contains("%z")
-        || format.contains("%:z")
-        || format.contains("%::z")
-        || format.contains("%#z")
-        || format == "%+"
+    format_time_and_offset_flags(format).1
 }
 
 /// Converts a timestamp in `time_unit` into [`chrono::NaiveDateTime`].
@@ -326,7 +353,10 @@ mod tests {
             ("%Y-%m-%d %H:%M:%S.%f", false),
             ("", false),
             ("random text", false),
-            ("%%z", true),
+            // Escaped `%%` is a literal percent sign, not a directive.
+            ("%%z", false),
+            ("%Y-%m-%d %%z", false),
+            ("%Y-%m-%d %#z", true),
         ];
 
         for (format, expected) in test_cases {
@@ -351,6 +381,8 @@ mod tests {
             ("%D", false),
             ("%Y-%m-%d %z", false),
             ("%Y-%m-%d %:z", false),
+            ("%Y-%m-%d %#z", false),
+            ("%Y-%m-%d %%z", false),
             ("%Y-%m-%d", false),
             ("", false),
             ("random text", false),
