@@ -243,3 +243,34 @@ def test_var_stddev_relationship(with_morsel_size):
     ).collect()
     row = next(result.iter_rows())
     assert abs(row["var"] - row["stddev"] ** 2) < 1e-10
+
+
+def test_var_large_mean_matches_shifted_data(with_morsel_size):
+    """Regression test for https://github.com/Eventual-Inc/Daft/issues/7468.
+
+    The old `E(x^2) - E(x)^2` rewrite collapsed to 0.0 for data with a large
+    mean; the Chan parallel merge must match the shifted (small-mean) result.
+    """
+    data = [1e9 + 1, 1e9 + 2, 1e9 + 3]
+    for ddof, expected in [(1, 1.0), (0, 2.0 / 3.0)]:
+        df = daft.from_pydict({"a": data, "g": [1, 1, 1]})
+        row = next(
+            df.select(
+                daft.col("a").var(ddof=ddof).alias("var"),
+                daft.col("a").stddev(ddof=ddof).alias("std"),
+            ).collect().iter_rows()
+        )
+        assert row["var"] == expected
+        assert abs(row["std"] - expected**0.5) < 1e-12
+
+        grouped = next(
+            df.groupby("g")
+            .agg(
+                daft.col("a").var(ddof=ddof).alias("var"),
+                daft.col("a").stddev(ddof=ddof).alias("std"),
+            )
+            .collect()
+            .iter_rows()
+        )
+        assert grouped["var"] == expected
+        assert abs(grouped["std"] - expected**0.5) < 1e-12

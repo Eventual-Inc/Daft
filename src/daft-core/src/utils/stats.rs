@@ -6,13 +6,125 @@ use crate::{
         prelude::{Float64Array, UInt64Array},
     },
     count_mode::CountMode,
+    datatypes::{DataType, Field},
 };
+
+pub const VAR_PARTIAL_COUNT_FIELD: &str = "count";
+pub const VAR_PARTIAL_MEAN_FIELD: &str = "mean";
+pub const VAR_PARTIAL_M2_FIELD: &str = "m2";
+
+pub fn var_partial_fields() -> Vec<Field> {
+    vec![
+        Field::new(VAR_PARTIAL_COUNT_FIELD, DataType::UInt64),
+        Field::new(VAR_PARTIAL_MEAN_FIELD, DataType::Float64),
+        Field::new(VAR_PARTIAL_M2_FIELD, DataType::Float64),
+    ]
+}
+
+pub fn var_partial_dtype() -> DataType {
+    DataType::Struct(var_partial_fields())
+}
 
 #[derive(Clone, Copy, Default, Debug)]
 pub struct Stats {
     pub sum: f64,
     pub count: f64,
     pub mean: Option<f64>,
+}
+
+/// Numerically stable partial variance state, per Chan et al. parallel variance update.
+///
+/// `count` is the number of valid (non-null) values observed, `mean` is their mean and
+/// `m2` is the sum of squared deviations from the mean, i.e. `sum((x - mean)^2)`.
+/// The finalized (population) variance is `m2 / count` and the sample variance with
+/// `ddof` degrees of freedom is `m2 / (count - ddof)`.
+///
+/// `mean` and `m2` are `None` when `count == 0`.
+#[derive(Clone, Copy, Default, Debug)]
+pub struct VarPartialState {
+    pub count: u64,
+    pub mean: Option<f64>,
+    pub m2: Option<f64>,
+}
+
+/// Single-pass Welford computation of `(count, mean, m2)` over non-null values.
+///
+/// This is the per-partition step of the parallel variance algorithm: it never forms
+/// `sum(x^2)`, so unlike `E(x^2) - E(x)^2` it does not catastrophically cancel when
+/// the mean is large relative to the variance (e.g. `[1e9 + 1, 1e9 + 2, 1e9 + 3]`).
+pub fn calculate_var_partial(values: impl Iterator<Item = f64>) -> VarPartialState {
+    let mut count: u64 = 0;
+    let mut mean = 0.0;
+    let mut m2 = 0.0;
+    for x in values {
+        count += 1;
+        let delta = x - mean;
+        mean += delta / count as f64;
+        let delta2 = x - mean;
+        m2 += delta * delta2;
+    }
+    if count == 0 {
+        VarPartialState {
+            count: 0,
+            mean: None,
+            m2: None,
+        }
+    } else {
+        VarPartialState {
+            count,
+            mean: Some(mean),
+            m2: Some(m2),
+        }
+    }
+}
+
+/// Chan et al. parallel merge of per-partition `(count, mean, m2)` states.
+///
+/// Each input with `count == 0` (or missing `mean`/`m2`) is an identity and is skipped.
+/// The merge is associative up to floating-point rounding and only ever combines
+/// deviations (`delta = mean_b - mean_a`), so it stays accurate when the global mean
+/// is large and the variance is small.
+pub fn merge_var_partials(partials: impl Iterator<Item = VarPartialState>) -> VarPartialState {
+    let mut count: u64 = 0;
+    let mut mean = 0.0;
+    let mut m2 = 0.0;
+    for partial in partials {
+        if partial.count == 0 {
+            continue;
+        }
+        let (other_n, other_mean, other_m2) = match (partial.mean, partial.m2) {
+            (Some(other_mean), Some(other_m2)) => (partial.count, other_mean, other_m2),
+            _ => continue,
+        };
+        if count == 0 {
+            count = other_n;
+            mean = other_mean;
+            m2 = other_m2;
+        } else {
+            let delta = other_mean - mean;
+            let new_count = count + other_n;
+            let new_mean = mean + delta * (other_n as f64) / (new_count as f64);
+            let new_m2 = m2
+                + other_m2
+                + delta * delta * (count as f64) * (other_n as f64) / (new_count as f64);
+            count = new_count;
+            mean = new_mean;
+            m2 = new_m2;
+        }
+    }
+    if count == 0 {
+        VarPartialState {
+            count: 0,
+            mean: None,
+            m2: None,
+        }
+    } else {
+        VarPartialState {
+            count,
+            mean: Some(mean),
+            m2: Some(m2),
+        }
+    }
 }
 
 pub fn calculate_stats(array: &Float64Array) -> DaftResult<Stats> {
@@ -144,4 +256,53 @@ pub fn calculate_skew(stats: Stats, values: impl Iterator<Item = f64>) -> Option
 
         (m3 / count) / (m2 / count).powi(3).sqrt()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{VarPartialState, calculate_var_partial, merge_var_partials};
+
+    fn var_from_state(state: VarPartialState, ddof: usize) -> Option<f64> {
+        if (state.count as usize) <= ddof {
+            return None;
+        }
+        state.m2.map(|m2| m2 / (state.count as f64 - ddof as f64))
+    }
+
+    #[test]
+    fn test_var_partial_large_mean() {
+        // Regression test for https://github.com/Eventual-Inc/Daft/issues/7468:
+        // `E(x^2) - E(x)^2` collapses to 0 for `[1e9 + 1, 1e9 + 2, 1e9 + 3]`.
+        let values = [1e9 + 1.0, 1e9 + 2.0, 1e9 + 3.0];
+        let state = calculate_var_partial(values.into_iter());
+        assert_eq!(state.count, 3);
+        assert_eq!(var_from_state(state, 1), Some(1.0));
+        assert_eq!(var_from_state(state, 0), Some(2.0 / 3.0));
+    }
+
+    #[test]
+    fn test_merge_var_partials_singletons() {
+        // Merging single-row partials must recover the joint variance, including
+        // the `n == 1` case where a per-partition sample variance would be null.
+        let partials = [1e9 + 1.0, 1e9 + 2.0, 1e9 + 3.0]
+            .into_iter()
+            .map(|v| calculate_var_partial(std::iter::once(v)));
+        let merged = merge_var_partials(partials);
+        assert_eq!(merged.count, 3);
+        assert_eq!(var_from_state(merged, 1), Some(1.0));
+    }
+
+    #[test]
+    fn test_merge_var_partials_empty_is_identity() {
+        let empty = VarPartialState {
+            count: 0,
+            mean: None,
+            m2: None,
+        };
+        let state = calculate_var_partial([1.0, 2.0, 3.0].into_iter());
+        let merged = merge_var_partials([empty, state, empty].into_iter());
+        assert_eq!(merged.count, 3);
+        assert_eq!(var_from_state(merged, 1), Some(1.0));
+        assert_eq!(merge_var_partials([empty, empty].into_iter()).count, 0);
+    }
 }

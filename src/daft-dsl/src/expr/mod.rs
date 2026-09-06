@@ -429,6 +429,12 @@ pub enum AggExpr {
     #[display("var({_0}, ddof={_1})")]
     Var(ExprRef, usize),
 
+    #[display("var_partial({_0})")]
+    VarPartial(ExprRef),
+
+    #[display("merge_var_partial({_0})")]
+    MergeVarPartial(ExprRef),
+
     #[display("min({_0})")]
     Min(ExprRef),
 
@@ -593,6 +599,8 @@ impl AggExpr {
             Self::Percentile(_, _) => "Percentile",
             Self::Stddev(_, _) => "Stddev",
             Self::Var(_, _) => "Var",
+            Self::VarPartial(_) => "Var Partial",
+            Self::MergeVarPartial(_) => "Merge Var Partial",
             Self::Min(_) => "Min",
             Self::Max(_) => "Max",
             Self::BoolAnd(_) => "Bool And",
@@ -625,6 +633,8 @@ impl AggExpr {
             | Self::Percentile(expr, _)
             | Self::Stddev(expr, _)
             | Self::Var(expr, _)
+            | Self::VarPartial(expr)
+            | Self::MergeVarPartial(expr)
             | Self::Min(expr)
             | Self::Max(expr)
             | Self::BoolAnd(expr)
@@ -706,6 +716,14 @@ impl AggExpr {
             Self::Var(expr, ddof) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_var(ddof={ddof})"))
+            }
+            Self::VarPartial(expr) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.local_var_partial()"))
+            }
+            Self::MergeVarPartial(expr) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.local_merge_var_partial()"))
             }
             Self::Min(expr) => {
                 let child_id = expr.semantic_id(schema);
@@ -795,6 +813,8 @@ impl AggExpr {
             | Self::Percentile(expr, _)
             | Self::Stddev(expr, _)
             | Self::Var(expr, _)
+            | Self::VarPartial(expr)
+            | Self::MergeVarPartial(expr)
             | Self::Min(expr)
             | Self::Max(expr)
             | Self::BoolAnd(expr)
@@ -832,6 +852,8 @@ impl AggExpr {
             Self::Percentile(_, percentile) => Self::Percentile(first_child(), percentile.clone()),
             &Self::Stddev(_, ddof) => Self::Stddev(first_child(), ddof),
             &Self::Var(_, ddof) => Self::Var(first_child(), ddof),
+            Self::VarPartial(_) => Self::VarPartial(first_child()),
+            Self::MergeVarPartial(_) => Self::MergeVarPartial(first_child()),
             Self::Min(_) => Self::Min(first_child()),
             Self::Max(_) => Self::Max(first_child()),
             Self::BoolAnd(_) => Self::BoolAnd(first_child()),
@@ -1006,6 +1028,26 @@ impl AggExpr {
                     field.name.as_ref(),
                     try_variance_aggregation_supertype(&field.dtype)?,
                 ))
+            }
+            Self::VarPartial(expr) => {
+                let field = expr.to_field(schema)?;
+                // Validate the input type eagerly so misuse fails with the same
+                // error as `var` instead of a downstream struct error.
+                try_variance_aggregation_supertype(&field.dtype)?;
+                Ok(Field::new(
+                    field.name.as_ref(),
+                    daft_core::utils::stats::var_partial_dtype(),
+                ))
+            }
+            Self::MergeVarPartial(expr) => {
+                let field = expr.to_field(schema)?;
+                match field.dtype {
+                    DataType::Struct(_) => Ok(Field::new(field.name.as_ref(), field.dtype)),
+                    _ => Err(DaftError::TypeError(format!(
+                        "Expected input to merge_var_partial() to be struct but received dtype {} for column \"{}\"",
+                        field.dtype, field.name,
+                    ))),
+                }
             }
 
             Self::Min(expr) | Self::Max(expr) | Self::AnyValue(expr, _) => {

@@ -149,3 +149,16 @@ def test_grouped_stddev_with_multiple_partitions(nums, ddof, with_morsel_size):
         pd.Series(expected["data"]).sort_values(),
         check_index=False,
     )
+
+
+@pytest.mark.parametrize("ddof,expected", [(1, 1.0), (0, 2.0 / 3.0)])
+def test_stddev_large_mean_matches_shifted_data(ddof, expected, with_morsel_size):
+    """Regression test for https://github.com/Eventual-Inc/Daft/issues/7468."""
+    df = daft.from_pydict({"a": [1e9 + 1, 1e9 + 2, 1e9 + 3], "g": [1, 1, 1]})
+    row = next(df.select(daft.col("a").stddev(ddof=ddof)).collect().iter_rows())
+    assert abs(row["a"] - math.sqrt(expected)) < 1e-12
+
+    grouped = next(
+        df.groupby("g").agg(daft.col("a").stddev(ddof=ddof)).collect().iter_rows()
+    )
+    assert abs(grouped["a"] - math.sqrt(expected)) < 1e-12

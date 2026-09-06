@@ -769,6 +769,8 @@ impl RecordBatch {
             }
             AggExpr::Stddev(expr, ddof) => self.eval_agg_child(expr)?.stddev(groups, *ddof),
             AggExpr::Var(expr, ddof) => self.eval_agg_child(expr)?.var(groups, *ddof),
+            AggExpr::VarPartial(expr) => self.eval_agg_child(expr)?.var_partial(groups),
+            AggExpr::MergeVarPartial(expr) => self.eval_agg_child(expr)?.merge_var_partial(groups),
             AggExpr::Min(expr) => self.eval_agg_child(expr)?.min(groups),
             AggExpr::Max(expr) => self.eval_agg_child(expr)?.max(groups),
             AggExpr::BoolAnd(expr) => self.eval_agg_child(expr)?.bool_and(groups),
