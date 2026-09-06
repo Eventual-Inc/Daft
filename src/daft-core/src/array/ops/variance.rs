@@ -9,7 +9,7 @@ use crate::{
             DaftMergeVarPartialAggable, DaftVarPartialAggable, DaftVarianceAggable, GroupIndices,
         },
     },
-    datatypes::{Field, Float64Type},
+    datatypes::{DataType, Field, Float64Type, UInt64Type},
     prelude::IntoSeries,
     utils::stats::{self, VarPartialState},
 };
@@ -18,8 +18,6 @@ fn build_var_partial_struct(
     parent_name: &str,
     states: Vec<VarPartialState>,
 ) -> DaftResult<StructArray> {
-    use crate::datatypes::{DataType, UInt64Type};
-
     let counts: Vec<Option<u64>> = states.iter().map(|s| Some(s.count)).collect();
     let means: Vec<Option<f64>> = states.iter().map(|s| s.mean).collect();
     let m2s: Vec<Option<f64>> = states.iter().map(|s| s.m2).collect();
