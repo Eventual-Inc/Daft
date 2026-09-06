@@ -529,12 +529,11 @@ fn count_only_stream(
     metadata: &ParquetMetaData,
     rg_indices: &[usize],
     num_rows: Option<usize>,
+    delete_rows: Option<&[i64]>,
     return_schema: Arc<Schema>,
 ) -> DaftResult<(Arc<Schema>, BoxStream<'static, DaftResult<RecordBatch>>)> {
-    let total: usize = rg_indices
-        .iter()
-        .map(|&i| metadata.row_group(i).num_rows() as usize)
-        .sum();
+    // Deleted rows never reach the consumer, so counting them would over-report.
+    let total = crate::helpers::visible_rows_in_row_groups(metadata, rg_indices, delete_rows);
     let n = num_rows.map(|n| n.min(total)).unwrap_or(total);
     let batch = RecordBatch::new_with_size(return_schema.clone(), Vec::new(), n)?;
     Ok((
@@ -595,6 +594,7 @@ pub async fn stream_parquet(
         opts.row_groups.as_deref(),
         opts.start_offset.unwrap_or(0),
         opts.num_rows,
+        opts.delete_rows.as_deref(),
         opts.predicate.as_ref(),
         &plan.read_daft_schema,
         source.label(),
@@ -614,6 +614,7 @@ pub async fn stream_parquet(
             &prepared.parquet_metadata,
             &rg_indices,
             opts.num_rows,
+            opts.delete_rows.as_deref(),
             plan.return_daft_schema,
         );
     }
