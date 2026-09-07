@@ -265,10 +265,6 @@ impl UdfHandle {
         func_input: RecordBatch,
         runtime_stats: &UdfRuntimeStats,
     ) -> DaftResult<Series> {
-        use daft_dsl::functions::python::initialize_udfs;
-
-        // Only actually initialized the first time
-        *udf_expr = BoundExpr::new_unchecked(initialize_udfs(udf_expr.inner().clone())?);
         let mut collected_metrics = OperatorMetrics::default();
         let result = func_input.eval_expression_with_metrics(udf_expr, &mut collected_metrics)?;
         runtime_stats.update_metrics(collected_metrics);

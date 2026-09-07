@@ -400,15 +400,24 @@ impl Optimizer {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
+    use std::{
+        num::NonZeroUsize,
+        sync::{Arc, Mutex},
+    };
 
     use common_error::DaftResult;
+    use common_hashable_float_wrapper::FloatWrapper;
     use common_treenode::{Transformed, TreeNode};
     use daft_core::prelude::*;
     use daft_dsl::{
-        AggExpr, Expr,
-        functions::{FunctionExpr, python::LegacyPythonUDF},
-        lit, resolved_col, unresolved_col,
+        AggExpr, Expr, ExprRef,
+        functions::{
+            python::{OnError, RuntimePyObject},
+            scalar::ScalarFn,
+        },
+        lit,
+        python_udf::{PyScalarFn, RowWisePyFn},
+        resolved_col, unresolved_col,
     };
     use daft_scan::Pushdowns;
 
@@ -713,6 +722,29 @@ mod tests {
         )
     }
 
+    /// Creates a v2 actor-pool UDF expression (row-wise, max_concurrency=4).
+    fn new_testing_udf(inputs: Vec<ExprRef>) -> ExprRef {
+        Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
+            func_id: Arc::from("dummy_udf"),
+            function_name: Arc::from("dummy_udf"),
+            cls: RuntimePyObject::new_none(),
+            method: RuntimePyObject::new_none(),
+            builtin_name: false,
+            is_async: false,
+            return_dtype: DataType::Int64,
+            original_args: RuntimePyObject::new_none(),
+            args: inputs,
+            cpus: None,
+            gpus: FloatWrapper(0.0),
+            use_process: None,
+            max_concurrency: NonZeroUsize::new(4),
+            max_retries: None,
+            on_error: OnError::Raise,
+            ray_options: None,
+        })))
+        .arced()
+    }
+
     /// Tests that Limit commutes with ActorPoolProject.
     ///
     /// Limit-ActorPoolProject-Source -> ActorPoolProject-Source[with_limit]
@@ -722,12 +754,7 @@ mod tests {
         let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
 
         // Create an actor pool project expression.
-        let inputs = vec![resolved_col("a").into()];
-        let actor_pool_expr = Arc::new(Expr::Function {
-            func: FunctionExpr::Python(LegacyPythonUDF::new_testing_udf()),
-            inputs,
-        })
-        .alias("a");
+        let actor_pool_expr = new_testing_udf(vec![resolved_col("a")]).alias("a");
 
         // Create a plan with Select using actor pool project followed by Limit.
         let plan = dummy_scan_node(scan_op.clone())
@@ -782,12 +809,7 @@ mod tests {
     fn filter_commutes_with_actor_pool_project() -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
         // Create an actor pool project expression.
-        let inputs = vec![resolved_col("a").into()];
-        let actor_pool_expr = Arc::new(Expr::Function {
-            func: FunctionExpr::Python(LegacyPythonUDF::new_testing_udf()),
-            inputs,
-        })
-        .alias("renamed_col");
+        let actor_pool_expr = new_testing_udf(vec![resolved_col("a")]).alias("renamed_col");
 
         // Create a plan with Select using actor pool project followed by Filter.
         let plan = dummy_scan_node(scan_op.clone())

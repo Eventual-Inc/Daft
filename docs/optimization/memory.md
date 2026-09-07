@@ -17,8 +17,8 @@ Understanding which operations your query contains can guide you to tuning the p
 
 ### Tune UDF Batch Size and Concurrency
 
-- Lower the [`batch_size`][daft.udf.UDF.batch_size] argument on the UDF so each invocation handles less data at once.
-- Cap UDF [`concurrency`][daft.udf.UDF.concurrency] if each invocation is memory hungry. Fewer concurrent tasks often outperforms repeated worker restarts caused by OOM kills.
+- Lower the `batch_size` argument on [`@daft.func.batch`](../custom-code/func.md) so each invocation handles less data at once.
+- Cap UDF `max_concurrency` (see [`@daft.cls`](../custom-code/cls.md)) if each invocation is memory hungry. Fewer concurrent tasks often outperforms repeated worker restarts caused by OOM kills.
 
 ### Limit Download Concurrency
 
