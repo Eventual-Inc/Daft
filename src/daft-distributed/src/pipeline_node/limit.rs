@@ -195,6 +195,12 @@ impl LimitNode {
         }
 
         parent_cancel.cancel();
+        // Drain remaining running tasks before killing the counter actor.
+        // `cancel_callback` (in `TaskResultAwaiter::await_result`) awaits the
+        // worker's `cancel_input` ack, so by the time a notify token resolves
+        // here the worker has registered the cancellation. This minimizes the
+        // window where an in-flight `claim()` would see the actor disappear.
+        while running_tasks.join_next().await.is_some() {}
         teardown_limit_counter_actor(&actor);
         Ok(())
     }
