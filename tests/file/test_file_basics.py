@@ -191,6 +191,26 @@ def test_filesize_expr(tmp_path: Path):
     assert res == 2048
 
 
+def test_filesize_expr_multiple_files_and_nulls(tmp_path: Path):
+    first_file = tmp_path / "first.bin"
+    first_file.write_bytes(b"abc")
+    second_file = tmp_path / "second.bin"
+    second_file.write_bytes(b"12345")
+
+    df = daft.from_pydict(
+        {
+            "file": [
+                str(first_file.absolute()),
+                None,
+                str(second_file.absolute()),
+            ]
+        }
+    )
+
+    result = df.select(file_size(file(df["file"]))).to_pydict()["file"]
+    assert result == [3, None, 5]
+
+
 def test_file_exists(tmp_path: Path):
     existing_file = tmp_path / "exists.bin"
     existing_file.write_bytes(b"data")
