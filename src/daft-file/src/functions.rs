@@ -484,9 +484,17 @@ impl ScalarUDF for FilePath {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Size;
 
+impl Size {
+    const DEFAULT_BATCH_SIZE: usize = 64;
+}
+
 #[typetag::serde]
 #[async_trait::async_trait]
 impl AsyncScalarUDF for Size {
+    fn preferred_batch_size(&self, _inputs: FunctionArgs<ExprRef>) -> DaftResult<Option<usize>> {
+        Ok(Some(Self::DEFAULT_BATCH_SIZE))
+    }
+
     fn name(&self) -> &'static str {
         "file_size"
     }
