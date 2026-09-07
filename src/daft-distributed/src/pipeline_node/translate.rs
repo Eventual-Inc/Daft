@@ -555,6 +555,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                         sort.descending.clone(),
                         sort.nulls_first.clone(),
                         sort.input.schema(),
+                        self.select_backend(),
                         self.curr_node.pop().unwrap(),
                     )),
                     &self.meter,
