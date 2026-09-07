@@ -87,7 +87,13 @@ impl RepartitionNode {
         );
 
         self.shuffle_context
-            .emit_read_tasks_from_stream(outputs, self.num_partitions, self.as_ref(), result_tx)
+            .emit_read_tasks_from_stream(
+                outputs,
+                self.num_partitions,
+                self.as_ref(),
+                result_tx,
+                &mut |_, plan| Ok(plan),
+            )
             .await
     }
 }
