@@ -143,16 +143,35 @@ fn replace_impl(
     let arr_iter = create_broadcasted_str_iter(arr, expected_size);
     let replacement_iter = create_broadcasted_str_iter(replacement, expected_size);
 
+    // A scalar replacement is broadcast to every row, so translate its template
+    // once here instead of re-scanning the same string inside the row loop.
+    // A genuinely element-wise replacement column is translated per row.
+    let broadcast_template = if replacement.len() == 1 {
+        replacement.get(0).map(regex_replace_posix_groups)
+    } else {
+        None
+    };
+
     let result = match (regex, pattern.len()) {
         (true, 1) => {
             let regex_val = regex::Regex::new(pattern.get(0).unwrap());
             let regex = regex_val.as_ref().map_err(|e| e.clone());
             let regex_iter = std::iter::repeat_n(Some(regex), expected_size);
-            regex_replace(arr_iter, regex_iter, replacement_iter, arr.name())?
+            let templates = translated_replacement_iter(
+                replacement,
+                broadcast_template.as_deref(),
+                expected_size,
+            );
+            regex_replace(arr_iter, regex_iter, templates, arr.name())?
         }
         (true, _) => {
             let regex_iter = pattern.into_iter().map(|pat| pat.map(regex::Regex::new));
-            regex_replace(arr_iter, regex_iter, replacement_iter, arr.name())?
+            let templates = translated_replacement_iter(
+                replacement,
+                broadcast_template.as_deref(),
+                expected_size,
+            );
+            regex_replace(arr_iter, regex_iter, templates, arr.name())?
         }
         (false, _) => {
             let pattern_iter = create_broadcasted_str_iter(pattern, expected_size);
@@ -163,67 +182,142 @@ fn replace_impl(
     Ok(result)
 }
 
-/// Translates POSIX-style capture-group references (`\1`, `\12`, ...) into the
-/// `regex` crate's `${1}` syntax so both `\n` and `$n`/`${n}` work as group
-/// references in `regexp_replace`.
+/// Length in bytes of the `$` construct at the start of `s`, if the `regex`
+/// crate would read a capture reference (or a `$$` escape) there.
+///
+/// This mirrors `regex`'s own interpolation rules so that we can copy such
+/// constructs through untouched:
+///
+/// * `$$` is the escape for a literal `$`.
+/// * `${name}` is a braced reference; the name is everything up to the first
+///   `}`, and an unclosed `${` is not a reference at all.
+/// * `$name` is an unbraced reference whose name is the longest run of
+///   `[0-9A-Za-z_]`; a `$` followed by none of those is not a reference.
+///
+/// Returns `None` when the `$` is just a literal dollar sign (a trailing `$`,
+/// a `$` before a non-name character, or an unclosed `${`).
+fn dollar_construct_len(s: &str) -> Option<usize> {
+    debug_assert!(s.starts_with('$'));
+    let bytes = s.as_bytes();
+    match bytes.get(1)? {
+        b'$' => Some(2),
+        b'{' => Some(2 + s[2..].find('}')? + 1),
+        _ => {
+            let name_len = bytes[1..]
+                .iter()
+                .take_while(|&&b| b.is_ascii_alphanumeric() || b == b'_')
+                .count();
+            (name_len > 0).then_some(1 + name_len)
+        }
+    }
+}
+
+/// Translates a `regexp_replace` replacement template into the syntax the
+/// `regex` crate expects, so that POSIX-style `\1` references, `$`-style
+/// references and literal backslashes can all coexist.
 ///
 /// Rules (single left-to-right pass):
 ///
 /// * `\\` (two backslashes) is an escaped backslash and becomes one `\`.
 ///   This takes precedence so `\\1` stays a literal `\1` instead of being
 ///   misread as a group reference starting at the second backslash.
-/// * `\` followed by one or more ASCII digits is a group reference (`\1` ->
-///   `${1}`, `\12` -> `${12}`, `\0` -> `${0}`).
+/// * `\` followed by a single ASCII digit is a group reference (`\1` ->
+///   `${1}`, `\0` -> `${0}` for the whole match). Only one digit is consumed,
+///   matching POSIX/sed/Java: `\10` is group 1 followed by a literal `0`, not
+///   the usually-nonexistent group 10. Groups past 9 are reachable as `${10}`.
 /// * A `\` followed by anything else (or a trailing `\`) is preserved
 ///   literally, so e.g. `a\b` stays `a\b`. The `regex` crate treats
 ///   backslashes in replacements literally, so this yields a literal backslash
 ///   in the output instead of silently dropping it.
-/// * Everything else, including `$`-style references (`$1`, `${1}`, `$$`),
-///   passes through untouched so `$` keeps exactly the `regex` crate's semantics.
+/// * `$$` and valid `$`-style references (`$1`, `$name`, `${10}`) are the
+///   `regex` crate's own syntax and are copied through untouched.
+/// * Any other `$` is a literal dollar sign and is escaped to `$$`. This keeps
+///   its meaning unchanged on its own, and stops it from merging with a `${`
+///   emitted for a following POSIX reference: without it `$\1` would produce
+///   the template `$${1}`, which the crate reads as an escaped `$` followed by
+///   the literal text `{1}`.
 ///
-/// Returns a borrowed `str` when no backslash is present to avoid allocating
-/// in the common case.
+/// Returns a borrowed `str` when there is nothing to translate, to avoid
+/// allocating in the common case.
 fn regex_replace_posix_groups(replacement: &str) -> Cow<'_, str> {
-    if !replacement.contains('\\') {
+    if !replacement.contains(['\\', '$']) {
         return Cow::Borrowed(replacement);
     }
     let mut translated = String::with_capacity(replacement.len());
-    let mut chars = replacement.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c != '\\' {
-            translated.push(c);
-            continue;
-        }
-        match chars.peek() {
-            // Escaped backslash: `\\` -> `\`.
-            Some('\\') => {
-                translated.push('\\');
-                chars.next();
-            }
-            // POSIX group reference: `\` + digits -> `${digits}`.
-            Some(d) if d.is_ascii_digit() => {
-                translated.push_str("${");
-                while let Some(d) = chars.peek() {
-                    if d.is_ascii_digit() {
-                        translated.push(*d);
-                        chars.next();
-                    } else {
-                        break;
+    let mut rest = replacement;
+    while let Some(c) = rest.chars().next() {
+        match c {
+            '\\' => {
+                let after = &rest[1..];
+                match after.as_bytes().first() {
+                    // Escaped backslash: `\\` -> `\`.
+                    Some(b'\\') => {
+                        translated.push('\\');
+                        rest = &after[1..];
+                    }
+                    // POSIX group reference: `\` + one digit -> `${digit}`.
+                    Some(&d) if d.is_ascii_digit() => {
+                        translated.push_str("${");
+                        translated.push(d as char);
+                        translated.push('}');
+                        rest = &after[1..];
+                    }
+                    // Lone or trailing backslash: preserve literally.
+                    _ => {
+                        translated.push('\\');
+                        rest = after;
                     }
                 }
-                translated.push('}');
             }
-            // Lone backslash: preserve literally.
-            _ => translated.push('\\'),
+            '$' => match dollar_construct_len(rest) {
+                // The regex crate's own syntax: copy it through untouched.
+                Some(len) => {
+                    translated.push_str(&rest[..len]);
+                    rest = &rest[len..];
+                }
+                // A literal `$`: escape it so it stays literal and cannot
+                // merge with a `${` we emit for a following `\1`.
+                None => {
+                    translated.push_str("$$");
+                    rest = &rest[1..];
+                }
+            },
+            _ => {
+                translated.push(c);
+                rest = &rest[c.len_utf8()..];
+            }
         }
     }
     Cow::Owned(translated)
 }
 
+/// Per-row iterator of replacement templates, already translated into the
+/// `regex` crate's syntax.
+///
+/// When `broadcast_template` is set the same pre-translated template is simply
+/// borrowed for every row; otherwise each row's replacement is translated as it
+/// is consumed.
+fn translated_replacement_iter<'a>(
+    replacement: &'a Utf8Array,
+    broadcast_template: Option<&'a str>,
+    expected_size: usize,
+) -> Box<dyn Iterator<Item = Option<Cow<'a, str>>> + 'a> {
+    match broadcast_template {
+        Some(template) => Box::new(std::iter::repeat_n(
+            Some(Cow::Borrowed(template)),
+            expected_size,
+        )),
+        None => Box::new(
+            create_broadcasted_str_iter(replacement, expected_size)
+                .map(|r| r.map(regex_replace_posix_groups)),
+        ),
+    }
+}
+
 fn regex_replace<'a, R: Borrow<regex::Regex>>(
     arr_iter: impl Iterator<Item = Option<&'a str>>,
     regex_iter: impl Iterator<Item = Option<Result<R, regex::Error>>>,
-    replacement_iter: impl Iterator<Item = Option<&'a str>>,
+    replacement_iter: impl Iterator<Item = Option<Cow<'a, str>>>,
     name: &str,
 ) -> DaftResult<Utf8Array> {
     let result = arr_iter
@@ -231,7 +325,6 @@ fn regex_replace<'a, R: Borrow<regex::Regex>>(
         .zip(replacement_iter)
         .map(|((val, re), replacement)| match (val, re, replacement) {
             (Some(val), Some(re), Some(replacement)) => {
-                let replacement = regex_replace_posix_groups(replacement);
                 Ok(Some(re?.borrow().replace_all(val, replacement.as_ref())))
             }
             _ => Ok(None),
@@ -356,17 +449,24 @@ mod tests {
 
     #[test]
     fn test_regex_replace_posix_groups_translation() {
-        // No backslash: borrowed, untouched (also covers `$`-only replacements).
-        let translated = regex_replace_posix_groups("[$1]");
+        // Neither `\` nor `$`: borrowed, untouched.
+        let translated = regex_replace_posix_groups("[hi]");
         assert!(matches!(translated, Cow::Borrowed(_)));
-        assert_eq!(translated, "[$1]");
+        assert_eq!(translated, "[hi]");
 
         // `\n` becomes `${n}`; `$n` passes through for the regex crate.
+        assert_eq!(regex_replace_posix_groups("[$1]"), "[$1]");
         assert_eq!(regex_replace_posix_groups("[\\1]"), "[${1}]");
-        assert_eq!(regex_replace_posix_groups("\\12"), "${12}");
         assert_eq!(regex_replace_posix_groups("\\0"), "${0}");
         assert_eq!(regex_replace_posix_groups("$1"), "$1");
         assert_eq!(regex_replace_posix_groups("$$"), "$$");
+        assert_eq!(regex_replace_posix_groups("${10}"), "${10}");
+        assert_eq!(regex_replace_posix_groups("$name"), "$name");
+
+        // Only one digit is consumed, so `\12` is group 1 then a literal `2`
+        // (POSIX/sed/Java semantics). Groups past 9 are written `${10}`.
+        assert_eq!(regex_replace_posix_groups("\\12"), "${1}2");
+        assert_eq!(regex_replace_posix_groups("\\10"), "${1}0");
 
         // `\\` is an escaped backslash and collapses to one.
         assert_eq!(regex_replace_posix_groups("\\\\"), "\\");
@@ -380,6 +480,98 @@ mod tests {
         assert_eq!(regex_replace_posix_groups("x\\"), "x\\");
         assert_eq!(regex_replace_posix_groups("\\"), "\\");
         assert_eq!(regex_replace_posix_groups("\\$1"), "\\$1");
+
+        // A `$` the regex crate would not read as a reference is escaped to
+        // `$$` so it stays literal and cannot merge with a following `${`.
+        assert_eq!(regex_replace_posix_groups("$"), "$$");
+        assert_eq!(regex_replace_posix_groups("a$"), "a$$");
+        assert_eq!(regex_replace_posix_groups("$ "), "$$ ");
+        assert_eq!(regex_replace_posix_groups("${"), "$${");
+        assert_eq!(regex_replace_posix_groups("$\\1"), "$$${1}");
+    }
+
+    #[test]
+    fn test_regexp_replace_literal_dollar_before_posix_group() {
+        // A literal `$` directly in front of a POSIX group reference must
+        // survive. Emitting a bare `${1}` for `\1` would produce the template
+        // `$${1}`, which the regex crate reads as an escaped `$` followed by
+        // the literal text `{1}`, yielding "a${1}c".
+        let arr = Utf8Array::from_iter("a", vec![Some("abc")].into_iter());
+        let pattern = Utf8Array::from_iter("p", vec![Some("(b)")].into_iter());
+        let replacement = Utf8Array::from_iter("r", vec![Some("$\\1")].into_iter());
+
+        let result = replace_impl(&arr, &pattern, &replacement, true).unwrap();
+
+        assert_eq!(result.get(0), Some("a$bc"));
+    }
+
+    #[test]
+    fn test_regexp_replace_multi_digit_group_reference() {
+        // `\10` is group 1 followed by a literal `0`, as in POSIX/sed/Java.
+        // Consuming both digits would ask for the nonexistent group 10, which
+        // the regex crate expands to the empty string, silently dropping the
+        // `0` as well.
+        let arr = Utf8Array::from_iter("a", vec![Some("abc")].into_iter());
+        let pattern = Utf8Array::from_iter("p", vec![Some("(b)")].into_iter());
+        let replacement = Utf8Array::from_iter("r", vec![Some("\\10")].into_iter());
+
+        let result = replace_impl(&arr, &pattern, &replacement, true).unwrap();
+
+        assert_eq!(result.get(0), Some("ab0c"));
+    }
+
+    #[test]
+    fn test_regexp_replace_high_group_reference_via_braces() {
+        // Groups past 9 stay reachable through the regex crate's own `${n}`.
+        let arr = Utf8Array::from_iter("a", vec![Some("abcdefghij")].into_iter());
+        let pattern = Utf8Array::from_iter(
+            "p",
+            vec![Some("(a)(b)(c)(d)(e)(f)(g)(h)(i)(j)")].into_iter(),
+        );
+        let replacement = Utf8Array::from_iter("r", vec![Some("${10}")].into_iter());
+
+        let result = replace_impl(&arr, &pattern, &replacement, true).unwrap();
+
+        assert_eq!(result.get(0), Some("j"));
+    }
+
+    #[test]
+    fn test_replace_literal_does_not_translate_backslashes() {
+        // `replace()` (regex = false) has no template semantics: every
+        // character of the replacement is emitted verbatim.
+        let arr = Utf8Array::from_iter("a", vec![Some("abc")].into_iter());
+        let pattern = Utf8Array::from_iter("p", vec![Some("b")].into_iter());
+        let replacement = Utf8Array::from_iter("r", vec![Some("\\1$1\\\\")].into_iter());
+
+        let result = replace_impl(&arr, &pattern, &replacement, false).unwrap();
+
+        assert_eq!(result.get(0), Some("a\\1$1\\\\c"));
+    }
+
+    #[test]
+    fn test_regexp_replace_unicode_replacement_with_backslash() {
+        // Multi-byte characters must survive the scan intact.
+        let arr = Utf8Array::from_iter("a", vec![Some("abc")].into_iter());
+        let pattern = Utf8Array::from_iter("p", vec![Some("(b)")].into_iter());
+        let replacement = Utf8Array::from_iter("r", vec![Some("é\\ü\\1")].into_iter());
+
+        let result = replace_impl(&arr, &pattern, &replacement, true).unwrap();
+
+        assert_eq!(result.get(0), Some("aé\\übc"));
+    }
+
+    #[test]
+    fn test_regexp_replace_elementwise_replacement_column() {
+        // The per-row path (replacement column longer than one) must translate
+        // each row's own template, not reuse a broadcast one.
+        let arr = Utf8Array::from_iter("a", vec![Some("abc"), Some("abc")].into_iter());
+        let pattern = Utf8Array::from_iter("p", vec![Some("(b)")].into_iter());
+        let replacement = Utf8Array::from_iter("r", vec![Some("[\\1]"), Some("x\\")].into_iter());
+
+        let result = replace_impl(&arr, &pattern, &replacement, true).unwrap();
+
+        assert_eq!(result.get(0), Some("a[b]c"));
+        assert_eq!(result.get(1), Some("ax\\c"));
     }
 
     #[test]

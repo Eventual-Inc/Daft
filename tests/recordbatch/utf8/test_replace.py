@@ -51,6 +51,21 @@ def test_series_utf8_replace(expr, data, expected) -> None:
         # Escaped backslash + group reference.
         (r"\\\1", r"a\bc"),
         ("$$", "a$c"),
+        # `\n`/`\t` are a literal backslash plus a letter, never a newline/tab.
+        (r"\n", r"a\nc"),
+        (r"\t", r"a\tc"),
+        # The regex crate's own braced syntax passes through untouched.
+        ("${1}", "abc"),
+        # A `$` the regex crate would not read as a reference stays literal.
+        ("$", "a$c"),
+        # A literal `$` in front of a group reference must not be swallowed.
+        (r"$\1", "a$bc"),
+        # Only one digit is consumed: `\10` is group 1 then a literal `0`.
+        (r"\10", "ab0c"),
+        # Empty replacement deletes the match.
+        ("", "ac"),
+        # Multi-byte characters survive around a literal backslash.
+        (r"é\ü", r"aé\üc"),
     ],
 )
 def test_series_utf8_regexp_replace_backslashes(replacement, expected) -> None:
@@ -58,3 +73,19 @@ def test_series_utf8_regexp_replace_backslashes(replacement, expected) -> None:
     table = MicroPartition.from_pydict({"col": ["abc"]})
     result = table.eval_expression_list([col("col").regexp_replace("(b)", replacement)])
     assert result.to_pydict() == {"col": [expected]}
+
+
+def test_series_utf8_replace_literal_keeps_template_chars() -> None:
+    # `replace` (non-regex) has no template semantics: backslashes and `$` are
+    # ordinary characters there.
+    table = MicroPartition.from_pydict({"col": ["abc"]})
+    result = table.eval_expression_list([col("col").replace("b", r"\1$1\\")])
+    assert result.to_pydict() == {"col": [r"a\1$1\\c"]}
+
+
+def test_series_utf8_regexp_replace_per_row_replacement() -> None:
+    # Templates are translated per row when the replacement is a real column,
+    # not just broadcast from a single scalar.
+    table = MicroPartition.from_pydict({"col": ["abc", "abc"], "repl": [r"[\1]", "x\\"]})
+    result = table.eval_expression_list([col("col").regexp_replace("(b)", col("repl"))])
+    assert result.to_pydict() == {"col": ["a[b]c", r"ax\c"]}

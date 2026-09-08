@@ -1511,7 +1511,16 @@ def regexp_replace(
     pattern: str | Expression,
     replacement: str | Expression,
 ) -> Expression:
-    """Replaces all occurrences of a regex pattern in a string column with a replacement string.
+    r"""Replaces all occurrences of a regex pattern in a string column with a replacement string.
+
+    The replacement string is a template. Within it:
+
+    - `\1` to `\9` and `$1` to `$9` refer to the corresponding capture group, and `\0`
+      or `$0` to the whole match. Only one digit follows a backslash, so `\10` is group
+      1 followed by a literal `0`; use `${10}` to reach group 10.
+    - `${name}` and `$name` refer to a named capture group.
+    - `\\` produces a literal backslash and `$$` a literal `$`. Any other backslash is
+      literal, so `\n` is a backslash followed by `n`, not a newline.
 
     Args:
         expr: The string expression to be replaced
@@ -1540,6 +1549,13 @@ def regexp_replace(
         ╰────────┴─────────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)
+
+        Capture groups are referenced as `\1` (or `$1`), and `\\` emits a literal backslash:
+
+        >>> df = daft.from_pydict({"data": ["2024-01-31"]})
+        >>> df = df.select(regexp_replace(df["data"], r"(\d+)-(\d+)-(\d+)", r"\3\\\2\\\1"))
+        >>> df.to_pydict()["data"]
+        ['31\\01\\2024']
 
     """
     return Expression._call_builtin_scalar_fn("regexp_replace", expr, pattern, replacement)
