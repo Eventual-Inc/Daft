@@ -816,6 +816,26 @@ def test_series_utf8_replace_regex(data, pattern, replacement, expected) -> None
 
 
 @pytest.mark.parametrize(
+    ["replacement", "expected"],
+    [
+        ("[$1]", "a[b]c"),  # `$1`: Rust group reference
+        ("[\\1]", "a[b]c"),  # `\1`: POSIX group reference
+        ("a\\b", "aa\\bc"),  # `\b`: not a group reference, backslash stays literal
+        ("\\\\", "a\\c"),  # `\\`: escaped backslash -> one literal `\`
+        ("x\\", "ax\\c"),  # trailing backslash stays literal
+    ],
+)
+def test_series_utf8_regexp_replace_backslashes(replacement, expected) -> None:
+    # From #7471: a backslash in the replacement that is not a group reference must be preserved
+    # rather than silently dropped.
+    s = Series.from_arrow(pa.array(["abc"], type=pa.string()))
+    pattern = Series.from_arrow(pa.array(["(b)"], type=pa.string()))
+    replacements = Series.from_arrow(pa.array([replacement], type=pa.string()))
+    result = s.str.replace(pattern, replacements, regex=True)
+    assert result.to_pylist() == [expected]
+
+
+@pytest.mark.parametrize(
     ["data", "pattern", "replacement", "expected"],
     [
         # Broadcast null data

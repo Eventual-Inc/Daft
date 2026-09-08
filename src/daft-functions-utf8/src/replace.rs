@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, sync::LazyLock};
+use std::borrow::Borrow;
 
 use common_error::{DaftError, DaftResult, ensure};
 use daft_core::{
@@ -163,14 +163,48 @@ fn replace_impl(
     Ok(result)
 }
 
-/// replace POSIX capture groups (like \1) with Rust Regex group (like ${1})
-/// used by regexp_replace
+/// Rewrites a `regexp_replace` replacement template into the syntax the `regex` crate expects.
+///
+/// The `regex` crate understands only `$name` / `${name}` group references and treats a backslash
+/// literally, whereas POSIX-style replacements use `\1` for groups and `\\` for a literal
+/// backslash. This translates `\<digits>` into `${digits}` and `\\` into a single `\`; any other
+/// `\x` (including a trailing `\`) keeps its backslash so a backslash can appear in the output.
+///
+/// The previous regex-based rewrite used `(\\)(\d*)` -> `${$2}`. Because `\d*` also matches zero
+/// digits, a backslash not followed by a digit became `${}` — an empty group name that expands to
+/// nothing — silently dropping every literal backslash.
 fn regex_replace_posix_groups(replacement: &str) -> String {
-    static CAPTURE_GROUPS_RE_LOCK: LazyLock<regex::Regex> =
-        LazyLock::new(|| regex::Regex::new(r"(\\)(\d*)").unwrap());
-    CAPTURE_GROUPS_RE_LOCK
-        .replace_all(replacement, "$${$2}")
-        .into_owned()
+    let mut result = String::with_capacity(replacement.len());
+    let mut chars = replacement.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            result.push(c);
+            continue;
+        }
+        match chars.peek() {
+            // `\\` is an escaped backslash: emit one literal backslash.
+            Some('\\') => {
+                chars.next();
+                result.push('\\');
+            }
+            // `\<digits>` is a POSIX group reference: emit Rust's `${digits}`.
+            Some(digit) if digit.is_ascii_digit() => {
+                result.push_str("${");
+                while let Some(digit) = chars.peek() {
+                    if digit.is_ascii_digit() {
+                        result.push(*digit);
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                result.push('}');
+            }
+            // Any other `\x` (or a trailing `\`) keeps the backslash literally.
+            _ => result.push('\\'),
+        }
+    }
+    result
 }
 
 fn regex_replace<'a, R: Borrow<regex::Regex>>(
@@ -305,5 +339,38 @@ mod tests {
         let result = replace_impl(&arr, &pattern, &replacement, true).unwrap();
 
         assert_eq!(result.get(0), Some("world hello"));
+    }
+
+    #[test]
+    fn test_regexp_replace_preserves_literal_backslashes() {
+        // From #7471: a backslash in the replacement that is neither a `\1`-style group reference
+        // nor an escaped `\\` must survive into the output instead of being silently dropped.
+        let arr = Utf8Array::from_iter("a", vec![Some("abc")].into_iter());
+        let pattern = Utf8Array::from_iter("p", vec![Some("(b)")].into_iter());
+
+        let cases = [
+            ("[$1]", "a[b]c"),  // `$1`: Rust group reference
+            ("[\\1]", "a[b]c"), // `\1`: POSIX group reference
+            ("a\\b", "aa\\bc"), // `\b`: not a group, backslash stays literal
+            ("\\\\", "a\\c"),   // `\\`: escaped backslash -> one literal `\`
+            ("x\\", "ax\\c"),   // trailing backslash stays literal
+        ];
+        for (replacement, expected) in cases {
+            let replacement_arr = Utf8Array::from_iter("r", vec![Some(replacement)].into_iter());
+            let result = replace_impl(&arr, &pattern, &replacement_arr, true).unwrap();
+            assert_eq!(result.get(0), Some(expected), "replacement={replacement:?}");
+        }
+    }
+
+    #[test]
+    fn test_regex_replace_posix_groups_translation() {
+        assert_eq!(regex_replace_posix_groups("[$1]"), "[$1]");
+        assert_eq!(regex_replace_posix_groups("[\\1]"), "[${1}]");
+        assert_eq!(regex_replace_posix_groups("a\\b"), "a\\b");
+        assert_eq!(regex_replace_posix_groups("\\\\"), "\\");
+        assert_eq!(regex_replace_posix_groups("x\\"), "x\\");
+        assert_eq!(regex_replace_posix_groups("\\2 \\1"), "${2} ${1}");
+        // Group references are greedy over digits, matching the previous behaviour.
+        assert_eq!(regex_replace_posix_groups("\\12"), "${12}");
     }
 }
