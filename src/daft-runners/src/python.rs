@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftError;
-use pyo3::{IntoPyObjectExt, PyResult, Python, pyfunction};
+use pyo3::{IntoPyObjectExt, PyResult, Python, exceptions::PyValueError, pyfunction};
 
 use crate::runners::{self, DAFT_RUNNER, NativeRunner, RayRunner, Runner, RunnerConfig};
 
@@ -42,7 +42,9 @@ pub fn get_or_infer_runner_type(py: Python) -> PyResult<pyo3::Py<pyo3::PyAny>> {
     address = None,
     noop_if_initialized = false,
     force_client_mode = false,
-    worker_startup_timeout = None
+    worker_startup_timeout = None,
+    autoscale_strategy = None,
+    autoscale_bisect_timeout_secs = None
 ))]
 pub fn set_runner_ray(
     py: Python,
@@ -50,8 +52,19 @@ pub fn set_runner_ray(
     noop_if_initialized: Option<bool>,
     force_client_mode: Option<bool>,
     worker_startup_timeout: Option<usize>,
+    autoscale_strategy: Option<String>,
+    autoscale_bisect_timeout_secs: Option<u64>,
 ) -> PyResult<pyo3::Py<pyo3::PyAny>> {
     let noop_if_initialized = noop_if_initialized.unwrap_or(false);
+
+    // Validate eagerly so users get an immediate error instead of a failure at query time.
+    if let Some(strategy) = &autoscale_strategy
+        && !matches!(strategy.to_lowercase().as_str(), "gradual" | "bisect")
+    {
+        return Err(PyValueError::new_err(format!(
+            "Invalid autoscale_strategy '{strategy}'. Expected 'gradual' or 'bisect'."
+        )));
+    }
 
     let runner_type = runners::get_runner_type_from_env();
     if !runner_type.is_empty() && runner_type != RayRunner::NAME {
@@ -65,6 +78,8 @@ pub fn set_runner_ray(
         address,
         force_client_mode,
         worker_startup_timeout,
+        autoscale_strategy,
+        autoscale_bisect_timeout_secs,
     )?));
 
     match runners::DAFT_RUNNER.set(runner.clone()) {

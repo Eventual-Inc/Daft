@@ -543,6 +543,8 @@ class RayRunner(Runner[ray.ObjectRef]):
         address: str | None,
         force_client_mode: bool = False,
         worker_startup_timeout: int | None = None,
+        autoscale_strategy: str | None = None,
+        autoscale_bisect_timeout_secs: int | None = None,
     ) -> None:
         super().__init__()
 
@@ -550,6 +552,8 @@ class RayRunner(Runner[ray.ObjectRef]):
         self.worker_startup_timeout = (
             worker_startup_timeout if worker_startup_timeout is not None else DEFAULT_WORKER_STARTUP_TIMEOUT
         )
+        self.autoscale_strategy = autoscale_strategy
+        self.autoscale_bisect_timeout_secs = autoscale_bisect_timeout_secs
 
         if ray.is_initialized():
             if address is not None:
@@ -659,6 +663,8 @@ class RayRunner(Runner[ray.ObjectRef]):
             if self.flotilla_plan_runner is None:
                 self.flotilla_plan_runner = FlotillaRunner(
                     worker_startup_timeout=self.worker_startup_timeout,
+                    autoscale_strategy=self.autoscale_strategy,
+                    autoscale_bisect_timeout_secs=self.autoscale_bisect_timeout_secs,
                 )
 
             total_rows = 0

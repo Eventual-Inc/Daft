@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
@@ -20,8 +20,6 @@ const DEFAULT_AUTOSCALE_INTERVAL_SECS: u64 = 5;
 // Environment variable Ray itself reads to configure its autoscaler reconciliation period.
 // We read the same variable so our rate-limit matches Ray's actual cycle length.
 const RAY_AUTOSCALER_UPDATE_INTERVAL_ENV: &str = "AUTOSCALER_UPDATE_INTERVAL_S";
-const DAFT_AUTOSCALE_STRATEGY_ENV: &str = "DAFT_AUTOSCALE_STRATEGY";
-const DAFT_AUTOSCALE_BISECT_TIMEOUT_ENV: &str = "DAFT_AUTOSCALE_BISECT_TIMEOUT_SECS";
 const DEFAULT_BISECT_TIMEOUT_SECS: u64 = 30;
 
 /// Autoscale strategy selection.
@@ -31,6 +29,16 @@ enum AutoscaleStrategy {
     Gradual,
     /// Binary-search/halving: request all demand first, halve on rejection, O(log N) convergence.
     Bisect,
+}
+
+impl AutoscaleStrategy {
+    fn parse(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "gradual" => Some(Self::Gradual),
+            "bisect" => Some(Self::Bisect),
+            _ => None,
+        }
+    }
 }
 
 /// State tracking for the bisect autoscale strategy.
@@ -50,6 +58,10 @@ struct BisectState {
     last_requested_memory: usize,
     /// When we issued the last request.
     last_request_time: Instant,
+    /// Worker IDs present when we last issued a request. Used to detect growth even when
+    /// total resources stay flat (e.g. a worker dies while an identically-sized one joins,
+    /// which is common in homogeneous clusters).
+    worker_ids_at_last_request: HashSet<WorkerId>,
 }
 
 struct RayWorkerManagerState {
@@ -122,8 +134,25 @@ pub(crate) struct RayWorkerManager {
 }
 
 impl RayWorkerManager {
-    pub fn new(worker_startup_timeout: usize) -> Self {
-        Self {
+    /// Create a new manager. Autoscale behavior is configured via `daft.set_runner_ray()`
+    /// arguments; unset options fall back to defaults (gradual strategy, 30s bisect timeout).
+    pub fn new(
+        worker_startup_timeout: usize,
+        autoscale_strategy: Option<&str>,
+        autoscale_bisect_timeout_secs: Option<u64>,
+    ) -> DaftResult<Self> {
+        let strategy = match autoscale_strategy {
+            Some(value) => AutoscaleStrategy::parse(value).ok_or_else(|| {
+                DaftError::ValueError(format!(
+                    "Invalid autoscale_strategy '{value}'. Expected 'gradual' or 'bisect'."
+                ))
+            })?,
+            None => AutoscaleStrategy::Gradual,
+        };
+        let bisect_growth_timeout = Duration::from_secs(
+            autoscale_bisect_timeout_secs.unwrap_or(DEFAULT_BISECT_TIMEOUT_SECS),
+        );
+        Ok(Self {
             state: Arc::new(Mutex::new(RayWorkerManagerState {
                 ray_workers: HashMap::new(),
                 last_refresh: None,
@@ -137,23 +166,11 @@ impl RayWorkerManager {
                         .unwrap_or(DEFAULT_AUTOSCALE_INTERVAL_SECS),
                 ),
                 worker_startup_timeout,
-                strategy: match std::env::var(DAFT_AUTOSCALE_STRATEGY_ENV)
-                    .unwrap_or_default()
-                    .to_lowercase()
-                    .as_str()
-                {
-                    "bisect" => AutoscaleStrategy::Bisect,
-                    _ => AutoscaleStrategy::Gradual,
-                },
+                strategy,
                 bisect_state: None,
-                bisect_growth_timeout: Duration::from_secs(
-                    std::env::var(DAFT_AUTOSCALE_BISECT_TIMEOUT_ENV)
-                        .ok()
-                        .and_then(|v| v.parse().ok())
-                        .unwrap_or(DEFAULT_BISECT_TIMEOUT_SECS),
-                ),
+                bisect_growth_timeout,
             })),
-        }
+        })
     }
 }
 
@@ -631,7 +648,14 @@ impl RayWorkerManager {
             }
             Some(bisect) => {
                 let elapsed = bisect.last_request_time.elapsed();
-                let cluster_grew = current_cluster_cpus > bisect.cluster_cpus_at_last_request
+                // Also treat new worker IDs as growth: in homogeneous clusters a worker can die
+                // while a same-sized replacement joins, leaving resource totals unchanged.
+                let has_new_workers = state
+                    .ray_workers
+                    .keys()
+                    .any(|id| !bisect.worker_ids_at_last_request.contains(id));
+                let cluster_grew = has_new_workers
+                    || current_cluster_cpus > bisect.cluster_cpus_at_last_request
                     || current_cluster_gpus > bisect.cluster_gpus_at_last_request
                     || current_cluster_memory > bisect.cluster_memory_at_last_request;
 
@@ -639,7 +663,8 @@ impl RayWorkerManager {
                     // Last request succeeded (cluster grew) -> greedily request all remaining demand
                     tracing::info!(
                         target: "daft_distributed::autoscale",
-                        "Bisect autoscale: cluster grew (CPUs {:.0}->{:.0}, GPUs {:.0}->{:.0}, mem {}->{} bytes), requesting all remaining demand",
+                        "Bisect autoscale: cluster grew (new workers: {}, CPUs {:.0}->{:.0}, GPUs {:.0}->{:.0}, mem {}->{} bytes), requesting all remaining demand",
+                        has_new_workers,
                         bisect.cluster_cpus_at_last_request,
                         current_cluster_cpus,
                         bisect.cluster_gpus_at_last_request,
@@ -708,6 +733,11 @@ impl RayWorkerManager {
         // Send request to Ray
         Self::send_bundles_to_ray(&selected_bundles)?;
 
+        // Scaling up should immediately allow workers on recently retired nodes to be re-created,
+        // and force a refresh so we can observe newly provisioned nodes quickly.
+        state.pending_release_blacklist.clear();
+        state.last_refresh = None;
+
         // Update bisect state
         state.bisect_state = Some(BisectState {
             cluster_cpus_at_last_request: current_cluster_cpus,
@@ -717,6 +747,7 @@ impl RayWorkerManager {
             last_requested_gpus: gpu_sum,
             last_requested_memory: memory_sum,
             last_request_time: Instant::now(),
+            worker_ids_at_last_request: state.ray_workers.keys().cloned().collect(),
         });
 
         Ok(())

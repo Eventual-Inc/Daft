@@ -74,6 +74,8 @@ def set_runner_ray(
     min_survivor_workers: int | None = None,
     pending_release_exclude_seconds: int | None = None,
     worker_startup_timeout: int | None = None,
+    autoscale_strategy: str | None = None,
+    autoscale_bisect_timeout_secs: int | None = None,
 ) -> Runner[PartitionT]:
     """Configure Daft to execute dataframes using the Ray distributed computing framework.
 
@@ -93,6 +95,12 @@ def set_runner_ray(
             provided, falls back to ``DAFT_AUTOSCALING_PENDING_RELEASE_EXCLUDE_SECONDS`` (default: 120).
         worker_startup_timeout: Timeout in seconds for Ray worker actors to report their addresses during startup.
             Can also be configured via the ``DAFT_RAY_WORKER_STARTUP_TIMEOUT`` environment variable.
+        autoscale_strategy: Strategy used when requesting additional workers from Ray's autoscaler.
+            One of "gradual" (default; ramp up demand one bundle at a time) or "bisect"
+            (request all demand upfront and halve on rejection for faster convergence).
+        autoscale_bisect_timeout_secs: Seconds to wait for the cluster to grow before the "bisect"
+            strategy halves its resource request. Only used when autoscale_strategy is "bisect".
+            Defaults to 30.
 
     Returns:
         Runner[PartitionT]: A runner object with the Ray runner's configurations.
@@ -123,4 +131,6 @@ def set_runner_ray(
         noop_if_initialized=noop_if_initialized,
         force_client_mode=force_client_mode,
         worker_startup_timeout=worker_startup_timeout,
+        autoscale_strategy=autoscale_strategy,
+        autoscale_bisect_timeout_secs=autoscale_bisect_timeout_secs,
     )
