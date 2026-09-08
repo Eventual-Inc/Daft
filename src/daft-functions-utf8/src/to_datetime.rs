@@ -105,7 +105,7 @@ fn to_datetime_impl(
     let len = arr.len();
     let arr_iter = arr.into_iter();
     let timeunit = infer_timeunit_from_format_string(format);
-    let mut timezone = timezone.map(|tz| tz.to_string());
+    let timezone = timezone.map(|tz| tz.to_string());
     let result = arr_iter
             .map(|val| match val {
                 Some(val) => {
@@ -136,11 +136,6 @@ fn to_datetime_impl(
                                     ))
                                 })?.0.to_utc();
 
-                                // if it has an offset, we coerce it to UTC. This is consistent with other engines (duckdb, polars, datafusion)
-                                if timezone.is_none() {
-                                    timezone = Some("UTC".to_string());
-                                }
-
                                 match timeunit {
                                     TimeUnit::Seconds => datetime.timestamp(),
                                     TimeUnit::Milliseconds => datetime.timestamp_millis(),
@@ -167,6 +162,12 @@ fn to_datetime_impl(
                 _ => Ok(None),
             })
             .collect::<DaftResult<Int64Array>>()?;
+
+    // The output timezone must be decided from the format alone, exactly as `get_return_field`
+    // does: an offset directive coerces the result to UTC even when no value carries an offset
+    // (e.g. an all-null column). Otherwise the runtime array would be built as `Timestamp[us]`
+    // and mismatch the planned `Timestamp[us; UTC]`, panicking at execution.
+    let timezone = timezone.or_else(|| format_string_has_offset(format).then(|| "UTC".to_string()));
 
     let result = TimestampArray::new(
         Field::new(arr.name(), DataType::Timestamp(timeunit, timezone)),
