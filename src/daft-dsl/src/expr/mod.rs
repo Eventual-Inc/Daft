@@ -429,14 +429,16 @@ pub enum AggExpr {
     #[display("var({_0}, ddof={_1})")]
     Var(ExprRef, usize),
 
-    /// Internal per-partition `(count, mean, m2)` summary for `Var`/`Stddev`, introduced only
-    /// by `populate_aggregation_stages`. Not user-constructible; mirrors the
-    /// [`Self::ApproxSketch`] / [`Self::MergeSketch`] pair.
+    /// Internal per-partition `(count, mean, m2)` summary for `Var`/`Stddev`.
+    ///
+    /// Introduced only by `populate_aggregation_stages`, so it is not user-constructible.
+    /// Mirrors the [`Self::ApproxSketch`] / [`Self::MergeSketch`] pair.
     #[display("var_partial({_0})")]
     VarPartial(ExprRef),
 
-    /// Internal Chan et al. merge of [`Self::VarPartial`] summaries. Associative, so it lowers
-    /// to itself like [`Self::MergeSketch`].
+    /// Internal Chan et al. merge of [`Self::VarPartial`] summaries.
+    ///
+    /// Associative, so it lowers to itself like [`Self::MergeSketch`].
     #[display("merge_var_partial({_0})")]
     MergeVarPartial(ExprRef),
 

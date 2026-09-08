@@ -32,9 +32,10 @@ pub struct Stats {
     pub mean: Option<f64>,
 }
 
-/// Per-partition variance state: `count` valid values with mean `mean` and
-/// `m2 = sum((x - mean)^2)`, so the variance is `m2 / (count - ddof)`. `mean` and `m2` are
-/// `None` when `count == 0`.
+/// Per-partition variance state.
+///
+/// `count` valid values with mean `mean` and `m2 = sum((x - mean)^2)`, so the variance is
+/// `m2 / (count - ddof)`. `mean` and `m2` are `None` when `count == 0`.
 #[derive(Clone, Copy, Default, Debug)]
 pub struct VarPartialState {
     pub count: u64,
@@ -42,11 +43,12 @@ pub struct VarPartialState {
     pub m2: Option<f64>,
 }
 
-/// Corrected two-pass `(count, mean, m2)` over non-null values, per Chan et al. eq. (1.7):
-/// with `s1 = sum(x - mean0)` and `s2 = sum((x - mean0)^2)`, `mean = mean0 + s1 / n` and
+/// Corrected two-pass `(count, mean, m2)` over non-null values, per Chan et al. eq. (1.7).
+///
+/// With `s1 = sum(x - mean0)` and `s2 = sum((x - mean0)^2)`: `mean = mean0 + s1 / n`,
 /// `m2 = s2 - s1^2 / n`. The `s1` correction removes the error in the provisional
-/// `mean0 = sum / count`, which a plain two-pass inherits as a spurious `n * error^2` term
-/// and a Welford update cannot fix once `delta / count` falls below `ulp(mean)`.
+/// `mean0 = sum / count`, which a plain two-pass inherits as a spurious `n * error^2`
+/// term and a Welford update cannot fix once `delta / count` falls below `ulp(mean)`.
 pub fn calculate_var_partial(stats: Stats, values: impl Iterator<Item = f64>) -> VarPartialState {
     let Some(mean0) = stats.mean else {
         // `mean` is `None` exactly when there were no valid values.
@@ -72,8 +74,10 @@ pub fn calculate_var_partial(stats: Stats, values: impl Iterator<Item = f64>) ->
     }
 }
 
-/// Chan et al. parallel merge of per-partition states. Inputs with `count == 0` (or a missing
-/// `mean`/`m2`) are the identity. Only combines deviations, so it stays accurate for large means.
+/// Chan et al. parallel merge of per-partition states.
+///
+/// Inputs with `count == 0` (or a missing `mean`/`m2`) are the identity. Only combines
+/// deviations, so it stays accurate for large means.
 pub fn merge_var_partials(partials: impl Iterator<Item = VarPartialState>) -> VarPartialState {
     let mut count: u64 = 0;
     let mut mean = 0.0;
@@ -218,8 +222,10 @@ pub fn calculate_stddev(
     calculate_variance(stats, values, ddof).map(f64::sqrt)
 }
 
-/// Variance of `values` with `ddof` degrees of freedom, or `None` when `count <= ddof`. Shares
-/// [`calculate_var_partial`] with the two-stage lowering so the two cannot diverge numerically.
+/// Variance of `values` with `ddof` degrees of freedom, or `None` when `count <= ddof`.
+///
+/// Shares [`calculate_var_partial`] with the two-stage lowering so the two cannot diverge
+/// numerically.
 pub fn calculate_variance(
     stats: Stats,
     values: impl Iterator<Item = f64>,
