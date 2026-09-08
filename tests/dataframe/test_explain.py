@@ -279,22 +279,26 @@ def test_explain_with_ray_options(input_df_with_uri):
     ) in value, f"Unexpected UDF Exception: {value}"
 
     # Configure via Conda Env Name
+    # The explain printer wraps at terminal width and can split the ray_options dict repr
+    # across lines, so compare with whitespace/tree characters stripped.
     gen_email_udf = gen_email.gen.with_ray_options(runtime_env={"conda": "punks"})
     df = input_df.with_column("email", gen_email_udf(col("id")))
-    text = explain_to_text(df)
-    assert "'runtime_env': {'conda': 'punks'}" in text, f"Unexpected Explain result: {text}"
+    text = clean_explain_output(explain_to_text(df))
+    assert clean_explain_output("'runtime_env': {'conda': 'punks'}") in text, f"Unexpected Explain result: {text}"
 
     # Configure via Conda YAML File
     gen_email_udf = gen_email.gen.with_ray_options(runtime_env={"conda": "/tmp/daft/conda_env.yaml"})
     df = input_df.with_column("email", gen_email_udf(col("id")))
-    text = explain_to_text(df)
-    assert "'runtime_env': {'conda': '/tmp/daft/conda_env.yaml'}" in text, f"Unexpected Explain result: {text}"
+    text = clean_explain_output(explain_to_text(df))
+    assert clean_explain_output("'runtime_env': {'conda': '/tmp/daft/conda_env.yaml'}") in text, (
+        f"Unexpected Explain result: {text}"
+    )
 
     # Configure via Conda YAML Config
     gen_email_udf = gen_email.gen.with_ray_options(runtime_env={})
     df = input_df.with_column("email", gen_email_udf(col("id")))
-    text = explain_to_text(df)
-    assert "'runtime_env': {}" in text, f"Unexpected Explain result: {text}"
+    text = clean_explain_output(explain_to_text(df))
+    assert clean_explain_output("'runtime_env': {}") in text, f"Unexpected Explain result: {text}"
 
     gen_email_udf = gen_email.gen.with_ray_options(
         runtime_env={
@@ -306,8 +310,8 @@ def test_explain_with_ray_options(input_df_with_uri):
     )
 
     df = input_df.with_column("email", gen_email_udf(col("id")))
-    text = explain_to_text(df)
-    assert "'runtime_env': {'conda': {'name': 'simple', 'channels': ['conda-forge']}}" in text, (
+    text = clean_explain_output(explain_to_text(df))
+    assert clean_explain_output("'runtime_env': {'conda': {'name': 'simple', 'channels': ['conda-forge']}}") in text, (
         f"Unexpected Explain result: {text}"
     )
 

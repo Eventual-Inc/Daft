@@ -261,7 +261,7 @@ impl UdfHandle {
 
     fn eval_input_inline(
         &self,
-        udf_expr: &mut BoundExpr,
+        udf_expr: &BoundExpr,
         func_input: RecordBatch,
         runtime_stats: &UdfRuntimeStats,
     ) -> DaftResult<Series> {
@@ -273,7 +273,7 @@ impl UdfHandle {
 
     pub(crate) fn eval_input(
         &mut self,
-        expr: &mut BoundExpr,
+        expr: &BoundExpr,
         params: &UdfParams,
         worker_idx: usize,
         input: MicroPartition,
@@ -453,7 +453,7 @@ impl IntermediateOperator for UdfOperator {
                 #[cfg(feature = "python")]
                 {
                     let result = state.udf_handle.eval_input(
-                        &mut state.expr,
+                        &state.expr,
                         &params,
                         state.worker_idx,
                         input,
