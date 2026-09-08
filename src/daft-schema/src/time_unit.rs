@@ -88,9 +88,9 @@ pub fn infer_timeunit_from_format_string(format: &str) -> TimeUnit {
 ///
 /// Returns `(has_time, has_offset)`. Tokenizing (instead of substring matching) correctly
 /// handles escaped literals (`%%z` is text, not an offset) and padding modifiers
-/// (`%_H` is an hour). `Fixed::Internal` variants are private to chrono (`%3f`/`%6f`/`%9f`
-/// fractional seconds vs `%#z` permissive offset), so they are distinguished via their debug
-/// representation.
+/// (`%_H` is an hour). `Fixed::Internal` variants are opaque to chrono's users (`%3f`/`%6f`/`%9f`
+/// fractional seconds vs `%#z` permissive offset), so they are distinguished by comparing against
+/// a tokenized `%#z`.
 fn format_time_and_offset_flags(format: &str) -> (bool, bool) {
     let mut has_time = false;
     let mut has_offset = false;
@@ -127,12 +127,19 @@ fn format_time_and_offset_flags(format: &str) -> (bool, bool) {
                 | Fixed::TimezoneOffsetColonZ
                 | Fixed::TimezoneOffsetZ,
             ) => has_offset = true,
-            Item::Fixed(Fixed::Internal(inner)) => {
-                if format!("{inner:?}").contains("Nanosecond") {
-                    has_time = true;
-                } else {
-                    // `TimezoneOffsetPermissive` (`%#z`).
+            Item::Fixed(Fixed::Internal(ref inner)) => {
+                // chrono keeps `InternalFixed` opaque but implements `PartialEq` for it, so the
+                // permissive offset directive is identified by tokenizing `%#z` rather than by
+                // scraping `Debug` output, whose shape chrono makes no promise about. Every other
+                // internal item is a fixed-width fractional second (`%3f`/`%6f`/`%9f`).
+                let is_permissive_offset = matches!(
+                    StrftimeItems::new("%#z").next(),
+                    Some(Item::Fixed(Fixed::Internal(ref permissive))) if permissive == inner
+                );
+                if is_permissive_offset {
                     has_offset = true;
+                } else {
+                    has_time = true;
                 }
             }
             _ => {}

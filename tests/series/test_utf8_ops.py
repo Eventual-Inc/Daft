@@ -1464,12 +1464,12 @@ def test_series_utf8_to_datetime_different_timezones(data, format, timezone, exp
             id="Microseconds",
         ),
         pytest.param(
-            ["2021-01-01 00:00:45.123", "2021-01-02 01:07:35.123", "2021-01-03 12:30:00.123"],
+            ["2021-01-01 00:00:45.123", "2021-01-02 01:07:35.456", "2021-01-03 12:30:00.789"],
             "%Y-%m-%d %H:%M:%S%.3f",
             [
                 datetime.datetime(2021, 1, 1, 0, 0, 45, 123000),
-                datetime.datetime(2021, 1, 2, 1, 7, 35, 123000),
-                datetime.datetime(2021, 1, 3, 12, 30, 0, 123000),
+                datetime.datetime(2021, 1, 2, 1, 7, 35, 456000),
+                datetime.datetime(2021, 1, 3, 12, 30, 0, 789000),
             ],
             "ms",
             id="Milliseconds",
@@ -1581,12 +1581,132 @@ def test_series_utf8_to_datetime_date_only(data, format, timezone, expected) -> 
         pytest.param(["2020-01-01 extra"], "%Y-%m-%d", id="Trailing text on date-only"),
         pytest.param(["2020-01-01 00:00:00 trailing"], "%Y-%m-%d %H:%M:%S", id="Trailing text on datetime"),
         pytest.param(["2021-01-01 00:00:45.123"], "%Y-%m-%d %H:%M:%S", id="Trailing fraction without format"),
+        pytest.param(["2020-01-01 "], "%Y-%m-%d", id="Trailing whitespace"),
+        pytest.param(["2020-01-01T"], "%Y-%m-%d", id="Trailing separator"),
+        pytest.param(["2020-01-01 00:00:00+00:00"], "%Y-%m-%d %H:%M:%S", id="Trailing offset"),
     ],
 )
 def test_series_utf8_to_datetime_rejects_trailing_input(data, format) -> None:
     s = Series.from_arrow(pa.array(data, type=pa.string()))
+    with pytest.raises(ValueError, match="trailing input"):
+        s.str.to_datetime(format)
+
+
+def test_series_utf8_to_datetime_rejects_trailing_input_with_timezone() -> None:
+    # The explicit-timezone path is strict too: trailing input is an error, not silently dropped.
+    s = Series.from_arrow(pa.array(["2020-01-01 12:34:56 +0000 extra"], type=pa.string()))
+    with pytest.raises(ValueError, match="trailing input"):
+        s.str.to_datetime("%Y-%m-%d %H:%M:%S %z", "UTC")
+
+
+def test_series_utf8_to_datetime_allows_leading_whitespace() -> None:
+    # chrono skips whitespace ahead of a numeric field, so leading whitespace stays accepted even
+    # though trailing whitespace is not. Pinned so the asymmetry is deliberate rather than
+    # accidental.
+    s = Series.from_arrow(pa.array([" 2020-01-01"], type=pa.string()))
+    assert s.str.to_datetime("%Y-%m-%d").to_pylist() == [datetime.datetime(2020, 1, 1)]
+
+
+@pytest.mark.parametrize(
+    ["data", "format"],
+    [
+        pytest.param(["2020-01-01 12"], "%Y-%m-%d %H", id="Hour without minute"),
+        pytest.param(["2020-01-01T12"], "%Y-%m-%dT%H", id="ISO hour without minute"),
+        pytest.param(["2020-01-01 AM"], "%Y-%m-%d %p", id="Meridiem without hour"),
+    ],
+)
+def test_series_utf8_to_datetime_rejects_partial_time(data, format) -> None:
+    # A partially specified time must not fall back to midnight and silently drop the hour.
+    s = Series.from_arrow(pa.array(data, type=pa.string()))
     with pytest.raises(ValueError):
         s.str.to_datetime(format)
+
+
+def test_series_utf8_to_datetime_optional_fraction_present() -> None:
+    # `%.f` is optional, so rows that omit the fraction still parse as long as the format names a
+    # complete time.
+    s = Series.from_arrow(pa.array(["2021-01-01 00:00:45.5", "2021-01-02 01:07:35"], type=pa.string()))
+    assert s.str.to_datetime("%Y-%m-%d %H:%M:%S%.f").to_pylist() == [
+        datetime.datetime(2021, 1, 1, 0, 0, 45, 500000),
+        datetime.datetime(2021, 1, 2, 1, 7, 35),
+    ]
+
+
+def test_series_utf8_to_datetime_optional_fraction_without_time_fields() -> None:
+    # `%Y-%m-%d%.f` names a fractional-seconds field, so it is not a date-only format even when a
+    # value happens to omit the fraction. The date-only fallback is chosen by the format, not by
+    # the row, so every row in a column behaves the same way instead of one becoming midnight and
+    # the next erroring.
+    s = Series.from_arrow(pa.array(["2020-01-01", "2020-01-01.5"], type=pa.string()))
+    with pytest.raises(ValueError):
+        s.str.to_datetime("%Y-%m-%d%.f")
+
+
+IST = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+
+
+def test_series_utf8_to_datetime_naive_format_with_timezone() -> None:
+    # A format with no offset directive is read as a local time in the requested timezone, instead
+    # of requiring every value to carry an offset of its own.
+    s = Series.from_arrow(pa.array(["2020-01-01 06:00:00", None], type=pa.string()))
+    result = s.str.to_datetime("%Y-%m-%d %H:%M:%S", "Asia/Kolkata")
+    assert result.datatype() == DataType.timestamp("us", "Asia/Kolkata")
+    assert result.to_pylist() == [datetime.datetime(2020, 1, 1, 6, 0, tzinfo=IST), None]
+
+
+def test_series_utf8_to_datetime_date_only_localizes_into_timezone() -> None:
+    # Midnight in Asia/Kolkata (UTC+05:30), i.e. 18:30 UTC on the previous day.
+    s = Series.from_arrow(pa.array(["2020-01-01"], type=pa.string()))
+    result = s.str.to_datetime("%Y-%m-%d", "Asia/Kolkata")
+    assert result.datatype() == DataType.timestamp("us", "Asia/Kolkata")
+    assert result.to_pylist() == [datetime.datetime(2020, 1, 1, 0, 0, tzinfo=IST)]
+
+
+def test_series_utf8_to_datetime_offset_wins_over_timezone_argument() -> None:
+    # When the format carries an offset directive, the offset in the input defines the instant and
+    # the timezone argument only controls how that instant is displayed: midnight UTC is 05:30 IST.
+    s = Series.from_arrow(pa.array(["2020-01-01 00:00:00 +0000"], type=pa.string()))
+    result = s.str.to_datetime("%Y-%m-%d %H:%M:%S %z", "Asia/Kolkata")
+    assert result.to_pylist() == [datetime.datetime(2020, 1, 1, 5, 30, tzinfo=IST)]
+
+
+@pytest.mark.parametrize(
+    ["date", "message"],
+    [
+        # Cuba starts DST at 00:00 -> 01:00, so this midnight never happens locally.
+        pytest.param("2018-03-11", "nonexistent local datetime", id="Nonexistent midnight"),
+        # Cuba ends DST at 01:00 -> 00:00, so this midnight happens twice locally.
+        pytest.param("2018-11-04", "ambiguous local datetime", id="Ambiguous midnight"),
+    ],
+)
+def test_series_utf8_to_datetime_date_only_dst_midnight(date, message) -> None:
+    # Localizing into a timezone can land on a gap or a fold; both are reported rather than being
+    # resolved arbitrarily.
+    s = Series.from_arrow(pa.array([date], type=pa.string()))
+    with pytest.raises(ValueError, match=message):
+        s.str.to_datetime("%Y-%m-%d", "America/Havana")
+
+
+def test_series_utf8_to_datetime_zone_name_without_offset() -> None:
+    # chrono skips `%Z` without deriving an offset from it, so the value is refused rather than
+    # silently assumed to be in some particular zone.
+    s = Series.from_arrow(pa.array(["2020-01-01 00:00:00 UTC"], type=pa.string()))
+    with pytest.raises(ValueError):
+        s.str.to_datetime("%Y-%m-%d %H:%M:%S %Z")
+
+
+def test_series_utf8_to_datetime_all_null_date_only() -> None:
+    s = Series.from_arrow(pa.array([None, None], type=pa.string()))
+    result = s.str.to_datetime("%Y-%m-%d")
+    assert result.to_pylist() == [None, None]
+    assert result.datatype() == DataType.timestamp("us")
+
+
+def test_series_utf8_to_datetime_mixed_valid_and_invalid() -> None:
+    # One bad row fails the whole column; nulls are skipped without being parsed.
+    s = Series.from_arrow(pa.array(["2020-01-01", None, "not a date"], type=pa.string()))
+    with pytest.raises(ValueError, match="not a date"):
+        s.str.to_datetime("%Y-%m-%d")
 
 
 # source: RedPajama

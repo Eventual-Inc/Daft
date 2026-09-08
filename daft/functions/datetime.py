@@ -1098,6 +1098,23 @@ def to_datetime(expr: Expression, format: str, timezone: str | None = None) -> E
     Note:
         The format must be a valid datetime format string. See: https://docs.rs/chrono/latest/chrono/format/strftime/index.html
 
+    Note:
+        Parsing is strict: the format must consume the whole string. A value with trailing text the
+        format does not describe (for example ``"2021-01-01 00:00:00.123"`` under
+        ``"%Y-%m-%d %H:%M:%S"``) raises rather than silently dropping the extra characters.
+
+    Note:
+        A format with no time-of-day fields (for example ``"%Y-%m-%d"``) resolves to midnight on
+        that date, matching DuckDB ``strptime``, Polars and Spark. A partially specified time (for
+        example ``"%Y-%m-%d %H"``) is an error rather than midnight.
+
+    Note:
+        If the format has an offset directive, the offset in the value determines the instant and
+        the result is returned in UTC unless ``timezone`` says otherwise. If the format has no
+        offset directive and ``timezone`` is given, values are read as local times in that
+        timezone; a local time that a daylight-saving transition makes ambiguous or nonexistent
+        raises.
+
     Examples:
         >>> import daft
         >>> from daft.functions import to_datetime
