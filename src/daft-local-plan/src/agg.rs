@@ -432,3 +432,60 @@ pub fn populate_aggregation_stages_bound_with_schema(
         final_exprs,
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use daft_core::{
+        prelude::{DataType, Field, Schema},
+        utils::stats::var_partial_dtype,
+    };
+    use daft_dsl::{AggExpr, expr::bound_expr::BoundAggExpr, resolved_col};
+
+    use super::populate_aggregation_stages_bound;
+
+    fn lower(agg: AggExpr, schema: &Schema) -> (Vec<BoundAggExpr>, Vec<BoundAggExpr>, usize) {
+        let bound = BoundAggExpr::try_new(agg, schema).unwrap();
+        let (first, second, finals) =
+            populate_aggregation_stages_bound(&[bound], schema, &[]).unwrap();
+        (first, second, finals.len())
+    }
+
+    #[test]
+    fn test_var_lowers_to_var_partial_stages() {
+        let schema = Schema::new(vec![Field::new("a", DataType::Float64)]);
+
+        for agg in [
+            AggExpr::Var(resolved_col("a"), 1),
+            AggExpr::Stddev(resolved_col("a"), 1),
+        ] {
+            let (first, second, num_finals) = lower(agg, &schema);
+            assert_eq!(first.len(), 1);
+            assert!(matches!(first[0].as_ref(), AggExpr::VarPartial(_)));
+            assert_eq!(second.len(), 1);
+            assert!(matches!(second[0].as_ref(), AggExpr::MergeVarPartial(_)));
+            assert_eq!(num_finals, 1);
+        }
+    }
+
+    #[test]
+    fn test_var_partial_stages_are_self_lowering() {
+        // Flotilla re-lowers the aggregations it hands to each Swordfish task, so the
+        // internal partial variants the `Var`/`Stddev` arms emit have to be lowerable
+        // themselves -- exactly like the `ApproxSketch`/`MergeSketch` pair. Without these
+        // arms a distributed var/stddev fails at plan time with a confusing schema error.
+        let value_schema = Schema::new(vec![Field::new("a", DataType::Float64)]);
+        let (first, second, num_finals) =
+            lower(AggExpr::VarPartial(resolved_col("a")), &value_schema);
+        assert!(matches!(first[0].as_ref(), AggExpr::VarPartial(_)));
+        assert!(matches!(second[0].as_ref(), AggExpr::MergeVarPartial(_)));
+        assert_eq!(num_finals, 1);
+
+        // Merging is associative, so `MergeVarPartial` lowers to itself on both stages.
+        let partial_schema = Schema::new(vec![Field::new("a", var_partial_dtype())]);
+        let (first, second, num_finals) =
+            lower(AggExpr::MergeVarPartial(resolved_col("a")), &partial_schema);
+        assert!(matches!(first[0].as_ref(), AggExpr::MergeVarPartial(_)));
+        assert!(matches!(second[0].as_ref(), AggExpr::MergeVarPartial(_)));
+        assert_eq!(num_finals, 1);
+    }
+}

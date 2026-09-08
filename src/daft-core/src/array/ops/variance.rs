@@ -95,16 +95,17 @@ impl DaftVarPartialAggable for DataArray<Float64Type> {
     type Output = DaftResult<StructArray>;
 
     fn var_partial(&self) -> Self::Output {
-        let state = stats::calculate_var_partial(self.into_iter().flatten());
+        let stats = stats::calculate_stats(self)?;
+        let values = self.into_iter().flatten();
+        let state = stats::calculate_var_partial(stats, values);
         build_var_partial_struct(self.name(), vec![state])
     }
 
     fn grouped_var_partial(&self, groups: &GroupIndices) -> Self::Output {
-        let states = groups
-            .iter()
-            .map(|group| {
+        let states = stats::grouped_stats(self, groups)?
+            .map(|(stats, group)| {
                 let values = group.iter().filter_map(|&index| self.get(index as _));
-                stats::calculate_var_partial(values)
+                stats::calculate_var_partial(stats, values)
             })
             .collect();
         build_var_partial_struct(self.name(), states)

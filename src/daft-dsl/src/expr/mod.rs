@@ -429,9 +429,23 @@ pub enum AggExpr {
     #[display("var({_0}, ddof={_1})")]
     Var(ExprRef, usize),
 
+    /// Internal: per-partition `(count, mean, m2)` summary for `Var`/`Stddev`.
+    ///
+    /// Not user-constructible and never produced by the frontends -- it is introduced
+    /// only by `populate_aggregation_stages`, which lowers `Var`/`Stddev` into
+    /// `VarPartial` followed by [`Self::MergeVarPartial`]. Both stages reduce many rows
+    /// to one row per group, so both have to be aggregations rather than a scalar
+    /// function over a `List` aggregate; this mirrors the existing
+    /// [`Self::ApproxSketch`] / [`Self::MergeSketch`] pair, and keeps the partial state
+    /// bounded instead of growing with the number of partitions.
     #[display("var_partial({_0})")]
     VarPartial(ExprRef),
 
+    /// Internal: Chan et al. parallel merge of [`Self::VarPartial`] summaries.
+    ///
+    /// See [`Self::VarPartial`]. Merging is associative, so this lowers to itself the
+    /// same way [`Self::MergeSketch`] does, which is what lets Flotilla re-lower the
+    /// aggregations it hands to each Swordfish task.
     #[display("merge_var_partial({_0})")]
     MergeVarPartial(ExprRef),
 

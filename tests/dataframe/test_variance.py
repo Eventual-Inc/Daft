@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import functools
+import statistics
 from typing import Any
 
 import pandas as pd
@@ -44,6 +45,9 @@ TESTS = [
     [nums := [None, 100, None], var(nums, ddof=0), var(nums, ddof=1)],
     [nums := [1, 2, 3, 4, 5], var(nums, ddof=0), var(nums, ddof=1)],
     [nums := [None] * 10 + [100], var(nums, ddof=0), var(nums, ddof=1)],
+    # Large mean, tiny spread: E(x^2) - E(x)^2 collapses to 0 here (see #7468).
+    [nums := [1e9 + 1, 1e9 + 2, 1e9 + 3], var(nums, ddof=0), var(nums, ddof=1)],
+    [nums := [1e12, 1e12 + 1, 1e12 + 2], var(nums, ddof=0), var(nums, ddof=1)],
 ]
 
 
@@ -176,6 +180,8 @@ GROUPED_TESTS = [
     [rows := [("k0", 100), ("k0", 100), ("k0", 100)], *grouped_var(rows)],
     [rows := [("k0", 0), ("k0", 1), ("k0", 2)], *grouped_var(rows)],
     [rows := [("k0", None), ("k0", None), ("k0", 100)], *grouped_var(rows)],
+    # Large mean, plus a single-row group that must stay NULL at ddof=1 (see #7468).
+    [rows := [("k0", 1e9 + 1), ("k0", 1e9 + 2), ("k1", 1e9 + 3)], *grouped_var(rows)],
 ]
 
 
@@ -276,3 +282,32 @@ def test_var_large_mean_matches_shifted_data(with_morsel_size):
         )
         assert grouped["var"] == expected
         assert abs(grouped["std"] - expected**0.5) < 1e-12
+
+
+@pytest.mark.parametrize("base", [1e9, 1e12, 1e15])
+def test_var_large_mean_large_partition(base, with_default_morsel_size):
+    """Large mean *and* a large partition (see #7468).
+
+    Every other large-mean test here uses three values, so whatever the morsel
+    size, the per-partition summary is computed over a handful of rows and only
+    the cross-partition merge is really exercised. With the default morsel size
+    these 20k rows land in a single partial aggregate, so this is the only test
+    that exercises the per-partition variance kernel at scale -- which is where
+    `E(x^2) - E(x)^2`, a mean reconstructed from a naive sum, and a Welford
+    running mean each lose the rest of their accuracy.
+
+    `statistics.variance` is the reference because it is computed in exact
+    rational arithmetic, unlike the float `var()` helper above.
+    """
+    n = 20_000
+    data = [base + ((i * 7919) % 1000) / 1000.0 for i in range(n)]
+    expected = statistics.variance(data)
+
+    df = daft.from_pydict({"a": data, "g": [1] * n})
+
+    row = next(df.agg(daft.col("a").var().alias("var"), daft.col("a").stddev().alias("std")).collect().iter_rows())
+    assert row["var"] == pytest.approx(expected, rel=1e-9)
+    assert row["std"] == pytest.approx(expected**0.5, rel=1e-9)
+
+    grouped = next(df.groupby("g").agg(daft.col("a").var().alias("var")).collect().iter_rows())
+    assert grouped["var"] == pytest.approx(expected, rel=1e-9)

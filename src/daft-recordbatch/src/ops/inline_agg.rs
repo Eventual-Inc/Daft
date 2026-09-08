@@ -862,6 +862,17 @@ fn try_create_accumulator(
 ///
 /// Uses schema-level type inference (`to_field`) instead of expression evaluation
 /// to avoid materializing computed columns just for a dtype check.
+///
+/// Note that `Var`/`Stddev` lower to a `VarPartial` first stage, which is deliberately
+/// *not* on this list, so a batch such as `agg(sum(a), var(b))` falls off the inline path
+/// entirely. `AggAccumulator`s consume rows in a single streaming `update_batch` pass,
+/// which for variance means a Welford online update -- and that is precisely the
+/// algorithm `calculate_var_partial` avoids, because its running mean stops updating once
+/// `delta / count` falls below `ulp(mean)` (see the note there). Inlining `VarPartial`
+/// would make the result depend on which path the planner picked; giving it a two-pass
+/// accumulator instead would mean reworking the accumulator contract, and `MergeVarPartial`
+/// additionally consumes and produces structs, which this module's typed dispatch does not
+/// model. Both are bigger changes than they are worth here.
 pub(super) fn can_inline_agg(to_agg: &[BoundAggExpr], source: &RecordBatch) -> bool {
     // Quick check: bail immediately if any agg type isn't supported.
     if !to_agg.iter().all(|e| {

@@ -47,34 +47,49 @@ pub struct VarPartialState {
     pub m2: Option<f64>,
 }
 
-/// Single-pass Welford computation of `(count, mean, m2)` over non-null values.
+/// Corrected two-pass computation of `(count, mean, m2)` over non-null values.
 ///
-/// This is the per-partition step of the parallel variance algorithm: it never forms
-/// `sum(x^2)`, so unlike `E(x^2) - E(x)^2` it does not catastrophically cancel when
-/// the mean is large relative to the variance (e.g. `[1e9 + 1, 1e9 + 2, 1e9 + 3]`).
-pub fn calculate_var_partial(values: impl Iterator<Item = f64>) -> VarPartialState {
-    let mut count: u64 = 0;
-    let mut mean = 0.0;
-    let mut m2 = 0.0;
-    for x in values {
-        count += 1;
-        let delta = x - mean;
-        mean += delta / count as f64;
-        let delta2 = x - mean;
-        m2 += delta * delta2;
-    }
-    if count == 0 {
-        VarPartialState {
+/// This is the per-partition step of the parallel variance algorithm. It starts from the
+/// provisional mean already in `stats` (`sum / count`) and then corrects both the mean and
+/// the second moment with the residual `s1`, per Chan et al. eq. (1.7):
+///
+/// ```text
+/// s1   = sum(x - mean0)            s2 = sum((x - mean0)^2)
+/// mean = mean0 + s1 / n            m2 = s2 - s1^2 / n
+/// ```
+///
+/// It never forms `sum(x^2)`, so unlike `E(x^2) - E(x)^2` it does not catastrophically
+/// cancel when the mean is large relative to the variance (e.g. `[1e9 + 1, 1e9 + 2,
+/// 1e9 + 3]`, which collapsed to `0.0` before this was introduced).
+///
+/// The `s1` correction is what makes this robust where the two obvious alternatives are
+/// not. A plain two-pass `sum((x - mean0)^2)` inherits the error in `mean0` from the
+/// summation kernel as a spurious `n * error^2` term, which matters because the grouped
+/// path sums with a sequential fold. A Welford update (`mean += delta / count`) instead
+/// stops moving the mean entirely once `delta / count` drops below `ulp(mean)` -- around
+/// `1e15` with a spread of ~1 the running mean freezes near its first few values and the
+/// result is off by tens of percent. Correcting an explicit `mean0` avoids both.
+pub fn calculate_var_partial(stats: Stats, values: impl Iterator<Item = f64>) -> VarPartialState {
+    let Some(mean0) = stats.mean else {
+        // `mean` is `None` exactly when there were no valid values.
+        return VarPartialState {
             count: 0,
             mean: None,
             m2: None,
-        }
-    } else {
-        VarPartialState {
-            count,
-            mean: Some(mean),
-            m2: Some(m2),
-        }
+        };
+    };
+
+    let count = stats.count as u64;
+    let n = stats.count;
+    let (s1, s2) = values.fold((0.0, 0.0), |(s1, s2), value| {
+        let delta = value - mean0;
+        (s1 + delta, s2 + delta * delta)
+    });
+
+    VarPartialState {
+        count,
+        mean: Some(mean0 + s1 / n),
+        m2: Some(s2 - s1 * s1 / n),
     }
 }
 
@@ -228,19 +243,21 @@ pub fn calculate_stddev(
     calculate_variance(stats, values, ddof).map(f64::sqrt)
 }
 
+/// Variance of `values` with `ddof` degrees of freedom, or `None` when `count <= ddof`.
+///
+/// This goes through [`calculate_var_partial`], the same kernel the two-stage `VarPartial`
+/// lowering uses, so `Series::var` and `df.agg(col(..).var())` cannot diverge numerically.
 pub fn calculate_variance(
     stats: Stats,
     values: impl Iterator<Item = f64>,
     ddof: usize,
 ) -> Option<f64> {
-    stats.mean.and_then(|mean| {
-        let n = stats.count as usize;
-        if n <= ddof {
-            return None; // Not enough data points for the requested ddof
-        }
-        let sum_of_squares = values.map(|value| (value - mean).powi(2)).sum::<f64>();
-        Some(sum_of_squares / (n - ddof) as f64)
-    })
+    let state = calculate_var_partial(stats, values);
+    let n = state.count as usize;
+    if n <= ddof {
+        return None; // Not enough data points for the requested ddof
+    }
+    state.m2.map(|m2| m2 / (n - ddof) as f64)
 }
 
 pub fn calculate_skew(stats: Stats, values: impl Iterator<Item = f64>) -> Option<f64> {
@@ -260,7 +277,25 @@ pub fn calculate_skew(stats: Stats, values: impl Iterator<Item = f64>) -> Option
 
 #[cfg(test)]
 mod tests {
-    use super::{VarPartialState, calculate_var_partial, merge_var_partials};
+    use super::{
+        Stats, VarPartialState, calculate_mean, calculate_var_partial, calculate_variance,
+        merge_var_partials,
+    };
+
+    /// Mirrors `calculate_stats`, which derives the provisional mean from the sum kernel.
+    fn stats_of(values: &[f64]) -> Stats {
+        let sum = values.iter().sum::<f64>();
+        let count = values.len() as u64;
+        Stats {
+            sum,
+            count: count as f64,
+            mean: calculate_mean(sum, count),
+        }
+    }
+
+    fn partial_of(values: &[f64]) -> VarPartialState {
+        calculate_var_partial(stats_of(values), values.iter().copied())
+    }
 
     fn var_from_state(state: VarPartialState, ddof: usize) -> Option<f64> {
         if (state.count as usize) <= ddof {
@@ -269,15 +304,47 @@ mod tests {
         state.m2.map(|m2| m2 / (state.count as f64 - ddof as f64))
     }
 
+    fn assert_close(actual: f64, expected: f64, rel: f64) {
+        assert!(
+            (actual - expected).abs() <= rel * expected.abs(),
+            "expected {expected}, got {actual} (relative tolerance {rel})"
+        );
+    }
+
     #[test]
     fn test_var_partial_large_mean() {
         // Regression test for https://github.com/Eventual-Inc/Daft/issues/7468:
         // `E(x^2) - E(x)^2` collapses to 0 for `[1e9 + 1, 1e9 + 2, 1e9 + 3]`.
         let values = [1e9 + 1.0, 1e9 + 2.0, 1e9 + 3.0];
-        let state = calculate_var_partial(values.into_iter());
+        let state = partial_of(&values);
         assert_eq!(state.count, 3);
         assert_eq!(var_from_state(state, 1), Some(1.0));
         assert_eq!(var_from_state(state, 0), Some(2.0 / 3.0));
+    }
+
+    #[test]
+    fn test_var_partial_large_mean_large_partition() {
+        // The other large-mean tests use three values, so they only exercise the merge.
+        // Here a single partition holds 20k values, which is where the *per-partition*
+        // kernel decides the answer -- and where a Welford running mean silently stops
+        // updating, because `delta / count` falls below `ulp(1e15)`.
+        //
+        // Every value is a multiple of 1/8, and 1e9, 1e12 and 1e15 all have an ulp of at
+        // most 1/8, so `base + x` is exact and the variance is *exactly* shift invariant.
+        // Any deviation from the unshifted variance is therefore pure algorithm error.
+        const N: usize = 20_000;
+        let unshifted: Vec<f64> = (0..N).map(|i| ((i * 7919) % 1000) as f64 / 8.0).collect();
+        let expected = var_from_state(partial_of(&unshifted), 1).unwrap();
+
+        for base in [1e9, 1e12, 1e15] {
+            let shifted: Vec<f64> = unshifted.iter().map(|x| base + x).collect();
+            assert!(
+                shifted.iter().zip(&unshifted).all(|(s, x)| s - base == *x),
+                "shift by {base} must not quantise the data"
+            );
+            let actual = var_from_state(partial_of(&shifted), 1).unwrap();
+            assert_close(actual, expected, 1e-12);
+        }
     }
 
     #[test]
@@ -286,7 +353,7 @@ mod tests {
         // the `n == 1` case where a per-partition sample variance would be null.
         let partials = [1e9 + 1.0, 1e9 + 2.0, 1e9 + 3.0]
             .into_iter()
-            .map(|v| calculate_var_partial(std::iter::once(v)));
+            .map(|v| partial_of(&[v]));
         let merged = merge_var_partials(partials);
         assert_eq!(merged.count, 3);
         assert_eq!(var_from_state(merged, 1), Some(1.0));
@@ -299,10 +366,56 @@ mod tests {
             mean: None,
             m2: None,
         };
-        let state = calculate_var_partial([1.0, 2.0, 3.0].into_iter());
+        let state = partial_of(&[1.0, 2.0, 3.0]);
         let merged = merge_var_partials([empty, state, empty].into_iter());
         assert_eq!(merged.count, 3);
         assert_eq!(var_from_state(merged, 1), Some(1.0));
         assert_eq!(merge_var_partials([empty, empty].into_iter()).count, 0);
+    }
+
+    #[test]
+    fn test_merge_var_partials_partition_shape_invariance() {
+        // How the rows happen to be split across morsels/partitions must not change the
+        // answer: the merge is what makes the two-stage lowering agree with a single pass.
+        for base in [0.0, 1e9] {
+            let values: Vec<f64> = (1..=8).map(|i| base + f64::from(i)).collect();
+            let whole = partial_of(&values);
+            let halves = merge_var_partials(
+                [partial_of(&values[..4]), partial_of(&values[4..])].into_iter(),
+            );
+            let uneven = merge_var_partials(
+                [partial_of(&values[..1]), partial_of(&values[1..])].into_iter(),
+            );
+            let singletons =
+                merge_var_partials(values.iter().map(|v| partial_of(std::slice::from_ref(v))));
+
+            let expected = var_from_state(whole, 1).unwrap();
+            assert_close(expected, 6.0, 1e-12);
+            for shape in [halves, uneven, singletons] {
+                assert_eq!(shape.count, 8);
+                assert_close(var_from_state(shape, 1).unwrap(), expected, 1e-9);
+            }
+        }
+    }
+
+    #[test]
+    fn test_calculate_variance_matches_var_partial() {
+        // `Series::var` goes through `calculate_variance` while the query engine goes
+        // through `calculate_var_partial`; they must not be able to disagree.
+        for values in [
+            vec![1.0, 2.0, 3.0, 4.0, 5.0],
+            vec![1e9 + 1.0, 1e9 + 2.0, 1e9 + 3.0],
+            vec![5.0],
+            vec![],
+        ] {
+            let stats = stats_of(&values);
+            for ddof in [0, 1] {
+                assert_eq!(
+                    calculate_variance(stats, values.iter().copied(), ddof),
+                    var_from_state(calculate_var_partial(stats, values.iter().copied()), ddof),
+                    "values={values:?} ddof={ddof}"
+                );
+            }
+        }
     }
 }
