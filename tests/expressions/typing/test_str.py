@@ -229,6 +229,29 @@ def test_str_to_datetime():
     )
 
 
+@pytest.mark.parametrize(
+    "format, timezone",
+    [
+        pytest.param("%Y-%m-%d %H:%M:%S", None, id="naive_format"),
+        pytest.param("%Y-%m-%dT%H:%M:%S%z", None, id="offset_format"),
+        pytest.param("%Y-%m-%dT%H:%M:%S%z", "Asia/Shanghai", id="offset_format_explicit_tz"),
+        pytest.param("%Y-%m-%d %H:%M:%S", "Asia/Shanghai", id="naive_format_explicit_tz"),
+    ],
+)
+def test_str_to_datetime_all_null_resolve_matches_runtime(format, timezone):
+    # https://github.com/Eventual-Inc/Daft/issues/7470
+    # With no non-null value the kernel has nothing to sniff, so the output timezone must be
+    # derived from (format, timezone) alone and agree with what schema resolution planned.
+    s = Series.from_arrow(pa.array([None, None, None], type=pa.string()), name="col")
+
+    assert_typing_resolve_vs_runtime_behavior(
+        data=[s],
+        expr=col("col").to_datetime(format, timezone),
+        run_kernel=lambda: s.str.to_datetime(format, timezone),
+        resolvable=True,
+    )
+
+
 @pytest.mark.parametrize("remove_punct", [False, True])
 @pytest.mark.parametrize("lowercase", [False, True])
 @pytest.mark.parametrize("nfd_unicode", [False, True])
