@@ -84,13 +84,8 @@ pub fn infer_timeunit_from_format_string(format: &str) -> TimeUnit {
     }
 }
 
-/// Classifies a strftime format string in a single tokenized pass.
-///
-/// Returns `(has_time, has_offset)`. Tokenizing (instead of substring matching) correctly
-/// handles escaped literals (`%%z` is text, not an offset) and padding modifiers
-/// (`%_H` is an hour). `Fixed::Internal` variants are opaque to chrono's users (`%3f`/`%6f`/`%9f`
-/// fractional seconds vs `%#z` permissive offset), so they are distinguished by comparing against
-/// a tokenized `%#z`.
+/// Returns `(has_time, has_offset)` for a strftime format string. Tokenizing rather than substring
+/// matching keeps escaped literals (`%%z`) and padding modifiers (`%_H`) classified correctly.
 fn format_time_and_offset_flags(format: &str) -> (bool, bool) {
     let mut has_time = false;
     let mut has_offset = false;
@@ -128,10 +123,8 @@ fn format_time_and_offset_flags(format: &str) -> (bool, bool) {
                 | Fixed::TimezoneOffsetZ,
             ) => has_offset = true,
             Item::Fixed(Fixed::Internal(ref inner)) => {
-                // chrono keeps `InternalFixed` opaque but implements `PartialEq` for it, so the
-                // permissive offset directive is identified by tokenizing `%#z` rather than by
-                // scraping `Debug` output, whose shape chrono makes no promise about. Every other
-                // internal item is a fixed-width fractional second (`%3f`/`%6f`/`%9f`).
+                // `InternalFixed` is opaque, so compare against a tokenized `%#z` rather than its
+                // `Debug` output, whose shape chrono does not promise. The rest are `%3f`-style.
                 let is_permissive_offset = matches!(
                     StrftimeItems::new("%#z").next(),
                     Some(Item::Fixed(Fixed::Internal(ref permissive))) if permissive == inner
