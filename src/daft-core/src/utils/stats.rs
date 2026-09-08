@@ -32,14 +32,9 @@ pub struct Stats {
     pub mean: Option<f64>,
 }
 
-/// Numerically stable partial variance state, per Chan et al. parallel variance update.
-///
-/// `count` is the number of valid (non-null) values observed, `mean` is their mean and
-/// `m2` is the sum of squared deviations from the mean, i.e. `sum((x - mean)^2)`.
-/// The finalized (population) variance is `m2 / count` and the sample variance with
-/// `ddof` degrees of freedom is `m2 / (count - ddof)`.
-///
-/// `mean` and `m2` are `None` when `count == 0`.
+/// Per-partition variance state: `count` valid values with mean `mean` and
+/// `m2 = sum((x - mean)^2)`, so the variance is `m2 / (count - ddof)`. `mean` and `m2` are
+/// `None` when `count == 0`.
 #[derive(Clone, Copy, Default, Debug)]
 pub struct VarPartialState {
     pub count: u64,
@@ -47,28 +42,11 @@ pub struct VarPartialState {
     pub m2: Option<f64>,
 }
 
-/// Corrected two-pass computation of `(count, mean, m2)` over non-null values.
-///
-/// This is the per-partition step of the parallel variance algorithm. It starts from the
-/// provisional mean already in `stats` (`sum / count`) and then corrects both the mean and
-/// the second moment with the residual `s1`, per Chan et al. eq. (1.7):
-///
-/// ```text
-/// s1   = sum(x - mean0)            s2 = sum((x - mean0)^2)
-/// mean = mean0 + s1 / n            m2 = s2 - s1^2 / n
-/// ```
-///
-/// It never forms `sum(x^2)`, so unlike `E(x^2) - E(x)^2` it does not catastrophically
-/// cancel when the mean is large relative to the variance (e.g. `[1e9 + 1, 1e9 + 2,
-/// 1e9 + 3]`, which collapsed to `0.0` before this was introduced).
-///
-/// The `s1` correction is what makes this robust where the two obvious alternatives are
-/// not. A plain two-pass `sum((x - mean0)^2)` inherits the error in `mean0` from the
-/// summation kernel as a spurious `n * error^2` term, which matters because the grouped
-/// path sums with a sequential fold. A Welford update (`mean += delta / count`) instead
-/// stops moving the mean entirely once `delta / count` drops below `ulp(mean)` -- around
-/// `1e15` with a spread of ~1 the running mean freezes near its first few values and the
-/// result is off by tens of percent. Correcting an explicit `mean0` avoids both.
+/// Corrected two-pass `(count, mean, m2)` over non-null values, per Chan et al. eq. (1.7):
+/// with `s1 = sum(x - mean0)` and `s2 = sum((x - mean0)^2)`, `mean = mean0 + s1 / n` and
+/// `m2 = s2 - s1^2 / n`. The `s1` correction removes the error in the provisional
+/// `mean0 = sum / count`, which a plain two-pass inherits as a spurious `n * error^2` term
+/// and a Welford update cannot fix once `delta / count` falls below `ulp(mean)`.
 pub fn calculate_var_partial(stats: Stats, values: impl Iterator<Item = f64>) -> VarPartialState {
     let Some(mean0) = stats.mean else {
         // `mean` is `None` exactly when there were no valid values.
@@ -81,9 +59,10 @@ pub fn calculate_var_partial(stats: Stats, values: impl Iterator<Item = f64>) ->
 
     let count = stats.count as u64;
     let n = stats.count;
+    // `mul_add` rounds `delta * delta + s2` once instead of twice.
     let (s1, s2) = values.fold((0.0, 0.0), |(s1, s2), value| {
         let delta = value - mean0;
-        (s1 + delta, s2 + delta * delta)
+        (s1 + delta, delta.mul_add(delta, s2))
     });
 
     VarPartialState {
@@ -93,12 +72,8 @@ pub fn calculate_var_partial(stats: Stats, values: impl Iterator<Item = f64>) ->
     }
 }
 
-/// Chan et al. parallel merge of per-partition `(count, mean, m2)` states.
-///
-/// Each input with `count == 0` (or missing `mean`/`m2`) is an identity and is skipped.
-/// The merge is associative up to floating-point rounding and only ever combines
-/// deviations (`delta = mean_b - mean_a`), so it stays accurate when the global mean
-/// is large and the variance is small.
+/// Chan et al. parallel merge of per-partition states. Inputs with `count == 0` (or a missing
+/// `mean`/`m2`) are the identity. Only combines deviations, so it stays accurate for large means.
 pub fn merge_var_partials(partials: impl Iterator<Item = VarPartialState>) -> VarPartialState {
     let mut count: u64 = 0;
     let mut mean = 0.0;
@@ -243,10 +218,8 @@ pub fn calculate_stddev(
     calculate_variance(stats, values, ddof).map(f64::sqrt)
 }
 
-/// Variance of `values` with `ddof` degrees of freedom, or `None` when `count <= ddof`.
-///
-/// This goes through [`calculate_var_partial`], the same kernel the two-stage `VarPartial`
-/// lowering uses, so `Series::var` and `df.agg(col(..).var())` cannot diverge numerically.
+/// Variance of `values` with `ddof` degrees of freedom, or `None` when `count <= ddof`. Shares
+/// [`calculate_var_partial`] with the two-stage lowering so the two cannot diverge numerically.
 pub fn calculate_variance(
     stats: Stats,
     values: impl Iterator<Item = f64>,
@@ -324,14 +297,10 @@ mod tests {
 
     #[test]
     fn test_var_partial_large_mean_large_partition() {
-        // The other large-mean tests use three values, so they only exercise the merge.
-        // Here a single partition holds 20k values, which is where the *per-partition*
-        // kernel decides the answer -- and where a Welford running mean silently stops
-        // updating, because `delta / count` falls below `ulp(1e15)`.
-        //
-        // Every value is a multiple of 1/8, and 1e9, 1e12 and 1e15 all have an ulp of at
-        // most 1/8, so `base + x` is exact and the variance is *exactly* shift invariant.
-        // Any deviation from the unshifted variance is therefore pure algorithm error.
+        // Exercises the per-partition kernel at scale rather than just the merge.
+        // Values are multiples of 1/8 and every base has an ulp of at most 1/8, so the shift
+        // is exact and the variance is exactly shift invariant; any deviation is algorithm
+        // error. Do not change the divisor without rechecking that.
         const N: usize = 20_000;
         let unshifted: Vec<f64> = (0..N).map(|i| ((i * 7919) % 1000) as f64 / 8.0).collect();
         let expected = var_from_state(partial_of(&unshifted), 1).unwrap();
@@ -349,8 +318,8 @@ mod tests {
 
     #[test]
     fn test_merge_var_partials_singletons() {
-        // Merging single-row partials must recover the joint variance, including
-        // the `n == 1` case where a per-partition sample variance would be null.
+        // Single-row partials must still recover the joint variance, even though a
+        // per-partition sample variance would be null at `n == 1`.
         let partials = [1e9 + 1.0, 1e9 + 2.0, 1e9 + 3.0]
             .into_iter()
             .map(|v| partial_of(&[v]));
@@ -375,8 +344,7 @@ mod tests {
 
     #[test]
     fn test_merge_var_partials_partition_shape_invariance() {
-        // How the rows happen to be split across morsels/partitions must not change the
-        // answer: the merge is what makes the two-stage lowering agree with a single pass.
+        // How rows split across morsels/partitions must not change the answer.
         for base in [0.0, 1e9] {
             let values: Vec<f64> = (1..=8).map(|i| base + f64::from(i)).collect();
             let whole = partial_of(&values);
@@ -400,8 +368,7 @@ mod tests {
 
     #[test]
     fn test_calculate_variance_matches_var_partial() {
-        // `Series::var` goes through `calculate_variance` while the query engine goes
-        // through `calculate_var_partial`; they must not be able to disagree.
+        // `Series::var` uses `calculate_variance`, the engine uses `calculate_var_partial`.
         for values in [
             vec![1.0, 2.0, 3.0, 4.0, 5.0],
             vec![1e9 + 1.0, 1e9 + 2.0, 1e9 + 3.0],

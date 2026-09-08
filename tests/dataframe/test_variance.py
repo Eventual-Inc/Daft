@@ -288,16 +288,9 @@ def test_var_large_mean_matches_shifted_data(with_morsel_size):
 def test_var_large_mean_large_partition(base, with_default_morsel_size):
     """Large mean *and* a large partition (see #7468).
 
-    Every other large-mean test here uses three values, so whatever the morsel
-    size, the per-partition summary is computed over a handful of rows and only
-    the cross-partition merge is really exercised. With the default morsel size
-    these 20k rows land in a single partial aggregate, so this is the only test
-    that exercises the per-partition variance kernel at scale -- which is where
-    `E(x^2) - E(x)^2`, a mean reconstructed from a naive sum, and a Welford
-    running mean each lose the rest of their accuracy.
-
-    `statistics.variance` is the reference because it is computed in exact
-    rational arithmetic, unlike the float `var()` helper above.
+    The other large-mean tests use three values, so they only exercise the merge; these
+    20k rows land in one partial aggregate. `statistics.variance` is the reference
+    because it is exact, unlike the float `var()` helper above.
     """
     n = 20_000
     data = [base + ((i * 7919) % 1000) / 1000.0 for i in range(n)]

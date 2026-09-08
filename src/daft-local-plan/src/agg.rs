@@ -469,10 +469,8 @@ mod tests {
 
     #[test]
     fn test_var_partial_stages_are_self_lowering() {
-        // Flotilla re-lowers the aggregations it hands to each Swordfish task, so the
-        // internal partial variants the `Var`/`Stddev` arms emit have to be lowerable
-        // themselves -- exactly like the `ApproxSketch`/`MergeSketch` pair. Without these
-        // arms a distributed var/stddev fails at plan time with a confusing schema error.
+        // Flotilla re-lowers the aggs it hands to each Swordfish task, so the partial
+        // variants must be lowerable themselves, like `ApproxSketch`/`MergeSketch`.
         let value_schema = Schema::new(vec![Field::new("a", DataType::Float64)]);
         let (first, second, num_finals) =
             lower(AggExpr::VarPartial(resolved_col("a")), &value_schema);
