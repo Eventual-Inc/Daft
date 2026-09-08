@@ -1464,12 +1464,12 @@ def test_series_utf8_to_datetime_different_timezones(data, format, timezone, exp
             id="Microseconds",
         ),
         pytest.param(
-            ["2021-01-01 00:00:45.1234", "2021-01-02 01:07:35.12300", "2021-01-03 12:30:00.123"],
+            ["2021-01-01 00:00:45.123", "2021-01-02 01:07:35.456", "2021-01-03 12:30:00.789"],
             "%Y-%m-%d %H:%M:%S%.3f",
             [
                 datetime.datetime(2021, 1, 1, 0, 0, 45, 123000),
-                datetime.datetime(2021, 1, 2, 1, 7, 35, 123000),
-                datetime.datetime(2021, 1, 3, 12, 30, 0, 123000),
+                datetime.datetime(2021, 1, 2, 1, 7, 35, 456000),
+                datetime.datetime(2021, 1, 3, 12, 30, 0, 789000),
             ],
             "ms",
             id="Milliseconds",
@@ -1481,6 +1481,32 @@ def test_series_utf8_to_datetime_different_timeunit(data, format, expected, time
     result = s.str.to_datetime(format)
     assert result.to_pylist() == expected
     assert result.datatype() == DataType.timestamp(timeunit)
+
+
+def test_series_utf8_to_datetime_date_only() -> None:
+    # A format with no time-of-day fields resolves to midnight, matching DuckDB / polars / Spark.
+    s = Series.from_arrow(pa.array(["2020-01-01", "2021-12-31"], type=pa.string()))
+    result = s.str.to_datetime("%Y-%m-%d")
+    assert result.to_pylist() == [
+        datetime.datetime(2020, 1, 1, 0, 0, 0),
+        datetime.datetime(2021, 12, 31, 0, 0, 0),
+    ]
+    assert result.datatype() == DataType.timestamp("us")
+
+
+def test_series_utf8_to_datetime_trailing_input_rejected() -> None:
+    # Trailing input the format does not consume is rejected rather than silently dropped.
+    s = Series.from_arrow(pa.array(["2020-01-01T12:34:56.789"], type=pa.string()))
+    with pytest.raises(ValueError, match="trailing input"):
+        s.str.to_datetime("%Y-%m-%dT%H:%M:%S")
+
+
+def test_series_utf8_to_datetime_partial_time_rejected() -> None:
+    # A partially specified time (hour without minute) must not fall back to midnight and silently
+    # drop the hour; it stays an error.
+    s = Series.from_arrow(pa.array(["2020-01-01 12"], type=pa.string()))
+    with pytest.raises(ValueError):
+        s.str.to_datetime("%Y-%m-%d %H")
 
 
 def test_series_utf8_to_datetime_bad_format() -> None:

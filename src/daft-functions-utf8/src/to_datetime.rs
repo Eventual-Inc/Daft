@@ -97,6 +97,47 @@ pub fn to_datetime<S: Into<String>>(input: ExprRef, format: S, timezone: Option<
     ScalarFn::builtin(ToDatetime, inputs).into()
 }
 
+/// Parses a value into a [`chrono::NaiveDateTime`] for a format that carries no UTC offset.
+///
+/// This is strict, mirroring `to_date`: trailing input the format does not consume is rejected
+/// instead of silently dropped (consistent with DuckDB and polars). As a special case, a format
+/// with no time-of-day field at all (e.g. `%Y-%m-%d`) resolves to midnight on that date, matching
+/// DuckDB / polars / Spark. A partially specified time (e.g. `%Y-%m-%d %H`) still errors rather
+/// than silently discarding the fields chrono cannot assemble a time from.
+fn parse_naive_datetime(val: &str, format: &str) -> DaftResult<chrono::NaiveDateTime> {
+    let fail = |e: chrono::format::ParseError| {
+        DaftError::ComputeError(format!(
+            "Error in to_datetime: failed to parse datetime {val} with format {format} : {e}"
+        ))
+    };
+
+    let mut parsed = chrono::format::Parsed::new();
+    // Unlike `parse_and_remainder`, `chrono::format::parse` errors when trailing input remains.
+    chrono::format::parse(&mut parsed, val, chrono::format::StrftimeItems::new(format))
+        .map_err(&fail)?;
+
+    // True when the value+format carry no time-of-day information whatsoever.
+    let date_only = parsed.hour_div_12.is_none()
+        && parsed.hour_mod_12.is_none()
+        && parsed.minute.is_none()
+        && parsed.second.is_none()
+        && parsed.nanosecond.is_none()
+        && parsed.timestamp.is_none();
+
+    match parsed.to_naive_datetime_with_offset(0) {
+        Ok(datetime) => Ok(datetime),
+        // `NaiveDateTime` needs time fields; a bare date reports `NotEnough`. Fall back to midnight
+        // only when nothing time-like was parsed, so partial times keep their error.
+        Err(e) if e.kind() == chrono::format::ParseErrorKind::NotEnough && date_only => {
+            let date = parsed.to_naive_date().map_err(&fail)?;
+            Ok(date
+                .and_hms_opt(0, 0, 0)
+                .expect("midnight is always a valid time"))
+        }
+        Err(e) => Err(fail(e)),
+    }
+}
+
 fn to_datetime_impl(
     arr: &Utf8Array,
     format: &str,
@@ -111,7 +152,7 @@ fn to_datetime_impl(
                 Some(val) => {
                     let timestamp = match timezone.as_deref() {
                         Some(tz) => {
-                            let (datetime, _) = chrono::DateTime::parse_and_remainder(val, format).map_err(|e| {
+                            let datetime = chrono::DateTime::parse_from_str(val, format).map_err(|e| {
                                 DaftError::ComputeError(format!(
                                     "Error in to_datetime: failed to parse datetime {val} with format {format} : {e}"
                                 ))
@@ -130,11 +171,11 @@ fn to_datetime_impl(
                         }
                         None => {
                             if format_string_has_offset(format) {
-                                let datetime = chrono::DateTime::parse_and_remainder(val, format).map_err(|e| {
+                                let datetime = chrono::DateTime::parse_from_str(val, format).map_err(|e| {
                                     DaftError::ComputeError(format!(
                                         "Error in to_datetime: failed to parse datetime {val} with format {format} : {e}"
                                     ))
-                                })?.0.to_utc();
+                                })?.to_utc();
 
                                 match timeunit {
                                     TimeUnit::Seconds => datetime.timestamp(),
@@ -143,11 +184,7 @@ fn to_datetime_impl(
                                     TimeUnit::Nanoseconds => datetime.timestamp_nanos_opt().ok_or_else(|| DaftError::ComputeError(format!("Error in to_datetime: failed to get nanoseconds for {val}")))?,
                                 }
                             } else {
-                                let naive_datetime = chrono::NaiveDateTime::parse_and_remainder(val, format).map_err(|e| {
-                                    DaftError::ComputeError(format!(
-                                        "Error in to_datetime: failed to parse datetime {val} with format {format} : {e}"
-                                    ))
-                                })?.0.and_utc();
+                                let naive_datetime = parse_naive_datetime(val, format)?.and_utc();
                                 match timeunit {
                                     TimeUnit::Seconds => naive_datetime.timestamp(),
                                     TimeUnit::Milliseconds => naive_datetime.timestamp_millis(),
