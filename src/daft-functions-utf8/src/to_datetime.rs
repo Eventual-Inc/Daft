@@ -51,9 +51,7 @@ impl ScalarUDF for ToDatetime {
     ) -> DaftResult<Field> {
         ensure!(!inputs.is_empty() && inputs.len() <= 3, SchemaMismatch: "Expected between 1 and 3 arguments, got {}", inputs.len());
         let data_field = inputs.required((0, "input"))?.to_field(schema)?;
-        // `Series::with_utf8_array` passes a `Null` series straight through, so without this
-        // check a `Null` input would plan as `Timestamp` but evaluate to `Null` and trip the
-        // dtype-mismatch assert. Matches how `to_date` validates via `binary_utf8_to_field`.
+        // `Series::with_utf8_array` passes a `Null` series through unchanged.
         ensure!(data_field.dtype == DataType::Utf8, TypeError: "input must be of type Utf8, got {}", data_field.dtype);
         let format_expr = inputs.required((1, "format"))?;
         let format = format_expr
@@ -95,13 +93,11 @@ pub fn to_datetime<S: Into<String>>(input: ExprRef, format: S, timezone: Option<
     ScalarFn::builtin(ToDatetime, inputs).into()
 }
 
-/// Single source of truth for the output timezone.
+/// Output timezone, from `format` and `timezone` alone and never from the data.
 ///
-/// An explicit `timezone` always wins. Otherwise, a format containing an offset
-/// directive is coerced to UTC (consistent with duckdb, polars, datafusion).
-/// This must stay in sync between planning (`get_return_field`) and execution
-/// (`to_datetime_impl`): the output dtype is a function of `format` and
-/// `timezone` only, never of the data, so all-null/empty inputs resolve identically.
+/// Shared by `get_return_field` and `to_datetime_impl` so planning and execution agree.
+/// An explicit `timezone` wins; otherwise an offset directive coerces to UTC, as in
+/// duckdb, polars and datafusion.
 fn resolve_output_timezone(format: &str, timezone: Option<&str>) -> Option<String> {
     if let Some(tz) = timezone {
         Some(tz.to_string())
@@ -120,20 +116,10 @@ fn to_datetime_impl(
     let len = arr.len();
     let arr_iter = arr.into_iter();
     let timeunit = infer_timeunit_from_format_string(format);
-    // Resolve the output timezone up front so the kernel dtype always matches
-    // `get_return_field`, even when there are no non-null values to inspect.
     let output_timezone = resolve_output_timezone(format, timezone);
-    // Hoisted out of the row loop: this selects the parse path and is loop-invariant.
-    // Deriving the path from this directly (rather than from `output_timezone`) keeps it
-    // independent of `resolve_output_timezone`'s internal precedence rules.
     let has_offset = format_string_has_offset(format);
-    // Parse (and thereby validate) an explicit timezone once, rather than per row.
-    //
-    // Behaviour change: because this no longer happens lazily inside the loop, an invalid or
-    // unsupported timezone string now errors deterministically even for an empty or all-null
-    // partition, instead of only for partitions that happened to contain a non-null value.
-    // Notably `chrono_tz` cannot parse fixed-offset forms such as "+05:30", so those error
-    // everywhere rather than silently producing a `Timestamp[.., +05:30]` array on empty input.
+    // Parsed once rather than per row, so an unparsable timezone now errors even with no
+    // data. `chrono_tz` rejects fixed-offset forms such as "+05:30".
     let parsed_timezone = timezone
         .map(|tz| {
             tz.parse::<chrono_tz::Tz>().map_err(|e| {
@@ -214,15 +200,12 @@ mod tests {
 
     #[test]
     fn test_resolve_output_timezone() {
-        // No timezone and no offset directive -> naive.
         assert_eq!(resolve_output_timezone(NAIVE_FMT, None), None);
-        // An offset directive with no explicit timezone -> coerced to UTC.
         assert_eq!(
             resolve_output_timezone(OFFSET_FMT, None),
             Some("UTC".to_string())
         );
         assert_eq!(resolve_output_timezone("%+", None), Some("UTC".to_string()));
-        // An explicit timezone always wins, offset directive or not.
         assert_eq!(
             resolve_output_timezone(NAIVE_FMT, Some("Asia/Shanghai")),
             Some("Asia/Shanghai".to_string())
@@ -236,7 +219,6 @@ mod tests {
     #[test]
     fn test_to_datetime_impl_dtype_is_independent_of_data() {
         // https://github.com/Eventual-Inc/Daft/issues/7470
-        // The array dtype must be identical whether or not a row carries an offset.
         let expected = DataType::Timestamp(TimeUnit::Microseconds, Some("UTC".to_string()));
 
         let all_null = Utf8Array::from_iter("col", vec![None::<&str>, None]);
@@ -263,7 +245,6 @@ mod tests {
         assert_eq!(result.get(0), None);
         assert_eq!(result.get(1), Some(PARSED_MICROS));
 
-        // A naive format must stay naive even with no data to inspect.
         let naive = to_datetime_impl(&all_null, NAIVE_FMT, None).unwrap();
         assert_eq!(
             naive.field().dtype,
@@ -275,7 +256,6 @@ mod tests {
     fn test_to_datetime_impl_explicit_timezone_wins_and_validates_without_data() {
         let all_null = Utf8Array::from_iter("col", vec![None::<&str>]);
 
-        // An explicit timezone wins over the offset directive.
         for format in [NAIVE_FMT, OFFSET_FMT] {
             let result = to_datetime_impl(&all_null, format, Some("Asia/Shanghai")).unwrap();
             assert_eq!(
@@ -284,9 +264,8 @@ mod tests {
             );
         }
 
-        // The timezone is parsed up front, so an unparseable one errors even with no data.
         assert!(to_datetime_impl(&all_null, NAIVE_FMT, Some("Not/AZone")).is_err());
-        // chrono_tz has no fixed-offset support, so these error rather than silently passing.
+        // `chrono_tz` has no fixed-offset support.
         assert!(to_datetime_impl(&all_null, NAIVE_FMT, Some("+05:30")).is_err());
     }
 }

@@ -1395,9 +1395,7 @@ def test_convert_timezone_sql() -> None:
 
 def test_to_datetime_offset_format_partition_with_no_non_null_values() -> None:
     # https://github.com/Eventual-Inc/Daft/issues/7470
-    # `concat` keeps partition boundaries, so the first partition has no non-null value while
-    # the second does. The output dtype must be a function of the format, not of which rows a
-    # partition happens to hold, or the all-null partition trips the dtype-mismatch assert.
+    # `concat` keeps partition boundaries, so the first partition has no non-null value.
     fmt = "%Y-%m-%dT%H:%M:%S%z"
     nulls = daft.from_pydict({"s": [None, None]}).with_column("s", col("s").cast(DataType.string()))
     values = daft.from_pydict({"s": ["2020-01-01T01:02:03+0100"]})

@@ -240,8 +240,6 @@ def test_str_to_datetime():
 )
 def test_str_to_datetime_all_null_resolve_matches_runtime(format, timezone):
     # https://github.com/Eventual-Inc/Daft/issues/7470
-    # With no non-null value the kernel has nothing to sniff, so the output timezone must be
-    # derived from (format, timezone) alone and agree with what schema resolution planned.
     s = Series.from_arrow(pa.array([None, None, None], type=pa.string()), name="col")
 
     assert_typing_resolve_vs_runtime_behavior(

@@ -32,8 +32,6 @@ def _all_null_string_table(n: int) -> MicroPartition:
 
 def test_utf8_to_datetime_offset_format_all_null():
     # https://github.com/Eventual-Inc/Daft/issues/7470
-    # The output timezone is a function of the format, not the data, so an
-    # all-null (or empty) input with an offset directive must still be UTC.
     table = _all_null_string_table(1)
     result = table.eval_expression_list([col("col").to_datetime("%Y-%m-%dT%H:%M:%S%z")])
     assert result.to_pydict() == {"col": [None]}
@@ -69,9 +67,7 @@ def test_utf8_to_datetime_explicit_timezone_all_null():
 
 
 def test_utf8_to_datetime_offset_format_explicit_null_timezone_all_null():
-    # An explicit Null timezone literal must be indistinguishable from an absent one, in
-    # both `get_return_field` and the kernel: the offset directive still coerces to UTC.
-    # Guards against the planner and the kernel applying the rule under different conditions.
+    # The planner treats an explicit `Null` timezone literal as an absent one.
     table = _all_null_string_table(1)
     expr = to_datetime(col("col"), "%Y-%m-%dT%H:%M:%S%z", timezone=daft.lit(None))
     result = table.eval_expression_list([expr])
@@ -88,8 +84,6 @@ def test_utf8_to_datetime_offset_format_explicit_null_timezone_with_values():
 
 
 def test_utf8_to_datetime_offset_format_differing_offsets_after_null():
-    # The parse path must not depend on row order or on which row is seen first: every row
-    # normalises to UTC and the array dtype is Timestamp[us; UTC] regardless.
     table = MicroPartition.from_pydict(
         {
             "col": [
@@ -114,17 +108,14 @@ def test_utf8_to_datetime_offset_format_differing_offsets_after_null():
 
 
 def test_utf8_to_datetime_invalid_timezone_all_null_still_errors():
-    # The timezone is parsed once up front, so an unparseable one fails the same way whether
-    # or not the partition happens to contain a non-null value.
+    # The timezone is parsed up front, so this fails with or without a non-null value.
     table = _all_null_string_table(1)
     with pytest.raises(ValueError, match="failed to parse timezone"):
         table.eval_expression_list([col("col").to_datetime("%Y-%m-%d %H:%M:%S", timezone="Not/AZone")])
 
 
 def test_utf8_to_datetime_null_dtype_input_rejected():
-    # `to_datetime` used to have no input-dtype check (unlike `to_date`), so a Null-typed
-    # column planned as Timestamp while `with_utf8_array` returned the Null series unchanged,
-    # tripping the data type mismatch assert. It must be rejected at schema-resolution time.
+    # `with_utf8_array` passes a Null series through unchanged, so this must fail at resolution.
     s = Series.from_arrow(pa.array([None, None], type=pa.null()), name="col")
     table = MicroPartition.from_pydict({"col": s})
     with pytest.raises(ValueError, match="Utf8"):
