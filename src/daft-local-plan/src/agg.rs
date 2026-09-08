@@ -3,8 +3,8 @@ use daft_core::prelude::{CountMode, DataType, Field, Schema};
 use daft_dsl::{
     AggExpr, ApproxPercentileParams, ExprRef, SketchType, bound_col,
     expr::bound_expr::{BoundAggExpr, BoundExpr},
-    functions::agg::merge_mean,
-    lit, null_lit,
+    functions::agg::{merge_mean, merge_var},
+    lit,
 };
 use daft_functions::numeric::sqrt;
 use daft_functions_list::{count_distinct, distinct};
@@ -188,74 +188,53 @@ pub fn populate_aggregation_stages_bound_with_schema(
                 final_stage(global_percentile_col);
             }
             AggExpr::Stddev(expr, ddof) => {
-                // The stddev calculation we're performing here is:
-                // stddev(X, ddof) = sqrt((E(X^2) - E(X)^2) * n / (n - ddof))
-                // where X is the sub_expr.
+                // stddev(X, ddof) = sqrt(var(X, ddof)).
                 //
-                // First stage, we compute `sum(X^2)`, `sum(X)` and `count(X)`.
-                // Second stage, we `global_sqsum := sum(sum(X^2))`, `global_sum := sum(sum(X))` and `global_count := sum(count(X))` in order to get the global versions of the first stage.
-                // In the final projection, we then compute:
-                // `sqrt(((global_sqsum / global_count) - (global_sum / global_count) ^ 2) * global_count / (global_count - ddof))`.
-
-                // This is a workaround since we have different code paths for single stage and two stage aggregations.
-                // Currently all Std Dev types will be computed using floats.
+                // We decompose the variance into per-partition summaries rather than
+                // the naive `E(X^2) - E(X)^2`, which loses all precision when the mean
+                // is large relative to the spread (values around 1e9 collapse to 0).
+                //
+                // Stage 1 computes, per partition, `count(X)`, `sum(X)` and the
+                // *population* variance `var(X, 0)` via the stable two-pass kernel.
+                // Stage 2 collects those summaries into lists. The final projection
+                // folds them with `merge_var` (Chan et al.), then takes the sqrt.
+                //
+                // The stage-1 `Var(.., 0)` is evaluated directly by the aggregation
+                // kernel (partial aggregates are never re-lowered), so this does not
+                // recurse into this match arm.
                 let expr = expr.clone().cast(&DataType::Float64);
 
+                let count_col = first_stage!(AggExpr::Count(expr.clone(), CountMode::Valid));
                 let sum_col = first_stage!(AggExpr::Sum(expr.clone()));
-                let sq_sum_col = first_stage!(AggExpr::Sum(expr.clone().mul(expr.clone())));
-                let count_col = first_stage!(AggExpr::Count(expr, CountMode::Valid));
+                let var_col = first_stage!(AggExpr::Var(expr, 0));
 
-                let global_sum_col = second_stage!(AggExpr::Sum(sum_col));
-                let global_sq_sum_col = second_stage!(AggExpr::Sum(sq_sum_col));
-                let global_count_col = second_stage!(AggExpr::Sum(count_col));
+                let counts_list = second_stage!(AggExpr::List(count_col));
+                let sums_list = second_stage!(AggExpr::List(sum_col));
+                let vars_list = second_stage!(AggExpr::List(var_col));
 
-                let n = global_count_col.clone().cast(&DataType::Float64);
-                let sq_mean = global_sq_sum_col.div(n.clone());
-                let mean = global_sum_col.clone().div(n.clone());
-                let mean_sq = mean.clone().mul(mean);
-                let pop_var = sq_mean.sub(mean_sq);
-
-                let ddof_expr = lit(*ddof as f64);
-                let adjusted = pop_var.mul(n.clone()).div(n.clone().sub(ddof_expr.clone()));
-                let result = n
-                    .clone()
-                    .lt_eq(ddof_expr)
-                    .if_else(null_lit(), sqrt::sqrt(adjusted));
-
+                let result = sqrt::sqrt(merge_var(counts_list, sums_list, vars_list, *ddof));
                 final_stage(result);
             }
             AggExpr::Var(expr, ddof) => {
-                // The variance calculation we're performing here is:
-                // var(X, ddof) = (E(X^2) - E(X)^2) * n / (n - ddof)
-                // where X is the sub_expr.
+                // var(X, ddof), decomposed into per-partition summaries and folded with
+                // a numerically stable merge. See the `Stddev` arm for the rationale:
+                // the naive `E(X^2) - E(X)^2` formulation suffers catastrophic
+                // cancellation when the mean is large relative to the spread.
                 //
-                // First stage, we compute `sum(X^2)`, `sum(X)` and `count(X)`.
-                // Second stage, we get global versions: `global_sqsum`, `global_sum`, `global_count`.
-                // In the final projection, we compute:
-                // ((global_sqsum / global_count) - (global_sum / global_count) ^ 2) * global_count / (global_count - ddof)
-
+                // Stage 1 keeps `count(X)`, `sum(X)` and `var(X, 0)` per partition,
+                // stage 2 lists them, and `merge_var` combines them (Chan et al.),
+                // including the `n <= ddof -> null` guard.
                 let expr = expr.clone().cast(&DataType::Float64);
 
+                let count_col = first_stage!(AggExpr::Count(expr.clone(), CountMode::Valid));
                 let sum_col = first_stage!(AggExpr::Sum(expr.clone()));
-                let sq_sum_col = first_stage!(AggExpr::Sum(expr.clone().mul(expr.clone())));
-                let count_col = first_stage!(AggExpr::Count(expr, CountMode::Valid));
+                let var_col = first_stage!(AggExpr::Var(expr, 0));
 
-                let global_sum_col = second_stage!(AggExpr::Sum(sum_col));
-                let global_sq_sum_col = second_stage!(AggExpr::Sum(sq_sum_col));
-                let global_count_col = second_stage!(AggExpr::Sum(count_col));
+                let counts_list = second_stage!(AggExpr::List(count_col));
+                let sums_list = second_stage!(AggExpr::List(sum_col));
+                let vars_list = second_stage!(AggExpr::List(var_col));
 
-                // Population variance = (sqsum/n - (sum/n)^2)
-                let n = global_count_col.clone().cast(&DataType::Float64);
-                let sq_mean = global_sq_sum_col.div(n.clone());
-                let mean = global_sum_col.clone().div(n.clone());
-                let mean_sq = mean.clone().mul(mean);
-                let pop_var = sq_mean.sub(mean_sq);
-
-                // Adjust for ddof: sample_var = pop_var * n / (n - ddof)
-                let ddof_expr = lit(*ddof as f64);
-                let adjusted = pop_var.mul(n.clone()).div(n.clone().sub(ddof_expr.clone()));
-                let result = n.clone().lt_eq(ddof_expr).if_else(null_lit(), adjusted);
-
+                let result = merge_var(counts_list, sums_list, vars_list, *ddof);
                 final_stage(result);
             }
             AggExpr::Min(expr) => {

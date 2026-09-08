@@ -44,6 +44,9 @@ TESTS = [
     [nums := [None, 100, None], var(nums, ddof=0), var(nums, ddof=1)],
     [nums := [1, 2, 3, 4, 5], var(nums, ddof=0), var(nums, ddof=1)],
     [nums := [None] * 10 + [100], var(nums, ddof=0), var(nums, ddof=1)],
+    # Large mean, tiny spread: E(x^2) - E(x)^2 collapses to 0 here (see #7468).
+    [nums := [1e9 + 1, 1e9 + 2, 1e9 + 3], var(nums, ddof=0), var(nums, ddof=1)],
+    [nums := [1e12, 1e12 + 1, 1e12 + 2], var(nums, ddof=0), var(nums, ddof=1)],
 ]
 
 
@@ -176,6 +179,7 @@ GROUPED_TESTS = [
     [rows := [("k0", 100), ("k0", 100), ("k0", 100)], *grouped_var(rows)],
     [rows := [("k0", 0), ("k0", 1), ("k0", 2)], *grouped_var(rows)],
     [rows := [("k0", None), ("k0", None), ("k0", 100)], *grouped_var(rows)],
+    [rows := [("k0", 1e9 + 1), ("k0", 1e9 + 2), ("k1", 1e9 + 3)], *grouped_var(rows)],
 ]
 
 
@@ -243,3 +247,25 @@ def test_var_stddev_relationship(with_morsel_size):
     ).collect()
     row = next(result.iter_rows())
     assert abs(row["var"] - row["stddev"] ** 2) < 1e-10
+
+
+def test_var_large_mean_does_not_lose_precision(with_morsel_size):
+    """Regression test for https://github.com/Eventual-Inc/Daft/issues/7468.
+
+    Values with a large mean but a tiny spread used to collapse to a variance of
+    0.0, because the two-stage lowering derived variance from E(x^2) - E(x)^2:
+    both terms are ~1e18 and their ~1 difference falls below float64 resolution.
+    The per-partition (count, sum, M2) summaries merged with Chan et al. keep the
+    intermediate deltas small, so the sample variance stays exactly 1.0.
+    """
+    df = daft.from_pydict({"a": [1e9 + 1, 1e9 + 2, 1e9 + 3]})
+    row = next(
+        df.agg(
+            daft.col("a").var(ddof=1).alias("var"),
+            daft.col("a").stddev(ddof=1).alias("stddev"),
+        )
+        .collect()
+        .iter_rows()
+    )
+    assert abs(row["var"] - 1.0) < 1e-10
+    assert abs(row["stddev"] - 1.0) < 1e-10
