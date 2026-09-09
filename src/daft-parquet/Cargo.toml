@@ -25,6 +25,7 @@ tokio-stream = {workspace = true}
 
 [dev-dependencies]
 bincode = {workspace = true}
+daft-functions-utf8 = {path = "../daft-functions-utf8", default-features = false}
 fastrand = "2.1.0"
 parquet = {workspace = true}
 path_macro = {workspace = true}
