@@ -234,7 +234,11 @@ impl IntoPartitionsNode {
         result_tx: Sender<SwordfishTaskBuilder>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
-        // Collect all input builders without materializing to count them
+        // Collect all input builders without materializing to count them.
+        // Note that this drains the child's stream to exhaustion before a
+        // single task is submitted, so a child whose own loop needs its emitted
+        // tasks to *run* must release its sender once its input is exhausted
+        // rather than when its loop ends — see `LimitNode::limit_execution_loop`.
         let input_builders: Vec<SwordfishTaskBuilder> = input_stream.collect().await;
         let num_input_tasks = input_builders.len();
 

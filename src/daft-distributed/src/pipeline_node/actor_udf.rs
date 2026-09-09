@@ -186,7 +186,7 @@ impl ActorUDF {
 
             let modified_builder = self.append_actor_udf_to_builder(builder, actors);
             let (builder_with_token, notify_token) = modified_builder.add_notify_token();
-            running_tasks.spawn(notify_token);
+            running_tasks.spawn(notify_token.wait_for_all());
             if result_tx.send(builder_with_token).await.is_err() {
                 break;
             }
@@ -196,9 +196,7 @@ impl ActorUDF {
         drop(result_tx);
         // Wait for all tasks to finish.
         while let Some(result) = running_tasks.join_next().await {
-            if result?.is_err() {
-                break;
-            }
+            result?;
         }
         // Only teardown actors after all tasks are finished.
         udf_actors.teardown();

@@ -101,16 +101,14 @@ impl VLLMNode {
             });
 
             let (builder_with_token, notify_token) = modified_builder.add_notify_token();
-            running_tasks.spawn(notify_token);
+            running_tasks.spawn(notify_token.wait_for_all());
             if result_tx.send(builder_with_token).await.is_err() {
                 break;
             }
         }
         // Wait for all tasks to finish.
         while let Some(result) = running_tasks.join_next().await {
-            if result?.is_err() {
-                break;
-            }
+            result?;
         }
 
         Ok(())

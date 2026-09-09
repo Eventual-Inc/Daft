@@ -17,12 +17,12 @@ use crate::{
     pipeline_node::MaterializedOutput,
     scheduling::{
         dispatcher::Dispatcher,
-        task::{Task, TaskID},
+        task::{Task, TaskID, TaskNotifyToken},
         worker::{Worker, WorkerManager},
     },
     statistics::{StatisticsManagerRef, TaskEvent},
     utils::channel::{
-        OneshotReceiver, OneshotSender, UnboundedReceiver, UnboundedSender, create_oneshot_channel,
+        OneshotReceiver, UnboundedReceiver, UnboundedSender, create_oneshot_channel,
         create_unbounded_channel,
     },
 };
@@ -353,14 +353,14 @@ impl<T: Task> SchedulerHandle<T> {
 pub(crate) struct SubmittableTask<T: Task> {
     task: T,
     cancel_token: CancellationToken,
-    notify_tokens: Vec<OneshotSender<TaskID>>,
+    notify_tokens: Vec<TaskNotifyToken>,
 }
 
 impl<T: Task> SubmittableTask<T> {
     pub fn new(
         task: T,
         cancel_token: CancellationToken,
-        notify_tokens: Vec<OneshotSender<TaskID>>,
+        notify_tokens: Vec<TaskNotifyToken>,
     ) -> Self {
         Self {
             task,
@@ -389,7 +389,7 @@ pub(crate) struct SubmittedTask {
     _task_id: TaskID,
     result_rx: OneshotReceiver<DaftResult<Option<MaterializedOutput>>>,
     cancel_token: Option<CancellationToken>,
-    notify_tokens: Vec<OneshotSender<TaskID>>,
+    notify_tokens: Vec<TaskNotifyToken>,
     finished: bool,
 }
 
@@ -398,7 +398,7 @@ impl SubmittedTask {
         task_id: TaskID,
         result_rx: OneshotReceiver<DaftResult<Option<MaterializedOutput>>>,
         cancel_token: Option<CancellationToken>,
-        notify_tokens: Vec<OneshotSender<TaskID>>,
+        notify_tokens: Vec<TaskNotifyToken>,
     ) -> Self {
         Self {
             _task_id: task_id,
@@ -424,7 +424,7 @@ impl Future for SubmittedTask {
                 self.finished = true;
                 let task_id = self._task_id;
                 for notify_token in self.notify_tokens.drain(..) {
-                    let _ = notify_token.send(task_id);
+                    notify_token.notify(task_id);
                 }
                 Poll::Ready(result)
             }
@@ -433,7 +433,7 @@ impl Future for SubmittedTask {
                 self.finished = true;
                 let task_id = self._task_id;
                 for notify_token in self.notify_tokens.drain(..) {
-                    let _ = notify_token.send(task_id);
+                    notify_token.notify(task_id);
                 }
                 Poll::Ready(Ok(None))
             }
