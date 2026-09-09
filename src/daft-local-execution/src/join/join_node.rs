@@ -13,6 +13,7 @@ use tracing::info_span;
 use crate::{
     ExecutionRuntimeContext, ExecutionTaskSpawner,
     channel::{Receiver, create_channel},
+    input_cancel::InputCancelRegistry,
     join::{
         build::{BuildExecutionContext, BuildStateBridge},
         join_operator::JoinOperator,
@@ -154,13 +155,16 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
         self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
+        input_cancel: &InputCancelRegistry,
     ) -> crate::Result<Receiver<PipelineMessage>> {
         let node_id = self.node_id();
         let name = self.name();
         let stats_manager = runtime_handle.stats_manager();
 
-        let build_child_receiver = self.left.start(false, runtime_handle)?;
-        let probe_child_receiver = self.right.start(maintain_order, runtime_handle)?;
+        let build_child_receiver = self.left.start(false, runtime_handle, input_cancel)?;
+        let probe_child_receiver =
+            self.right
+                .start(maintain_order, runtime_handle, input_cancel)?;
 
         let (destination_sender, destination_receiver) = create_channel(1);
 

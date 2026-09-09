@@ -22,6 +22,7 @@ use crate::{
     batch_manager::BatchManager,
     channel::{Receiver, Sender, create_channel},
     dynamic_batching::BatchingStrategy,
+    input_cancel::InputCancelRegistry,
     pipeline::{
         BuilderContext, InputId, MorselSizeRequirement, NodeName, PipelineEvent, PipelineMessage,
         PipelineNode, next_event,
@@ -31,7 +32,48 @@ use crate::{
 
 pub enum StreamingSinkOutput {
     NeedMoreInput(Option<MicroPartition>),
+    /// The operator has all the data it will ever need for *this* `input_id`,
+    /// but the node must keep running for the others.
+    ///
+    /// Producers feeding this input are asked to stop (see
+    /// [`InputCancelRegistry`]) and anything already buffered for it is
+    /// dropped, yet the input still completes through its own
+    /// `PipelineMessage::Flush` exactly as an uncancelled one would. Operators
+    /// returning this must opt in via [`StreamingSink::cancels_inputs`].
+    ///
+    /// This is separate from `Finished` because `Finished` tears down the whole
+    /// node — correct for a single-task pipeline, fatal for a flotilla worker
+    /// pipeline shared by every task with the same plan fingerprint.
+    ///
+    /// Truncating a subtree is safe even when it contains an operator that must
+    /// see all of its input before it may emit — an aggregation, a sort, a
+    /// top-N. Those are all `BlockingSink`s, and a `BlockingSink` emits nothing
+    /// until it has drained its input, so no row can reach this operator (and
+    /// hence nothing can be satisfied) before every such operator below it has
+    /// already consumed everything it needed.
+    InputSatisfied(Option<MicroPartition>),
+    /// The operator is done with the entire node; the pipeline below it is torn
+    /// down. Only safe when the node serves exactly one input.
     Finished(Option<MicroPartition>),
+}
+
+/// What [`ExecutionContext`] should do after an operator returned a
+/// [`StreamingSinkOutput`].
+#[derive(Copy, Clone, PartialEq, Eq)]
+enum Disposition {
+    KeepGoing,
+    InputSatisfied,
+    Finished,
+}
+
+impl StreamingSinkOutput {
+    fn split(self) -> (Option<MicroPartition>, Disposition) {
+        match self {
+            Self::NeedMoreInput(mp) => (mp, Disposition::KeepGoing),
+            Self::InputSatisfied(mp) => (mp, Disposition::InputSatisfied),
+            Self::Finished(mp) => (mp, Disposition::Finished),
+        }
+    }
 }
 
 pub enum StreamingSinkFinalizeOutput<Op: StreamingSink> {
@@ -79,6 +121,19 @@ pub(crate) trait StreamingSink: Send + Sync {
         None
     }
     fn batching_strategy(&self) -> Self::BatchingStrategy;
+
+    /// Whether this operator ever returns
+    /// [`StreamingSinkOutput::InputSatisfied`].
+    ///
+    /// Opting in gives the operator's subtree its own cancellation scope, so
+    /// satisfying one input cannot stop a producer feeding a *sibling* branch —
+    /// the other side of a broadcast or cross join fused into the same task plan
+    /// by `SwordfishTaskBuilder::combine_with`. Operators that never return
+    /// `InputSatisfied` leave this at `false` and simply forward the scope they
+    /// were handed.
+    fn cancels_inputs(&self) -> bool {
+        false
+    }
 }
 
 enum TaskResult<Op: StreamingSink> {
@@ -129,6 +184,12 @@ struct ExecutionContext<Op: StreamingSink> {
     node_info: Arc<NodeInfo>,
     node_id: usize,
     node_initialized: bool,
+    /// The scope covering this node's *child* subtree — the producers of the
+    /// data this node consumes. Owned (and therefore writable) only when
+    /// `op.cancels_inputs()`; otherwise it is the scope inherited from a
+    /// cancelling sink further downstream, which this node only reads.
+    input_cancel: InputCancelRegistry,
+    owns_input_cancel: bool,
 }
 
 impl<Op: StreamingSink + 'static> ExecutionContext<Op> {
@@ -154,6 +215,13 @@ impl<Op: StreamingSink + 'static> ExecutionContext<Op> {
     }
 
     fn dispatch_ready_batches(&mut self, input_id: InputId) -> DaftResult<()> {
+        if self.input_cancel.is_cancelled(input_id) {
+            // Satisfied — by this operator, or by a sink downstream of it.
+            // Discard rather than `drain`: the entry has to stay so the input's
+            // `Flush` is still handled as an ordinary one.
+            self.batch_manager.discard_buffered(input_id)?;
+            return Ok(());
+        }
         let per_input = self
             .inputs
             .get_mut(&input_id)
@@ -185,6 +253,14 @@ impl<Op: StreamingSink + 'static> ExecutionContext<Op> {
         if workers_idle && self.batch_manager.can_flush(input_id) {
             let remaining = self.batch_manager.drain(input_id)?;
             let per_input = self.inputs.remove(&input_id).unwrap();
+            if self.owns_input_cancel {
+                // The subtree has finished this input, so nothing can act on
+                // the flag any more. Dropping it keeps the registry from growing
+                // by an entry per task on a long-lived reused pipeline. Only the
+                // owner may do this: clearing a flag while a sibling branch is
+                // still producing would let that branch resume.
+                self.input_cancel.forget(input_id);
+            }
             self.spawn_complete_input(per_input, remaining, input_id);
         }
         Ok(())
@@ -217,9 +293,14 @@ impl<Op: StreamingSink + 'static> ExecutionContext<Op> {
                 runtime_stats.add_duration_us(elapsed.as_micros() as u64);
                 runtime_stats.increment_num_tasks();
 
-                let (mp, finished) = match result {
-                    StreamingSinkOutput::NeedMoreInput(mp) => (mp, false),
-                    StreamingSinkOutput::Finished(mp) => (mp, true),
+                // `InputSatisfied` needs no special handling here: this is
+                // already the input's last batch (`try_complete_input` only
+                // fires once the child has flushed it), so there is nothing
+                // left upstream to cancel and the input proceeds to finalize
+                // just as `NeedMoreInput` would.
+                let (mp, finished) = match result.split() {
+                    (mp, Disposition::Finished) => (mp, true),
+                    (mp, _) => (mp, false),
                 };
                 if let Some(mp) = mp {
                     runtime_stats.add_rows_out(mp.len() as u64);
@@ -291,10 +372,7 @@ impl<Op: StreamingSink + 'static> ExecutionContext<Op> {
             .add_duration_us(elapsed.as_micros() as u64);
         per_input.runtime_stats.increment_num_tasks();
 
-        let (mp, finished) = match output {
-            StreamingSinkOutput::NeedMoreInput(mp) => (mp, false),
-            StreamingSinkOutput::Finished(mp) => (mp, true),
-        };
+        let (mp, disposition) = output.split();
         self.batch_manager.record_completion(
             per_input.runtime_stats.as_ref(),
             mp.as_ref().map(|p| p.len()).unwrap_or(0),
@@ -318,7 +396,7 @@ impl<Op: StreamingSink + 'static> ExecutionContext<Op> {
             }
         }
 
-        if finished {
+        if disposition == Disposition::Finished {
             let _ = self
                 .output_sender
                 .send(PipelineMessage::Flush(input_id))
@@ -327,6 +405,19 @@ impl<Op: StreamingSink + 'static> ExecutionContext<Op> {
         }
 
         per_input.states.push(state);
+
+        if disposition == Disposition::InputSatisfied {
+            debug_assert!(
+                self.owns_input_cancel,
+                "operator returned InputSatisfied without opting into cancels_inputs"
+            );
+            // Stop the producers feeding this input. `dispatch_ready_batches`
+            // then throws away whatever they already handed us instead of
+            // claiming against it. The input still completes normally: its
+            // `Flush` arrives once the short-circuited subtree drains, and
+            // `try_complete_input` takes it from there.
+            self.input_cancel.cancel(input_id);
+        }
         self.dispatch_ready_batches(input_id)?;
         self.try_complete_input(input_id)?;
         Ok(ControlFlow::Continue(()))
@@ -532,6 +623,7 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
         self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
+        input_cancel: &InputCancelRegistry,
     ) -> crate::Result<Receiver<PipelineMessage>> {
         let Self {
             op,
@@ -542,7 +634,16 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
         } = *self;
         let node_id = node_info.id;
         let name: Arc<str> = node_info.name.clone();
-        let child_rx = child.start(maintain_order, runtime_handle)?;
+        // A cancelling operator gets a scope of its own, covering exactly the
+        // producers it consumes from; everything else forwards what it was
+        // handed, so a cancel from further downstream still reaches down here.
+        let owns_input_cancel = op.cancels_inputs();
+        let input_cancel = if owns_input_cancel {
+            InputCancelRegistry::new()
+        } else {
+            input_cancel.clone()
+        };
+        let child_rx = child.start(maintain_order, runtime_handle, &input_cancel)?;
         let (output_tx, output_rx) = create_channel(1);
         let memory_manager = runtime_handle.memory_manager();
         let stats_manager = runtime_handle.stats_manager();
@@ -575,6 +676,8 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
                     node_info,
                     node_id,
                     node_initialized: false,
+                    input_cancel,
+                    owns_input_cancel,
                 };
                 let mut child_rx = child_rx;
                 ctx.process_input(&mut child_rx).await?;

@@ -80,6 +80,15 @@ impl StreamingSink for LimitSink {
             input_num_rows = input.len();
         }
 
+        // `Finished` tears down the whole node, which is only correct because
+        // this operator never runs on a pipeline that serves more than one
+        // input: it is built from `LocalPhysicalPlan::Limit`, which flotilla
+        // does not generate (it plans `distributed_limit` instead, whose sink
+        // returns `InputSatisfied` so that the shared worker pipeline survives).
+        // A future flotilla plan that *does* emit `LocalPhysicalPlan::Limit`
+        // must switch these to `InputSatisfied` — otherwise the first task to
+        // hit its limit kills the pipeline out from under every other task with
+        // the same plan fingerprint.
         match input_num_rows.cmp(remaining_take) {
             Less => {
                 *remaining_take -= input_num_rows;

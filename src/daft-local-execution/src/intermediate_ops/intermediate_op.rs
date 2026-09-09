@@ -23,6 +23,7 @@ use crate::{
     batch_manager::BatchManager,
     channel::{Receiver, Sender, create_channel},
     dynamic_batching::BatchingStrategy,
+    input_cancel::InputCancelRegistry,
     pipeline::{
         BuilderContext, InputId, MorselSizeRequirement, NodeName, PipelineEvent, PipelineMessage,
         PipelineNode, next_event,
@@ -98,6 +99,10 @@ struct ExecutionContext<Op: IntermediateOperator> {
     node_info: Arc<NodeInfo>,
     node_id: usize,
     node_initialized: bool,
+    /// Cancellation scope this node lives in. Read-only here: intermediate
+    /// operators never satisfy an input themselves, they only notice that a
+    /// sink downstream has, and stop spending work on it.
+    input_cancel: InputCancelRegistry,
 }
 
 impl<Op: IntermediateOperator + 'static> ExecutionContext<Op> {
@@ -114,6 +119,15 @@ impl<Op: IntermediateOperator + 'static> ExecutionContext<Op> {
     }
 
     fn dispatch_ready_batches(&mut self, input_id: InputId) -> DaftResult<()> {
+        if self.input_cancel.is_cancelled(input_id) {
+            // A sink downstream has all it needs for this input, so running the
+            // operator over the backlog would produce rows nobody reads — for a
+            // row-wise UDF under a satisfied `LIMIT` that is the bulk of the
+            // wasted work. Discard rather than `drain`: the entry has to stay so
+            // the input's `Flush` is still handled as an ordinary one.
+            self.batch_manager.discard_buffered(input_id)?;
+            return Ok(());
+        }
         while !self.operator_states.is_empty() {
             let Some(batch) = self.batch_manager.next_batch(input_id)? else {
                 break;
@@ -239,11 +253,20 @@ impl<Op: IntermediateOperator + 'static> ExecutionContext<Op> {
                 }
                 PipelineEvent::Flush(input_id) => {
                     if !self.batch_manager.has_input(input_id) {
-                        let _ = self
+                        // Nothing was ever buffered for this input, so just pass
+                        // the flush along. Note this must *not* end
+                        // `process_input`: a worker pipeline is shared by every
+                        // task with the same plan fingerprint, and the other
+                        // `input_id`s riding it still need this node alive.
+                        if self
                             .output_sender
                             .send(PipelineMessage::Flush(input_id))
-                            .await;
-                        return Ok(());
+                            .await
+                            .is_err()
+                        {
+                            return Ok(());
+                        }
+                        continue;
                     }
                     self.batch_manager.set_pending_flush(input_id);
                     self.try_dispatch()?;
@@ -399,11 +422,15 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
         self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
+        input_cancel: &InputCancelRegistry,
     ) -> crate::Result<Receiver<PipelineMessage>> {
         let node_id = self.node_id();
         let name = self.name();
 
-        let mut child_result_receiver = self.child.start(maintain_order, runtime_handle)?;
+        let mut child_result_receiver =
+            self.child
+                .start(maintain_order, runtime_handle, input_cancel)?;
+        let input_cancel = input_cancel.clone();
         let op = self.intermediate_op.clone();
         let (destination_sender, destination_receiver) = create_channel(1);
 
@@ -441,6 +468,7 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
                     node_info,
                     node_id,
                     node_initialized: false,
+                    input_cancel,
                 };
                 ctx.process_input(&mut child_result_receiver).await?;
 

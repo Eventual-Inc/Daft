@@ -13,6 +13,7 @@ use daft_logical_plan::stats::StatsState;
 use crate::{
     ExecutionRuntimeContext,
     channel::{Receiver, create_channel},
+    input_cancel::InputCancelRegistry,
     pipeline::{BuilderContext, MorselSizeRequirement, PipelineMessage, PipelineNode},
     runtime_stats::{DefaultRuntimeStats, RuntimeStats},
 };
@@ -143,11 +144,14 @@ impl PipelineNode for CheckpointTerminusNode {
         self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
+        input_cancel: &InputCancelRegistry,
     ) -> crate::Result<Receiver<PipelineMessage>> {
         let node_id = self.node_id();
         let name = self.name();
 
-        let mut child_receiver = self.child.start(maintain_order, runtime_handle)?;
+        let mut child_receiver = self
+            .child
+            .start(maintain_order, runtime_handle, input_cancel)?;
         let (output_sender, output_receiver) = create_channel(1);
 
         let stats_manager = runtime_handle.stats_manager();

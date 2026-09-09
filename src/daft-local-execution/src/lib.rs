@@ -6,6 +6,7 @@ mod channel;
 mod checkpoint_terminus;
 mod concat;
 mod dynamic_batching;
+mod input_cancel;
 mod input_sender;
 mod intermediate_ops;
 mod join;
