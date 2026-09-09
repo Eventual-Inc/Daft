@@ -72,7 +72,7 @@ def uuid_ext_type() -> Generator[DaftUuidType, None, None]:
     params=[
         # Convert the data into Arrow and then load as in-memory Arrow data
         "arrow",
-        # Dump the data as Parquet and load it as Parquet (will trigger "Unloaded" MicroPartitions)
+        # Dump the data as Parquet and read it back through the Parquet scan path
         "parquet",
     ],
 )
