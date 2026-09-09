@@ -1,5 +1,6 @@
 mod chunk_source;
 mod field_reader;
+mod pred_pipeline;
 mod rg_processor;
 mod util;
 
@@ -22,6 +23,7 @@ use parquet::{
     arrow::arrow_reader::{ArrowReaderMetadata, RowSelection, RowSelector},
     file::metadata::ParquetMetaData,
 };
+use pred_pipeline::{PredGroup, lm_pipeline_enabled, order_groups, plan_pred_groups};
 use rg_processor::{
     process_rg_predicate_only, process_rg_with_data_cols, recv_one_chunk, spawn_col_decoders,
 };
@@ -317,9 +319,19 @@ struct RgInputs {
 /// Build the per-RG input bundles for the streaming decoder.
 ///
 /// Without a pushed predicate prefilter, this just forwards offset/delete/limit
-/// selections. With one, it first decodes predicate columns, evaluates the mask,
-/// and uses that same mask for both filtered predicate arrays and a data-column
-/// `RowSelection`.
+/// selections. With one, it pre-filters: two strategies produce the *same*
+/// `RgInputs` contract (an RG-relative `selection` plus predicate-column arrays
+/// already filtered to the selected rows, in `pred_col_indices` order):
+///
+/// - **Monolithic** ([`prefilter_rg_monolithic`]): decode every predicate column
+///   up-front and evaluate the whole conjunction as one mask.
+/// - **LM-pipelined** ([`prefilter_rg_pipelined`], #6340): split the conjunction
+///   into column-disjoint groups and evaluate them one at a time, progressively
+///   narrowing the selection so each later group decodes fewer rows.
+///
+/// The pipelined path is used only when it can help and is safe for the MVP:
+/// kill-switch on, no `num_rows` limit, and the predicate splits into >= 2
+/// column-disjoint groups. Otherwise it falls back to the monolithic path.
 #[allow(clippy::too_many_arguments)]
 async fn build_rg_inputs(
     chunk_source: &Arc<ChunkSource>,
@@ -348,6 +360,21 @@ async fn build_rg_inputs(
             .collect());
     };
 
+    // Decide the strategy once per file. Pipelining needs >= 2 column-disjoint
+    // groups; the MVP also skips it when a limit is set (limit + progressive
+    // narrowing interacts subtly, deferred to a follow-up).
+    let pred_groups: Option<Vec<PredGroup>> = (lm_pipeline_enabled() && opts.num_rows.is_none())
+        .then(|| plan_pred_groups(prefilter_predicate))
+        .flatten();
+    let group_decodes = match &pred_groups {
+        Some(groups) => Some(prepare_group_decodes(
+            groups,
+            arrow_schema,
+            &plan.pred_col_indices,
+        )?),
+        None => None,
+    };
+
     // Limit set → chunked streaming for early termination. Unbounded → one
     // chunk per col so per-chunk arrow setup costs collapse to per-RG.
     let chunk_size = match opts.num_rows {
@@ -369,90 +396,39 @@ async fn build_rg_inputs(
         if selected_rows_remaining == 0 {
             break;
         }
-        let total_selected = base_sel
-            .as_ref()
-            .map(|s| s.row_count())
-            .unwrap_or_else(|| metadata.row_group(rg_idx).num_rows() as usize);
-
-        let (mut col_receivers, _col_handles) = spawn_col_decoders(
-            &plan.pred_col_indices,
-            chunk_source,
-            metadata,
-            arrow_schema,
-            base_sel.as_ref(),
-            rg_idx,
-            chunk_size,
-            path,
-        )
-        .await?;
-
-        let mut predicate_selectors: Vec<RowSelector> = Vec::new();
-        let mut filtered_pred_by_col: Vec<Vec<ArrayRef>> = (0..plan.pred_col_indices.len())
-            .map(|_| Vec::new())
-            .collect();
-        let mut processed_rows = 0usize;
-
-        loop {
-            let Some(chunks) = recv_one_chunk(&mut col_receivers).await? else {
-                break;
-            };
-            let chunk_rows = chunks[0].len();
-            let daft_pred =
-                record_batch_from_arrow(pred_arrow_schema.clone(), chunks.clone(), path.as_ref())?;
-            let mask = eval_predicate_mask(&daft_pred, &bound_pred)?;
-
-            let selected_rows = mask.true_count();
-            let (mask, selected_rows) = if selected_rows > selected_rows_remaining {
-                (
-                    truncate_mask_to_n_trues(&mask, selected_rows_remaining),
-                    selected_rows_remaining,
+        let (selection, pred_arrays) = match (&pred_groups, &group_decodes) {
+            (Some(groups), Some(decodes)) => {
+                prefilter_rg_pipelined(
+                    chunk_source,
+                    metadata,
+                    arrow_schema,
+                    &plan.read_daft_schema,
+                    &plan.pred_col_indices,
+                    groups,
+                    decodes,
+                    rg_idx,
+                    base_sel,
+                    path,
                 )
-            } else {
-                (mask, selected_rows)
-            };
-
-            let filtered = filter_arrays_by_mask(&chunks, &mask, path.as_ref())?;
-            for (col_pos, filtered) in filtered.into_iter().enumerate() {
-                filtered_pred_by_col[col_pos].push(filtered);
+                .await?
             }
-            predicate_selectors.extend(bool_array_to_row_selection(&mask).iter().copied());
-            processed_rows += chunk_rows;
-            selected_rows_remaining -= selected_rows;
-            if selected_rows_remaining == 0 {
-                break;
+            _ => {
+                prefilter_rg_monolithic(
+                    chunk_source,
+                    metadata,
+                    arrow_schema,
+                    &pred_arrow_schema,
+                    &bound_pred,
+                    &plan.pred_col_indices,
+                    rg_idx,
+                    base_sel,
+                    chunk_size,
+                    path,
+                    &mut selected_rows_remaining,
+                )
+                .await?
             }
-        }
-        // Dropping receivers closes the channels → spawned decoders abort.
-        drop(col_receivers);
-
-        // Concat per-col filtered chunks into one ArrayRef per col. Zero rows
-        // processed (e.g. base_sel selected 0 rows) → empty array of the col's
-        // data type.
-        let pred_arrays: Vec<ArrayRef> = plan
-            .pred_col_indices
-            .iter()
-            .enumerate()
-            .map(|(col_pos, &col_idx)| {
-                let chunks = &filtered_pred_by_col[col_pos];
-                if chunks.is_empty() {
-                    arrow::array::new_empty_array(arrow_schema.field(col_idx).data_type())
-                } else {
-                    let refs: Vec<&dyn arrow::array::Array> =
-                        chunks.iter().map(|a| a.as_ref()).collect();
-                    arrow::compute::concat(&refs).expect("concat per-col chunks")
-                }
-            })
-            .collect();
-
-        let unprocessed = total_selected - processed_rows;
-        if unprocessed > 0 {
-            predicate_selectors.push(RowSelector::skip(unprocessed));
-        }
-        let pred_sel = RowSelection::from(predicate_selectors);
-        let selection = Some(match &base_sel {
-            Some(base) => refine_selection(base, &pred_sel),
-            None => pred_sel,
-        });
+        };
 
         out.push(RgInputs {
             selection,
@@ -461,6 +437,269 @@ async fn build_rg_inputs(
     }
 
     Ok(out)
+}
+
+/// Monolithic per-RG prefilter: decode all predicate columns at `base_sel` and
+/// evaluate the whole conjunction as one mask per chunk. Handles the `num_rows`
+/// limit via chunked streaming + mask truncation + early break (mutating
+/// `selected_rows_remaining` across RGs).
+#[allow(clippy::too_many_arguments)]
+async fn prefilter_rg_monolithic(
+    chunk_source: &Arc<ChunkSource>,
+    metadata: &Arc<ParquetMetaData>,
+    arrow_schema: &Arc<ArrowSchema>,
+    pred_arrow_schema: &Arc<ArrowSchema>,
+    bound_pred: &BoundExpr,
+    pred_col_indices: &[usize],
+    rg_idx: usize,
+    base_sel: Option<RowSelection>,
+    chunk_size: usize,
+    path: &Arc<str>,
+    selected_rows_remaining: &mut usize,
+) -> DaftResult<(Option<RowSelection>, Vec<ArrayRef>)> {
+    let total_selected = base_sel
+        .as_ref()
+        .map(|s| s.row_count())
+        .unwrap_or_else(|| metadata.row_group(rg_idx).num_rows() as usize);
+
+    let (mut col_receivers, _col_handles) = spawn_col_decoders(
+        pred_col_indices,
+        chunk_source,
+        metadata,
+        arrow_schema,
+        base_sel.as_ref(),
+        rg_idx,
+        chunk_size,
+        path,
+    )
+    .await?;
+
+    let mut predicate_selectors: Vec<RowSelector> = Vec::new();
+    let mut filtered_pred_by_col: Vec<Vec<ArrayRef>> =
+        (0..pred_col_indices.len()).map(|_| Vec::new()).collect();
+    let mut processed_rows = 0usize;
+
+    loop {
+        let Some(chunks) = recv_one_chunk(&mut col_receivers).await? else {
+            break;
+        };
+        let chunk_rows = chunks[0].len();
+        let daft_pred =
+            record_batch_from_arrow(pred_arrow_schema.clone(), chunks.clone(), path.as_ref())?;
+        let mask = eval_predicate_mask(&daft_pred, bound_pred)?;
+
+        let selected_rows = mask.true_count();
+        let (mask, selected_rows) = if selected_rows > *selected_rows_remaining {
+            (
+                truncate_mask_to_n_trues(&mask, *selected_rows_remaining),
+                *selected_rows_remaining,
+            )
+        } else {
+            (mask, selected_rows)
+        };
+
+        let filtered = filter_arrays_by_mask(&chunks, &mask, path.as_ref())?;
+        for (col_pos, filtered) in filtered.into_iter().enumerate() {
+            filtered_pred_by_col[col_pos].push(filtered);
+        }
+        predicate_selectors.extend(bool_array_to_row_selection(&mask).iter().copied());
+        processed_rows += chunk_rows;
+        *selected_rows_remaining -= selected_rows;
+        if *selected_rows_remaining == 0 {
+            break;
+        }
+    }
+    // Dropping receivers closes the channels → spawned decoders abort.
+    drop(col_receivers);
+
+    // Concat per-col filtered chunks into one ArrayRef per col. Zero rows
+    // processed (e.g. base_sel selected 0 rows) → empty array of the col's
+    // data type.
+    let pred_arrays: Vec<ArrayRef> = pred_col_indices
+        .iter()
+        .enumerate()
+        .map(|(col_pos, &col_idx)| {
+            let chunks = &filtered_pred_by_col[col_pos];
+            if chunks.is_empty() {
+                arrow::array::new_empty_array(arrow_schema.field(col_idx).data_type())
+            } else {
+                let refs: Vec<&dyn arrow::array::Array> =
+                    chunks.iter().map(|a| a.as_ref()).collect();
+                arrow::compute::concat(&refs).expect("concat per-col chunks")
+            }
+        })
+        .collect();
+
+    let unprocessed = total_selected - processed_rows;
+    if unprocessed > 0 {
+        predicate_selectors.push(RowSelector::skip(unprocessed));
+    }
+    let pred_sel = RowSelection::from(predicate_selectors);
+    let selection = Some(match &base_sel {
+        Some(base) => refine_selection(base, &pred_sel),
+        None => pred_sel,
+    });
+
+    Ok((selection, pred_arrays))
+}
+
+/// Per-group decode artifacts, prepared once per file (RG-invariant): the
+/// physical column indices, the arrow schema over just those columns, and the
+/// sub-predicate bound against that schema.
+struct GroupDecode {
+    col_indices: Vec<usize>,
+    group_arrow_schema: Arc<ArrowSchema>,
+    bound: BoundExpr,
+}
+
+fn prepare_group_decodes(
+    groups: &[PredGroup],
+    arrow_schema: &Arc<ArrowSchema>,
+    pred_col_indices: &[usize],
+) -> DaftResult<Vec<GroupDecode>> {
+    groups
+        .iter()
+        .map(|g| {
+            let group_cols: HashSet<&str> = g.col_names.iter().map(String::as_str).collect();
+            // Preserve `pred_col_indices` order so kept-array assembly is stable.
+            let col_indices: Vec<usize> = pred_col_indices
+                .iter()
+                .copied()
+                .filter(|&ci| group_cols.contains(arrow_schema.field(ci).name().as_str()))
+                .collect();
+            let group_arrow_schema = schema_from_indices(arrow_schema, &col_indices);
+            let group_daft_schema = Arc::new(Schema::try_from(group_arrow_schema.as_ref())?);
+            let bound = BoundExpr::try_new(
+                substitute_missing_cols(&g.subpred, &group_daft_schema)?,
+                &group_daft_schema,
+            )?;
+            Ok(GroupDecode {
+                col_indices,
+                group_arrow_schema,
+                bound,
+            })
+        })
+        .collect()
+}
+
+/// LM-pipelined per-RG prefilter (#6340): evaluate one column-disjoint group at a
+/// time, narrowing `running_sel` after each so the next group decodes only the
+/// rows that survived all earlier groups.
+///
+/// Alignment invariant: `kept` arrays are *always* at `running_sel` granularity.
+/// Each group is decoded at `running_sel`, so its mask has exactly that many
+/// entries; re-filtering `kept` by the same mask keeps every array aligned.
+///
+/// Produces the identical contract to [`prefilter_rg_monolithic`]: since a row
+/// survives a conjunction iff it passes every conjunct, progressive narrowing
+/// yields the same surviving-row set regardless of group order — only the decode
+/// work differs.
+#[allow(clippy::too_many_arguments)]
+async fn prefilter_rg_pipelined(
+    chunk_source: &Arc<ChunkSource>,
+    metadata: &Arc<ParquetMetaData>,
+    arrow_schema: &Arc<ArrowSchema>,
+    read_daft_schema: &Schema,
+    pred_col_indices: &[usize],
+    groups: &[PredGroup],
+    decodes: &[GroupDecode],
+    rg_idx: usize,
+    base_sel: Option<RowSelection>,
+    path: &Arc<str>,
+) -> DaftResult<(Option<RowSelection>, Vec<ArrayRef>)> {
+    // Group order is per-RG: min/max selectivity estimates come from this RG's stats.
+    let order = order_groups(groups, metadata.row_group(rg_idx), read_daft_schema);
+    let rg_rows = metadata.row_group(rg_idx).num_rows() as usize;
+
+    let mut running_sel = base_sel;
+    // Kept predicate-column arrays, keyed by physical column index, all at
+    // `running_sel` granularity.
+    let mut kept: BTreeMap<usize, ArrayRef> = BTreeMap::new();
+
+    for &gi in &order {
+        // Rows still alive entering this group; if none, nothing left to decode.
+        let alive = running_sel
+            .as_ref()
+            .map(|s| s.row_count())
+            .unwrap_or(rg_rows);
+        if alive == 0 {
+            break;
+        }
+        let dec = &decodes[gi];
+
+        // No limit in the pipelined MVP → one chunk covering all alive rows.
+        let (mut col_receivers, _col_handles) = spawn_col_decoders(
+            &dec.col_indices,
+            chunk_source,
+            metadata,
+            arrow_schema,
+            running_sel.as_ref(),
+            rg_idx,
+            usize::MAX,
+            path,
+        )
+        .await?;
+        let chunks = match recv_one_chunk(&mut col_receivers).await? {
+            Some(c) => c,
+            // Decoder closed with no rows; alive rows already reflected in running_sel.
+            None => {
+                drop(col_receivers);
+                break;
+            }
+        };
+        drop(col_receivers);
+
+        let batch = record_batch_from_arrow(
+            dec.group_arrow_schema.clone(),
+            chunks.clone(),
+            path.as_ref(),
+        )?;
+        let mask = eval_predicate_mask(&batch, &dec.bound)?;
+
+        // Re-filter previously kept arrays by this mask, then keep this group's
+        // filtered columns. Both are at `alive`-row granularity, so they align.
+        for arr in kept.values_mut() {
+            *arr = arrow::compute::filter(&**arr, &mask)
+                .with_context(|_| ArrowSnafu {
+                    path: path.to_string(),
+                })
+                .map_err(common_error::DaftError::from)?;
+        }
+        let group_filtered = filter_arrays_by_mask(&chunks, &mask, path.as_ref())?;
+        for (&ci, arr) in dec.col_indices.iter().zip(group_filtered) {
+            kept.insert(ci, arr);
+        }
+
+        // Narrow: `mask` is relative to `running_sel`-selected rows.
+        let group_sel = bool_array_to_row_selection(&mask);
+        running_sel = Some(match running_sel {
+            Some(base) => refine_selection(&base, &group_sel),
+            None => group_sel,
+        });
+    }
+
+    let final_rows = running_sel
+        .as_ref()
+        .map(|s| s.row_count())
+        .unwrap_or(rg_rows);
+    // Assemble pred_arrays in pred_col_indices order. A column whose group never
+    // ran (alive hit 0) becomes an empty array — correct, since final_rows is 0
+    // in that case.
+    let pred_arrays: Vec<ArrayRef> = pred_col_indices
+        .iter()
+        .map(|&ci| {
+            kept.get(&ci).cloned().unwrap_or_else(|| {
+                arrow::array::new_empty_array(arrow_schema.field(ci).data_type())
+            })
+        })
+        .collect();
+    debug_assert!(
+        pred_arrays.iter().all(|a| a.len() == final_rows),
+        "pipelined pred_arrays length mismatch: lens={:?} final_rows={final_rows}",
+        pred_arrays.iter().map(|a| a.len()).collect::<Vec<_>>()
+    );
+
+    Ok((running_sel, pred_arrays))
 }
 
 /// Shared per-file state for an RG-decoding task. One `Arc<RgTaskCtx>` is
