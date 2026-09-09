@@ -18,6 +18,19 @@ pub async fn file_exists(file_ref: FileReference) -> DaftResult<bool> {
     }
 }
 
+/// Returns the size of the file at the given reference.
+pub async fn file_size(file_ref: FileReference) -> DaftResult<usize> {
+    let io_config = file_ref.io_config.unwrap_or_default();
+    let io_client = daft_io::get_io_client(true, io_config)?;
+
+    let (source, path) = io_client
+        .get_source_and_path(&file_ref.url)
+        .await
+        .map_err(DaftError::from)?;
+
+    source.get_size(&path, None).await.map_err(DaftError::from)
+}
+
 /// Blocking version of `file_exists`.
 /// Checks whether the file at the given reference exists.
 pub fn file_exists_blocking(file_ref: FileReference) -> DaftResult<bool> {
