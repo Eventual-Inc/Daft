@@ -312,3 +312,87 @@ pub fn prune_row_groups(
     }
     Ok(result)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use arrow::{
+        array::{RecordBatch as ArrowRecordBatch, StringArray},
+        datatypes::{DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema},
+    };
+    use daft_core::prelude::{DataType, Field, Schema};
+    use daft_dsl::{lit, resolved_col};
+    use daft_functions_utf8::startswith;
+    use parquet::arrow::{ArrowWriter, arrow_reader::ParquetRecordBatchReaderBuilder};
+
+    use super::prune_row_groups;
+
+    /// End-to-end coverage for `starts_with` row-group pruning: write a real
+    /// parquet file with per-row-group min/max statistics, then confirm
+    /// `prune_row_groups` skips row groups using those stats. This exercises the
+    /// same path production reads use (`row_group_metadata_to_table_stats` ->
+    /// `TableStatistics::eval_expression`), not just the in-memory stats layer.
+    ///
+    /// Layout (two row groups, each flushed separately so each gets its own
+    /// min/max stats):
+    ///   row group 0: ["apple", "avocado"]    -> min="apple",  max="avocado"
+    ///   row group 1: ["banana", "blueberry"] -> min="banana", max="blueberry"
+    ///
+    /// Data is ASCII-only so signed/unsigned byte stat ordering is irrelevant.
+    #[test]
+    fn test_prune_row_groups_startswith_uses_stats() {
+        let dir = std::env::temp_dir().join("daft_test_prune_startswith");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("startswith.parquet");
+
+        let arrow_schema = Arc::new(ArrowSchema::new(vec![ArrowField::new(
+            "s",
+            ArrowDataType::Utf8,
+            true,
+        )]));
+        let file = std::fs::File::create(&path).unwrap();
+        let mut writer = ArrowWriter::try_new(file, arrow_schema.clone(), None).unwrap();
+        for values in [vec!["apple", "avocado"], vec!["banana", "blueberry"]] {
+            let batch = ArrowRecordBatch::try_new(
+                arrow_schema.clone(),
+                vec![Arc::new(StringArray::from(values))],
+            )
+            .unwrap();
+            writer.write(&batch).unwrap();
+            // Flush after each batch so it becomes its own row group.
+            writer.flush().unwrap();
+        }
+        writer.close().unwrap();
+
+        let file = std::fs::File::open(&path).unwrap();
+        let builder = ParquetRecordBatchReaderBuilder::try_new(file).unwrap();
+        let metadata = builder.metadata();
+        assert_eq!(metadata.num_row_groups(), 2, "expected two row groups");
+
+        let schema = Schema::new(vec![Field::new("s", DataType::Utf8)]);
+        let uri = path.to_str().unwrap();
+
+        // starts_with(s, "b") => "b" <= s < "c": overlaps only row group 1.
+        let pred = startswith(resolved_col("s"), lit("b"));
+        let kept = prune_row_groups(metadata, None, 0, None, Some(&pred), &schema, uri).unwrap();
+        assert_eq!(kept, vec![1], "prefix 'b' must prune row group 0");
+
+        // starts_with(s, "a") => "a" <= s < "b": overlaps only row group 0.
+        let pred = startswith(resolved_col("s"), lit("a"));
+        let kept = prune_row_groups(metadata, None, 0, None, Some(&pred), &schema, uri).unwrap();
+        assert_eq!(kept, vec![0], "prefix 'a' must prune row group 1");
+
+        // starts_with(s, "c") => "c" <= s < "d": overlaps neither row group.
+        let pred = startswith(resolved_col("s"), lit("c"));
+        let kept = prune_row_groups(metadata, None, 0, None, Some(&pred), &schema, uri).unwrap();
+        assert!(kept.is_empty(), "prefix 'c' must prune both row groups");
+
+        // Empty prefix yields no useful bound (Missing), so nothing is pruned.
+        let pred = startswith(resolved_col("s"), lit(""));
+        let kept = prune_row_groups(metadata, None, 0, None, Some(&pred), &schema, uri).unwrap();
+        assert_eq!(kept, vec![0, 1], "empty prefix must not prune anything");
+
+        std::fs::remove_file(&path).ok();
+    }
+}

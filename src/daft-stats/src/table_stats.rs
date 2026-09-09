@@ -165,20 +165,28 @@ impl TableStatistics {
             // (e.g. Spark's `StringStartsWith`) push prefix predicates into
             // column-statistics-based data skipping.
             Expr::ScalarFn(ScalarFn::Builtin(func)) if func.name() == "starts_with" => {
-                let args: Vec<&ExprRef> = func.inputs.iter().map(|arg| arg.inner()).collect();
-                // Expect exactly `starts_with(input, prefix)`.
-                if args.len() != 2 {
+                // Bind by name, not position: `starts_with`'s two arguments are
+                // both named (`input`, `pattern`) and a caller may pass them as
+                // keyword args in either order, so positional indexing would be
+                // fragile. This mirrors the binding used by the `starts_with`
+                // kernel itself (see daft-functions-utf8/src/utils.rs). If either
+                // argument is absent we fail safe by returning Missing (no
+                // pruning) rather than propagating an error.
+                let (Ok(input), Ok(pattern)) = (
+                    func.inputs.required((0, "input")),
+                    func.inputs.required((1, "pattern")),
+                ) else {
                     return Ok(ColumnRangeStatistics::Missing);
-                }
+                };
                 // The prefix must be a non-empty Utf8 literal; anything else
                 // (column, non-string literal, empty prefix) yields no useful
                 // bound, so we conservatively return Missing (never prune).
-                let prefix = match args[1].as_ref() {
+                let prefix = match pattern.as_ref() {
                     Expr::Literal(Literal::Utf8(s)) if !s.is_empty() => s.clone(),
                     _ => return Ok(ColumnRangeStatistics::Missing),
                 };
 
-                let col_stats = self.eval_expression(&BoundExpr::new_unchecked(args[0].clone()))?;
+                let col_stats = self.eval_expression(&BoundExpr::new_unchecked(input.clone()))?;
 
                 // Lower bound: col >= prefix
                 let lower: ColumnRangeStatistics = Literal::Utf8(prefix.clone()).try_into()?;
@@ -336,7 +344,7 @@ mod test {
     use daft_recordbatch::RecordBatch;
     use snafu::ResultExt;
 
-    use super::TableStatistics;
+    use super::{TableStatistics, increment_utf8_prefix, next_unicode_scalar};
     use crate::{DaftCoreComputeSnafu, column_stats::TruthValue};
 
     #[test]
@@ -582,5 +590,47 @@ mod test {
         assert_eq!(result.to_truth_value(), TruthValue::Maybe);
 
         Ok(())
+    }
+
+    #[test]
+    fn test_increment_utf8_prefix_basic() {
+        // ASCII: the last scalar advances by one.
+        assert_eq!(increment_utf8_prefix("a"), Some("b".to_string()));
+        assert_eq!(increment_utf8_prefix("foo"), Some("fop".to_string()));
+        // Multibyte: é (U+00E9) -> ê (U+00EA); UTF-8 byte order matches scalar
+        // order, so this is the correct exclusive upper bound.
+        assert_eq!(increment_utf8_prefix("café"), Some("cafê".to_string()));
+    }
+
+    #[test]
+    fn test_increment_utf8_prefix_skips_surrogate_range() {
+        // U+D7FF is the last scalar before the surrogate range; its successor
+        // must skip U+D800..=U+DFFF and land on U+E000.
+        assert_eq!(next_unicode_scalar('\u{D7FF}'), Some('\u{E000}'));
+        assert_eq!(
+            increment_utf8_prefix("\u{D7FF}"),
+            Some("\u{E000}".to_string())
+        );
+    }
+
+    #[test]
+    fn test_increment_utf8_prefix_carries_left_past_max_scalar() {
+        // A trailing U+10FFFF (char::MAX) has no successor, so it is dropped and
+        // the increment carries to the previous char.
+        assert_eq!(increment_utf8_prefix("a\u{10FFFF}"), Some("b".to_string()));
+        // Multiple trailing max scalars collapse into a single carry.
+        assert_eq!(
+            increment_utf8_prefix("ab\u{10FFFF}\u{10FFFF}"),
+            Some("ac".to_string())
+        );
+    }
+
+    #[test]
+    fn test_increment_utf8_prefix_all_max_scalar_is_none() {
+        // When every char is char::MAX there is no valid exclusive upper bound,
+        // so the caller must fall back to the lower-bound-only test.
+        assert_eq!(next_unicode_scalar('\u{10FFFF}'), None);
+        assert_eq!(increment_utf8_prefix("\u{10FFFF}"), None);
+        assert_eq!(increment_utf8_prefix("\u{10FFFF}\u{10FFFF}"), None);
     }
 }
