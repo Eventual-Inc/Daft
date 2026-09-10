@@ -32,9 +32,6 @@ def read_hudi(
     Returns:
         DataFrame: A DataFrame with the schema converted from the specified Hudi table.
 
-    Note:
-        This function requires the use of Apache Hudi. To ensure that this is installed with Daft, you may install: ``pip install -U daft[hudi]``
-
     Examples:
         Read a Hudi table from a local path:
         >>> df = daft.read_hudi("some-table-uri")
