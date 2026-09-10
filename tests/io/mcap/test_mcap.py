@@ -324,6 +324,87 @@ def test_mcap_small_remote_filter_uses_one_body_request(tmp_path):
     assert CountingRangeHandler.bytes_served == len(contents)
 
 
+def test_mcap_where_pushdown_coalesces_remote_ranges(tmp_path):
+    path = tmp_path / "chunked.mcap"
+    with path.open("wb") as output:
+        writer = MCAPWriter(output, chunk_size=64 * 1024, compression=CompressionType.NONE)
+        writer.start()
+        schema_id = writer.register_schema(name="", encoding="", data=b"")
+        channel_id = writer.register_channel(topic="/camera", message_encoding="", schema_id=schema_id)
+        payload = b"x" * (60 * 1024)
+        for sequence in range(64):
+            writer.add_message(
+                channel_id=channel_id,
+                log_time=sequence,
+                publish_time=sequence,
+                sequence=sequence,
+                data=payload,
+            )
+        writer.finish()
+    contents = path.read_bytes()
+    CountingRangeHandler = _make_counting_range_handler(contents)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), CountingRangeHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/chunked.mcap"
+        result = (
+            daft.read_mcap(url)
+            .where((daft.col("topic") == "/camera") & (daft.col("log_time") >= 32) & (daft.col("log_time") < 37))
+            .select("log_time")
+            .to_pydict()
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert result == {"log_time": [32, 33, 34, 35, 36]}
+    assert CountingRangeHandler.bytes_served * 2 < len(contents)
+    assert CountingRangeHandler.get_requests <= 6
+
+
+def test_mcap_unfiltered_read_is_log_time_ordered(tmp_path):
+    path = tmp_path / "out_of_order.mcap"
+    with path.open("wb") as output:
+        writer = MCAPWriter(output, chunk_size=64, compression=CompressionType.NONE)
+        writer.start()
+        schema_id = writer.register_schema(name="", encoding="", data=b"")
+        channel_id = writer.register_channel(topic="/camera", message_encoding="", schema_id=schema_id)
+        for log_time in [*range(100, 110), *range(10)]:
+            writer.add_message(
+                channel_id,
+                log_time=log_time,
+                publish_time=log_time,
+                sequence=log_time,
+                data=log_time.to_bytes(8, "little"),
+            )
+        writer.finish()
+
+    result = daft.read_mcap(path).select("log_time").to_pydict()
+    assert result == {"log_time": [*range(10), *range(100, 110)]}
+
+
+def test_mcap_where_matches_kwargs_results(raw_bytes_mcap_dataset_path):
+    topic = "/robot0/sensor/camera0/compressed"
+    start, end = 100_000_000, 110_000_000
+
+    via_kwargs = (
+        daft.read_mcap(raw_bytes_mcap_dataset_path, topics=[topic], start_time=start, end_time=end)
+        .select("log_time", "sequence")
+        .to_pydict()
+    )
+    via_where = (
+        daft.read_mcap(raw_bytes_mcap_dataset_path)
+        .where((daft.col("topic") == topic) & (daft.col("log_time") >= start) & (daft.col("log_time") < end))
+        .select("log_time", "sequence")
+        .to_pydict()
+    )
+
+    assert len(via_kwargs["log_time"]) == 10
+    assert via_where == via_kwargs
+
+
 def test_mcap_batch_size_must_be_positive(raw_bytes_mcap_dataset_path):
     with pytest.raises(ValueError, match="batch_size must be positive"):
         daft.read_mcap(raw_bytes_mcap_dataset_path, batch_size=0)
