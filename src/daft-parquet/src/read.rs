@@ -859,31 +859,36 @@ mod tests {
             array::{Int64Array, RecordBatch as ArrowRecordBatch},
             datatypes::{DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema},
         };
-        use parquet::{arrow::ArrowWriter, file::properties::WriterProperties};
-
         let schema = Arc::new(ArrowSchema::new(vec![
             ArrowField::new("a", ArrowDataType::Int64, true),
             ArrowField::new("b", ArrowDataType::Int64, false),
             ArrowField::new("c", ArrowDataType::Int64, false),
         ]));
+        let rows = pipelined_test_rows(n, a_nulls);
+        let a: Int64Array = rows.iter().map(|(a, _, _)| *a).collect();
+        let b: Int64Array = rows.iter().map(|(_, b, _)| *b).collect();
+        let c: Int64Array = rows.iter().map(|(_, _, c)| *c).collect();
+        let batch =
+            ArrowRecordBatch::try_new(schema, vec![Arc::new(a), Arc::new(b), Arc::new(c)]).unwrap();
+        write_pipelined_test_batch(path, &batch, rg_size);
+    }
+
+    fn write_pipelined_test_batch(
+        path: &std::path::Path,
+        batch: &arrow::array::RecordBatch,
+        rg_size: usize,
+    ) {
+        use parquet::{arrow::ArrowWriter, file::properties::WriterProperties};
+
         let props = WriterProperties::builder()
             .set_max_row_group_row_count(Some(rg_size))
             .build();
         let file = std::fs::File::create(path).unwrap();
-        let mut writer = ArrowWriter::try_new(file, schema.clone(), Some(props)).unwrap();
-
-        let rows = pipelined_test_rows(n, a_nulls);
-        // Write in rg_size-sized batches so each becomes its own row group.
-        for chunk in rows.chunks(rg_size) {
-            let a: Int64Array = chunk.iter().map(|(a, _, _)| *a).collect();
-            let b: Int64Array = chunk.iter().map(|(_, b, _)| *b).collect();
-            let c: Int64Array = chunk.iter().map(|(_, _, c)| *c).collect();
-            let batch = ArrowRecordBatch::try_new(
-                schema.clone(),
-                vec![Arc::new(a), Arc::new(b), Arc::new(c)],
-            )
-            .unwrap();
-            writer.write(&batch).unwrap();
+        let mut writer = ArrowWriter::try_new(file, batch.schema(), Some(props)).unwrap();
+        for offset in (0..batch.num_rows()).step_by(rg_size) {
+            writer
+                .write(&batch.slice(offset, rg_size.min(batch.num_rows() - offset)))
+                .unwrap();
         }
         writer.close().unwrap();
     }
@@ -893,6 +898,15 @@ mod tests {
         predicate: Option<daft_dsl::ExprRef>,
         columns: Vec<String>,
     ) -> daft_recordbatch::RecordBatch {
+        read_pipelined_with_limit(path, predicate, columns, None)
+    }
+
+    fn read_pipelined_with_limit(
+        path: &str,
+        predicate: Option<daft_dsl::ExprRef>,
+        columns: Vec<String>,
+        num_rows: Option<usize>,
+    ) -> daft_recordbatch::RecordBatch {
         let path = path.to_string();
         let io_client = Arc::new(IOClient::new(IOConfig::default().into()).unwrap());
         let runtime = get_io_runtime(true);
@@ -901,6 +915,7 @@ mod tests {
                 let opts = ParquetReadOptions {
                     predicate,
                     columns: Some(columns),
+                    num_rows,
                     ..Default::default()
                 };
                 read_parquet_into_recordbatch(&path, io_client, None, opts)
@@ -937,6 +952,7 @@ mod tests {
         let pred = resolved_col("a")
             .gt(lit(100))
             .and(resolved_col("b").lt(lit(10)));
+        crate::reader::assert_prefilter_strategy(&pred, None, true);
         let batch = read_pipelined(&uri, Some(pred), vec!["a".into(), "b".into(), "c".into()]);
 
         let expected: Vec<(Option<i64>, i64, i64)> = pipelined_test_rows(200, false)
@@ -976,44 +992,118 @@ mod tests {
     fn test_pipelined_matches_monolithic_same_data() {
         use daft_dsl::{lit, resolved_col};
 
-        // Identical data + projection; compare a pipelined predicate against a
-        // monolithic one that selects the same rows, to prove the two strategies
-        // agree. `a > 100 AND b < 10` (pipelined) vs `a > 100 AND a < 1000 AND
-        // b < 10` — the extra same-column conjunct forces grouping but keeps the
-        // surviving set identical.
-        let dir = std::env::temp_dir().join("daft_test_pipelined_vs_mono");
+        let dir =
+            std::env::temp_dir().join(format!("daft_test_pipelined_vs_mono_{}", fastrand::u64(..)));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("data.parquet");
-        write_pipelined_test_parquet(&path, 200, 64, false);
+        let total_fixture_rows = 200;
+        write_pipelined_test_parquet(&path, total_fixture_rows, 64, true);
         let uri = path.to_str().unwrap().to_string();
 
-        let pipelined_pred = resolved_col("a")
+        let pred = resolved_col("a")
             .gt(lit(100))
             .and(resolved_col("b").lt(lit(10)));
-        let pipelined = read_pipelined(
-            &uri,
-            Some(pipelined_pred),
-            vec!["a".into(), "b".into(), "c".into()],
-        );
+        crate::reader::assert_prefilter_strategy(&pred, None, true);
+        crate::reader::assert_prefilter_strategy(&pred, Some(total_fixture_rows), false);
+        let columns = vec!["a".into(), "b".into(), "c".into()];
+        let pipelined = read_pipelined(&uri, Some(pred.clone()), columns.clone());
+        let mono = read_pipelined_with_limit(&uri, Some(pred), columns, Some(total_fixture_rows));
 
-        // `a > 100 AND a < 1000` share column a → merged into one group; with
-        // `b < 10` that's still 2 groups, but the point here is the surviving
-        // rows are identical to the pipelined predicate above.
-        let mono_pred = resolved_col("a")
-            .gt(lit(100))
-            .and(resolved_col("a").lt(lit(1000)))
-            .and(resolved_col("b").lt(lit(10)));
-        let mono = read_pipelined(
-            &uri,
-            Some(mono_pred),
-            vec!["a".into(), "b".into(), "c".into()],
-        );
-
+        assert!(pipelined.len() > 0 && pipelined.len() < total_fixture_rows);
         assert_eq!(pipelined.len(), mono.len());
-        assert_eq!(
-            pipelined_col_i64(&pipelined, "c"),
-            pipelined_col_i64(&mono, "c")
-        );
+        for name in ["a", "b", "c"] {
+            assert_eq!(
+                pipelined_col_i64(&pipelined, name),
+                pipelined_col_i64(&mono, name)
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_monolithic_fallback_column_dependent_is_in() {
+        use arrow::{
+            array::{Int64Array, RecordBatch as ArrowRecordBatch},
+            datatypes::{Field as ArrowField, Schema as ArrowSchema},
+        };
+        use daft_dsl::{lit, resolved_col};
+
+        let dir =
+            std::env::temp_dir().join(format!("daft_test_pipelined_is_in_{}", fastrand::u64(..)));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("data.parquet");
+        let schema = Arc::new(ArrowSchema::new(
+            ["a", "b", "c", "d"]
+                .map(|name| ArrowField::new(name, DataType::Int64, false))
+                .to_vec(),
+        ));
+        let batch = ArrowRecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(Int64Array::from(vec![0, 1])),
+                Arc::new(Int64Array::from(vec![9, 5])),
+                Arc::new(Int64Array::from(vec![5, 9])),
+                Arc::new(Int64Array::from(vec![10, 20])),
+            ],
+        )
+        .unwrap();
+        write_pipelined_test_batch(&path, &batch, 2);
+        let pred = resolved_col("a")
+            .eq(lit(1))
+            .and(resolved_col("b").is_in(vec![resolved_col("c")]));
+        let result = read_pipelined(path.to_str().unwrap(), Some(pred.clone()), vec!["d".into()]);
+
+        assert_eq!(pipelined_col_i64(&result, "d"), vec![Some(20)]);
+        assert_eq!(result.schema.field_names().collect::<Vec<_>>(), vec!["d"]);
+        crate::reader::assert_prefilter_strategy(&pred, None, false);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_monolithic_fallback_constant_conjuncts() {
+        use daft_dsl::{lit, null_lit, resolved_col};
+
+        let dir = std::env::temp_dir().join(format!(
+            "daft_test_pipelined_constants_{}",
+            fastrand::u64(..)
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("data.parquet");
+        write_pipelined_test_parquet(&path, 20, 20, true);
+        let expected: Vec<_> = pipelined_test_rows(20, true)
+            .into_iter()
+            .filter(|(a, b, _)| a.is_some_and(|a| a > 0) && *b < 10)
+            .map(|(_, _, c)| Some(c))
+            .collect();
+        assert!(!expected.is_empty());
+
+        for (constant, keeps_rows) in [
+            (lit(true), true),
+            (lit(false), false),
+            (null_lit(), false),
+            (
+                null_lit().cast(&daft_core::prelude::DataType::Boolean),
+                false,
+            ),
+        ] {
+            let pred = resolved_col("a")
+                .gt(lit(0))
+                .and(resolved_col("b").lt(lit(10)))
+                .and(constant);
+            let result =
+                read_pipelined(path.to_str().unwrap(), Some(pred.clone()), vec!["c".into()]);
+            assert_eq!(
+                pipelined_col_i64(&result, "c"),
+                if keeps_rows {
+                    expected.clone()
+                } else {
+                    Vec::new()
+                },
+                "predicate: {pred}"
+            );
+            crate::reader::assert_prefilter_strategy(&pred, None, false);
+        }
 
         let _ = std::fs::remove_dir_all(&dir);
     }

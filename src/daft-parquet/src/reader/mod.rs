@@ -316,6 +316,24 @@ struct RgInputs {
     pred_arrays: Vec<ArrayRef>,
 }
 
+fn plan_prefilter_groups(predicate: &ExprRef, num_rows: Option<usize>) -> Option<Vec<PredGroup>> {
+    (lm_pipeline_enabled() && num_rows.is_none())
+        .then(|| plan_pred_groups(predicate))
+        .flatten()
+}
+
+#[cfg(test)]
+pub(super) fn assert_prefilter_strategy(
+    predicate: &ExprRef,
+    num_rows: Option<usize>,
+    pipelined: bool,
+) {
+    assert_eq!(
+        plan_prefilter_groups(predicate, num_rows).is_some(),
+        pipelined
+    );
+}
+
 /// Build the per-RG input bundles for the streaming decoder.
 ///
 /// Without a pushed predicate prefilter, this just forwards offset/delete/limit
@@ -363,9 +381,7 @@ async fn build_rg_inputs(
     // Decide the strategy once per file. Pipelining needs >= 2 column-disjoint
     // groups; the MVP also skips it when a limit is set (limit + progressive
     // narrowing interacts subtly, deferred to a follow-up).
-    let pred_groups: Option<Vec<PredGroup>> = (lm_pipeline_enabled() && opts.num_rows.is_none())
-        .then(|| plan_pred_groups(prefilter_predicate))
-        .flatten();
+    let pred_groups = plan_prefilter_groups(prefilter_predicate, opts.num_rows);
     let group_decodes = match &pred_groups {
         Some(groups) => Some(prepare_group_decodes(
             groups,
