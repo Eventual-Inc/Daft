@@ -5,10 +5,10 @@ use common_io_config::HuggingFaceConfig;
 use futures::{FutureExt, StreamExt, stream::BoxStream};
 use reqwest_middleware::ClientWithMiddleware;
 use serde::Deserialize;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, OnceCell};
 use xet::xet_session::{
     HeaderMap, HeaderValue, XetDownloadStream, XetDownloadStreamGroup, XetFileInfo, XetSession,
-    XetSessionBuilder, header,
+    XetSessionBuilder, XetTaskState, header,
 };
 
 use super::{
@@ -63,6 +63,7 @@ fn auth_headers(hf_config: &HuggingFaceConfig) -> HeaderMap {
 pub(super) struct XetContext {
     hf_config: HuggingFaceConfig,
     session: Mutex<Option<Arc<XetSession>>>,
+    download_groups: Mutex<HashMap<String, Arc<OnceCell<Arc<XetDownloadStreamGroup>>>>>,
     resolve_cache: Mutex<HashMap<String, Option<XetResolvedFile>>>,
 }
 
@@ -71,6 +72,7 @@ impl XetContext {
         Self {
             hf_config,
             session: Mutex::new(None),
+            download_groups: Mutex::new(HashMap::new()),
             resolve_cache: Mutex::new(HashMap::new()),
         }
     }
@@ -138,7 +140,11 @@ impl XetContext {
 
     async fn get_session(&self) -> Result<Arc<XetSession>, Error> {
         let mut guard = self.session.lock().await;
-        if let Some(session) = guard.as_ref() {
+        // A failed group build puts the Xet session into a terminal error state.
+        // Replace it on retry; existing groups retain their own session handles.
+        if let Some(session) = guard.as_ref()
+            && matches!(session.status(), Ok(XetTaskState::Running))
+        {
             return Ok(session.clone());
         }
         let session = XetSessionBuilder::new()
@@ -153,7 +159,47 @@ impl XetContext {
         Ok(session)
     }
 
-    async fn get_download_group(&self, refresh_url: &str) -> Result<XetDownloadStreamGroup, Error> {
+    async fn get_download_group(
+        &self,
+        refresh_url: &str,
+    ) -> Result<Arc<XetDownloadStreamGroup>, Error> {
+        // The refresh URL scopes tokens to a repository/revision, not a file.
+        // Credentials are immutable within this context; never share groups globally.
+        let cell = self
+            .download_groups
+            .lock()
+            .await
+            .entry(refresh_url.to_string())
+            .or_default()
+            .clone();
+        // Coalesce concurrent initialization without holding the map lock over IO.
+        // Failures remain retryable, and the group owns Xet's token-refresh machinery.
+        cell.get_or_try_init(|| async {
+            self.build_download_group(refresh_url).await.map(Arc::new)
+        })
+        .await
+        .cloned()
+    }
+
+    async fn invalidate_download_group(
+        &self,
+        refresh_url: &str,
+        group: &Arc<XetDownloadStreamGroup>,
+    ) {
+        let mut groups = self.download_groups.lock().await;
+        if groups
+            .get(refresh_url)
+            .and_then(|cell| cell.get())
+            .is_some_and(|cached| Arc::ptr_eq(cached, group))
+        {
+            groups.remove(refresh_url);
+        }
+    }
+
+    async fn build_download_group(
+        &self,
+        refresh_url: &str,
+    ) -> Result<XetDownloadStreamGroup, Error> {
         let session = self.get_session().await?;
         let refresh_headers = auth_headers(&self.hf_config);
         session
@@ -178,16 +224,25 @@ impl XetContext {
         resolved: &XetResolvedFile,
         range: Option<GetRange>,
     ) -> Result<XetDownloadStream, Error> {
-        let group = self.get_download_group(&xet_read_token_url(parts)).await?;
+        let refresh_url = xet_read_token_url(parts);
+        let group = self.get_download_group(&refresh_url).await?;
         let xet_range = get_range_to_xet_range(range, resolved.file_size);
 
-        let mut stream = group
+        let mut stream = match group
             .download_stream(resolved.file_info.clone(), xet_range)
             .await
-            .map_err(|source| Error::XetOperationFailed {
-                path: parts.path.clone(),
-                message: source.to_string(),
-            })?;
+        {
+            Ok(stream) => stream,
+            Err(source) => {
+                // Xet marks the group terminal after a stream-creation error.
+                // Evict only this generation, not a concurrent replacement.
+                self.invalidate_download_group(&refresh_url, &group).await;
+                return Err(Error::XetOperationFailed {
+                    path: parts.path.clone(),
+                    message: source.to_string(),
+                });
+            }
+        };
         stream.start();
         Ok(stream)
     }
@@ -301,6 +356,114 @@ mod tests {
             .unwrap();
         context.get_download_group(&server.url).await.unwrap();
         assert_eq!(server.requests(), 1, "one token request per auth scope");
+    }
+
+    #[tokio::test]
+    async fn test_download_group_isolates_scopes_and_contexts() {
+        let server = TokenServer::start(false).await;
+        let context = XetContext::new(HuggingFaceConfig::default());
+        for scope in ["repo-a/main", "repo-a/revision", "repo-b/main"] {
+            let url = format!("{}/{scope}", server.url);
+            context.get_download_group(&url).await.unwrap();
+            context.get_download_group(&url).await.unwrap();
+        }
+        assert_eq!(server.requests(), 3);
+        let other_context = XetContext::new(HuggingFaceConfig::default());
+        other_context
+            .get_download_group(&format!("{}/repo-a/main", server.url))
+            .await
+            .unwrap();
+        assert_eq!(server.requests(), 4, "contexts must not share auth state");
+    }
+
+    #[tokio::test]
+    async fn test_download_group_retries_failed_initialization() {
+        let server = TokenServer::start(true).await;
+        let healthy_server = TokenServer::start(false).await;
+        let context = XetContext::new(HuggingFaceConfig::default());
+        context
+            .get_download_group(&healthy_server.url)
+            .await
+            .unwrap();
+        assert!(context.get_download_group(&server.url).await.is_err());
+        context.get_download_group(&server.url).await.unwrap();
+        context.get_download_group(&server.url).await.unwrap();
+        context
+            .get_download_group(&healthy_server.url)
+            .await
+            .unwrap();
+        assert_eq!(healthy_server.requests(), 1);
+        assert_eq!(
+            server.requests(),
+            2,
+            "failed initialization must not be cached"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_download_group_invalidation_preserves_replacement() {
+        let server = TokenServer::start(false).await;
+        let context = XetContext::new(HuggingFaceConfig::default());
+        let old = context.get_download_group(&server.url).await.unwrap();
+        context.invalidate_download_group(&server.url, &old).await;
+        let replacement = context.get_download_group(&server.url).await.unwrap();
+        context.invalidate_download_group(&server.url, &old).await;
+        let cached = context.get_download_group(&server.url).await.unwrap();
+        assert!(Arc::ptr_eq(&replacement, &cached));
+        assert_eq!(server.requests(), 2);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires approved ABC-130k access and HF_TOKEN; downloads remote byte ranges"]
+    async fn test_shared_xet_group_remote_ranges() -> Result<(), Box<dyn std::error::Error>> {
+        use common_io_config::HTTPConfig;
+
+        use crate::huggingface::HFSource;
+
+        const URI: &str = "hf://datasets/XDOF/ABC-130k@75ca0b88bda489f2bd935d72454593ecb90efb52/data/val/arrange_the_flowers_into_the_vase/episode_02161a65-02b6-477b-ad3a-f4f6947041cc/episode.mcap";
+        const SIZE: usize = 602_196_185;
+        let config = HuggingFaceConfig {
+            token: Some(std::env::var("HF_TOKEN")?.into()),
+            use_xet: true,
+            ..Default::default()
+        };
+        let source = HFSource::get_client(&config, &HTTPConfig::default()).await?;
+        // Discarding one stream must not cancel later streams sharing the group.
+        drop(
+            source
+                .get_via_xet(URI, Some(GetRange::Bounded(0..64)), None)
+                .await?
+                .expect("the pinned file must use Xet"),
+        );
+        let ranges = [
+            (GetRange::Bounded(0..64), 64),
+            (GetRange::Bounded(32..65_568), 65_536),
+            (GetRange::Offset(SIZE - 256), 256),
+            (GetRange::Suffix(128), 128),
+        ];
+        futures::future::try_join_all(ranges.into_iter().map(|(range, expected_len)| {
+            let source = source.clone();
+            async move {
+                // Call the Xet path directly: HTTP fallback cannot make this test pass.
+                let xet = source
+                    .get_via_xet(URI, Some(range.clone()), None)
+                    .await?
+                    .expect("the pinned file must use Xet")
+                    .bytes()
+                    .await?;
+                let http = source
+                    .get_via_http(URI, Some(range), None)
+                    .await?
+                    .bytes()
+                    .await?;
+                assert_eq!(xet.len(), expected_len);
+                assert_eq!(xet, http);
+                Ok::<_, Box<dyn std::error::Error>>(())
+            }
+        }))
+        .await?;
+        assert_eq!(source.xet.download_groups.lock().await.len(), 1);
+        Ok(())
     }
 
     #[test]
