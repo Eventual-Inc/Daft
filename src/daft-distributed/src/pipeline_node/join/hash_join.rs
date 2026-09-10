@@ -132,8 +132,8 @@ impl PipelineNodeImpl for HashJoinNode {
                 .zip(right_input)
                 .map(move |(left_task, right_task)| {
                     SwordfishTaskBuilder::combine_with(
-                        &left_task,
-                        &right_task,
+                        left_task,
+                        right_task,
                         self.as_ref(),
                         |left_plan, right_plan| {
                             LocalPhysicalPlan::hash_join(
