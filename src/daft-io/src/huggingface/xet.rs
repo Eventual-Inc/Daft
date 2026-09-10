@@ -1,4 +1,8 @@
-use std::{collections::HashMap, ops::Range, sync::Arc};
+use std::{
+    collections::{HashMap, VecDeque},
+    ops::Range,
+    sync::Arc,
+};
 
 use bytes::Bytes;
 use common_io_config::HuggingFaceConfig;
@@ -18,6 +22,103 @@ use super::{
 use crate::range::GetRange;
 
 const XET_FILEINFO_ACCEPT: &str = "application/vnd.xet-fileinfo+json";
+const MAX_CACHED_DOWNLOAD_GROUPS: usize = 64;
+const MAX_DOWNLOAD_GROUP_USES: usize = 1024;
+const MAX_SESSION_USES: usize = 16_384;
+
+type DownloadGroupCell = Arc<OnceCell<Arc<XetDownloadStreamGroup>>>;
+
+enum GroupInitError {
+    StaleSession,
+    Failed(Error),
+}
+
+struct CachedDownloadGroup {
+    refresh_url: String,
+    cell: DownloadGroupCell,
+    uses: usize,
+}
+
+#[derive(Default)]
+struct DownloadGroupCache {
+    // Small bounded LRU, oldest first. Callers retain their own handles on eviction.
+    entries: VecDeque<CachedDownloadGroup>,
+    session: Option<Arc<XetSession>>,
+    session_uses: usize,
+}
+
+impl DownloadGroupCache {
+    fn clear_session(&mut self) {
+        // Never abort: already-created streams own their download state/runtime.
+        self.entries.clear();
+        self.session = None;
+        self.session_uses = 0;
+    }
+
+    fn get_or_insert(
+        &mut self,
+        refresh_url: &str,
+    ) -> Result<(DownloadGroupCell, Arc<XetSession>), Error> {
+        // Count every acquisition (including canceled initializers), not just
+        // inserted scopes: the parent keeps weak registrations for build attempts.
+        if self.session_uses == MAX_SESSION_USES
+            || self
+                .session
+                .as_ref()
+                .is_some_and(|session| !matches!(session.status(), Ok(XetTaskState::Running)))
+        {
+            self.clear_session();
+        }
+        if self.session.is_none() {
+            let session = XetSessionBuilder::new()
+                .with_tokio_handle(tokio::runtime::Handle::current())
+                .build()
+                .map_err(|source| Error::XetOperationFailed {
+                    path: "xet-session".to_string(),
+                    message: source.to_string(),
+                })?;
+            self.session = Some(Arc::new(session));
+        }
+        self.session_uses += 1;
+        if let Some(index) = self
+            .entries
+            .iter()
+            .position(|entry| entry.refresh_url == refresh_url)
+        {
+            let mut entry = self.entries.remove(index).unwrap();
+            // hf-xet retains progress records and weak task registrations per stream.
+            // Rotate even hot scopes: LRU eviction alone cannot bound that state.
+            if entry.uses < MAX_DOWNLOAD_GROUP_USES {
+                entry.uses += 1;
+                let cell = entry.cell.clone();
+                self.entries.push_back(entry);
+                return Ok((cell, self.session.as_ref().unwrap().clone()));
+            }
+        }
+        if self.entries.len() == MAX_CACHED_DOWNLOAD_GROUPS {
+            self.entries.pop_front();
+        }
+        let cell = DownloadGroupCell::default();
+        self.entries.push_back(CachedDownloadGroup {
+            refresh_url: refresh_url.to_string(),
+            cell: cell.clone(),
+            uses: 1,
+        });
+        Ok((cell, self.session.as_ref().unwrap().clone()))
+    }
+
+    fn invalidate(&mut self, refresh_url: &str, group: &Arc<XetDownloadStreamGroup>) {
+        if let Some(index) = self.entries.iter().position(|entry| {
+            entry.refresh_url == refresh_url
+                && entry
+                    .cell
+                    .get()
+                    .is_some_and(|cached| Arc::ptr_eq(cached, group))
+        }) {
+            self.entries.remove(index);
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub(super) struct XetResolvedFile {
@@ -62,8 +163,7 @@ fn auth_headers(hf_config: &HuggingFaceConfig) -> HeaderMap {
 
 pub(super) struct XetContext {
     hf_config: HuggingFaceConfig,
-    session: Mutex<Option<Arc<XetSession>>>,
-    download_groups: Mutex<HashMap<String, Arc<OnceCell<Arc<XetDownloadStreamGroup>>>>>,
+    download_groups: Mutex<DownloadGroupCache>,
     resolve_cache: Mutex<HashMap<String, Option<XetResolvedFile>>>,
 }
 
@@ -71,8 +171,7 @@ impl XetContext {
     pub(super) fn new(hf_config: HuggingFaceConfig) -> Self {
         Self {
             hf_config,
-            session: Mutex::new(None),
-            download_groups: Mutex::new(HashMap::new()),
+            download_groups: Mutex::new(DownloadGroupCache::default()),
             resolve_cache: Mutex::new(HashMap::new()),
         }
     }
@@ -138,47 +237,39 @@ impl XetContext {
         }))
     }
 
-    async fn get_session(&self) -> Result<Arc<XetSession>, Error> {
-        let mut guard = self.session.lock().await;
-        // A failed group build puts the Xet session into a terminal error state.
-        // Replace it on retry; existing groups retain their own session handles.
-        if let Some(session) = guard.as_ref()
-            && matches!(session.status(), Ok(XetTaskState::Running))
-        {
-            return Ok(session.clone());
-        }
-        let session = XetSessionBuilder::new()
-            .with_tokio_handle(tokio::runtime::Handle::current())
-            .build()
-            .map_err(|source| Error::XetOperationFailed {
-                path: "xet-session".to_string(),
-                message: source.to_string(),
-            })?;
-        let session = Arc::new(session);
-        *guard = Some(session.clone());
-        Ok(session)
-    }
-
     async fn get_download_group(
         &self,
         refresh_url: &str,
     ) -> Result<Arc<XetDownloadStreamGroup>, Error> {
         // The refresh URL scopes tokens to a repository/revision, not a file.
         // Credentials are immutable within this context; never share groups globally.
-        let cell = self
-            .download_groups
-            .lock()
-            .await
-            .entry(refresh_url.to_string())
-            .or_default()
-            .clone();
-        // Coalesce concurrent initialization without holding the map lock over IO.
-        // Failures remain retryable, and the group owns Xet's token-refresh machinery.
-        cell.get_or_try_init(|| async {
-            self.build_download_group(refresh_url).await.map(Arc::new)
-        })
-        .await
-        .cloned()
+        loop {
+            let (cell, session) = self
+                .download_groups
+                .lock()
+                .await
+                .get_or_insert(refresh_url)?;
+            // Coalesce initialization while resident, without holding the cache lock
+            // over IO. Eviction/rotation may allow a new generation to initialize.
+            let result = cell
+                .get_or_try_init(|| async {
+                    // Another initializer may have failed while this caller waited.
+                    // Reacquire a healthy session rather than retry its terminal one.
+                    if !matches!(session.status(), Ok(XetTaskState::Running)) {
+                        return Err(GroupInitError::StaleSession);
+                    }
+                    self.build_download_group(&session, refresh_url)
+                        .await
+                        .map(Arc::new)
+                        .map_err(GroupInitError::Failed)
+                })
+                .await;
+            match result {
+                Ok(group) => return Ok(group.clone()),
+                Err(GroupInitError::Failed(error)) => return Err(error),
+                Err(GroupInitError::StaleSession) => continue,
+            }
+        }
     }
 
     async fn invalidate_download_group(
@@ -186,21 +277,17 @@ impl XetContext {
         refresh_url: &str,
         group: &Arc<XetDownloadStreamGroup>,
     ) {
-        let mut groups = self.download_groups.lock().await;
-        if groups
-            .get(refresh_url)
-            .and_then(|cell| cell.get())
-            .is_some_and(|cached| Arc::ptr_eq(cached, group))
-        {
-            groups.remove(refresh_url);
-        }
+        self.download_groups
+            .lock()
+            .await
+            .invalidate(refresh_url, group);
     }
 
     async fn build_download_group(
         &self,
+        session: &XetSession,
         refresh_url: &str,
     ) -> Result<XetDownloadStreamGroup, Error> {
-        let session = self.get_session().await?;
         let refresh_headers = auth_headers(&self.hf_config);
         session
             .new_download_stream_group()
@@ -286,10 +373,14 @@ pub(super) fn xet_download_stream_to_bytes_stream(
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    use common_io_config::HTTPConfig;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     use super::*;
-    use crate::huggingface::path::HFRepoType;
+    use crate::huggingface::{
+        HFSource,
+        path::{HFRepoType, hf_path_parts_from_uri},
+    };
 
     // Exercise the real Xet group builder without Hugging Face credentials or CAS traffic.
     struct TokenServer {
@@ -392,7 +483,11 @@ mod tests {
             .get_download_group(&healthy_server.url)
             .await
             .unwrap();
-        assert_eq!(healthy_server.requests(), 1);
+        assert_eq!(
+            healthy_server.requests(),
+            2,
+            "session replacement evicts old cached groups"
+        );
         assert_eq!(
             server.requests(),
             2,
@@ -414,12 +509,107 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_download_group_cache_is_bounded_lru() {
+        let mut cache = DownloadGroupCache::default();
+        let (first, _) = cache.get_or_insert("scope-0").unwrap();
+        let (second, _) = cache.get_or_insert("scope-1").unwrap();
+        for i in 2..MAX_CACHED_DOWNLOAD_GROUPS {
+            cache.get_or_insert(&format!("scope-{i}")).unwrap();
+        }
+        assert!(Arc::ptr_eq(
+            &first,
+            &cache.get_or_insert("scope-0").unwrap().0
+        ));
+        cache.get_or_insert("new-scope").unwrap();
+        assert_eq!(cache.entries.len(), MAX_CACHED_DOWNLOAD_GROUPS);
+        assert!(
+            cache
+                .entries
+                .iter()
+                .any(|entry| Arc::ptr_eq(&entry.cell, &first))
+        );
+        assert!(
+            !cache
+                .entries
+                .iter()
+                .any(|entry| Arc::ptr_eq(&entry.cell, &second))
+        );
+        assert!(!Arc::ptr_eq(
+            &second,
+            &cache.get_or_insert("scope-1").unwrap().0
+        ));
+        assert_eq!(cache.entries.len(), MAX_CACHED_DOWNLOAD_GROUPS);
+    }
+
+    #[tokio::test]
+    async fn test_hot_download_group_rotates_and_releases_old_generation() {
+        let server = TokenServer::start(false).await;
+        let context = XetContext::new(HuggingFaceConfig::default());
+        let old = context.get_download_group(&server.url).await.unwrap();
+        let weak = Arc::downgrade(&old);
+        for _ in 1..MAX_DOWNLOAD_GROUP_USES {
+            let cached = context.get_download_group(&server.url).await.unwrap();
+            assert!(Arc::ptr_eq(&old, &cached));
+        }
+        let replacement = context.get_download_group(&server.url).await.unwrap();
+        assert!(!Arc::ptr_eq(&old, &replacement));
+        context.invalidate_download_group(&server.url, &old).await;
+        assert!(Arc::ptr_eq(
+            &replacement,
+            &context.get_download_group(&server.url).await.unwrap()
+        ));
+        assert_eq!(server.requests(), 2);
+        drop(old);
+        assert!(
+            weak.upgrade().is_none(),
+            "old group must not remain cache-owned"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_session_rotation_releases_cold_entries() {
+        let mut cache = DownloadGroupCache::default();
+        let (old_cell, old_session) = cache.get_or_insert("cold-scope").unwrap();
+        // Bound every acquisition, including ones canceled before initialization.
+        for _ in 1..MAX_SESSION_USES {
+            cache.get_or_insert("hot-scope").unwrap();
+        }
+        let (_, replacement) = cache.get_or_insert("hot-scope").unwrap();
+        assert!(!Arc::ptr_eq(&old_session, &replacement));
+        assert_eq!(cache.entries.len(), 1);
+        assert_eq!(cache.session_uses, 1);
+        assert!(
+            !cache
+                .entries
+                .iter()
+                .any(|entry| Arc::ptr_eq(&entry.cell, &old_cell))
+        );
+        assert!(
+            matches!(old_session.status(), Ok(XetTaskState::Running)),
+            "rotation must not abort callers"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_waiting_initializer_recovers_from_terminal_session() {
+        let server = TokenServer::start(true).await;
+        let context = XetContext::new(HuggingFaceConfig::default());
+        let (first, second) = tokio::join!(
+            context.get_download_group(&server.url),
+            context.get_download_group(&server.url),
+        );
+        assert_ne!(
+            first.is_ok(),
+            second.is_ok(),
+            "only the original 401 should fail"
+        );
+        context.get_download_group(&server.url).await.unwrap();
+        assert_eq!(server.requests(), 2);
+    }
+
+    #[tokio::test]
     #[ignore = "requires approved ABC-130k access and HF_TOKEN; downloads remote byte ranges"]
     async fn test_shared_xet_group_remote_ranges() -> Result<(), Box<dyn std::error::Error>> {
-        use common_io_config::HTTPConfig;
-
-        use crate::huggingface::HFSource;
-
         const URI: &str = "hf://datasets/XDOF/ABC-130k@75ca0b88bda489f2bd935d72454593ecb90efb52/data/val/arrange_the_flowers_into_the_vase/episode_02161a65-02b6-477b-ad3a-f4f6947041cc/episode.mcap";
         const SIZE: usize = 602_196_185;
         let config = HuggingFaceConfig {
@@ -435,6 +625,24 @@ mod tests {
                 .await?
                 .expect("the pinned file must use Xet"),
         );
+        let parts = hf_path_parts_from_uri(URI)?.unwrap();
+        let resolved = source
+            .xet
+            .resolve_xet_file(&parts, &source.http_source.client)
+            .await?
+            .unwrap();
+        let group = source
+            .xet
+            .get_download_group(&xet_read_token_url(&parts))
+            .await?;
+        // Keep this stream paused until after rotation, so a fast network cannot
+        // make it finish before the old group/session is evicted.
+        let mut retained = group
+            .download_stream(resolved.file_info, Some(0..64))
+            .await?;
+        drop(group);
+        // Force the real session-rotation path while an old stream still exists.
+        source.xet.download_groups.lock().await.session_uses = MAX_SESSION_USES;
         let ranges = [
             (GetRange::Bounded(0..64), 64),
             (GetRange::Bounded(32..65_568), 65_536),
@@ -462,7 +670,22 @@ mod tests {
             }
         }))
         .await?;
-        assert_eq!(source.xet.download_groups.lock().await.len(), 1);
+        retained.start();
+        let mut retained_bytes = Vec::new();
+        while let Some(bytes) = retained.next().await? {
+            retained_bytes.extend_from_slice(&bytes);
+        }
+        let http = source
+            .get_via_http(URI, Some(GetRange::Bounded(0..64)), None)
+            .await?
+            .bytes()
+            .await?;
+        assert_eq!(
+            retained_bytes.as_slice(),
+            http.as_ref(),
+            "rotation must not disrupt existing streams"
+        );
+        assert_eq!(source.xet.download_groups.lock().await.entries.len(), 1);
         Ok(())
     }
 
