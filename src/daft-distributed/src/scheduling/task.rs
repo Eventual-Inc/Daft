@@ -364,6 +364,12 @@ impl SwordfishTaskBuilder {
         self.plan_fingerprint
     }
 
+    /// Get the number of notify tokens currently held by this builder.
+    #[cfg(test)]
+    pub fn notify_token_count(&self) -> usize {
+        self.notify_tokens.len()
+    }
+
     /// Fold an additional value into the plan fingerprint.
     /// Use this when a node produces plans that differ by some parameter
     /// (e.g., limit value, partition offset).
@@ -386,15 +392,70 @@ impl SwordfishTaskBuilder {
         self
     }
 
-    /// Create a new builder by combining two existing builders.
+    /// Fuse two builders into a single task, one-to-one.
     /// The function receives both plans and returns a new plan.
     /// This allows combining plans from two builders without exposing internals.
     /// The new builder will have:
     /// - The combined plan from the function
-    /// - Merged psets from both builders (right takes precedence on conflicts)
-    /// - Config and other fields from the left builder
+    /// - Merged inputs and psets from both builders (right takes precedence on conflicts)
+    /// - Config and other scalar fields from the left builder
     /// - Merged pending_node_ids from both builders, with the node's node_id appended
-    pub fn combine_with<F>(left: &Self, right: &Self, node: &dyn PipelineNodeImpl, f: F) -> Self
+    /// - Merged notify tokens from both builders, and whichever side has a cancel token
+    ///
+    /// Both inputs are consumed so their notify tokens survive the fusion: the
+    /// combined task *is* the task the upstream nodes are waiting on, and a
+    /// dropped token resolves to a cancellation, which upstream reads as "this
+    /// task never ran".
+    pub fn combine_with<F>(left: Self, right: Self, node: &dyn PipelineNodeImpl, f: F) -> Self
+    where
+        F: FnOnce(LocalPhysicalPlanRef, LocalPhysicalPlanRef) -> LocalPhysicalPlanRef,
+    {
+        let combined_plan = f(left.plan.clone(), right.plan.clone());
+
+        let mut inputs = left.inputs;
+        inputs.extend(right.inputs);
+
+        let mut psets = left.psets;
+        psets.extend(right.psets);
+
+        // Merge pending_node_ids from both sides, then add the current node's node_id
+        let mut pending_node_ids = left.pending_node_ids;
+        pending_node_ids.extend(right.pending_node_ids);
+        pending_node_ids.push(node.node_id());
+
+        let mut notify_tokens = left.notify_tokens;
+        notify_tokens.extend(right.notify_tokens);
+
+        let plan_fingerprint = hash_fingerprint(&[
+            left.plan_fingerprint,
+            right.plan_fingerprint,
+            node.node_id(),
+        ]);
+
+        Self {
+            plan: combined_plan,
+            config: left.config,
+            inputs,
+            psets,
+            strategy: left.strategy,
+            context: left.context,
+            node_context: left.node_context,
+            pending_node_ids,
+            notify_tokens,
+            cancel_token: left.cancel_token.or(right.cancel_token),
+            plan_fingerprint,
+        }
+    }
+
+    /// Fan-out variant of [`Self::combine_with`]: borrows both inputs so one
+    /// builder can be combined with many partners.
+    ///
+    /// A notify token is a oneshot, so it cannot report the completion of
+    /// several fanned-out tasks. Tokens therefore stay with the builders they
+    /// were added to instead of moving into the combined one, which means an
+    /// input carrying a notify token must be materialized before being fanned
+    /// out here.
+    pub fn combine_fanout<F>(left: &Self, right: &Self, node: &dyn PipelineNodeImpl, f: F) -> Self
     where
         F: FnOnce(LocalPhysicalPlanRef, LocalPhysicalPlanRef) -> LocalPhysicalPlanRef,
     {
@@ -406,7 +467,6 @@ impl SwordfishTaskBuilder {
         let mut psets = left.psets.clone();
         psets.extend(right.psets.clone());
 
-        // Merge pending_node_ids from both sides, then add the current node's node_id
         let mut pending_node_ids = left.pending_node_ids.clone();
         pending_node_ids.extend(right.pending_node_ids.clone());
         pending_node_ids.push(node.node_id());
