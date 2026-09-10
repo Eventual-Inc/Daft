@@ -267,7 +267,7 @@ impl XetContext {
             match result {
                 Ok(group) => return Ok(group.clone()),
                 Err(GroupInitError::Failed(error)) => return Err(error),
-                Err(GroupInitError::StaleSession) => continue,
+                Err(GroupInitError::StaleSession) => {}
             }
         }
     }
