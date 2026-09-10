@@ -2878,6 +2878,7 @@ def io_glob(
     fanout_limit: int | None = None,
     page_size: int | None = None,
     limit: int | None = None,
+    recursive: bool = False,
 ) -> list[dict[str, Any]]: ...
 def io_put(
     path: str,

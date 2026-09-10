@@ -15,8 +15,10 @@ mod py {
         io_config=None,
         fanout_limit=None,
         page_size=None,
-        limit=None
+        limit=None,
+        recursive=false
     ))]
+    #[allow(clippy::too_many_arguments)]
     fn io_glob(
         py: Python,
         input: String,
@@ -25,6 +27,7 @@ mod py {
         fanout_limit: Option<usize>,
         page_size: Option<i32>,
         limit: Option<usize>,
+        recursive: bool,
     ) -> PyResult<Vec<Bound<PyDict>>> {
         let multithreaded_io = multithreaded_io.unwrap_or(true);
         let io_stats = IOStatsContext::new(format!("io_glob for {input}"));
@@ -40,6 +43,39 @@ mod py {
 
             runtime_handle.block_on_current_thread(async {
                 let source = io_client.get_source(&input).await?;
+                // Preserve exact file paths (including extensionless files), but
+                // expand directory inputs when recursive discovery is requested.
+                let path = if recursive
+                    && !crate::object_store_glob::GlobFragment::new(path.as_ref())
+                        .has_special_character()
+                {
+                    if path.ends_with('/') {
+                        // Object stores can have zero-byte directory markers.
+                        // A trailing slash explicitly requests a directory.
+                        format!("{path}**").into()
+                    } else {
+                        match source
+                            .get_size(path.as_ref(), Some(io_stats_handle.clone()))
+                            .await
+                        {
+                            Ok(size) => {
+                                return Ok(vec![crate::FileMetadata {
+                                    filepath: path.into_owned(),
+                                    size: Some(size as u64),
+                                    filetype: crate::FileType::File,
+                                }]);
+                            }
+                            Err(
+                                crate::Error::NotAFile { .. }
+                                | crate::Error::NotFound { .. }
+                                | crate::Error::UnableToDetermineSize { .. },
+                            ) => format!("{}/**", path.trim_end_matches('/')).into(),
+                            Err(error) => return Err(error.into()),
+                        }
+                    }
+                } else {
+                    path
+                };
                 let files = source
                     .glob(
                         path.as_ref(),

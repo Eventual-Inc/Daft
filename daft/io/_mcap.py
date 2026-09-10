@@ -149,7 +149,7 @@ class MCAPSource(DataSource):
     async def get_tasks(self, pushdowns: Pushdowns) -> AsyncIterator[DataSourceTask]:
         file_infos = [
             file_info
-            for file_info in io_glob(self._file_path, io_config=self._io_config)
+            for file_info in io_glob(self._file_path, io_config=self._io_config, recursive=True)
             if file_info["type"] == "File"
         ]
         if not file_infos:

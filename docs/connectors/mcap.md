@@ -87,6 +87,16 @@ df = daft.read_mcap(
 df.show()
 ```
 
+### Ordering
+
+Indexed MCAP files (files with a summary and chunk indexes, the common case)
+are read in `log_time` order within each file, even when messages are
+physically out of order across chunks. Files without an index stream in file
+order, and ordering across multiple files is not guaranteed.
+
+HTTP servers that do not support byte-range requests require a full-file
+download and buffer. Indexed files still retain per-file `log_time` ordering.
+
 ### Batch Size
 
 Control memory usage by adjusting the batch size:
