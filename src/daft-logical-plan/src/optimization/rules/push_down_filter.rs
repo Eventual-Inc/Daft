@@ -8,7 +8,7 @@ use common_treenode::{DynTreeNode, Transformed, TreeNode};
 use daft_algebra::boolean::{combine_conjunction, split_conjunction, to_cnf};
 use daft_core::join::JoinType;
 use daft_dsl::{
-    ExprRef,
+    ExprRef, is_udf,
     optimization::{get_required_columns, replace_columns_with_expressions},
     resolved_col,
 };
@@ -321,6 +321,9 @@ impl PushDownFilter {
                         Filter::try_new(new_projection.into(), post_projection_predicate)?.into();
                     post_projection_filter.into()
                 }
+            }
+            LogicalPlan::Sort(_) if filter.predicate.exists(is_udf) => {
+                return Ok(Transformed::no(plan));
             }
             LogicalPlan::Sort(_)
             | LogicalPlan::Shuffle(_)

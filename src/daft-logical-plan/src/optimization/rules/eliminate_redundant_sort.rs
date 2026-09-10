@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
-use daft_dsl::{Expr, ExprRef, functions::scalar::ScalarFn};
+use daft_dsl::{Expr, ExprRef, functions::scalar::ScalarFn, is_udf};
 
 use super::OptimizerRule;
 use crate::LogicalPlan;
@@ -20,9 +20,9 @@ use crate::LogicalPlan;
 /// final result anyway. It intentionally stops at order-sensitive operators such as
 /// `Limit`, `Offset`, `TopN`, `Sample`, and `MonotonicallyIncreasingId`, where the
 /// inner ordering is observable and therefore must be preserved. A `Project` or
-/// `Filter` that still embeds a `monotonically_increasing_id()` expression is
-/// order-sensitive in the same way — `DetectMonotonicId` rewrites those into the
-/// operator form, but it runs after this rule — so the look-through stops there too.
+/// `Filter` that still embeds a `monotonically_increasing_id()` expression or a UDF
+/// may also observe row order. `DetectMonotonicId` and `SplitUDFs` rewrite those into
+/// operator form after this rule, so the look-through stops there too.
 ///
 /// ```text
 /// Sort(a) <- Sort(b) <- X                        => Sort(a) <- X
@@ -85,17 +85,19 @@ fn remove_redundant_sorts(plan: &Arc<LogicalPlan>) -> Option<Arc<LogicalPlan>> {
             Some(remove_redundant_sorts(&inner.input).unwrap_or_else(|| inner.input.clone()))
         }
         // Order-insensitive, row-wise operators: safe to look through, unless they
-        // embed a monotonically_increasing_id() expression, which observes the row
-        // order produced below (see contains_monotonic_id).
+        // embed a monotonically_increasing_id() expression or a UDF. Batch UDFs can
+        // observe the row order before SplitUDFs extracts them into operators.
         LogicalPlan::Project(project) => {
-            if contains_monotonic_id_exprs(&project.projection) {
+            if contains_monotonic_id_exprs(&project.projection)
+                || project.projection.iter().any(|expr| expr.exists(is_udf))
+            {
                 return None;
             }
             remove_redundant_sorts(&project.input)
                 .map(|new_child| plan.with_new_children(&[new_child]).into())
         }
         LogicalPlan::Filter(filter) => {
-            if contains_monotonic_id(&filter.predicate) {
+            if contains_monotonic_id(&filter.predicate) || filter.predicate.exists(is_udf) {
                 return None;
             }
             remove_redundant_sorts(&filter.input)
@@ -112,7 +114,11 @@ mod tests {
 
     use common_error::DaftResult;
     use daft_core::prelude::*;
-    use daft_dsl::{lit, unresolved_col};
+    use daft_dsl::{
+        Expr,
+        functions::{FunctionExpr, python::LegacyPythonUDF},
+        lit, unresolved_col,
+    };
     use daft_functions::monotonically_increasing_id::monotonically_increasing_id;
 
     use crate::{
@@ -202,6 +208,69 @@ mod tests {
             .sort(vec![unresolved_col("b")], vec![false], vec![false])?
             .build();
         assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// Ordinary scalar expressions still allow elimination through a projection.
+    #[test]
+    fn looks_through_scalar_projection() -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
+        let projection = vec![
+            unresolved_col("a"),
+            unresolved_col("a").add(lit(1)).alias("b"),
+        ];
+        let plan = dummy_scan_node(scan_op.clone())
+            .sort(vec![unresolved_col("a")], vec![false], vec![false])?
+            .select(projection.clone())?
+            .sort(vec![unresolved_col("b")], vec![false], vec![false])?
+            .build();
+        let expected = dummy_scan_node(scan_op)
+            .select(projection)?
+            .sort(vec![unresolved_col("b")], vec![false], vec![false])?
+            .build();
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// A UDF nested under an alias can observe the inner sort before SplitUDFs runs.
+    #[test]
+    fn keeps_sort_blocked_by_udf_projection() -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
+        let udf = Expr::Function {
+            func: FunctionExpr::Python(LegacyPythonUDF {
+                concurrency: None,
+                ..LegacyPythonUDF::new_testing_udf()
+            }),
+            inputs: vec![unresolved_col("a")],
+        }
+        .arced();
+        let plan = dummy_scan_node(scan_op)
+            .sort(vec![unresolved_col("a")], vec![false], vec![false])?
+            .select(vec![unresolved_col("a"), udf.alias("b")])?
+            .sort(vec![unresolved_col("a")], vec![false], vec![false])?
+            .build();
+        assert_optimized_plan_eq(plan.clone(), plan)?;
+        Ok(())
+    }
+
+    /// A UDF nested in a predicate can change which rows survive based on input order.
+    #[test]
+    fn keeps_sort_blocked_by_udf_filter() -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
+        let udf = Expr::Function {
+            func: FunctionExpr::Python(LegacyPythonUDF {
+                concurrency: None,
+                ..LegacyPythonUDF::new_testing_udf()
+            }),
+            inputs: vec![unresolved_col("a")],
+        }
+        .arced();
+        let plan = dummy_scan_node(scan_op)
+            .sort(vec![unresolved_col("a")], vec![false], vec![false])?
+            .filter(udf.gt(lit(1)))?
+            .sort(vec![unresolved_col("a")], vec![false], vec![false])?
+            .build();
+        assert_optimized_plan_eq(plan.clone(), plan)?;
         Ok(())
     }
 
