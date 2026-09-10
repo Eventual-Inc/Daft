@@ -118,6 +118,17 @@ impl InferDataType<'_> {
         let other = &other.0;
         let evaluator = || match (left, other) {
             (s, o) if s == o => Ok((DataType::Boolean, None, s.to_physical())),
+            (DataType::UInt64, signed) | (signed, DataType::UInt64)
+                if matches!(
+                    signed,
+                    DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64
+                ) =>
+            {
+                // Float64 cannot exactly represent either 64-bit integer domain.
+                // Decimal128(20, 0) holds both, including negative signed values.
+                let dtype = DataType::Decimal128(20, 0);
+                Ok((DataType::Boolean, Some(dtype.clone()), dtype))
+            }
             (DataType::Utf8, o) | (o, DataType::Utf8) if o.is_numeric() => {
                 Err(DaftError::TypeError(format!(
                     "Cannot perform comparison on DataType::Utf8 and numeric type.\ntypes: {}, {}",

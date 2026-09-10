@@ -30,7 +30,7 @@ from daft.io._parquet import read_parquet
 from daft.io._sql import read_sql
 from daft.io._warc import read_warc
 from daft.io.huggingface import read_huggingface
-from daft.io.mcap._mcap import read_mcap
+from daft.io._mcap import read_mcap
 from daft.io._range import _range
 from daft.io._files import from_files
 from daft.io.file_path import from_glob_path

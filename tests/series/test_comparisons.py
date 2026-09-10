@@ -38,6 +38,20 @@ def make_array(data: list, type=None) -> pa.array:
     return pa.array(data, type=type)
 
 
+@pytest.mark.parametrize("op", [operator.eq, operator.ne, operator.lt, operator.le, operator.gt, operator.ge])
+@pytest.mark.parametrize("reverse", [False, True])
+def test_signed_unsigned_64_bit_comparisons_are_exact(op, reverse):
+    unsigned = [0, 2**53, 2**53 + 1, 2**63 - 1, 2**63, 2**64 - 1, None]
+    signed = [-1, 2**53 + 1, 2**53, 2**63 - 2, 2**63 - 1, -1, 0]
+    left = Series.from_arrow(pa.array(unsigned, type=pa.uint64()))
+    right = Series.from_arrow(pa.array(signed, type=pa.int64()))
+    if reverse:
+        left, right = right, left
+        unsigned, signed = signed, unsigned
+    expected = [None if a is None or b is None else op(a, b) for a, b in zip(unsigned, signed)]
+    assert op(left, right).to_pylist() == expected
+
+
 @pytest.mark.parametrize("l_dtype, r_dtype", VALID_INT_STRING_COMPARISONS)
 def test_comparisons_int_and_str(l_dtype, r_dtype) -> None:
     l_arrow = make_array([1, 2, 3, None, 5, None], type=l_dtype)

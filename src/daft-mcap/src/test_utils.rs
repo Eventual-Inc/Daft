@@ -4,10 +4,11 @@ use std::{borrow::Cow, collections::BTreeMap, fs::File, io::BufWriter, sync::Arc
 
 use common_error::DaftResult;
 use daft_io::{IOConfig, IOStatsContext, get_io_client};
+use futures::TryStreamExt;
 use mcap::{Channel, Compression, Message, WriteOptions};
 use tempfile::NamedTempFile;
 
-use crate::{McapReadOptions, NativeMcapReader};
+use crate::{McapConvertOptions, McapReadOptions, NativeMcapReader, stream_mcap};
 
 pub(crate) fn write_mcap(
     indexed: bool,
@@ -109,6 +110,23 @@ pub(crate) fn write_mcap_out_of_order_with_payload(
     temp
 }
 
+/// Writes a valid indexed MCAP, then flips the first byte of the first
+/// chunk's compressed data (the zstd frame magic) so that chunk fails to
+/// decompress during streaming while the summary stays intact.
+pub(crate) fn write_corrupt_chunk_mcap() -> NamedTempFile {
+    let temp = write_mcap(true, Some(Compression::Zstd), 64, 512);
+    let mut contents = std::fs::read(temp.path()).unwrap();
+    let summary = crate::parse_summary_from_bytes(&bytes::Bytes::from(contents.clone()))
+        .unwrap()
+        .expect("fixture has a summary");
+    let data_offset = summary.chunk_indexes[0]
+        .compressed_data_offset()
+        .expect("fixture chunk has a data offset");
+    contents[usize::try_from(data_offset).unwrap()] ^= 0xFF;
+    std::fs::write(temp.path(), &contents).unwrap();
+    temp
+}
+
 pub(crate) async fn make_reader(
     file: &NamedTempFile,
     options: McapReadOptions,
@@ -142,4 +160,18 @@ pub(crate) async fn collect_rows(
         }
     }
     Ok(rows)
+}
+
+pub(crate) async fn collect_stream(
+    file: &NamedTempFile,
+    read_options: McapReadOptions,
+    convert_options: McapConvertOptions,
+) -> DaftResult<Vec<daft_recordbatch::RecordBatch>> {
+    let io_client = get_io_client(true, Arc::new(IOConfig::default()))?;
+    let io_stats = IOStatsContext::new("daft-mcap stream unit test");
+    let uri = file.path().to_string_lossy().into_owned();
+    stream_mcap(&uri, io_client, io_stats, read_options, convert_options)
+        .await?
+        .try_collect()
+        .await
 }
