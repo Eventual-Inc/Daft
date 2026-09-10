@@ -11,9 +11,9 @@
 //!
 //! # Correctness
 //!
-//! This module only decides **split / group / order**. For a conjunction the
-//! surviving-row set is order-independent: a row survives iff *every* conjunct
-//! is true, and progressive narrowing only ever drops rows that already failed
+//! This module only decides **split / group / order** for row-local expressions.
+//! Their surviving-row set is order-independent: a row survives iff *every*
+//! conjunct is true, and progressive narrowing only drops rows that already failed
 //! an earlier conjunct (which would fail the AND anyway). Reordering therefore
 //! changes **how many rows later groups decode**, never **which rows survive**.
 //! Any estimation failure degrades to a neutral ordering, not to a wrong result.
@@ -29,8 +29,9 @@ use daft_core::{
     prelude::{DataType, Operator, Schema},
 };
 use daft_dsl::{
-    Expr, ExprRef,
+    Column, Expr, ExprRef, ResolvedColumn,
     common_treenode::{TreeNode, TreeNodeRecursion},
+    is_udf,
     optimization::get_required_columns,
 };
 use daft_stats::{ColumnRangeStatistics, TableStatistics};
@@ -167,16 +168,48 @@ pub(super) fn group_conjuncts(conjuncts: Vec<ExprRef>) -> Vec<PredGroup> {
         .collect()
 }
 
-/// Plan the pipelined groups for `predicate`, or `None` if pipelining does not
-/// apply (fewer than two column-disjoint groups → the monolithic prefilter is
-/// already optimal, e.g. a single-column or fully column-overlapping predicate).
+fn is_row_local(predicate: &ExprRef) -> bool {
+    let mut row_local = true;
+    let result = predicate.apply(|expr| {
+        row_local = !is_udf(expr)
+            && match expr.as_ref() {
+                Expr::Column(Column::Resolved(ResolvedColumn::Basic(_)))
+                | Expr::Literal(_)
+                | Expr::Alias(..)
+                | Expr::BinaryOp { .. }
+                | Expr::Cast(..)
+                | Expr::Not(_)
+                | Expr::IsNull(_)
+                | Expr::NotNull(_)
+                | Expr::FillNull(..)
+                | Expr::Between(..)
+                | Expr::List(_)
+                | Expr::IfElse { .. }
+                | Expr::Coalesce(_) => true,
+                // IsIn builds a set over the entire RHS batch, not one set per row.
+                Expr::IsIn(_, items) => items
+                    .iter()
+                    .all(|item| get_required_columns(item).is_empty()),
+                _ => false,
+            };
+        Ok(if row_local {
+            TreeNodeRecursion::Continue
+        } else {
+            TreeNodeRecursion::Stop
+        })
+    });
+    result.is_ok() && row_local
+}
+
+/// Plan at least two nonempty, column-disjoint groups of row-local conjuncts,
+/// or fall back to the monolithic prefilter.
 pub(super) fn plan_pred_groups(predicate: &ExprRef) -> Option<Vec<PredGroup>> {
     let conjuncts = split_conjunction(predicate);
-    if conjuncts.len() < 2 {
+    if conjuncts.len() < 2 || !is_row_local(predicate) {
         return None;
     }
     let groups = group_conjuncts(conjuncts);
-    (groups.len() >= 2).then_some(groups)
+    (groups.len() >= 2 && groups.iter().all(|group| !group.col_names.is_empty())).then_some(groups)
 }
 
 /// Per-row-group estimation inputs for ordering. Bundling them keeps the
@@ -622,6 +655,79 @@ mod tests {
 
         let pipelineable = col("a").gt(lit(5)).and(col("b").lt(lit(10)));
         assert!(plan_pred_groups(&pipelineable).is_some());
+    }
+
+    #[test]
+    fn plan_rejects_column_dependent_is_in() {
+        for rhs in [col("c"), col("c").cast(&DataType::Int64).alias("items")] {
+            let pred = col("a")
+                .eq(lit(1))
+                .and(col("b").is_in(vec![rhs]).not().alias("predicate"));
+            assert!(plan_pred_groups(&pred).is_none());
+        }
+    }
+
+    #[test]
+    fn plan_allows_literal_is_in() {
+        let pred = col("a")
+            .eq(lit(1))
+            .and(col("b").is_in(vec![lit(5), lit(9)]));
+        let groups = plan_pred_groups(&pred).unwrap();
+        assert_eq!(
+            names(&groups),
+            vec![vec!["a".to_string()], vec!["b".to_string()]]
+        );
+    }
+
+    #[test]
+    fn plan_rejects_non_row_local_expressions() {
+        for expr in [col("b").sum(), col("b").offset(1, None)] {
+            let pred = col("a").eq(lit(1)).and(expr.gt(lit(0)));
+            assert!(plan_pred_groups(&pred).is_none());
+        }
+    }
+
+    #[test]
+    fn plan_rejects_udfs() {
+        use daft_dsl::functions::{
+            FunctionExpr,
+            python::{LegacyPythonUDF, MaybeInitializedUDF, RuntimePyObject},
+        };
+
+        #[cfg(feature = "python")]
+        pyo3::Python::initialize();
+        let udf: ExprRef = Expr::Function {
+            func: FunctionExpr::Python(LegacyPythonUDF {
+                name: "batch_predicate".to_string().into(),
+                func: MaybeInitializedUDF::Initialized(RuntimePyObject::new_none()),
+                bound_args: RuntimePyObject::new_none(),
+                num_expressions: 1,
+                return_dtype: DataType::Boolean,
+                resource_request: None,
+                batch_size: None,
+                concurrency: None,
+                use_process: None,
+                ray_options: None,
+            }),
+            inputs: vec![col("b")],
+        }
+        .into();
+        let pred = col("a").eq(lit(1)).and(udf.not().alias("predicate"));
+        assert!(plan_pred_groups(&pred).is_none());
+    }
+
+    #[test]
+    fn plan_rejects_zero_column_conjuncts() {
+        for constant in [
+            lit(true),
+            lit(false),
+            daft_dsl::null_lit(),
+            daft_dsl::null_lit().cast(&DataType::Boolean),
+            lit(1).eq(lit(1)),
+        ] {
+            let pred = col("a").eq(lit(1)).and(col("b").lt(lit(10))).and(constant);
+            assert!(plan_pred_groups(&pred).is_none());
+        }
     }
 
     #[test]
