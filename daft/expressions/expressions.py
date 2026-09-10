@@ -1210,9 +1210,15 @@ class Expression:
             (Showing first 3 of 3 rows)
 
         """
-        from daft.udf import func as row_wise_udf
+        from daft.series import Series
+        from daft.udf import func as udf
 
-        return row_wise_udf(func, return_dtype=DataType._infer(return_dtype))(self)
+        # Use a batch UDF so apply remains usable in aggregations.
+        @udf.batch(return_dtype=DataType._infer(return_dtype))
+        def batch_apply(series: Series) -> list[Any]:
+            return [func(x) for x in series]
+
+        return batch_apply(self)
 
     def is_null(self) -> Expression:
         """Checks if values in the Expression are Null (a special value indicating missing data).
