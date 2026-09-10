@@ -7,7 +7,8 @@ use reqwest_middleware::ClientWithMiddleware;
 use serde::Deserialize;
 use tokio::sync::Mutex;
 use xet::xet_session::{
-    HeaderMap, HeaderValue, XetDownloadStream, XetFileInfo, XetSession, XetSessionBuilder, header,
+    HeaderMap, HeaderValue, XetDownloadStream, XetDownloadStreamGroup, XetFileInfo, XetSession,
+    XetSessionBuilder, header,
 };
 
 use super::{
@@ -152,31 +153,33 @@ impl XetContext {
         Ok(session)
     }
 
+    async fn get_download_group(&self, refresh_url: &str) -> Result<XetDownloadStreamGroup, Error> {
+        let session = self.get_session().await?;
+        let refresh_headers = auth_headers(&self.hf_config);
+        session
+            .new_download_stream_group()
+            .map_err(|source| Error::XetOperationFailed {
+                path: refresh_url.to_string(),
+                message: source.to_string(),
+            })?
+            .with_token_refresh_url(refresh_url.to_string(), refresh_headers)
+            .build()
+            .boxed()
+            .await
+            .map_err(|source| Error::XetOperationFailed {
+                path: refresh_url.to_string(),
+                message: source.to_string(),
+            })
+    }
+
     pub(super) async fn download_stream(
         &self,
         parts: &HFPathParts,
         resolved: &XetResolvedFile,
         range: Option<GetRange>,
     ) -> Result<XetDownloadStream, Error> {
-        let session = self.get_session().await?;
-        let refresh_url = xet_read_token_url(parts);
-        let refresh_headers = auth_headers(&self.hf_config);
+        let group = self.get_download_group(&xet_read_token_url(parts)).await?;
         let xet_range = get_range_to_xet_range(range, resolved.file_size);
-
-        let group = session
-            .new_download_stream_group()
-            .map_err(|source| Error::XetOperationFailed {
-                path: refresh_url.clone(),
-                message: source.to_string(),
-            })?
-            .with_token_refresh_url(refresh_url, refresh_headers)
-            .build()
-            .boxed()
-            .await
-            .map_err(|source| Error::XetOperationFailed {
-                path: parts.path.clone(),
-                message: source.to_string(),
-            })?;
 
         let mut stream = group
             .download_stream(resolved.file_info.clone(), xet_range)
@@ -226,8 +229,79 @@ pub(super) fn xet_download_stream_to_bytes_stream(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
     use super::*;
     use crate::huggingface::path::HFRepoType;
+
+    // Exercise the real Xet group builder without Hugging Face credentials or CAS traffic.
+    struct TokenServer {
+        url: String,
+        requests: Arc<AtomicUsize>,
+        task: tokio::task::JoinHandle<()>,
+    }
+
+    impl TokenServer {
+        async fn start(fail_first: bool) -> Self {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let url = format!("http://{}", listener.local_addr().unwrap());
+            let body =
+                format!(r#"{{"accessToken":"test-token","exp":9999999999,"casUrl":"{url}/cas"}}"#);
+            let requests = Arc::new(AtomicUsize::new(0));
+            let count = requests.clone();
+            let task = tokio::spawn(async move {
+                loop {
+                    let (mut socket, _) = listener.accept().await.unwrap();
+                    let mut request = Vec::new();
+                    let mut buf = [0; 1024];
+                    while !request.windows(4).any(|w| w == b"\r\n\r\n") {
+                        let n = socket.read(&mut buf).await.unwrap();
+                        assert!(n > 0);
+                        request.extend_from_slice(&buf[..n]);
+                    }
+                    let n = count.fetch_add(1, Ordering::SeqCst);
+                    let status = if fail_first && n == 0 {
+                        "401 Unauthorized"
+                    } else {
+                        "200 OK"
+                    };
+                    let response = format!(
+                        "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    socket.write_all(response.as_bytes()).await.unwrap();
+                }
+            });
+            Self {
+                url,
+                requests,
+                task,
+            }
+        }
+
+        fn requests(&self) -> usize {
+            self.requests.load(Ordering::SeqCst)
+        }
+    }
+
+    impl Drop for TokenServer {
+        fn drop(&mut self) {
+            self.task.abort();
+        }
+    }
+
+    #[tokio::test]
+    async fn test_download_group_reuses_token_request() {
+        let server = TokenServer::start(false).await;
+        let context = XetContext::new(HuggingFaceConfig::default());
+        futures::future::try_join_all((0..8).map(|_| context.get_download_group(&server.url)))
+            .await
+            .unwrap();
+        context.get_download_group(&server.url).await.unwrap();
+        assert_eq!(server.requests(), 1, "one token request per auth scope");
+    }
 
     #[test]
     fn test_xet_read_token_url_datasets() {
