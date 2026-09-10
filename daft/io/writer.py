@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from daft.datatype import DataType
 from daft.dependencies import pa, pacsv, pafs, pq
@@ -113,6 +113,11 @@ class FileWriterBase(ABC):
         pass
 
 
+# Parquet codecs that accept a compression level in PyArrow. PyArrow raises if a level is
+# supplied for any other codec, so levels are only ever attached to these.
+_LEVELED_CODECS = frozenset({"zstd", "gzip", "brotli"})
+
+
 class ParquetFileWriter(FileWriterBase):
     def __init__(
         self,
@@ -125,6 +130,7 @@ class ParquetFileWriter(FileWriterBase):
         default_partition_fallback: str | None = None,
         metadata_collector: list[pq.FileMetaData] | None = None,
         column_compression: dict[str, str] | None = None,
+        compression_level: int | None = None,
     ):
         super().__init__(
             root_dir=root_dir,
@@ -140,9 +146,10 @@ class ParquetFileWriter(FileWriterBase):
         self.current_writer: pq.ParquetWriter | None = None
         self.metadata_collector: list[pq.FileMetaData] | None = metadata_collector
         self.column_compression = column_compression
+        self.compression_level = compression_level
 
     def _create_writer(self, schema: pa.Schema) -> pq.ParquetWriter:
-        opts = {}
+        opts: dict[str, Any] = {}
         if self.metadata_collector is not None:
             opts["metadata_collector"] = self.metadata_collector
         compression: str | dict[str, str]
@@ -150,6 +157,9 @@ class ParquetFileWriter(FileWriterBase):
             compression = self._resolve_column_compression(schema)
         else:
             compression = self.compression
+        compression_level = self._resolve_compression_level(compression)
+        if compression_level is not None:
+            opts["compression_level"] = compression_level
         return pq.ParquetWriter(
             self.full_path,
             schema,
@@ -188,6 +198,27 @@ class ParquetFileWriter(FileWriterBase):
             return RecordBatch.from_pydict(metadata).slice(0, 0)
         self.current_writer.close()
         return RecordBatch.from_pydict(metadata)
+
+    def _resolve_compression_level(
+        self,
+        compression: str | dict[str, str],
+    ) -> int | dict[str, int] | None:
+        """Shape ``compression_level`` the way ``pq.ParquetWriter`` expects it.
+
+        PyArrow rejects a level for codecs that do not take one (e.g. snappy), so
+        with a single codec the level is passed only if that codec supports it,
+        and with per-column codecs it is passed as a leaf-path -> level dict
+        restricted to the leaves whose codec supports it. Returns ``None`` when
+        there is nothing to pass.
+        """
+        if self.compression_level is None:
+            return None
+        if isinstance(compression, str):
+            return self.compression_level if compression.lower() in _LEVELED_CODECS else None
+        levels = {
+            leaf: self.compression_level for leaf, codec in compression.items() if codec.lower() in _LEVELED_CODECS
+        }
+        return levels or None
 
     def _resolve_column_compression(
         self,

@@ -2254,7 +2254,11 @@ class PyFormatSinkOption:
         timestamp_format: str | None = None,
     ) -> PyFormatSinkOption: ...
     @classmethod
-    def parquet(cls, column_compression: list[tuple[str, str]] | None = None) -> PyFormatSinkOption: ...
+    def parquet(
+        cls,
+        column_compression: list[tuple[str, str]] | None = None,
+        compression_level: int | None = None,
+    ) -> PyFormatSinkOption: ...
 
 class CheckpointStoreConfig:
     @staticmethod

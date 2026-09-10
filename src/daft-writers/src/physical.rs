@@ -161,6 +161,13 @@ pub fn create_pyarrow_file_writer(
             let parquet_option = format_option
                 .map(|opt| opt.to_parquet())
                 .unwrap_or_default();
+            // Validate codec names and the compression level up front so the PyArrow fallback
+            // rejects the same inputs, with the same errors, as the native writer.
+            crate::parquet_writer::resolve_parquet_compression(
+                compression.map(String::as_str),
+                parquet_option.column_compression.as_deref(),
+                parquet_option.compression_level,
+            )?;
             Ok(Box::new(crate::pyarrow::PyArrowWriter::new_parquet_writer(
                 root_dir,
                 file_idx,
@@ -168,6 +175,7 @@ pub fn create_pyarrow_file_writer(
                 io_config,
                 partition,
                 parquet_option.column_compression.as_deref(),
+                parquet_option.compression_level,
             )?))
         }
         #[cfg(feature = "python")]
@@ -212,6 +220,7 @@ fn create_native_writer(
                 io_config,
                 compression,
                 parquet_option.column_compression.as_deref(),
+                parquet_option.compression_level,
                 single_file,
                 single_file && matches!(write_mode, WriteMode::Overwrite),
             )

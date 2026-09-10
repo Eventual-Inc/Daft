@@ -370,6 +370,9 @@ pub struct ParquetFormatOption {
     /// Per-column compression overrides, the type matches the parquet writer builder
     /// method for setting column compression. The writer will parse the codec names.
     pub column_compression: Option<Vec<(String, String)>>,
+    /// Compression level applied to every codec in use that supports one (zstd, gzip, brotli),
+    /// including `column_compression` overrides. `None` keeps each codec's default level.
+    pub compression_level: Option<i32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -452,13 +455,17 @@ impl PyFormatSinkOption {
     }
 
     #[classmethod]
-    #[pyo3(signature = (column_compression=None))]
+    #[pyo3(signature = (column_compression=None, compression_level=None))]
     pub fn parquet(
         _cls: &pyo3::prelude::Bound<pyo3::types::PyType>,
         column_compression: Option<Vec<(String, String)>>,
+        compression_level: Option<i32>,
     ) -> Self {
         Self {
-            inner: FormatSinkOption::Parquet(ParquetFormatOption { column_compression }),
+            inner: FormatSinkOption::Parquet(ParquetFormatOption {
+                column_compression,
+                compression_level,
+            }),
         }
     }
 }
