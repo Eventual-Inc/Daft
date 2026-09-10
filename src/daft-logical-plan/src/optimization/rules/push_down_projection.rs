@@ -161,13 +161,18 @@ impl PushDownProjection {
                         // use them, otherwise the scan would stop reading them
                         // and the filter would fail
                         // (https://github.com/Eventual-Inc/Daft/issues/6757).
-                        for filter in external_info
-                            .pushdowns
-                            .filters
-                            .iter()
-                            .chain(external_info.pushdowns.partition_filters.iter())
-                        {
+                        if let Some(filter) = &external_info.pushdowns.filters {
                             required_columns.extend(get_required_columns(filter));
+                        }
+                        // Partition filters can reference hidden transformed fields
+                        // (e.g. bucket columns) that are not part of the data schema.
+                        // Only retain their dependencies that are also data columns.
+                        if let Some(filter) = &external_info.pushdowns.partition_filters {
+                            required_columns.extend(
+                                get_required_columns(filter)
+                                    .into_iter()
+                                    .filter(|col| external_info.source_schema.has_field(col)),
+                            );
                         }
                         if required_columns.len() < upstream_schema.names().len() {
                             // Don't modify materialized scans — their tasks are already built.
@@ -708,6 +713,7 @@ mod tests {
     use daft_core::prelude::*;
     use daft_dsl::{lit, resolved_col, unresolved_col};
     use daft_scan::Pushdowns;
+    use rstest::rstest;
 
     use crate::{
         LogicalPlan,
@@ -1069,6 +1075,41 @@ mod tests {
             Pushdowns::default()
                 .with_columns(Some(Arc::new(vec!["a".to_string(), "b".to_string()])))
                 .with_filters(Some(pred)),
+        )
+        .select(vec![resolved_col("a")])?
+        .build();
+
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// Source projections must not request hidden partition metadata, while
+    /// retaining ordinary filter dependencies and visible partition fields.
+    #[rstest]
+    #[case::hidden_bucket("b_bucket16", vec!["a", "b"])]
+    #[case::visible_identity("c", vec!["a", "b", "c"])]
+    fn test_source_pruning_only_keeps_data_partition_columns(
+        #[case] partition_col: &str,
+        #[case] expected_columns: Vec<&str>,
+    ) -> DaftResult<()> {
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Int64),
+            Field::new("c", DataType::Int64),
+            Field::new("d", DataType::Int64),
+        ]);
+        let pushdowns = Pushdowns::default()
+            .with_filters(Some(resolved_col("b").eq(lit(1))))
+            .with_partition_filters(Some(resolved_col(partition_col).eq(lit(1))));
+        let plan = dummy_scan_node_with_pushdowns(scan_op.clone(), pushdowns.clone())
+            .select(vec![resolved_col("a")])?
+            .build();
+
+        let expected = dummy_scan_node_with_pushdowns(
+            scan_op,
+            pushdowns.with_columns(Some(Arc::new(
+                expected_columns.into_iter().map(String::from).collect(),
+            ))),
         )
         .select(vec![resolved_col("a")])?
         .build();

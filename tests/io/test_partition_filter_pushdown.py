@@ -14,12 +14,17 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from typing import Any
 
+import pyarrow as pa
+import pytest
+
 from daft.expressions import Expression, col, lit
 from daft.expressions.visitor import PredicateVisitor
+from daft.functions import partition_iceberg_bucket
 from daft.io.partitioning import PartitionField, PartitionTransform
 from daft.io.pushdowns import Pushdowns
 from daft.io.source import DataSource, DataSourceTask
 from daft.logical.schema import DataType
+from daft.recordbatch import RecordBatch
 from daft.schema import Field, Schema, TimeUnit
 
 # ---------------------------------------------------------------------------
@@ -143,6 +148,50 @@ class _CapturePushdownsDataSource(DataSource):
         yield  # type: ignore[misc]  # makes this an async generator
 
 
+class _ProjectedDataSourceTask(DataSourceTask):
+    def __init__(self, table: pa.Table, filters: Expression | None) -> None:
+        self._table = table
+        self._filters = filters
+
+    @property
+    def schema(self) -> Schema:
+        return Schema.from_pyarrow_schema(self._table.schema)
+
+    async def read(self) -> AsyncIterator[RecordBatch]:
+        batch = RecordBatch.from_arrow_table(self._table)
+        if self._filters is not None:
+            batch = batch.filter([self._filters])
+        yield batch
+
+
+class _ProjectingDataSource(_CapturePushdownsDataSource):
+    """Reads data columns directly, evaluating partition metadata separately."""
+
+    def __init__(
+        self, table: pa.Table, partition_fields: list[PartitionField], partition_expr: Expression | None
+    ) -> None:
+        super().__init__(Schema.from_pyarrow_schema(table.schema), partition_fields)
+        self._table = table
+        self._partition_values = (
+            RecordBatch.from_arrow_table(table).eval_expression_list([partition_expr])
+            if partition_expr is not None
+            else None
+        )
+
+    async def get_tasks(self, pushdowns: Pushdowns) -> AsyncIterator[DataSourceTask]:
+        self.captured_pushdowns.append(pushdowns)
+        # Do not sanitize pushdowns: hidden metadata names must never reach
+        # this data projection through the optimizer/Python scan wrapper.
+        table = self._table.select(pushdowns.columns) if pushdowns.columns is not None else self._table
+        for i in range(table.num_rows):
+            if pushdowns.partition_filters is not None:
+                assert self._partition_values is not None
+                metadata = self._partition_values.slice(i, i + 1)
+                if len(metadata.filter([pushdowns.partition_filters])) == 0:
+                    continue
+            yield _ProjectedDataSourceTask(table.slice(i, 1), pushdowns.filters)
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -178,6 +227,59 @@ def _build_df_and_capture(
     df.collect()
     assert len(source.captured_pushdowns) == 1, "Expected exactly one call to get_tasks"
     return source.captured_pushdowns[0]
+
+
+@pytest.mark.parametrize("partition_kind", ["hidden_bucket", "visible_identity", "unpartitioned"])
+@pytest.mark.parametrize("count_rows", [False, True], ids=["select", "count"])
+def test_data_source_projection_keeps_only_data_filter_columns(partition_kind, count_rows):
+    table = pa.table({"a": [0, 1, 2, 3], "b": [0, 1, 2, 1], "c": [4, 5, 6, 7], "d": [8, 9, 10, 11]})
+    if partition_kind == "hidden_bucket":
+        partition_col = "b_bucket16"
+        partition_fields = [
+            PartitionField.create(
+                field=Field.create(partition_col, DataType.int32()),
+                source_field=Field.create("b", DataType.int64()),
+                transform=PartitionTransform.iceberg_bucket(16),
+            )
+        ]
+        partition_expr = partition_iceberg_bucket(col("b"), 16).alias(partition_col)
+    elif partition_kind == "visible_identity":
+        partition_col = "b"
+        partition_fields = [_make_identity_partition_field("b", "b", DataType.int64())]
+        partition_expr = col("b")
+    else:
+        partition_fields = []
+        partition_expr = None
+
+    source = _ProjectingDataSource(table, partition_fields, partition_expr)
+    query = source.read().filter(col("b") == 1).select("a")
+    if count_rows:
+        assert query.count_rows() == 2
+    else:
+        result = query.to_pydict()
+        assert list(result) == ["a"]
+        assert sorted(result["a"]) == [1, 3]
+
+    assert len(source.captured_pushdowns) == 1
+    pushdowns = source.captured_pushdowns[0]
+    assert pushdowns.columns is not None
+    assert "b" in pushdowns.columns
+    assert set(pushdowns.columns) <= {"a", "b"}
+    if not count_rows:
+        assert set(pushdowns.columns) == {"a", "b"}
+    if partition_kind == "unpartitioned":
+        assert pushdowns.partition_filters is None
+    else:
+        assert pushdowns.partition_filters is not None
+        partition_filter = extract_comparison(pushdowns.partition_filters)
+        assert partition_filter["op"] == "equal"
+        assert partition_filter["left"]["name"] == partition_col
+    if partition_kind == "visible_identity":
+        assert pushdowns.filters is None
+    else:
+        # Bucket pruning is lossy, so the original data predicate must survive.
+        assert pushdowns.filters is not None
+        assert extract_comparison(pushdowns.filters)["left"]["name"] == "b"
 
 
 # ---------------------------------------------------------------------------
