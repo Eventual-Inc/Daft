@@ -6,9 +6,7 @@
 //! consistent snapshot of worker statuses under its state lock, calls
 //! [`plan_reap`], and applies the returned plan.
 //!
-//! Retirement is two-phase to avoid racing with the scheduler's
-//! snapshot->dispatch window (a worker could be selected for dispatch from a
-//! snapshot taken just before retirement):
+//! Retirement is two-phase to let schedulers prefer non-draining workers:
 //!
 //! 1. **Drain**: a worker idle past the threshold is marked as draining. A
 //!    draining worker stays alive and can still accept tasks, but is flagged as
@@ -20,10 +18,7 @@
 //!    idle is actually released. If it picked up work in the meantime (the
 //!    race resolving in favor of the task), it is put back in service instead.
 //!
-//! A release can therefore only happen after the worker has been off the
-//! scheduler's list of candidates for at least one full reaper interval, which
-//! is orders of magnitude longer than the synchronous snapshot->dispatch span in
-//! the scheduler loop.
+//! The worker manager's dispatch gate serializes retirement with snapshot-to-submit.
 
 // The runtime consumer (RayWorkerManager) only exists under the `python` feature;
 // without it this module is exercised by unit tests alone.

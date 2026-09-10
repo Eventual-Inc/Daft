@@ -16,7 +16,7 @@ use crate::scheduling::{
     },
     scheduler::WorkerSnapshot,
     task::{SwordfishTask, TaskContext, TaskResourceRequest},
-    worker::{AutoscaleDemandId, Worker, WorkerId, WorkerManager},
+    worker::{AutoscaleDemandId, DispatchLifecycleGuard, Worker, WorkerId, WorkerManager},
 };
 
 const REFRESH_INTERVAL_SECS: Duration = Duration::from_secs(5);
@@ -124,6 +124,7 @@ impl RayWorkerManagerState {
 // Wrapper around the RaySwordfishWorkerManager class in the distributed_swordfish module.
 pub(crate) struct RayWorkerManager {
     state: Arc<Mutex<RayWorkerManagerState>>,
+    dispatch_gate: Arc<Mutex<()>>,
 }
 
 impl RayWorkerManager {
@@ -154,10 +155,9 @@ impl RayWorkerManager {
         // downscaling is enabled, and it holds a Weak handle so it self-terminates once the
         // manager is dropped.
         //
-        // Retirement is two-phase (drain, then release on a later tick) so a worker is
-        // only ever killed after it has been flagged as draining in scheduler snapshots
-        // for at least one full reaper interval — see `scheduling::downscale` for the
-        // race analysis.
+        // Always acquire the dispatch gate before state locks or Python attachment.
+        let dispatch_gate = Arc::new(Mutex::new(()));
+        let reaper_dispatch_gate = dispatch_gate.clone();
         let reaper_state = Arc::downgrade(&state);
         let spawn_result = std::thread::Builder::new()
             .name("daft-idle-reaper".to_string())
@@ -179,7 +179,7 @@ impl RayWorkerManager {
                     // kill retirement for the rest of the session.
                     let tick_result =
                         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            Self::reap_idle_workers(&state)
+                            Self::reap_idle_workers(&state, &reaper_dispatch_gate)
                         }));
                     match tick_result {
                         Ok(Ok(_)) => {}
@@ -207,7 +207,10 @@ impl RayWorkerManager {
             );
         }
 
-        Self { state }
+        Self {
+            state,
+            dispatch_gate,
+        }
     }
 
     /// Lock the shared state, recovering from poisoning. Used on the reaper path so a
@@ -223,6 +226,14 @@ impl RayWorkerManager {
 
 impl WorkerManager for RayWorkerManager {
     type Worker = RaySwordfishWorker;
+
+    fn begin_dispatch(&self) -> DispatchLifecycleGuard<'_> {
+        DispatchLifecycleGuard::new(
+            self.dispatch_gate
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
+    }
 
     fn submit_tasks_to_workers(
         &self,
@@ -502,10 +513,7 @@ impl WorkerManager for RayWorkerManager {
         // Draining the idle warm pool is owned by the background reaper so retirement
         // has a single authority (see #5683).
         let remaining_bundles = {
-            let mut state = self
-                .state
-                .lock()
-                .expect("Failed to lock RayWorkerManagerState");
+            let mut state = Self::lock_state(&self.state);
             // If this job never sent a scale-up request, there is no demand of ours in
             // Ray's autoscaler to clear. Skipping the call avoids touching Python on the
             // default (non-autoscaling) path and avoids writing to the cluster-wide
@@ -543,7 +551,16 @@ impl RayWorkerManager {
     /// from a single consistent snapshot of the state taken under one lock so the guard,
     /// floor, and candidate selection cannot diverge. This function only gathers inputs
     /// and applies the plan.
-    fn reap_idle_workers(state_arc: &Arc<Mutex<RayWorkerManagerState>>) -> DaftResult<usize> {
+    fn reap_idle_workers(
+        state_arc: &Arc<Mutex<RayWorkerManagerState>>,
+        dispatch_gate: &Mutex<()>,
+    ) -> DaftResult<usize> {
+        // Keep retirement, including failed-release reinsertion, outside snapshot-to-submit.
+        let _dispatch_guard = match dispatch_gate.try_lock() {
+            Ok(guard) => guard,
+            Err(std::sync::TryLockError::WouldBlock) => return Ok(0),
+            Err(std::sync::TryLockError::Poisoned(error)) => error.into_inner(),
+        };
         // Read the downscale policy from the environment on every tick. The worker
         // manager owns every gating decision so the scheduler can stay backend-agnostic.
         let policy = DownscalePolicy::from_env();
@@ -715,5 +732,45 @@ impl RayWorkerManager {
         );
 
         Ok(released)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::mpsc;
+
+    use super::*;
+
+    #[test]
+    fn reaper_skips_dispatch_before_locking_state() {
+        let manager = RayWorkerManager {
+            state: Arc::new(Mutex::new(RayWorkerManagerState {
+                ray_workers: HashMap::new(),
+                draining_workers: HashSet::new(),
+                last_refresh: None,
+                autoscale_demands: HashMap::new(),
+                pending_release_blacklist: HashMap::new(),
+                last_autoscale_request_time: None,
+                autoscale_interval_secs: Duration::from_secs(5),
+                worker_startup_timeout: 1,
+            })),
+            dispatch_gate: Arc::new(Mutex::new(())),
+        };
+        let dispatch_guard = manager.begin_dispatch();
+        let state_guard = RayWorkerManager::lock_state(&manager.state);
+        let state = manager.state.clone();
+        let dispatch_gate = manager.dispatch_gate.clone();
+        let (tx, rx) = mpsc::channel();
+        let reaper = std::thread::spawn(move || {
+            tx.send(RayWorkerManager::reap_idle_workers(&state, &dispatch_gate))
+                .unwrap();
+        });
+
+        let result = rx.recv_timeout(Duration::from_secs(5));
+        drop(state_guard);
+        drop(dispatch_guard);
+        reaper.join().unwrap();
+        assert_eq!(result.unwrap().unwrap(), 0);
+        assert!(manager.dispatch_gate.try_lock().is_ok());
     }
 }

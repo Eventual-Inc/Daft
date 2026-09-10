@@ -106,35 +106,70 @@ where
 
     #[instrument(name = "FlotillaScheduler", skip_all)]
     async fn run(mut self) -> DaftResult<()> {
-        let loop_result = self.event_loop().await;
+        self.event_loop().await?;
+        tracing::info!(target: SCHEDULER_LOG_TARGET, "Scheduler event loop completed");
+        Ok(())
+    }
 
-        // Job complete (successfully or not): retract this loop's autoscaling demand
-        // so the autoscaler stops provisioning capacity for work that no longer exists.
-        // Only our own slice is dropped — demand published by other concurrently running
-        // plans stays in effect, since Ray's request_resources() is a single cluster-wide
-        // slot that the worker manager maintains as the union of all live owners.
-        // This must also run when the loop exits with an error — a failed query is exactly
-        // the case where the demand we signaled no longer has work behind it, and Ray's
-        // request_resources() is sticky. It is best-effort: a cleanup failure must not
-        // mask the loop's own result or fail an otherwise-successful job.
-        //
-        // We deliberately do NOT retire idle workers here — the warm pool is kept for the
-        // next query in the session and drained by the worker manager's background reaper
-        // once workers pass the idle threshold (see #5683). This keeps retirement under a
-        // single authority.
-        if let Err(e) = self
-            .worker_manager
-            .clear_autoscale_demand(self.autoscale_demand_id)
-        {
-            tracing::warn!(
+    fn schedule_and_dispatch(&mut self) -> DaftResult<()> {
+        let _dispatch_guard = self.worker_manager.begin_dispatch();
+        let worker_snapshots = self.worker_manager.worker_snapshots()?;
+        tracing::info!(
+            target: SCHEDULER_LOG_TARGET,
+            num_workers = worker_snapshots.len(),
+            pending_tasks = self.scheduler.num_pending_tasks(),
+            "Received worker snapshots"
+        );
+        tracing::debug!(
+            target: SCHEDULER_LOG_TARGET,
+            worker_snapshots = %format!("{:#?}", worker_snapshots)
+        );
+
+        self.scheduler.update_worker_state(&worker_snapshots);
+
+        // 1: Send autoscaling request if needed (scale up).
+        // We do this before scheduling tasks to ensure that the autoscaler sees the true demand
+        // and not just the residual demand after scheduling.
+        let autoscaling_request = self.scheduler.get_autoscaling_request();
+        if let Some(request) = autoscaling_request {
+            tracing::info!(
                 target: SCHEDULER_LOG_TARGET,
-                error = %e,
-                "Failed to clear autoscaling demand on job completion; continuing"
+                autoscaling_request = %format!("{:#?}", request),
+                "Sending autoscaling request"
             );
+            self.worker_manager
+                .try_autoscale(self.autoscale_demand_id, request)?;
         }
 
-        loop_result?;
-        tracing::info!(target: SCHEDULER_LOG_TARGET, "Scheduler event loop completed");
+        // 2: Get all tasks that are ready to be scheduled
+        let (scheduled_tasks, cancelled_tasks) = self.scheduler.schedule_tasks();
+        for task in &cancelled_tasks {
+            self.statistics_manager.handle_event(TaskEvent::Cancelled {
+                context: task.task_context(),
+            })?;
+        }
+        // 3: Dispatch tasks directly to the dispatcher
+        if !scheduled_tasks.is_empty() {
+            tracing::info!(
+                target: SCHEDULER_LOG_TARGET,
+                num_tasks = scheduled_tasks.len(),
+                "Scheduling tasks for dispatch"
+            );
+            tracing::debug!(
+                target: SCHEDULER_LOG_TARGET,
+                scheduled_tasks = %format!("{:#?}", scheduled_tasks)
+            );
+
+            for task in &scheduled_tasks {
+                self.statistics_manager.handle_event(TaskEvent::Scheduled {
+                    context: task.task().task_context(),
+                    worker_id: task.worker_id(),
+                })?;
+            }
+
+            self.dispatcher
+                .dispatch_tasks(scheduled_tasks, &self.worker_manager)?;
+        }
         Ok(())
     }
 
@@ -145,63 +180,7 @@ where
             || self.scheduler.num_pending_tasks() > 0
             || self.dispatcher.has_running_tasks()
         {
-            let worker_snapshots = self.worker_manager.worker_snapshots()?;
-            tracing::info!(
-                target: SCHEDULER_LOG_TARGET,
-                num_workers = worker_snapshots.len(),
-                pending_tasks = self.scheduler.num_pending_tasks(),
-                "Received worker snapshots"
-            );
-            tracing::debug!(
-                target: SCHEDULER_LOG_TARGET,
-                worker_snapshots = %format!("{:#?}", worker_snapshots)
-            );
-
-            self.scheduler.update_worker_state(&worker_snapshots);
-
-            // 1: Send autoscaling request if needed (scale up).
-            // We do this before scheduling tasks to ensure that the autoscaler sees the true demand
-            // and not just the residual demand after scheduling.
-            let autoscaling_request = self.scheduler.get_autoscaling_request();
-            if let Some(request) = autoscaling_request {
-                tracing::info!(
-                    target: SCHEDULER_LOG_TARGET,
-                    autoscaling_request = %format!("{:#?}", request),
-                    "Sending autoscaling request"
-                );
-                self.worker_manager
-                    .try_autoscale(self.autoscale_demand_id, request)?;
-            }
-
-            // 2: Get all tasks that are ready to be scheduled
-            let (scheduled_tasks, cancelled_tasks) = self.scheduler.schedule_tasks();
-            for task in &cancelled_tasks {
-                self.statistics_manager.handle_event(TaskEvent::Cancelled {
-                    context: task.task_context(),
-                })?;
-            }
-            // 3: Dispatch tasks directly to the dispatcher
-            if !scheduled_tasks.is_empty() {
-                tracing::info!(
-                    target: SCHEDULER_LOG_TARGET,
-                    num_tasks = scheduled_tasks.len(),
-                    "Scheduling tasks for dispatch"
-                );
-                tracing::debug!(
-                    target: SCHEDULER_LOG_TARGET,
-                    scheduled_tasks = %format!("{:#?}", scheduled_tasks)
-                );
-
-                for task in &scheduled_tasks {
-                    self.statistics_manager.handle_event(TaskEvent::Scheduled {
-                        context: task.task().task_context(),
-                        worker_id: task.worker_id(),
-                    })?;
-                }
-
-                self.dispatcher
-                    .dispatch_tasks(scheduled_tasks, &self.worker_manager)?;
-            }
+            self.schedule_and_dispatch()?;
 
             // 4: Concurrently wait for new tasks, task completions, or periodic tick.
             let Self {
@@ -238,6 +217,22 @@ where
         }
 
         Ok(())
+    }
+}
+
+impl<W: Worker, S: Scheduler<W::Task>> Drop for SchedulerLoop<W, S> {
+    fn drop(&mut self) {
+        // Aborting the owning JoinSet drops the future without returning from event_loop.
+        if let Err(e) = self
+            .worker_manager
+            .clear_autoscale_demand(self.autoscale_demand_id)
+        {
+            tracing::warn!(
+                target: SCHEDULER_LOG_TARGET,
+                error = %e,
+                "Failed to clear autoscaling demand on scheduler shutdown"
+            );
+        }
     }
 }
 
@@ -466,7 +461,10 @@ impl Drop for SubmittedTask {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
+    use std::{
+        collections::HashSet,
+        sync::{Barrier, Mutex, TryLockError},
+    };
 
     use rand::Rng;
 
@@ -476,7 +474,10 @@ mod tests {
             scheduler::test_utils::setup_workers,
             task::tests::MockTaskFailure,
             tests::{MockTask, MockTaskBuilder, create_mock_partition_ref},
-            worker::{WorkerId, tests::MockWorkerManager},
+            worker::{
+                WorkerId,
+                tests::{MockWorker, MockWorkerManager},
+            },
         },
         utils::channel::create_channel,
     };
@@ -651,6 +652,245 @@ mod tests {
         assert!(saw_error, "scheduler loop should have exited with an error");
         // Demand must be cleared exactly once even though the loop exited with an error.
         assert_eq!(ctx.worker_manager.clear_demand_call_count(), 1);
+        Ok(())
+    }
+
+    fn unspawned_scheduler_loop(
+        worker_manager: Arc<MockWorkerManager>,
+    ) -> (
+        SchedulerLoop<MockWorker, DefaultScheduler<MockTask>>,
+        SchedulerHandle<MockTask>,
+    ) {
+        let (sender, receiver) = create_unbounded_channel();
+        (
+            SchedulerLoop::new(
+                DefaultScheduler::with_autoscaling_threshold(1.25),
+                receiver,
+                worker_manager,
+                StatisticsManagerRef::default(),
+            ),
+            SchedulerHandle::new(sender),
+        )
+    }
+
+    fn enqueue_mock_task(
+        loop_state: &mut SchedulerLoop<MockWorker, DefaultScheduler<MockTask>>,
+        task_id: TaskID,
+    ) -> DaftResult<SubmittedTask> {
+        let task = MockTaskBuilder::default().with_task_id(task_id).build();
+        let (pending, submitted) =
+            SchedulerHandle::prepare_task_for_submission(SubmittableTask::task_only(task));
+        loop_state.handle_new_tasks(Some(pending))?;
+        Ok(submitted)
+    }
+
+    #[tokio::test]
+    async fn test_scheduler_abort_clears_only_its_published_demand() -> DaftResult<()> {
+        let manager = Arc::new(MockWorkerManager::new(setup_workers(&[])));
+        manager.enable_dispatch_gate_checks();
+        manager.set_autoscale_creates_workers(false);
+        let (mut aborted, aborted_handle) = unspawned_scheduler_loop(manager.clone());
+        let (mut live, live_handle) = unspawned_scheduler_loop(manager.clone());
+        let aborted_id = aborted.autoscale_demand_id;
+        let live_id = live.autoscale_demand_id;
+        assert_ne!(aborted_id, live_id);
+        let aborted_task = enqueue_mock_task(&mut aborted, 0)?;
+        let live_task = enqueue_mock_task(&mut live, 1)?;
+
+        let mut aborted = Box::pin(aborted.run());
+        let mut live = Box::pin(live.run());
+        // Poll through publication to the scheduler's await without any timer sleeps.
+        // No workers are materialized, so both owners still have unsatisfied demand.
+        assert!(futures::poll!(aborted.as_mut()).is_pending());
+        assert!(futures::poll!(live.as_mut()).is_pending());
+        assert_eq!(
+            manager.active_demand_ids(),
+            HashSet::from([aborted_id, live_id])
+        );
+        assert_eq!(manager.clear_demand_call_count(), 0);
+        assert!(manager.dispatch_gate.try_lock().is_ok());
+
+        // Abort a future that has already published, not one that was never polled.
+        // Keep its input handle alive so channel closure cannot explain cleanup.
+        let mut joinset = JoinSet::new();
+        joinset.spawn(aborted);
+        joinset.abort_all();
+        let mut aborted_count = 0;
+        while let Some(result) = joinset.join_next().await {
+            assert!(result.is_err(), "the scheduler should have been aborted");
+            aborted_count += 1;
+        }
+        assert_eq!(aborted_count, 1);
+        assert_eq!(manager.clear_demand_call_count(), 1);
+        assert_eq!(manager.cleared_demand_ids(), vec![aborted_id]);
+        assert_eq!(manager.active_demand_ids(), HashSet::from([live_id]));
+        assert!(manager.dispatch_gate.try_lock().is_ok());
+        assert!(aborted_task.await?.is_none());
+        drop(aborted_handle);
+
+        // Let the other owner finish normally. An input task wakes it immediately,
+        // avoiding dependence on the scheduler's next periodic tick.
+        manager.set_autoscale_creates_workers(true);
+        let wake_task =
+            SubmittableTask::task_only(MockTaskBuilder::default().with_task_id(2).build())
+                .submit(&live_handle)?;
+        drop(live_handle);
+        live.await?;
+        assert!(live_task.await?.is_some());
+        assert!(wake_task.await?.is_some());
+        assert_eq!(manager.cleared_demand_ids(), vec![aborted_id, live_id]);
+        assert_eq!(manager.clear_demand_call_count(), 2);
+        assert!(manager.active_demand_ids().is_empty());
+        assert!(manager.dispatch_gate.try_lock().is_ok());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_scheduler_releases_dispatch_gate_while_awaiting() -> DaftResult<()> {
+        let worker_id: WorkerId = Arc::from("worker1");
+        let manager = Arc::new(MockWorkerManager::new(setup_workers(&[(
+            worker_id.clone(),
+            1,
+        )])));
+        manager.enable_dispatch_gate_checks();
+        let (mut loop_state, handle) = unspawned_scheduler_loop(manager.clone());
+        let demand_id = loop_state.autoscale_demand_id;
+        let submitted = enqueue_mock_task(&mut loop_state, 0)?;
+        let mut running = Box::pin(loop_state.run());
+
+        // On this current-thread runtime the dispatched result future has not run
+        // yet: the scheduler is awaiting input/completion with an active worker.
+        assert!(futures::poll!(running.as_mut()).is_pending());
+        assert!(manager.dispatch_gate.try_lock().is_ok());
+        assert!(!manager.try_reap_idle_worker(&worker_id));
+        assert_eq!(manager.clear_demand_call_count(), 0);
+
+        drop(handle);
+        running.await?;
+        assert!(submitted.await?.is_some());
+        assert_eq!(manager.cleared_demand_ids(), vec![demand_id]);
+        assert!(manager.dispatch_gate.try_lock().is_ok());
+        Ok(())
+    }
+
+    async fn assert_dispatch_error_releases_gate(
+        worker_configs: &[(WorkerId, usize)],
+        inject_failure: fn(&MockWorkerManager, bool),
+        expected_error: &str,
+    ) -> DaftResult<()> {
+        let manager = Arc::new(MockWorkerManager::new(setup_workers(worker_configs)));
+        manager.enable_dispatch_gate_checks();
+        inject_failure(&manager, true);
+        manager.set_fail_clear_demand(true);
+        let (mut loop_state, _handle) = unspawned_scheduler_loop(manager.clone());
+        let demand_id = loop_state.autoscale_demand_id;
+        let _submitted = enqueue_mock_task(&mut loop_state, 0)?;
+
+        let error = loop_state.run().await.unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!("DaftError::InternalError {expected_error}")
+        );
+        assert!(manager.dispatch_gate.try_lock().is_ok());
+        // The cleanup hook also checks the gate is free before injecting its own
+        // error; it must neither replace the dispatch error nor be called twice.
+        assert_eq!(manager.clear_demand_call_count(), 1);
+        assert_eq!(manager.cleared_demand_ids(), vec![demand_id]);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_snapshot_error_releases_gate_and_preserves_original_error() -> DaftResult<()> {
+        assert_dispatch_error_releases_gate(
+            &[],
+            MockWorkerManager::set_fail_worker_snapshots,
+            "injected worker_snapshots failure",
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn test_autoscale_error_releases_gate_and_preserves_original_error() -> DaftResult<()> {
+        assert_dispatch_error_releases_gate(
+            &[],
+            MockWorkerManager::set_fail_autoscale,
+            "injected autoscale failure",
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn test_submit_error_releases_gate_and_preserves_original_error() -> DaftResult<()> {
+        assert_dispatch_error_releases_gate(
+            &[(Arc::from("worker1"), 1)],
+            MockWorkerManager::set_fail_submit,
+            "injected submit failure",
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_failure_preserves_successful_scheduler_result() -> DaftResult<()> {
+        let manager = Arc::new(MockWorkerManager::new(setup_workers(&[])));
+        manager.enable_dispatch_gate_checks();
+        manager.set_fail_clear_demand(true);
+        let (loop_state, handle) = unspawned_scheduler_loop(manager.clone());
+        let demand_id = loop_state.autoscale_demand_id;
+        drop(handle);
+
+        loop_state.run().await?;
+        assert_eq!(manager.clear_demand_call_count(), 1);
+        assert_eq!(manager.cleared_demand_ids(), vec![demand_id]);
+        assert!(manager.dispatch_gate.try_lock().is_ok());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_scheduler_dispatch_wins_reaper_between_snapshot_and_submit() -> DaftResult<()> {
+        let worker_id: WorkerId = Arc::from("worker1");
+        let manager = Arc::new(MockWorkerManager::new(setup_workers(&[(
+            worker_id.clone(),
+            1,
+        )])));
+        manager.enable_dispatch_gate_checks();
+        let (mut loop_state, handle) = unspawned_scheduler_loop(manager.clone());
+        let submitted = enqueue_mock_task(&mut loop_state, 0)?;
+        let observation = Arc::new(Mutex::new(None));
+        let reaper_observation = observation.clone();
+        let reaper_manager = manager.clone();
+        let reaper_worker_id = worker_id.clone();
+        manager.set_after_snapshot_hook(move || {
+            let barrier = Arc::new(Barrier::new(2));
+            let reaper_barrier = barrier.clone();
+            let reaper = std::thread::spawn(move || {
+                reaper_barrier.wait();
+                let gate_held = matches!(
+                    reaper_manager.dispatch_gate.try_lock(),
+                    Err(TryLockError::WouldBlock)
+                );
+                let retired = reaper_manager.try_reap_idle_worker(&reaper_worker_id);
+                (gate_held, retired)
+            });
+            barrier.wait();
+            // Joining inside the snapshot hook guarantees the attempted retirement
+            // happens before submit, while the worker-map lock is already released.
+            *reaper_observation.lock().unwrap() = Some(reaper.join().unwrap());
+        });
+
+        // No standalone test guard: the scheduler itself must acquire the gate.
+        loop_state.schedule_and_dispatch()?;
+        assert_eq!(*observation.lock().unwrap(), Some((true, false)));
+        assert_eq!(loop_state.scheduler.num_pending_tasks(), 0);
+        assert!(loop_state.dispatcher.has_running_tasks());
+        assert!(manager.dispatch_gate.try_lock().is_ok());
+        // Once dispatch releases the gate, registered active work prevents reaping.
+        assert!(!manager.try_reap_idle_worker(&worker_id));
+
+        drop(handle);
+        loop_state.run().await?;
+        assert!(submitted.await?.is_some());
+        // The mock reaper is functional: it can retire this worker after completion.
+        assert!(manager.try_reap_idle_worker(&worker_id));
         Ok(())
     }
 
