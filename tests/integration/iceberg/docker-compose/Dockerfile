@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM python:3.10-bullseye
+FROM python:3.10-bookworm
 
 RUN apt-get -qq update && \
     apt-get -qq install -y --no-install-recommends \
@@ -21,7 +21,7 @@ RUN apt-get -qq update && \
       curl \
       vim \
       unzip \
-      openjdk-11-jdk \
+      openjdk-17-jdk \
       build-essential \
       software-properties-common \
       ssh && \
