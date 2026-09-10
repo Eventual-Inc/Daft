@@ -61,6 +61,54 @@ pub(crate) fn write_mcap(
     temp
 }
 
+/// Writes an indexed MCAP whose chunks are physically out of log-time order:
+/// a run of log times starting at 100 precedes a run starting at 0, with a
+/// chunk size small enough that the runs never share a chunk.
+pub(crate) fn write_mcap_out_of_order(messages_per_run: usize) -> NamedTempFile {
+    write_mcap_out_of_order_with_payload(messages_per_run, 8)
+}
+
+pub(crate) fn write_mcap_out_of_order_with_payload(
+    messages_per_run: usize,
+    payload_size: usize,
+) -> NamedTempFile {
+    let temp = NamedTempFile::new().unwrap();
+    let output = File::create(temp.path()).unwrap();
+    let mut writer = WriteOptions::new()
+        .use_chunks(true)
+        .chunk_size(Some(64))
+        .compression(None)
+        .create(BufWriter::new(output))
+        .unwrap();
+    let channel = Arc::new(Channel {
+        id: 1,
+        schema: None,
+        topic: "/camera".to_string(),
+        message_encoding: String::new(),
+        metadata: BTreeMap::new(),
+    });
+
+    for run_start in [100_u64, 0_u64] {
+        for offset in 0..messages_per_run as u64 {
+            let time = run_start + offset;
+            let mut data = time.to_le_bytes().to_vec();
+            data.resize(payload_size.max(data.len()), 0);
+            writer
+                .write(&Message {
+                    channel: channel.clone(),
+                    sequence: time as u32,
+                    log_time: time,
+                    publish_time: time,
+                    data: Cow::Owned(data),
+                })
+                .unwrap();
+        }
+    }
+    writer.finish().unwrap();
+    drop(writer);
+    temp
+}
+
 pub(crate) async fn make_reader(
     file: &NamedTempFile,
     options: McapReadOptions,

@@ -4,8 +4,8 @@
 //! indexed chunk traversal when a usable summary is present and a linear
 //! fallback otherwise.
 //!
-//! Peak memory scales with chunk size and batch payload size, not total file
-//! size.
+//! Indexed traversal buffers overlapping chunks for log-time ordering. HTTP
+//! servers without range support require a full-file buffer.
 
 use std::{io::SeekFrom, sync::Arc};
 
@@ -14,11 +14,14 @@ use common_error::{DaftError, DaftResult};
 use daft_io::{GetRange, GetResult, IOClient, IOStatsRef};
 use mcap::sans_io::{SummaryReadEvent, SummaryReader, SummaryReaderOptions};
 
+mod indexed;
 mod read;
+mod stats;
 #[cfg(test)]
 mod test_utils;
 
 pub use read::NativeMcapReader;
+pub use stats::McapReadStats;
 
 pub(crate) const MAX_RECORD_LENGTH: usize = 1024 * 1024 * 1024;
 const SUMMARY_READ_AHEAD_BYTES: usize = 8 * 1024 * 1024;
@@ -45,9 +48,9 @@ fn seek_position(position: SeekFrom, current: u64, file_size: u64) -> DaftResult
     Ok(value as u64)
 }
 
-async fn fetch_range(
+pub(crate) async fn fetch_range(
     uri: &str,
-    start: u64,
+    start: usize,
     length: usize,
     io_client: &Arc<IOClient>,
     io_stats: &IOStatsRef,
@@ -55,8 +58,6 @@ async fn fetch_range(
     if length == 0 {
         return Ok(Bytes::new());
     }
-    let start =
-        usize::try_from(start).map_err(|_| mcap_error("range offset does not fit in usize"))?;
     let end = start
         .checked_add(length)
         .ok_or_else(|| mcap_error("range end overflow"))?;
@@ -75,9 +76,13 @@ async fn fetch_range(
     Ok(bytes)
 }
 
+/// Require the range contract when callers rely on the requested interval.
+/// An oversized response is not necessarily extra bytes at the
+/// requested offset: a server ignoring Range can return the file from byte zero.
+/// Without a verified response offset, truncating that body would be unsafe.
 pub(crate) async fn fetch_exact_range(
     uri: &str,
-    start: u64,
+    start: usize,
     length: usize,
     io_client: &Arc<IOClient>,
     io_stats: &IOStatsRef,
@@ -85,7 +90,7 @@ pub(crate) async fn fetch_exact_range(
     let bytes = fetch_range(uri, start, length, io_client, io_stats).await?;
     if bytes.len() != length {
         return Err(mcap_error(format!(
-            "unexpected EOF reading range at {start}: requested {length} bytes, received {}",
+            "unexpected range length at {start}: requested {length} bytes, received {}",
             bytes.len()
         )));
     }
@@ -106,18 +111,23 @@ impl BufferedRange {
 }
 
 /// Reads the optional summary section from the end of an MCAP file.
+#[tracing::instrument(
+    skip_all,
+    name = "McapReader::read_summary",
+    fields(file_size = file_size, is_remote = is_remote),
+    err
+)]
 pub(crate) async fn read_summary(
     uri: &str,
-    file_size: usize,
+    file_size: u64,
     is_remote: bool,
     io_client: &Arc<IOClient>,
     io_stats: &IOStatsRef,
+    stats: &mut McapReadStats,
 ) -> DaftResult<Option<mcap::Summary>> {
-    let file_size_u64 =
-        u64::try_from(file_size).map_err(|_| mcap_error("file size does not fit in u64"))?;
     let mut reader = SummaryReader::new_with_options(
         SummaryReaderOptions::default()
-            .with_file_size(file_size_u64)
+            .with_file_size(file_size)
             .with_record_length_limit(MAX_RECORD_LENGTH),
     );
     let mut position = 0_u64;
@@ -126,31 +136,43 @@ pub(crate) async fn read_summary(
     while let Some(event) = reader.next_event() {
         match event.map_err(mcap_error)? {
             SummaryReadEvent::SeekRequest(request) => {
-                position = seek_position(request, position, file_size_u64)?;
+                stats.summary_seeks += 1;
+                position = seek_position(request, position, file_size)?;
+                if stats.summary_seeks == 2 {
+                    stats.summary_tail_bytes = file_size.checked_sub(position);
+                }
                 reader.notify_seeked(position);
             }
             SummaryReadEvent::ReadRequest(requested) => {
-                let remaining = file_size_u64.saturating_sub(position);
-                let available = requested.min(usize::try_from(remaining).unwrap_or(usize::MAX));
-                let bytes = if available == 0 {
+                stats.summary_reads += 1;
+                let remaining =
+                    usize::try_from(file_size.saturating_sub(position)).unwrap_or(usize::MAX);
+                let read_length = requested.min(remaining);
+                let start = usize::try_from(position)
+                    .map_err(|_| mcap_error("range offset does not fit in usize"))?;
+                let bytes = if read_length == 0 {
                     Bytes::new()
                 } else if !is_remote {
-                    fetch_range(uri, position, available, io_client, io_stats).await?
+                    stats.summary_fetches += 1;
+                    fetch_range(uri, start, read_length, io_client, io_stats).await?
                 } else if let Some(bytes) = read_buffer
                     .as_ref()
-                    .and_then(|buffer| buffer.slice(position, available))
+                    .and_then(|buffer| buffer.slice(position, read_length))
                 {
+                    stats.summary_buffer_hits += 1;
                     bytes
                 } else {
-                    let read_length = available
-                        .max(SUMMARY_READ_AHEAD_BYTES)
-                        .min(usize::try_from(remaining).unwrap_or(usize::MAX));
+                    stats.summary_fetches += 1;
+                    // The footer seek gives us summary_start, so remaining is
+                    // the exact tail size. Fetch it in one piece when it fits
+                    // the read-ahead budget; bound memory for larger summaries.
+                    let fetch_length = read_length.max(SUMMARY_READ_AHEAD_BYTES).min(remaining);
                     let buffer = BufferedRange {
                         start: position,
-                        bytes: fetch_exact_range(uri, position, read_length, io_client, io_stats)
+                        bytes: fetch_exact_range(uri, start, fetch_length, io_client, io_stats)
                             .await?,
                     };
-                    let bytes = buffer.slice(position, available).ok_or_else(|| {
+                    let bytes = buffer.slice(position, read_length).ok_or_else(|| {
                         DaftError::InternalError(
                             "MCAP summary read-ahead did not contain requested bytes".to_string(),
                         )
@@ -166,6 +188,54 @@ pub(crate) async fn read_summary(
         }
     }
 
+    Ok(reader.finish())
+}
+
+/// Parses the optional summary section from a fully buffered MCAP file.
+#[cfg(test)]
+pub(crate) fn parse_summary_from_bytes(bytes: &Bytes) -> DaftResult<Option<mcap::Summary>> {
+    parse_summary_from_bytes_with_stats(bytes, &mut McapReadStats::default())
+}
+
+pub(crate) fn parse_summary_from_bytes_with_stats(
+    bytes: &Bytes,
+    stats: &mut McapReadStats,
+) -> DaftResult<Option<mcap::Summary>> {
+    let file_size = bytes.len() as u64;
+    let mut reader = SummaryReader::new_with_options(
+        SummaryReaderOptions::default()
+            .with_file_size(file_size)
+            .with_record_length_limit(MAX_RECORD_LENGTH),
+    );
+    let mut position = 0_u64;
+    while let Some(event) = reader.next_event() {
+        match event.map_err(mcap_error)? {
+            SummaryReadEvent::SeekRequest(request) => {
+                stats.summary_seeks += 1;
+                position = seek_position(request, position, file_size)?;
+                if stats.summary_seeks == 2 {
+                    stats.summary_tail_bytes = file_size.checked_sub(position);
+                }
+                reader.notify_seeked(position);
+            }
+            SummaryReadEvent::ReadRequest(requested) => {
+                stats.summary_reads += 1;
+                let start = usize::try_from(position)
+                    .map_err(|_| mcap_error("summary position does not fit in usize"))?;
+                if start > bytes.len() {
+                    return Err(mcap_error("summary offset exceeds file size"));
+                }
+                let read_length = bytes.len().saturating_sub(start).min(requested);
+                if read_length > 0 {
+                    stats.summary_buffer_hits += 1;
+                }
+                reader.insert(requested)[..read_length]
+                    .copy_from_slice(&bytes[start..start + read_length]);
+                reader.notify_read(read_length);
+                position = position.saturating_add(read_length as u64);
+            }
+        }
+    }
     Ok(reader.finish())
 }
 
