@@ -160,10 +160,17 @@ class DataSourceTask(ABC):
         - ``"bytes.read"``: number of bytes read from the underlying storage.
           Reported as the scan node's ``bytes.read`` stat, the same counter the
           native Parquet/CSV/JSON readers populate.
-        - ``"requests"``: number of I/O requests issued (e.g. HTTP GETs). Tracked
-          alongside ``bytes.read`` in the scan task's I/O stats.
+        - ``"io.requests"``: number of I/O requests issued (e.g. HTTP GET, HEAD
+          and LIST calls). Reported as the scan node's ``io.requests`` stat.
 
         Unknown keys are ignored. The default implementation reports nothing.
+
+        Note:
+            Delivery of scan-node I/O stats to Python subscribers currently
+            applies to the native runner. On the Ray runner these counters are
+            aggregated by the distributed scan node but, like ``bytes.read``
+            from the native readers, are not yet forwarded to Python
+            ``Stats`` events.
 
         Example:
             >>> class MyTask(DataSourceTask):
@@ -177,7 +184,7 @@ class DataSourceTask(ABC):
             ...         yield to_record_batch(data)
             ...
             ...     def stats(self):
-            ...         return {"bytes.read": self._bytes_read}
+            ...         return {"bytes.read": self._bytes_read, "io.requests": 1}
         """
         return {}
 

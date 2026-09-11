@@ -9,7 +9,7 @@ use smallvec::SmallVec;
 
 use crate::{
     BYTES_IN_KEY, BYTES_OUT_KEY, BYTES_READ_KEY, BYTES_WRITTEN_KEY, CHECKPOINT_FILES_STAGED_KEY,
-    CHECKPOINT_KEYS_STAGED_KEY, CHECKPOINTS_SEALED_KEY, DURATION_KEY,
+    CHECKPOINT_KEYS_STAGED_KEY, CHECKPOINTS_SEALED_KEY, DURATION_KEY, IO_REQUESTS_KEY,
     JOIN_BUILD_BYTES_INSERTED_KEY, JOIN_PROBE_BYTES_IN_KEY, JOIN_PROBE_BYTES_OUT_KEY,
     NUM_TASKS_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, ROWS_WRITTEN_KEY, Stat, Stats,
 };
@@ -89,6 +89,9 @@ pub struct SourceSnapshot {
     pub bytes_out: u64,
     #[serde(default)]
     pub num_tasks: u64,
+    /// Number of I/O requests (GET + HEAD + LIST) issued while reading.
+    #[serde(default)]
+    pub requests: u64,
 }
 
 impl StatSnapshotImpl for SourceSnapshot {
@@ -101,6 +104,7 @@ impl StatSnapshotImpl for SourceSnapshot {
             DURATION_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
             ROWS_OUT_KEY; Stat::Count(self.rows_out),
             BYTES_READ_KEY; Stat::Bytes(self.bytes_read),
+            IO_REQUESTS_KEY; Stat::Count(self.requests),
             BYTES_OUT_KEY; Stat::Bytes(self.bytes_out),
             NUM_TASKS_KEY; Stat::Count(self.num_tasks),
         ]
@@ -123,6 +127,7 @@ impl SourceSnapshot {
             bytes_read: self.bytes_read + other.bytes_read,
             bytes_out: self.bytes_out + other.bytes_out,
             num_tasks: self.num_tasks + other.num_tasks,
+            requests: self.requests + other.requests,
         }
     }
 }
@@ -581,6 +586,7 @@ mod tests {
                     rows_out: 0,
                     bytes_read: 0,
                     bytes_out: 0,
+                    requests: 0,
                 }),
                 StatSnapshot::Source(SourceSnapshot {
                     num_tasks: 3,
@@ -588,6 +594,7 @@ mod tests {
                     rows_out: 0,
                     bytes_read: 0,
                     bytes_out: 0,
+                    requests: 0,
                 }),
                 4,
             ),

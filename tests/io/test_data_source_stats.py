@@ -69,11 +69,7 @@ class StatsCollector(Subscriber):
         pass
 
     def scan_node_stats(self, query_id: str) -> list[dict[str, Any]]:
-        return [
-            stats
-            for stats in self.node_stats[query_id].values()
-            if "bytes.read" in stats
-        ]
+        return [stats for stats in self.node_stats[query_id].values() if "bytes.read" in stats]
 
 
 def _batch(start: int, stop: int) -> RecordBatch:
@@ -104,7 +100,7 @@ class CountingTask(DataSourceTask):
 
     def stats(self) -> dict[str, int]:
         self.stats_calls += 1
-        return {"bytes.read": self._bytes_read, "requests": self._requests, **self._extra}
+        return {"bytes.read": self._bytes_read, "io.requests": self._requests, **self._extra}
 
 
 class CountingSource(DataSource):
@@ -168,6 +164,7 @@ def test_data_source_task_stats_reported_on_scan_node():
         scan_stats = subscriber.scan_node_stats(query_id)
         assert len(scan_stats) == 1, f"expected exactly one scan node with bytes.read, got {scan_stats}"
         assert scan_stats[0]["bytes.read"] == 5000
+        assert scan_stats[0]["io.requests"] == 5
         assert scan_stats[0]["rows.out"] == 10
     finally:
         daft.detach_subscriber("data_source_stats")
@@ -185,6 +182,7 @@ def test_data_source_task_stats_are_cumulative_not_double_counted():
         scan_stats = subscriber.scan_node_stats(query_id)
         assert len(scan_stats) == 1
         assert scan_stats[0]["bytes.read"] == 4 * 7
+        assert scan_stats[0]["io.requests"] == 4
     finally:
         daft.detach_subscriber("data_source_stats")
 
@@ -200,6 +198,7 @@ def test_data_source_task_default_stats_is_noop():
         scan_stats = subscriber.scan_node_stats(query_id)
         assert len(scan_stats) == 1
         assert scan_stats[0]["bytes.read"] == 0
+        assert scan_stats[0]["io.requests"] == 0
     finally:
         daft.detach_subscriber("data_source_stats")
 

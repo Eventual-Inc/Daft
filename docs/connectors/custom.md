@@ -278,8 +278,15 @@ class TextFileDataSourceTask(DataSourceTask):
 ```
 
 Recognized keys are `"bytes.read"` (bytes read from storage, surfaced as the scan node's
-`bytes.read` stat) and `"requests"` (number of I/O requests issued). Unknown keys are ignored, and
-the default implementation returns an empty mapping, so existing sources are unaffected.
+`bytes.read` stat) and `"io.requests"` (number of I/O requests issued, such as GET, HEAD and LIST
+calls, surfaced as the scan node's `io.requests` stat). Unknown keys are ignored, and the default
+implementation returns an empty mapping, so existing sources are unaffected.
+
+!!! note "Runner support"
+
+    Scan-node I/O stats are delivered to Python subscribers on the native runner. On the Ray
+    runner they are aggregated by the distributed scan node but, like `bytes.read` from the
+    native readers, are not yet forwarded to Python `Stats` events.
 
 ## Writing to a Custom Data Sink
 

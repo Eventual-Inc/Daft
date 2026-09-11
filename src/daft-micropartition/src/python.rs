@@ -1159,7 +1159,7 @@ pub fn read_sql_into_py_table(
 /// the scan task's [`IOStatsContext`] so that Python-backed sources surface `bytes.read` on their
 /// scan node exactly like the native readers.
 const PY_STATS_BYTES_READ_KEY: &str = "bytes.read";
-const PY_STATS_REQUESTS_KEY: &str = "requests";
+const PY_STATS_REQUESTS_KEY: &str = "io.requests";
 
 /// Polls the optional `stats()` method on a Python iterator returned by a factory function and
 /// records the deltas since the previous poll into `io_stats`.
