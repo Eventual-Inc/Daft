@@ -80,7 +80,6 @@ class S3Path(Sequence[str]):
 
 
 class S3Catalog(Catalog):
-    #
     _client: S3TablesClient
     _table_bucket_arn: str
     _io_config: IOConfig
@@ -321,10 +320,8 @@ class S3Catalog(Catalog):
 
 
 class S3Table(Table):
-    #
     _catalog: S3Catalog
     _path: S3Path
-    #
     metadata_location: str | None
 
     def __init__(

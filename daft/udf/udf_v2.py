@@ -226,8 +226,8 @@ class Func(Generic[P, T, C]):
 
     def _derive_function_names(self) -> tuple[str, str]:
         """Compute a unique name for the function using its module and qualified name."""
-        module_name = getattr(self, "__module__")
-        qual_name: str = getattr(self, "__qualname__")
+        module_name = self.__module__
+        qual_name: str = self.__qualname__  # type: ignore[attr-defined]
 
         if self.name_override:
             name = self.name_override
@@ -290,7 +290,7 @@ class Func(Generic[P, T, C]):
 
         # When building expression-based UDFs, we must avoid incorrectly sharing call-site state across multiple uses of the same function.
         call_seq = getattr(self, "_daft_call_seq", 0)
-        setattr(self, "_daft_call_seq", call_seq + 1)
+        self._daft_call_seq = call_seq + 1
         call_id = f"{self.func_id}-{call_seq}"
 
         check_serializable(

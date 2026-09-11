@@ -117,54 +117,53 @@ class HuggingFaceSink(DataSink[CommitOperationAddWrapper]):
         num_files = 0
         num_rows = 0
 
-        with self._hf_api() as api:
-            with io.BytesIO() as buffer:
-                writer = None
+        with self._hf_api() as api, io.BytesIO() as buffer:
+            writer = None
 
-                def flush(writer: pq.ParquetWriter) -> WriteResult[CommitOperationAddWrapper]:
-                    writer.close()
+            def flush(writer: pq.ParquetWriter) -> WriteResult[CommitOperationAddWrapper]:
+                writer.close()
 
-                    nonlocal num_files
-                    nonlocal num_rows
+                nonlocal num_files
+                nonlocal num_rows
 
-                    path_in_repo = f"{self.path_prefix}-{id}-{num_files}.parquet"
-                    num_files += 1
+                path_in_repo = f"{self.path_prefix}-{id}-{num_files}.parquet"
+                num_files += 1
 
-                    addition = CommitOperationAdd(path_in_repo=path_in_repo, path_or_fileobj=buffer.getvalue())
-                    api.preupload_lfs_files(
-                        repo_id=self.repo, additions=[addition], repo_type="dataset", revision=self.revision
-                    )
+                addition = CommitOperationAdd(path_in_repo=path_in_repo, path_or_fileobj=buffer.getvalue())
+                api.preupload_lfs_files(
+                    repo_id=self.repo, additions=[addition], repo_type="dataset", revision=self.revision
+                )
 
-                    # Reuse the buffer for the next file
-                    buffer.seek(0)
-                    buffer.truncate()
+                # Reuse the buffer for the next file
+                buffer.seek(0)
+                buffer.truncate()
 
-                    result = WriteResult(
-                        CommitOperationAddWrapper(addition),
-                        bytes_written=addition.upload_info.size,
-                        rows_written=num_rows,
-                    )
+                result = WriteResult(
+                    CommitOperationAddWrapper(addition),
+                    bytes_written=addition.upload_info.size,
+                    rows_written=num_rows,
+                )
 
-                    num_rows = 0
+                num_rows = 0
 
-                    return result
+                return result
 
-                for part in micropartitions:
-                    if writer is None:
-                        writer = pq.ParquetWriter(buffer, part.schema().to_pyarrow_schema(), **self.writer_kwargs)
+            for part in micropartitions:
+                if writer is None:
+                    writer = pq.ParquetWriter(buffer, part.schema().to_pyarrow_schema(), **self.writer_kwargs)
 
-                    num_rows += len(part)
-                    writer.write_table(part.to_arrow(), row_group_size=self.config.row_group_size)
+                num_rows += len(part)
+                writer.write_table(part.to_arrow(), row_group_size=self.config.row_group_size)
 
-                    if buffer.tell() > self.config.target_filesize:
-                        yield flush(writer)
-
-                        # delete the writer and create one for the next partition
-                        writer = None
-
-                # flush remaining data
-                if writer is not None:
+                if buffer.tell() > self.config.target_filesize:
                     yield flush(writer)
+
+                    # delete the writer and create one for the next partition
+                    writer = None
+
+            # flush remaining data
+            if writer is not None:
+                yield flush(writer)
 
     def finalize(self, write_results: list[WriteResult[CommitOperationAddWrapper]]) -> MicroPartition:
         from huggingface_hub import CommitOperationAdd, CommitOperationCopy, CommitOperationDelete

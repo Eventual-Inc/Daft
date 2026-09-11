@@ -47,9 +47,8 @@ def get_gpu_udf_options() -> UDFOptions:
 
         num_gpus = 0
         for node in ray.nodes():
-            if "Resources" in node:
-                if "GPU" in node["Resources"] and node["Resources"]["GPU"] > 0:
-                    num_gpus += int(node["Resources"]["GPU"])
+            if "Resources" in node and "GPU" in node["Resources"] and node["Resources"]["GPU"] > 0:
+                num_gpus += int(node["Resources"]["GPU"])
     else:
         raise ValueError(f"Invalid runner type: {runner}, expected 'native' or 'ray'")
 

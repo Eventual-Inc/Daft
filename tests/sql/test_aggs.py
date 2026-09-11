@@ -309,7 +309,7 @@ def test_groupby_rollup():
 )
 def test_various_groupby_positions(query):
     data = daft.from_pydict({"strings": ["foo", "bar"]})
-    res = daft.sql(query, **{"data": data})
+    res = daft.sql(query, data=data)
     if "s" in res.column_names:
         res = res.sort("s").to_pydict()
         assert res == {"s": ["Bar", "Foo"], "count": [1, 1]}

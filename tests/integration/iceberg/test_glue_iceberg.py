@@ -6,9 +6,9 @@ import uuid
 import pandas as pd
 import pytest
 import torch
-import torchvision.models as models
 from boto3 import session
 from torch.utils.data import DataLoader
+from torchvision import models
 
 import daft
 from daft.catalog.__glue import GlueCatalog

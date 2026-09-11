@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-from typing import Any
 
 import pytest
 
@@ -22,7 +21,7 @@ class MyObj:
     def __init__(self, x: int):
         self._x = x
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         return isinstance(other, MyObj) and self._x == other._x
 
 

@@ -64,7 +64,7 @@ def test_fizzbuzz_sql():
             "a": arr,
             "fizzbuzz": [
                 "FizzBuzz" if x % 15 == 0 else "Fizz" if x % 3 == 0 else "Buzz" if x % 5 == 0 else str(x)
-                for x in range(0, 100)
+                for x in range(100)
             ],
         }
     ).collect()
@@ -170,7 +170,7 @@ def test_sql_function_locals_shadow_globals(set_global_df):
 
 def test_sql_function_globals_are_added_to_catalog(set_global_df):
     df = daft.from_pydict({"n": [1], "x": [2]})
-    res = daft.sql("SELECT * FROM GLOBAL_DF g JOIN df d USING (n)", **{"df": df})
+    res = daft.sql("SELECT * FROM GLOBAL_DF g JOIN df d USING (n)", df=df)
     joined = GLOBAL_DF.join(df, on="n")
     assert res.collect().to_pydict() == joined.collect().to_pydict()
 
@@ -179,7 +179,7 @@ def test_sql_function_catalog_is_final(set_global_df):
     df = daft.from_pydict({"a": [1]})
     # sanity check to ensure validity of below test
     assert df.collect().to_pydict() != GLOBAL_DF.collect().to_pydict()
-    res = daft.sql("SELECT * FROM GLOBAL_DF", **{"GLOBAL_DF": df})
+    res = daft.sql("SELECT * FROM GLOBAL_DF", GLOBAL_DF=df)
     assert res.collect().to_pydict() == df.collect().to_pydict()
 
 
@@ -464,7 +464,7 @@ def test_cast_image():
 
     s = Series.from_pylist(data, dtype=DataType.python())
     df = daft.from_pydict({"img": s})
-    actual = daft.sql("select cast(img as image(RGB)) from df", **{"df": df}).collect()
+    actual = daft.sql("select cast(img as image(RGB)) from df", df=df).collect()
     assert actual.schema()["img"].dtype == DataType.image("RGB")
 
 
@@ -477,7 +477,7 @@ def test_count_pushdown(capsys):
 
     df = daft.from_pylist(data)
 
-    result_df = daft.sql("SELECT count(1) as total FROM df", **{"df": df})
+    result_df = daft.sql("SELECT count(1) as total FROM df", df=df)
     result = result_df.collect().to_pydict()
 
     assert result == {"total": [3]}, "count(1) return 3 rows"

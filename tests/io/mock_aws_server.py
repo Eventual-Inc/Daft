@@ -26,7 +26,7 @@ def start_service(host: str, port: int, log_file: io.IOBase):
     # Use static data fetch as healthcheck API.
     url = f"http://{host}:{port}/moto-api/data.json"
 
-    for _ in range(0, 100):
+    for _ in range(100):
         output = process.poll()
         if output is not None:
             stdout, stderr = process.communicate()
