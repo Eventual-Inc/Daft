@@ -4440,7 +4440,7 @@ class DataFrame:
     def unpivot(
         self,
         ids: ManyColumnsInputType,
-        values: ManyColumnsInputType = [],
+        values: ManyColumnsInputType = (),
         variable_name: str = "variable",
         value_name: str = "value",
     ) -> "DataFrame":
@@ -4501,7 +4501,7 @@ class DataFrame:
     def melt(
         self,
         ids: ManyColumnsInputType,
-        values: ManyColumnsInputType = [],
+        values: ManyColumnsInputType = (),
         variable_name: str = "variable",
         value_name: str = "value",
     ) -> "DataFrame":
