@@ -139,6 +139,8 @@ pub(crate) mod tests {
     use super::*;
     use crate::scheduling::tests::{MockTask, MockTaskResultHandle};
 
+    type AfterSnapshotHook = Box<dyn FnOnce() + Send>;
+
     /// A mock implementation of the WorkerManager trait for testing
     #[derive(Clone)]
     pub struct MockWorkerManager {
@@ -151,7 +153,7 @@ pub(crate) mod tests {
         fail_submit: Arc<AtomicBool>,
         fail_clear_demand: Arc<AtomicBool>,
         autoscale_creates_workers: Arc<AtomicBool>,
-        after_snapshot_hook: Arc<Mutex<Option<Box<dyn FnOnce() + Send>>>>,
+        after_snapshot_hook: Arc<Mutex<Option<AfterSnapshotHook>>>,
         active_demand_ids: Arc<Mutex<HashSet<AutoscaleDemandId>>>,
         /// Owners seen by `try_autoscale`, in call order.
         autoscale_demand_ids: Arc<Mutex<Vec<AutoscaleDemandId>>>,
