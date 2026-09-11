@@ -41,6 +41,21 @@ impl ScalarUDF for ToDatetime {
             None
         };
 
+        if data.data_type() == &DataType::Null {
+            // `with_utf8_array` would pass a Null series through unchanged (keeping the
+            // Null dtype), so build the planned all-null Timestamp directly instead.
+            let timeunit = infer_timeunit_from_format_string(format);
+            let output_timezone = resolve_output_timezone(format, tz);
+            if let Some(tz) = output_timezone.as_deref() {
+                parse_to_datetime_timezone(tz)?;
+            }
+            return Ok(Series::full_null(
+                data.name(),
+                &DataType::Timestamp(timeunit, output_timezone),
+                data.len(),
+            ));
+        }
+
         data.with_utf8_array(|arr| Ok(to_datetime_impl(arr, format, tz)?.into_series()))
     }
 
@@ -51,8 +66,8 @@ impl ScalarUDF for ToDatetime {
     ) -> DaftResult<Field> {
         ensure!(!inputs.is_empty() && inputs.len() <= 3, SchemaMismatch: "Expected between 1 and 3 arguments, got {}", inputs.len());
         let data_field = inputs.required((0, "input"))?.to_field(schema)?;
-        // `Series::with_utf8_array` passes a `Null` series through unchanged.
-        ensure!(data_field.dtype == DataType::Utf8, TypeError: "input must be of type Utf8, got {}", data_field.dtype);
+        // A `Null` input yields an all-null Timestamp (see `call`); anything else must be Utf8.
+        ensure!(data_field.dtype == DataType::Utf8 || data_field.dtype == DataType::Null, TypeError: "input must be of type Utf8 or Null, got {}", data_field.dtype);
         let format_expr = inputs.required((1, "format"))?;
         let format = format_expr
             .as_literal()
@@ -75,6 +90,10 @@ impl ScalarUDF for ToDatetime {
             None
         };
         let timezone = resolve_output_timezone(format, explicit_timezone);
+        // Validate up front so a bad literal fails during planning, before anything runs.
+        if let Some(tz) = timezone.as_deref() {
+            parse_to_datetime_timezone(tz)?;
+        }
 
         Ok(Field::new(
             data_field.name,
@@ -108,6 +127,17 @@ fn resolve_output_timezone(format: &str, timezone: Option<&str>) -> Option<Strin
     }
 }
 
+/// Parse a resolved output timezone, shared by planning and execution (the parsed
+/// value itself cannot cross that boundary). Rejects fixed-offset forms like
+/// "+05:30", which `chrono_tz` does not support.
+fn parse_to_datetime_timezone(tz: &str) -> DaftResult<chrono_tz::Tz> {
+    tz.parse::<chrono_tz::Tz>().map_err(|e| {
+        DaftError::ValueError(format!(
+            "Error in to_datetime: failed to parse timezone {tz} : {e}"
+        ))
+    })
+}
+
 fn to_datetime_impl(
     arr: &Utf8Array,
     format: &str,
@@ -116,18 +146,14 @@ fn to_datetime_impl(
     let len = arr.len();
     let arr_iter = arr.into_iter();
     let timeunit = infer_timeunit_from_format_string(format);
+    // Resolve and parse the output timezone up front so the kernel dtype matches
+    // planning even with no non-null values. The single `Some` arm below then covers
+    // both explicit timezones and offset-coerced UTC (`with_timezone(&Tz::UTC)`
+    // extracts the same instant as `to_utc()`).
     let output_timezone = resolve_output_timezone(format, timezone);
-    let has_offset = format_string_has_offset(format);
-    // Parsed once rather than per row, so an unparsable timezone now errors even with no
-    // data. `chrono_tz` rejects fixed-offset forms such as "+05:30".
-    let parsed_timezone = timezone
-        .map(|tz| {
-            tz.parse::<chrono_tz::Tz>().map_err(|e| {
-                DaftError::ComputeError(format!(
-                    "Error in to_datetime: failed to parse timezone {tz} : {e}"
-                ))
-            })
-        })
+    let parsed_timezone = output_timezone
+        .as_deref()
+        .map(parse_to_datetime_timezone)
         .transpose()?;
     let result = arr_iter
             .map(|val| match val {
@@ -145,20 +171,6 @@ fn to_datetime_impl(
                                 TimeUnit::Milliseconds => datetime_with_timezone.timestamp_millis(),
                                 TimeUnit::Microseconds => datetime_with_timezone.timestamp_micros(),
                                 TimeUnit::Nanoseconds => datetime_with_timezone.timestamp_nanos_opt().ok_or_else(|| DaftError::ComputeError(format!("Error in to_datetime: failed to get nanoseconds for {val}")))?,
-                            }
-                        }
-                        None if has_offset => {
-                            let datetime = chrono::DateTime::parse_and_remainder(val, format).map_err(|e| {
-                                DaftError::ComputeError(format!(
-                                    "Error in to_datetime: failed to parse datetime {val} with format {format} : {e}"
-                                ))
-                            })?.0.to_utc();
-
-                            match timeunit {
-                                TimeUnit::Seconds => datetime.timestamp(),
-                                TimeUnit::Milliseconds => datetime.timestamp_millis(),
-                                TimeUnit::Microseconds => datetime.timestamp_micros(),
-                                TimeUnit::Nanoseconds => datetime.timestamp_nanos_opt().ok_or_else(|| DaftError::ComputeError(format!("Error in to_datetime: failed to get nanoseconds for {val}")))?,
                             }
                         }
                         None => {

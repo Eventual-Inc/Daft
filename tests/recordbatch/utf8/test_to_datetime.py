@@ -114,9 +114,42 @@ def test_utf8_to_datetime_invalid_timezone_all_null_still_errors():
         table.eval_expression_list([col("col").to_datetime("%Y-%m-%d %H:%M:%S", timezone="Not/AZone")])
 
 
-def test_utf8_to_datetime_null_dtype_input_rejected():
-    # `with_utf8_array` passes a Null series through unchanged, so this must fail at resolution.
-    s = Series.from_arrow(pa.array([None, None], type=pa.null()), name="col")
+def _null_dtype_table(n: int) -> MicroPartition:
+    s = Series.from_arrow(pa.array([None] * n, type=pa.null()), name="col")
+    return MicroPartition.from_pydict({"col": s})
+
+
+def test_utf8_to_datetime_null_dtype_input_offset_format():
+    # A Null-dtype column (e.g. uncast `[None]`) yields an all-null Timestamp; the
+    # kernel builds it directly since `with_utf8_array` would pass Null through as Null.
+    table = _null_dtype_table(2)
+    result = table.eval_expression_list([col("col").to_datetime("%Y-%m-%dT%H:%M:%S%z")])
+    assert result.to_pydict() == {"col": [None, None]}
+    assert result.schema()["col"].dtype == DataType.timestamp("us", "UTC")
+
+
+def test_utf8_to_datetime_null_dtype_input_naive_format_stays_naive():
+    table = _null_dtype_table(1)
+    result = table.eval_expression_list([col("col").to_datetime("%Y-%m-%d %H:%M:%S")])
+    assert result.to_pydict() == {"col": [None]}
+    assert result.schema()["col"].dtype == DataType.timestamp("us")
+
+
+def test_utf8_to_datetime_null_dtype_input_explicit_timezone():
+    table = _null_dtype_table(1)
+    result = table.eval_expression_list([col("col").to_datetime("%Y-%m-%d %H:%M:%S", timezone="Asia/Shanghai")])
+    assert result.to_pydict() == {"col": [None]}
+    assert result.schema()["col"].dtype == DataType.timestamp("us", "Asia/Shanghai")
+
+
+def test_utf8_to_datetime_null_dtype_input_invalid_timezone_still_errors():
+    table = _null_dtype_table(1)
+    with pytest.raises(ValueError, match="failed to parse timezone"):
+        table.eval_expression_list([col("col").to_datetime("%Y-%m-%d %H:%M:%S", timezone="Not/AZone")])
+
+
+def test_utf8_to_datetime_null_dtype_input_non_string_still_rejected():
+    s = Series.from_arrow(pa.array([1, 2], type=pa.int64()), name="col")
     table = MicroPartition.from_pydict({"col": s})
     with pytest.raises(ValueError, match="Utf8"):
         table.eval_expression_list([col("col").to_datetime("%Y-%m-%d %H:%M:%S")])
