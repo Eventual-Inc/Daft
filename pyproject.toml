@@ -53,7 +53,7 @@ postgres = ["psycopg[binary]<3.4.0", "pgvector<0.5.0", "sqlglot<30.9.0", "connec
 ray = [
   # floor is 2.11: flotilla uses ray.exceptions.ActorUnavailableError, added in ray 2.11
   # Inherit existing Ray version. Get the "default" extra for the Ray dashboard.
-  'ray[data, client]<2.58.0,>=2.11.0'
+  'ray[data, client]>=2.11.0,<2.59.0'
 ]
 transformers = ["transformers<5.10.0", "sentence-transformers<5.6.0", "torch<2.13.0", "torchvision<0.28.0", "pillow==12.2.0"]
 # connectorx 0.4.4 is needed for pgvector support.
@@ -112,7 +112,7 @@ dev = [
   "pyarrow >= 16.0.0,<26.0.0",
   "pyarrow-stubs==20.0.0.20251215",
   # Ray
-  "ray[data, client]==2.57.0",
+  "ray[data, client]==2.58.0",
   # Lance
   "daft-lance==0.3.2",
   # Iceberg
@@ -246,6 +246,9 @@ minversion = "6.0"
 testpaths = [
   "tests"
 ]
+
+[tool.uv]
+required-version = "~=0.12.0"
 
 [tool.uv.sources.daft_dashboard]
 workspace = true
