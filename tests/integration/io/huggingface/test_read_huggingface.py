@@ -79,6 +79,20 @@ def test_read_huggingface_fallback_on_400_error():
         assert_df_equals(actual, expected, "foo")
 
 
+def test_read_huggingface_webdataset_routes_to_webdataset_reader():
+    repo = "laion/conceptual-captions-12m-webdataset"
+    sentinel = object()
+
+    with patch("daft.io.huggingface.read_webdataset", return_value=sentinel) as mock_read_webdataset:
+        result = daft.read_huggingface(repo, format="webdataset")
+
+    assert result is sentinel
+    mock_read_webdataset.assert_called_once_with(
+        f"hf://datasets/{repo}/**/*.tar",
+        io_config=None,
+    )
+
+
 @pytest.mark.integration()
 def test_read_huggingface_multi_split_dataset():
     """Test that read_huggingface works with datasets that have multiple splits.

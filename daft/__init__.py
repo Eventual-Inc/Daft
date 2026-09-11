@@ -155,6 +155,7 @@ from daft.io import (
     read_text,
     read_video_frames,
     read_warc,
+    read_webdataset,
     read_huggingface,
     read_mcap,
 )
@@ -295,6 +296,7 @@ __all__ = [
     "read_text",
     "read_video_frames",
     "read_warc",
+    "read_webdataset",
     "refresh_logger",
     "register_viz_hook",
     "runners",

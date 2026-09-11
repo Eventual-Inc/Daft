@@ -26,9 +26,30 @@ Using [`daft.read_huggingface()`][daft.read_huggingface], you can easily read a 
 
 This will read the entire dataset into a DataFrame.
 
+For repositories stored as uncompressed
+[WebDataset](https://huggingface.co/docs/hub/en/datasets-webdataset) TAR shards,
+select the WebDataset reader explicitly:
+
+=== "🐍 Python"
+
+    ```python
+    import daft
+
+    df = daft.read_huggingface(
+        "laion/conceptual-captions-12m-webdataset",
+        format="webdataset",
+    )
+    ```
+
+Media members remain lazy, range-backed file references, so selecting metadata
+columns does not download image, audio, or video payloads.
+
 !!! warning "Warning"
 
-    This is currently limited to either public datasets, or PRO/ENTERPRISE datasets, where Hugging Face will [automatically convert](https://huggingface.co/docs/dataset-viewer/en/parquet) the dataset to Parquet.
+    The default `format="parquet"` path is currently limited to either public
+    datasets, or PRO/ENTERPRISE datasets, where Hugging Face will
+    [automatically convert](https://huggingface.co/docs/dataset-viewer/en/parquet)
+    the dataset to Parquet.
 
     For other datasets, you will need to manually specify the path or glob pattern to the files you want to read, similar to how you would read from a local file system. See the next section for an example.
 
