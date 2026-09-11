@@ -8,8 +8,9 @@ use crate::{
         growable::make_growable,
         ops::{
             DaftApproxSketchAggable, DaftBoolAggable, DaftConcatAggable, DaftCountAggable,
-            DaftHllMergeAggable, DaftMeanAggable, DaftMergeSketchAggable, DaftPercentileAggable,
-            DaftProductAggable, DaftSetAggable, DaftSkewAggable, DaftStddevAggable, DaftSumAggable,
+            DaftHllMergeAggable, DaftMeanAggable, DaftMergeSketchAggable,
+            DaftMergeVarPartialAggable, DaftPercentileAggable, DaftProductAggable, DaftSetAggable,
+            DaftSkewAggable, DaftStddevAggable, DaftSumAggable, DaftVarPartialAggable,
             DaftVarianceAggable, GroupIndices,
         },
     },
@@ -510,6 +511,43 @@ impl Series {
         Ok(groups
             .map_or_else(|| casted.skew(), |groups| casted.grouped_skew(groups))?
             .into_series())
+    }
+
+    pub fn var_partial(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
+        let target_type = try_variance_aggregation_supertype(self.data_type())?;
+        match target_type {
+            DataType::Float64 => {
+                let casted = self.cast(&DataType::Float64)?;
+                let casted = casted.f64()?;
+                let result = match groups {
+                    Some(groups) => casted.grouped_var_partial(groups)?,
+                    None => casted.var_partial()?,
+                }
+                .into_series();
+                Ok(result)
+            }
+            _ => Err(DaftError::not_implemented(format!(
+                "Variance partial not implemented for {target_type}, source type: {}",
+                self.data_type()
+            ))),
+        }
+    }
+
+    pub fn merge_var_partial(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
+        match self.data_type() {
+            DataType::Struct(_) => {
+                let struct_array = self.struct_()?;
+                let result = match groups {
+                    Some(groups) => struct_array.grouped_merge_var_partial(groups)?,
+                    None => struct_array.merge_var_partial()?,
+                }
+                .into_series();
+                Ok(result)
+            }
+            other => Err(DaftError::TypeError(format!(
+                "Merge variance partial is not implemented for type {other}"
+            ))),
+        }
     }
 }
 
