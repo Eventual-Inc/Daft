@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import inspect
+from collections.abc import MutableSequence
 from typing import TYPE_CHECKING
 
 import pytest
@@ -16,6 +18,23 @@ if TYPE_CHECKING:
 
 def assert_eq(df1, df2):
     assert df1.to_pydict() == df2.to_pydict()
+
+
+def test_from_postgres_default_extensions_is_immutable():
+    # Regression test for a shared mutable default argument (B006): every catalog
+    # created with the default used to alias the same module-level list object.
+    default = inspect.signature(Catalog.from_postgres).parameters["extensions"].default
+    assert not isinstance(default, MutableSequence)
+    assert tuple(default) == ("vector",)
+
+
+def test_from_postgres_explicit_none_extensions_preserved():
+    pytest.importorskip("psycopg")
+    pytest.importorskip("pgvector")
+    catalog = Catalog.from_postgres("postgresql://user:pass@localhost:5432/db", extensions=None)
+    assert catalog._extensions is None
+    catalog_default = Catalog.from_postgres("postgresql://user:pass@localhost:5432/db")
+    assert tuple(catalog_default._extensions) == ("vector",)
 
 
 def test_try_from_iceberg(tmpdir):
