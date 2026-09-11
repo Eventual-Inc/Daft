@@ -410,14 +410,14 @@ class Catalog(ABC):
             raise ImportError("pypaimon is required: pip install pypaimon")
 
     @staticmethod
-    def from_postgres(connection_string: str, extensions: list[str] | None = ["vector"]) -> Catalog:
+    def from_postgres(connection_string: str, extensions: Sequence[str] | None = ("vector",)) -> Catalog:
         """Create a Daft Catalog from a PostgreSQL connection string.
 
         Args:
             connection_string (str): a PostgreSQL connection string
-            extensions (list[str], optional): List of PostgreSQL extensions to create if they don't exist.
+            extensions (Sequence[str], optional): List of PostgreSQL extensions to create if they don't exist.
                 For each extension, "CREATE EXTENSION IF NOT EXISTS <extension>" will be executed.
-                Defaults to ["vector"] (pgvector extension, if available).
+                Defaults to ("vector",) (pgvector extension, if available).
 
         Returns:
             Catalog: a new Catalog instance to a PostgreSQL database.
