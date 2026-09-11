@@ -1487,10 +1487,56 @@ jobs:
         webhook: ${{ env.SLACK_WEBHOOK_URL }}
         webhook-type: incoming-webhook
 
+  # The `celeborn` cargo feature gates a whole shuffle backend, so none of its
+  # code is compiled -- let alone tested -- by `rust-tests-platform`, which runs
+  # the workspace with default features. Linux only: the stub client in
+  # `tools/celeborn-stub` is a POSIX shared library.
+  rust-tests-celeborn:
+    needs: skipcheck
+    if: ${{ needs.skipcheck.outputs.skip == 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        fetch-depth: 0
+    - uses: moonrepo/setup-rust@v1
+      with:
+        cache: false
+    - uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: ${{ runner.os }}-dev-build
+        cache-all-crates: "true"
+        cache-workspace-crates: "true"
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+    - uses: ./.github/actions/restore-mtime
+    - name: Free Disk Space (Ubuntu)
+      uses: jlumbroso/free-disk-space@v1.3.1
+      with:
+        tool-cache: false
+        android: true
+        dotnet: true
+        haskell: true
+        large-packages: false
+        docker-images: true
+        swap-storage: true
+      # `celeborn-client-sys` links libceleborn_client, and Apache Celeborn
+      # publishes no prebuilt copy of it -- without one the build compiles
+      # Celeborn's whole `cpp/` tree (folly, glog, gflags, OpenSSL). Nothing
+      # under test calls the FFI, so link the stub instead; it aborts loudly if
+      # anything ever does.
+    - name: Build the Celeborn stub client
+      run: make celeborn-stub
+    - name: Run Rust tests with the celeborn feature
+      env:
+        LD_LIBRARY_PATH: ${{ github.workspace }}/tools/celeborn-stub/lib
+      run: cargo test --no-default-features --workspace --exclude common-arrow-ffi --features celeborn --lib --tests
+
   rust-tests:
     runs-on: ubuntu-latest
     needs:
     - rust-tests-platform
+    - rust-tests-celeborn
     if: always()
     steps:
     - name: All tests ok

@@ -51,6 +51,16 @@ impl LocalShuffleBackend {
                     shuffle_address,
                 }))
             }
+            // Celeborn needs the shuffle client and the mapper-attempt registry
+            // from the `BuilderContext`, neither of which is available here, so
+            // its sinks are constructed directly in `physical_plan_to_pipeline`
+            // and never reach this function.
+            #[cfg(feature = "celeborn")]
+            daft_local_plan::ShuffleBackend::Celeborn { .. } => {
+                unreachable!(
+                    "Celeborn shuffle sinks are built directly from the plan, not via from_plan"
+                )
+            }
         }
     }
 

@@ -67,7 +67,12 @@ impl RepartitionNode {
             config,
             context: context.clone(),
             repartition_spec,
-            shuffle_context: ShuffleContext::new(&context, schema, backend),
+            shuffle_context: ShuffleContext::new(
+                &context,
+                schema,
+                backend,
+                child.config().clustering_spec.num_partitions(),
+            ),
             num_partitions,
             child,
         })
@@ -119,17 +124,18 @@ impl PipelineNodeImpl for RepartitionNode {
         let num_partitions = self.num_partitions;
         let repartition_spec = self.repartition_spec.clone();
         let local_shuffle_write_node =
-            input_node.pipeline_instruction(self.clone(), move |input| {
-                LocalPhysicalPlan::repartition_write(
-                    input,
-                    num_partitions,
-                    schema.clone(),
-                    shuffle_backend.clone(),
-                    repartition_spec.clone(),
-                    StatsState::NotMaterialized,
-                    LocalNodeContext::new(Some(node_id as usize)),
-                )
-            });
+            self.shuffle_context
+                .build_map_stream(input_node, self.clone(), move |input| {
+                    LocalPhysicalPlan::repartition_write(
+                        input,
+                        num_partitions,
+                        schema.clone(),
+                        shuffle_backend.clone(),
+                        repartition_spec.clone(),
+                        StatsState::NotMaterialized,
+                        LocalNodeContext::new(Some(node_id as usize)),
+                    )
+                });
 
         let (result_tx, result_rx) = create_channel(1);
 

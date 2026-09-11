@@ -9,7 +9,26 @@ use serde::{Deserialize, Serialize};
 
 use crate::Input;
 #[cfg(feature = "python")]
-use crate::{ExecutionStats, LocalPhysicalPlanRef, translate};
+use crate::{
+    ExecutionStats, LocalPhysicalPlan, LocalPhysicalPlanRef, RepartitionWrite, ShuffleBackend,
+    translate,
+};
+
+#[pyclass(
+    module = "daft.daft",
+    name = "ShuffleWriteInfo",
+    frozen,
+    skip_from_py_object
+)]
+#[derive(Debug, Clone)]
+pub struct PyShuffleWriteInfo {
+    #[pyo3(get)]
+    pub backend: String,
+    #[pyo3(get)]
+    pub shuffle_id: u64,
+    #[pyo3(get)]
+    pub num_partitions: usize,
+}
 
 #[pyclass(module = "daft.daft", name = "LocalPhysicalPlan")]
 #[derive(Debug, Serialize, Deserialize)]
@@ -71,6 +90,29 @@ impl PyLocalPhysicalPlan {
                 | crate::LocalPhysicalPlan::IntoPartitions(_)
                 | crate::LocalPhysicalPlan::IntoBatches(_)
         )
+    }
+
+    fn shuffle_write_info(&self) -> Option<PyShuffleWriteInfo> {
+        match self.plan.as_ref() {
+            LocalPhysicalPlan::RepartitionWrite(RepartitionWrite {
+                backend,
+                num_partitions,
+                ..
+            }) => {
+                let (backend_name, shuffle_id) = match backend {
+                    ShuffleBackend::Ray => ("ray", 0u64),
+                    ShuffleBackend::Flight { shuffle_id, .. } => ("flight", *shuffle_id),
+                    #[cfg(feature = "celeborn")]
+                    ShuffleBackend::Celeborn { shuffle_id, .. } => ("celeborn", *shuffle_id),
+                };
+                Some(PyShuffleWriteInfo {
+                    backend: backend_name.to_string(),
+                    shuffle_id,
+                    num_partitions: *num_partitions,
+                })
+            }
+            _ => None,
+        }
     }
 }
 

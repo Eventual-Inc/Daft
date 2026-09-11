@@ -22,15 +22,19 @@ const PARTITION_SLOT_HEAD_MEMORY_BYTES: usize = 3 * 1024;
 impl LogicalPlanToPipelineNodeTranslator {
     /// Pick the shuffle backend implied by the current execution config.
     pub(crate) fn select_backend(&self) -> ShuffleBackend {
-        if self.plan_config.config.shuffle_algorithm.as_str() == "flight_shuffle" {
-            ShuffleBackend::Flight {
+        match self.plan_config.config.shuffle_algorithm.as_str() {
+            "flight_shuffle" => ShuffleBackend::Flight {
                 // Placeholder; each shuffle node stamps its own id in `ShuffleContext::new`.
                 shuffle_id: 0,
                 shuffle_dirs: self.plan_config.config.flight_shuffle_dirs.clone(),
                 compression: self.plan_config.config.flight_shuffle_compression.clone(),
-            }
-        } else {
-            ShuffleBackend::Ray
+            },
+            #[cfg(feature = "celeborn")]
+            "celeborn" => ShuffleBackend::Celeborn {
+                shuffle_id: 0,
+                num_mappers: 0,
+            },
+            _ => ShuffleBackend::Ray,
         }
     }
 
@@ -118,6 +122,8 @@ impl LogicalPlanToPipelineNodeTranslator {
             "pre_shuffle_merge" => Ok(true),
             "map_reduce" => Ok(false),
             "flight_shuffle" => Ok(false), // Flight shuffle will be handled separately
+            #[cfg(feature = "celeborn")]
+            "celeborn" => Ok(false),
             "auto" => {
                 let total_num_partitions = input_num_partitions * target_num_partitions;
                 let geometric_mean = (total_num_partitions as f64).sqrt() as usize;
@@ -167,7 +173,13 @@ impl LogicalPlanToPipelineNodeTranslator {
         input_num_partitions: usize,
         output_num_partitions: usize,
     ) {
-        if matches!(backend, ShuffleBackend::Flight { .. }) {
+        let external_backend = match backend {
+            ShuffleBackend::Flight { .. } => true,
+            #[cfg(feature = "celeborn")]
+            ShuffleBackend::Celeborn { .. } => true,
+            _ => false,
+        };
+        if external_backend {
             return;
         }
 

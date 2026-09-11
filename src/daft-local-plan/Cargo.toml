@@ -25,6 +25,7 @@ daft-functions = {path = "../daft-functions", default-features = false}
 daft-functions-list = {path = "../daft-functions-list", default-features = false}
 
 [features]
+celeborn = []
 python = [
   "dep:pyo3",
   "common-error/python",

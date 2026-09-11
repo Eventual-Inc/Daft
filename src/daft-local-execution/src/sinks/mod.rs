@@ -8,6 +8,8 @@ pub mod into_partitions;
 pub mod pivot;
 pub mod repartition;
 pub mod shuffle_backend;
+#[cfg(feature = "celeborn")]
+pub mod shuffle_metadata;
 pub mod sort;
 pub mod top_n;
 pub mod window_base;

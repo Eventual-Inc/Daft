@@ -89,6 +89,11 @@ impl<T: Task> PendingTask<T> {
     fn task_metadata(&self) -> TaskMetadata {
         self.task.task_metadata()
     }
+
+    /// Increment the attempt counter on the underlying task before resubmission.
+    pub fn increment_attempt_id(&mut self) {
+        self.task.increment_attempt_id();
+    }
 }
 
 impl<T: Task> std::fmt::Debug for PendingTask<T> {

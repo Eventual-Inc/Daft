@@ -61,7 +61,12 @@ impl RandomShuffleNode {
             plan_config.config.clone(),
             ClusteringStrategy::Passthrough { child: &child },
         );
-        let shuffle_context = ShuffleContext::new(&context, output_schema, backend);
+        let shuffle_context = ShuffleContext::new(
+            &context,
+            output_schema,
+            backend,
+            child.config().clustering_spec.num_partitions(),
+        );
         Self {
             config,
             context,
@@ -121,6 +126,42 @@ impl RandomShuffleNode {
             task_id_counter.clone(),
         );
 
+        #[cfg(feature = "celeborn")]
+        if matches!(
+            self.shuffle_context.backend(),
+            ShuffleBackend::Celeborn { .. }
+        ) {
+            return self
+                .shuffle_context
+                .emit_celeborn_read_tasks_with(
+                    outputs,
+                    num_partitions,
+                    self.as_ref(),
+                    result_tx,
+                    |partition_idx, input| {
+                        let partition_seed = self.seed.map(|seed| {
+                            let mut hasher = DefaultHasher::new();
+                            seed.hash(&mut hasher);
+                            partition_idx.hash(&mut hasher);
+                            hasher.finish()
+                        });
+                        let sort_by = BoundExpr::bind_all(
+                            &[random_int_expr(i64::MIN, i64::MAX, partition_seed)],
+                            &self.config.schema,
+                        )?;
+                        Ok(LocalPhysicalPlan::sort(
+                            input,
+                            sort_by,
+                            vec![false],
+                            vec![false],
+                            StatsState::NotMaterialized,
+                            LocalNodeContext::new(Some(self.node_id() as usize)),
+                        ))
+                    },
+                )
+                .await;
+        }
+
         let partition_groups =
             transpose_materialized_outputs_from_stream(outputs, num_partitions).await?;
 
@@ -169,19 +210,21 @@ impl PipelineNodeImpl for RandomShuffleNode {
         let seed = self.seed;
         let shuffle_backend = self.shuffle_context.backend().clone();
 
-        let partitioned_input = input_node.pipeline_instruction(self.clone(), move |input| {
-            LocalPhysicalPlan::repartition_write(
-                input,
-                num_partitions,
-                schema.clone(),
-                shuffle_backend.clone(),
-                daft_logical_plan::partitioning::RepartitionSpec::Random(
-                    RandomShuffleConfig::new_with_seed(Some(num_partitions), seed),
-                ),
-                StatsState::NotMaterialized,
-                LocalNodeContext::new(Some(node_id as usize)),
-            )
-        });
+        let partitioned_input =
+            self.shuffle_context
+                .build_map_stream(input_node, self.clone(), move |input| {
+                    LocalPhysicalPlan::repartition_write(
+                        input,
+                        num_partitions,
+                        schema.clone(),
+                        shuffle_backend.clone(),
+                        daft_logical_plan::partitioning::RepartitionSpec::Random(
+                            RandomShuffleConfig::new_with_seed(Some(num_partitions), seed),
+                        ),
+                        StatsState::NotMaterialized,
+                        LocalNodeContext::new(Some(node_id as usize)),
+                    )
+                });
 
         let (result_tx, result_rx) = create_channel(1);
         plan_context.spawn(self.execution_loop(

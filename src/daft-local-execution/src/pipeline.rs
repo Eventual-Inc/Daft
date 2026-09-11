@@ -24,6 +24,10 @@ use daft_local_plan::{
     TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly,
     WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
+#[cfg(feature = "celeborn")]
+use daft_local_plan::{CelebornShuffleReadInput, ShuffleBackend};
+#[cfg(feature = "celeborn")]
+use daft_logical_plan::partitioning::{RandomShuffleConfig, RepartitionSpec};
 use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
 use daft_partition_refs::FlightPartitionRef;
@@ -259,6 +263,28 @@ impl ConcreteTreeNode for Box<dyn PipelineNode> {
     }
 }
 
+/// A shuffle mapper's attempt: `map_id` is the upstream partition ordinal in
+/// `[0, num_mappers)`, and `attempt_id` is the reschedule count.
+///
+/// Both are per-task values that cannot live in the shared plan (same-fingerprint
+/// mappers share one pipeline/sink), so they are delivered at runtime keyed by
+/// `InputId` through [`MapperAttemptRegistry`]. Today only the Celeborn shuffle
+/// backend consumes them (it pushes to a remote cluster that aggregates by
+/// `(shuffle_id, map_id, attempt_id)`); the Ray and Flight backends resolve
+/// mapper identity and retries coordinator-side and do not read these.
+#[derive(Clone, Copy, Debug)]
+#[cfg_attr(not(feature = "celeborn"), allow(dead_code))]
+pub struct MapperAttempt {
+    pub map_id: u32,
+    pub attempt_id: u32,
+}
+
+/// Shared per-pipeline registry mapping each `InputId` to its mapper attempt.
+/// Populated by the execution loop when an input is enqueued and read by
+/// `RepartitionSink::make_state`. Shared (via `Arc`) between the executor's
+/// enqueue path and the sink, which run on different runtimes.
+pub type MapperAttemptRegistry = Arc<std::sync::Mutex<HashMap<InputId, MapperAttempt>>>;
+
 /// Single use context for translating a physical plan to a Pipeline.
 /// It generates a plan_id, and node ids for each plan.
 pub struct BuilderContext {
@@ -277,6 +303,18 @@ pub struct BuilderContext {
         )>,
     >,
     pub skipped_corrupt_files: std::sync::Arc<std::sync::Mutex<Vec<(String, String, bool)>>>,
+    /// Global Celeborn shuffle client, injected by the `NativeExecutor` when
+    /// the active shuffle algorithm is "celeborn". Uses `RefCell` so it can
+    /// be set through a shared `&BuilderContext` reference (same pattern as
+    /// `checkpoint`).
+    #[cfg(feature = "celeborn")]
+    celeborn_client:
+        std::cell::RefCell<Option<Arc<dyn daft_shuffles::client::celeborn::CelebornClient>>>,
+    /// Per-pipeline registry of shuffle map task attempts, injected by the
+    /// `NativeExecutor` so the Celeborn `RepartitionSink` can look up each
+    /// task's `map_id`/`attempt_id` by `InputId` in `make_state`.
+    #[cfg(feature = "celeborn")]
+    map_attempts: std::cell::RefCell<Option<MapperAttemptRegistry>>,
 }
 
 impl BuilderContext {
@@ -298,6 +336,10 @@ impl BuilderContext {
             shuffle_server,
             checkpoint: std::cell::RefCell::new(None),
             skipped_corrupt_files: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+            #[cfg(feature = "celeborn")]
+            celeborn_client: std::cell::RefCell::new(None),
+            #[cfg(feature = "celeborn")]
+            map_attempts: std::cell::RefCell::new(None),
         }
     }
 
@@ -322,6 +364,39 @@ impl BuilderContext {
         daft_dsl::expr::bound_expr::BoundExpr,
     )> {
         self.checkpoint.borrow().clone()
+    }
+
+    /// Inject the global Celeborn client into this builder context.
+    ///
+    /// Called by `NativeExecutor::run` when a Celeborn client has been
+    /// configured. Must be set before `translate_physical_plan_to_pipeline`
+    /// if any plan node uses the Celeborn shuffle backend.
+    #[cfg(feature = "celeborn")]
+    pub fn set_celeborn_client(
+        &self,
+        client: Arc<dyn daft_shuffles::client::celeborn::CelebornClient>,
+    ) {
+        *self.celeborn_client.borrow_mut() = Some(client);
+    }
+
+    #[cfg(feature = "celeborn")]
+    pub fn celeborn_client(
+        &self,
+    ) -> Option<Arc<dyn daft_shuffles::client::celeborn::CelebornClient>> {
+        self.celeborn_client.borrow().clone()
+    }
+
+    /// Inject the per-pipeline shuffle-map-attempt registry. Set by
+    /// `NativeExecutor::run` before `translate_physical_plan_to_pipeline` so
+    /// the Celeborn `RepartitionSink` captures a clone at construction.
+    #[cfg(feature = "celeborn")]
+    pub fn set_map_attempts(&self, map_attempts: MapperAttemptRegistry) {
+        *self.map_attempts.borrow_mut() = Some(map_attempts);
+    }
+
+    #[cfg(feature = "celeborn")]
+    pub fn map_attempts(&self) -> Option<MapperAttemptRegistry> {
+        self.map_attempts.borrow().clone()
     }
 
     pub fn next_id(&self) -> usize {
@@ -1590,6 +1665,15 @@ fn physical_plan_to_pipeline(
             backend,
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            #[cfg(feature = "celeborn")]
+            if matches!(backend, ShuffleBackend::Celeborn { .. }) {
+                return Err(DaftError::ValueError(
+                    "Celeborn shuffle backend does not yet support IntoPartitions".into(),
+                ))
+                .with_context(|_| PipelineCreationSnafu {
+                    plan_name: physical_plan.name(),
+                });
+            }
             let backend = LocalShuffleBackend::from_plan(backend, ctx.shuffle_server());
             BlockingSinkNode::new(
                 Arc::new(IntoPartitionsSink::new(
@@ -1614,13 +1698,29 @@ fn physical_plan_to_pipeline(
             context,
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-            let backend = LocalShuffleBackend::from_plan(backend, ctx.shuffle_server());
-            let repartition_sink = RepartitionSink::new(
-                schema.clone(),
-                repartition_spec.clone(),
-                *num_partitions,
-                backend,
-            )
+            let repartition_sink = match backend {
+                #[cfg(feature = "celeborn")]
+                ShuffleBackend::Celeborn {
+                    shuffle_id,
+                    num_mappers,
+                } => RepartitionSink::try_new_celeborn(
+                    *num_partitions,
+                    *shuffle_id,
+                    *num_mappers,
+                    repartition_spec.clone(),
+                    ctx.celeborn_client().expect(
+                        "Celeborn client must be set on BuilderContext before pipeline translation",
+                    ),
+                    schema.clone(),
+                    ctx.map_attempts(),
+                ),
+                _ => RepartitionSink::new(
+                    schema.clone(),
+                    repartition_spec.clone(),
+                    *num_partitions,
+                    LocalShuffleBackend::from_plan(backend, ctx.shuffle_server()),
+                ),
+            }
             .with_context(|_| PipelineCreationSnafu {
                 plan_name: physical_plan.name(),
             })?;
@@ -1642,6 +1742,42 @@ fn physical_plan_to_pipeline(
             context,
         }) => {
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            #[cfg(feature = "celeborn")]
+            if let ShuffleBackend::Celeborn {
+                shuffle_id,
+                num_mappers,
+            } = backend
+            {
+                // Gather = every mapper writes to a single reduce partition.
+                // It is exactly a `RepartitionWrite` with `num_partitions=1`
+                // and a random spec (empty keys → `partition_by_random(1)`
+                // sends all rows to partition 0). The coordinator's read side
+                // (`GatherNode` → `emit_read_tasks(.., 1)`) already reads that
+                // one partition, so reusing the Celeborn repartition sink here
+                // makes write/read symmetric with no new backend code.
+                let gather_sink = RepartitionSink::try_new_celeborn(
+                    1,
+                    *shuffle_id,
+                    *num_mappers,
+                    RepartitionSpec::Random(RandomShuffleConfig::new(Some(1))),
+                    ctx.celeborn_client().expect(
+                        "Celeborn client must be set on BuilderContext before pipeline translation",
+                    ),
+                    schema.clone(),
+                    ctx.map_attempts(),
+                )
+                .with_context(|_| PipelineCreationSnafu {
+                    plan_name: physical_plan.name(),
+                })?;
+                return Ok(BlockingSinkNode::new(
+                    Arc::new(gather_sink),
+                    child_node,
+                    stats_state.clone(),
+                    ctx,
+                    context,
+                )
+                .boxed());
+            }
             let backend = LocalShuffleBackend::from_plan(backend, ctx.shuffle_server());
             BlockingSinkNode::new(
                 Arc::new(GatherSink::new(schema.clone(), backend)),
@@ -1672,7 +1808,7 @@ fn physical_plan_to_pipeline(
                 )
                 .boxed()
             }
-            ShuffleReadBackend::Flight => {
+            ShuffleReadBackend::Flight { .. } => {
                 let (tx, rx) = create_unbounded_channel::<(InputId, Vec<FlightShuffleReadInput>)>();
                 input_senders.insert(*source_id, InputSender::FlightShuffle(tx));
                 let (local_server, local_address) = ctx.shuffle_server().expect(
@@ -1680,6 +1816,30 @@ fn physical_plan_to_pipeline(
                 );
                 let source =
                     ShuffleReadSource::new(rx, local_server, local_address, schema.clone(), cfg);
+                SourceNode::new(Box::new(source), stats_state.clone(), ctx, context).boxed()
+            }
+            #[cfg(feature = "celeborn")]
+            ShuffleReadBackend::Celeborn {
+                shuffle_id,
+                num_mappers,
+            } => {
+                let client = ctx.celeborn_client().expect(
+                    "Celeborn client must be set on BuilderContext before pipeline translation",
+                );
+                let (tx, rx) =
+                    create_unbounded_channel::<(InputId, Vec<CelebornShuffleReadInput>)>();
+                input_senders.insert(*source_id, InputSender::CelebornShuffle(tx));
+                let source = crate::sources::shuffle_read::CelebornShuffleReadSource::try_new(
+                    rx,
+                    *shuffle_id,
+                    *num_mappers,
+                    client,
+                    schema.clone(),
+                    cfg,
+                )
+                .with_context(|_| PipelineCreationSnafu {
+                    plan_name: physical_plan.name(),
+                })?;
                 SourceNode::new(Box::new(source), stats_state.clone(), ctx, context).boxed()
             }
         },

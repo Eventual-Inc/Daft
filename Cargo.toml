@@ -65,6 +65,12 @@ pyo3-log = {workspace = true, optional = true}
 sysinfo = {workspace = true}
 
 [features]
+celeborn = [
+  "daft-shuffles/celeborn",
+  "daft-local-execution/celeborn",
+  "daft-distributed/celeborn",
+  "daft-local-plan/celeborn"
+]
 # maturin will turn this on
 python = [
   "dep:pyo3",
