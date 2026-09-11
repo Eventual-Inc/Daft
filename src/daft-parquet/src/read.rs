@@ -1009,7 +1009,7 @@ mod tests {
         let pipelined = read_pipelined(&uri, Some(pred.clone()), columns.clone());
         let mono = read_pipelined_with_limit(&uri, Some(pred), columns, Some(total_fixture_rows));
 
-        assert!(pipelined.len() > 0 && pipelined.len() < total_fixture_rows);
+        assert!(!pipelined.is_empty() && pipelined.len() < total_fixture_rows);
         assert_eq!(pipelined.len(), mono.len());
         for name in ["a", "b", "c"] {
             assert_eq!(
