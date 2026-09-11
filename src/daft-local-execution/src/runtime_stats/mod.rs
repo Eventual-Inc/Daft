@@ -4,13 +4,17 @@ mod values;
 
 use std::{
     collections::{HashMap, HashSet},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
     time::{Duration, Instant},
 };
 
 use common_error::DaftResult;
 use common_metrics::{
-    NodeID, QueryEndState, QueryID, StatSnapshot, ops::NodeInfo, snapshot::StatSnapshotImpl,
+    BYTES_OUT_KEY, BYTES_READ_KEY, NodeID, PROCESS_RSS_KEY, QueryEndState, QueryID, ROWS_OUT_KEY,
+    Stat, StatSnapshot, Stats, ops::NodeInfo, snapshot::StatSnapshotImpl,
 };
 use common_runtime::RuntimeTask;
 use daft_context::{
@@ -25,7 +29,7 @@ use daft_context::{
     },
 };
 use daft_dsl::common_treenode::{TreeNode, TreeNodeRecursion};
-use daft_local_plan::{ExecutionStats, InputId};
+use daft_local_plan::{ExecutionStats, InputId, ProfileTelemetry};
 use progress_bar::{ProgressBar, make_progress_bar_manager};
 use tokio::{
     runtime::Handle,
@@ -96,6 +100,7 @@ pub struct RuntimeStatsManagerHandle {
     // Final per-input snapshots are retained here after the stats manager exits so
     // callers can still retrieve metrics during executor teardown.
     finished_snapshots: Arc<Mutex<Option<HashMap<InputId, ExecutionStats>>>>,
+    peak_process_rss_bytes: Option<Arc<AtomicU64>>,
 }
 
 impl RuntimeStatsManagerHandle {
@@ -138,7 +143,8 @@ impl RuntimeStatsManagerHandle {
     /// plans do not retain metrics for completed inputs indefinitely.
     #[allow(dead_code)]
     pub async fn take_input_snapshot(&self, input_id: InputId) -> DaftResult<ExecutionStats> {
-        if let Some(stats) = self.take_finished_snapshot(input_id) {
+        if let Some(mut stats) = self.take_finished_snapshot(input_id) {
+            self.attach_peak_process_rss(&mut stats);
             return Ok(stats);
         }
 
@@ -158,7 +164,10 @@ impl RuntimeStatsManagerHandle {
             });
         }
         match rx.await {
-            Ok(stats) => Ok(stats),
+            Ok(mut stats) => {
+                self.attach_peak_process_rss(&mut stats);
+                Ok(stats)
+            }
             Err(_) => {
                 // The manager dropped the responder before answering — typically
                 // because it broke out of its event loop (and stopped reading
@@ -180,6 +189,14 @@ impl RuntimeStatsManagerHandle {
             .expect("finished_snapshots lock poisoned")
             .as_mut()
             .and_then(|snapshots| snapshots.remove(&input_id))
+    }
+
+    fn attach_peak_process_rss(&self, stats: &mut ExecutionStats) {
+        stats.profile_telemetry.peak_process_rss_bytes = self
+            .peak_process_rss_bytes
+            .as_ref()
+            .map(|peak| peak.load(Ordering::Relaxed))
+            .filter(|peak| *peak > 0);
     }
 }
 
@@ -256,18 +273,13 @@ impl RuntimeStatsManager {
                     .insert(input_id, stats);
             }
             StatsManagerMessage::TakeInputSnapshot(input_id, respond_tx) => {
-                let mut result = Vec::new();
-                for (node_id, by_input) in input_stats.iter() {
-                    if let Some(stats) = by_input.get(&input_id)
-                        && let Some(node_info) = node_info_map.get(node_id)
-                    {
-                        result.push((node_info.clone(), stats.flush()));
-                    }
-                }
-                let _ = respond_tx.send(
-                    ExecutionStats::new(query_id.clone(), result)
-                        .with_query_plan(query_plan.clone()),
-                );
+                let _ = respond_tx.send(build_input_execution_stats(
+                    query_id,
+                    query_plan,
+                    input_id,
+                    input_stats,
+                    node_info_map,
+                ));
             }
         }
     }
@@ -397,8 +409,10 @@ impl RuntimeStatsManager {
         } else {
             None
         };
+        let peak_process_rss_bytes = process_stats.as_ref().map(|_| Arc::new(AtomicU64::new(0)));
 
         let finished_snapshots_for_task = finished_snapshots.clone();
+        let peak_process_rss_for_task = peak_process_rss_bytes.clone();
         let task_events_enabled_now = task_events_enabled();
         // TaskStatsUpdate is emitted on a separate (slower) cadence than the
         // 200ms ProcessStats / Event::Stats tick. Per-task amplification means
@@ -469,30 +483,12 @@ impl RuntimeStatsManager {
                         // the data via `finished_snapshots` rather than a closed channel.
                         // (Setting it post-loop leaves a window between break and assignment
                         // during which channel sends silently queue but are never read.)
-                        let mut snapshots_by_input: HashMap<InputId, Vec<(Arc<NodeInfo>, StatSnapshot)>> =
-                            HashMap::new();
-                        for (node_id, by_input) in &input_stats {
-                            let Some(node_info) = node_info_map.get(node_id) else {
-                                continue;
-                            };
-                            for (input_id, stats) in by_input {
-                                snapshots_by_input
-                                    .entry(*input_id)
-                                    .or_default()
-                                    .push((node_info.clone(), stats.flush()));
-                            }
-                        }
-                        let finished = snapshots_by_input
-                            .into_iter()
-                            .map(|(input_id, mut nodes)| {
-                                nodes.sort_by_key(|(node_info, _)| node_info.id);
-                                (
-                                    input_id,
-                                    ExecutionStats::new(query_id.clone(), nodes)
-                                        .with_query_plan(query_plan.clone()),
-                                )
-                            })
-                            .collect();
+                        let finished = build_all_input_execution_stats(
+                            &query_id,
+                            &query_plan,
+                            &input_stats,
+                            &node_info_map,
+                        );
                         *finished_snapshots_for_task
                             .lock()
                             .expect("finished_snapshots lock poisoned") = Some(finished);
@@ -502,6 +498,9 @@ impl RuntimeStatsManager {
                     _ = interval.tick() => {
                         if let Some(ps) = &mut process_stats {
                             let ps_stats = ps.sample();
+                            if let Some(peak) = &peak_process_rss_for_task {
+                                update_peak_process_rss(peak, &ps_stats);
+                            }
                             let event = Event::ProcessStats(ProcessStatsEvent {
                                 header: event_header(query_id.clone()),
                                 stats: ps_stats,
@@ -572,6 +571,7 @@ impl RuntimeStatsManager {
             handle: RuntimeStatsManagerHandle {
                 tx: node_tx,
                 finished_snapshots,
+                peak_process_rss_bytes,
             },
             finish_tx,
             stats_manager_task: task_handle,
@@ -679,6 +679,132 @@ fn aggregate_node_stats(input_stats: &InputStatsMap, node_id: NodeID) -> Option<
     aggregated
 }
 
+fn update_peak_process_rss(peak: &AtomicU64, stats: &Stats) {
+    if let Some(rss) = stats.iter().find_map(|(name, value)| match (name, value) {
+        (PROCESS_RSS_KEY, Stat::Bytes(bytes)) => Some(*bytes),
+        _ => None,
+    }) {
+        peak.fetch_max(rss, Ordering::Relaxed);
+    }
+}
+
+struct ProfileInputBuilder {
+    nodes: Vec<(Arc<NodeInfo>, StatSnapshot)>,
+    telemetry: ProfileTelemetry,
+}
+
+impl ProfileInputBuilder {
+    fn new() -> Self {
+        Self {
+            nodes: Vec::new(),
+            telemetry: ProfileTelemetry {
+                shuffle_write_bytes: Some(0),
+                ..Default::default()
+            },
+        }
+    }
+
+    fn record(
+        &mut self,
+        node_id: NodeID,
+        node_info: Option<&Arc<NodeInfo>>,
+        runtime_stats: &dyn RuntimeStats,
+        snapshot: StatSnapshot,
+    ) {
+        let mut rows_out = 0;
+        let mut bytes_out = 0;
+        let stats = snapshot.to_stats();
+        for (name, stat) in stats.iter() {
+            match (name, stat) {
+                (ROWS_OUT_KEY, Stat::Count(value)) => rows_out = *value,
+                (BYTES_OUT_KEY | BYTES_READ_KEY, Stat::Bytes(value)) => {
+                    bytes_out = bytes_out.max(*value);
+                }
+                _ => {}
+            }
+        }
+        self.telemetry
+            .partition_stats
+            .entry(node_id)
+            .or_default()
+            .record(rows_out, bytes_out);
+        *self.telemetry.shuffle_write_bytes.as_mut().unwrap() +=
+            runtime_stats.shuffle_write_bytes();
+
+        if let Some(node_info) = node_info {
+            if let (Some(filter_applied), Some(projection_applied)) = (
+                node_info.context.get("profile.scan.filter_applied"),
+                node_info.context.get("profile.scan.projection_applied"),
+            ) {
+                self.telemetry.scan_pushdowns.insert(
+                    node_id,
+                    daft_local_plan::ScanPushdownStats {
+                        filter_requested: false,
+                        filter_applied: filter_applied == "true",
+                        projection_requested: false,
+                        projection_applied: projection_applied == "true",
+                    },
+                );
+            }
+            self.nodes.push((node_info.clone(), snapshot));
+        }
+    }
+
+    fn finish(mut self, query_id: &QueryID, query_plan: &serde_json::Value) -> ExecutionStats {
+        self.nodes.sort_by_key(|(node_info, _)| node_info.id);
+        ExecutionStats::new(query_id.clone(), self.nodes)
+            .with_query_plan(query_plan.clone())
+            .with_profile_telemetry(self.telemetry)
+    }
+}
+
+fn build_input_execution_stats(
+    query_id: &QueryID,
+    query_plan: &serde_json::Value,
+    input_id: InputId,
+    input_stats: &InputStatsMap,
+    node_info_map: &HashMap<NodeID, Arc<NodeInfo>>,
+) -> ExecutionStats {
+    let mut builder = ProfileInputBuilder::new();
+    for (node_id, by_input) in input_stats {
+        if let Some(runtime_stats) = by_input.get(&input_id) {
+            builder.record(
+                *node_id,
+                node_info_map.get(node_id),
+                runtime_stats.as_ref(),
+                runtime_stats.flush(),
+            );
+        }
+    }
+    builder.finish(query_id, query_plan)
+}
+
+fn build_all_input_execution_stats(
+    query_id: &QueryID,
+    query_plan: &serde_json::Value,
+    input_stats: &InputStatsMap,
+    node_info_map: &HashMap<NodeID, Arc<NodeInfo>>,
+) -> HashMap<InputId, ExecutionStats> {
+    let mut builders: HashMap<InputId, ProfileInputBuilder> = HashMap::new();
+    for (node_id, by_input) in input_stats {
+        for (input_id, runtime_stats) in by_input {
+            builders
+                .entry(*input_id)
+                .or_insert_with(ProfileInputBuilder::new)
+                .record(
+                    *node_id,
+                    node_info_map.get(node_id),
+                    runtime_stats.as_ref(),
+                    runtime_stats.flush(),
+                );
+        }
+    }
+    builders
+        .into_iter()
+        .map(|(input_id, builder)| (input_id, builder.finish(query_id, query_plan)))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -689,6 +815,7 @@ mod tests {
     use common_error::DaftResult;
     use common_metrics::{
         DURATION_KEY, Meter, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshot, Stats,
+        snapshot::DefaultSnapshot,
     };
     use daft_context::Subscriber;
     use tokio::time::{Duration, sleep};
@@ -758,6 +885,152 @@ mod tests {
             id,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn sampled_process_rss_keeps_the_peak() {
+        let peak = AtomicU64::new(0);
+        for bytes in [100, 80, 120] {
+            let stats = Stats(
+                std::iter::once((Arc::<str>::from(PROCESS_RSS_KEY), Stat::Bytes(bytes))).collect(),
+            );
+            update_peak_process_rss(&peak, &stats);
+        }
+        assert_eq!(peak.load(Ordering::Relaxed), 120);
+    }
+
+    #[test]
+    fn profile_telemetry_collects_native_input_and_shuffle_stats() {
+        let runtime_stats = Arc::new(DefaultRuntimeStats::new(
+            &Meter::test_scope("test_profile_telemetry"),
+            &node_info_from_id(7),
+        ));
+        runtime_stats.add_rows_out(100);
+        runtime_stats.add_bytes_out(200);
+        runtime_stats.add_shuffle_write_bytes(50);
+        let input_stats: InputStatsMap = HashMap::from([(
+            7,
+            HashMap::from([(3, runtime_stats as Arc<dyn RuntimeStats>)]),
+        )]);
+
+        let stats = build_input_execution_stats(
+            &"query".into(),
+            &serde_json::Value::Null,
+            3,
+            &input_stats,
+            &HashMap::from([(7, Arc::new(node_info_from_id(7)))]),
+        );
+        let telemetry = stats.profile_telemetry;
+
+        assert_eq!(telemetry.shuffle_write_bytes, Some(50));
+        assert_eq!(telemetry.partition_stats[&7].count, 1);
+        assert_eq!(telemetry.partition_stats[&7].total_rows, 100);
+        assert_eq!(telemetry.partition_stats[&7].max_bytes, 200);
+    }
+
+    struct CountingRuntimeStats {
+        flushes: AtomicU64,
+        rows_out: u64,
+        bytes_out: u64,
+    }
+
+    impl CountingRuntimeStats {
+        fn new(rows_out: u64, bytes_out: u64) -> Self {
+            Self {
+                flushes: AtomicU64::new(0),
+                rows_out,
+                bytes_out,
+            }
+        }
+    }
+
+    impl RuntimeStats for CountingRuntimeStats {
+        fn new(_meter: &Meter, _node_info: &NodeInfo) -> Self {
+            Self::new(0, 0)
+        }
+
+        fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
+            if matches!(ordering, Ordering::SeqCst) {
+                self.flushes.fetch_add(1, Ordering::Relaxed);
+            }
+            StatSnapshot::Default(DefaultSnapshot {
+                cpu_us: 0,
+                rows_in: 0,
+                rows_out: self.rows_out,
+                bytes_in: 0,
+                bytes_out: self.bytes_out,
+                num_tasks: 0,
+            })
+        }
+
+        fn add_rows_in(&self, _rows: u64) {}
+        fn add_rows_out(&self, _rows: u64) {}
+        fn add_duration_us(&self, _duration_us: u64) {}
+        fn add_bytes_in(&self, _bytes: u64) {}
+        fn add_bytes_out(&self, _bytes: u64) {}
+        fn increment_num_tasks(&self) {}
+    }
+
+    #[test]
+    fn final_metadata_flushes_once_and_keeps_inputs_independent() {
+        let first = Arc::new(CountingRuntimeStats::new(10, 100));
+        let second = Arc::new(CountingRuntimeStats::new(20, 200));
+        let input_stats: InputStatsMap = HashMap::from([(
+            7,
+            HashMap::from([
+                (1, first.clone() as Arc<dyn RuntimeStats>),
+                (2, second.clone() as Arc<dyn RuntimeStats>),
+            ]),
+        )]);
+
+        let finished = build_all_input_execution_stats(
+            &"query".into(),
+            &serde_json::Value::Null,
+            &input_stats,
+            &HashMap::from([(7, Arc::new(node_info_from_id(7)))]),
+        );
+
+        assert_eq!(first.flushes.load(Ordering::Relaxed), 1);
+        assert_eq!(second.flushes.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            finished[&1].profile_telemetry.partition_stats[&7].total_rows,
+            10
+        );
+        assert_eq!(
+            finished[&2].profile_telemetry.partition_stats[&7].total_rows,
+            20
+        );
+    }
+
+    #[test]
+    fn profile_snapshot_handles_empty_and_unmapped_inputs() {
+        let empty = build_input_execution_stats(
+            &"query".into(),
+            &serde_json::Value::Null,
+            1,
+            &HashMap::new(),
+            &HashMap::new(),
+        );
+        assert!(empty.nodes.is_empty());
+        assert!(empty.profile_telemetry.partition_stats.is_empty());
+
+        let runtime_stats = Arc::new(CountingRuntimeStats::new(12, 34));
+        let input_stats: InputStatsMap = HashMap::from([(
+            9,
+            HashMap::from([(1, runtime_stats as Arc<dyn RuntimeStats>)]),
+        )]);
+        let unmapped = build_input_execution_stats(
+            &"query".into(),
+            &serde_json::Value::Null,
+            1,
+            &input_stats,
+            &HashMap::new(),
+        );
+        assert!(unmapped.nodes.is_empty());
+        assert_eq!(
+            unmapped.profile_telemetry.partition_stats[&9].total_rows,
+            12
+        );
     }
 
     impl Subscriber for MockSubscriber {
@@ -1068,6 +1341,7 @@ mod tests {
             "test_ps_enabled",
             true,
         );
+        let handle = stats_manager.handle();
 
         // Let a few ticks fire
         sleep(Duration::from_millis(150)).await;
@@ -1079,6 +1353,8 @@ mod tests {
         );
 
         stats_manager.finish(QueryEndState::Finished).await;
+        let stats = handle.take_input_snapshot(0).await.unwrap();
+        assert!(stats.profile_telemetry.peak_process_rss_bytes.is_some());
     }
 
     #[tokio::test(start_paused = true)]
@@ -1097,6 +1373,7 @@ mod tests {
             "test_ps_disabled",
             false,
         );
+        let handle = stats_manager.handle();
         // Let a few ticks fire
         sleep(Duration::from_millis(150)).await;
 
@@ -1107,5 +1384,7 @@ mod tests {
         );
 
         stats_manager.finish(QueryEndState::Finished).await;
+        let stats = handle.take_input_snapshot(0).await.unwrap();
+        assert_eq!(stats.profile_telemetry.peak_process_rss_bytes, None);
     }
 }
