@@ -36,7 +36,7 @@ from daft.io._range import _range
 from daft.io._files import from_files
 from daft.io.file_path import from_glob_path
 from daft.io.sink import DataSink
-from daft.io.source import DataSource, DataSourceTask
+from daft.io.source import DataFrameSource, DataSource, DataSourceTask
 from daft.io.av import read_video_frames
 
 # Lance is lazy-loaded to keep `import daft` fast.
@@ -55,6 +55,7 @@ def __getattr__(name: str) -> object:
 __all__ = [
     "AzureConfig",
     "CosConfig",
+    "DataFrameSource",
     "DataSink",
     "DataSource",
     "DataSourceTask",
