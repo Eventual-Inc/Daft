@@ -9,8 +9,7 @@ import daft
 from daft.api_annotations import PublicAPI
 from daft.daft import io_glob
 from daft.dependencies import mcap as _mcap_mod
-from daft.dependencies import pafs
-from daft.filesystem import _resolve_paths_and_filesystem, get_protocol_from_path
+from daft.filesystem import get_protocol_from_path
 from daft.io.source import DataSource, DataSourceTask
 from daft.logical.schema import Schema
 from daft.recordbatch import RecordBatch
@@ -56,41 +55,15 @@ def normalize_storage_path(path: str, io_config: IOConfig | None = None) -> str:
 def list_files(
     root_dir: str | pathlib.Path,
     io_config: IOConfig | None,
-    resolved_path: str | None = None,
-    fs: pafs.FileSystem | None = None,
 ) -> list[str]:
     if isinstance(root_dir, pathlib.Path):
         root_dir = str(root_dir)
 
-    # Special case for handling HuggingFace paths
-    # TODO: Remove once we remove fsspec-based filesystem resolution
-    if get_protocol_from_path(root_dir) == "hf":
-        glob_path = root_dir if "*" in root_dir else root_dir.rstrip("/")
-        if not glob_path.endswith(".mcap"):
-            glob_path = f"{glob_path}/**/*.mcap" if "**" not in glob_path else glob_path
-        files = io_glob(glob_path, io_config=io_config)
-        return [f["path"] for f in files if f["type"] == "File"]
-
-    if resolved_path is None or fs is None:
-        [resolved_path], fs = _resolve_paths_and_filesystem(root_dir, io_config=io_config)
-
-    try:
-        file_info = fs.get_file_info(resolved_path)
-        if file_info.type == pafs.FileType.File:
-            return [resolved_path]
-    except FileNotFoundError:
-        return []
-
-    selector = pafs.FileSelector(resolved_path, recursive=True)
-
-    try:
-        file_infos = fs.get_file_info(selector)
-    except NotADirectoryError:
-        return [resolved_path]
-    except FileNotFoundError:
-        return []
-
-    return [file_info.path for file_info in file_infos if file_info.type == pafs.FileType.File]
+    glob_path = root_dir if "*" in root_dir else root_dir.rstrip("/")
+    if not glob_path.endswith(".mcap"):
+        glob_path = f"{glob_path}/**/*.mcap" if "**" not in glob_path else glob_path
+    files = io_glob(glob_path, io_config=io_config)
+    return [f["path"] for f in files if f["type"] == "File"]
 
 
 @PublicAPI
