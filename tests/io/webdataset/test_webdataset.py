@@ -26,6 +26,20 @@ def _write_tar(path: Path, members: list[tuple[str, bytes]]) -> None:
             archive.addfile(info, io.BytesIO(data))
 
 
+def _write_sparse_tar(path: Path) -> None:
+    info = tarfile.TarInfo("sample.bin")
+    info.type = tarfile.GNUTYPE_SPARSE
+    info.size = 4
+    header = bytearray(info.tobuf(format=tarfile.GNU_FORMAT))
+    header[386:398] = b"00000002000\0"
+    header[398:410] = b"00000000004\0"
+    header[483:495] = b"00000004000\0"
+    header[148:156] = b"        "
+    checksum = sum(header)
+    header[148:156] = f"{checksum:06o}\0 ".encode()
+    path.write_bytes(header + b"data" + bytes(508 + 1024))
+
+
 @pytest.fixture
 def webdataset_path(tmp_path: Path) -> Path:
     path = tmp_path / "samples.tar"
@@ -202,6 +216,14 @@ def test_read_webdataset_rejects_compressed_tar(tmp_path: Path) -> None:
         archive.addfile(info, io.BytesIO(b"hello"))
 
     with pytest.raises(ValueError, match="Compressed WebDataset shards are not supported"):
+        daft.read_webdataset(str(path))
+
+
+def test_read_webdataset_rejects_sparse_tar_member(tmp_path: Path) -> None:
+    path = tmp_path / "sparse.tar"
+    _write_sparse_tar(path)
+
+    with pytest.raises(ValueError, match="Sparse TAR member 'sample.bin'"):
         daft.read_webdataset(str(path))
 
 

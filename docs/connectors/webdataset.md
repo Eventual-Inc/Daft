@@ -57,6 +57,8 @@ df = daft.read_webdataset(
 Daft currently requires:
 
 - Uncompressed `.tar` shards, because lazy member reads use byte offsets.
+- Non-sparse TAR members, because sparse file contents are not stored in one
+  contiguous byte range.
 - Consistent member suffixes and JSON shapes across shards.
 
 Schema inference uses the first five samples in the first shard. If a later

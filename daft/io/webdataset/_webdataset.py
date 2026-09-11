@@ -160,6 +160,12 @@ def _iter_archive_samples(
                     if not member.isreg() or _ARCHIVE_METADATA.match(member.name):
                         continue
 
+                    if member.issparse():
+                        raise ValueError(
+                            f"Sparse TAR member {member.name!r} in WebDataset archive {archive_path!r} "
+                            "is not supported because its contents are not stored as a contiguous byte range"
+                        )
+
                     match = _BASE_PLUS_EXTENSION.match(member.name)
                     if match is None:
                         continue
@@ -355,6 +361,8 @@ def read_webdataset(
     Note:
         Compressed TAR archives are not supported because member byte offsets cannot
         be used for lazy range-backed file references.
+        Sparse TAR members are not supported because their logical contents are not
+        stored as contiguous byte ranges.
         Member suffixes and JSON shapes must be consistent across shards. The schema
         is inferred from the first five samples of the first shard, and later
         incompatibilities raise an error instead of discarding data.
