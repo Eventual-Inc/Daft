@@ -8,7 +8,11 @@ use arrow_array::{
     },
 };
 use common_error::{DaftError, DaftResult};
-use common_metrics::{QueryID, StatSnapshot, ops::NodeInfo, snapshot::StatSnapshotImpl};
+use common_metrics::{
+    QueryID, StatSnapshot,
+    ops::NodeInfo,
+    snapshot::{StatSnapshotImpl, decode_execution_stats, encode_execution_stats},
+};
 use daft_core::prelude::{DataType, Field, Schema, TimeUnit};
 use daft_recordbatch::RecordBatch;
 use serde::{Deserialize, Serialize};
@@ -52,25 +56,15 @@ impl ExecutionStats {
 
     /// Encode the ExecutionStats into a binary format for transmission to scheduler
     pub fn encode(&self) -> Vec<u8> {
-        bincode::encode_to_vec(
-            (&self.nodes, &self.skipped_corrupt_files),
-            bincode::config::legacy(),
-        )
-        .expect("Failed to encode ExecutionStats")
+        encode_execution_stats(&self.nodes, &self.skipped_corrupt_files)
+            .expect("Failed to encode ExecutionStats")
     }
 
     /// Decode the ExecutionStats from a binary format received from scheduler
     pub fn decode(bytes: &[u8]) -> Self {
-        type Decoded = (
-            Vec<(Arc<NodeInfo>, StatSnapshot)>,
-            Vec<(String, String, bool)>,
-        );
-        let ((nodes, skipped_corrupt_files), _): (Decoded, usize) =
-            bincode::decode_from_slice(bytes, bincode::config::legacy())
-                .map_err(|e| {
-                    DaftError::InternalError(format!("Failed to decode ExecutionStats: {e}"))
-                })
-                .unwrap();
+        let (nodes, skipped_corrupt_files) = decode_execution_stats(bytes)
+            .map_err(|e| DaftError::InternalError(format!("Failed to decode ExecutionStats: {e}")))
+            .unwrap();
         Self {
             query_id: "".into(),
             query_plan: None,

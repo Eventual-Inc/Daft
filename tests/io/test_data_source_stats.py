@@ -11,7 +11,6 @@ from daft.io import DataSource, DataSourceTask
 from daft.recordbatch import RecordBatch
 from daft.schema import Schema
 from daft.subscribers import Subscriber
-from tests.conftest import get_tests_daft_runner_name
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -27,11 +26,6 @@ if TYPE_CHECKING:
         QueryStarted,
         Stats,
     )
-
-pytestmark = pytest.mark.skipif(
-    get_tests_daft_runner_name() == "ray",
-    reason="bytes.read is not yet emitted to Python subscribers on Ray Flotilla",
-)
 
 
 class StatsCollector(Subscriber):

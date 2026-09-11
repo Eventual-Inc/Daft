@@ -166,11 +166,10 @@ class DataSourceTask(ABC):
         Unknown keys are ignored. The default implementation reports nothing.
 
         Note:
-            Delivery of scan-node I/O stats to Python subscribers currently
-            applies to the native runner. On the Ray runner these counters are
-            aggregated by the distributed scan node but, like ``bytes.read``
-            from the native readers, are not yet forwarded to Python
-            ``Stats`` events.
+            On the native runner ``Stats`` events are delivered progressively
+            during execution. On the Ray runner they are aggregated by the
+            distributed scan node and delivered to driver-side subscribers as
+            final per-node totals when execution finishes.
 
         Example:
             >>> class MyTask(DataSourceTask):

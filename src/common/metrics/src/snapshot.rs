@@ -11,7 +11,7 @@ use crate::{
     BYTES_IN_KEY, BYTES_OUT_KEY, BYTES_READ_KEY, BYTES_WRITTEN_KEY, CHECKPOINT_FILES_STAGED_KEY,
     CHECKPOINT_KEYS_STAGED_KEY, CHECKPOINTS_SEALED_KEY, DURATION_KEY, IO_REQUESTS_KEY,
     JOIN_BUILD_BYTES_INSERTED_KEY, JOIN_PROBE_BYTES_IN_KEY, JOIN_PROBE_BYTES_OUT_KEY,
-    NUM_TASKS_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, ROWS_WRITTEN_KEY, Stat, Stats,
+    NUM_TASKS_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, ROWS_WRITTEN_KEY, Stat, Stats, ops::NodeInfo,
 };
 
 macro_rules! stats {
@@ -78,6 +78,33 @@ impl DefaultSnapshot {
             num_tasks: self.num_tasks + other.num_tasks,
         }
     }
+}
+
+/// Per-node snapshots and skipped-corrupt-file records, as carried by an execution's final stats.
+pub type ExecutionStatsPayload = (
+    Vec<(Arc<NodeInfo>, StatSnapshot)>,
+    Vec<(String, String, bool)>,
+);
+
+/// Encodes an execution's final per-node snapshots into the wire format used to ship them from
+/// the scheduler to the driver.
+///
+/// Shared by `ExecutionStats` (daft-local-plan) and the driver-side subscriber dispatch
+/// (daft-context) so neither crate has to depend on the other.
+pub fn encode_execution_stats(
+    nodes: &[(Arc<NodeInfo>, StatSnapshot)],
+    skipped_corrupt_files: &[(String, String, bool)],
+) -> Result<Vec<u8>, bincode::error::EncodeError> {
+    bincode::encode_to_vec((nodes, skipped_corrupt_files), bincode::config::legacy())
+}
+
+/// Inverse of [`encode_execution_stats`].
+pub fn decode_execution_stats(
+    bytes: &[u8],
+) -> Result<ExecutionStatsPayload, bincode::error::DecodeError> {
+    let (payload, _): (ExecutionStatsPayload, usize) =
+        bincode::decode_from_slice(bytes, bincode::config::legacy())?;
+    Ok(payload)
 }
 
 #[derive(Debug, Clone, Encode, Decode, Serialize, Deserialize)]

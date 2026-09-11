@@ -679,6 +679,16 @@ class RayRunner(Runner[ray.ObjectRef]):
             # (`StatisticsManager`) as each distributed pipeline node finishes
             # producing tasks and its in-flight task count drains.
 
+            # Operator-level Stats events are emitted inside the RemoteFlotillaRunner
+            # actor, whose subscribers are separate from the driver's. Replay the
+            # final per-node totals here so subscribers attached on the driver see
+            # the same scan/operator stats (bytes.read, rows.out, ...) as on the
+            # native runner.
+            try:
+                ctx._notify_exec_emit_execution_stats(query_id, stats)
+            except Exception as e:
+                logger.warning("Failed to send execution stats notification: %s", e)
+
             try:
                 ctx._notify_exec_end(query_id)
                 ctx._notify_query_end(query_id, PyQueryResult(QueryEndState.Finished, "Query finished"))
