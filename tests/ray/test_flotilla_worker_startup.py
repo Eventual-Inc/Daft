@@ -69,7 +69,7 @@ def _install_fakes(monkeypatch, nodes, outcomes):
     ``ray.get`` raises), or ``("timeout", None)`` (never resolves -> stays in
     ``ray.wait``'s ``not_ready`` bucket).
     """
-    captured: dict[str, object] = {"killed": []}
+    captured: dict[str, object] = {"killed": [], "options": []}
 
     created = {"i": 0}
 
@@ -82,6 +82,7 @@ def _install_fakes(monkeypatch, nodes, outcomes):
     class _FakeActorClass:
         @staticmethod
         def options(**kwargs):
+            captured["options"].append(kwargs)
             return _Opts()
 
     def _fake_ray_wait(refs, *, num_returns, timeout):
@@ -223,3 +224,46 @@ def test_start_ray_workers_refresh_total_failure_is_non_fatal(monkeypatch):
 
     assert workers == []
     assert captured["killed"] == [0]
+
+
+def test_start_ray_workers_sets_actor_max_restarts_by_default(monkeypatch):
+    """Swordfish actors must be created with max_restarts > 0.
+
+    Ray's default of max_restarts=0 makes any actor crash (e.g. an OOM kill)
+    terminal: in-flight calls raise ActorDiedError, the dispatcher evicts the
+    node from the worker pool, and its compute is lost until the next refresh
+    cycle. With max_restarts > 0 Ray restarts the actor in place and in-flight
+    calls surface ActorUnavailableError, which requeues tasks without evicting
+    the node.
+    """
+    monkeypatch.delenv(flotilla.SWORDFISH_ACTOR_MAX_RESTARTS_ENV, raising=False)
+    captured = _install_fakes(
+        monkeypatch,
+        nodes=[_node(_hex_node_id(0))],
+        outcomes={0: ("ok", "1.2.3.4:5000")},
+    )
+
+    workers = flotilla.start_ray_workers(existing_worker_ids=[])
+
+    assert len(workers) == 1
+    assert len(captured["options"]) == 1
+    options = captured["options"][0]
+    assert options["max_restarts"] == flotilla.DEFAULT_SWORDFISH_ACTOR_MAX_RESTARTS
+    assert options["max_restarts"] > 0
+    # Task retry stays owned by Daft's dispatcher, never delegated to Ray.
+    assert "max_task_retries" not in options
+
+
+def test_start_ray_workers_max_restarts_env_override(monkeypatch):
+    """DAFT_SWORDFISH_ACTOR_MAX_RESTARTS overrides the default (-1 = infinite)."""
+    monkeypatch.setenv(flotilla.SWORDFISH_ACTOR_MAX_RESTARTS_ENV, "-1")
+    captured = _install_fakes(
+        monkeypatch,
+        nodes=[_node(_hex_node_id(0))],
+        outcomes={0: ("ok", "1.2.3.4:5000")},
+    )
+
+    workers = flotilla.start_ray_workers(existing_worker_ids=[])
+
+    assert len(workers) == 1
+    assert captured["options"][0]["max_restarts"] == -1
