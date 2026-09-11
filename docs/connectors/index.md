@@ -331,6 +331,14 @@ See also [Text Files](text.md) and [Blob Files](blob.md) for detailed usage.
 |----------------------------------|----------------------------------------------------------|
 | [`read_warc`][daft.io.read_warc] | Read a WARC file or multiple WARC files into a DataFrame |
 
+### WebDataset
+
+| Function                                       | Description                                                    |
+|------------------------------------------------|----------------------------------------------------------------|
+| [`read_webdataset`][daft.io.read_webdataset]   | Read multimodal WebDataset TAR shards into a DataFrame          |
+
+See also [WebDataset](webdataset.md) for format details and lazy media reads.
+
 ### Video
 
 | Function                                         | Description                        |
