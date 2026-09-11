@@ -39,7 +39,7 @@ def _fallback_to_datasets_library(repo: str, original_error: Exception) -> DataF
 def read_huggingface(
     repo: str,
     io_config: IOConfig | None = None,
-    format: Literal["parquet", "webdataset"] = "parquet",
+    format: Literal["parquet", "webdataset"] | None = None,
 ) -> DataFrame:
     """Create a DataFrame from a Hugging Face dataset.
 
@@ -51,12 +51,12 @@ def read_huggingface(
     Args:
         repo (str): repository to read in the form `username/dataset_name`
         io_config (IOConfig): Config to use when reading data
-        format: Dataset storage format. Defaults to ``"parquet"`` for backwards
-            compatibility. Use ``"webdataset"`` to read uncompressed TAR shards.
+        format: Dataset storage format. If ``None``, currently defaults to
+            ``"parquet"``. Use ``"webdataset"`` to read uncompressed TAR shards.
     """
     if format == "webdataset":
         return read_webdataset(f"hf://datasets/{repo}/**/*.tar", io_config=io_config)
-    if format != "parquet":
+    if format not in (None, "parquet"):
         raise ValueError(f"Unsupported Hugging Face dataset format: {format!r}")
 
     try:

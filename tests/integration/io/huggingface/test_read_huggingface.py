@@ -93,6 +93,18 @@ def test_read_huggingface_webdataset_routes_to_webdataset_reader():
     )
 
 
+@pytest.mark.parametrize("format", [None, "parquet"])
+def test_read_huggingface_parquet_format(format):
+    repo = "Eventual-Inc/sample-parquet"
+    sentinel = object()
+
+    with patch("daft.io.huggingface.read_parquet", return_value=sentinel) as mock_read_parquet:
+        result = daft.read_huggingface(repo, format=format)
+
+    assert result is sentinel
+    mock_read_parquet.assert_called_once_with(f"hf://datasets/{repo}", io_config=None)
+
+
 @pytest.mark.integration()
 def test_read_huggingface_multi_split_dataset():
     """Test that read_huggingface works with datasets that have multiple splits.

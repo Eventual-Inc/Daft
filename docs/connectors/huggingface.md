@@ -46,10 +46,10 @@ columns does not download image, audio, or video payloads.
 
 !!! warning "Warning"
 
-    The default `format="parquet"` path is currently limited to either public
-    datasets, or PRO/ENTERPRISE datasets, where Hugging Face will
+    `daft.read_huggingface()` is currently limited to WebDataset repositories
+    or datasets that Hugging Face
     [automatically convert](https://huggingface.co/docs/dataset-viewer/en/parquet)
-    the dataset to Parquet.
+    to Parquet. When `format=None`, Daft currently uses the Parquet reader.
 
     For other datasets, you will need to manually specify the path or glob pattern to the files you want to read, similar to how you would read from a local file system. See the next section for an example.
 
