@@ -28,7 +28,7 @@ impl<T: Task> LinearScheduler<T> {
     fn try_schedule_spread_task(&self, task: &T) -> Option<WorkerId> {
         self.worker_snapshots
             .iter()
-            .filter(|(_, worker)| worker.can_schedule_task(task))
+            .filter(|(_, worker)| worker.accepts_new_work() && worker.can_schedule_task(task))
             .max_by_key(|(_, worker)| {
                 (worker.available_num_cpus() + worker.available_num_gpus()) as usize
             })
@@ -43,6 +43,11 @@ impl<T: Task> LinearScheduler<T> {
     ) -> Option<WorkerId> {
         if let Some(worker) = self.worker_snapshots.get(worker_id)
             && worker.can_schedule_task(task)
+            // A draining worker is on its way out, so prefer somewhere else whenever
+            // we have that choice. Hard affinity has no alternative: refusing to place
+            // here would strand the task forever, and the worker is still alive and
+            // gets taken out of draining as soon as it picks the task up.
+            && (!soft || worker.accepts_new_work())
         {
             return Some(worker.worker_id.clone());
         }
@@ -69,8 +74,14 @@ impl<T: Task> LinearScheduler<T> {
             return false;
         }
 
-        // If there are no workers, we need to autoscale
-        if self.worker_snapshots.is_empty() {
+        // If no worker can take new work, we need to autoscale. Draining workers are on
+        // their way out and must not be counted as usable capacity; asking for a
+        // scale-up also makes the backend cancel the in-flight drains.
+        if !self
+            .worker_snapshots
+            .values()
+            .any(|worker| worker.accepts_new_work())
+        {
             return true;
         }
 
