@@ -858,3 +858,25 @@ def test_resolve_column_compression_unknown_key_raises(tmp_path):
     schema = pa.schema([("a", pa.int64())])
     with pytest.raises(ValueError, match="does_not_exist"):
         writer._resolve_column_compression(schema)
+
+
+def test_parquet_filter_on_pruned_column(tmp_path):
+    # Regression test for https://github.com/Eventual-Inc/Daft/issues/6757.
+    # Filtering on a column that is then dropped by a following select() must
+    # still work: the optimizer has to keep reading the filtered column even
+    # though it is pruned from the output projection.
+    path = tmp_path / "filter_pruned.parquet"
+    papq.write_table(
+        pa.table(
+            {
+                "a": list(range(10)),
+                "b": [i % 3 for i in range(10)],
+                "c": [f"row{i}" for i in range(10)],
+            }
+        ),
+        path,
+    )
+
+    res = daft.read_parquet(str(path)).where(col("b") < 1).select("a").collect()
+    assert res.column_names == ["a"]
+    assert res.to_pydict()["a"] == [0, 3, 6, 9]
