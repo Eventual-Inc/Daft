@@ -68,6 +68,80 @@ Any subsequent filter operations on the Daft `df` DataFrame object will be corre
     df.show()
     ```
 
+### Reading Changes Between Snapshots
+
+Use `daft.io.iceberg.read_iceberg_changes` to read the row-level changes made to a copy-on-write (COW) Iceberg table over a snapshot range. The start snapshot is exclusive and the end snapshot is inclusive, so the following query reads the range `(100, 200]`:
+
+=== "🐍 Python"
+
+    ```python
+    from daft.io.iceberg import read_iceberg_changes
+
+    changes = read_iceberg_changes(
+        table,
+        start_snapshot_id=100,
+        end_snapshot_id=200,
+    )
+    changes.show()
+    ```
+
+Omit `start_snapshot_id` to read from the beginning of the table's snapshot history, or omit `end_snapshot_id` to use the current snapshot. You can alternatively specify the boundaries with `start_timestamp_ms` and `end_timestamp_ms`, as UTC millisecond epoch integers. Snapshot IDs and timestamps cannot both be specified for the same boundary.
+
+The result contains the table's data columns, projected to the schema associated with the end snapshot, plus three changelog metadata columns:
+
+| Column | Daft type | Description |
+|--------|-----------|-------------|
+| `_change_type` | `String` | `INSERT` or `DELETE` by default; may also be `UPDATE_BEFORE` or `UPDATE_AFTER` when update pairing is enabled. |
+| `_change_ordinal` | `Int64` | Zero-based, query-relative ordinal of the snapshot that produced the change. All rows from the same snapshot have the same ordinal. |
+| `_commit_snapshot_id` | `Int64` | Iceberg snapshot ID that produced the change. |
+
+Rows from data files removed by a commit are emitted as `DELETE`, and rows from added data files are emitted as `INSERT`. The data columns contain the actual deleted or inserted row values. When a COW operation rewrites an entire data file, Daft removes unchanged carryover rows from that rewrite.
+
+#### Computing Updates
+
+Iceberg does not store an explicit row-level `UPDATE` event. Daft can optionally infer updates by pairing a `DELETE` followed by an `INSERT` with the same identifier:
+
+=== "🐍 Python"
+
+    ```python
+    changes = read_iceberg_changes(
+        table,
+        start_snapshot_id=100,
+        end_snapshot_id=200,
+        compute_updates=True,
+        identifier_columns=["id"],
+    )
+    ```
+
+The deleted row becomes `UPDATE_BEFORE` and contains the old values; the inserted row becomes `UPDATE_AFTER` and contains the new values. If `identifier_columns` is omitted, Daft uses the identifier fields declared by the end snapshot's Iceberg schema.
+
+Pairing may cross snapshot ordinals because some writers represent a logical update as a delete/overwrite commit followed by an append commit. This is an inference based on identifier continuity: an independent delete followed later by an insert with the same identifier can also be classified as an update. Keep the default `compute_updates=False` when you need the unambiguous `DELETE`/`INSERT` stream.
+
+#### Computing Net Changes
+
+Use `net_changes=True` to cancel identical row changes across the complete requested range:
+
+=== "🐍 Python"
+
+    ```python
+    changes = read_iceberg_changes(
+        table,
+        start_snapshot_id=100,
+        end_snapshot_id=200,
+        net_changes=True,
+    )
+    ```
+
+For example, a row inserted and then deleted within the range produces no output. `net_changes=True` and `compute_updates=True` are mutually exclusive.
+
+#### Limitations
+
+- Changelog reads currently support only copy-on-write tables. A scanned range that references position or equality delete files is rejected rather than producing an incomplete merge-on-read changelog.
+- `compute_updates` requires identifier columns that uniquely identify logical rows.
+- Historical files are matched to the end snapshot's schema by Iceberg field ID. Compatible renames, optional field additions, type promotions, and nested schema evolution are supported; incompatible or ambiguous schemas are rejected.
+- Fields requiring Iceberg `initial_default` materialization are not yet supported when a historical file does not contain that field.
+- `read_iceberg_changes` requires PyIceberg 0.11.0 or newer.
+
 ### Writing to a Table
 
 To write to an Apache Iceberg table, use the [`df.write_iceberg()`][daft.DataFrame.write_iceberg] method.
@@ -466,7 +540,7 @@ column's value (identity) or use a *partition transform* to derive a partition v
 
 7. **Does Daft support time travel queries?**
 
-    *Daft supports reading by snapshot id, and snapshot slices are on the roadmap*.
+    *Daft supports reading a table at a snapshot ID and reading COW row changes over a snapshot or timestamp range with `daft.io.iceberg.read_iceberg_changes`.*
 
 8. **Which complex data types does Daft support in Iceberg tables?**
 
