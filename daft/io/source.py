@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from daft.daft import ParquetSourceConfig, PyDataSourceTask, StorageConfig
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Iterator
+    from collections.abc import AsyncIterator, Iterator, Mapping
 
     from daft.dataframe import DataFrame
     from daft.io.clustering import ClusteringKeys
@@ -143,6 +143,43 @@ class DataSourceTask(ABC):
     def get_micro_partitions(self) -> Iterator[MicroPartition]:
         """Deprecated: override read instead."""
         raise NotImplementedError
+
+    def stats(self) -> Mapping[str, int]:
+        """Returns cumulative I/O counters for this task.
+
+        Override this to report I/O statistics for the scan node that executes
+        this task. The engine calls it after each record batch yielded by
+        :meth:`read` and once more after ``read`` completes, so counters must be
+        cumulative (monotonically non-decreasing) for the lifetime of the task.
+        The engine folds the deltas between calls into the scan operator's
+        runtime stats, which are delivered to subscribers attached with
+        ``daft.attach_subscriber`` as ``Stats`` events.
+
+        Recognized keys:
+
+        - ``"bytes.read"``: number of bytes read from the underlying storage.
+          Reported as the scan node's ``bytes.read`` stat, the same counter the
+          native Parquet/CSV/JSON readers populate.
+        - ``"requests"``: number of I/O requests issued (e.g. HTTP GETs). Tracked
+          alongside ``bytes.read`` in the scan task's I/O stats.
+
+        Unknown keys are ignored. The default implementation reports nothing.
+
+        Example:
+            >>> class MyTask(DataSourceTask):
+            ...     def __init__(self, path):
+            ...         self._path = path
+            ...         self._bytes_read = 0
+            ...
+            ...     async def read(self):
+            ...         data = await fetch(self._path)
+            ...         self._bytes_read += len(data)
+            ...         yield to_record_batch(data)
+            ...
+            ...     def stats(self):
+            ...         return {"bytes.read": self._bytes_read}
+        """
+        return {}
 
     @staticmethod
     def parquet(

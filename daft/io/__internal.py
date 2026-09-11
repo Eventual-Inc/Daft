@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, TypeVar
 from daft.event_loop import get_or_init_event_loop
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Iterator
+    from collections.abc import AsyncIterator, Iterator, Mapping
 
     from daft.daft import PyRecordBatch
     from daft.io.source import DataSourceTask
@@ -57,9 +57,35 @@ def _drain_async_iter(async_iter: AsyncIterator[_T]) -> Iterator[_T]:
         yield item
 
 
+class _TaskRecordBatchIterator:
+    """Iterator over a task's record batches that also exposes the task's I/O stats.
+
+    The Rust executor polls ``stats()`` after each batch and once the iterator is
+    exhausted, folding the deltas into the scan node's runtime stats so that a
+    Python ``DataSourceTask`` reports ``bytes.read`` the same way native readers do.
+    """
+
+    __slots__ = ("_inner", "_task")
+
+    def __init__(self, task: DataSourceTask) -> None:
+        self._task = task
+        self._inner = (rb._recordbatch for rb in _drain_async_iter(task.read()))
+
+    def __iter__(self) -> _TaskRecordBatchIterator:
+        return self
+
+    def __next__(self) -> PyRecordBatch:
+        return next(self._inner)
+
+    def stats(self) -> Mapping[str, int]:
+        return self._task.stats()
+
+
 def _get_record_batches(task: DataSourceTask) -> Iterator[PyRecordBatch]:
     """Called by the Rust python_factory_func_scan_task at execution time.
 
     The task instance has been pickled then sent to this stateless method.
+    The returned iterator exposes a ``stats()`` method that the executor uses
+    to fold the task's I/O counters into the scan operator's runtime stats.
     """
-    yield from (rb._recordbatch for rb in _drain_async_iter(task.read()))
+    return _TaskRecordBatchIterator(task)

@@ -83,7 +83,7 @@ pub(crate) async fn read_scan_task(
         #[cfg(feature = "python")]
         SourceConfig::Database(cfg) => read_database(scan_task, cfg).await,
         #[cfg(feature = "python")]
-        SourceConfig::PythonFunction { .. } => read_python_function(scan_task).await,
+        SourceConfig::PythonFunction { .. } => read_python_function(scan_task, io_stats).await,
     }
 }
 
@@ -384,8 +384,14 @@ async fn read_database(
 #[cfg(feature = "python")]
 async fn read_python_function(
     scan_task: &Arc<ScanTask>,
+    io_stats: IOStatsRef,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
-    let iter = daft_micropartition::python::read_pyfunc_into_table_iter(scan_task.clone())?;
+    // The Python iterator may expose a `stats()` method (see `daft.io.__internal`); its
+    // `bytes.read` is folded into `io_stats`, which backs the scan node's `bytes.read` stat.
+    let iter = daft_micropartition::python::read_pyfunc_into_table_iter(
+        scan_task.clone(),
+        Some(io_stats),
+    )?;
     let stream = futures::stream::iter(iter.map(|r| r.map_err(|e| e.into())));
     Ok(Box::pin(stream))
 }

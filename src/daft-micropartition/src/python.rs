@@ -13,7 +13,7 @@ use daft_dsl::{
     expr::bound_expr::{BoundAggExpr, BoundExpr},
     python::PyExpr,
 };
-use daft_io::{IOStatsContext, python::IOConfig};
+use daft_io::{IOStatsContext, IOStatsRef, python::IOConfig};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::ParquetSchemaInferenceOptions;
 use daft_recordbatch::{RecordBatch, python::PyRecordBatch};
@@ -1153,8 +1153,96 @@ pub fn read_sql_into_py_table(
         .extract()?)
 }
 
+/// Stat keys a Python factory-function iterator may report through its optional `stats()` method.
+///
+/// The values are cumulative counters; [`PyIterStatsPoller`] folds the deltas between polls into
+/// the scan task's [`IOStatsContext`] so that Python-backed sources surface `bytes.read` on their
+/// scan node exactly like the native readers.
+const PY_STATS_BYTES_READ_KEY: &str = "bytes.read";
+const PY_STATS_REQUESTS_KEY: &str = "requests";
+
+/// Polls the optional `stats()` method on a Python iterator returned by a factory function and
+/// records the deltas since the previous poll into `io_stats`.
+///
+/// Iterators without a `stats` attribute are a no-op, which keeps existing factory functions
+/// (e.g. `daft.io._generator`) unaffected.
+struct PyIterStatsPoller {
+    stats_fn: Option<pyo3::Py<pyo3::PyAny>>,
+    io_stats: IOStatsRef,
+    last_bytes_read: u64,
+    last_requests: u64,
+}
+
+impl PyIterStatsPoller {
+    fn new(py: Python<'_>, iter: &Bound<'_, PyAny>, io_stats: IOStatsRef) -> PyResult<Self> {
+        let stats_fn = match iter.getattr(pyo3::intern!(py, "stats")) {
+            Ok(attr) if attr.is_callable() => Some(attr.unbind()),
+            Ok(_) => None,
+            Err(e) if e.is_instance_of::<pyo3::exceptions::PyAttributeError>(py) => None,
+            Err(e) => return Err(e),
+        };
+        Ok(Self {
+            stats_fn,
+            io_stats,
+            last_bytes_read: 0,
+            last_requests: 0,
+        })
+    }
+
+    /// Calls `stats()` (if present) and folds the growth since the last poll into `io_stats`.
+    fn poll(&mut self, py: Python<'_>) -> PyResult<()> {
+        let Some(stats_fn) = self.stats_fn.as_ref() else {
+            return Ok(());
+        };
+        let stats = stats_fn.bind(py).call0()?;
+        if stats.is_none() {
+            return Ok(());
+        }
+        let stats = stats.cast::<pyo3::types::PyMapping>()?;
+
+        let bytes_read = Self::get_counter(stats, PY_STATS_BYTES_READ_KEY)?;
+        let delta = bytes_read.saturating_sub(self.last_bytes_read);
+        if delta > 0 {
+            self.io_stats.mark_bytes_read(delta as usize);
+        }
+        self.last_bytes_read = self.last_bytes_read.max(bytes_read);
+
+        let requests = Self::get_counter(stats, PY_STATS_REQUESTS_KEY)?;
+        let delta = requests.saturating_sub(self.last_requests);
+        if delta > 0 {
+            self.io_stats.mark_get_requests(delta as usize);
+        }
+        self.last_requests = self.last_requests.max(requests);
+        Ok(())
+    }
+
+    /// Reads a non-negative integer counter from `stats`, treating a missing or `None` key as 0.
+    fn get_counter(stats: &Bound<'_, pyo3::types::PyMapping>, key: &str) -> PyResult<u64> {
+        if !stats.contains(key)? {
+            return Ok(0);
+        }
+        let value = stats.get_item(key)?;
+        if value.is_none() {
+            return Ok(0);
+        }
+        let value: i128 = value.extract().map_err(|_| {
+            pyo3::exceptions::PyTypeError::new_err(format!(
+                "DataSourceTask.stats()[{key:?}] must be an int, got {}",
+                value
+                    .get_type()
+                    .name()
+                    .map(|n| n.to_string())
+                    .unwrap_or_default()
+            ))
+        })?;
+        // Clamp negative values to zero rather than erroring on a bogus counter.
+        Ok(u64::try_from(value.max(0)).unwrap_or(u64::MAX))
+    }
+}
+
 pub fn read_pyfunc_into_table_iter(
     scan_task: ScanTaskRef,
+    io_stats: Option<IOStatsRef>,
 ) -> crate::Result<impl Iterator<Item = crate::Result<RecordBatch>>> {
     let table_iterators = scan_task.sources.iter().map(|source| {
         // Call Python function to create an Iterator (Grabs the GIL and then releases it)
@@ -1164,14 +1252,19 @@ pub fn read_pyfunc_into_table_iter(
                 func_name,
                 func_args,
             } => {
-                Python::attach(|py| {
+                Python::attach(|py| -> crate::Result<(pyo3::Py<pyo3::PyAny>, Option<PyIterStatsPoller>)> {
                     let func = py.import(module.as_str())
                         .unwrap_or_else(|_| panic!("Cannot import factory function from module {module}"))
                         .getattr(func_name.as_str())
                         .unwrap_or_else(|_| panic!("Cannot find function {func_name} in module {module}"));
-                    func.call(func_args.to_pytuple(py).with_context(|_| PyIOSnafu)?, None)
-                        .with_context(|_| PyIOSnafu)
-                        .map(Into::<pyo3::Py<pyo3::PyAny>>::into)
+                    let iter = func.call(func_args.to_pytuple(py).with_context(|_| PyIOSnafu)?, None)
+                        .with_context(|_| PyIOSnafu)?;
+                    let poller = io_stats
+                        .clone()
+                        .map(|io_stats| PyIterStatsPoller::new(py, &iter, io_stats))
+                        .transpose()
+                        .with_context(|_| PyIOSnafu)?;
+                    Ok((iter.unbind(), poller))
                 })
             },
             _ => unreachable!("PythonFunction file format must be paired with PythonFactoryFunction scan sources"),
@@ -1191,10 +1284,11 @@ pub fn read_pyfunc_into_table_iter(
     };
     let res = table_iterators
         .into_iter()
-        .flat_map(move |iter| {
+        .flat_map(move |(iter, mut poller)| {
             std::iter::from_fn(move || {
                 Python::attach(|py| {
-                    iter.cast_bound::<pyo3::types::PyIterator>(py)
+                    let next = iter
+                        .cast_bound::<pyo3::types::PyIterator>(py)
                         .expect("Function must return an iterator of tables")
                         .clone()
                         .next()
@@ -1206,7 +1300,16 @@ pub fn read_pyfunc_into_table_iter(
                                         .record_batch
                                 })
                                 .with_context(|_| PyIOSnafu)
-                        })
+                        });
+                    // Fold the iterator's I/O counters into the scan task's stats after every
+                    // batch (so long-running tasks report progressively) and once more after
+                    // exhaustion (so the final totals are captured).
+                    if let Some(poller) = poller.as_mut()
+                        && let Err(e) = poller.poll(py).with_context(|_| PyIOSnafu)
+                    {
+                        return Some(Err(e));
+                    }
+                    next
                 })
             })
         })

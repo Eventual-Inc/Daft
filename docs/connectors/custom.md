@@ -247,6 +247,40 @@ class TimeSeriesSource(DataSource):
     genuinely non-overlapping range of values for the declared columns. Incorrectly overriding
     `get_clustering_keys()` will likely lead to incorrect results.
 
+### Optional: Reporting I/O Statistics
+
+Daft's native readers (Parquet, CSV, JSON, ...) report how many bytes they read, and that number
+surfaces as the `bytes.read` stat on the scan node in `Stats` events delivered to any
+`daft.subscribers.Subscriber` attached with `daft.attach_subscriber`. A Python
+[`DataSourceTask`](../api/io.md#daft.io.source.DataSourceTask) reports `0` by default, because
+Daft cannot see the I/O it performs.
+
+Override [`DataSourceTask.stats()`](../api/io.md#daft.io.source.DataSourceTask.stats) to fill that
+gap. Daft calls it after every record batch yielded by `read()` and once more after `read()`
+completes, so the returned counters must be **cumulative** for the lifetime of the task. Daft folds
+the growth between calls into the scan operator's runtime stats, so a long-running task reports
+progressively rather than only at the end.
+
+```python
+class TextFileDataSourceTask(DataSourceTask):
+    def __init__(self, file_path: str):
+        self._file_path = file_path
+        self._bytes_read = 0
+
+    async def read(self) -> AsyncIterator[RecordBatch]:
+        with open(self._file_path, "rb") as f:
+            data = f.read()
+        self._bytes_read += len(data)
+        yield RecordBatch.from_pydict({"line": data.decode().splitlines()})
+
+    def stats(self) -> dict[str, int]:
+        return {"bytes.read": self._bytes_read}
+```
+
+Recognized keys are `"bytes.read"` (bytes read from storage, surfaced as the scan node's
+`bytes.read` stat) and `"requests"` (number of I/O requests issued). Unknown keys are ignored, and
+the default implementation returns an empty mapping, so existing sources are unaffected.
+
 ## Writing to a Custom Data Sink
 
 ### Step 1: Implement the `DataSink` Interface
