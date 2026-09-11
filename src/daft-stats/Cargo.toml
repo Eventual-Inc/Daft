@@ -6,6 +6,9 @@ daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 serde = {workspace = true}
 snafu = {workspace = true}
 
+[dev-dependencies]
+daft-functions-utf8 = {path = "../daft-functions-utf8", default-features = false}
+
 [features]
 python = ["common-error/python", "daft-core/python", "daft-dsl/python", "daft-recordbatch/python"]
 
