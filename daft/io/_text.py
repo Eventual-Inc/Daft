@@ -16,7 +16,7 @@ def read_text(
     skip_blank_lines: bool = True,
     whole_text: bool = False,
     file_path_column: str | None = None,
-    hive_partitioning: bool = False,
+    hive_partitioning: bool | None = None,
     io_config: IOConfig | None = None,
     _buffer_size: int | None = None,
     _chunk_size: int | None = None,
@@ -32,8 +32,10 @@ def read_text(
             When ``False``, each line in the file becomes a row in the DataFrame.
             When ``True``, the entire content of each file becomes a single row in the DataFrame.
         file_path_column: Include the source path(s) as a column with this name. Defaults to ``None``.
-        hive_partitioning: Whether to infer hive-style partitions from file paths and include them as
-            columns in the DataFrame. Defaults to ``False``.
+                hive_partitioning: Whether to infer Hive-style partitions from file paths and
+            include them as columns in the DataFrame. If ``None``, automatically detects
+            Hive partitioning from the expanded file paths. ``True`` forces Hive
+            partitioning and ``False`` disables it. Defaults to ``None``.
         io_config: IO configuration for the native downloader.
         _buffer_size: Optional tuning parameter for the underlying streaming reader buffer size (bytes).
         _chunk_size: Optional tuning parameter for the underlying streaming reader chunk size (rows).

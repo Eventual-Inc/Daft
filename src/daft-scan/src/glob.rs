@@ -148,6 +148,63 @@ fn run_glob_parallel(
     Ok(iterator)
 }
 
+pub(crate) async fn detect_hive_partitioning(
+    glob_paths: &[String],
+    io_client: Arc<IOClient>,
+    io_stats: Option<IOStatsRef>,
+    file_format: FileFormat,
+    skip_glob: bool,
+) -> DaftResult<bool> {
+    let mut expected_keys = None;
+
+    for glob_path in glob_paths {
+        if skip_glob {
+            let partitions = parse_hive_partitioning(glob_path)?;
+
+            if partitions.is_empty() {
+                return Ok(false);
+            }
+
+            let keys = partitions.keys().cloned().collect::<Vec<_>>();
+
+            match &expected_keys {
+                Some(expected) if expected != &keys => return Ok(false),
+                None => expected_keys = Some(keys),
+                _ => {}
+            }
+        } else {
+            let mut stream = run_glob(
+                glob_path.clone(),
+                None,
+                io_client.clone(),
+                io_stats.clone(),
+                file_format,
+            )
+            .await?;
+
+            while let Some(metadata) = stream.next().await {
+                let FileMetadata { filepath, .. } = metadata?;
+
+                let partitions = parse_hive_partitioning(&filepath)?;
+
+                if partitions.is_empty() {
+                    return Ok(false);
+                }
+
+                let keys = partitions.keys().cloned().collect::<Vec<_>>();
+
+                match &expected_keys {
+                    Some(expected) if expected != &keys => return Ok(false),
+                    None => expected_keys = Some(keys),
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    Ok(expected_keys.is_some())
+}
+
 #[allow(clippy::too_many_arguments)]
 impl GlobScanOperator {
     pub async fn try_new(
@@ -157,7 +214,7 @@ impl GlobScanOperator {
         infer_schema: bool,
         user_provided_schema: Option<SchemaRef>,
         file_path_column: Option<String>,
-        hive_partitioning: bool,
+        hive_partitioning: Option<bool>,
         skip_glob: bool,
     ) -> DaftResult<Self> {
         let first_glob_path = match glob_paths.first() {
@@ -498,6 +555,20 @@ impl GlobScanOperator {
             };
 
             (schema, None, first_filepath)
+        };
+
+        let hive_partitioning = match hive_partitioning {
+            Some(value) => value,
+            None => {
+                detect_hive_partitioning(
+                    &glob_paths,
+                    io_client.clone(),
+                    Some(io_stats.clone()),
+                    file_format,
+                    skip_glob,
+                )
+                .await?
+            }
         };
 
         // If hive partitioning is set, create partition fields from the hive partitions.

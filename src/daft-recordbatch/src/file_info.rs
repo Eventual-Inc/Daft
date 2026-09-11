@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use common_py_serde::impl_bincode_py_state_serialization;
 #[cfg(feature = "python")]
 use pyo3::{PyResult, Python, exceptions::PyKeyError, pyclass, pymethods};
