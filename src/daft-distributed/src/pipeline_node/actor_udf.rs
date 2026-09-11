@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftResult;
 use common_metrics::{
@@ -24,7 +24,7 @@ use super::{
 use crate::{
     pipeline_node::{DistributedPipelineNode, TaskBuilderStream},
     plan::{PlanConfig, PlanExecutionContext},
-    scheduling::task::SwordfishTaskBuilder,
+    scheduling::task::{SwordfishTaskBuilder, TaskID},
     statistics::stats::RuntimeStatsRef,
     utils::channel::{Sender, create_channel},
 };
@@ -32,22 +32,33 @@ use crate::{
 #[derive(Debug)]
 enum UDFActors {
     Uninitialized(BoundExpr, UDFProperties),
-    Initialized { actors: Vec<PyObjectWrapper> },
+    Initialized { pool: PyObjectWrapper },
+}
+
+struct UDFActorHandleLease {
+    pool: PyObjectWrapper,
+}
+
+impl Drop for UDFActorHandleLease {
+    fn drop(&mut self) {
+        UDFActors::release_actor_handles(self.pool.clone());
+    }
 }
 
 impl UDFActors {
     // TODO: This is a blocking call, and should be done asynchronously.
-    async fn initialize_actors(
+    async fn initialize_actor_pool(
         udf_expr: &BoundExpr,
         udf_properties: &UDFProperties,
         actor_ready_timeout: usize,
-    ) -> DaftResult<Vec<PyObjectWrapper>> {
+    ) -> DaftResult<PyObjectWrapper> {
         let py_expr = PyExpr {
             expr: udf_expr.inner().clone(),
         };
         let num_actors = udf_properties
             .concurrency
             .expect("ActorUDF should have concurrency specified");
+        let min_actors = udf_properties.min_concurrency.unwrap_or(NonZeroUsize::MIN);
         let (gpu_request, cpu_request, memory_request) = match &udf_properties.resource_request {
             Some(resource_request) => (
                 resource_request.num_gpus().unwrap_or(0.0),
@@ -59,63 +70,165 @@ impl UDFActors {
 
         let actor_name = udf_properties.name.clone();
         let ray_options = udf_properties.ray_options.clone();
-        let result =
-            common_runtime::python::execute_python_coroutine::<_, Vec<Py<PyAny>>>(move |py| {
-                let ray_actor_pool_udf_module =
-                    py.import(pyo3::intern!(py, "daft.execution.ray_actor_pool_udf"))?;
-                // Convert RuntimePyObject option to a Python object (dict) or None
-                let py_ray_options = match &ray_options {
-                    Some(ro) => ro.as_ref().clone_ref(py),
-                    None => py.None(),
-                };
-                ray_actor_pool_udf_module.call_method1(
-                    pyo3::intern!(py, "start_udf_actors"),
-                    (
-                        py_expr,
-                        num_actors,
-                        gpu_request,
-                        cpu_request,
-                        memory_request,
-                        py_ray_options,
-                        actor_ready_timeout,
-                        actor_name,
-                    ),
-                )
-            })
-            .await?;
+        let result = common_runtime::python::execute_python_coroutine::<_, Py<PyAny>>(move |py| {
+            let ray_actor_pool_udf_module =
+                py.import(pyo3::intern!(py, "daft.execution.ray_actor_pool_udf"))?;
+            // Convert RuntimePyObject option to a Python object (dict) or None
+            let py_ray_options = match &ray_options {
+                Some(ro) => ro.as_ref().clone_ref(py),
+                None => py.None(),
+            };
+            ray_actor_pool_udf_module.call_method1(
+                pyo3::intern!(py, "start_udf_actor_pool"),
+                (
+                    py_expr,
+                    min_actors.get(),
+                    num_actors.get(),
+                    gpu_request,
+                    cpu_request,
+                    memory_request,
+                    py_ray_options,
+                    actor_ready_timeout,
+                    actor_name,
+                ),
+            )
+        })
+        .await?;
 
-        let actors = result
-            .into_iter()
-            .map(|py_object| PyObjectWrapper(Arc::new(py_object)))
-            .collect::<Vec<_>>();
-        Ok(actors)
+        Ok(PyObjectWrapper(Arc::new(result)))
     }
 
-    async fn get_actors(&mut self, actor_ready_timeout: usize) -> DaftResult<Vec<PyObjectWrapper>> {
+    async fn get_actors(
+        &mut self,
+        actor_ready_timeout: usize,
+        pending_tasks: usize,
+    ) -> DaftResult<Vec<PyObjectWrapper>> {
         match self {
             Self::Uninitialized(projection, udf_properties) => {
-                let actors =
-                    Self::initialize_actors(projection, udf_properties, actor_ready_timeout)
+                let pool =
+                    Self::initialize_actor_pool(projection, udf_properties, actor_ready_timeout)
                         .await?;
-                *self = Self::Initialized {
-                    actors: actors.clone(),
-                };
+                let actors = Self::get_actors_from_pool(pool.clone(), pending_tasks).await?;
+                *self = Self::Initialized { pool };
                 Ok(actors)
             }
-            Self::Initialized { actors } => Ok(actors.clone()),
+            Self::Initialized { pool } => {
+                Self::get_actors_from_pool(pool.clone(), pending_tasks).await
+            }
         }
+    }
+
+    async fn get_leased_actors(
+        &mut self,
+        actor_ready_timeout: usize,
+        pending_tasks: usize,
+    ) -> DaftResult<(Vec<PyObjectWrapper>, UDFActorHandleLease)> {
+        match self {
+            Self::Uninitialized(projection, udf_properties) => {
+                let pool =
+                    Self::initialize_actor_pool(projection, udf_properties, actor_ready_timeout)
+                        .await?;
+                let actors = Self::get_leased_actors_from_pool(pool.clone(), pending_tasks).await?;
+                let lease = UDFActorHandleLease { pool: pool.clone() };
+                *self = Self::Initialized { pool };
+                Ok((actors, lease))
+            }
+            Self::Initialized { pool } => {
+                let actors = Self::get_leased_actors_from_pool(pool.clone(), pending_tasks).await?;
+                let lease = UDFActorHandleLease { pool: pool.clone() };
+                Ok((actors, lease))
+            }
+        }
+    }
+
+    async fn get_actors_from_pool(
+        pool: PyObjectWrapper,
+        pending_tasks: usize,
+    ) -> DaftResult<Vec<PyObjectWrapper>> {
+        Self::call_actor_handles_method(pool, pending_tasks, "get_actor_handles").await
+    }
+
+    async fn get_leased_actors_from_pool(
+        pool: PyObjectWrapper,
+        pending_tasks: usize,
+    ) -> DaftResult<Vec<PyObjectWrapper>> {
+        Self::call_actor_handles_method(pool, pending_tasks, "get_leased_actor_handles").await
+    }
+
+    async fn call_actor_handles_method(
+        pool: PyObjectWrapper,
+        pending_tasks: usize,
+        method_name: &'static str,
+    ) -> DaftResult<Vec<PyObjectWrapper>> {
+        let result =
+            common_runtime::python::execute_python_coroutine::<_, Vec<Py<PyAny>>>(move |py| {
+                let coroutine = pool.0.call_method1(py, method_name, (pending_tasks,))?;
+                Ok(coroutine.into_bound(py))
+            })
+            .await?;
+        Ok(result
+            .into_iter()
+            .map(|py_object| PyObjectWrapper(Arc::new(py_object)))
+            .collect::<Vec<_>>())
+    }
+
+    fn cleanup_retired_actors(&mut self) {
+        Python::attach(|py| {
+            if let Self::Initialized { pool, .. } = self
+                && let Err(e) = pool
+                    .0
+                    .call_method0(py, pyo3::intern!(py, "cleanup_retired_actors"))
+            {
+                eprintln!("Error cleaning up retired UDF actors: {:?}", e);
+            }
+        });
+    }
+
+    fn release_actor_handles(pool: PyObjectWrapper) {
+        Python::attach(|py| {
+            if let Err(e) = pool
+                .0
+                .call_method0(py, pyo3::intern!(py, "release_actor_handles"))
+            {
+                eprintln!("Error releasing UDF actor handles: {:?}", e);
+            }
+        });
+    }
+
+    async fn scale_down_to_min_if_initialized(&mut self) -> DaftResult<()> {
+        if let Self::Initialized { pool } = self {
+            Self::get_actors_from_pool(pool.clone(), 0).await?;
+        }
+        Ok(())
     }
 
     fn teardown(&mut self) {
         Python::attach(|py| {
-            if let Self::Initialized { actors, .. } = self {
-                for actor in actors {
-                    if let Err(e) = actor.0.call_method1(py, pyo3::intern!(py, "teardown"), ()) {
-                        eprintln!("Error tearing down actor: {:?}", e);
-                    }
-                }
+            if let Self::Initialized { pool, .. } = self
+                && let Err(e) = pool.0.call_method0(py, pyo3::intern!(py, "teardown"))
+            {
+                eprintln!("Error tearing down actor pool: {:?}", e);
             }
         });
+    }
+}
+
+impl Drop for UDFActors {
+    fn drop(&mut self) {
+        self.teardown();
+    }
+}
+
+impl UDFActors {
+    fn drain_completed_tasks(
+        running_tasks: &mut JoinSet<Result<TaskID, tokio::sync::oneshot::error::RecvError>>,
+    ) -> DaftResult<Option<bool>> {
+        while let Some(result) = running_tasks.try_join_next() {
+            if result?.is_err() {
+                return Ok(Some(false));
+            }
+        }
+        Ok(None)
     }
 }
 
@@ -179,17 +292,39 @@ impl ActorUDF {
     ) -> DaftResult<()> {
         let mut udf_actors =
             UDFActors::Uninitialized(self.udf_expr.clone(), self.udf_properties.clone());
+        // Start each UDF's min_concurrency before consuming upstream input.
+        // This gives downstream UDFs a chance to reserve their min actors before
+        // upstream UDFs consume all cluster resources with opportunistic
+        // above-min autoscaling.
+        udf_actors.get_actors(self.actor_ready_timeout, 0).await?;
 
         let mut running_tasks = JoinSet::new();
         while let Some(builder) = input_task_stream.next().await {
-            let actors = udf_actors.get_actors(self.actor_ready_timeout).await?;
+            if matches!(
+                UDFActors::drain_completed_tasks(&mut running_tasks)?,
+                Some(false)
+            ) {
+                break;
+            }
+            if running_tasks.is_empty() {
+                udf_actors.cleanup_retired_actors();
+            }
+
+            let pending_tasks = running_tasks.len() + 1;
+            let (actors, lease) = udf_actors
+                .get_leased_actors(self.actor_ready_timeout, pending_tasks)
+                .await?;
 
             let modified_builder = self.append_actor_udf_to_builder(builder, actors);
             let (builder_with_token, notify_token) = modified_builder.add_notify_token();
-            running_tasks.spawn(notify_token);
             if result_tx.send(builder_with_token).await.is_err() {
                 break;
             }
+            running_tasks.spawn(async move {
+                let result = notify_token.await;
+                drop(lease);
+                result
+            });
         }
         // Drop the sender so downstream BlockingSinks observe EOF and flush;
         // otherwise their notify_tokens (awaited below) never fire -> deadlock.
@@ -200,6 +335,8 @@ impl ActorUDF {
                 break;
             }
         }
+        udf_actors.scale_down_to_min_if_initialized().await?;
+        udf_actors.cleanup_retired_actors();
         // Only teardown actors after all tasks are finished.
         udf_actors.teardown();
         Ok(())
