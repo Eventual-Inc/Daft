@@ -483,10 +483,7 @@ impl ObjectSource for HFSource {
         use crate::object_store_glob::glob;
 
         let path = glob_path.parse::<HFPath>()?;
-        let glob_path = match &path {
-            HFPath::Hf(parts) if parts.repo_type == HFRepoType::Buckets => parts.to_string(),
-            _ => glob_path.to_string(),
-        };
+        let glob_path = path.canonical_glob_path(glob_path);
 
         // Ensure fanout_limit is None because HTTP ObjectSource does not support prefix listing
         let fanout_limit = None;
@@ -497,19 +494,10 @@ impl ObjectSource for HFSource {
                 glob(self, &glob_path, fanout_limit, page_size, limit, io_stats).await
             }
             HFPath::Hf(parts) => {
-                // Huggingface has a special API for parquet files
-                // So we'll try to use that API to get the parquet files
-                // This allows us compatibility with datasets that are not natively uploaded as parquet, such as image datasets
-
-                // We only want to use this api for datasets, not specific files
-                // such as
-                // hf://datasets/user/repo
-                // but not
-                // hf://datasets/user/repo/file.parquet
-                // Buckets are plain object storage with no parquet-conversion API, so they
-                // always go through regular globbing.
+                // The Parquet conversion API accepts unpinned dataset roots.
                 if file_format == Some(FileFormat::Parquet)
-                    && parts.repo_type != HFRepoType::Buckets
+                    && parts.repo_type == HFRepoType::Datasets
+                    && parts.revision == "main"
                 {
                     let res =
                         try_parquet_api(parts, limit, io_stats.clone(), &self.http_source.client)
