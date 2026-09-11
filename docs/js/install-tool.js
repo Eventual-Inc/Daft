@@ -1,10 +1,13 @@
 // Daft Installation Tool JavaScript.
-document.addEventListener('DOMContentLoaded', function() {
-  // Wait a bit to ensure the DOM is fully loaded.
-  setTimeout(function() {
+if (typeof document$ !== 'undefined') {
+  document$.subscribe(function() {
     initializeInstallTool();
-  }, 100);
-});
+  });
+} else {
+  document.addEventListener('DOMContentLoaded', function() {
+    initializeInstallTool();
+  });
+}
 
 function initializeInstallTool() {
   const checkboxes = document.querySelectorAll('#daft-install-tool input[type="checkbox"]');
