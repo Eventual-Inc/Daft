@@ -143,11 +143,24 @@ fn replace_impl(
     let arr_iter = create_broadcasted_str_iter(arr, expected_size);
     let replacement_iter = create_broadcasted_str_iter(replacement, expected_size);
 
-    // Translate a broadcast scalar replacement once rather than per row.
+    // Translate a broadcast scalar replacement once, then repeat a borrow of it.
+    // Repeating `Cow::Borrowed` copies only the fat pointer per row; repeating the
+    // `Option<Cow>` directly would clone the translated `String` per row.
     let broadcast_template = if replacement.len() == 1 {
         replacement.get(0).map(regex_replace_posix_groups)
     } else {
         None
+    };
+    let templates: Box<dyn Iterator<Item = Option<Cow<str>>>> = match broadcast_template.as_deref()
+    {
+        Some(template) => Box::new(std::iter::repeat_n(
+            Some(Cow::Borrowed(template)),
+            expected_size,
+        )),
+        None => Box::new(
+            create_broadcasted_str_iter(replacement, expected_size)
+                .map(|r| r.map(regex_replace_posix_groups)),
+        ),
     };
 
     let result = match (regex, pattern.len()) {
@@ -155,20 +168,10 @@ fn replace_impl(
             let regex_val = regex::Regex::new(pattern.get(0).unwrap());
             let regex = regex_val.as_ref().map_err(|e| e.clone());
             let regex_iter = std::iter::repeat_n(Some(regex), expected_size);
-            let templates = translated_replacement_iter(
-                replacement,
-                broadcast_template.as_deref(),
-                expected_size,
-            );
             regex_replace(arr_iter, regex_iter, templates, arr.name())?
         }
         (true, _) => {
             let regex_iter = pattern.into_iter().map(|pat| pat.map(regex::Regex::new));
-            let templates = translated_replacement_iter(
-                replacement,
-                broadcast_template.as_deref(),
-                expected_size,
-            );
             regex_replace(arr_iter, regex_iter, templates, arr.name())?
         }
         (false, _) => {
@@ -256,25 +259,6 @@ fn regex_replace_posix_groups(replacement: &str) -> Cow<'_, str> {
         }
     }
     Cow::Owned(translated)
-}
-
-/// Per-row iterator of already-translated replacement templates: a borrow of
-/// `broadcast_template` when set, otherwise translated as each row is consumed.
-fn translated_replacement_iter<'a>(
-    replacement: &'a Utf8Array,
-    broadcast_template: Option<&'a str>,
-    expected_size: usize,
-) -> Box<dyn Iterator<Item = Option<Cow<'a, str>>> + 'a> {
-    match broadcast_template {
-        Some(template) => Box::new(std::iter::repeat_n(
-            Some(Cow::Borrowed(template)),
-            expected_size,
-        )),
-        None => Box::new(
-            create_broadcasted_str_iter(replacement, expected_size)
-                .map(|r| r.map(regex_replace_posix_groups)),
-        ),
-    }
 }
 
 fn regex_replace<'a, R: Borrow<regex::Regex>>(
