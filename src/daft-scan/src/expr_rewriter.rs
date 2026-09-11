@@ -6,7 +6,7 @@ use daft_core::prelude::Operator;
 use daft_dsl::{
     Column, Expr, ExprRef, ResolvedColumn,
     common_treenode::{Transformed, TreeNode, TreeNodeRecursion},
-    functions::{FunctionExpr, partitioning},
+    functions::partitioning,
     null_lit, resolved_col,
 };
 
@@ -105,14 +105,6 @@ pub fn rewrite_predicate_for_partitioning(
         let mut any_non_identity_part_keys = false;
         let mut has_udf = false;
         e.apply(&mut |e: &ExprRef| match e.as_ref() {
-            #[cfg(feature = "python")]
-            Expr::Function {
-                func: FunctionExpr::Python(..),
-                ..
-            } => {
-                has_udf = true;
-                Ok(TreeNodeRecursion::Stop)
-            }
             Expr::ScalarFn(_) => {
                 // TODO: can we support scalar functions here?
                 has_udf = true;

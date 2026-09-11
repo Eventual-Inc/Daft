@@ -16,14 +16,11 @@ from daft.daft import (
     ImageFormat,
     ImageMode,
     ImageProperty,
-    ResourceRequest,
-    initialize_udfs,
     resolved_col,
     unresolved_col,
 )
 from daft.daft import PyExpr as _PyExpr
 from daft.daft import lit as _lit
-from daft.daft import udf as _udf
 from daft.datatype import DataType, DataTypeLike, MediaType, TimeUnit
 from daft.expressions.testing import expr_structurally_equal
 from daft.logical.schema import Field, Schema
@@ -31,8 +28,6 @@ from daft.logical.schema import Field, Schema
 if TYPE_CHECKING:
     from daft.dependencies import pc
     from daft.io import IOConfig
-    from daft.series import Series
-    from daft.udf.legacy import BoundUDFArgs, InitArgsType, UninitializedUdf
     from daft.window import Window
 
     ENCODING_CHARSET = Literal["utf-8", "utf8", "base64", "hex"]
@@ -172,36 +167,6 @@ class Expression:
     def as_py(self) -> Any:
         """Returns this literal expression as a python value, raises a ValueError if this is not a literal expression."""
         return self._expr.as_py()
-
-    @staticmethod
-    def udf(
-        name: builtins.str,
-        inner: UninitializedUdf,
-        bound_args: BoundUDFArgs,
-        expressions: builtins.list[Expression],
-        return_dtype: DataType,
-        init_args: InitArgsType,
-        resource_request: ResourceRequest | None,
-        batch_size: int | None,
-        concurrency: int | None,
-        use_process: bool | None,
-        ray_options: dict[builtins.str, builtins.str] | None = None,
-    ) -> Expression:
-        return Expression._from_pyexpr(
-            _udf(
-                name,
-                inner,
-                bound_args,
-                [e._expr for e in expressions],
-                return_dtype._dtype,
-                init_args,
-                resource_request,
-                batch_size,
-                concurrency,
-                use_process,
-                ray_options,
-            )
-        )
 
     def unnest(self) -> Expression:
         """Flatten the fields of a struct expression into columns in a DataFrame.
@@ -1245,28 +1210,15 @@ class Expression:
             (Showing first 3 of 3 rows)
 
         """
-        from daft.udf import UDF
+        from daft.series import Series
+        from daft.udf import func as udf
 
-        inferred_return_dtype = DataType._infer(return_dtype)
+        # Use a batch UDF so apply remains usable in aggregations.
+        @udf.batch(return_dtype=DataType._infer(return_dtype))
+        def batch_apply(series: Series) -> list[Any]:
+            return [func(x) for x in series]
 
-        def batch_func(self_series: Series) -> list[Any]:
-            return [func(x) for x in self_series]
-
-        name = getattr(func, "__module__", "")
-        if name:
-            name = name + "."
-        if hasattr(func, "__qualname__"):
-            name = name + getattr(func, "__qualname__")
-        elif hasattr(func, "__class__"):
-            name = name + func.__class__.__name__
-        else:
-            name = name + func.__name__
-
-        return UDF(
-            inner=batch_func,
-            name=name,
-            return_dtype=inferred_return_dtype,
-        )(self)
+        return batch_apply(self)
 
     def is_null(self) -> Expression:
         """Checks if values in the Expression are Null (a special value indicating missing data).
@@ -1567,9 +1519,6 @@ class Expression:
 
     def _input_mapping(self) -> builtins.str | None:
         return self._expr._input_mapping()
-
-    def _initialize_udfs(self) -> Expression:
-        return Expression._from_pyexpr(initialize_udfs(self._expr))
 
     def parse_url(self) -> Expression:
         """Parse string URLs and extract URL components.

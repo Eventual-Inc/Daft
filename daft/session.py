@@ -17,7 +17,7 @@ from daft.dataframe import DataFrame
 from daft.expressions import Expression
 from daft.logical.builder import LogicalPlanBuilder
 from daft.logical.schema import Schema
-from daft.udf import UDF
+from daft.udf.udf_v2 import Func
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -173,7 +173,9 @@ class Session:
     # attach & detach
     ###
 
-    def attach(self, object: Catalog | Provider | Table | UDF | DataFrame, alias: str | None = None) -> None:
+    def attach(
+        self, object: Catalog | Provider | Table | Func[Any, Any, Any] | DataFrame, alias: str | None = None
+    ) -> None:
         """Attaches a known attachable object like a Catalog, Table, UDF, or DataFrame.
 
         Args:
@@ -188,7 +190,7 @@ class Session:
             self.attach_provider(object, alias)
         elif isinstance(object, Table):
             self.attach_table(object, alias)
-        elif isinstance(object, UDF):
+        elif isinstance(object, Func):
             self.attach_function(object, alias)
         elif isinstance(object, DataFrame):
             if alias is None:
@@ -212,7 +214,7 @@ class Session:
         self._session.attach_catalog(c, a)
         return c
 
-    def attach_function(self, function: UDF, alias: str | None = None) -> None:
+    def attach_function(self, function: Func[Any, Any, Any], alias: str | None = None) -> None:
         """Attaches a Python function as a UDF in the current session."""
         self._session.attach_function(function, alias)
 
@@ -826,7 +828,7 @@ def _session() -> Session:
 ###
 
 
-def attach(object: Catalog | Provider | Table | UDF | DataFrame, alias: str | None = None) -> None:
+def attach(object: Catalog | Provider | Table | Func[Any, Any, Any] | DataFrame, alias: str | None = None) -> None:
     """Attaches a known attachable object like a Catalog or Table."""
     return _session().attach(object, alias)
 
@@ -836,7 +838,7 @@ def attach_catalog(catalog: object | Catalog, alias: str | None = None) -> Catal
     return _session().attach_catalog(catalog, alias)
 
 
-def attach_function(function: UDF, alias: str | None = None) -> None:
+def attach_function(function: Func[Any, Any, Any], alias: str | None = None) -> None:
     """Attaches a Python function as a UDF in the current session."""
     _session().attach_function(function, alias)
 

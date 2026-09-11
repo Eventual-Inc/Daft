@@ -1,6 +1,6 @@
 # Migrating to Daft's new UDF API
 
-Daft now offers a new UDF API via the `@daft.func` and `@daft.cls` decorators, replacing the legacy `@daft.udf` decorator. The new API is more powerful and Pythonic, and the legacy API will be deprecated in a future release.
+Daft now offers a new UDF API via the `@daft.func` and `@daft.cls` decorators, replacing the legacy `@daft.udf` decorator, which was removed in Daft 0.8.0. The new API is more powerful and Pythonic.
 
 This guide will walk you through the steps to migrate your existing UDFs to the new API.
 
@@ -182,6 +182,6 @@ async def my_api_call(prompt: str) -> str:
 
 ## Known Limitations
 
-- The new API does not yet expose a `memory_bytes` parameter, and `ray_options={"memory": ...}` is explicitly rejected ([#6711](https://github.com/Eventual-Inc/Daft/issues/6711)). If you were using `memory_bytes` primarily to bound concurrency, prefer `max_concurrency`. If you need true memory-based placement on Ray, you'll need to stay on `@daft.udf` until this is resolved.
+- The new API does not yet expose a `memory_bytes` parameter, and `ray_options={"memory": ...}` is explicitly rejected ([#6711](https://github.com/Eventual-Inc/Daft/issues/6711)). If you were using `memory_bytes` primarily to bound concurrency, prefer `max_concurrency`. True memory-based placement on Ray is not currently supported by the new API; follow [#6711](https://github.com/Eventual-Inc/Daft/issues/6711) for updates.
 
 If you have any questions or feedback about the new UDF API, please submit an [issue on GitHub](https://github.com/Eventual-Inc/Daft/issues) or reach out to us on [Slack](https://daft.ai/slack).

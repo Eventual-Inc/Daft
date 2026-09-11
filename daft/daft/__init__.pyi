@@ -12,7 +12,6 @@ from daft.io.sink import WriteResultType
 from daft.runners.flotilla import RaySwordfishActorHandle
 from daft.runners.partitioning import PartitionCacheEntry, PartitionT
 from daft.sql.sql_connection import SQLConnection
-from daft.udf.legacy import UDF, BoundUDFArgs, InitArgsType, UninitializedUdf
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -25,7 +24,7 @@ if TYPE_CHECKING:
     from daft.expressions.visitor import ExpressionVisitor
     from daft.runners.runner import Runner
     from daft.subscribers import Subscriber
-    from daft.udf.udf_v2 import ClsBase
+    from daft.udf.udf_v2 import ClsBase, Func
 
 R = TypeVar("R")
 
@@ -1809,19 +1808,6 @@ def interval_lit(
 ) -> PyExpr: ...
 def decimal_lit(sign: bool, digits: tuple[int, ...], exp: int) -> PyExpr: ...
 def list_lit(item: PySeries) -> PyExpr: ...
-def udf(
-    name: str,
-    inner: UninitializedUdf,
-    bound_args: BoundUDFArgs,
-    expressions: list[PyExpr],
-    return_dtype: PyDataType,
-    init_args: InitArgsType,
-    resource_request: ResourceRequest | None,
-    batch_size: int | None,
-    concurrency: int | None,
-    use_process: bool | None,
-    ray_options: dict[str, Any] | None = None,
-) -> PyExpr: ...
 def row_wise_udf(
     func_id: str,
     name: str,
@@ -1859,7 +1845,6 @@ def batch_udf(
     expr_args: list[PyExpr],
     ray_options: dict[str, Any] | None = None,
 ) -> PyExpr: ...
-def initialize_udfs(expression: PyExpr) -> PyExpr: ...
 def udaf_expr(
     func_id: str,
     func_name: str,
@@ -2904,7 +2889,7 @@ class PySession:
     @staticmethod
     def empty() -> PySession: ...
     def attach_catalog(self, catalog: Catalog, alias: str) -> None: ...
-    def attach_function(self, function: UDF, alias: str | None = None) -> None: ...
+    def attach_function(self, function: Func[Any, Any, Any], alias: str | None = None) -> None: ...
     def attach_provider(self, provider: Provider, alias: str) -> None: ...
     def attach_table(self, table: Table, alias: str) -> None: ...
     def detach_catalog(self, alias: str) -> None: ...

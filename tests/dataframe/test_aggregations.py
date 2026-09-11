@@ -205,6 +205,25 @@ def test_agg_global_empty(make_df):
     assert res_set[0] == exp_set[0], "Set should be empty for empty DataFrame"
 
 
+@pytest.mark.parametrize("repartition_nparts", [1, 2])
+@pytest.mark.parametrize(
+    "data, expected",
+    [
+        ({"k": ["a", "a"], "v": [1, 2]}, {"k": ["a", "a"], "v": [2, 3]}),
+        (
+            {"k": ["b", "a", "b", "a", "c"], "v": [10, 1, 20, None, None]},
+            {"k": ["a", "a", "b", "b", "c"], "v": [0, 2, 11, 21, 0]},
+        ),
+    ],
+    ids=["single_group", "multiple_groups_with_nulls"],
+)
+def test_agg_groupby_apply(make_df, repartition_nparts, data, expected):
+    df = make_df(data, repartition=repartition_nparts)
+    # Apply remains elementwise in aggregations, returning one row per input row.
+    result = df.groupby("k").agg(col("v").apply(lambda x: 0 if x is None else x + 1, return_dtype=DataType.int64()))
+    assert sort_pydict(result.to_pydict(), "k", "v", ascending=True) == expected
+
+
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 7])
 def test_agg_groupby(make_df, repartition_nparts, with_morsel_size):
     daft_df = make_df(

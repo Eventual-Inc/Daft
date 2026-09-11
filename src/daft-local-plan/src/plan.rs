@@ -16,7 +16,7 @@ use daft_dsl::{
         BoundColumn, VLLMExpr,
         bound_expr::{BoundAggExpr, BoundExpr, BoundVLLMExpr, BoundWindowExpr},
     },
-    functions::python::{RuntimePyObject, UDFProperties, get_resource_request},
+    functions::python::{RuntimePyObject, UDFProperties},
 };
 use daft_logical_plan::{
     InMemoryInfo, OutputFileInfo,
