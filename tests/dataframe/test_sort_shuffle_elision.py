@@ -15,6 +15,7 @@ when the hint fires.
 from __future__ import annotations
 
 import io
+import re
 from collections.abc import AsyncIterator
 
 import pyarrow as pa
@@ -145,11 +146,21 @@ def test_hint_persists_through_projection(source_table):
     assert result["ts"] == [1, 2, 3, 4, 5, 6]
 
 
-def test_sort_on_sort_skips_repartition():
-    """A sort whose input is a prior sort by the same key skips its own repartition."""
+def test_sort_on_sort_redundant_sort_eliminated():
+    """A sort whose input is a prior sort by the same key is eliminated by the optimizer.
+
+    The EliminateRedundantSort logical rule removes the inner (redundant) sort entirely,
+    since the outer sort re-establishes the same ordering from scratch. After optimization
+    only one Sort node remains in the plan and the result is still correct.
+    """
     df = daft.from_pydict({"ts": [4, 2, 6, 1, 3, 5], "val": [40, 20, 60, 10, 30, 50]}).repartition(2).sort("ts")
     df2 = df.sort("ts")
-    assert not _sort_needs_repartition(df2)
+    # Only one sort should remain after optimization
+    buf = io.StringIO()
+    df2.explain(show_all=True, file=buf)
+    optimized = buf.getvalue().split("== Optimized Logical Plan ==")[1].split("== Physical Plan ==")[0]
+    sort_count = len(re.findall(r"^\* Sort:", optimized, re.M))
+    assert sort_count == 1, f"Expected 1 Sort after optimization, got {sort_count}"
     result = df2.to_pydict()
     assert result["ts"] == [1, 2, 3, 4, 5, 6]
 
@@ -255,11 +266,16 @@ def test_sort_on_sort_different_nulls_first_repartitions():
     assert df2.to_pydict()["a"] == [None, None, 1, 2, 3, 4, 5, 7, 8, 9]
 
 
-def test_sort_on_sort_same_nulls_first_skips_repartition():
-    """Matching nulls_first (non-default) still skips the repartition."""
+def test_sort_on_sort_same_nulls_first_redundant_sort_eliminated():
+    """Matching nulls_first (non-default) redundant sort is eliminated by the optimizer."""
     df = daft.from_pydict({"a": [5, None, 3, 8, None, 1, 9, 4, 7, 2]}).repartition(3).sort("a", nulls_first=True)
     df2 = df.sort("a", nulls_first=True)
-    assert not _sort_needs_repartition(df2)
+    # The redundant inner sort should be eliminated
+    buf = io.StringIO()
+    df2.explain(show_all=True, file=buf)
+    optimized = buf.getvalue().split("== Optimized Logical Plan ==")[1].split("== Physical Plan ==")[0]
+    sort_count = len(re.findall(r"^\* Sort:", optimized, re.M))
+    assert sort_count == 1, f"Expected 1 Sort after optimization, got {sort_count}"
     pytest.xfail(
         "pre-existing: the first sort's own shuffle already places nulls incorrectly "
         "(search_sorted has no nulls_first support)"
