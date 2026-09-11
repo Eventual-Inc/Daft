@@ -101,13 +101,18 @@ impl RuntimeStats for SourceStats {
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
         let cpu_us = self.duration_us.load(ordering);
         let rows_out = self.rows_out.load(ordering);
-        let bytes_read = self.input_stats.io_stats.load_bytes_read() as u64;
+        let io_stats = &self.input_stats.io_stats;
+        let bytes_read = io_stats.load_bytes_read() as u64;
+        let requests = (io_stats.load_get_requests()
+            + io_stats.load_head_requests()
+            + io_stats.load_list_requests()) as u64;
         StatSnapshot::Source(SourceSnapshot {
             cpu_us,
             rows_out,
             bytes_read,
             bytes_out: self.bytes_out.load(ordering),
             num_tasks: self.num_tasks.load(ordering),
+            requests,
         })
     }
 

@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from collections.abc import Generator
     from pathlib import Path
 
-    from daft.daft import PyQueryMetadata
+    from daft.daft import PyExecutionStats, PyQueryMetadata
     from daft.subscribers import Subscriber
 
 logger = logging.getLogger(__name__)
@@ -107,6 +107,10 @@ class DaftContext:
 
     def _notify_exec_emit_stats(self, query_id: str, node_id: int, stats: dict[str, int]) -> None:
         self._ctx.notify_exec_emit_stats(query_id, node_id, stats)
+
+    def _notify_exec_emit_execution_stats(self, query_id: str, stats: PyExecutionStats) -> None:
+        """Emit a ``Stats`` event with the final per-node totals of a finished execution."""
+        self._ctx.notify_exec_emit_execution_stats(query_id, stats.encode())
 
 
 def get_context() -> DaftContext:
