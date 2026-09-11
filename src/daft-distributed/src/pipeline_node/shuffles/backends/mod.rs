@@ -1,4 +1,4 @@
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_partitioning::PartitionRef;
 use daft_local_plan::{
     LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef, ShuffleBackend, ShuffleReadBackend,
@@ -79,47 +79,70 @@ impl ShuffleContext {
     }
 
     /// Build a `SwordfishTaskBuilder` whose plan reads from already-materialized
-    /// partition refs (`in_memory_scan` for Ray, `shuffle_read(Flight)` for Flight)
-    /// and then applies `wrap_plan` on top. The partition refs are attached to
-    /// the task via the backend-appropriate API (`with_psets` /
+    /// partition refs (`in_memory_scan` for plain refs, `shuffle_read(Flight)` for
+    /// flight refs) and then applies `wrap_plan` on top. The partition refs are
+    /// attached to the task via the matching API (`with_psets` /
     /// `with_flight_shuffle_reads`).
+    ///
+    /// The read path is chosen from what the refs *are*, not from what the backend
+    /// is configured to be. A flight-configured node can legitimately hold plain
+    /// in-memory refs: only refs produced by a flight write (`gather_write`,
+    /// `repartition_write`, a Flight-backed local `into_partitions`) are addressable
+    /// over flight, and a node that materializes its child's output directly — as
+    /// `IntoPartitionsNode`'s coalesce branch does — gets ordinary Ray object refs.
+    /// Dispatching on the config instead used to hand those to the flight reader and
+    /// panic on the downcast.
     pub(crate) fn build_refs_task_builder<F>(
         &self,
         partition_refs: Vec<PartitionRef>,
         node: &dyn PipelineNodeImpl,
         wrap_plan: F,
-    ) -> SwordfishTaskBuilder
+    ) -> DaftResult<SwordfishTaskBuilder>
     where
         F: FnOnce(LocalPhysicalPlanRef) -> LocalPhysicalPlanRef,
     {
         let node_id = self.node_id;
-        match &self.backend {
-            ShuffleBackend::Ray => {
-                let total_size_bytes = partition_refs.iter().map(|p| p.size_bytes()).sum::<usize>();
-                let in_memory_scan = LocalPhysicalPlan::in_memory_scan(
-                    node_id,
-                    self.schema.clone(),
-                    total_size_bytes,
-                    StatsState::NotMaterialized,
-                    LocalNodeContext::new(Some(node_id as usize)),
-                );
-                let plan = wrap_plan(in_memory_scan);
+        let num_flight_refs = partition_refs
+            .iter()
+            .filter(|p| flight::is_flight_ref(p))
+            .count();
+        // Empty falls to the in-memory path: there is nothing to read back over
+        // flight, and `in_memory_scan` with no psets yields an empty partition.
+        if num_flight_refs == 0 {
+            let total_size_bytes = partition_refs.iter().map(|p| p.size_bytes()).sum::<usize>();
+            let in_memory_scan = LocalPhysicalPlan::in_memory_scan(
+                node_id,
+                self.schema.clone(),
+                total_size_bytes,
+                StatsState::NotMaterialized,
+                LocalNodeContext::new(Some(node_id as usize)),
+            );
+            let plan = wrap_plan(in_memory_scan);
+            return Ok(
                 SwordfishTaskBuilder::new(plan, node, node_id).with_psets(node_id, partition_refs)
-            }
-            ShuffleBackend::Flight { .. } => {
-                let read_inputs = flight::read_inputs_from_refs(partition_refs);
-                let shuffle_read = LocalPhysicalPlan::shuffle_read(
-                    node_id,
-                    self.schema.clone(),
-                    ShuffleReadBackend::Flight,
-                    StatsState::NotMaterialized,
-                    LocalNodeContext::new(Some(node_id as usize)),
-                );
-                let plan = wrap_plan(shuffle_read);
-                SwordfishTaskBuilder::new(plan, node, node_id)
-                    .with_flight_shuffle_reads(node_id, read_inputs)
-            }
+            );
         }
+        if num_flight_refs != partition_refs.len() {
+            return Err(DaftError::InternalError(format!(
+                "Shuffle read for node {} got a mix of flight and in-memory partition refs \
+                 ({} of {} are flight refs); a stage's outputs must be all one or the other.",
+                node_id,
+                num_flight_refs,
+                partition_refs.len(),
+            )));
+        }
+
+        let read_inputs = flight::read_inputs_from_refs(partition_refs)?;
+        let shuffle_read = LocalPhysicalPlan::shuffle_read(
+            node_id,
+            self.schema.clone(),
+            ShuffleReadBackend::Flight,
+            StatsState::NotMaterialized,
+            LocalNodeContext::new(Some(node_id as usize)),
+        );
+        let plan = wrap_plan(shuffle_read);
+        Ok(SwordfishTaskBuilder::new(plan, node, node_id)
+            .with_flight_shuffle_reads(node_id, read_inputs))
     }
 
     /// Group a stream of map-task outputs into per-partition read tasks.

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeType};
 use common_runtime::OrderedJoinSet;
-use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, ShuffleBackend};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef, ShuffleBackend};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
@@ -21,6 +21,28 @@ use crate::{
     },
     utils::channel::{Sender, create_channel},
 };
+
+/// Collapse a task's output into exactly one partition.
+///
+/// This is a local concat, not a shuffle write, so it is always built on the Ray
+/// backend even when the node shuffles over Flight. A Flight-backed local
+/// `into_partitions` is a terminal sink: it spills to disk and emits
+/// `FlightPartitionRef`s instead of morsels, which only the flight read path can
+/// consume. Emitting such a task as this node's output would hand flight refs to
+/// whatever operator the parent node stacks on top, and every local operator
+/// treats an incoming flight ref as unreachable.
+fn local_concat_into_one_partition(
+    plan: LocalPhysicalPlanRef,
+    node_id: NodeID,
+) -> LocalPhysicalPlanRef {
+    LocalPhysicalPlan::into_partitions(
+        plan,
+        1,
+        ShuffleBackend::Ray,
+        StatsState::NotMaterialized,
+        LocalNodeContext::new(Some(node_id as usize)),
+    )
+}
 
 #[derive(Clone)]
 pub(crate) struct IntoPartitionsNode {
@@ -131,20 +153,11 @@ impl IntoPartitionsNode {
                 .collect::<Vec<_>>();
 
             let node_id = self.node_id();
-            let shuffle_backend = self.shuffle_context.backend().clone();
             let builder = self.shuffle_context.build_refs_task_builder(
                 partition_refs,
                 self.as_ref(),
-                move |input| {
-                    LocalPhysicalPlan::into_partitions(
-                        input,
-                        1,
-                        shuffle_backend,
-                        StatsState::NotMaterialized,
-                        LocalNodeContext::new(Some(node_id as usize)),
-                    )
-                },
-            );
+                move |input| local_concat_into_one_partition(input, node_id),
+            )?;
             if result_tx.send(builder).await.is_err() {
                 break;
             }
@@ -216,7 +229,7 @@ impl IntoPartitionsNode {
                         partition_refs,
                         self.as_ref(),
                         |input| input,
-                    );
+                    )?;
                     if result_tx.send(builder).await.is_err() {
                         break;
                     }
@@ -248,13 +261,7 @@ impl IntoPartitionsNode {
                     let node_id = self.node_id();
                     for builder in input_builders {
                         let builder = builder.map_plan(self.as_ref(), |plan| {
-                            LocalPhysicalPlan::into_partitions(
-                                plan,
-                                1,
-                                self.shuffle_context.backend().clone(),
-                                StatsState::NotMaterialized,
-                                LocalNodeContext::new(Some(node_id as usize)),
-                            )
+                            local_concat_into_one_partition(plan, node_id)
                         });
                         let _ = result_tx.send(builder).await;
                     }
