@@ -1098,6 +1098,12 @@ def to_datetime(expr: Expression, format: str, timezone: str | None = None) -> E
     Note:
         The format must be a valid datetime format string. See: https://docs.rs/chrono/latest/chrono/format/strftime/index.html
 
+    Note:
+        Parsing is strict: trailing text the format does not describe raises. A format without
+        time-of-day fields resolves to midnight, but a partial time such as ``"%Y-%m-%d %H"`` is an
+        error. An offset directive determines the instant, otherwise ``timezone`` is the zone the
+        value is read in.
+
     Examples:
         >>> import daft
         >>> from daft.functions import to_datetime
