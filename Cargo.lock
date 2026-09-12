@@ -2815,7 +2815,7 @@ dependencies = [
 
 [[package]]
 name = "daft-ext"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "arrow-array 56.2.0",
  "arrow-array 57.3.0",
@@ -2851,7 +2851,7 @@ dependencies = [
 
 [[package]]
 name = "daft-ext-macros"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "proc-macro2",
  "quote",

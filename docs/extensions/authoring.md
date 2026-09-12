@@ -207,16 +207,17 @@ impl DaftScalarFunction for Greet {
     }
 
     /// Type checking.
-    /// Receives input fields as C Data Interface `ArrowSchema` types.
-    /// Use `.as_raw()` / `.into()` to convert between arrow-rs and ABI types.
-    fn return_field(&self, args: &[ArrowSchema]) -> DaftResult<ArrowSchema> {
+    /// Receives one `ArgDescriptor` per argument, carrying that argument's
+    /// field (and its value, when the argument is a foldable constant — see
+    /// [Literal arguments](#literal-arguments)).
+    fn return_field(&self, args: &[ArgDescriptor]) -> DaftResult<ArrowSchema> {
         if args.len() != 1 {
             return Err(DaftError::TypeError(format!(
                 "greet: expected 1 argument, got {}",
                 args.len()
             )));
         }
-        let field = Field::try_from(&args[0])?;
+        let field = Field::try_from(args[0].field())?;
         let dt = field.data_type();
         if *dt != DataType::Utf8 && *dt != DataType::LargeUtf8 {
             return Err(DaftError::TypeError(format!(
@@ -258,6 +259,65 @@ impl DaftScalarFunction for Greet {
     }
 }
 ```
+
+### Literal arguments
+
+`return_field` sees argument *values*, not just their types. When an argument
+is a literal — `lit(3)`, or `daft.lit(3)` from Python — `ArgDescriptor::literal`
+carries its value as a length-1 array typed exactly like `ArgDescriptor::field`.
+Every other argument carries no literal.
+
+Read scalars with the typed accessors — `literal_i64`, `literal_u64`,
+`literal_f64`, `literal_bool`, `literal_string`, `literal_binary`. Each returns
+`Ok(None)` when the argument is not a literal (or its value is null), and an
+error when it is a literal of the wrong type:
+
+```rust
+/// `splat(value, count)` repeats each value into a `FixedSizeList` whose
+/// width is the *value* of `count`.
+fn return_field(&self, args: &[ArgDescriptor]) -> DaftResult<ArrowSchema> {
+    let value_field = import_field(args[0].field())?;
+
+    let count = literal_i64(&args[1])?.ok_or_else(|| {
+        DaftError::TypeError("splat: 'count' must be a literal, not a column".into())
+    })?;
+
+    let item = Field::new("item", DataType::Int64, true);
+    export_field(&Field::new(
+        value_field.name(),
+        DataType::FixedSizeList(Arc::new(item), count as i32),
+        true,
+    ))
+}
+```
+
+For a literal that is not a scalar — a list, a struct — use `with_literal`,
+which hands your closure the arrow-rs array itself. It is `unsafe`: the array
+borrows buffers the host owns only for the duration of `return_field`, so
+nothing derived from it may escape the closure.
+
+!!! warning "Name the output after your first argument"
+
+    Daft derives an expression's name from its *first input*, while the column's
+    schema entry comes from `return_field`. Returning a field with some other
+    name makes the two disagree, and projection pushdown will prune the column
+    the query asked for. Echo `import_field(args[0].field())?.name()`, as above
+    and as `#[daft_func]` does.
+
+!!! note "Only literals, and only what Arrow can carry"
+
+    An argument is visible as a literal when it is *already* a literal at the
+    point the call is planned. A constant expression that has not been folded
+    (`lit(1) + lit(2)`) is not, and neither is a Python-object literal, which
+    has no representation an extension can plan against. Treat a missing literal
+    as a plain type-check failure — as in the example above — rather than
+    assuming it can't happen.
+
+`call` still receives every argument as an array, literals included (typically
+as a length-1 column). Daft resolves the return field with the same literals it
+captured during planning, so the output type your `return_field` computed is the
+one execution uses — but `call` must still derive the same shape from its own
+arguments, so keep that logic shared between the two.
 
 !!! tip "ABI pattern"
 
@@ -312,6 +372,8 @@ impl DaftAggregateFunction for MySum {
     }
 
     /// Declare the output type given the input field schemas.
+    /// Aggregates receive bare `ArrowSchema`s — argument descriptors are a
+    /// scalar-function feature today.
     fn return_field(&self, _args: &[ArrowSchema]) -> DaftResult<ArrowSchema> {
         Ok(ArrowSchema::try_from(&Field::new("my_sum", DataType::Int64, true))?)
     }
@@ -500,12 +562,16 @@ Follow the Daft extension authoring guide at docs/extensions/authoring.md. Here 
 - Register aggregate functions via `session.define_aggregate_function(Arc::new(MyAgg))`.
 - Each scalar function is a struct implementing `DaftScalarFunction` with:
   - `name(&self) -> &CStr` — use `c"<extension_name>_<fn_name>"` prefix to avoid collisions.
-  - `return_field(&self, args: &[ArrowSchema]) -> DaftResult<ArrowSchema>` — use `.as_raw()` to
-    borrow as arrow-rs `FFI_ArrowSchema` for type checking, then `.into()` to return output.
+  - `return_field(&self, args: &[ArgDescriptor]) -> DaftResult<ArrowSchema>` — use
+    `import_field(args[i].field())` for type checking, and `literal_i64(&args[i])` (or
+    `literal_string` / `literal_f64` / ...) to read the value of a literal argument, then
+    `export_field` to return the output. Name the output field after `args[0]`'s field.
   - `call(&self, args: &[ArrowData]) -> DaftResult<ArrowData>` — use `ArrowData::take_arg` then
     `.into()` to convert to arrow-rs FFI types, compute, then `.into()` to return the result.
 - Each aggregate function is a struct implementing `DaftAggregateFunction` with:
-  - `name`, `return_field` — same as scalar functions.
+  - `name` — same as scalar functions.
+  - `return_field(&self, args: &[ArrowSchema]) -> DaftResult<ArrowSchema>` — note that aggregates
+    take bare `ArrowSchema`s, not `ArgDescriptor`s.
   - `state_fields(&self, args: &[ArrowSchema]) -> DaftResult<Vec<ArrowSchema>>` — intermediate state schema.
   - `aggregate(&self, inputs: Vec<ArrowData>) -> DaftResult<Vec<ArrowData>>` — partial aggregation.
   - `combine(&self, states: Vec<ArrowData>) -> DaftResult<Vec<ArrowData>>` — merge partial states.
