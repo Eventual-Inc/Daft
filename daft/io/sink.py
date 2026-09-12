@@ -64,6 +64,15 @@ class DataSink(ABC, Generic[WriteResultType]):
         """
         pass
 
+    def checkpoint_file_format(self) -> str | None:
+        """Optional checkpoint metadata format for DataSink write results.
+
+        Sinks that return a format opt in to having their ``write_results``
+        staged in the checkpoint store. The default keeps existing DataSink
+        behavior unchanged.
+        """
+        return None
+
     @abstractmethod
     def write(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteResult[WriteResultType]]:
         """Writes a stream of micropartitions to the sink.
