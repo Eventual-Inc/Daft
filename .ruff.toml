@@ -30,7 +30,8 @@ extend-select = [
   "RUF034",  # Useless if-else condition
   "RUF041",  # Unnecessary nested Literal
   "RUF100",  # unused-noqa
-  "T10"  # flake8-debugger
+  "T10",  # flake8-debugger
+  "B006"  # Mutable default argument values
 ]
 ignore = [
   "E402",  # Module level import not at top of file [TODO(sammy): We want to fix this]

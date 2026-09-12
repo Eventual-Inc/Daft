@@ -16,7 +16,7 @@ from tests.conftest import get_tests_daft_runner_name
 
 def _load_queries() -> list[str]:
     with open("benchmarking/clickbench/queries.sql") as f:
-        lines = [ln.strip() for ln in f.readlines() if ln.strip()]
+        lines = [ln.strip() for ln in f if ln.strip()]
     return lines
 
 

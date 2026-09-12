@@ -17,22 +17,18 @@ class VLLMExecutor(ABC):
     @abstractmethod
     def submit(self, prefix: str, prompts: list[str], rows: RecordBatch) -> None:
         """Submit a batch of prompts and their corresponding rows to the executor, returning once all tasks are started."""
-        pass
 
     @abstractmethod
     def poll(self) -> tuple[list[str], RecordBatch] | None:
         """Poll the executor for completed tasks. Returns a tuple of completed outputs and their corresponding rows, or None if no tasks are completed."""
-        pass
 
     @abstractmethod
     def finished_submitting(self) -> None:
         """Call this when all tasks have been submitted."""
-        pass
 
     @abstractmethod
     def all_tasks_finished(self) -> bool:
         """Check if all tasks have been completed and all results have been polled."""
-        pass
 
 
 class DummyVLLMExecutor(VLLMExecutor):
@@ -290,10 +286,7 @@ class PrefixRouter:
                     except ValueError:
                         recency = None
 
-                    if best_actor_recency is None:
-                        best_actor = i
-                        best_actor_recency = recency
-                    elif recency is not None and recency < best_actor_recency:
+                    if best_actor_recency is None or recency is not None and recency < best_actor_recency:
                         best_actor = i
                         best_actor_recency = recency
 

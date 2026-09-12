@@ -50,10 +50,10 @@ def test_detach_catalog():
     # setup.
     cat1 = Catalog.from_pydict({})
     cat2 = Catalog.from_pydict({})
+    #
+    # attach
     sess.attach_catalog(cat1, alias="cat1")
     sess.attach_catalog(cat2, alias="cat2")
-    #
-    #
     assert 2 == len(sess.list_catalogs())
     #
     # detach existing
@@ -319,7 +319,6 @@ def test_use():
     # set a namespace
     sess.set_namespace("a.b")
     assert sess.current_namespace() == Identifier("a", "b")
-    #
     sess.set_catalog(None)
     sess.set_namespace(None)
     assert sess.current_catalog() is None

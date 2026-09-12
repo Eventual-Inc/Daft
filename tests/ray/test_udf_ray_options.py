@@ -12,7 +12,7 @@ import pytest
 # This module tests legacy @daft.udf features (ray_options, conda runtime_env) with no new-API equivalent.
 warnings.filterwarnings("ignore", category=DeprecationWarning, message=r".*@daft\.udf.*")
 pytestmark = pytest.mark.filterwarnings(r"ignore:.*@daft\.udf.*:DeprecationWarning")
-import ray._private.ray_constants as ray_constants
+from ray._private import ray_constants
 
 from daft import DataType, col, get_or_infer_runner_type, udf
 

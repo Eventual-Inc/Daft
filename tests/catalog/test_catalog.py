@@ -42,10 +42,8 @@ def test_try_from_iceberg(tmpdir):
 
     pyiceberg_catalog = SqlCatalog(
         "default",
-        **{
-            "uri": f"sqlite:///{tmpdir}/pyiceberg_catalog.db",
-            "warehouse": f"file://{tmpdir}",
-        },
+        uri=f"sqlite:///{tmpdir}/pyiceberg_catalog.db",
+        warehouse=f"file://{tmpdir}",
     )
     # assert doesn't throw!
     assert Catalog._from_obj(pyiceberg_catalog) is not None

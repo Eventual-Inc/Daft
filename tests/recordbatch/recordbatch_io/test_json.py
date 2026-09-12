@@ -40,8 +40,7 @@ def _json_write_helper(data: dict[str, list[Any]]):
             assert len(data[k]) == data_len
         file = os.path.join(directory_name, "tempfile")
         with open(file, "w", newline="") as f:
-            for i in range(data_len):
-                f.write(json.dumps({k: data[k][i] for k in data}) + "\n")
+            f.writelines(json.dumps({k: data[k][i] for k in data}) + "\n" for i in range(data_len))
         yield file
 
 

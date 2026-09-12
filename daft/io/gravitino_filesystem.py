@@ -81,7 +81,6 @@ class GravitinoFileSystemHandler:
     def create_dir(self, path: str, *, recursive: bool = True) -> None:
         """Create a directory. For gvfs://, this is typically a no-op."""
         # Gravitino filesets don't require explicit directory creation
-        pass
 
     def delete_dir(self, path: str) -> None:
         """Delete a directory."""

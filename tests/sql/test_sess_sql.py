@@ -16,10 +16,8 @@ def _create_catalog(name: str, tmpdir: str):
 
     catalog = SqlCatalog(
         name,
-        **{
-            "uri": f"sqlite:///{tmpdir}/pytest_sql_{name}.db",
-            "warehouse": f"file://{tmpdir}",
-        },
+        uri=f"sqlite:///{tmpdir}/pytest_sql_{name}.db",
+        warehouse=f"file://{tmpdir}",
     )
     # using naming convention "tbl_<catalog>_<namespace #><table #>"
     # which let's us know where the table is coming from with only its name
