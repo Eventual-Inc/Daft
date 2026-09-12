@@ -18,6 +18,7 @@ from daft.daft import (
 )
 from daft.dependencies import pa
 from daft.expressions import ExpressionsProjection
+from daft.expressions.visitor import _ColumnVisitor
 from daft.io.iceberg._expressions import convert_row_filter
 from daft.io.iceberg._metadata import (
     convert_iceberg_data_type,
@@ -218,6 +219,7 @@ class IcebergDataSource(DataSource):
 
         self._schema = convert_iceberg_schema(iceberg_schema)
         self._partition_fields = iceberg_partition_spec_to_fields(iceberg_schema, self._iceberg_table.spec())
+        self._settleable_partition_fields: list[PartitionField] | None = None
 
         # Precompute ordered field metadata for per-file stats decoding.  The
         # order must match self._schema — downstream consumers (TableStatistics,
@@ -242,7 +244,50 @@ class IcebergDataSource(DataSource):
         return self._schema
 
     def get_partition_fields(self) -> list[PartitionField]:
-        return self._partition_fields
+        """Partition fields the optimizer may treat as settling a predicate on their own.
+
+        A predicate over an identity-partitioned field is dropped from the row-level filter
+        on the assumption that pruning covers it. Partition evolution breaks that: a file
+        written before a field was added carries no value for it and holds a mix of matching
+        and non-matching rows. Reporting only the fields every live file carries keeps such
+        predicates as ordinary row filters instead.
+        """
+        if self._settleable_partition_fields is None:
+            live = self._live_partition_field_names()
+            self._settleable_partition_fields = [
+                pfield for pfield in self._partition_fields if live is not None and pfield.field.name in live
+            ]
+        return self._settleable_partition_fields
+
+    def _live_partition_field_names(self) -> set[str] | None:
+        """Partition field names carried by every manifest in the snapshot being read.
+
+        Manifests record the spec they were written with, so this reads the manifest list
+        rather than planning files. Returns None when that cannot be determined, which
+        callers treat as "settle nothing".
+        """
+        try:
+            snapshot = (
+                self._iceberg_table.snapshot_by_id(self._snapshot_id)
+                if self._snapshot_id is not None
+                else self._iceberg_table.current_snapshot()
+            )
+            if snapshot is None:
+                # No data yet, so nothing can contradict the current spec.
+                return {field.name for field in self._iceberg_table.spec().fields}
+
+            specs = self._iceberg_table.specs()
+            live: set[str] | None = None
+            for manifest in snapshot.manifests(self._iceberg_table.io):
+                spec = specs.get(manifest.partition_spec_id)
+                if spec is None:
+                    return None
+                names = {field.name for field in spec.fields}
+                live = names if live is None else live & names
+            return live if live is not None else {field.name for field in self._iceberg_table.spec().fields}
+        except Exception as e:
+            logger.warning("Could not determine partition specs in use: %s, disabling partition pruning", e)
+            return None
 
     def _iceberg_record_to_partition_spec(
         self, spec: IcebergPartitionSpec, record: Record
@@ -303,6 +348,11 @@ class IcebergDataSource(DataSource):
             snapshot_id=self._snapshot_id,
         ).plan_files()
 
+        # Fields a file's partition record must carry for the predicate to be evaluable.
+        required_partition_fields = (
+            _ColumnVisitor().visit(pushdowns.partition_filters) if pushdowns.partition_filters is not None else set()
+        )
+
         should_limit_files = limit is not None and pushdowns.filters is None and pushdowns.partition_filters is None
 
         if len(self._partition_fields) > 0 and pushdowns.partition_filters is None:
@@ -332,7 +382,14 @@ class IcebergDataSource(DataSource):
             pspec = self._iceberg_record_to_partition_spec(self._iceberg_table.specs()[file.spec_id], file.partition)
 
             # Partition pruning is the DataSource's responsibility in the DataSource model.
-            if pspec is not None and pushdowns.partition_filters is not None:
+            # Only prune on a record that carries every field the predicate references;
+            # get_partition_fields keeps such predicates out of `partition_filters` in the
+            # first place, so this is a guard rather than a filtering step.
+            if (
+                pspec is not None
+                and pushdowns.partition_filters is not None
+                and required_partition_fields.issubset(pspec.schema().column_names())
+            ):
                 filtered = pspec.filter(ExpressionsProjection([pushdowns.partition_filters]))
                 if len(filtered) == 0:
                     continue
@@ -415,7 +472,11 @@ class IcebergDataSource(DataSource):
             return True
 
     def supports_count_pushdown(self) -> bool:
-        return not self._has_delete_files()
+        # Counting from partition metadata assumes every file can be settled by its
+        # partition values, which is exactly what get_partition_fields establishes.
+        current_fields = {field.name for field in self._iceberg_table.spec().fields}
+        settleable = {pfield.field.name for pfield in self.get_partition_fields()}
+        return not self._has_delete_files() and current_fields == settleable
 
     def supported_count_modes(self) -> list[CountMode]:
         return [CountMode.All]
