@@ -7,10 +7,9 @@ aws-credential-types = {version = "1.2.7", features = ["hardcoded-credentials"]}
 aws-sdk-s3 = {version = "1.119.0", features = ["default-https-client", "rt-tokio", "sigv4a"], default-features = false}
 aws-smithy-http-client = "1.1.2"
 aws-smithy-runtime-api = "1.8.0"
-azure_core = {git = "https://github.com/Eventual-Inc/azure-sdk-for-rust", tag = "patched-azure-identity-2", features = ["enable_reqwest_rustls", "hmac_rust"], default-features = false}
-azure_identity = {git = "https://github.com/Eventual-Inc/azure-sdk-for-rust", tag = "patched-azure-identity-2", features = ["enable_reqwest_rustls"], default-features = false}
-azure_storage = {git = "https://github.com/Eventual-Inc/azure-sdk-for-rust", tag = "patched-azure-identity-2", features = ["enable_reqwest_rustls"], default-features = false}
-azure_storage_blobs = {git = "https://github.com/Eventual-Inc/azure-sdk-for-rust", tag = "patched-azure-identity-2", features = ["enable_reqwest_rustls"], default-features = false}
+azure_core = {version = "1.1.0", features = ["reqwest", "reqwest_rustls", "tokio", "hmac_rust", "xml"], default-features = false}
+azure_identity = {version = "1.0.0", features = ["tokio"], default-features = false}
+azure_storage_blob = {version = "1.1.0-beta.1", default-features = false}
 bytes = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 common-file-formats = {path = "../common/file-formats", default-features = false}

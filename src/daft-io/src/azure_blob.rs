@@ -1,15 +1,21 @@
 use std::{any::Any, sync::Arc};
 
 use async_trait::async_trait;
-use azure_core::auth::TokenCredential;
-use azure_identity::{
-    ClientSecretCredential, DefaultAzureCredentialBuilder, TokenCredentialOptions,
+use azure_core::{
+    credentials::{Secret, TokenCredential},
+    http::{ClientOptions, StatusCode, Url, policies::Policy},
 };
-use azure_storage::{CloudLocation, prelude::*};
-use azure_storage_blobs::{
-    blob::operations::GetBlobResponse,
-    container::{Container, operations::BlobItem},
-    prelude::*,
+use azure_identity::{
+    ClientSecretCredential, DeveloperToolsCredential, ManagedIdentityCredential,
+    WorkloadIdentityCredential,
+};
+use azure_storage_blob::{
+    BlobClient, BlobClientOptions, BlobServiceClient, BlobServiceClientOptions,
+    models::{
+        BlobClientDownloadOptions, BlobClientGetPropertiesResultHeaders,
+        BlobContainerClientListBlobsHierarchicalOptions, BlobContainerClientListBlobsOptions,
+        BlobItem, ContainerItem, HttpRange,
+    },
 };
 use common_io_config::AzureConfig;
 use common_runtime::get_io_pool_num_threads;
@@ -18,6 +24,7 @@ use snafu::{IntoError, ResultExt, Snafu};
 
 use crate::{
     FileFormat, GetResult, InvalidRangeRequestSnafu,
+    azure_auth::{SasTokenPolicy, SharedKeyAuthorizationPolicy, StaticBearerCredential},
     object_io::{FileMetadata, FileType, LSResult, ObjectSource},
     range::GetRange,
     stats::IOStatsRef,
@@ -28,6 +35,10 @@ const AZURE_DELIMITER: &str = "/";
 const DEFAULT_GLOB_FANOUT_LIMIT: usize = 1024;
 const AZURE_STORAGE_RESOURCE: &str = "https://storage.azure.com/.default";
 const AZURE_STORE_SUFFIX: &str = ".dfs.core.windows.net";
+/// Pin below the GA crate default (`2026-04-06`). Azurite rejects newer
+/// `x-ms-version` values with HTTP 400 (`InvalidHeaderValue`). Azure Storage
+/// still accepts this version, and delimiter listing does not need the latest.
+const AZURE_REST_API_VERSION: &str = "2025-01-05";
 
 #[derive(Debug, Snafu)]
 enum Error {
@@ -46,24 +57,27 @@ enum Error {
     ))]
     StorageAccountNotSet,
     #[snafu(display("Azure client generic error: {}", source))]
-    AzureGeneric { source: azure_storage::Error },
+    AzureGeneric { source: azure_core::Error },
     #[snafu(display("Unable to open {}: {}", path, source))]
     UnableToOpenFile {
         path: String,
-        source: azure_storage::Error,
+        source: azure_core::Error,
     },
 
     #[snafu(display("Unable to read data from {}: {}", path, source))]
     UnableToReadBytes {
         path: String,
-        source: azure_storage::Error,
+        source: azure_core::Error,
     },
 
     #[snafu(display("Unable to read metadata about {}: {}", path, source))]
     RequestFailedForPath {
         path: String,
-        source: azure_storage::Error,
+        source: azure_core::Error,
     },
+
+    #[snafu(display("Unable to parse Azure list-blobs XML for {}: {}", path, reason))]
+    InvalidListBlobsXml { path: String, reason: String },
 
     #[snafu(display("Not Found: \"{}\"", path))]
     NotFound { path: String },
@@ -131,12 +145,25 @@ fn parse_azure_uri(uri: &str) -> super::Result<ParsedAzureUri> {
     Ok(parsed)
 }
 
+/// Extract the HTTP status code from an `azure_core::Error`, if the error was
+/// an HTTP error response.
+fn core_error_status(error: &azure_core::Error) -> Option<StatusCode> {
+    match error.kind() {
+        azure_core::error::ErrorKind::HttpResponse { status, .. } => Some(*status),
+        _ => None,
+    }
+}
+
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
-        use Error::{NotAFile, NotFound, UnableToOpenFile, UnableToReadBytes};
+        use Error::{
+            NotAFile, NotFound, RequestFailedForPath, UnableToOpenFile, UnableToReadBytes,
+        };
         match error {
-            UnableToReadBytes { path, source } | UnableToOpenFile { path, source } => {
-                match source.as_http_error().map(|v| v.status().into()) {
+            UnableToOpenFile { path, source }
+            | UnableToReadBytes { path, source }
+            | RequestFailedForPath { path, source } => {
+                match core_error_status(&source).map(u16::from) {
                     Some(404 | 410) => Self::NotFound {
                         path,
                         source: source.into(),
@@ -165,8 +192,189 @@ impl From<Error> for super::Error {
     }
 }
 
+/// Resolve a default token credential the same way the old
+/// `DefaultAzureCredential` did: try each candidate credential source and use
+/// the first one that can produce a storage token.
+async fn default_credential_chain() -> Option<Arc<dyn TokenCredential>> {
+    let mut candidates: Vec<(&str, Arc<dyn TokenCredential>)> = Vec::new();
+    match WorkloadIdentityCredential::new(None) {
+        Ok(cred) => candidates.push(("workload identity", cred as _)),
+        Err(e) => log::debug!("Azure workload identity credential unavailable: {e}"),
+    }
+    match ManagedIdentityCredential::new(None) {
+        Ok(cred) => candidates.push(("managed identity", cred as _)),
+        Err(e) => log::debug!("Azure managed identity credential unavailable: {e}"),
+    }
+    match DeveloperToolsCredential::new(None) {
+        Ok(cred) => candidates.push(("developer tools", cred as _)),
+        Err(e) => log::debug!("Azure developer tools credential unavailable: {e}"),
+    }
+
+    for (name, cred) in candidates {
+        match cred
+            .get_token(std::slice::from_ref(&AZURE_STORAGE_RESOURCE), None)
+            .await
+        {
+            Ok(_) => {
+                log::debug!("Using Azure {name} credential");
+                return Some(cred);
+            }
+            Err(e) => log::debug!("Azure {name} credential failed to get a token: {e}"),
+        }
+    }
+    None
+}
+
+fn container_to_file_metadata(protocol: &str, container: &ContainerItem) -> Option<FileMetadata> {
+    container.name.as_ref().map(|name| FileMetadata {
+        filepath: format!("{protocol}://{name}/"),
+        size: None,
+        filetype: FileType::Directory,
+    })
+}
+
+fn blob_to_file_metadata(
+    protocol: &str,
+    container_name: &str,
+    blob: &BlobItem,
+) -> Option<FileMetadata> {
+    blob.name.as_ref().map(|name| {
+        file_metadata_for_blob(
+            protocol,
+            container_name,
+            name,
+            blob.properties.as_ref().and_then(|p| p.content_length),
+        )
+    })
+}
+
+fn file_metadata_for_blob(
+    protocol: &str,
+    container_name: &str,
+    name: &str,
+    size: Option<u64>,
+) -> FileMetadata {
+    FileMetadata {
+        filepath: format!("{protocol}://{container_name}/{name}"),
+        size,
+        filetype: FileType::File,
+    }
+}
+
+fn file_metadata_for_prefix(protocol: &str, container_name: &str, name: &str) -> FileMetadata {
+    FileMetadata {
+        filepath: format!("{protocol}://{container_name}/{name}"),
+        size: None,
+        filetype: FileType::Directory,
+    }
+}
+
+struct ParsedBlobList {
+    blobs: Vec<(String, Option<u64>)>,
+    prefixes: Vec<String>,
+}
+
+/// Parse a List Blobs (hierarchical / delimiter) XML body.
+///
+/// `azure_storage_blob` 1.1.0-beta.1 deserializes `blob_prefixes` as
+/// `Option<Vec<BlobPrefix>>`, which treats a second `<BlobPrefix>` sibling as a
+/// duplicate field. HNS accounts also attach `<Properties>` to prefixes. Parse
+/// the XML ourselves so posix listing keeps working.
+fn parse_hierarchical_listing_xml(xml: &[u8]) -> Result<ParsedBlobList, String> {
+    let text = std::str::from_utf8(xml).map_err(|e| format!("invalid utf-8: {e}"))?;
+    let text = text.trim_start_matches('\u{feff}');
+
+    let mut prefixes = Vec::new();
+    for block in xml_blocks(text, "<BlobPrefix>", "</BlobPrefix>") {
+        if let Some(name) = xml_tag_text(block, "Name") {
+            prefixes.push(name);
+        }
+    }
+
+    let mut blobs = Vec::new();
+    for block in xml_blocks(text, "<Blob>", "</Blob>") {
+        if let Some(name) = xml_tag_text(block, "Name") {
+            let size = xml_tag_text(block, "Content-Length")
+                .filter(|s| !s.is_empty())
+                .and_then(|s| s.parse().ok());
+            blobs.push((name, size));
+        }
+    }
+
+    Ok(ParsedBlobList { blobs, prefixes })
+}
+
+fn xml_blocks<'a>(xml: &'a str, open: &'a str, close: &'a str) -> Vec<&'a str> {
+    let mut out = Vec::new();
+    let mut rest = xml;
+    while let Some(start) = rest.find(open) {
+        let after = &rest[start + open.len()..];
+        match after.find(close) {
+            Some(end) => {
+                out.push(&after[..end]);
+                rest = &after[end + close.len()..];
+            }
+            None => break,
+        }
+    }
+    out
+}
+
+fn xml_tag_text(block: &str, tag: &str) -> Option<String> {
+    let open = format!("<{tag}");
+    let close = format!("</{tag}>");
+    let start = block.find(&open)?;
+    let after_name = &block[start + open.len()..];
+    let inner_start = after_name.find('>')? + 1;
+    let inner = &after_name[inner_start..];
+    let end = inner.find(&close)?;
+    Some(unescape_xml(&inner[..end]))
+}
+
+fn unescape_xml(s: &str) -> String {
+    s.replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+}
+
+fn ensure_trailing_slash(mut url: Url) -> Url {
+    let mut path = url.path().to_string();
+    if !path.ends_with('/') {
+        path.push('/');
+        url.set_path(&path);
+    }
+    url
+}
+
+/// Join container + blob name onto the service URL without encoding `/` in the
+/// blob name. The GA helper `BlobServiceClient::blob_client` treats the whole
+/// blob name as one path segment, turning `dir/file` into `dir%2Ffile`, which
+/// Azure treats as a different blob.
+fn blob_url(service: &Url, container: &str, key: &str) -> Url {
+    let mut url = service.clone();
+    {
+        let mut segments = url
+            .path_segments_mut()
+            .expect("Azure service URL must be a base URL");
+        segments.pop_if_empty();
+        if !container.is_empty() {
+            segments.push(container);
+        }
+        for segment in key.split('/') {
+            if !segment.is_empty() {
+                segments.push(segment);
+            }
+        }
+    }
+    url
+}
+
 pub struct AzureBlobSource {
     blob_client: Arc<BlobServiceClient>,
+    token_credential: Option<Arc<dyn TokenCredential>>,
+    blob_client_options: BlobClientOptions,
     connection_pool_sema: Arc<tokio::sync::Semaphore>,
 }
 
@@ -199,72 +407,76 @@ impl AzureBlobSource {
             .clone()
             .or_else(|| std::env::var("AZURE_STORAGE_TOKEN").ok());
 
-        let storage_credentials = if config.anonymous {
-            StorageCredentials::anonymous()
+        // The GA `azure_storage_blob` SDK natively supports Entra ID token
+        // credentials only. The other Daft credential paths are implemented as
+        // custom pipeline policies (see `azure_auth`):
+        // - access key -> `SharedKeyAuthorizationPolicy` (per-try request signing)
+        // - SAS token -> `SasTokenPolicy` (per-try query param injection)
+        // - static bearer token -> `StaticBearerCredential`
+        let mut token_credential: Option<Arc<dyn TokenCredential>> = None;
+        let mut per_try_policies: Vec<Arc<dyn Policy>> = Vec::new();
+
+        if config.anonymous {
+            // No credential.
         } else if let Some(access_key) = access_key {
-            StorageCredentials::access_key(&storage_account, access_key.as_string().clone())
+            per_try_policies.push(SharedKeyAuthorizationPolicy::new(
+                storage_account.clone(),
+                access_key.as_string().clone(),
+            ) as _);
         } else if let Some(sas_token) = sas_token {
-            StorageCredentials::sas_token(sas_token)
-                .map_err(|e| Error::AzureGeneric { source: e })?
+            per_try_policies.push(SasTokenPolicy::new(&sas_token) as _);
         } else if let Some(bearer_token) = bearer_token {
-            StorageCredentials::bearer_token(bearer_token)
+            token_credential = Some(StaticBearerCredential::new(bearer_token) as _);
         } else if let Some(tenant_id) = &config.tenant_id
             && let Some(client_id) = &config.client_id
             && let Some(client_secret) = &config.client_secret
         {
-            let options = TokenCredentialOptions::default();
-
-            StorageCredentials::token_credential(Arc::new(ClientSecretCredential::new(
-                options.http_client(),
-                options
-                    .authority_host()
-                    .expect("default authority host should be valid"),
-                tenant_id.clone(),
+            let cred = ClientSecretCredential::new(
+                tenant_id,
                 client_id.clone(),
-                client_secret.as_string().clone(),
-            )))
+                Secret::new(client_secret.as_string().clone()),
+                None,
+            )
+            .context(AzureGenericSnafu {})?;
+            token_credential = Some(cred as _);
+        } else if let Some(cred) = default_credential_chain().await {
+            token_credential = Some(cred);
         } else {
-            let default_creds = DefaultAzureCredentialBuilder::new()
-                .build()
-                .with_context(|_| AzureGenericSnafu {})?;
+            log::warn!("Azure credentials resolution failed. Defaulting to anonymous mode.");
+        }
 
-            if default_creds
-                .get_token(std::slice::from_ref(&AZURE_STORAGE_RESOURCE))
-                .await
-                .is_ok()
-            {
-                StorageCredentials::token_credential(Arc::new(default_creds))
-            } else {
-                log::warn!("Azure credentials resolution failed. Defaulting to anonymous mode.");
-                StorageCredentials::anonymous()
-            }
-        };
         let endpoint_url = if let Some(endpoint_url) = &config.endpoint_url {
             Some(endpoint_url.clone())
         } else {
             std::env::var("AZURE_ENDPOINT_URL").ok()
         };
-        let blob_client = if let Some(endpoint_url) = endpoint_url {
-            ClientBuilder::with_location(
-                CloudLocation::Custom {
-                    uri: endpoint_url,
-                    account: storage_account,
-                },
-                storage_credentials,
-            )
-            .blob_service_client()
+        let endpoint = if let Some(endpoint_url) = endpoint_url {
+            endpoint_url
         } else if config.use_fabric_endpoint {
-            ClientBuilder::with_location(
-                CloudLocation::Custom {
-                    uri: format!("https://{storage_account}.blob.fabric.microsoft.com"),
-                    account: storage_account,
-                },
-                storage_credentials,
-            )
-            .blob_service_client()
+            format!("https://{storage_account}.blob.fabric.microsoft.com")
         } else {
-            BlobServiceClient::new(storage_account, storage_credentials)
+            format!("https://{storage_account}.blob.core.windows.net")
         };
+        let endpoint = Url::parse(&endpoint).with_context(|_| InvalidUrlSnafu {
+            path: endpoint.clone(),
+        })?;
+        let endpoint = ensure_trailing_slash(endpoint);
+
+        let client_options = ClientOptions {
+            per_try_policies,
+            ..Default::default()
+        };
+        let options = BlobServiceClientOptions {
+            client_options: client_options.clone(),
+            version: AZURE_REST_API_VERSION.to_string(),
+        };
+        let blob_client_options = BlobClientOptions {
+            client_options,
+            version: AZURE_REST_API_VERSION.to_string(),
+        };
+
+        let blob_client = BlobServiceClient::new(endpoint, token_credential.clone(), Some(options))
+            .context(AzureGenericSnafu {})?;
 
         let connection_pool_sema = Arc::new(tokio::sync::Semaphore::new(
             (config.max_connections_per_io_thread.max(1) as usize)
@@ -273,9 +485,20 @@ impl AzureBlobSource {
 
         Ok(Self {
             blob_client: blob_client.into(),
+            token_credential,
+            blob_client_options,
             connection_pool_sema,
         }
         .into())
+    }
+
+    fn blob_client_for(&self, container: &str, key: &str) -> super::Result<BlobClient> {
+        Ok(BlobClient::new(
+            blob_url(self.blob_client.url(), container, key),
+            self.token_credential.clone(),
+            Some(self.blob_client_options.clone()),
+        )
+        .context(AzureGenericSnafu {})?)
     }
 
     async fn list_containers_stream(
@@ -284,36 +507,42 @@ impl AzureBlobSource {
         io_stats: Option<IOStatsRef>,
     ) -> BoxStream<'_, super::Result<FileMetadata>> {
         let protocol = protocol.to_string();
+        let blob_client = self.blob_client.clone();
 
-        // Paginated stream of results from Azure API call.
-        let responses_stream = self
-            .blob_client
-            .clone()
-            .list_containers()
-            .include_metadata(true)
-            .into_stream();
-
-        // Flatmap each page of results to a single stream of our standardized FileMetadata.
-        responses_stream
-            .map(move |response| {
+        let s = async_stream::stream! {
+            let mut pager = match blob_client.list_containers(None) {
+                Ok(pager) => pager.into_pages(),
+                Err(error) => {
+                    yield Err(Error::AzureGeneric { source: error }.into());
+                    return;
+                }
+            };
+            while let Some(page) = pager.next().await {
                 if let Some(is) = io_stats.clone() {
                     is.mark_list_requests(1);
                 }
-                (response, protocol.clone())
-            })
-            .flat_map(move |(response, protocol)| match response {
-                Ok(response) => {
-                    let containers = response.containers.into_iter().map(move |container| {
-                        Ok(self.container_to_file_metadata(protocol.as_str(), &container))
-                    });
-                    futures::stream::iter(containers).boxed()
+                match page {
+                    Ok(response) => match response.into_model() {
+                        Ok(body) => {
+                            for container in &body.container_items {
+                                if let Some(file_metadata) =
+                                    container_to_file_metadata(&protocol, container)
+                                {
+                                    yield Ok(file_metadata);
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            yield Err(Error::AzureGeneric { source: error }.into());
+                        }
+                    },
+                    Err(error) => {
+                        yield Err(Error::AzureGeneric { source: error }.into());
+                    }
                 }
-                Err(error) => {
-                    let error = Err(Error::AzureGeneric { source: error }.into());
-                    futures::stream::iter(vec![error]).boxed()
-                }
-            })
-            .boxed()
+            }
+        };
+        s.boxed()
     }
 
     async fn list_directory_stream(
@@ -324,8 +553,6 @@ impl AzureBlobSource {
         posix: bool,
         io_stats: Option<IOStatsRef>,
     ) -> BoxStream<'_, super::Result<FileMetadata>> {
-        let container_client = self.blob_client.container_client(container_name);
-
         // Clone and own some references that we need for the lifetime of the stream.
         let protocol = protocol.to_string();
         let container_name = container_name.to_string();
@@ -349,11 +576,10 @@ impl AzureBlobSource {
 
         let mut unchecked_results = self
             .list_directory_delimiter_stream(
-                &container_client,
                 &protocol,
                 &container_name,
                 &prefix_with_delimiter,
-                &posix,
+                posix,
                 io_stats.clone(),
             )
             .await;
@@ -400,11 +626,10 @@ impl AzureBlobSource {
                                 .trim_end_matches(|c: char| c.to_string() != AZURE_DELIMITER); // "/upper/"
 
                             let upper_results_stream = self.list_directory_delimiter_stream(
-                                &container_client,
                                 &protocol,
                                 &container_name,
                                 upper_dir,
-                                &posix,
+                                posix,
                                 io_stats.clone()
                             ).await;
 
@@ -448,11 +673,10 @@ impl AzureBlobSource {
 
     async fn list_directory_delimiter_stream(
         &self,
-        container_client: &ContainerClient,
         protocol: &str,
         container_name: &str,
         prefix: &str,
-        posix: &bool,
+        posix: bool,
         io_stats: Option<IOStatsRef>,
     ) -> BoxStream<'_, super::Result<FileMetadata>> {
         // Calls Azure list_blobs with the prefix
@@ -462,72 +686,122 @@ impl AzureBlobSource {
         let protocol = protocol.to_string();
         let container_name = container_name.to_string();
         let prefix = prefix.to_string();
+        let container_client = self.blob_client.blob_container_client(&container_name);
 
-        // Paginated response stream from Azure API.
-        let mut responses_stream = container_client.list_blobs().prefix(prefix.clone());
-
-        // Setting delimiter will trigger "directory-mode" which is a posix-like ls for the current directory
-        if *posix {
-            responses_stream = responses_stream.delimiter(AZURE_DELIMITER.to_string());
-        }
-
-        let responses_stream = responses_stream.into_stream();
-
-        // Map each page of results to a page of standardized FileMetadata.
-        responses_stream
-            .map(move |response| {
-                if let Some(is) = io_stats.clone() {
-                    is.mark_list_requests(1);
-                }
-                (response, protocol.clone(), container_name.clone())
-            })
-            .flat_map(move |(response, protocol, container_name)| match response {
-                Ok(response) => {
-                    let paths_data = response.blobs.items.into_iter().map(move |blob_item| {
-                        Ok(self.blob_item_to_file_metadata(&protocol, &container_name, &blob_item))
-                    });
-                    futures::stream::iter(paths_data).boxed()
-                }
-                Err(error) => {
-                    let error = Err(Error::RequestFailedForPath {
-                        path: format!("{}://{}{}", &protocol, &container_name, &prefix),
-                        source: error,
+        let s = async_stream::stream! {
+            let request_path = format!("{}://{}{}", &protocol, &container_name, &prefix);
+            if posix {
+                // Setting a delimiter triggers "directory-mode" which is a posix-like ls for the current directory.
+                let options = BlobContainerClientListBlobsHierarchicalOptions {
+                    prefix: Some(prefix.clone()),
+                    ..Default::default()
+                };
+                let mut pager =
+                    match container_client.list_blobs_hierarchical(AZURE_DELIMITER, Some(options)) {
+                        Ok(pager) => pager,
+                        Err(error) => {
+                            yield Err(Error::RequestFailedForPath {
+                                path: request_path,
+                                source: error,
+                            }
+                            .into());
+                            return;
+                        }
+                    };
+                while let Some(page) = pager.next().await {
+                    if let Some(is) = io_stats.clone() {
+                        is.mark_list_requests(1);
                     }
-                    .into());
-                    futures::stream::iter(vec![error]).boxed()
+                    match page {
+                        Ok(response) => {
+                            let body = response.into_body();
+                            match parse_hierarchical_listing_xml(&body) {
+                                Ok(listing) => {
+                                    for name in listing.prefixes {
+                                        yield Ok(file_metadata_for_prefix(
+                                            &protocol,
+                                            &container_name,
+                                            &name,
+                                        ));
+                                    }
+                                    for (name, size) in listing.blobs {
+                                        yield Ok(file_metadata_for_blob(
+                                            &protocol,
+                                            &container_name,
+                                            &name,
+                                            size,
+                                        ));
+                                    }
+                                }
+                                Err(reason) => {
+                                    yield Err(Error::InvalidListBlobsXml {
+                                        path: request_path.clone(),
+                                        reason,
+                                    }
+                                    .into());
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            yield Err(Error::RequestFailedForPath {
+                                path: request_path.clone(),
+                                source: error,
+                            }
+                            .into());
+                        }
+                    }
                 }
-            })
-            .boxed()
-    }
-
-    fn container_to_file_metadata(&self, protocol: &str, container: &Container) -> FileMetadata {
-        // NB: Cannot pass through to Azure client's .url() methods here
-        // because they return URIs of a very different format (https://.../container/path).
-        FileMetadata {
-            filepath: format!("{protocol}://{}/", &container.name),
-            size: None,
-            filetype: FileType::Directory,
-        }
-    }
-
-    fn blob_item_to_file_metadata(
-        &self,
-        protocol: &str,
-        container_name: &str,
-        blob_item: &BlobItem,
-    ) -> FileMetadata {
-        match blob_item {
-            BlobItem::Blob(blob) => FileMetadata {
-                filepath: format!("{protocol}://{}/{}", container_name, &blob.name),
-                size: Some(blob.properties.content_length),
-                filetype: FileType::File,
-            },
-            BlobItem::BlobPrefix(prefix) => FileMetadata {
-                filepath: format!("{protocol}://{}/{}", container_name, &prefix.name),
-                size: None,
-                filetype: FileType::Directory,
-            },
-        }
+            } else {
+                let options = BlobContainerClientListBlobsOptions {
+                    prefix: Some(prefix.clone()),
+                    ..Default::default()
+                };
+                let mut pager = match container_client.list_blobs(Some(options)) {
+                    Ok(pager) => pager.into_pages(),
+                    Err(error) => {
+                        yield Err(Error::RequestFailedForPath {
+                            path: request_path,
+                            source: error,
+                        }
+                        .into());
+                        return;
+                    }
+                };
+                while let Some(page) = pager.next().await {
+                    if let Some(is) = io_stats.clone() {
+                        is.mark_list_requests(1);
+                    }
+                    match page {
+                        Ok(response) => match response.into_model() {
+                            Ok(body) => {
+                                for blob in body.blob_items {
+                                    if let Some(file_metadata) =
+                                        blob_to_file_metadata(&protocol, &container_name, &blob)
+                                    {
+                                        yield Ok(file_metadata);
+                                    }
+                                }
+                            }
+                            Err(error) => {
+                                yield Err(Error::RequestFailedForPath {
+                                    path: request_path.clone(),
+                                    source: error,
+                                }
+                                .into());
+                            }
+                        },
+                        Err(error) => {
+                            yield Err(Error::RequestFailedForPath {
+                                path: request_path.clone(),
+                                source: error,
+                            }
+                            .into());
+                        }
+                    }
+                }
+            }
+        };
+        s.boxed()
     }
 
     /// Internal get_size that does NOT acquire the semaphore.
@@ -549,17 +823,21 @@ impl AzureBlobSource {
             return Err(Error::NotAFile { path: uri.into() }.into());
         }
 
-        let container_client = self.blob_client.container_client(container);
-        let blob_client = container_client.blob_client(key);
-        let metadata = blob_client
-            .get_properties()
+        let blob_client = self.blob_client_for(&container, &key)?;
+        let response = blob_client
+            .get_properties(None)
             .await
             .context(UnableToOpenFileSnafu::<String> { path: uri.into() })?;
         if let Some(is) = io_stats.as_ref() {
             is.mark_head_requests(1);
         }
 
-        Ok(metadata.blob.properties.content_length as usize)
+        let content_length = response
+            .content_length()
+            .context(RequestFailedForPathSnafu::<String> { path: uri.into() })?
+            .ok_or_else(|| Error::NotAFile { path: uri.into() })?;
+
+        Ok(content_length as usize)
     }
 }
 
@@ -594,36 +872,35 @@ impl ObjectSource for AzureBlobSource {
             return Err(Error::NotAFile { path: uri.into() }.into());
         }
 
-        let container_client = self.blob_client.container_client(container);
-        let blob_client = container_client.blob_client(key);
-        let request_builder = blob_client.get();
-        let request_builder = if let Some(range) = range {
+        let blob_client = self.blob_client_for(&container, &key)?;
+        let mut options = BlobClientDownloadOptions::default();
+        if let Some(range) = range {
             range.validate().context(InvalidRangeRequestSnafu)?;
-            match range {
-                GetRange::Bounded(u) => request_builder.range(u),
+            options.range = Some(match range {
+                GetRange::Bounded(u) => HttpRange::from(u),
                 // Note: if n is greater than file size, Azure will return the whole content.
-                GetRange::Offset(n) => request_builder.range(n..),
+                GetRange::Offset(n) => HttpRange::from_offset(n as u64),
                 GetRange::Suffix(n) => {
                     // Use get_size_internal to avoid deadlock (we already hold a permit)
                     let size = self.get_size_internal(uri, io_stats.clone()).await?;
-                    request_builder.range(size.saturating_sub(n)..)
+                    HttpRange::from_offset(size.saturating_sub(n) as u64)
                 }
-            }
-        } else {
-            request_builder
-        };
-        let blob_stream = request_builder.into_stream();
+            });
+        }
+
+        let response = blob_client
+            .download(Some(options))
+            .await
+            .context(UnableToOpenFileSnafu::<String> { path: uri.into() })?;
 
         let owned_string = uri.to_string();
-        let stream = blob_stream
-            .and_then(async move |v: GetBlobResponse| v.data.collect().await)
-            .map_err(move |e| {
-                UnableToReadBytesSnafu::<String> {
-                    path: owned_string.clone(),
-                }
-                .into_error(e)
-                .into()
-            });
+        let stream = response.body.map_err(move |e| {
+            UnableToReadBytesSnafu::<String> {
+                path: owned_string.clone(),
+            }
+            .into_error(e)
+            .into()
+        });
         if let Some(is) = io_stats.as_ref() {
             is.mark_get_requests(1);
         }
@@ -713,11 +990,8 @@ impl ObjectSource for AzureBlobSource {
         _page_size: Option<i32>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<LSResult> {
-        // It looks like the azure rust library API
-        // does not currently allow using the continuation token:
-        // https://docs.rs/azure_storage_blobs/0.15.0/azure_storage_blobs/container/operations/list_blobs/struct.ListBlobsBuilder.html
-        // https://docs.rs/azure_storage_blobs/0.15.0/azure_storage_blobs/service/operations/struct.ListContainersBuilder.html
-        // https://docs.rs/azure_core/0.15.0/azure_core/struct.Pageable.html
+        // Continuation tokens are handled internally by the SDK's page
+        // iterators; resuming from an external token is not supported.
         match continuation_token {
             None => Ok(()),
             Some(token) => Err(Error::ContinuationToken {
@@ -740,5 +1014,87 @@ impl ObjectSource for AzureBlobSource {
 
     fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use azure_core::http::Url;
+
+    use super::{blob_url, ensure_trailing_slash, parse_hierarchical_listing_xml, unescape_xml};
+
+    #[test]
+    fn parses_repeated_hns_blob_prefixes() {
+        // HNS accounts emit multiple <BlobPrefix> siblings, each with <Properties>.
+        // The GA SDK's Option<Vec<BlobPrefix>> deserializer rejects this XML with
+        // "duplicate field BlobPrefix".
+        let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<EnumerationResults ServiceEndpoint="https://dafttestdata.blob.core.windows.net/" ContainerName="public-anonymous">
+  <Prefix>/</Prefix>
+  <Delimiter>/</Delimiter>
+  <Blobs>
+    <BlobPrefix>
+      <Name>iceberg/</Name>
+      <Properties>
+        <Creation-Time>Thu, 06 Jun 2024 21:52:18 GMT</Creation-Time>
+        <ResourceType>directory</ResourceType>
+        <Content-Length>0</Content-Length>
+        <BlobType>BlockBlob</BlobType>
+      </Properties>
+    </BlobPrefix>
+    <Blob>
+      <Name>mvp.parquet</Name>
+      <Properties>
+        <Content-Length>1234</Content-Length>
+        <BlobType>BlockBlob</BlobType>
+      </Properties>
+    </Blob>
+    <BlobPrefix>
+      <Name>test_ls/</Name>
+      <Properties>
+        <ResourceType>directory</ResourceType>
+        <Content-Length>0</Content-Length>
+      </Properties>
+    </BlobPrefix>
+  </Blobs>
+  <NextMarker />
+</EnumerationResults>"#;
+
+        let listing = parse_hierarchical_listing_xml(xml.as_bytes()).unwrap();
+        assert_eq!(listing.prefixes, vec!["iceberg/", "test_ls/"]);
+        assert_eq!(listing.blobs, vec![("mvp.parquet".to_string(), Some(1234))]);
+    }
+
+    #[test]
+    fn strips_bom_and_unescapes_names() {
+        let xml = "\u{feff}<Blobs><BlobPrefix><Name>a&amp;b/</Name></BlobPrefix><Blob><Name>c&lt;d</Name><Properties><Content-Length></Content-Length></Properties></Blob></Blobs>";
+        let listing = parse_hierarchical_listing_xml(xml.as_bytes()).unwrap();
+        assert_eq!(listing.prefixes, vec!["a&b/"]);
+        assert_eq!(listing.blobs, vec![("c<d".to_string(), None)]);
+        assert_eq!(unescape_xml("&quot;x&apos;"), "\"x'");
+    }
+
+    #[test]
+    fn blob_url_keeps_virtual_directory_slashes() {
+        let service = Url::parse("http://127.0.0.1:10000/devstoreaccount1/").unwrap();
+        let url = blob_url(&service, "test-data", "/part_idx=0/file.parquet");
+        assert_eq!(
+            url.as_str(),
+            "http://127.0.0.1:10000/devstoreaccount1/test-data/part_idx=0/file.parquet"
+        );
+    }
+
+    #[test]
+    fn blob_url_production_account() {
+        let service = Url::parse("https://myaccount.blob.core.windows.net").unwrap();
+        let url = blob_url(
+            &ensure_trailing_slash(service),
+            "container",
+            "dir/blob.parquet",
+        );
+        assert_eq!(
+            url.as_str(),
+            "https://myaccount.blob.core.windows.net/container/dir/blob.parquet"
+        );
     }
 }
