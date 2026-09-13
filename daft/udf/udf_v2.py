@@ -267,13 +267,6 @@ class Func(Generic[P, T, C]):
                 return_dtype = args[0]
         return DataType._infer(return_dtype)
 
-    @overload
-    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> T: ...
-    @overload
-    def __call__(self, *args: Expression, **kwargs: Expression) -> Expression: ...
-    @overload
-    def __call__(self, *args: Any, **kwargs: Any) -> Expression | T: ...
-
     def _input_dtypes_for_expr_args(self, args: tuple[Any, ...], kwargs: dict[str, Any]) -> list[DataType | None]:
         """Declared input DataType for each Expression argument, aligned with `expr_args` order.
 
@@ -311,6 +304,12 @@ class Func(Generic[P, T, C]):
                 result.append(dtype_for(key))
         return result
 
+    @overload
+    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> T: ...
+    @overload
+    def __call__(self, *args: Expression, **kwargs: Expression) -> Expression: ...
+    @overload
+    def __call__(self, *args: Any, **kwargs: Any) -> Expression | T: ...
     def __call__(self, *args: Any, **kwargs: Any) -> Expression | T:
         expr_args = []
         for arg in args:
