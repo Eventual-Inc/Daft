@@ -731,6 +731,11 @@ def test_series_utf8_extract_all_bad_pattern() -> None:
         ([None] * 4, ["foo"] * 4, [None] * 4),
         # All null substrs
         (["foo"] * 4, [None] * 4, [None] * 4),
+        # Unicode character indices (not byte offsets)
+        (["你好世界", "a😀b"], ["世", "b"], [2, 2]),
+        (["你好世界"], ["好"], [1]),
+        (["a😀b"], ["😀"], [1]),
+        (["你好世界"], ["界外"], [-1]),
     ],
 )
 def test_series_utf8_find(data, substrs, expected) -> None:
@@ -1245,8 +1250,11 @@ def test_series_utf8_ilike_empty_arrs() -> None:
         pytest.param(["foo"] * 4, [0] * 4, [None] * 4, ["foo"] * 4, id="All null length"),
         pytest.param(["foo"] * 4, [None] * 4, [None] * 4, [None] * 4, id="All null length and length"),
         pytest.param(["😃😌😝", "abc😃😄😅"], [1, 3], [None], ["😌😝", "😃😄😅"], id="With emojis"),
-        pytest.param(["foo"], [0], [0], [None], id="Zero length"),
-        pytest.param(["foo"], [5], [10], [None], id="Start over the string length"),
+        pytest.param(["foo"], [0], [0], [""], id="Zero length"),
+        pytest.param(["foo"], [5], [10], [""], id="Start over the string length"),
+        pytest.param(["foo", "barbarbar", "quux", "1", ""], [0], [5], ["foo", "barba", "quux", "1", ""], id="Empty string"),
+        pytest.param(["你好世界"], [2], [2], ["世界"], id="Unicode substring"),
+        pytest.param(["你好世界"], [2], [0], [""], id="Unicode zero length"),
         pytest.param(["foo", "bar"], [0, 1], [None, None], ["foo", "ar"], id="None series length"),
     ],
 )

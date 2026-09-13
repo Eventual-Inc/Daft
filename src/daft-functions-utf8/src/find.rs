@@ -54,7 +54,7 @@ impl ScalarUDF for Find {
     }
 
     fn docstring(&self) -> &'static str {
-        "Returns the index of the first occurrence of the substring in each string."
+        "Returns the 0-based character index of the first occurrence of the substring in each string, or -1 if not found."
     }
 }
 
@@ -82,11 +82,50 @@ fn find_impl(arr: &Utf8Array, substr: &Utf8Array) -> DaftResult<Int64Array> {
     let iter = self_iter
         .zip(substr_iter)
         .map(|(val, substr)| match (val, substr) {
-            (Some(val), Some(substr)) => Some(val.find(substr).map(|pos| pos as i64).unwrap_or(-1)),
+            (Some(val), Some(substr)) => Some(find_char_index(val, substr)),
             _ => None,
         });
 
     let result = Int64Array::from_iter(Arc::new(Field::new(arr.name(), DataType::Int64)), iter);
     assert_eq!(result.len(), expected_size);
     Ok(result)
+}
+
+/// Returns the 0-based Unicode character index of `needle` in `haystack`, or -1 if not found.
+///
+/// Rust's [`str::find`] returns a byte offset, which disagrees with `substr` / `left` / `right`
+/// (those operate on character indices). Empty needles match at index 0, matching `str::find`.
+fn find_char_index(haystack: &str, needle: &str) -> i64 {
+    if needle.is_empty() {
+        return 0;
+    }
+    haystack
+        .char_indices()
+        .enumerate()
+        .find(|&(_, (byte_idx, _))| haystack[byte_idx..].starts_with(needle))
+        .map(|(char_idx, _)| char_idx as i64)
+        .unwrap_or(-1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_find_char_index_ascii() {
+        assert_eq!(find_char_index("foobar", "bar"), 3);
+        assert_eq!(find_char_index("foobar", "baz"), -1);
+        assert_eq!(find_char_index("foobar", ""), 0);
+        assert_eq!(find_char_index("", "a"), -1);
+        assert_eq!(find_char_index("", ""), 0);
+    }
+
+    #[test]
+    fn test_find_char_index_unicode() {
+        assert_eq!(find_char_index("你好世界", "世"), 2);
+        assert_eq!(find_char_index("你好世界", "好"), 1);
+        assert_eq!(find_char_index("你好世界", "界外"), -1);
+        assert_eq!(find_char_index("a😀b", "b"), 2);
+        assert_eq!(find_char_index("a😀b", "😀"), 1);
+    }
 }
