@@ -214,9 +214,15 @@ def test_negative_offset(input_df):
 
 
 def test_offset_without_limit(input_df):
-    with pytest.raises(Exception) as excinfo:
-        input_df.select("name").offset(17).collect()
-    assert "Not Yet Implemented: Offset without limit is unsupported now!" in str(excinfo.value)
+    df = input_df.select("name").offset(17)
+    assert df.count_rows() == 1024 - 17
+
+
+def test_offset_without_limit_preserves_remaining_rows():
+    df = daft.from_pydict({"x": [1, 2, 3, 4, 5]})
+    assert df.offset(2).to_pydict() == {"x": [3, 4, 5]}
+    assert df.offset(0).to_pydict() == {"x": [1, 2, 3, 4, 5]}
+    assert df.offset(5).to_pydict() == {"x": []}
 
 
 @pytest.mark.parametrize(

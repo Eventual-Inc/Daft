@@ -57,11 +57,20 @@ impl RewriteOffset {
                         )));
                         Ok(Transformed::yes(new_plan))
                     }
-                    // Currently, offset without limit is not supported
-                    _ => Err(DaftError::not_implemented(
-                        // TODO(zhenchao) maybe we should allow users to use offset without limit
-                        "Offset without limit is unsupported now!",
-                    )),
+                    // Offset(n) with no Limit child: skip n rows, keep the rest.
+                    // Physical layer only understands Limit, so rewrite to Limit(cap, Some(n)).
+                    // Cap at i64::MAX so limit+offset and Ray's `limit as i64` cannot overflow.
+                    _ => {
+                        const OFFSET_WITHOUT_LIMIT_CAP: u64 = i64::MAX as u64;
+                        let limit = OFFSET_WITHOUT_LIMIT_CAP.saturating_sub(*offset);
+                        let new_plan = Arc::new(LogicalPlan::Limit(LogicalLimit::new(
+                            input.clone(),
+                            limit,
+                            Some(*offset),
+                            false,
+                        )));
+                        Ok(Transformed::yes(new_plan))
+                    }
                 }
             }
             // Some checks on LIMIT nodes
@@ -240,10 +249,10 @@ mod tests {
             Field::new("a", DataType::Int64),
             Field::new("b", DataType::Utf8),
         ]);
-        let plan = dummy_scan_node(scan_op).offset(offset)?.build();
-        assert_optimized_plan_err(
-            plan,
-            DaftError::not_implemented("Offset without limit is unsupported now!"),
-        )
+        let plan = dummy_scan_node(scan_op.clone()).offset(offset)?.build();
+        let expected = dummy_scan_node(scan_op)
+            .limit_with_offset((i64::MAX as u64).saturating_sub(offset), Some(offset), false)?
+            .build();
+        assert_optimized_plan_eq(plan, expected)
     }
 }
