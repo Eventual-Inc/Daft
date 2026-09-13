@@ -251,7 +251,11 @@ mod tests {
         ]);
         let plan = dummy_scan_node(scan_op.clone()).offset(offset)?.build();
         let expected = dummy_scan_node(scan_op)
-            .limit_with_offset((i64::MAX as u64).saturating_sub(offset), Some(offset), false)?
+            .limit_with_offset(
+                (i64::MAX as u64).saturating_sub(offset),
+                Some(offset),
+                false,
+            )?
             .build();
         assert_optimized_plan_eq(plan, expected)
     }
