@@ -1565,7 +1565,8 @@ def find(expr: Expression, substr: str | Expression) -> Expression:
         Expression: an Int64 expression with the index of the first occurrence of the substring in each string
 
     Note:
-        The returned index is 0-based and counts Unicode characters (not bytes). If the substring is not found, -1 is returned.
+        The returned index is 0-based and counts Unicode characters (not bytes).
+        If the substring is not found, -1 is returned.
 
     Examples:
         >>> import daft
