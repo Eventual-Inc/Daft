@@ -274,6 +274,43 @@ class Func(Generic[P, T, C]):
     @overload
     def __call__(self, *args: Any, **kwargs: Any) -> Expression | T: ...
 
+    def _input_dtypes_for_expr_args(self, args: tuple[Any, ...], kwargs: dict[str, Any]) -> list[DataType | None]:
+        """Declared input DataType for each Expression argument, aligned with `expr_args` order.
+
+        `None` means the parameter was unannotated (or annotated as `Any`/`object`), so no
+        planning-time validation should be performed for it. Returns `None` entirely if the
+        signature cannot be introspected, disabling validation rather than guessing.
+        """
+        try:
+            params = list(inspect.signature(self._method).parameters.values())
+            # `@daft.cls` methods carry a leading `self`; `@daft.func` wrappers do not. Drop it.
+            if params and params[0].name == "self":
+                params = params[1:]
+            type_hints = get_type_hints(self._method)
+        except (ValueError, TypeError, NameError):
+            return [None] * (
+                sum(isinstance(a, Expression) for a in args) + sum(isinstance(a, Expression) for a in kwargs.values())
+            )
+
+        def dtype_for(param_name: str) -> DataType | None:
+            hint = type_hints.get(param_name)
+            if hint is None or hint is Any:
+                return None
+            inferred = DataType._infer(hint)
+            # An explicit `object`/`Any` annotation infers to python; treat as "no constraint".
+            return None if inferred == DataType.python() else inferred
+
+        # Match positional args to parameter names, then keyword args by name.
+        pos_names = [p.name for p in params if p.kind != inspect.Parameter.KEYWORD_ONLY]
+        result: list[DataType | None] = []
+        for i, arg in enumerate(args):
+            if isinstance(arg, Expression):
+                result.append(dtype_for(pos_names[i]) if i < len(pos_names) else None)
+        for key, arg in kwargs.items():
+            if isinstance(arg, Expression):
+                result.append(dtype_for(key))
+        return result
+
     def __call__(self, *args: Any, **kwargs: Any) -> Expression | T:
         expr_args = []
         for arg in args:
@@ -287,6 +324,9 @@ class Func(Generic[P, T, C]):
         if len(expr_args) == 0:
             bound_method = self._cls._daft_bind_method(self._method)
             return bound_method(*args, **kwargs)
+
+        # Declared input dtypes for planning-time signature validation (row-wise only).
+        input_dtypes = [dt._dtype if dt is not None else None for dt in self._input_dtypes_for_expr_args(args, kwargs)]
 
         # When building expression-based UDFs, we must avoid incorrectly sharing call-site state across multiple uses of the same function.
         call_seq = getattr(self, "_daft_call_seq", 0)
@@ -344,6 +384,7 @@ class Func(Generic[P, T, C]):
                     (args, kwargs),
                     expr_args,
                     ray_options if ray_options else None,
+                    input_dtypes,
                 )
             ).explode()
         elif self.is_batch:
@@ -387,6 +428,7 @@ class Func(Generic[P, T, C]):
                     (args, kwargs),
                     expr_args,
                     ray_options if ray_options else None,
+                    input_dtypes,
                 )
             )
 

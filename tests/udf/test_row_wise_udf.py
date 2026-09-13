@@ -567,3 +567,41 @@ def test_row_wise_udf_kwargs_prefix_suffix_literals_and_exprs():
         "customized": ["$1010", "$2020", "$3030"],
     }
     assert result == expected
+
+
+def test_row_wise_udf_input_type_signature_validation():
+    """Declared input type hints are validated at planning time, like native expressions.
+
+    Regression test for https://github.com/Eventual-Inc/Daft/issues/5462
+    """
+    df = daft.from_pydict({"ints_list": [[1], [1, 2, 3]], "s": ["a", "b"]})
+
+    @daft.func
+    def my_upper(s: str) -> str:
+        return s.upper()
+
+    # Mismatched input type errors during planning, not at runtime.
+    with pytest.raises(
+        daft.exceptions.DaftCoreException,
+        match="Expects input to '.*my_upper' to be String, but received List",
+    ):
+        df.select(my_upper(df["ints_list"]))
+
+    # Matching input type is accepted.
+    assert df.select(my_upper(df["s"])).to_pydict() == {"s": ["A", "B"]}
+
+    # Unannotated parameters are not validated (opt-in behavior).
+    @daft.func
+    def no_type(x) -> str:
+        return str(x)
+
+    assert df.select(no_type(df["ints_list"])).to_pydict() == {"ints_list": ["[1]", "[1, 2, 3]"]}
+
+    # Optional annotations validate against the non-None type.
+    @daft.func
+    def opt_upper(s: str | None) -> str:
+        return "" if s is None else s.upper()
+
+    assert df.select(opt_upper(df["s"])).to_pydict() == {"s": ["A", "B"]}
+    with pytest.raises(daft.exceptions.DaftCoreException, match="Expects input to '.*opt_upper' to be String"):
+        df.select(opt_upper(df["ints_list"]))

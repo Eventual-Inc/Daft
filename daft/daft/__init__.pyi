@@ -1839,6 +1839,7 @@ def row_wise_udf(
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
     expr_args: list[PyExpr],
     ray_options: dict[str, Any] | None = None,
+    input_dtypes: list[PyDataType | None] | None = None,
 ) -> PyExpr: ...
 def batch_udf(
     func_id: str,
