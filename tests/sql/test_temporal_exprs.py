@@ -247,7 +247,7 @@ def test_date_comparison():
 
 
 def test_at_time_zone():
-    df = daft.from_pydict(
+    df = daft.from_pydict(  # noqa: F841
         {
             "ts": [
                 datetime.datetime(2021, 1, 1, 12, 0, tzinfo=datetime.timezone.utc),
