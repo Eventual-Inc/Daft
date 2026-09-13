@@ -569,7 +569,7 @@ mod tests {
         let err = deserialize_json(r#"{"xs":[1,2,3]}"#, &schema).unwrap_err();
         let msg = err.to_string();
         assert!(
-            msg.contains("fixed-size list") && msg.contains("2") && msg.contains("3"),
+            msg.contains("fixed-size list") && msg.contains('2') && msg.contains('3'),
             "unexpected error: {msg}"
         );
     }
