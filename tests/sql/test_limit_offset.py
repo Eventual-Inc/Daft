@@ -175,9 +175,8 @@ def test_negative_offset(input_df):
 
 
 def test_offset_without_limit(input_df):
-    with pytest.raises(Exception) as excinfo:
-        daft.sql("SELECT name FROM input_df OFFSET 17", **{"input_df": input_df}).collect()
-    assert "Not Yet Implemented: Offset without limit is unsupported now!" in str(excinfo.value)
+    df = daft.sql("SELECT name FROM input_df OFFSET 17", **{"input_df": input_df})
+    assert df.count_rows() == 1024 - 17
 
 
 def test_limit_before_offset(input_df):
