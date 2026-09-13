@@ -16,8 +16,7 @@ pub(crate) struct Options {
 }
 
 /// Identifier mode controls identifier resolution and name binding logic (tables, columns, views, etc).
-#[derive(Debug, Default, Clone)]
-#[allow(dead_code)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub enum IdentifierMode {
     /// For `ident AS alias` -> lookup 'ident' case-insensitively and bind to 'alias' case-preserved.
     Insensitive,
@@ -26,6 +25,21 @@ pub enum IdentifierMode {
     Sensitive,
     /// For `ident AS aLiAs` -> lookup 'ident' case-sensitively and bind to `lowercase('aLiAs') -> 'alias'`.
     Normalize,
+}
+
+impl std::str::FromStr for IdentifierMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "sensitive" => Ok(Self::Sensitive),
+            "insensitive" => Ok(Self::Insensitive),
+            "normalize" => Ok(Self::Normalize),
+            other => Err(format!(
+                "invalid identifier_mode '{other}', expected sensitive, insensitive, or normalize"
+            )),
+        }
+    }
 }
 
 /// Options helpers to convert session

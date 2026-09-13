@@ -146,3 +146,15 @@ def test_pydict_catalog():
     table_t = sess.sql("SELECT * FROM T")
     table_s = sess.read_table("S")
     assert_eq(table_t, table_s)
+
+
+def test_sql_set_catalog(sess: Session):
+    assert sess.sql("SET catalog = 'cat_2'") is None
+    sess.set_namespace("ns_1")
+    assert sess.sql("select * from tbl_cat_2_11") is not None
+
+
+def test_sql_set_unsupported_does_not_panic():
+    sess = Session()
+    with pytest.raises(Exception, match="SET"):
+        sess.sql("SET not_a_real_option = 'x'")

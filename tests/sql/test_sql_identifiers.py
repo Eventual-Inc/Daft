@@ -60,3 +60,10 @@ def test_case_sensitive_identifiers():
     assert_ok(sess, " abc ", find="abc")
     assert_ok(sess, " ABC ", find="ABC")
     assert_ok(sess, " aBc ", find="aBc")
+
+
+def test_sql_set_identifier_mode_insensitive():
+    sess = Session()
+    sess.create_temp_table("T", _df("T"))
+    assert sess.sql("SET identifier_mode = 'insensitive'") is None
+    assert_ok(sess, "t", find="T")

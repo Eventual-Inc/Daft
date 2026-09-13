@@ -89,9 +89,7 @@ impl SQLPlanner<'_> {
                 *has_table_keyword,
                 table_name,
             ),
-            ast::Statement::Set(_) => {
-                todo!("set_variable")
-            }
+            ast::Statement::Set(set) => self.plan_set(set),
             ast::Statement::ShowTables {
                 extended,
                 full,
@@ -170,9 +168,45 @@ impl SQLPlanner<'_> {
         Ok(Statement::Select(describe.build()))
     }
 
-    #[allow(dead_code)]
-    fn plan_set(&self, _: &ast::SetConfigValue) -> SQLPlannerResult<Statement> {
-        unsupported_sql_err!("SET statement is not yet supported.")
+    fn plan_set(&self, set: &ast::Set) -> SQLPlannerResult<Statement> {
+        match set {
+            ast::Set::SingleAssignment {
+                hivevar,
+                variable,
+                values,
+                ..
+            } => {
+                if *hivevar {
+                    unsupported_sql_err!("SET hivevar")
+                }
+                if values.len() != 1 {
+                    unsupported_sql_err!("SET with multiple values")
+                }
+                Ok(Statement::Set(Set {
+                    option: variable.to_string(),
+                    value: Self::set_value_to_string(&values[0])?,
+                }))
+            }
+            other => unsupported_sql_err!("SET statement: {other}"),
+        }
+    }
+
+    fn set_value_to_string(expr: &ast::Expr) -> SQLPlannerResult<String> {
+        match expr {
+            ast::Expr::Value(v) => match &v.value {
+                ast::Value::SingleQuotedString(s)
+                | ast::Value::DoubleQuotedString(s)
+                | ast::Value::DollarQuotedString(ast::DollarQuotedString { value: s, .. }) => {
+                    Ok(s.clone())
+                }
+                ast::Value::Number(n, _) => Ok(n.clone()),
+                ast::Value::Boolean(b) => Ok(b.to_string()),
+                ast::Value::Null => Ok("null".to_string()),
+                other => unsupported_sql_err!("SET value {other}"),
+            },
+            ast::Expr::Identifier(ident) => Ok(ident.value.clone()),
+            other => unsupported_sql_err!("SET value {other}"),
+        }
     }
 
     fn plan_show_tables(
@@ -608,6 +642,55 @@ mod test {
                 .unwrap_err()
                 .to_string()
                 .contains("Duplicate column name: a")
+        );
+    }
+
+    #[test]
+    fn test_set_identifier_mode() {
+        let statement = parse_sql("SET identifier_mode = 'insensitive'");
+        let session = Session::default();
+        let mut planner = SQLPlanner::new(&session);
+        let plan = planner.plan_statement(&statement).unwrap();
+        if let Statement::Set(set) = plan {
+            assert_eq!(set.option.to_lowercase(), "identifier_mode");
+            assert_eq!(set.value, "insensitive");
+        } else {
+            panic!("Expected Set statement");
+        }
+    }
+
+    #[test]
+    fn test_set_catalog_unquoted() {
+        let statement = parse_sql("SET catalog = my_cat");
+        let session = Session::default();
+        let mut planner = SQLPlanner::new(&session);
+        let plan = planner.plan_statement(&statement).unwrap();
+        if let Statement::Set(set) = plan {
+            assert_eq!(set.option.to_lowercase(), "catalog");
+            assert_eq!(set.value, "my_cat");
+        } else {
+            panic!("Expected Set statement");
+        }
+    }
+
+    #[test]
+    fn test_set_unknown_plans_without_panic() {
+        let statement = parse_sql("SET not_a_real_option = 'x'");
+        let session = Session::default();
+        let mut planner = SQLPlanner::new(&session);
+        let plan = planner.plan_statement(&statement).unwrap();
+        assert!(matches!(plan, Statement::Set(_)));
+    }
+
+    #[test]
+    fn test_set_time_zone_is_unsupported_not_panic() {
+        let statement = parse_sql("SET TIME ZONE 'UTC'");
+        let session = Session::default();
+        let mut planner = SQLPlanner::new(&session);
+        let err = planner.plan_statement(&statement).unwrap_err();
+        assert!(
+            err.to_string().to_lowercase().contains("set"),
+            "unexpected error: {err}"
         );
     }
 }

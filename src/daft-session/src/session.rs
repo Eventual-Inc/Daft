@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use crate::{
     ScalarFunction, ambiguous_identifier_err,
-    error::CatalogResult,
+    error::{CatalogError, CatalogResult},
     obj_already_exists_err, obj_not_found_err,
     options::{IdentifierMode, Options},
     unsupported_err,
@@ -465,6 +465,20 @@ impl Session {
         }
 
         Ok(out)
+    }
+
+    /// Sets the identifier mode used for name resolution.
+    pub fn set_identifier_mode(&self, mode: &str) -> CatalogResult<()> {
+        let parsed = mode
+            .parse::<IdentifierMode>()
+            .map_err(CatalogError::unsupported)?;
+        self.state_mut().options.identifier_mode = parsed;
+        Ok(())
+    }
+
+    /// Returns the current identifier mode.
+    pub fn identifier_mode(&self) -> IdentifierMode {
+        self.state().options.identifier_mode.clone()
     }
 
     /// Sets the current_catalog.
