@@ -93,17 +93,15 @@ fn find_impl(arr: &Utf8Array, substr: &Utf8Array) -> DaftResult<Int64Array> {
 
 /// Returns the 0-based Unicode character index of `needle` in `haystack`, or -1 if not found.
 ///
-/// Rust's [`str::find`] returns a byte offset, which disagrees with `substr` / `left` / `right`
-/// (those operate on character indices). Empty needles match at index 0, matching `str::find`.
+/// Uses [`str::find`] for a linear substring search, then converts the matched byte offset
+/// into a character index. Empty needles match at index 0, matching `str::find`.
 fn find_char_index(haystack: &str, needle: &str) -> i64 {
     if needle.is_empty() {
         return 0;
     }
     haystack
-        .char_indices()
-        .enumerate()
-        .find(|&(_, (byte_idx, _))| haystack[byte_idx..].starts_with(needle))
-        .map(|(char_idx, _)| char_idx as i64)
+        .find(needle)
+        .map(|byte_idx| haystack[..byte_idx].chars().count() as i64)
         .unwrap_or(-1)
 }
 
