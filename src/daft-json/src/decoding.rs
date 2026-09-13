@@ -40,17 +40,17 @@ pub fn deserialize_records<'a, A: Borrow<BorrowedValue<'a>>>(
     let fields: Vec<_> = schema.fields().iter().collect();
     let mut builders: IndexMap<&str, Box<dyn ArrayBuilder>> = fields
         .iter()
-        .map(|f| (f.name().as_str(), allocate_array(f, records.len())))
-        .collect();
+        .map(|f| allocate_array(f, records.len()).map(|b| (f.name().as_str(), b)))
+        .collect::<Result<_, ArrowError>>()?;
     for record in records {
         match record.borrow() {
             BorrowedValue::Object(record) => {
                 for (i, (key, arr)) in builders.iter_mut().enumerate() {
                     let dtype = fields[i].data_type();
                     if let Some(value) = record.get(&**key) {
-                        deserialize_into(arr, dtype, &[value]);
+                        deserialize_into(arr, dtype, &[value])?;
                     } else {
-                        deserialize_into(arr, dtype, &[&JSON_NULL_VALUE]);
+                        deserialize_into(arr, dtype, &[&JSON_NULL_VALUE])?;
                     }
                 }
             }
@@ -69,8 +69,8 @@ pub fn deserialize_records<'a, A: Borrow<BorrowedValue<'a>>>(
         .collect())
 }
 
-pub fn allocate_array(f: &Field, length: usize) -> Box<dyn ArrayBuilder> {
-    match f.data_type() {
+pub fn allocate_array(f: &Field, length: usize) -> Result<Box<dyn ArrayBuilder>, ArrowError> {
+    Ok(match f.data_type() {
         DataType::Null => Box::new(NullBuilder::new()),
         DataType::Int8 => Box::new(PrimitiveBuilder::<Int8Type>::with_capacity(length)),
         DataType::Int16 => Box::new(PrimitiveBuilder::<Int16Type>::with_capacity(length)),
@@ -136,7 +136,7 @@ pub fn allocate_array(f: &Field, length: usize) -> Box<dyn ArrayBuilder> {
         DataType::Utf8 => Box::new(GenericStringBuilder::<i32>::with_capacity(length, 1024)),
         DataType::LargeUtf8 => Box::new(GenericStringBuilder::<i64>::with_capacity(length, 1024)),
         DataType::FixedSizeList(inner, size) => {
-            let inner_builder = allocate_array(inner.as_ref(), length);
+            let inner_builder = allocate_array(inner.as_ref(), length)?;
             Box::new(FixedSizeListBuilder::with_capacity(
                 inner_builder,
                 *size,
@@ -144,22 +144,26 @@ pub fn allocate_array(f: &Field, length: usize) -> Box<dyn ArrayBuilder> {
             ))
         }
         DataType::List(inner) => {
-            let inner_builder = allocate_array(inner.as_ref(), length);
+            let inner_builder = allocate_array(inner.as_ref(), length)?;
             Box::new(
                 GenericListBuilder::<i32, _>::with_capacity(inner_builder, length)
                     .with_field(inner.clone()),
             )
         }
         DataType::LargeList(inner) => {
-            let inner_builder = allocate_array(inner.as_ref(), length);
+            let inner_builder = allocate_array(inner.as_ref(), length)?;
             Box::new(
                 GenericListBuilder::<i64, _>::with_capacity(inner_builder, length)
                     .with_field(inner.clone()),
             )
         }
         DataType::Struct(fields) => Box::new(StructBuilder::from_fields(fields.clone(), length)),
-        dt => todo!("Dtype not supported: {:?}", dt),
-    }
+        dt => {
+            return Err(ArrowError::NotYetImplemented(format!(
+                "JSON deserialization does not support dtype {dt:?}"
+            )));
+        }
+    })
 }
 
 /// Deserialize `rows` by extending them into the given `target`.
@@ -167,7 +171,7 @@ pub fn deserialize_into<'a, A: Borrow<BorrowedValue<'a>>>(
     target: &mut Box<dyn ArrayBuilder>,
     dtype: &DataType,
     rows: &[A],
-) {
+) -> Result<(), ArrowError> {
     match dtype {
         DataType::Null => {
             let target = target.as_any_mut().downcast_mut::<NullBuilder>().unwrap();
@@ -248,23 +252,26 @@ pub fn deserialize_into<'a, A: Borrow<BorrowedValue<'a>>>(
             deserialize_utf8_into,
         ),
         DataType::FixedSizeList(inner, size) => {
-            deserialize_fixed_size_list_into(target, inner.data_type(), *size, rows);
+            deserialize_fixed_size_list_into(target, inner.data_type(), *size, rows)?;
         }
         DataType::List(inner) => {
-            deserialize_list_into::<i32, _>(target, inner.data_type(), rows);
+            deserialize_list_into::<i32, _>(target, inner.data_type(), rows)?;
         }
         DataType::LargeList(inner) => {
-            deserialize_list_into::<i64, _>(target, inner.data_type(), rows);
+            deserialize_list_into::<i64, _>(target, inner.data_type(), rows)?;
         }
         DataType::Struct(fields) => {
-            deserialize_struct_into(target, fields, rows);
+            deserialize_struct_into(target, fields, rows)?;
         }
         // TODO(Clark): Add support for decimal type.
         // TODO(Clark): Add support for binary and large binary types.
         dt => {
-            todo!("Dtype not supported: {:?}", dt)
+            return Err(ArrowError::NotYetImplemented(format!(
+                "JSON deserialization does not support dtype {dt:?}"
+            )));
         }
     }
+    Ok(())
 }
 
 fn deserialize_primitive_into<'a, A: Borrow<BorrowedValue<'a>>, T: ArrowPrimitiveType>(
@@ -438,7 +445,7 @@ fn deserialize_list_into<'a, O: OffsetSizeTrait, A: Borrow<BorrowedValue<'a>>>(
     target: &mut Box<dyn ArrayBuilder>,
     inner_dtype: &DataType,
     rows: &[A],
-) {
+) -> Result<(), ArrowError> {
     let target = target
         .as_any_mut()
         .downcast_mut::<GenericListBuilder<O, Box<dyn ArrayBuilder>>>()
@@ -447,7 +454,7 @@ fn deserialize_list_into<'a, O: OffsetSizeTrait, A: Borrow<BorrowedValue<'a>>>(
     for row in rows {
         match row.borrow() {
             BorrowedValue::Array(values) => {
-                deserialize_into(target.values(), inner_dtype, values);
+                deserialize_into(target.values(), inner_dtype, values)?;
                 target.append(true);
             }
             _ => {
@@ -455,6 +462,7 @@ fn deserialize_list_into<'a, O: OffsetSizeTrait, A: Borrow<BorrowedValue<'a>>>(
             }
         }
     }
+    Ok(())
 }
 
 fn deserialize_fixed_size_list_into<'a, A: Borrow<BorrowedValue<'a>>>(
@@ -462,7 +470,7 @@ fn deserialize_fixed_size_list_into<'a, A: Borrow<BorrowedValue<'a>>>(
     inner_dtype: &DataType,
     size: i32,
     rows: &[A],
-) {
+) -> Result<(), ArrowError> {
     let target = target
         .as_any_mut()
         .downcast_mut::<FixedSizeListBuilder<Box<dyn ArrayBuilder>>>()
@@ -474,29 +482,30 @@ fn deserialize_fixed_size_list_into<'a, A: Borrow<BorrowedValue<'a>>>(
         match row.borrow() {
             BorrowedValue::Array(value) => {
                 if value.len() == size as usize {
-                    deserialize_into(target.values(), inner_dtype, value);
+                    deserialize_into(target.values(), inner_dtype, value)?;
                     target.append(true);
                 } else {
-                    // TODO(Clark): Return an error instead of dropping incorrectly sized lists.
-                    // Push placeholder nulls to maintain alignment, then mark as null.
-                    deserialize_into(target.values(), inner_dtype, &null_values);
-                    target.append(false);
+                    return Err(ArrowError::InvalidArgumentError(format!(
+                        "Expected fixed-size list of length {size}, got {}",
+                        value.len()
+                    )));
                 }
             }
             _ => {
-                // Push placeholder nulls to maintain alignment, then mark as null.
-                deserialize_into(target.values(), inner_dtype, &null_values);
+                // Non-array values are treated as null; pad child values to keep slots aligned.
+                deserialize_into(target.values(), inner_dtype, &null_values)?;
                 target.append(false);
             }
         }
     }
+    Ok(())
 }
 
 fn deserialize_struct_into<'a, A: Borrow<BorrowedValue<'a>>>(
     target: &mut Box<dyn ArrayBuilder>,
     fields: &arrow::datatypes::Fields,
     rows: &[A],
-) {
+) -> Result<(), ArrowError> {
     let target = target.as_any_mut().downcast_mut::<StructBuilder>().unwrap();
 
     // Build a map from struct field name -> accumulated JSON values.
@@ -528,11 +537,64 @@ fn deserialize_struct_into<'a, A: Borrow<BorrowedValue<'a>>>(
     // have aligned columns; we can assume this because:
     // - field_builders_mut() is guaranteed to have the same column ordering as the fields,
     // - values is an ordered map, whose ordering is tied to fields.
-    values
+    for ((col_values, field), col_builder) in values
         .into_values()
         .zip(fields.iter())
         .zip(target.field_builders_mut().iter_mut())
-        .for_each(|((col_values, field), col_builder)| {
-            deserialize_into(col_builder, field.data_type(), col_values.as_slice());
-        });
+    {
+        deserialize_into(col_builder, field.data_type(), col_values.as_slice())?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::*;
+
+    fn deserialize_json(json: &str, schema: &Schema) -> Result<Vec<ArrayRef>, ArrowError> {
+        let mut bytes = json.as_bytes().to_vec();
+        let value = crate::deserializer::to_value(&mut bytes).expect("valid json");
+        deserialize_records(&[value], schema)
+    }
+
+    #[test]
+    fn test_fixed_size_list_wrong_length_errors() {
+        let schema = Schema::new(vec![Field::new(
+            "xs",
+            DataType::FixedSizeList(Arc::new(Field::new("item", DataType::Int64, true)), 2),
+            true,
+        )]);
+        let err = deserialize_json(r#"{"xs":[1,2,3]}"#, &schema).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("fixed-size list") && msg.contains("2") && msg.contains("3"),
+            "unexpected error: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_fixed_size_list_matching_length_ok() {
+        let schema = Schema::new(vec![Field::new(
+            "xs",
+            DataType::FixedSizeList(Arc::new(Field::new("item", DataType::Int64, true)), 2),
+            true,
+        )]);
+        let arrays = deserialize_json(r#"{"xs":[1,2]}"#, &schema).unwrap();
+        assert_eq!(arrays.len(), 1);
+        assert_eq!(arrays[0].len(), 1);
+        assert!(!arrays[0].is_null(0));
+    }
+
+    #[test]
+    fn test_unsupported_dtype_errors_instead_of_panic() {
+        let schema = Schema::new(vec![Field::new("x", DataType::Decimal128(10, 2), true)]);
+        let err = deserialize_json(r#"{"x":1}"#, &schema).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("does not support dtype") || msg.contains("Not Yet Implemented"),
+            "unexpected error: {msg}"
+        );
+    }
 }

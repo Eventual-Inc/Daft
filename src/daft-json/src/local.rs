@@ -136,8 +136,11 @@ pub fn read_json_array_impl(
 
     let mut columns: IndexMap<Cow<str>, Box<dyn ArrayBuilder>> = arrow_fields
         .iter()
-        .map(|f| (Cow::Owned(f.name().clone()), allocate_array(f, bytes.len())))
-        .collect();
+        .map(|f| {
+            allocate_array(f, bytes.len()).map(|builder| (Cow::Owned(f.name().clone()), builder))
+        })
+        .collect::<Result<_, _>>()
+        .context(ArrowSnafu)?;
 
     let mut num_rows = 0;
     for record in iter {
@@ -154,10 +157,11 @@ pub fn read_json_array_impl(
                             let dtype = arrow_fields[i].data_type();
                             match record.get(s) {
                                 Some(value) => {
-                                    deserialize_into(inner, dtype, &[value]);
+                                    deserialize_into(inner, dtype, &[value]).context(ArrowSnafu)?;
                                 }
                                 None => {
-                                    deserialize_into(inner, dtype, &[&JSON_NULL_VALUE]);
+                                    deserialize_into(inner, dtype, &[&JSON_NULL_VALUE])
+                                        .context(ArrowSnafu)?;
                                 }
                             }
                         }
@@ -174,10 +178,10 @@ pub fn read_json_array_impl(
                     let dtype = arrow_fields[i].data_type();
                     match record.get(s) {
                         Some(value) => {
-                            deserialize_into(inner, dtype, &[value]);
+                            deserialize_into(inner, dtype, &[value]).context(ArrowSnafu)?;
                         }
                         None => {
-                            deserialize_into(inner, dtype, &[&JSON_NULL_VALUE]);
+                            deserialize_into(inner, dtype, &[&JSON_NULL_VALUE]).context(ArrowSnafu)?;
                         }
                     }
                 }
@@ -346,12 +350,11 @@ impl<'a> JsonReader<'a> {
         let mut columns: IndexMap<Cow<str>, Box<dyn ArrayBuilder>> = arrow_fields
             .iter()
             .map(|f| {
-                (
-                    Cow::Owned(f.name().clone()),
-                    allocate_array(f, estimated_rows),
-                )
+                allocate_array(f, estimated_rows)
+                    .map(|builder| (Cow::Owned(f.name().clone()), builder))
             })
-            .collect();
+            .collect::<Result<_, _>>()
+            .context(ArrowSnafu)?;
 
         let mut num_rows = 0;
         for record in iter {
@@ -366,10 +369,11 @@ impl<'a> JsonReader<'a> {
                         let dtype = arrow_fields[i].data_type();
                         match record.get(s) {
                             Some(value) => {
-                                deserialize_into(inner, dtype, &[value]);
+                                deserialize_into(inner, dtype, &[value]).context(ArrowSnafu)?;
                             }
                             None => {
-                                deserialize_into(inner, dtype, &[&JSON_NULL_VALUE]);
+                                deserialize_into(inner, dtype, &[&JSON_NULL_VALUE])
+                                    .context(ArrowSnafu)?;
                             }
                         }
                     }
