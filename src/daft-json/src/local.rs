@@ -181,7 +181,8 @@ pub fn read_json_array_impl(
                             deserialize_into(inner, dtype, &[value]).context(ArrowSnafu)?;
                         }
                         None => {
-                            deserialize_into(inner, dtype, &[&JSON_NULL_VALUE]).context(ArrowSnafu)?;
+                            deserialize_into(inner, dtype, &[&JSON_NULL_VALUE])
+                                .context(ArrowSnafu)?;
                         }
                     }
                 }
