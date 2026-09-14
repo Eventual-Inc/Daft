@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import threading
 import inspect
+import threading
 from collections.abc import MutableSequence
 from typing import TYPE_CHECKING
 
