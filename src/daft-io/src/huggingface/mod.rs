@@ -494,7 +494,17 @@ impl ObjectSource for HFSource {
                 glob(self, &glob_path, fanout_limit, page_size, limit, io_stats).await
             }
             HFPath::Hf(parts) => {
-                // The Parquet conversion API accepts unpinned dataset roots.
+                // Huggingface has a special API for parquet files
+                // So we'll try to use that API to get the parquet files
+                // This allows us compatibility with datasets that are not natively uploaded as parquet, such as image datasets
+
+                // We only want to use this api for datasets, not specific files
+                // such as
+                // hf://datasets/user/repo
+                // but not
+                // hf://datasets/user/repo/file.parquet
+                // Buckets are plain object storage with no parquet-conversion API, so they
+                // always go through regular globbing.
                 if file_format == Some(FileFormat::Parquet)
                     && parts.repo_type == HFRepoType::Datasets
                     && parts.revision == "main"
