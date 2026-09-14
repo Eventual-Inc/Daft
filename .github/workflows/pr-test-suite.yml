@@ -1030,7 +1030,14 @@ jobs:
       env:
         DAFT_RUNNER: native
 
-      # Cleanup docker services
+    # Cleanup docker services
+    - name: Show catalog service diagnostics
+      if: failure()
+      run: |
+        docker compose -f ./tests/integration/iceberg/docker-compose/docker-compose.yml ps -a || true
+        docker compose -f ./tests/integration/iceberg/docker-compose/docker-compose.yml logs --no-color || true
+        docker compose -f ./tests/integration/gravitino/docker-compose/docker-compose.yml ps -a || true
+        docker compose -f ./tests/integration/gravitino/docker-compose/docker-compose.yml logs --no-color || true
     - name: Cleanup Docker services
       if: always()
       run: |
