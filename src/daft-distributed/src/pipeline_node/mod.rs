@@ -651,11 +651,26 @@ pub(crate) mod tests {
         let fps = collect_fingerprints(TaskBuilderStream::new(
             make_source_stream(&left_src, 3)
                 .zip(make_source_stream(&right_src, 3))
-                .map(move |(l, r)| SwordfishTaskBuilder::combine_with(&l, &r, j.as_ref(), |l, _| l))
+                .map(move |(l, r)| SwordfishTaskBuilder::combine_with(l, r, j.as_ref(), |l, _| l))
                 .boxed(),
         ))
         .await;
         assert!(fps.iter().all(|fp| *fp == fps[0]));
+    }
+
+    #[test]
+    fn join_preserves_notify_tokens_from_both_sides() {
+        let (left_src, right_src) = (MockNode::new(10), MockNode::new(20));
+        let join = MockNode::new(30);
+        let (left, _left_rx) = make_builder(&left_src, 1).add_notify_token();
+        let (right, _right_rx) = make_builder(&right_src, 2).add_notify_token();
+
+        let combined =
+            SwordfishTaskBuilder::combine_with(left, right, &join, |left_plan, _| left_plan);
+
+        // The fused task is the one both upstream nodes are waiting on, so
+        // dropping either token would make them see it as never having run.
+        assert_eq!(combined.notify_token_count(), 2);
     }
 
     #[tokio::test]
