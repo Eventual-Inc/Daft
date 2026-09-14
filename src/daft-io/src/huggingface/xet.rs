@@ -242,4 +242,21 @@ mod tests {
             "https://huggingface.co/api/datasets/user/repo/xet-read-token/main"
         );
     }
+
+    #[test]
+    fn test_xet_read_token_url_preserves_model_revision() {
+        let revision = "735d9f692981e286ade093b5046627eda876e5d0";
+        let parts = HFPathParts {
+            repo_type: HFRepoType::Models,
+            repository: "lerobot/VLA-JEPA-LIBERO".to_string(),
+            revision: revision.to_string(),
+            path: "model.safetensors".to_string(),
+        };
+        assert_eq!(
+            xet_read_token_url(&parts),
+            format!(
+                "https://huggingface.co/api/models/lerobot/VLA-JEPA-LIBERO/xet-read-token/{revision}"
+            )
+        );
+    }
 }
