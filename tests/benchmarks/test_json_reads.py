@@ -21,8 +21,7 @@ def _rand_string(rng: random.Random, min_len: int = 1, max_len: int = 31) -> str
 
 def _write_jsonl(path: Path, rows: list[dict]) -> Path:
     with open(path, "w") as f:
-        for row in rows:
-            f.write(json.dumps(row) + "\n")
+        f.writelines(json.dumps(row) + "\n" for row in rows)
     return path
 
 

@@ -18,7 +18,6 @@ if TYPE_CHECKING:
     import pyarrow.compute as pc
     import pyarrow.csv as pacsv
     import pyarrow.dataset as pads
-    import pyarrow.flight as flight
     import pyarrow.fs as pafs
     import pyarrow.json as pajson
     import pyarrow.parquet as pq
@@ -27,6 +26,7 @@ if TYPE_CHECKING:
     import tensorflow as tf
     import torch
     import torchvision
+    from pyarrow import flight
 else:
     av = LazyImport("av")
     confluent_kafka = LazyImport("confluent_kafka")

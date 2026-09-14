@@ -101,7 +101,6 @@ class FileWriterBase(ABC):
         Returns:
             int: The number of bytes written to the file.
         """
-        pass
 
     @abstractmethod
     def close(self) -> RecordBatch:
@@ -110,7 +109,6 @@ class FileWriterBase(ABC):
         Returns:
             RecordBatch containing metadata about the written file, including path and partition values.
         """
-        pass
 
 
 class ParquetFileWriter(FileWriterBase):
