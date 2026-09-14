@@ -692,9 +692,8 @@ class DataType:
             shape: The shape of each tensor in the column. This is ``None`` by default, which allows the shapes of
                 each tensor element to vary.
         """
-        if shape is not None:
-            if not isinstance(shape, tuple) or any(not isinstance(n, int) for n in shape):
-                raise ValueError("Tensor shape must be a tuple of ints, but got: ", shape)
+        if shape is not None and (not isinstance(shape, tuple) or any(not isinstance(n, int) for n in shape)):
+            raise ValueError("Tensor shape must be a tuple of ints, but got: ", shape)
         return cls._from_pydatatype(PyDataType.tensor(dtype._dtype, shape))
 
     @datatype_constructor
@@ -813,7 +812,7 @@ class DataType:
             type_ids = list(arrow_type.type_codes)
             return cls.union(field_dict, type_ids, mode)
         # Only check for PyExtensionType if pyarrow version is < 21.0.0
-        if hasattr(pa, "PyExtensionType") and isinstance(arrow_type, getattr(pa, "PyExtensionType")):
+        if hasattr(pa, "PyExtensionType") and isinstance(arrow_type, pa.PyExtensionType):
             # TODO(Clark): Add a native cross-lang extension type representation for PyExtensionTypes.
             raise ValueError(
                 "pyarrow extension types that subclass pa.PyExtensionType can't be used in Daft, since they can't be "

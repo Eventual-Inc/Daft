@@ -2,7 +2,8 @@ import builtins
 import datetime
 from collections.abc import AsyncIterator, Callable
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Concatenate, Literal, TypeVar
+from types import TracebackType
+from typing import TYPE_CHECKING, Any, Concatenate, Literal, TypeAlias, TypeVar
 
 from daft.dataframe.display import MermaidOptions
 from daft.io import DataSink
@@ -76,7 +77,6 @@ class ImageMode(Enum):
                 attribute name, e.g. ``ImageMode.from_mode_string("RGB")`` would
                 return ``ImageMode.RGB``.
         """
-        ...
 
 class ImageProperty(Enum):
     """Supported image properties for Daft's image type."""
@@ -138,7 +138,6 @@ class ImageFormat(Enum):
     @staticmethod
     def from_format_string(mode: str) -> ImageFormat:
         """Create an ImageFormat from its string representation."""
-        ...
 
 class JoinType(Enum):
     """Type of a join operation."""
@@ -159,7 +158,6 @@ class JoinType(Enum):
                 attribute name (but snake-case), e.g. ``JoinType.from_join_type_str("inner")`` would
                 return ``JoinType.Inner``.
         """
-        ...
 
 class JoinStrategy(Enum):
     """Join strategy (algorithm) to use."""
@@ -179,7 +177,6 @@ class JoinStrategy(Enum):
                 attribute name (but snake-case), e.g. ``JoinType.from_join_strategy_str("sort_merge")`` would
                 return ``JoinStrategy.SortMerge``.
         """
-        ...
 
 class AsofJoinStrategy(Enum):
     """Asof join strategy."""
@@ -195,7 +192,6 @@ class AsofJoinStrategy(Enum):
             strategy: String representation of the asof join strategy.
             e.g. ``AsofJoinStrategy.from_asof_join_strategy_str("backward")`` would return ``AsofJoinStrategy.Backward``.
         """
-        ...
 
 class JoinSide(Enum):
     Left = 1
@@ -220,7 +216,6 @@ class CountMode(Enum):
         Args:
             count_mode: String representation of the count mode , e.g. "all", "valid", or "null".
         """
-        ...
 
 class ResourceRequest:
     """Resource request for a query fragment task."""
@@ -238,14 +233,12 @@ class ResourceRequest:
     @staticmethod
     def max_resources(resource_requests: list[ResourceRequest]) -> ResourceRequest:
         """Take a field-wise max of the list of resource requests."""
-        ...
 
     def with_num_cpus(self, num_cpus: float | None) -> ResourceRequest: ...
     def with_num_gpus(self, num_gpus: float | None) -> ResourceRequest: ...
     def with_memory_bytes(self, memory_bytes: int | None) -> ResourceRequest: ...
     def __mul__(self, factor: float) -> ResourceRequest: ...
     def __add__(self, other: ResourceRequest) -> ResourceRequest: ...
-    def __repr__(self) -> str: ...
     def __eq__(self, other: ResourceRequest) -> bool: ...  # type: ignore[override]
     def __ne__(self, other: ResourceRequest) -> bool: ...  # type: ignore[override]
 
@@ -391,22 +384,18 @@ class FileFormatConfig:
     @staticmethod
     def from_parquet_config(config: ParquetSourceConfig) -> FileFormatConfig:
         """Create a Parquet file format config."""
-        ...
 
     @staticmethod
     def from_csv_config(config: CsvSourceConfig) -> FileFormatConfig:
         """Create a CSV file format config."""
-        ...
 
     @staticmethod
     def from_json_config(config: JsonSourceConfig) -> FileFormatConfig:
         """Create a JSON file format config."""
-        ...
 
     @staticmethod
     def from_warc_config(config: WarcSourceConfig) -> FileFormatConfig:
         """Create a WARC file format config."""
-        ...
 
     @staticmethod
     def from_mcap_config(config: McapSourceConfig) -> FileFormatConfig:
@@ -416,11 +405,9 @@ class FileFormatConfig:
     @staticmethod
     def from_text_config(config: TextSourceConfig) -> FileFormatConfig:
         """Create a Text file format config."""
-        ...
 
     def file_format(self) -> FileFormat:
         """Get the file format for this config."""
-        ...
 
     def __eq__(self, other: FileFormatConfig) -> bool: ...  # type: ignore[override]
     def __ne__(self, other: FileFormatConfig) -> bool: ...  # type: ignore[override]
@@ -524,7 +511,6 @@ class FileInfos:
     def from_infos(file_paths: list[str], file_sizes: list[int | None], num_rows: list[int | None]) -> FileInfos: ...
     def merge(self, new_infos: FileInfos) -> FileInfos:
         """Merge two FileInfos together."""
-        ...
 
     def __getitem__(self, idx: int) -> FileInfo: ...
     def __len__(self) -> int: ...
@@ -670,16 +656,13 @@ class S3Config:
         custom_retry_msgs: list[str] | None = None,
     ) -> S3Config:
         """Replaces values if provided, returning a new S3Config."""
-        ...
 
     @staticmethod
     def from_env() -> S3Config:
         """Creates an S3Config, retrieving credentials and configurations from the current environment."""
-        ...
 
     def provide_cached_credentials(self) -> S3Credentials | None:
         """Wrapper around call to `S3Config.credentials_provider` to cache credentials until expiry."""
-        ...
 
 class S3Credentials:
     key_id: str
@@ -742,7 +725,6 @@ class AzureConfig:
         max_connections: int | None = None,
     ) -> AzureConfig:
         """Replaces values if provided, returning a new AzureConfig."""
-        ...
 
 class GCSConfig:
     """I/O configuration for accessing Google Cloud Storage."""
@@ -782,7 +764,6 @@ class GCSConfig:
         num_tries: int | None = None,
     ) -> GCSConfig:
         """Replaces values if provided, returning a new GCSConfig."""
-        ...
 
 class UnityConfig:
     """I/O configuration for Unity Catalog volumes."""
@@ -801,7 +782,6 @@ class UnityConfig:
         token: str | None,
     ) -> UnityConfig:
         """Replaces values if provided, returning a new UnityConfig."""
-        ...
 
 class GravitinoConfig:
     """I/O configuration for Gravitino filesets."""
@@ -832,7 +812,6 @@ class GravitinoConfig:
         token: str | None,
     ) -> GravitinoConfig:
         """Replaces values if provided, returning a new GravitinoConfig."""
-        ...
 
 class HuggingFaceConfig:
     """I/O configuration for accessing Hugging Face datasets.
@@ -877,7 +856,6 @@ class HuggingFaceConfig:
         max_operations_per_commit: int | None = None,
     ) -> HuggingFaceConfig:
         """Replaces values if provided, returning a new HuggingFaceConfig."""
-        ...
 
 class TosConfig:
     """I/O configuration for accessing Volcengine TOS (Torch Object Storage).
@@ -955,7 +933,6 @@ class TosConfig:
         max_connections_per_io_thread: int | None = None,
     ) -> TosConfig:
         """Replaces values if provided, returning a new TosConfig."""
-        ...
 
     @staticmethod
     def from_env() -> TosConfig:
@@ -1043,7 +1020,6 @@ class CosConfig:
         max_connections: int | None = None,
     ) -> CosConfig:
         """Replaces values if provided, returning a new CosConfig."""
-        ...
 
     @staticmethod
     def from_env() -> CosConfig:
@@ -1140,7 +1116,6 @@ class GooseFSConfig:
         max_connections: int | None = None,
     ) -> GooseFSConfig:
         """Replaces values if provided, returning a new GooseFSConfig."""
-        ...
 
     @staticmethod
     def from_env() -> GooseFSConfig:
@@ -1180,7 +1155,6 @@ class HdfsConfig:
         root: str | None = None,
     ) -> HdfsConfig:
         """Replaces values if provided, returning a new HdfsConfig."""
-        ...
 
 class IOConfig:
     """Configuration for the native I/O layer, e.g. credentials for accessing cloud storage systems."""
@@ -1235,7 +1209,6 @@ class IOConfig:
         protocol_aliases: dict[str, str] | None = None,
     ) -> IOConfig:
         """Replaces values if provided, returning a new IOConfig."""
-        ...
 
 class StorageConfig:
     """Configuration for interacting with a particular storage backend."""
@@ -1251,11 +1224,9 @@ class ScanTask:
 
     def num_rows(self) -> int:
         """Get number of rows that will be scanned by this ScanTask."""
-        ...
 
     def estimate_in_memory_size_bytes(self, cfg: PyDaftExecutionConfig) -> int:
         """Estimate the In Memory Size of this ScanTask."""
-        ...
 
     @staticmethod
     def catalog_scan_task(
@@ -1271,7 +1242,6 @@ class ScanTask:
         stats: PyRecordBatch | None,
     ) -> ScanTask | None:
         """Create a Catalog Scan Task."""
-        ...
 
     @staticmethod
     def sql_scan_task(
@@ -1285,7 +1255,6 @@ class ScanTask:
         stats: PyRecordBatch | None,
     ) -> ScanTask:
         """Create a SQL Scan Task."""
-        ...
 
     @staticmethod
     def python_factory_func_scan_task(
@@ -1300,7 +1269,6 @@ class ScanTask:
         source_name: str | None = None,
     ) -> ScanTask:
         """Create a Python factory function Scan Task."""
-        ...
 
 class PyDataSource:
     """A Rust DataSource exposed as a Python object."""
@@ -1375,7 +1343,6 @@ class ClusteringKeys:
     def hash(exprs: list[PyExpr]) -> ClusteringKeys: ...
     @staticmethod
     def range(exprs: list[PyExpr], descending: bool = False, nulls_first: bool | None = None) -> ClusteringKeys: ...
-    def __repr__(self) -> str: ...
 
 class PyPartitionField:
     """Partitioning Field of a Scan Source such as Hive or Iceberg."""
@@ -1437,17 +1404,14 @@ class PyPushdowns:
     ) -> None: ...
     def filter_required_column_names(self) -> list[str]:
         """List of field names that are required by the filter predicate."""
-        ...
 
     def aggregation_required_column_names(self) -> list[str]:
         """List of field names that are required by the aggregation predicate."""
-        ...
 
     def aggregation_count_mode(self) -> CountMode:
         """Count mode of the aggregation predicate."""
-        ...
 
-PyArrowParquetType = tuple[pa.Field, dict[str, str], pa.Array, int]
+PyArrowParquetType: TypeAlias = tuple[pa.Field, dict[str, str], pa.Array, int]
 
 def read_parquet(
     uri: str,
@@ -1536,7 +1500,7 @@ class PyTimeUnit:
     @staticmethod
     def from_str(unit: str) -> PyTimeUnit: ...
 
-ReduceReturnType = tuple[Callable[..., Any], tuple[Any, ...]]
+ReduceReturnType: TypeAlias = tuple[Callable[..., Any], tuple[Any, ...]]
 
 class UnionMode(Enum):
     """Union mode for Arrow union types."""
@@ -1709,7 +1673,6 @@ class PySchema:
     def from_fields(fields: list[PyField]) -> PySchema: ...
     def to_pyarrow_schema(self) -> pa.Schema: ...
     def __reduce__(self) -> ReduceReturnType: ...
-    def __repr__(self) -> str: ...
     def _repr_html_(self) -> str: ...
     def _truncated_table_html(self) -> str: ...
     def _truncated_table_string(self) -> str: ...
@@ -1773,7 +1736,6 @@ class PyExpr:
     def name(self) -> str: ...
     def to_field(self, schema: PySchema) -> PyField: ...
     def to_sql(self) -> str: ...
-    def __repr__(self) -> str: ...
     def __hash__(self) -> int: ...
     def __reduce__(self) -> ReduceReturnType: ...
     def struct_get(self, name: str) -> PyExpr: ...
@@ -2056,8 +2018,7 @@ class PySeriesIterator:
     def __next__(self) -> Any: ...
     def __iter__(self) -> PySeriesIterator: ...
 
-class PyShowOptions:
-    pass
+class PyShowOptions: ...
 
 class OperatorMetrics:
     def inc_counter(
@@ -2112,7 +2073,6 @@ class PyRecordBatch:
     def partition_by_value(self, partition_keys: list[PyExpr]) -> tuple[list[PyRecordBatch], PyRecordBatch]: ...
     def add_monotonically_increasing_id(self, partition_num: int, column_name: str) -> PyRecordBatch: ...
     def preview(self, format: str | None, options: str | None) -> str: ...
-    def __repr__(self) -> str: ...
     def _repr_html_(self) -> str: ...
     def __len__(self) -> int: ...
     def size_bytes(self) -> int: ...
@@ -2138,6 +2098,8 @@ class PyRecordBatch:
     @staticmethod
     def from_ipc_stream(bytes: bytes) -> PyRecordBatch: ...
     def to_ipc_stream(self) -> bytes: ...
+
+NANOSECONDS_TIME_UNIT = PyTimeUnit.nanoseconds()
 
 class PyMicroPartition:
     def schema(self) -> PySchema: ...
@@ -2221,7 +2183,6 @@ class PyMicroPartition:
     ) -> list[PyMicroPartition]: ...
     def partition_by_value(self, exprs: list[PyExpr]) -> tuple[list[PyMicroPartition], PyMicroPartition]: ...
     def add_monotonically_increasing_id(self, partition_num: int, column_name: str) -> PyMicroPartition: ...
-    def __repr__(self) -> str: ...
     def __len__(self) -> int: ...
     @classmethod
     def read_parquet(
@@ -2234,7 +2195,7 @@ class PyMicroPartition:
         predicate: PyExpr | None = None,
         io_config: IOConfig | None = None,
         multithreaded_io: bool | None = None,
-        coerce_int96_timestamp_unit: PyTimeUnit = PyTimeUnit.nanoseconds(),
+        coerce_int96_timestamp_unit: PyTimeUnit = NANOSECONDS_TIME_UNIT,
     ) -> PyMicroPartition: ...
     @classmethod
     def read_csv(
@@ -2302,7 +2263,6 @@ class PyFormatSinkOption:
 class CheckpointStoreConfig:
     @staticmethod
     def object_store(prefix: str, io_config: IOConfig) -> CheckpointStoreConfig: ...
-    def __repr__(self) -> str: ...
 
 class KeyFilteringSettings:
     def __init__(
@@ -2323,7 +2283,6 @@ class KeyFilteringSettings:
     def max_concurrency_per_worker(self) -> int | None: ...
     @property
     def filter_batch_size(self) -> int | None: ...
-    def __repr__(self) -> str: ...
 
 class CheckpointConfig:
     def __init__(
@@ -2336,7 +2295,6 @@ class CheckpointConfig:
     def key_column(self) -> str: ...
     @property
     def settings(self) -> KeyFilteringSettings: ...
-    def __repr__(self) -> str: ...
 
 def build_checkpoint_store(config: CheckpointStoreConfig) -> PyCheckpointStore: ...
 
@@ -2626,8 +2584,6 @@ class LocalPhysicalPlan:
 class Input:
     """Input for NativeExecutor execution. Holds ScanTasks or GlobPaths."""
 
-    ...
-
 class NativeExecutor:
     def __init__(self, is_flotilla_worker: bool, ip: str) -> None: ...
     def shuffle_address(self) -> str | None: ...
@@ -2681,7 +2637,6 @@ class PyDaftExecutionConfig:
         pre_shuffle_merge_partition_threshold: int | None = None,
         scantask_max_parallel: int | None = None,
         native_parquet_writer: bool | None = None,
-        min_cpu_per_task: float | None = None,
         actor_udf_ready_timeout: int | None = None,
         maintain_order: bool | None = None,
         enable_dynamic_batching: bool | None = None,
@@ -2740,8 +2695,6 @@ class PyDaftExecutionConfig:
     def pre_shuffle_merge_threshold(self) -> int: ...
     @property
     def pre_shuffle_merge_partition_threshold(self) -> int: ...
-    @property
-    def min_cpu_per_task(self) -> float: ...
     @property
     def actor_udf_ready_timeout(self) -> int: ...
     @property
@@ -2930,7 +2883,6 @@ class PyIdentifier:
     def eq(self, other: PyIdentifier) -> bool: ...
     def getitem(self, index: int) -> str: ...
     def __len__(self) -> int: ...
-    def __repr__(self) -> str: ...
     def __hash__(self) -> int: ...
 
 class PyTableSource:
@@ -2986,6 +2938,27 @@ class PyScalarFunction:
 def get_function_from_registry(name: str) -> PyScalarFunction: ...
 def to_from_proto(builder: LogicalPlanBuilder) -> LogicalPlanBuilder: ...
 
+class _PyFileTracingSpan:
+    @staticmethod
+    def is_enabled() -> bool: ...
+    @staticmethod
+    def video_frames() -> _PyFileTracingSpan: ...
+    @staticmethod
+    def video_open() -> _PyFileTracingSpan: ...
+    @staticmethod
+    def video_seek() -> _PyFileTracingSpan: ...
+    @staticmethod
+    def video_decode() -> _PyFileTracingSpan: ...
+    @staticmethod
+    def video_to_image() -> _PyFileTracingSpan: ...
+    def __enter__(self) -> None: ...
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None: ...
+
 class PyFileReference:
     @staticmethod
     def _from_tuple(tuple: tuple[Any]) -> PyFileReference: ...
@@ -3007,7 +2980,6 @@ class PyDaftFile:
     def seek(self, offset: int, whence: int = 0) -> int: ...
     def tell(self) -> int: ...
     def close(self) -> None: ...
-    def __str__(self) -> str: ...
     def closed(self) -> bool: ...
     def _supports_range_requests(self) -> bool: ...
     def size(self) -> int: ...

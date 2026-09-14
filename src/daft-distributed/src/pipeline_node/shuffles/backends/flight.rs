@@ -17,21 +17,14 @@ use crate::{
     utils::channel::Sender,
 };
 
-#[derive(Clone, Default)]
-pub(crate) struct FlightShuffleBackendConfig {
-    pub(crate) shuffle_id: u64,
-    pub(crate) shuffle_dirs: Vec<String>,
-    pub(crate) compression: Option<String>,
-}
-
 pub(crate) fn register_cleanup(
-    backend: &FlightShuffleBackendConfig,
+    shuffle_id: u64,
+    shuffle_dirs: &[String],
     plan_context: &mut PlanExecutionContext,
 ) {
-    let shuffle_dirs_to_register: Vec<String> = backend
-        .shuffle_dirs
+    let shuffle_dirs_to_register: Vec<String> = shuffle_dirs
         .iter()
-        .map(|base_dir| format!("{}/daft_shuffle/{}", base_dir, backend.shuffle_id))
+        .map(|base_dir| format!("{}/daft_shuffle/{}", base_dir, shuffle_id))
         .collect();
     plan_context.register_shuffle_dirs(shuffle_dirs_to_register);
 }

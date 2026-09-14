@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeType};
-use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, ShuffleBackend};
 use daft_logical_plan::{partitioning::RepartitionSpec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 
@@ -10,8 +10,7 @@ use crate::{
     pipeline_node::{
         ClusteringStrategy, DistributedPipelineNode, NodeID, PipelineNodeConfig,
         PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
-        clustering::clustering_from_repartition_spec,
-        shuffles::backends::{DistributedShuffleBackend, ShuffleBackend},
+        clustering::clustering_from_repartition_spec, shuffles::backends::ShuffleContext,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -25,7 +24,7 @@ pub(crate) struct RepartitionNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     repartition_spec: RepartitionSpec,
-    shuffle_backend: ShuffleBackend,
+    shuffle_context: ShuffleContext,
     num_partitions: usize,
     child: DistributedPipelineNode,
 }
@@ -40,7 +39,7 @@ impl RepartitionNode {
         repartition_spec: RepartitionSpec,
         schema: SchemaRef,
         num_partitions: usize,
-        backend: DistributedShuffleBackend,
+        backend: ShuffleBackend,
         child: DistributedPipelineNode,
     ) -> DaftResult<Self> {
         let context = PipelineNodeContext::new(
@@ -68,7 +67,7 @@ impl RepartitionNode {
             config,
             context: context.clone(),
             repartition_spec,
-            shuffle_backend: ShuffleBackend::new(&context, schema, backend),
+            shuffle_context: ShuffleContext::new(&context, schema, backend),
             num_partitions,
             child,
         })
@@ -87,7 +86,7 @@ impl RepartitionNode {
             task_id_counter,
         );
 
-        self.shuffle_backend
+        self.shuffle_context
             .emit_read_tasks_from_stream(outputs, self.num_partitions, self.as_ref(), result_tx)
             .await
     }
@@ -112,11 +111,11 @@ impl PipelineNodeImpl for RepartitionNode {
     ) -> TaskBuilderStream {
         let input_node = self.child.clone().produce_tasks(plan_context);
         let self_arc = self.clone();
-        self.shuffle_backend.register_cleanup(plan_context);
+        self.shuffle_context.register_cleanup(plan_context);
 
-        let schema = self.shuffle_backend.schema().clone();
-        let node_id = self.shuffle_backend.node_id();
-        let local_shuffle_backend = self.shuffle_backend.local_shuffle_backend();
+        let schema = self.shuffle_context.schema().clone();
+        let node_id = self.shuffle_context.node_id();
+        let shuffle_backend = self.shuffle_context.backend().clone();
         let num_partitions = self.num_partitions;
         let repartition_spec = self.repartition_spec.clone();
         let local_shuffle_write_node =
@@ -125,7 +124,7 @@ impl PipelineNodeImpl for RepartitionNode {
                     input,
                     num_partitions,
                     schema.clone(),
-                    local_shuffle_backend.clone(),
+                    shuffle_backend.clone(),
                     repartition_spec.clone(),
                     StatsState::NotMaterialized,
                     LocalNodeContext::new(Some(node_id as usize)),
@@ -153,10 +152,7 @@ impl PipelineNodeImpl for RepartitionNode {
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
-        let backend_name = match self.shuffle_backend.backend() {
-            DistributedShuffleBackend::Ray => "RayShuffle",
-            DistributedShuffleBackend::Flight(_) => "FlightShuffle",
-        };
+        let backend_name = format!("{}Shuffle", self.shuffle_context.backend().name());
         let mut res = vec![format!(
             "{backend_name}: {}",
             self.repartition_spec.var_name()

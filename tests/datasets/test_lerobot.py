@@ -9,7 +9,14 @@ import pyarrow.parquet as pq
 import pytest
 
 import daft
-from daft.datasets.lerobot import load_episode_frames, read, read_episodes, read_tasks
+from daft.datasets.lerobot import (
+    _V2_VIDEO_PATH,
+    _format_path_template,
+    load_episode_frames,
+    read,
+    read_episodes,
+    read_tasks,
+)
 
 
 def _write_table(path, table: pa.Table) -> None:
@@ -180,13 +187,137 @@ def test_read_episodes_meta_and_stats_columns(tiny_lerobot_v3):
     assert "stats/action_mean" in with_stats
 
 
-def test_read_episodes_rejects_non_v3(tmp_path):
+def _write_jsonl(path, rows: list[dict]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+
+
+def _write_tiny_v2(root: pathlib.Path, *, version: str = "v2.1", extra_episode_fields: dict | None = None):
+    """Minimal on-disk LeRobot v2 layout (two episodes, one parquet each)."""
+    extra_episode_fields = extra_episode_fields or {}
+    (root / "data" / "chunk-000").mkdir(parents=True)
+
+    episodes = []
+    for ep_idx in (0, 1):
+        row = {"episode_index": ep_idx, "tasks": ["pick"], "length": 2, **extra_episode_fields}
+        episodes.append(row)
+        frames_tbl = pa.table(
+            {
+                "index": [ep_idx * 2, ep_idx * 2 + 1],
+                "episode_index": [ep_idx, ep_idx],
+                "frame_index": [0, 1],
+                "timestamp": [0.0, 1 / 30],
+                "task_index": [0, 0],
+            }
+        )
+        _write_table(root / "data" / "chunk-000" / f"episode_{ep_idx:06d}.parquet", frames_tbl)
+
+    _write_jsonl(root / "meta" / "episodes.jsonl", episodes)
+    _write_jsonl(
+        root / "meta" / "episodes_stats.jsonl",
+        [
+            {"episode_index": 0, "stats": {"action": {"mean": [0.1]}}},
+            {"episode_index": 1, "stats": {"action": {"mean": [0.2]}}},
+        ],
+    )
+    _write_jsonl(root / "meta" / "tasks.jsonl", [{"task_index": 0, "task": "pick"}])
+
+    info = {
+        "codebase_version": version,
+        "fps": 30,
+        "chunks_size": 1000,
+        "data_path": "data/chunk-{episode_chunk:03d}/episode_{episode_index:06d}.parquet",
+        "video_path": "videos/chunk-{episode_chunk:03d}/{video_key}/episode_{episode_index:06d}.mp4",
+        "features": {},
+        "total_episodes": 2,
+        "total_frames": 4,
+        "total_tasks": 1,
+    }
+    (root / "meta").mkdir(parents=True, exist_ok=True)
+    (root / "meta" / "info.json").write_text(json.dumps(info), encoding="utf-8")
+    return str(root)
+
+
+@pytest.fixture
+def tiny_lerobot_v21(tmp_path):
+    return _write_tiny_v2(tmp_path / "ds_v21", version="v2.1")
+
+
+@pytest.fixture
+def tiny_lerobot_v21_extra_fields(tmp_path):
+    """v2.1 layout plus extra per-episode metadata columns."""
+    return _write_tiny_v2(
+        tmp_path / "ds_v21_extra",
+        version="v2.1",
+        extra_episode_fields={
+            "instruction_segments": [{"start": 0, "end": 2, "instruction": "pick the cube"}],
+        },
+    )
+
+
+@pytest.fixture
+def tiny_lerobot_v21_video(tmp_path):
+    """Single-episode v2.1 dataset with one MP4 per camera."""
+    av = pytest.importorskip("av")
+    pytest.importorskip("PIL", reason="Pillow required for decoded image rows")
+
+    root = tmp_path / "ds_v21_vid"
+    video_key = "camera.test"
+    video_dir = root / "videos" / "chunk-000" / video_key
+    video_dir.mkdir(parents=True)
+    (root / "data" / "chunk-000").mkdir(parents=True)
+    shutil.copy(pathlib.Path("tests/assets/sample_video.mp4"), video_dir / "episode_000000.mp4")
+
+    with av.open(str(video_dir / "episode_000000.mp4")) as c:
+        s = c.streams.video[0]
+        fps = float(s.average_rate)
+        timestamps = []
+        for fr in c.decode(s):
+            if fr.pts is not None:
+                timestamps.append(float(fr.pts * s.time_base))
+            if len(timestamps) >= 3:
+                break
+        assert len(timestamps) == 3
+
+    n_frames = len(timestamps)
+
+    _write_table(
+        root / "data" / "chunk-000" / "episode_000000.parquet",
+        pa.table(
+            {
+                "index": list(range(n_frames)),
+                "episode_index": [0] * n_frames,
+                "frame_index": list(range(n_frames)),
+                "timestamp": timestamps,
+                "task_index": [0] * n_frames,
+            }
+        ),
+    )
+    _write_jsonl(root / "meta" / "episodes.jsonl", [{"episode_index": 0, "tasks": ["pick"], "length": n_frames}])
+    _write_jsonl(root / "meta" / "tasks.jsonl", [{"task_index": 0, "task": "pick"}])
+
+    info = {
+        "codebase_version": "v2.1",
+        "fps": fps,
+        "chunks_size": 1000,
+        "data_path": "data/chunk-{episode_chunk:03d}/episode_{episode_index:06d}.parquet",
+        "video_path": "videos/chunk-{episode_chunk:03d}/{video_key}/episode_{episode_index:06d}.mp4",
+        "features": {video_key: {"dtype": "video"}},
+        "total_episodes": 1,
+        "total_frames": n_frames,
+        "total_tasks": 1,
+    }
+    (root / "meta" / "info.json").write_text(json.dumps(info), encoding="utf-8")
+    return str(root)
+
+
+def test_read_episodes_rejects_unsupported_version(tmp_path):
     root = tmp_path / "ds_old"
     (root / "meta").mkdir(parents=True)
-    info = {"codebase_version": "v2.1", "fps": 30, "features": {}}
+    info = {"codebase_version": "v1.0", "fps": 30, "features": {}}
     (root / "meta" / "info.json").write_text(json.dumps(info), encoding="utf-8")
 
-    with pytest.raises(ValueError, match="v3"):
+    with pytest.raises(ValueError, match="v2.0"):
         read_episodes(str(root))
 
 
@@ -381,3 +512,134 @@ def test_batched_decode_tolerance_violation_raises(tmp_path):
     )
     with pytest.raises(Exception, match="No frame matched timestamp"):
         df.select("img").collect()
+
+
+def test_v21_read_episodes_and_load_episode_frames(tiny_lerobot_v21):
+    ep = read_episodes(tiny_lerobot_v21).sort("episode_index")
+    assert ep.count_rows() == 2
+    assert "tasks" in ep.column_names
+    assert "videos/" not in "".join(ep.column_names)
+
+    frames = load_episode_frames(ep, tiny_lerobot_v21).sort("index")
+    assert frames.count_rows() == 4
+    assert set(frames.to_pydict()["episode_index"]) == {0, 1}
+
+    f0 = load_episode_frames(ep.where(daft.col("episode_index") == 0), tiny_lerobot_v21).sort("frame_index")
+    assert f0.count_rows() == 2
+    assert f0.to_pydict()["episode_index"] == [0, 0]
+
+
+def test_v21_read_frame_rows(tiny_lerobot_v21):
+    df = read(tiny_lerobot_v21).sort("index").collect()
+    assert df.count_rows() == 4
+    for expected in ("episode_index", "frame_index", "timestamp"):
+        assert expected in df.column_names
+
+
+def test_v21_read_episodes_stats_column(tiny_lerobot_v21):
+    default_cols = read_episodes(tiny_lerobot_v21).column_names
+    assert "stats" not in default_cols
+
+    with_stats = read_episodes(tiny_lerobot_v21, include_stats=True).column_names
+    assert "stats" in with_stats
+
+
+def test_v21_read_tasks_jsonl(tiny_lerobot_v21):
+    t = read_tasks(tiny_lerobot_v21).collect()
+    assert t.count_rows() == 1
+    assert t.to_pydict()["task"] == ["pick"]
+
+
+def test_v21_extra_episode_fields(tiny_lerobot_v21_extra_fields):
+    ep = read_episodes(tiny_lerobot_v21_extra_fields).sort("episode_index").collect()
+    assert "instruction_segments" in ep.column_names
+    segments = ep.to_pydict()["instruction_segments"]
+    assert segments[0][0]["instruction"] == "pick the cube"
+
+
+def test_v20_read_episodes(tmp_path):
+    root = _write_tiny_v2(tmp_path / "ds_v20", version="v2.0")
+    ep = read_episodes(root).sort("episode_index")
+    assert ep.count_rows() == 2
+
+
+def test_v21_video_path_and_from_timestamp(tiny_lerobot_v21_video):
+    ep = read_episodes(tiny_lerobot_v21_video, include_video_metadata=True)
+    cols = ep.column_names
+    assert "videos/camera.test/video" in cols
+    assert "videos/camera.test/from_timestamp" in cols
+    row = ep.collect().to_pydict()
+    assert row["videos/camera.test/from_timestamp"] == [0.0]
+    video_path = row["videos/camera.test/video"][0]
+    path = video_path.path if hasattr(video_path, "path") else str(video_path)
+    assert path.endswith("videos/chunk-000/camera.test/episode_000000.mp4")
+
+
+def test_v21_read_load_video_frames(tiny_lerobot_v21_video):
+    df = read(tiny_lerobot_v21_video, load_video_frames=["camera.test"]).select("camera.test").collect()
+    assert df.count_rows() == 3
+    img0 = df.to_pydict()["camera.test"][0]
+    if hasattr(img0, "mode"):
+        assert img0.mode == "RGB"
+        assert img0.size[0] > 10 and img0.size[1] > 10
+    else:
+        np = pytest.importorskip("numpy")
+
+        assert isinstance(img0, np.ndarray)
+        assert img0.ndim == 3 and img0.shape[2] >= 3
+    assert not any(c.startswith("videos/") for c in read(tiny_lerobot_v21_video, load_video_frames=True).column_names)
+
+
+def test_v21_video_frames_match_raw_pyav_decode(tiny_lerobot_v21_video):
+    av = pytest.importorskip("av")
+    np = pytest.importorskip("numpy")
+
+    df = read(tiny_lerobot_v21_video, load_video_frames=["camera.test"]).sort("frame_index").collect()
+    decoded = df.to_pydict()["camera.test"]
+
+    shard = pathlib.Path(tiny_lerobot_v21_video) / "videos/chunk-000/camera.test/episode_000000.mp4"
+    with av.open(str(shard)) as c:
+        stream = c.streams.video[0]
+        ground_truth = [f.to_ndarray(format="rgb24") for f, _ in zip(c.decode(stream), range(len(decoded)))]
+
+    assert len(decoded) == len(ground_truth)
+    for got, want in zip(decoded, ground_truth):
+        assert np.array_equal(np.asarray(got)[..., :3], want)
+
+
+def test_format_path_template_pads_episode_chunk():
+    df = daft.from_pydict({"episode_index": [0, 1000]})
+    df = df.with_column(
+        "path",
+        _format_path_template(
+            _V2_VIDEO_PATH,
+            root="/ds",
+            bindings={
+                "episode_index": daft.col("episode_index"),
+                "episode_chunk": daft.col("episode_index") // 1000,
+                "chunk_index": daft.col("episode_index") // 1000,
+                "video_key": "observation.images.top_head",
+            },
+        ),
+    )
+    paths = df.to_pydict()["path"]
+    assert paths[0] == "/ds/videos/chunk-000/observation.images.top_head/episode_000000.mp4"
+    assert paths[1] == "/ds/videos/chunk-001/observation.images.top_head/episode_001000.mp4"
+
+
+def test_format_path_template_chunk_index_alias():
+    template = "videos/chunk-{chunk_index:03d}/{video_key}/episode_{episode_index:06d}.mp4"
+    df = daft.from_pydict({"episode_index": [42]})
+    df = df.with_column(
+        "path",
+        _format_path_template(
+            template,
+            root="/ds",
+            bindings={
+                "episode_index": daft.col("episode_index"),
+                "chunk_index": daft.col("episode_index") // 1000,
+                "video_key": "cam",
+            },
+        ),
+    )
+    assert df.to_pydict()["path"] == ["/ds/videos/chunk-000/cam/episode_000042.mp4"]

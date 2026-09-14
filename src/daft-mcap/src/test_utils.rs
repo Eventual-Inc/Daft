@@ -8,7 +8,7 @@ use futures::TryStreamExt;
 use mcap::{Channel, Compression, Message, WriteOptions};
 use tempfile::NamedTempFile;
 
-use crate::{McapConvertOptions, McapReadOptions, NativeMcapReader, stream_mcap};
+use crate::{McapConvertOptions, McapReadOptions, McapReader, stream_mcap};
 
 pub(crate) fn write_mcap(
     indexed: bool,
@@ -130,10 +130,10 @@ pub(crate) fn write_corrupt_chunk_mcap() -> NamedTempFile {
 pub(crate) async fn make_reader(
     file: &NamedTempFile,
     options: McapReadOptions,
-) -> DaftResult<(NativeMcapReader, daft_io::IOStatsRef)> {
+) -> DaftResult<(McapReader, daft_io::IOStatsRef)> {
     let io_client = get_io_client(true, Arc::new(IOConfig::default()))?;
     let io_stats = IOStatsContext::new("daft-mcap unit test");
-    let reader = NativeMcapReader::new(
+    let reader = McapReader::new(
         file.path().to_string_lossy(),
         io_client,
         io_stats.clone(),
@@ -144,7 +144,7 @@ pub(crate) async fn make_reader(
 }
 
 pub(crate) async fn collect_rows(
-    reader: &mut NativeMcapReader,
+    reader: &mut McapReader,
 ) -> DaftResult<Vec<(String, u64, Vec<u8>)>> {
     let mut rows = Vec::new();
     while let Some(batch) = reader.next_batch().await? {

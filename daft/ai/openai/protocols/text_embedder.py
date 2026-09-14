@@ -224,7 +224,7 @@ class OpenAITextEmbedder(TextEmbedder):
             nonlocal curr_batch
             nonlocal curr_batch_token_count
             if len(curr_batch) == 0:
-                return None
+                return
             embeddings_result = await self._embed_text_batch(curr_batch)
             embeddings.extend(embeddings_result)
             curr_batch = []

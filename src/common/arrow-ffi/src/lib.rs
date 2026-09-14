@@ -398,7 +398,7 @@ pub fn schema_from_requested_schema(capsule: &Bound<PyCapsule>) -> PyResult<Sche
 pub fn schema_to_pycapsule(py: Python<'_>, schema: &Schema) -> PyResult<Py<PyAny>> {
     let ffi_schema = FFI_ArrowSchema::try_from(schema).map_err(to_py_err)?;
     Ok(
-        PyCapsule::new(py, ffi_schema, Some(ARROW_SCHEMA_CAPSULE_NAME.into()))?
+        PyCapsule::new_with_value(py, ffi_schema, ARROW_SCHEMA_CAPSULE_NAME.into())?
             .into_any()
             .unbind(),
     )
@@ -408,7 +408,7 @@ pub fn schema_to_pycapsule(py: Python<'_>, schema: &Schema) -> PyResult<Py<PyAny
 pub fn field_to_pycapsule(py: Python<'_>, field: &Field) -> PyResult<Py<PyAny>> {
     let ffi_schema = FFI_ArrowSchema::try_from(field).map_err(to_py_err)?;
     Ok(
-        PyCapsule::new(py, ffi_schema, Some(ARROW_SCHEMA_CAPSULE_NAME.into()))?
+        PyCapsule::new_with_value(py, ffi_schema, ARROW_SCHEMA_CAPSULE_NAME.into())?
             .into_any()
             .unbind(),
     )
@@ -418,8 +418,9 @@ pub fn field_to_pycapsule(py: Python<'_>, field: &Field) -> PyResult<Py<PyAny>> 
 pub fn array_to_pycapsules(py: Python<'_>, data: &ArrayData, field: &Field) -> PyResult<Py<PyAny>> {
     let ffi_schema = FFI_ArrowSchema::try_from(field).map_err(to_py_err)?;
     let ffi_array = FFI_ArrowArray::new(data);
-    let schema_capsule = PyCapsule::new(py, ffi_schema, Some(ARROW_SCHEMA_CAPSULE_NAME.into()))?;
-    let array_capsule = PyCapsule::new(py, ffi_array, Some(ARROW_ARRAY_CAPSULE_NAME.into()))?;
+    let schema_capsule =
+        PyCapsule::new_with_value(py, ffi_schema, ARROW_SCHEMA_CAPSULE_NAME.into())?;
+    let array_capsule = PyCapsule::new_with_value(py, ffi_array, ARROW_ARRAY_CAPSULE_NAME.into())?;
     Ok(
         PyTuple::new(py, [schema_capsule.into_any(), array_capsule.into_any()])?
             .into_any()
@@ -450,7 +451,7 @@ pub fn reader_to_stream_pycapsule(
 ) -> PyResult<Py<PyAny>> {
     let stream = FFI_ArrowArrayStream::new(reader);
     Ok(
-        PyCapsule::new(py, stream, Some(ARROW_STREAM_CAPSULE_NAME.into()))?
+        PyCapsule::new_with_value(py, stream, ARROW_STREAM_CAPSULE_NAME.into())?
             .into_any()
             .unbind(),
     )

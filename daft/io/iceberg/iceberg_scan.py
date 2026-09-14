@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import logging
+import struct
 import warnings
 from typing import TYPE_CHECKING
 
+from pyiceberg.conversions import from_bytes
+from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.schema import visit
+from pyiceberg.types import PrimitiveType
 
 import daft
 from daft.daft import (
@@ -29,6 +33,7 @@ from daft.recordbatch import RecordBatch
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
 
+    from pyiceberg.manifest import DataFile
     from pyiceberg.partitioning import PartitionField as IcebergPartitionField
     from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
     from pyiceberg.schema import Schema as IcebergSchema
@@ -38,6 +43,18 @@ if TYPE_CHECKING:
     from daft.io.pushdowns import Pushdowns
 
 logger = logging.getLogger(__name__)
+
+# Errors that can occur during Iceberg stats decoding and are safe to treat
+# as "stats unavailable for this field" rather than fatal errors.
+_EXPECTED_STATS_DECODE_ERRORS = (
+    pa.ArrowInvalid,
+    pa.ArrowTypeError,
+    pa.ArrowNotImplementedError,
+    TypeError,
+    ValueError,
+    NotImplementedError,
+    struct.error,
+)
 
 
 def _iceberg_count_result_function(total_count: int, field_name: str) -> Iterator[RecordBatch]:
@@ -94,6 +111,78 @@ def iceberg_partition_spec_to_fields(iceberg_schema: IcebergSchema, spec: Iceber
     return [_iceberg_partition_field_to_daft_partition_field(iceberg_schema, field) for field in spec.fields]
 
 
+def _build_iceberg_data_source_task_stats(
+    file: DataFile,
+    top_level_fields: list[tuple[int, str, object, bool, pa.DataType]],
+    task_schema: Schema,
+) -> RecordBatch | None:
+    """Decode Iceberg DataFile column bounds into a 2-row stats RecordBatch.
+
+    Returns a RecordBatch with row 0 = min values, row 1 = max values,
+    matching the column names, order, and dtypes of ``task_schema`` exactly.
+
+    Columns whose bounds are missing or fail to decode are filled with typed
+    nulls. If no column produces usable bounds, returns ``None``.
+
+    Args:
+        file: PyIceberg DataFile with optional ``lower_bounds`` / ``upper_bounds`` dicts.
+        top_level_fields: Precomputed list of ``(field_id, name, iceberg_type,
+            is_primitive, arrow_type)`` in schema order.
+        task_schema: Daft Schema the returned RecordBatch must match.
+    """
+    lower = file.lower_bounds or {}
+    upper = file.upper_bounds or {}
+
+    if not lower and not upper:
+        return None
+
+    arrays: dict[str, daft.Series] = {}
+    has_decoded_bounds = False
+
+    for field_id, field_name, field_type, is_primitive, arrow_type in top_level_fields:
+        # Require both lower and upper bounds. Single-sided bounds
+        # (e.g. key-only metrics with only one direction populated)
+        # cannot be expressed by ColumnRangeStatistics — it requires
+        # paired min/max — so the field is conservatively treated as
+        # unknown rather than partially used.
+        if is_primitive and field_id in lower and field_id in upper:
+            assert isinstance(field_type, PrimitiveType)  # narrow object→PrimitiveType for mypy
+            try:
+                values = [
+                    from_bytes(field_type, lower[field_id]),
+                    from_bytes(field_type, upper[field_id]),
+                ]
+                arrays[field_name] = daft.Series.from_arrow(
+                    pa.array(values, type=arrow_type),
+                    name=field_name,
+                    dtype=task_schema[field_name].dtype,
+                )
+                has_decoded_bounds = True
+                continue
+            except _EXPECTED_STATS_DECODE_ERRORS:
+                logger.debug(
+                    "Failed to decode stats for field %s (id=%d, type=%s)",
+                    field_name,
+                    field_id,
+                    field_type,
+                )
+
+        arrays[field_name] = daft.Series.from_arrow(
+            pa.array([None, None], type=arrow_type),
+            name=field_name,
+            dtype=task_schema[field_name].dtype,
+        )
+
+    if not has_decoded_bounds:
+        return None
+
+    stats = RecordBatch.from_pydict(arrays)
+    assert stats.schema() == task_schema, (
+        f"stats schema {stats.schema().column_names()} != task schema {task_schema.column_names()}"
+    )
+    return stats
+
+
 class IcebergDataSource(DataSource):
     """DataSource for Apache Iceberg tables.
 
@@ -129,6 +218,20 @@ class IcebergDataSource(DataSource):
 
         self._schema = convert_iceberg_schema(iceberg_schema)
         self._partition_fields = iceberg_partition_spec_to_fields(iceberg_schema, self._iceberg_table.spec())
+
+        # Precompute ordered field metadata for per-file stats decoding.  The
+        # order must match self._schema — downstream consumers (TableStatistics,
+        # MicroPartition) index columns by position and require exact equality.
+        self._top_level_fields: list[tuple[int, str, object, bool, pa.DataType]] = [
+            (
+                field.field_id,
+                field.name,
+                field.field_type,
+                isinstance(field.field_type, PrimitiveType),
+                schema_to_pyarrow(field.field_type),
+            )
+            for field in iceberg_schema.fields
+        ]
 
     @property
     def name(self) -> str:
@@ -226,7 +329,6 @@ class IcebergDataSource(DataSource):
 
             iceberg_delete_files = [f.file_path for f in task.delete_files]
 
-            # TODO: Thread in Statistics to each task: P2
             pspec = self._iceberg_record_to_partition_spec(self._iceberg_table.specs()[file.spec_id], file.partition)
 
             # Partition pruning is the DataSource's responsibility in the DataSource model.
@@ -234,6 +336,12 @@ class IcebergDataSource(DataSource):
                 filtered = pspec.filter(ExpressionsProjection([pushdowns.partition_filters]))
                 if len(filtered) == 0:
                     continue
+
+            stats = _build_iceberg_data_source_task_stats(
+                file=file,
+                top_level_fields=self._top_level_fields,
+                task_schema=self._schema,
+            )
 
             yield DataSourceTask.parquet(
                 path=path,
@@ -243,6 +351,7 @@ class IcebergDataSource(DataSource):
                 num_rows=record_count,
                 size_bytes=file.file_size_in_bytes,
                 partition_values=pspec,
+                stats=stats,
                 storage_config=self._storage_config,
                 iceberg_delete_files=iceberg_delete_files if iceberg_delete_files else None,
             )

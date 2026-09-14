@@ -6,7 +6,8 @@ use super::SQLTableFunction;
 use crate::{
     SQLPlanner,
     error::{PlannerError, SQLPlannerResult},
-    functions::{self, SQLFunctionArguments},
+    functions::SQLFunctionArguments,
+    modules::config::expr_to_iocfg,
 };
 
 /// The Daft-SQL `read_iceberg` table-value function.
@@ -50,7 +51,10 @@ impl TryFrom<SQLFunctionArguments> for SqlReadIcebergArgs {
         let snapshot_id: Option<usize> = args.try_get_named("snapshot_id")?;
         let branch: Option<String> = args.try_get_named("branch")?;
         let tag: Option<String> = args.try_get_named("tag")?;
-        let io_config: Option<IOConfig> = functions::args::parse_io_config(&args)?.into();
+        // Keep `None` when unset so the scan can fall back to the table's FileIO
+        // properties and the context `default_io_config`, matching the Python API.
+        let io_config: Option<IOConfig> =
+            args.get_named("io_config").map(expr_to_iocfg).transpose()?;
         let ignore_corrupt_files = args.try_get_named("ignore_corrupt_files")?.unwrap_or(false);
         Ok(Self {
             metadata_location,

@@ -20,10 +20,9 @@ use tokio::io::AsyncRead;
 use tokio_util::io::StreamReader;
 
 use crate::{
-    BufferedRange, MAX_RECORD_LENGTH, McapReadOptions, McapReadStats, fetch_exact_range,
-    fetch_range,
+    BufferedRange, MAX_RECORD_LENGTH, McapReadOptions, fetch_exact_range, fetch_range,
     indexed::{IndexedAction, IndexedReader},
-    mcap_error, parse_summary_from_bytes_with_stats, read_summary,
+    mcap_error, parse_summary_from_bytes, read_summary,
 };
 
 // Read small remote files in one request.
@@ -143,7 +142,7 @@ impl McapBatchBuilder {
 enum ReaderMode {
     Indexed(IndexedReader),
     Linear {
-        reader: LinearReader,
+        reader: Box<LinearReader>,
         record_buffer: Vec<u8>,
     },
     Empty,
@@ -162,11 +161,10 @@ enum LinearAction {
     End,
 }
 
-pub struct NativeMcapReader {
+pub struct McapReader {
     uri: String,
     io_client: Arc<IOClient>,
     io_stats: IOStatsRef,
-    read_stats: McapReadStats,
     mode: ReaderMode,
     channels: BTreeMap<u16, String>,
     topics: Option<BTreeSet<String>>,
@@ -179,13 +177,7 @@ pub struct NativeMcapReader {
     indexed_read_buffer: Option<BufferedRange>,
 }
 
-impl Drop for NativeMcapReader {
-    fn drop(&mut self) {
-        tracing::debug!(stats = ?self.read_stats, "MCAP logical I/O profile");
-    }
-}
-
-impl NativeMcapReader {
+impl McapReader {
     #[tracing::instrument(
         skip_all,
         name = "NativeMcapReader::new",
@@ -220,7 +212,6 @@ impl NativeMcapReader {
                 .is_some_and(|(start, end)| start >= end);
 
         let mut channels = BTreeMap::new();
-        let mut read_stats = McapReadStats::default();
         let (mode, indexed, indexed_remote_file_size, indexed_read_buffer) = if empty {
             // Provably-empty constraints never touch storage.
             (ReaderMode::Empty, false, None, None)
@@ -264,17 +255,9 @@ impl NativeMcapReader {
             }
 
             let summary = match &buffer {
-                Some(bytes) => parse_summary_from_bytes_with_stats(bytes, &mut read_stats)?,
+                Some(bytes) => parse_summary_from_bytes(bytes)?,
                 None => {
-                    read_summary(
-                        &uri,
-                        file_size as u64,
-                        is_remote,
-                        &io_client,
-                        &io_stats,
-                        &mut read_stats,
-                    )
-                    .await?
+                    read_summary(&uri, file_size as u64, is_remote, &io_client, &io_stats).await?
                 }
             };
             if let Some(summary) = &summary {
@@ -308,7 +291,7 @@ impl NativeMcapReader {
                 };
                 (
                     ReaderMode::Linear {
-                        reader,
+                        reader: Box::new(reader),
                         record_buffer: Vec::new(),
                     },
                     false,
@@ -322,7 +305,6 @@ impl NativeMcapReader {
             uri,
             io_client,
             io_stats,
-            read_stats,
             mode,
             channels,
             topics,
@@ -340,12 +322,6 @@ impl NativeMcapReader {
         self.indexed
     }
 
-    /// Logical reads/seeks and cache effectiveness. Storage request and byte
-    /// counts remain in the caller-provided `IOStatsContext`.
-    pub fn read_stats(&self) -> &McapReadStats {
-        &self.read_stats
-    }
-
     fn message_matches(&self, topic: &str, header: MessageHeader) -> bool {
         if self.start_time.is_some_and(|start| header.log_time < start) {
             return false;
@@ -359,17 +335,13 @@ impl NativeMcapReader {
     }
 
     async fn fetch_indexed_chunk(&mut self, offset: u64, length: usize) -> DaftResult<Bytes> {
-        self.read_stats.chunk_reads += 1;
         if let Some(bytes) = self
             .indexed_read_buffer
             .as_ref()
             .and_then(|buffer| buffer.slice(offset, length))
         {
-            self.read_stats.chunk_buffer_hits += 1;
             return Ok(bytes);
         }
-
-        self.read_stats.chunk_fetches += 1;
 
         let start = usize::try_from(offset)
             .map_err(|_| mcap_error("range offset does not fit in usize"))?;
@@ -419,7 +391,6 @@ impl NativeMcapReader {
     }
 
     async fn next_linear_action(&mut self) -> DaftResult<LinearAction> {
-        self.read_stats.linear_record_reads += 1;
         let ReaderMode::Linear {
             reader,
             record_buffer,
