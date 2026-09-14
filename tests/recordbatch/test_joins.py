@@ -352,3 +352,151 @@ def test_table_join_anti_different_names() -> None:
     assert result_table.column_names() == ["x", "y"]
     result_sorted = result_table.sort([col("x")])
     assert result_sorted.get_column_by_name("y").to_pylist() == [3, 6]
+
+
+def test_table_join_semi_anti_static_null_key_null_safe() -> None:
+    # https://github.com/Eventual-Inc/Daft/issues/7502
+    # A statically-Null key matches every right row under null-safe equality.
+    left_table = MicroPartition.from_pydict({"x": [None, None], "y": [1, 2]})
+    right_table = MicroPartition.from_pydict({"x": [None]})
+    assert left_table.schema()["x"].dtype == DataType.null()
+    assert right_table.schema()["x"].dtype == DataType.null()
+
+    semi = left_table.hash_join(
+        right_table, left_on=[col("x")], right_on=[col("x")], how=JoinType.Semi, null_equals_nulls=[True]
+    )
+    assert semi.column_names() == ["x", "y"]
+    assert sorted(semi.get_column_by_name("y").to_pylist()) == [1, 2]
+
+    anti = left_table.hash_join(
+        right_table, left_on=[col("x")], right_on=[col("x")], how=JoinType.Anti, null_equals_nulls=[True]
+    )
+    assert anti.column_names() == ["x", "y"]
+    assert anti.get_column_by_name("y").to_pylist() == []
+
+
+@pytest.mark.parametrize("null_equals_nulls", [None, [False]])
+def test_table_join_semi_anti_static_null_key_not_null_safe(null_equals_nulls) -> None:
+    # Without null-safe equality a statically-Null key never matches.
+    left_table = MicroPartition.from_pydict({"x": [None, None], "y": [1, 2]})
+    right_table = MicroPartition.from_pydict({"x": [None]})
+    kwargs = {} if null_equals_nulls is None else {"null_equals_nulls": null_equals_nulls}
+
+    semi = left_table.hash_join(right_table, left_on=[col("x")], right_on=[col("x")], how=JoinType.Semi, **kwargs)
+    assert semi.get_column_by_name("y").to_pylist() == []
+
+    anti = left_table.hash_join(right_table, left_on=[col("x")], right_on=[col("x")], how=JoinType.Anti, **kwargs)
+    assert sorted(anti.get_column_by_name("y").to_pylist()) == [1, 2]
+
+
+def test_table_join_semi_anti_static_null_key_null_safe_empty_right() -> None:
+    # Null-safe equality still needs at least one right row to match against.
+    left_table = MicroPartition.from_pydict({"x": [None, None], "y": [1, 2]})
+    right_table = MicroPartition.from_pydict({"x": []})
+
+    semi = left_table.hash_join(
+        right_table, left_on=[col("x")], right_on=[col("x")], how=JoinType.Semi, null_equals_nulls=[True]
+    )
+    assert semi.get_column_by_name("y").to_pylist() == []
+
+    anti = left_table.hash_join(
+        right_table, left_on=[col("x")], right_on=[col("x")], how=JoinType.Anti, null_equals_nulls=[True]
+    )
+    assert sorted(anti.get_column_by_name("y").to_pylist()) == [1, 2]
+
+
+def test_table_join_semi_anti_multi_key_static_null_mixed_flags() -> None:
+    left_table = MicroPartition.from_pydict({"n": [None, None], "k": [1, 2], "y": [10, 20]})
+    right_table = MicroPartition.from_pydict({"n": [None, None], "k": [1, 3]})
+    assert left_table.schema()["n"].dtype == DataType.null()
+
+    # The null-safe statically-Null key acts as a wildcard; the typed key decides.
+    semi = left_table.hash_join(
+        right_table,
+        left_on=[col("n"), col("k")],
+        right_on=[col("n"), col("k")],
+        how=JoinType.Semi,
+        null_equals_nulls=[True, False],
+    )
+    assert semi.get_column_by_name("y").to_pylist() == [10]
+
+    anti = left_table.hash_join(
+        right_table,
+        left_on=[col("n"), col("k")],
+        right_on=[col("n"), col("k")],
+        how=JoinType.Anti,
+        null_equals_nulls=[True, False],
+    )
+    assert anti.get_column_by_name("y").to_pylist() == [20]
+
+    # A statically-Null key without null-safe equality poisons every candidate pair.
+    semi = left_table.hash_join(
+        right_table,
+        left_on=[col("n"), col("k")],
+        right_on=[col("n"), col("k")],
+        how=JoinType.Semi,
+        null_equals_nulls=[False, True],
+    )
+    assert semi.get_column_by_name("y").to_pylist() == []
+
+    anti = left_table.hash_join(
+        right_table,
+        left_on=[col("n"), col("k")],
+        right_on=[col("n"), col("k")],
+        how=JoinType.Anti,
+        null_equals_nulls=[False, True],
+    )
+    assert sorted(anti.get_column_by_name("y").to_pylist()) == [10, 20]
+
+
+def test_table_join_semi_anti_all_null_keys_null_safe() -> None:
+    # Multiple statically-Null keys with null-safe equality match across both sides.
+    left_table = MicroPartition.from_pydict({"a": [None, None], "b": [None, None], "y": [1, 2]})
+    right_table = MicroPartition.from_pydict({"a": [None, None], "b": [None, None]})
+
+    semi = left_table.hash_join(
+        right_table,
+        left_on=[col("a"), col("b")],
+        right_on=[col("a"), col("b")],
+        how=JoinType.Semi,
+        null_equals_nulls=[True, True],
+    )
+    assert sorted(semi.get_column_by_name("y").to_pylist()) == [1, 2]
+
+    anti = left_table.hash_join(
+        right_table,
+        left_on=[col("a"), col("b")],
+        right_on=[col("a"), col("b")],
+        how=JoinType.Anti,
+        null_equals_nulls=[True, True],
+    )
+    assert anti.get_column_by_name("y").to_pylist() == []
+
+
+def test_table_join_semi_anti_null_dtype_vs_typed_nulls() -> None:
+    # A Null-dtype column joined against a typed column is cast to the typed supertype,
+    # so results follow the typed column's null semantics, not the static-null shortcut.
+    left_table = MicroPartition.from_pydict({"x": [None, None], "y": [1, 2]})
+    right_table = MicroPartition.from_pydict({"x": [None, 5]})
+    assert left_table.schema()["x"].dtype == DataType.null()
+    assert right_table.schema()["x"].dtype == DataType.int64()
+
+    semi = left_table.hash_join(
+        right_table, left_on=[col("x")], right_on=[col("x")], how=JoinType.Semi, null_equals_nulls=[True]
+    )
+    assert sorted(semi.get_column_by_name("y").to_pylist()) == [1, 2]
+
+    anti = left_table.hash_join(
+        right_table, left_on=[col("x")], right_on=[col("x")], how=JoinType.Anti, null_equals_nulls=[True]
+    )
+    assert anti.get_column_by_name("y").to_pylist() == []
+
+    semi = left_table.hash_join(
+        right_table, left_on=[col("x")], right_on=[col("x")], how=JoinType.Semi, null_equals_nulls=[False]
+    )
+    assert semi.get_column_by_name("y").to_pylist() == []
+
+    anti = left_table.hash_join(
+        right_table, left_on=[col("x")], right_on=[col("x")], how=JoinType.Anti, null_equals_nulls=[False]
+    )
+    assert sorted(anti.get_column_by_name("y").to_pylist()) == [1, 2]
