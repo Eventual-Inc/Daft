@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
@@ -16,7 +17,7 @@ from daft.logical.schema import Field
 
 
 @contextmanager
-def postgres_connection(connection_string: str, extensions: list[str] | None) -> psycopg.Connection.connect:
+def postgres_connection(connection_string: str, extensions: Sequence[str] | None) -> psycopg.Connection.connect:
     """Context manager that provides a PostgreSQL connection with specified extensions setup.
 
     Args:
@@ -177,7 +178,7 @@ class PostgresCatalog(Catalog):
     # TODO(desmond): For now we can create connections as needed, but in the future we can create lazy connections
     # and connection pools as an optimization.
     _inner: str  # connection string
-    _extensions: list[str] | None  # extensions to create
+    _extensions: Sequence[str] | None  # extensions to create
     _create_table_options = {
         "enable_rls",
     }
@@ -186,7 +187,7 @@ class PostgresCatalog(Catalog):
         raise RuntimeError("PostgresCatalog.__init__ is not supported, please use `Catalog.from_postgres` instead.")
 
     @staticmethod
-    def from_uri(uri: str, extensions: list[str] | None, **options: str | None) -> PostgresCatalog:
+    def from_uri(uri: str, extensions: Sequence[str] | None, **options: str | None) -> PostgresCatalog:
         """Create a PostgresCatalog from a connection string."""
         validate_connection_string(uri)
         c = PostgresCatalog.__new__(PostgresCatalog)
@@ -445,7 +446,7 @@ class PostgresCatalog(Catalog):
 
 class PostgresTable(Table):
     _inner: tuple[str, Identifier]  # (connection_string, identifier)
-    _extensions: list[str] | None
+    _extensions: Sequence[str] | None
     _read_options = {
         "partition_col",
         "num_partitions",
@@ -461,7 +462,7 @@ class PostgresTable(Table):
 
     @classmethod
     def _from_catalog(
-        cls, connection_string: str, identifier: Identifier, extensions: list[str] | None
+        cls, connection_string: str, identifier: Identifier, extensions: Sequence[str] | None
     ) -> PostgresTable:
         """Create a PostgresTable from catalog connection details."""
         t = cls.__new__(cls)
