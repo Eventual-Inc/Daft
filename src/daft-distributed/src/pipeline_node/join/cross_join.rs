@@ -80,7 +80,7 @@ impl CrossJoinNode {
             if is_left {
                 // Create cross joins with all existing right builders
                 for right_builder in &right_builders {
-                    let new_builder = SwordfishTaskBuilder::combine_with(
+                    let new_builder = SwordfishTaskBuilder::combine_fanout(
                         &builder,
                         right_builder,
                         self.as_ref(),
@@ -100,7 +100,7 @@ impl CrossJoinNode {
             } else {
                 // Create cross joins with all existing left builders
                 for left_builder in &left_builders {
-                    let new_builder = SwordfishTaskBuilder::combine_with(
+                    let new_builder = SwordfishTaskBuilder::combine_fanout(
                         left_builder,
                         &builder,
                         self.as_ref(),
