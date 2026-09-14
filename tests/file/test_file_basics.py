@@ -4,6 +4,9 @@ import importlib
 import io
 import random
 import struct
+import threading
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -189,6 +192,72 @@ def test_filesize_expr(tmp_path: Path):
 
     res = df.select(file_size(file(df["file"]))).to_pydict()["file"][0]
     assert res == 2048
+
+
+def test_filesize_expr_multiple_files_and_nulls(tmp_path: Path):
+    first_file = tmp_path / "first.bin"
+    first_file.write_bytes(b"abc")
+    second_file = tmp_path / "second.bin"
+    second_file.write_bytes(b"12345")
+
+    df = daft.from_pydict(
+        {
+            "file": [
+                str(first_file.absolute()),
+                None,
+                str(second_file.absolute()),
+            ]
+        }
+    )
+
+    result = df.select(file_size(file(df["file"]))).to_pydict()["file"]
+    assert result == [3, None, 5]
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local HTTP server is unavailable to Ray workers")
+def test_filesize_expr_uses_http_metadata_only(tmp_path: Path):
+    file_path = tmp_path / "test_file.bin"
+    file_path.write_bytes(b"metadata-only")
+    requests: list[str] = []
+
+    class RequestRecordingHandler(SimpleHTTPRequestHandler):
+        def do_GET(self):
+            requests.append("GET")
+            super().do_GET()
+
+        def do_HEAD(self):
+            requests.append("HEAD")
+            super().do_HEAD()
+
+        def log_message(self, format, *args):
+            pass
+
+    handler = partial(RequestRecordingHandler, directory=str(tmp_path))
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/{file_path.name}"
+        df = daft.from_pydict({"file": [url]})
+        result = df.select(file_size(file(df["file"]))).to_pydict()["file"]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert result == [len(b"metadata-only")]
+    assert requests == ["HEAD"]
+
+
+def test_filesize_expr_preserves_byte_range_size(tmp_path: Path):
+    file_path = tmp_path / "test_file.bin"
+    file_path.write_bytes(b"abcdef")
+
+    df = daft.from_pydict({"file": [daft.File(str(file_path), position=2, size=3)]})
+
+    result = df.select(file_size(df["file"])).to_pydict()["file"]
+    assert result == [3]
 
 
 def test_file_exists(tmp_path: Path):
