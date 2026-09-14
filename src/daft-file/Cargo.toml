@@ -12,6 +12,7 @@ common-runtime.workspace = true
 serde.workspace = true
 typetag.workspace = true
 url.workspace = true
+tracing.workspace = true
 
 [features]
 python = [

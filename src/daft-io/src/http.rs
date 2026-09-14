@@ -507,6 +507,7 @@ impl ObjectSource for HttpSource {
                 Ok(LSResult {
                     files: file_metadatas,
                     continuation_token: None,
+                    not_found_if_empty: false,
                 })
             }
             // All other forms of content-type is treated as a raw file
@@ -517,6 +518,7 @@ impl ObjectSource for HttpSource {
                     size: response.content_length(),
                 }],
                 continuation_token: None,
+                not_found_if_empty: false,
             }),
         }
     }

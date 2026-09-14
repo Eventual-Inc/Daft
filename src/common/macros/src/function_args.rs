@@ -1,5 +1,5 @@
 use proc_macro_crate::{FoundCrate, crate_name};
-use proc_macro_error::{abort, abort_call_site, emit_error};
+use proc_macro_error2::{abort, abort_call_site, emit_error};
 use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote};
 use syn::{

@@ -110,9 +110,6 @@ gsutil -m cp -r gs://gresearch/robotics/droid_raw/<episode_path> /path/to/droid_
 !!! note
     See the [official DROID dataset documentation](https://droid-dataset.github.io/droid/the-droid-dataset) for details on the dataset format and downloading the necessary files for your use case.
 
-For lower-level HDF5 file usage patterns, see the [HDF5 file usage notebook](https://github.com/Eventual-Inc/Daft/blob/main/examples/hdf5_file_usage.ipynb).
-
-
 ## Basic usage
 
 ### Loading from the public GCS bucket
@@ -337,7 +334,6 @@ frames.show(3)
 
 ## Next steps
 
-- Run the [HDF5 file usage notebook](https://github.com/Eventual-Inc/Daft/blob/main/examples/hdf5_file_usage.ipynb) for lower-level examples of inspecting and reading HDF5 files.
 - See the [Videos modality guide](../modalities/videos.md) for decoding frames with [`video_frames`][daft.functions.video_frames] and working with [`daft.VideoFile`](../api/datatypes/file_types.md).
 - See the [Files modality guide](../modalities/files.md) for reading trajectory HDF5 files with [`daft.File`](../api/datatypes/file_types.md).
 - Visit the [official DROID project page](https://droid-dataset.github.io/) for hardware setup, policy learning code, and additional dataset formats.

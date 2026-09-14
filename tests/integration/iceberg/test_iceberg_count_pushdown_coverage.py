@@ -92,6 +92,7 @@ class TestIcebergDataSourceUnit:
 
         # Mock schema
         mock_schema = Mock()
+        mock_schema.fields = []  # Required by IcebergDataSource.__init__
         mock_table.schema.return_value = mock_schema
 
         # Mock spec
@@ -281,7 +282,9 @@ class TestIcebergDataSourceUnit:
         # Create table that will fail on scan
         mock_table = Mock()
         mock_table.name.return_value = ["test", "table"]
-        mock_table.schema.return_value = Mock()
+        mock_schema_exc = Mock()
+        mock_schema_exc.fields = []
+        mock_table.schema.return_value = mock_schema_exc
         mock_spec = Mock()
         mock_spec.fields = []
         mock_table.spec.return_value = mock_spec
@@ -312,7 +315,9 @@ class TestIcebergDataSourceUnit:
         # Create table that will fail on scan
         mock_table = Mock()
         mock_table.name.return_value = ["test", "table"]
-        mock_table.schema.return_value = Mock()
+        mock_schema_exc2 = Mock()
+        mock_schema_exc2.fields = []
+        mock_table.schema.return_value = mock_schema_exc2
         mock_spec = Mock()
         mock_spec.fields = []
         mock_table.spec.return_value = mock_spec

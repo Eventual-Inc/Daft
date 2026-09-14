@@ -249,6 +249,7 @@ class IcebergTable(Table):
 
     _read_options = {"snapshot_id", "branch", "tag", "ignore_corrupt_files"}
     _write_options: set[str] = set()
+    _overwrite_options: set[str] = {"overwrite_filter", "validate_overwrite_filter"}
 
     def __init__(self) -> None:
         raise RuntimeError("IcebergTable.__init__ is not supported, please use `Table.from_iceberg` instead.")
@@ -286,9 +287,14 @@ class IcebergTable(Table):
         df.write_iceberg(self._inner, mode="append")
 
     def overwrite(self, df: DataFrame, **options: Any) -> None:
-        self._validate_options("Iceberg write", options, IcebergTable._write_options)
+        self._validate_options("Iceberg overwrite", options, IcebergTable._overwrite_options)
 
-        df.write_iceberg(self._inner, mode="overwrite")
+        df.write_iceberg(
+            self._inner,
+            mode="overwrite",
+            overwrite_filter=options.get("overwrite_filter"),
+            validate_overwrite_filter=options.get("validate_overwrite_filter", True),
+        )
 
 
 def _to_pyiceberg_ident(ident: Identifier | str) -> tuple[str, ...] | str:

@@ -260,6 +260,7 @@ impl ObjectSource for LocalSource {
         Ok(LSResult {
             files,
             continuation_token: None,
+            not_found_if_empty: false,
         })
     }
 

@@ -267,6 +267,7 @@ jobs:
       uses: isbang/compose-action@v3.0.0
       with:
         compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
+        up-flags: --wait --wait-timeout 60
         down-flags: --volumes
     - name: Run IO integration tests
       run: |
@@ -274,6 +275,11 @@ jobs:
         pytest tests/integration/io -m 'integration and not benchmark' --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+    - name: Show IO service diagnostics
+      if: failure()
+      run: |
+        docker compose -f ./tests/integration/io/docker-compose/docker-compose.yml ps -a
+        docker compose -f ./tests/integration/io/docker-compose/docker-compose.yml logs --no-color bigtable-emulator
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v3.0.3
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.ref == 'refs/heads/main') }}
