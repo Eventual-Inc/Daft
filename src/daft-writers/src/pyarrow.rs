@@ -24,6 +24,7 @@ impl PyArrowWriter {
         io_config: Option<&daft_io::IOConfig>,
         partition_values: Option<&RecordBatch>,
         column_compression: Option<&[(String, String)]>,
+        compression_level: Option<i32>,
     ) -> DaftResult<Self> {
         Python::attach(|py| {
             let file_writer_module = py.import(pyo3::intern!(py, "daft.io.writer"))?;
@@ -53,6 +54,9 @@ impl PyArrowWriter {
                     dict.set_item(path, codec)?;
                 }
                 kwargs.set_item("column_compression", dict)?;
+            }
+            if let Some(level) = compression_level {
+                kwargs.set_item("compression_level", level)?;
             }
 
             let py_writer = file_writer_class.call(
