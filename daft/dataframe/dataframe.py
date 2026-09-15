@@ -2379,7 +2379,8 @@ class DataFrame:
               - If omitted, defaults to ``"_rowaddr"``.
               - If ``right_on`` is omitted, it defaults to the value of ``left_on``.
               - The DataFrame passed to ``write_lance(mode="merge")`` must contain ``fragment_id`` and the join key column specified by ``right_on`` (or ``_rowaddr`` by default).
-          **kwargs: Additional keyword arguments to pass to the Lance writer.
+          **kwargs: Additional keyword arguments to pass to the Lance writer. daft-lance
+            validates these against a fixed set; an unrecognized argument raises ``TypeError``.
 
         Returns:
             DataFrame: A DataFrame containing metadata about the written Lance table, such as number of fragments, number of deleted rows, number of small files, and version.
@@ -2418,7 +2419,6 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 4 of 4 rows)
             >>> # Pass additional keyword arguments to the Lance writer
-            >>> # All additional keyword arguments are passed to `lance.write_fragments`
             >>> df.write_lance("/tmp/lance/my_table.lance", mode="overwrite", max_bytes_per_file=1024)  # doctest: +SKIP
             ╭───────────────┬──────────────────┬─────────────────┬─────────╮
             │ num_fragments ┆ num_deleted_rows ┆ num_small_files ┆ version │
@@ -2517,14 +2517,14 @@ class DataFrame:
             )
 
         from daft.io.lance.lance_merge_column import merge_columns_from_df
+        from daft.io.lance.namespace import DatasetOpenContext
 
         merge_columns_from_df(
             df=self,
             lance_ds=lance_ds,
-            uri=uri,
+            open_context=DatasetOpenContext.from_dataset(lance_ds, str(uri), storage_options=storage_options),
             left_on=join_left,
             right_on=join_right,
-            storage_options=storage_options,
         )
 
         # Build and return stats DataFrame similar to sink.finalize
