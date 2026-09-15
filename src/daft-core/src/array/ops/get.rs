@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use arrow::{
     array::{Array, ArrayRef, Scalar},
     datatypes::IntervalMonthDayNano,
