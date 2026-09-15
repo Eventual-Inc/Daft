@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 import sys
-from typing import TYPE_CHECKING, Any, Literal
+from typing import IO, TYPE_CHECKING, Any, Literal, cast, overload
 
 from daft.file import File
 
@@ -99,13 +99,31 @@ class DaftFileIO(io.RawIOBase):
         return f"DaftFileIO({self._inner})"
 
 
+@overload
+def open_file(
+    url: str,
+    mode: Literal["r", "rt"] = "r",
+    buffering: int = -1,
+    encoding: str | None = None,
+    io_config: IOConfig | None = None,
+) -> IO[str]: ...
+@overload
+def open_file(
+    url: str,
+    mode: Literal["rb"],
+    buffering: int = -1,
+    encoding: str | None = None,
+    io_config: IOConfig | None = None,
+) -> IO[bytes]: ...
+
+
 def open_file(
     url: str,
     mode: Literal["r", "rt", "rb"] = "r",
     buffering: int = -1,
     encoding: str | None = None,
     io_config: IOConfig | None = None,
-) -> io.IOBase:
+) -> IO[str] | IO[bytes]:
     """Open a file from a URL, potentially from a remote filesystem using Daft's IO backend.
 
     This is not intended for building expressions inside of DataFrames. Instead, this
@@ -142,7 +160,7 @@ def open_file(
         file_handle = io.BufferedReader(file_handle, buffering)
 
     if mode == "rb":
-        return file_handle
+        return cast("IO[bytes]", file_handle)
     elif mode in ("rt", "r"):
         return io.TextIOWrapper(file_handle, encoding=encoding, line_buffering=buffering in (1, -1))  # type: ignore[type-var]
     else:

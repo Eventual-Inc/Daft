@@ -243,11 +243,14 @@ class ResourceRequest:
     def __ne__(self, other: ResourceRequest) -> bool: ...  # type: ignore[override]
 
 class FileFormat(Enum):
-    """Format of a file, e.g. Parquet, CSV, and JSON."""
+    """Format of a file."""
 
     Parquet = 1
     Csv = 2
     Json = 3
+    Warc = 4
+    Text = 5
+    Mcap = 6
 
     def ext(self) -> str: ...
 
@@ -324,6 +327,22 @@ class WarcSourceConfig:
 
     def __init__(self) -> None: ...
 
+class McapSourceConfig:
+    """Configuration of an MCAP data source."""
+
+    batch_size: int
+    start_time: int | None
+    end_time: int | None
+    topics: list[str] | None
+
+    def __init__(
+        self,
+        batch_size: int = 1000,
+        start_time: int | None = None,
+        end_time: int | None = None,
+        topics: list[str] | None = None,
+    ) -> None: ...
+
 class DatabaseSourceConfig:
     """Configuration of a database data source."""
 
@@ -351,9 +370,16 @@ class TextSourceConfig:
     ): ...
 
 class FileFormatConfig:
-    """Configuration for parsing a particular file format (Parquet, CSV, JSON)."""
+    """Configuration for parsing a particular file format."""
 
-    config: ParquetSourceConfig | CsvSourceConfig | JsonSourceConfig | WarcSourceConfig
+    config: (
+        ParquetSourceConfig
+        | CsvSourceConfig
+        | JsonSourceConfig
+        | WarcSourceConfig
+        | TextSourceConfig
+        | McapSourceConfig
+    )
 
     @staticmethod
     def from_parquet_config(config: ParquetSourceConfig) -> FileFormatConfig:
@@ -370,6 +396,11 @@ class FileFormatConfig:
     @staticmethod
     def from_warc_config(config: WarcSourceConfig) -> FileFormatConfig:
         """Create a WARC file format config."""
+
+    @staticmethod
+    def from_mcap_config(config: McapSourceConfig) -> FileFormatConfig:
+        """Create an MCAP file format config."""
+        ...
 
     @staticmethod
     def from_text_config(config: TextSourceConfig) -> FileFormatConfig:
@@ -1262,6 +1293,18 @@ class PyDataSourceTask:
         stats: PyRecordBatch | None = None,
         storage_config: StorageConfig | None = None,
         iceberg_delete_files: list[str] | None = None,
+    ) -> PyDataSourceTask: ...
+    @staticmethod
+    def mcap(
+        path: str,
+        schema: PySchema,
+        *,
+        mcap_config: McapSourceConfig | None = None,
+        pushdowns: PyPushdowns | None = None,
+        num_rows: int | None = None,
+        size_bytes: int | None = None,
+        stats: PyRecordBatch | None = None,
+        storage_config: StorageConfig | None = None,
     ) -> PyDataSourceTask: ...
 
 class ScanOperatorHandle:
