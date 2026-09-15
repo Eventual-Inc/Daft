@@ -6,10 +6,20 @@ use std::{
 
 use common_error::DaftResult;
 use daft_schema::schema::SchemaRef;
+#[cfg(feature = "python")]
+use pyo3::Py;
 
 use crate::{
     ClusteringKeys, PartitionField, Pushdowns, ScanTaskRef, Statistics, SupportsPushdownFilters,
 };
+
+#[cfg(feature = "python")]
+pub trait ExpandsToDataFrame: Send + Sync {
+    fn expand_dataframe(&self, pushdowns: &Pushdowns) -> DaftResult<Option<Py<pyo3::PyAny>>>;
+
+    /// Identity of the Python DataFrameSource object, used to refuse `self.read()`.
+    fn python_object_id(&self) -> usize;
+}
 
 pub trait ScanOperator: Send + Sync + Debug {
     fn name(&self) -> &str;
@@ -65,6 +75,11 @@ pub trait ScanOperator: Send + Sync + Debug {
     fn to_scan_tasks(&self, pushdowns: Pushdowns) -> DaftResult<Vec<ScanTaskRef>>;
 
     fn as_pushdown_filter(&self) -> Option<&dyn SupportsPushdownFilters> {
+        None
+    }
+
+    #[cfg(feature = "python")]
+    fn as_dataframe_expander(&self) -> Option<&dyn ExpandsToDataFrame> {
         None
     }
 }
