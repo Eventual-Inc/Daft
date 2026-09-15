@@ -95,6 +95,15 @@ def generate_multi_fragment_dataset(tmp_path, num_fragments=4, rows_per_fragment
 class TestDistributedIndexing:
     """Test cases for distributed indexing functionality."""
 
+    @pytest.mark.xfail(
+        reason=(
+            "Known upstream issue: daft-lance 0.5.0 + pylance 11.0.0 does not populate"
+            " index type metadata (reports 'Unknown'/empty type_url) for indices built"
+            " through the non-segmented distributed path (_create_partitioned_index);"
+            " building the same index with segmented=True reports the type correctly."
+        ),
+        strict=False,
+    )
     def test_build_distributed_index_search_functionality(self, multi_fragment_lance_dataset):
         """Test that the built index actually works for searching."""
         dataset_uri = multi_fragment_lance_dataset
@@ -287,6 +296,15 @@ class TestDistributedIndexing:
         error_msg = str(exc_info.value)
         assert "already exists" in error_msg and index_name in error_msg
 
+    @pytest.mark.xfail(
+        reason=(
+            "Known upstream issue: daft-lance 0.5.0 + pylance 11.0.0 does not populate"
+            " index type metadata (reports 'Unknown'/empty type_url) for indices built"
+            " through the non-segmented distributed path (_create_partitioned_index);"
+            " building the same index with segmented=True reports the type correctly."
+        ),
+        strict=False,
+    )
     def test_build_distributed_index_replace_true_overwrite_existing(self, multi_fragment_lance_dataset):
         """Test that replace=True successfully overwrites existing index."""
         dataset_uri = multi_fragment_lance_dataset

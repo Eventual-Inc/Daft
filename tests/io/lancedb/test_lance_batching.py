@@ -55,6 +55,7 @@ def test_accumulate_small_micropartitions(schema, tmp_path):
 
     with patch("daft_lance.lance_data_sink.lance", fake):
         sink = LanceDataSink(uri=str(tmp_path / "tbl"), schema=schema, mode="create", max_rows_per_file=25)
+        sink.start()
         mps = [_make_mp(10), _make_mp(20), _make_mp(30)]
         results = list(sink.write(iter(mps)))
 
@@ -69,6 +70,7 @@ def test_flush_remaining_at_end(schema, tmp_path):
 
     with patch("daft_lance.lance_data_sink.lance", fake):
         sink = LanceDataSink(uri=str(tmp_path / "tbl"), schema=schema, mode="create", max_rows_per_file=25)
+        sink.start()
         mps = [_make_mp(10), _make_mp(5)]
         results = list(sink.write(iter(mps)))
 
@@ -83,6 +85,7 @@ def test_large_micropartition_writes_directly(schema, tmp_path):
 
     with patch("daft_lance.lance_data_sink.lance", fake):
         sink = LanceDataSink(uri=str(tmp_path / "tbl"), schema=schema, mode="create", max_rows_per_file=25)
+        sink.start()
         mps = [_make_mp(30)]
         results = list(sink.write(iter(mps)))
 
@@ -92,15 +95,22 @@ def test_large_micropartition_writes_directly(schema, tmp_path):
     assert sum(r.rows_written for r in results) == 30
 
 
-def test_no_accumulation_when_param_missing(schema, tmp_path):
+def test_default_max_rows_per_file_accumulates(schema, tmp_path):
+    # daft-lance 0.5.0 changed LanceDataSink's default `max_rows_per_file` from
+    # None (accumulation disabled) to 1024 * 1024, so micropartitions are now
+    # buffered and flushed together by default instead of written one-by-one.
     fake = FakeLanceModule()._bind()
 
     with patch("daft_lance.lance_data_sink.lance", fake):
         sink = LanceDataSink(uri=str(tmp_path / "tbl"), schema=schema, mode="create")
+        # The default is now a concrete row count rather than None.
+        assert sink._max_rows_per_file == 1024 * 1024
+        sink.start()
         mps = [_make_mp(10), _make_mp(5)]
         results = list(sink.write(iter(mps)))
 
-    # Expect two separate writes corresponding to each micropartition
-    assert len(fake.calls) == 2
-    assert [t.num_rows for t in fake.calls] == [10, 5]
-    assert [r.rows_written for r in results] == [10, 5]
+    # The default threshold is far above 15 rows, so both micropartitions
+    # accumulate and are flushed together as a single write at the end.
+    assert len(fake.calls) == 1
+    assert fake.calls[0].num_rows == 15
+    assert sum(r.rows_written for r in results) == 15
