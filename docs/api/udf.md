@@ -25,33 +25,3 @@ Learn more about user-defined functions in the user guide: [`daft.func`](../cust
 ## Aggregate UDFs
 
 ::: daft.udaf
-
-## Legacy UDFs
-
-!!! danger "To Be Removed in 0.8.0"
-
-    The `@daft.udf` decorator has been **deprecated** since Daft 0.7.0 and **will be removed in 0.8.0**.
-    Please use `@daft.func` and `@daft.cls` instead.
-
-    Using `@daft.udf` emits the following warning:
-
-    ```
-    DeprecationWarning: The `@daft.udf` decorator is deprecated since Daft version >= 0.7.0
-    and will be removed in >= 0.8.0. Please use `@daft.func` and `@daft.cls` instead.
-    See the migration guide for more details:
-    https://docs.daft.ai/en/stable/custom-code/migration/
-    ```
-
-    See the [migration guide](../custom-code/migration.md) for how to update your code.
-
-### Creating Legacy UDFs
-
-::: daft.udf.udf
-    options:
-        heading_level: 4
-
-### Using Legacy UDFs
-
-::: daft.udf.UDF
-    options:
-        filters: ["!^_", "__call__"]
