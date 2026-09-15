@@ -100,7 +100,7 @@ def set_runner_ray(
             (request all demand upfront and halve on rejection for faster convergence).
         autoscale_bisect_timeout_secs: Seconds to wait for the cluster to grow before the "bisect"
             strategy halves its resource request. Only used when autoscale_strategy is "bisect".
-            Defaults to 30.
+            Must be greater than zero. Defaults to 30.
 
     Returns:
         Runner[PartitionT]: A runner object with the Ray runner's configurations.

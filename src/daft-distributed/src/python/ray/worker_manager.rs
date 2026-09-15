@@ -58,10 +58,34 @@ struct BisectState {
     last_requested_memory: usize,
     /// When we issued the last request.
     last_request_time: Instant,
-    /// Worker IDs present when we last issued a request. Used to detect growth even when
-    /// total resources stay flat (e.g. a worker dies while an identically-sized one joins,
-    /// which is common in homogeneous clusters).
+    /// Worker IDs present when we last issued a request. This supplements resource totals for
+    /// workers that do not advertise CPU, GPU, or memory resources. A replacement worker alone
+    /// is not considered growth; the current set must strictly extend this snapshot.
     worker_ids_at_last_request: HashSet<WorkerId>,
+}
+
+fn worker_set_grew(
+    previous_worker_ids: &HashSet<WorkerId>,
+    current_worker_ids: &HashSet<WorkerId>,
+) -> bool {
+    // A new ID can indicate either scale-up or a same-capacity replacement. Only use worker
+    // identity as a growth signal when every previously observed worker is still present and the
+    // set has strictly expanded. Resource growth remains authoritative when workers are replaced.
+    current_worker_ids.len() > previous_worker_ids.len()
+        && current_worker_ids.is_superset(previous_worker_ids)
+}
+
+fn cluster_capacity_grew(
+    bisect: &BisectState,
+    current_worker_ids: &HashSet<WorkerId>,
+    current_cluster_cpus: f64,
+    current_cluster_gpus: f64,
+    current_cluster_memory: usize,
+) -> bool {
+    worker_set_grew(&bisect.worker_ids_at_last_request, current_worker_ids)
+        || current_cluster_cpus > bisect.cluster_cpus_at_last_request
+        || current_cluster_gpus > bisect.cluster_gpus_at_last_request
+        || current_cluster_memory > bisect.cluster_memory_at_last_request
 }
 
 struct RayWorkerManagerState {
@@ -149,9 +173,14 @@ impl RayWorkerManager {
             })?,
             None => AutoscaleStrategy::Gradual,
         };
-        let bisect_growth_timeout = Duration::from_secs(
-            autoscale_bisect_timeout_secs.unwrap_or(DEFAULT_BISECT_TIMEOUT_SECS),
-        );
+        let bisect_growth_timeout_secs =
+            autoscale_bisect_timeout_secs.unwrap_or(DEFAULT_BISECT_TIMEOUT_SECS);
+        if bisect_growth_timeout_secs == 0 {
+            return Err(DaftError::ValueError(
+                "autoscale_bisect_timeout_secs must be greater than zero".to_string(),
+            ));
+        }
+        let bisect_growth_timeout = Duration::from_secs(bisect_growth_timeout_secs);
         Ok(Self {
             state: Arc::new(Mutex::new(RayWorkerManagerState {
                 ray_workers: HashMap::new(),
@@ -648,23 +677,23 @@ impl RayWorkerManager {
             }
             Some(bisect) => {
                 let elapsed = bisect.last_request_time.elapsed();
-                // Also treat new worker IDs as growth: in homogeneous clusters a worker can die
-                // while a same-sized replacement joins, leaving resource totals unchanged.
-                let has_new_workers = state
-                    .ray_workers
-                    .keys()
-                    .any(|id| !bisect.worker_ids_at_last_request.contains(id));
-                let cluster_grew = has_new_workers
-                    || current_cluster_cpus > bisect.cluster_cpus_at_last_request
-                    || current_cluster_gpus > bisect.cluster_gpus_at_last_request
-                    || current_cluster_memory > bisect.cluster_memory_at_last_request;
+                let current_worker_ids = state.ray_workers.keys().cloned().collect::<HashSet<_>>();
+                let worker_set_grew =
+                    worker_set_grew(&bisect.worker_ids_at_last_request, &current_worker_ids);
+                let cluster_grew = cluster_capacity_grew(
+                    bisect,
+                    &current_worker_ids,
+                    current_cluster_cpus,
+                    current_cluster_gpus,
+                    current_cluster_memory,
+                );
 
                 if cluster_grew {
                     // Last request succeeded (cluster grew) -> greedily request all remaining demand
                     tracing::info!(
                         target: "daft_distributed::autoscale",
-                        "Bisect autoscale: cluster grew (new workers: {}, CPUs {:.0}->{:.0}, GPUs {:.0}->{:.0}, mem {}->{} bytes), requesting all remaining demand",
-                        has_new_workers,
+                        "Bisect autoscale: cluster grew (worker set expanded: {}, CPUs {:.0}->{:.0}, GPUs {:.0}->{:.0}, mem {}->{} bytes), requesting all remaining demand",
+                        worker_set_grew,
                         bisect.cluster_cpus_at_last_request,
                         current_cluster_cpus,
                         bisect.cluster_gpus_at_last_request,
@@ -751,5 +780,82 @@ impl RayWorkerManager {
         });
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn worker_ids(ids: &[&str]) -> HashSet<WorkerId> {
+        ids.iter().map(|id| Arc::<str>::from(*id)).collect()
+    }
+
+    fn bisect_state(worker_ids_at_last_request: HashSet<WorkerId>) -> BisectState {
+        BisectState {
+            cluster_cpus_at_last_request: 8.0,
+            cluster_gpus_at_last_request: 0.0,
+            cluster_memory_at_last_request: 1024,
+            last_requested_cpus: 16.0,
+            last_requested_gpus: 0.0,
+            last_requested_memory: 2048,
+            last_request_time: Instant::now(),
+            worker_ids_at_last_request,
+        }
+    }
+
+    #[test]
+    fn equal_capacity_worker_replacement_is_not_growth() {
+        let bisect = bisect_state(worker_ids(&["worker-a", "worker-b"]));
+        let current_worker_ids = worker_ids(&["worker-a", "worker-c"]);
+
+        assert!(!cluster_capacity_grew(
+            &bisect,
+            &current_worker_ids,
+            8.0,
+            0.0,
+            1024,
+        ));
+    }
+
+    #[test]
+    fn strictly_expanded_worker_set_is_growth() {
+        let bisect = bisect_state(worker_ids(&["worker-a", "worker-b"]));
+        let current_worker_ids = worker_ids(&["worker-a", "worker-b", "worker-c"]);
+
+        assert!(cluster_capacity_grew(
+            &bisect,
+            &current_worker_ids,
+            8.0,
+            0.0,
+            1024,
+        ));
+    }
+
+    #[test]
+    fn resource_increase_is_growth_during_worker_replacement() {
+        let bisect = bisect_state(worker_ids(&["worker-a", "worker-b"]));
+        let current_worker_ids = worker_ids(&["worker-a", "worker-c"]);
+
+        assert!(cluster_capacity_grew(
+            &bisect,
+            &current_worker_ids,
+            12.0,
+            0.0,
+            1024,
+        ));
+    }
+
+    #[test]
+    fn zero_bisect_timeout_is_rejected() {
+        let error = RayWorkerManager::new(120, Some("bisect"), Some(0))
+            .err()
+            .expect("zero bisect timeout should be rejected");
+
+        assert!(
+            error
+                .to_string()
+                .contains("autoscale_bisect_timeout_secs must be greater than zero")
+        );
     }
 }

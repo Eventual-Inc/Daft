@@ -65,6 +65,11 @@ pub fn set_runner_ray(
             "Invalid autoscale_strategy '{strategy}'. Expected 'gradual' or 'bisect'."
         )));
     }
+    if autoscale_bisect_timeout_secs == Some(0) {
+        return Err(PyValueError::new_err(
+            "autoscale_bisect_timeout_secs must be greater than zero",
+        ));
+    }
 
     let runner_type = runners::get_runner_type_from_env();
     if !runner_type.is_empty() && runner_type != RayRunner::NAME {
