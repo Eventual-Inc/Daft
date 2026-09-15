@@ -821,4 +821,393 @@ mod tests {
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    // ---------------------------------------------------------------------
+    // LM-pipelined predicate evaluation (#6340)
+    //
+    // These tests drive the full read path with real multi-row-group Parquet
+    // files and assert exact output rows/values. The pipelined path
+    // (`a > x AND b < y`, column-disjoint) and the monolithic fallbacks
+    // (single column, or same-column conjunction) must all produce identical,
+    // correctly-ordered results.
+    // ---------------------------------------------------------------------
+
+    /// Deterministic row generator: `a = i` (nullable every 7th row when
+    /// `a_nulls`), `b = i % 50`, `c = i * 10`. Shared by the writer and the
+    /// expected-value computation so they can never drift.
+    fn pipelined_test_rows(n: usize, a_nulls: bool) -> Vec<(Option<i64>, i64, i64)> {
+        (0..n)
+            .map(|i| {
+                let iv = i as i64;
+                let a = if a_nulls && iv % 7 == 0 {
+                    None
+                } else {
+                    Some(iv)
+                };
+                (a, iv % 50, iv * 10)
+            })
+            .collect()
+    }
+
+    fn write_pipelined_test_parquet(
+        path: &std::path::Path,
+        n: usize,
+        rg_size: usize,
+        a_nulls: bool,
+    ) {
+        use arrow::{
+            array::{Int64Array, RecordBatch as ArrowRecordBatch},
+            datatypes::{DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema},
+        };
+        let schema = Arc::new(ArrowSchema::new(vec![
+            ArrowField::new("a", ArrowDataType::Int64, true),
+            ArrowField::new("b", ArrowDataType::Int64, false),
+            ArrowField::new("c", ArrowDataType::Int64, false),
+        ]));
+        let rows = pipelined_test_rows(n, a_nulls);
+        let a: Int64Array = rows.iter().map(|(a, _, _)| *a).collect();
+        let b: Int64Array = rows.iter().map(|(_, b, _)| *b).collect();
+        let c: Int64Array = rows.iter().map(|(_, _, c)| *c).collect();
+        let batch =
+            ArrowRecordBatch::try_new(schema, vec![Arc::new(a), Arc::new(b), Arc::new(c)]).unwrap();
+        write_pipelined_test_batch(path, &batch, rg_size);
+    }
+
+    fn write_pipelined_test_batch(
+        path: &std::path::Path,
+        batch: &arrow::array::RecordBatch,
+        rg_size: usize,
+    ) {
+        use parquet::{arrow::ArrowWriter, file::properties::WriterProperties};
+
+        let props = WriterProperties::builder()
+            .set_max_row_group_row_count(Some(rg_size))
+            .build();
+        let file = std::fs::File::create(path).unwrap();
+        let mut writer = ArrowWriter::try_new(file, batch.schema(), Some(props)).unwrap();
+        for offset in (0..batch.num_rows()).step_by(rg_size) {
+            writer
+                .write(&batch.slice(offset, rg_size.min(batch.num_rows() - offset)))
+                .unwrap();
+        }
+        writer.close().unwrap();
+    }
+
+    fn read_pipelined(
+        path: &str,
+        predicate: Option<daft_dsl::ExprRef>,
+        columns: Vec<String>,
+    ) -> daft_recordbatch::RecordBatch {
+        read_pipelined_with_limit(path, predicate, columns, None)
+    }
+
+    fn read_pipelined_with_limit(
+        path: &str,
+        predicate: Option<daft_dsl::ExprRef>,
+        columns: Vec<String>,
+        num_rows: Option<usize>,
+    ) -> daft_recordbatch::RecordBatch {
+        let path = path.to_string();
+        let io_client = Arc::new(IOClient::new(IOConfig::default().into()).unwrap());
+        let runtime = get_io_runtime(true);
+        runtime
+            .block_within_async_context(async move {
+                let opts = ParquetReadOptions {
+                    predicate,
+                    columns: Some(columns),
+                    num_rows,
+                    ..Default::default()
+                };
+                read_parquet_into_recordbatch(&path, io_client, None, opts)
+                    .await
+                    .unwrap()
+            })
+            .unwrap()
+    }
+
+    fn pipelined_col_i64(batch: &daft_recordbatch::RecordBatch, name: &str) -> Vec<Option<i64>> {
+        let idx = batch
+            .schema
+            .get_fields_with_name(name)
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| panic!("column {name} missing from output"))
+            .0;
+        let arr = batch.get_column(idx).i64().unwrap();
+        (0..arr.len()).map(|i| arr.get(i)).collect()
+    }
+
+    #[test]
+    fn test_pipelined_compound_disjoint_predicate() {
+        use daft_dsl::{lit, resolved_col};
+
+        let dir = std::env::temp_dir().join("daft_test_pipelined_compound");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("data.parquet");
+        // 200 rows across ~4 row groups of 64.
+        write_pipelined_test_parquet(&path, 200, 64, false);
+        let uri = path.to_str().unwrap().to_string();
+
+        // a > 100 AND b < 10  →  column-disjoint  →  pipelined path.
+        let pred = resolved_col("a")
+            .gt(lit(100))
+            .and(resolved_col("b").lt(lit(10)));
+        crate::reader::assert_prefilter_strategy(&pred, None, true);
+        let batch = read_pipelined(&uri, Some(pred), vec!["a".into(), "b".into(), "c".into()]);
+
+        let expected: Vec<(Option<i64>, i64, i64)> = pipelined_test_rows(200, false)
+            .into_iter()
+            .filter(|(a, b, _)| a.is_some_and(|av| av > 100) && *b < 10)
+            .collect();
+        assert!(
+            expected.len() > 1 && expected.len() < 200,
+            "test predicate should be selective but non-empty, got {}",
+            expected.len()
+        );
+
+        assert_eq!(batch.len(), expected.len(), "row count mismatch");
+        assert_eq!(
+            pipelined_col_i64(&batch, "a"),
+            expected.iter().map(|(a, _, _)| *a).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            pipelined_col_i64(&batch, "b"),
+            expected
+                .iter()
+                .map(|(_, b, _)| Some(*b))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            pipelined_col_i64(&batch, "c"),
+            expected
+                .iter()
+                .map(|(_, _, c)| Some(*c))
+                .collect::<Vec<_>>()
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_pipelined_matches_monolithic_same_data() {
+        use daft_dsl::{lit, resolved_col};
+
+        let dir =
+            std::env::temp_dir().join(format!("daft_test_pipelined_vs_mono_{}", fastrand::u64(..)));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("data.parquet");
+        let total_fixture_rows = 200;
+        write_pipelined_test_parquet(&path, total_fixture_rows, 64, true);
+        let uri = path.to_str().unwrap().to_string();
+
+        let pred = resolved_col("a")
+            .gt(lit(100))
+            .and(resolved_col("b").lt(lit(10)));
+        crate::reader::assert_prefilter_strategy(&pred, None, true);
+        crate::reader::assert_prefilter_strategy(&pred, Some(total_fixture_rows), false);
+        let columns = vec!["a".into(), "b".into(), "c".into()];
+        let pipelined = read_pipelined(&uri, Some(pred.clone()), columns.clone());
+        let mono = read_pipelined_with_limit(&uri, Some(pred), columns, Some(total_fixture_rows));
+
+        assert!(!pipelined.is_empty() && pipelined.len() < total_fixture_rows);
+        assert_eq!(pipelined.len(), mono.len());
+        for name in ["a", "b", "c"] {
+            assert_eq!(
+                pipelined_col_i64(&pipelined, name),
+                pipelined_col_i64(&mono, name)
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_monolithic_fallback_column_dependent_is_in() {
+        use arrow::{
+            array::{Int64Array, RecordBatch as ArrowRecordBatch},
+            datatypes::{Field as ArrowField, Schema as ArrowSchema},
+        };
+        use daft_dsl::{lit, resolved_col};
+
+        let dir =
+            std::env::temp_dir().join(format!("daft_test_pipelined_is_in_{}", fastrand::u64(..)));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("data.parquet");
+        let schema = Arc::new(ArrowSchema::new(
+            ["a", "b", "c", "d"]
+                .map(|name| ArrowField::new(name, DataType::Int64, false))
+                .to_vec(),
+        ));
+        let batch = ArrowRecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(Int64Array::from(vec![0, 1])),
+                Arc::new(Int64Array::from(vec![9, 5])),
+                Arc::new(Int64Array::from(vec![5, 9])),
+                Arc::new(Int64Array::from(vec![10, 20])),
+            ],
+        )
+        .unwrap();
+        write_pipelined_test_batch(&path, &batch, 2);
+        let pred = resolved_col("a")
+            .eq(lit(1))
+            .and(resolved_col("b").is_in(vec![resolved_col("c")]));
+        let result = read_pipelined(path.to_str().unwrap(), Some(pred.clone()), vec!["d".into()]);
+
+        assert_eq!(pipelined_col_i64(&result, "d"), vec![Some(20)]);
+        assert_eq!(result.schema.field_names().collect::<Vec<_>>(), vec!["d"]);
+        crate::reader::assert_prefilter_strategy(&pred, None, false);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_monolithic_fallback_constant_conjuncts() {
+        use daft_dsl::{lit, null_lit, resolved_col};
+
+        let dir = std::env::temp_dir().join(format!(
+            "daft_test_pipelined_constants_{}",
+            fastrand::u64(..)
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("data.parquet");
+        write_pipelined_test_parquet(&path, 20, 20, true);
+        let expected: Vec<_> = pipelined_test_rows(20, true)
+            .into_iter()
+            .filter(|(a, b, _)| a.is_some_and(|a| a > 0) && *b < 10)
+            .map(|(_, _, c)| Some(c))
+            .collect();
+        assert!(!expected.is_empty());
+
+        for (constant, keeps_rows) in [
+            (lit(true), true),
+            (lit(false), false),
+            (null_lit(), false),
+            (
+                null_lit().cast(&daft_core::prelude::DataType::Boolean),
+                false,
+            ),
+        ] {
+            let pred = resolved_col("a")
+                .gt(lit(0))
+                .and(resolved_col("b").lt(lit(10)))
+                .and(constant);
+            let result =
+                read_pipelined(path.to_str().unwrap(), Some(pred.clone()), vec!["c".into()]);
+            assert_eq!(
+                pipelined_col_i64(&result, "c"),
+                if keeps_rows {
+                    expected.clone()
+                } else {
+                    Vec::new()
+                },
+                "predicate: {pred}"
+            );
+            crate::reader::assert_prefilter_strategy(&pred, None, false);
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_monolithic_fallback_single_column() {
+        use daft_dsl::{lit, resolved_col};
+
+        let dir = std::env::temp_dir().join("daft_test_pipelined_mono_single");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("data.parquet");
+        write_pipelined_test_parquet(&path, 200, 64, false);
+        let uri = path.to_str().unwrap().to_string();
+
+        // Single-column predicate → one group → monolithic fallback.
+        let pred = resolved_col("a").gt(lit(100));
+        let batch = read_pipelined(&uri, Some(pred), vec!["a".into(), "c".into()]);
+
+        let expected: Vec<(Option<i64>, i64)> = pipelined_test_rows(200, false)
+            .into_iter()
+            .filter(|(a, _, _)| a.is_some_and(|av| av > 100))
+            .map(|(a, _, c)| (a, c))
+            .collect();
+        assert_eq!(batch.len(), expected.len());
+        assert_eq!(
+            pipelined_col_i64(&batch, "a"),
+            expected.iter().map(|(a, _)| *a).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            pipelined_col_i64(&batch, "c"),
+            expected.iter().map(|(_, c)| Some(*c)).collect::<Vec<_>>()
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_monolithic_fallback_same_column_conjunction() {
+        use daft_dsl::{lit, resolved_col};
+
+        let dir = std::env::temp_dir().join("daft_test_pipelined_mono_samecol");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("data.parquet");
+        write_pipelined_test_parquet(&path, 200, 64, false);
+        let uri = path.to_str().unwrap().to_string();
+
+        // a > 100 AND a < 150 → same column → merged into one group → monolithic.
+        let pred = resolved_col("a")
+            .gt(lit(100))
+            .and(resolved_col("a").lt(lit(150)));
+        let batch = read_pipelined(&uri, Some(pred), vec!["a".into(), "c".into()]);
+
+        let expected: Vec<(Option<i64>, i64)> = pipelined_test_rows(200, false)
+            .into_iter()
+            .filter(|(a, _, _)| a.is_some_and(|av| av > 100 && av < 150))
+            .map(|(a, _, c)| (a, c))
+            .collect();
+        assert_eq!(batch.len(), expected.len());
+        assert_eq!(
+            pipelined_col_i64(&batch, "a"),
+            expected.iter().map(|(a, _)| *a).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            pipelined_col_i64(&batch, "c"),
+            expected.iter().map(|(_, c)| Some(*c)).collect::<Vec<_>>()
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_pipelined_null_handling() {
+        use daft_dsl::{lit, resolved_col};
+
+        let dir = std::env::temp_dir().join("daft_test_pipelined_nulls");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("data.parquet");
+        // `a` is null on every 7th row; those rows must never survive `a > 100`.
+        write_pipelined_test_parquet(&path, 200, 64, true);
+        let uri = path.to_str().unwrap().to_string();
+
+        let pred = resolved_col("a")
+            .gt(lit(100))
+            .and(resolved_col("b").lt(lit(10)));
+        let batch = read_pipelined(&uri, Some(pred), vec!["a".into(), "b".into(), "c".into()]);
+
+        let expected: Vec<(Option<i64>, i64, i64)> = pipelined_test_rows(200, true)
+            .into_iter()
+            .filter(|(a, b, _)| a.is_some_and(|av| av > 100) && *b < 10)
+            .collect();
+        assert_eq!(batch.len(), expected.len());
+        // No null `a` may appear in the output.
+        assert!(
+            pipelined_col_i64(&batch, "a").iter().all(|a| a.is_some()),
+            "null `a` rows must be excluded by `a > 100`"
+        );
+        assert_eq!(
+            pipelined_col_i64(&batch, "c"),
+            expected
+                .iter()
+                .map(|(_, _, c)| Some(*c))
+                .collect::<Vec<_>>()
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
