@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_partitioning::PartitionRef;
 use daft_local_plan::{
     FlightShuffleReadInput, LocalNodeContext, LocalPhysicalPlan, ShuffleReadBackend,
@@ -27,6 +27,32 @@ pub(crate) fn register_cleanup(
         .map(|base_dir| format!("{}/daft_shuffle/{}", base_dir, shuffle_id))
         .collect();
     plan_context.register_shuffle_dirs(shuffle_dirs_to_register);
+}
+
+/// Whether `partition` came out of a flight write, i.e. whether the flight read
+/// path can address it.
+pub(crate) fn is_flight_ref(partition: &PartitionRef) -> bool {
+    partition.as_any().is::<FlightPartitionRef>()
+}
+
+/// View `partition` as a `FlightPartitionRef`.
+///
+/// Returns an error rather than panicking: the refs reaching the flight read path
+/// come from whatever the upstream stage materialized, and mixing in a plain
+/// in-memory ref is a bug in the calling node, not something to abort the process
+/// over. The panic this replaces surfaced in Python as a bare
+/// `RayTaskError(DaftCoreException)` with no indication of which node was at fault.
+fn as_flight_ref(partition: &PartitionRef) -> DaftResult<&FlightPartitionRef> {
+    partition
+        .as_any()
+        .downcast_ref::<FlightPartitionRef>()
+        .ok_or_else(|| {
+            DaftError::InternalError(
+                "Flight shuffle read expected a flight partition ref, got a partition ref that \
+                 did not come from a flight write."
+                    .to_string(),
+            )
+        })
 }
 
 /// `partition_ref_id` layout: `(input_id << 32) | partition_idx`.
@@ -64,10 +90,7 @@ pub(crate) async fn fold_outputs_from_stream(
         let Some(partition) = output?.into_inner().0.into_iter().next() else {
             continue;
         };
-        let flight_ref = partition
-            .as_any()
-            .downcast_ref::<FlightPartitionRef>()
-            .expect("expected flight partition ref");
+        let flight_ref = as_flight_ref(&partition)?;
         inputs_by_server
             .entry(flight_ref.server_address.clone())
             .or_default()
@@ -88,13 +111,10 @@ pub(crate) async fn fold_outputs_from_stream(
 /// (shuffle, partition idx).
 pub(crate) fn read_inputs_from_refs(
     partition_refs: Vec<PartitionRef>,
-) -> Vec<FlightShuffleReadInput> {
+) -> DaftResult<Vec<FlightShuffleReadInput>> {
     let mut groups: BTreeMap<(u64, u32), BTreeMap<String, Vec<u32>>> = BTreeMap::new();
     for partition in partition_refs {
-        let flight_ref = partition
-            .as_any()
-            .downcast_ref::<FlightPartitionRef>()
-            .expect("expected flight partition ref");
+        let flight_ref = as_flight_ref(&partition)?;
         groups
             .entry((flight_ref.shuffle_id, partition_idx_from_ref(flight_ref)))
             .or_default()
@@ -103,7 +123,7 @@ pub(crate) fn read_inputs_from_refs(
             .push(input_id_from_ref(flight_ref));
     }
 
-    groups
+    Ok(groups
         .into_iter()
         .map(
             |((shuffle_id, partition_idx), inputs_by_server)| FlightShuffleReadInput {
@@ -112,7 +132,7 @@ pub(crate) fn read_inputs_from_refs(
                 inputs_by_server: Arc::new(inputs_by_server),
             },
         )
-        .collect()
+        .collect())
 }
 
 pub(crate) async fn emit_read_tasks(
