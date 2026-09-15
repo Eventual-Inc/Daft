@@ -117,6 +117,8 @@ impl IntoIterator for Stats {
 
 // Common statistic names
 pub const BYTES_READ_KEY: &str = "bytes.read";
+/// Number of I/O requests (GET + HEAD + LIST) issued by a source/scan operator.
+pub const IO_REQUESTS_KEY: &str = "io.requests";
 pub const BYTES_WRITTEN_KEY: &str = "bytes.written";
 pub const BYTES_IN_KEY: &str = "bytes.in";
 pub const BYTES_OUT_KEY: &str = "bytes.out";
