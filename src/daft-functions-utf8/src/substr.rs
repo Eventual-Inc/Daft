@@ -256,8 +256,8 @@ where
             };
 
             match (val, s, l) {
-                (Some(val), Some(s), Some(l)) => Ok(substring(val, s, Some(l))),
-                (Some(val), Some(s), None) => Ok(substring(val, s, None)),
+                (Some(val), Some(s), Some(l)) => Ok(Some(substring(val, s, Some(l)))),
+                (Some(val), Some(s), None) => Ok(Some(substring(val, s, None))),
                 _ => Ok(None),
             }
         })
@@ -266,29 +266,19 @@ where
     Ok(res.rename(name))
 }
 
-fn substring(s: &str, start: usize, len: Option<usize>) -> Option<&str> {
+fn substring(s: &str, start: usize, len: Option<usize>) -> &str {
     let mut char_indices = s.char_indices();
+    let start_pos = char_indices.nth(start).map_or(s.len(), |(idx, _)| idx);
 
-    if let Some((start_pos, _)) = char_indices.nth(start) {
-        let len = match len {
-            Some(len) => {
-                if len == 0 {
-                    return None;
-                }
+    let len = match len {
+        Some(0) => return &s[start_pos..start_pos],
+        Some(len) => len,
+        None => return &s[start_pos..],
+    };
 
-                len
-            }
-            None => {
-                return Some(&s[start_pos..]);
-            }
-        };
+    let end_pos = char_indices
+        .nth(len.saturating_sub(1))
+        .map_or(s.len(), |(idx, _)| idx);
 
-        let end_pos = char_indices
-            .nth(len.saturating_sub(1))
-            .map_or(s.len(), |(idx, _)| idx);
-
-        Some(&s[start_pos..end_pos])
-    } else {
-        None
-    }
+    &s[start_pos..end_pos]
 }
