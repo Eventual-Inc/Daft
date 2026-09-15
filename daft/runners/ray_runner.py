@@ -231,9 +231,7 @@ def _series_from_arrow_with_ray_data_extensions(
                 tensor_array = cast("ArrowTensorArray", array)
                 storage_series = _series_from_arrow_with_ray_data_extensions(tensor_array.storage, name=name)
                 # Ray 2.55.0 renamed `scalar_type` to `value_type` for all tensor extension types
-                arrow_scalar_type = getattr(tensor_array.type, "value_type", None) or getattr(
-                    tensor_array.type, "scalar_type"
-                )
+                arrow_scalar_type = getattr(tensor_array.type, "value_type", None) or tensor_array.type.scalar_type
                 series = storage_series.cast(
                     DataType.fixed_size_list(
                         _from_arrow_type_with_ray_data_extensions(arrow_scalar_type),
@@ -397,7 +395,7 @@ def _from_arrow_type_with_ray_data_extensions(arrow_type: pa.DataType) -> DataTy
     if _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(arrow_type, tuple(_TENSOR_EXTENSION_TYPES)):
         tensor_types = cast("ArrowTensorType | ArrowVariableShapedTensorType", arrow_type)
         # Ray 2.55.0 renamed `scalar_type` to `value_type` for all tensor extension types
-        arrow_scalar_type = getattr(tensor_types, "value_type", None) or getattr(tensor_types, "scalar_type")
+        arrow_scalar_type = getattr(tensor_types, "value_type", None) or tensor_types.scalar_type
         scalar_dtype = _from_arrow_type_with_ray_data_extensions(arrow_scalar_type)
         # Both ArrowTensorType and ArrowTensorTypeV2 have a shape attribute
         # ArrowVariableShapedTensorType does not

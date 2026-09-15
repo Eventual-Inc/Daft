@@ -33,6 +33,7 @@ daft-json = {path = "../daft-json", default-features = false}
 daft-text = {path = "../daft-text", default-features = false}
 daft-local-plan = {path = "../daft-local-plan", default-features = false}
 daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
+daft-mcap = {path = "../daft-mcap", default-features = false}
 daft-micropartition = {path = "../daft-micropartition", default-features = false}
 daft-parquet = {path = "../daft-parquet", default-features = false}
 daft-partition-refs = {path = "../daft-partition-refs", default-features = false}

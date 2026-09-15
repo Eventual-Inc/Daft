@@ -62,7 +62,6 @@ class DataSink(ABC, Generic[WriteResultType]):
         For example, this can be used to initialize resources, open connections, start a transaction etc.
         The default implementation does nothing.
         """
-        pass
 
     @abstractmethod
     def write(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteResult[WriteResultType]]:
