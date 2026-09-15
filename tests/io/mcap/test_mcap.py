@@ -78,6 +78,18 @@ def _get_s3_io_config() -> IOConfig:
     )
 
 
+def mcap_bytes(times=(1, 2, 3), *, index_types=IndexType.ALL, payload=b"PAYLOAD-ORIGINAL", **options):
+    output = io.BytesIO()
+    compression = options.pop("compression", CompressionType.NONE)
+    writer = MCAPWriter(output, compression=compression, index_types=index_types, **options)
+    writer.start()
+    channel = writer.register_channel(topic="/a", message_encoding="raw", schema_id=0)
+    for sequence, time in enumerate(times):
+        writer.add_message(channel, time, payload, time, sequence)
+    writer.finish()
+    return output.getvalue()
+
+
 @pytest.fixture(scope="function")
 def mcap_dataset_path(tmp_path_factory):
     tmp_dir = tmp_path_factory.mktemp("mcap")
@@ -166,17 +178,13 @@ def data_from_s3():
     yield s3_file_path
 
 
-@pytest.mark.parametrize("mcap_dataset_path", ["mcap_dataset_path"], indirect=True)
 def test_mcap_read(mcap_dataset_path):
     df = daft.read_mcap(
         mcap_dataset_path,
         start_time=0,
         end_time=100000,
         topics=["/test_topic"],
-        use_legacy_types=False,
     )
-    df = df.collect()
-
     pdf = df.to_pandas()
 
     assert len(pdf) == 100
@@ -192,7 +200,7 @@ def test_mcap_read_huggingface():
     # Public gameplay MCAP from https://huggingface.co/datasets/open-world-agents/D2E-480p (~1.4 MiB).
     HF_MCAP_PATH = "hf://datasets/open-world-agents/D2E-480p/PEAK/recording_20250901_122320__8bd56fb0_split_02.mcap"
 
-    df = daft.read_mcap(HF_MCAP_PATH, topics=["mouse"], use_legacy_types=False).limit(10)
+    df = daft.read_mcap(HF_MCAP_PATH, topics=["mouse"]).limit(10)
     pdf = df.to_pandas()
 
     assert len(pdf) == 10
@@ -202,7 +210,6 @@ def test_mcap_read_huggingface():
 
 
 @pytest.mark.skipif(not HAS_S3, reason="S3 Env not set, skip S3 tests")
-@pytest.mark.parametrize("data_from_s3", ["data_from_s3"], indirect=True)
 def test_mcap_read_s3(data_from_s3):
     io_config = _get_s3_io_config()
     df = daft.read_mcap(
@@ -211,7 +218,6 @@ def test_mcap_read_s3(data_from_s3):
         end_time=100000,
         topics=["/test_topic"],
         io_config=io_config,
-        use_legacy_types=False,
     )
     df = df.collect()
 
@@ -233,7 +239,7 @@ def test_mcap_native_reader_compression(tmp_path, compression):
         writer.add_message(channel_id, log_time=1, publish_time=2, sequence=3, data=b"raw-payload")
         writer.finish()
 
-    assert daft.read_mcap(path, use_legacy_types=False).select("data").to_pydict() == {"data": [b"raw-payload"]}
+    assert daft.read_mcap(path).select("data").to_pydict() == {"data": [b"raw-payload"]}
 
 
 def test_mcap_native_reader_unindexed_fallback(tmp_path):
@@ -253,13 +259,13 @@ def test_mcap_native_reader_unindexed_fallback(tmp_path):
             )
         writer.finish()
 
-    assert daft.read_mcap(path, use_legacy_types=False).select("sequence", "data").to_pydict() == {
+    assert daft.read_mcap(path).select("sequence", "data").to_pydict() == {
         "sequence": [0, 1, 2],
         "data": [b"\x00", b"\x01", b"\x02"],
     }
-    assert daft.read_mcap(path, topics=["/state"], start_time=1, end_time=3, use_legacy_types=False).select(
-        "sequence"
-    ).to_pydict() == {"sequence": [1, 2]}
+    assert daft.read_mcap(path, topics=["/state"], start_time=1, end_time=3).select("sequence").to_pydict() == {
+        "sequence": [1, 2]
+    }
 
 
 def test_mcap_explicit_time_filter_coalesces_remote_ranges(tmp_path):
@@ -286,11 +292,7 @@ def test_mcap_explicit_time_filter_coalesces_remote_ranges(tmp_path):
     thread.start()
     try:
         url = f"http://127.0.0.1:{server.server_port}/chunked.mcap"
-        result = (
-            daft.read_mcap(url, start_time=32, end_time=37, topics=["/camera"], use_legacy_types=False)
-            .select("log_time")
-            .to_pydict()
-        )
+        result = daft.read_mcap(url, start_time=32, end_time=37, topics=["/camera"]).select("log_time").to_pydict()
     finally:
         server.shutdown()
         server.server_close()
@@ -326,7 +328,7 @@ def test_mcap_small_remote_filter_uses_one_body_request(tmp_path):
     thread.start()
     try:
         url = f"http://127.0.0.1:{server.server_port}/small.mcap"
-        result = daft.read_mcap(url, topics=["/state"], use_legacy_types=False).select("sequence").to_pydict()
+        result = daft.read_mcap(url, topics=["/state"]).select("sequence").to_pydict()
     finally:
         server.shutdown()
         server.server_close()
@@ -339,7 +341,7 @@ def test_mcap_small_remote_filter_uses_one_body_request(tmp_path):
 
 def test_mcap_batch_size_must_be_positive(raw_bytes_mcap_dataset_path):
     with pytest.raises(ValueError, match="batch_size must be positive"):
-        daft.read_mcap(raw_bytes_mcap_dataset_path, batch_size=0, use_legacy_types=False)
+        daft.read_mcap(raw_bytes_mcap_dataset_path, batch_size=0)
 
 
 def test_mcap_source_emits_native_task(raw_bytes_mcap_dataset_path):
@@ -369,7 +371,7 @@ def test_mcap_source_config_pickle_round_trip():
 
 
 def test_mcap_residual_filter_projection_limit_and_repeated_collection(raw_bytes_mcap_dataset_path):
-    df = daft.read_mcap(raw_bytes_mcap_dataset_path, batch_size=3, use_legacy_types=False)
+    df = daft.read_mcap(raw_bytes_mcap_dataset_path, batch_size=3)
     query = (
         df.where((daft.col("topic") == "/robot0/sensor/camera0/compressed") & (daft.col("sequence") >= 1995))
         .select("sequence")
@@ -390,7 +392,7 @@ def test_mcap_residual_filter_projection_limit_and_repeated_collection(raw_bytes
     ],
 )
 def test_mcap_empty_native_constraints(raw_bytes_mcap_dataset_path, kwargs):
-    assert len(daft.read_mcap(raw_bytes_mcap_dataset_path, use_legacy_types=False, **kwargs).collect()) == 0
+    assert len(daft.read_mcap(raw_bytes_mcap_dataset_path, **kwargs).collect()) == 0
 
 
 def test_mcap_per_file_keyframe_scanner(tmp_path_factory):
@@ -429,7 +431,6 @@ def test_mcap_per_file_keyframe_scanner(tmp_path_factory):
     df = daft.read_mcap(
         str(dir_path),
         topic_start_time_resolver=scan_for_keyframes,
-        use_legacy_types=False,
     ).collect()
 
     pdf = df.to_pandas()
@@ -448,7 +449,7 @@ def test_mcap_use_legacy_types_schema_and_deprecation(tmp_path):
         writer.finish()
 
     with pytest.warns(DeprecationWarning, match="use_legacy_types=False"):
-        legacy_df = daft.read_mcap(path)
+        legacy_df = daft.read_mcap(path, use_legacy_types=True)
 
     assert legacy_df.schema()["log_time"].dtype == daft.DataType.int64()
     assert legacy_df.schema()["publish_time"].dtype == daft.DataType.int64()
@@ -463,7 +464,7 @@ def test_mcap_use_legacy_types_schema_and_deprecation(tmp_path):
 
     with warnings.catch_warnings():
         warnings.simplefilter("error", DeprecationWarning)
-        native_df = daft.read_mcap(path, use_legacy_types=False)
+        native_df = daft.read_mcap(path)
 
     assert native_df.schema()["log_time"].dtype == daft.DataType.uint64()
     assert native_df.schema()["publish_time"].dtype == daft.DataType.uint64()
@@ -475,18 +476,6 @@ def test_mcap_use_legacy_types_schema_and_deprecation(tmp_path):
         "sequence": [3],
         "data": [b"payload"],
     }
-
-
-def mcap_bytes(times=(1, 2, 3), *, index_types=IndexType.ALL, payload=b"PAYLOAD-ORIGINAL", **options):
-    output = io.BytesIO()
-    compression = options.pop("compression", CompressionType.NONE)
-    writer = MCAPWriter(output, compression=compression, index_types=index_types, **options)
-    writer.start()
-    channel = writer.register_channel(topic="/a", message_encoding="raw", schema_id=0)
-    for sequence, time in enumerate(times):
-        writer.add_message(channel, time, payload, time, sequence)
-    writer.finish()
-    return output.getvalue()
 
 
 def test_glob_pattern_expands_directories_only():
