@@ -1303,7 +1303,6 @@ class PyDataSourceTask:
         pushdowns: PyPushdowns | None = None,
         num_rows: int | None = None,
         size_bytes: int | None = None,
-        partition_values: PyRecordBatch | None = None,
         stats: PyRecordBatch | None = None,
         storage_config: StorageConfig | None = None,
     ) -> PyDataSourceTask: ...

@@ -5,7 +5,7 @@
 //! - [`stream_mcap`] is the scan entry point. It applies topic/time
 //!   constraints while decoding, then residual predicates, projection, and
 //!   an exact limit.
-//! - [`read`] holds [`NativeMcapReader`]: indexed chunk traversal with a
+//! - [`read`] holds [`McapReader`]: indexed chunk traversal with a
 //!   linear fallback.
 //!
 //! Indexed traversal buffers overlapping chunks for log-time ordering. HTTP

@@ -10,6 +10,7 @@ from daft import context, runners
 from daft.api_annotations import PublicAPI
 from daft.daft import IOConfig, McapSourceConfig, StorageConfig, io_glob
 from daft.datatype import DataType
+from daft.expressions import col
 from daft.io.source import DataSource, DataSourceTask
 from daft.logical.schema import Schema
 
@@ -23,22 +24,20 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _topic_start_time_resolver_scan_specs(
+def _topic_start_time_resolver(
     file_path: str,
     start_time: int | None,
     end_time: int | None,
     topics: list[str] | None,
     resolver: Callable[[str], dict[str, int]],
 ) -> Iterator[tuple[int | None, list[str] | None]]:
-    """Yield scan specs for the legacy ``topic_start_time_resolver`` API.
+    """Yield scan specs for the ``topic_start_time_resolver`` API.
 
     The callback was introduced for external video keyframe discovery in
-    https://github.com/Eventual-Inc/Daft/pull/5886. Because each topic can
-    resolve to a different start time, its result is expanded into one
-    ``(start_time, topics)`` scan spec per topic.
+    https://github.com/Eventual-Inc/Daft/pull/5886. Because topics like video
+    packets need keyframe packets that may be located before a global start_time,
+    having a custom resolver allows for precise control.
     """
-    # TODO: Remove this helper and the public callback after replacing the
-    # keyframe workflow with dedicated custom video decoding support.
     try:
         topic_start_times = resolver(file_path)
     except Exception:
@@ -94,14 +93,16 @@ class MCAPSource(DataSource):
 
     @property
     def name(self) -> str:
-        return "MCAPSource"
+        return "MCAP"
 
     @property
     def schema(self) -> Schema:
         return self._schema
 
     def display_name(self) -> str:
-        return f"MCAPSource({self._file_path}, start_time={self._start_time}, end_time={self._end_time}, topics={self._topics})"
+        return (
+            f"MCAP({self._file_path}, start_time={self._start_time}, end_time={self._end_time}, topics={self._topics})"
+        )
 
     def multiline_display(self) -> list[str]:
         return [
@@ -166,8 +167,7 @@ class MCAPSource(DataSource):
                 )
                 continue
 
-            # Deprecated compatibility path; see the helper for provenance.
-            for start_time, topics in _topic_start_time_resolver_scan_specs(
+            for start_time, topics in _topic_start_time_resolver(
                 file_info["path"],
                 self._start_time,
                 self._end_time,
@@ -192,6 +192,7 @@ def read_mcap(
     topics: list[str] | None = None,
     batch_size: int = 1000,
     topic_start_time_resolver: Callable[[str], dict[str, int]] | None = None,
+    use_legacy_types: bool = False,
     _multithreaded_io: bool | None = None,
 ) -> DataFrame:
     """Read raw messages from one or more MCAP files.
@@ -199,29 +200,39 @@ def read_mcap(
     Args:
         path: MCAP file or directory path.
         io_config: Configuration for storage credentials and native I/O.
-        start_time: Inclusive non-negative lower bound for ``message.log_time``.
-        end_time: Exclusive non-negative upper bound for ``message.log_time``.
+        start_time: Inclusive non-negative lower bound for `message.log_time`.
+        end_time: Exclusive non-negative upper bound for `message.log_time`.
         topics: Topic names to include.
         batch_size: Number of messages decoded per native record batch.
-        topic_start_time_resolver: DEPRECATED. Optional per-file callback
+        topic_start_time_resolver: Optional per-file callback
             returning non-negative topic start times. Each result fans out into
-            one native task per topic, using ``max(start_time, resolved_start_time)``.
+            one native task per topic, using `max(start_time, resolved_start_time)`.
+        use_legacy_types: This is deprecated and will be removed in v0.9.0.
+            If True, cast the output DataFrame to the schema emitted
+            by the legacy MCAP reader. Specifically the output columns will be:
+            - `source_path`: Unchanged (str)
+            - `topic`: Unchanged (str)
+            - `log_time`: uint64 -> int64
+            - `publish_time`: uint64 -> int64
+            - `sequence`: uint32 -> int32
+            - `data`: binary -> string
 
     Warning:
-        MCAP timestamps use the format's native unsigned 64-bit representation. ``start_time``,
-        ``end_time``, and times returned by ``topic_start_time_resolver`` must be between 0 and
-        ``2**64 - 1``. Negative time values accepted by earlier Daft versions now raise
-        ``OverflowError`` because the output schema uses ``uint64`` timestamps instead of ``int64``.
+        Times returned by `topic_start_time_resolver` must be between 0 and
+        `2**64 - 1` to match the internal MCAP timestamp format. Negative time values raise `OverflowError`.
 
     Returns:
-        A DataFrame with ``source_path``, ``topic``, ``log_time``,
-        ``publish_time``, ``sequence``, and raw binary ``data`` columns.
+        A DataFrame with columns:
+        - `source_path` (str): The path to the MCAP file
+        - `topic` (str): The topic of the message
+        - `log_time` (int64 by default, uint64 when `use_legacy_types=False`): Message log time
+        - `publish_time` (int64 by default, uint64 when `use_legacy_types=False`): Message publish time
+        - `sequence` (int32 by default, uint32 when `use_legacy_types=False`): Message sequence number
+        - `data` (string by default, binary when `use_legacy_types=False`): Message payload
     """
-    if topic_start_time_resolver is not None:
+    if use_legacy_types:
         warnings.warn(
-            "`topic_start_time_resolver` is deprecated and will be removed in a future release. "
-            "Use explicit `topics` and `start_time` values for MCAP scans. "
-            "Dedicated support for custom video decoding will be added separately.",
+            "`use_legacy_types=True` is deprecated and will be removed in v0.9.0. Update your script to use the currently emitted column types. See `daft.io.read_mcap` documentation for more details.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -232,7 +243,7 @@ def read_mcap(
     )
     storage_config = StorageConfig(multithreaded_io, io_config)
 
-    return MCAPSource(
+    df = MCAPSource(
         file_path=path,
         start_time=start_time,
         end_time=end_time,
@@ -242,3 +253,15 @@ def read_mcap(
         topic_start_time_resolver=topic_start_time_resolver,
         storage_config=storage_config,
     ).read()
+
+    if use_legacy_types:
+        df = df.with_columns(
+            {
+                "log_time": col("log_time").cast(DataType.int64()),
+                "publish_time": col("publish_time").cast(DataType.int64()),
+                "sequence": col("sequence").cast(DataType.int32()),
+                "data": col("data").cast(DataType.string()),
+            }
+        )
+
+    return df

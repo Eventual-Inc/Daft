@@ -14,6 +14,12 @@ from mcap.writer import CompressionType, IndexType, Writer
 import daft
 
 
+def read_mcap(*args, **kwargs):
+    """Call ``daft.read_mcap`` with native types for regression coverage."""
+    kwargs.setdefault("use_legacy_types", False)
+    return daft.read_mcap(*args, **kwargs)
+
+
 def mcap_bytes(times=(1, 2, 3), *, index_types=IndexType.ALL, payload=b"PAYLOAD-ORIGINAL", **options):
     output = io.BytesIO()
     compression = options.pop("compression", CompressionType.NONE)
@@ -34,37 +40,41 @@ def test_directory_keeps_recursive_discovery(tmp_path, top_level_file, trailing_
     nested = tmp_path / "nested"
     nested.mkdir()
     (nested / "b.mcap").write_bytes(mcap_bytes((4, 5)))
-    expected = daft.read_mcap(str(tmp_path / "**" / "*.mcap")).sort("log_time").select("log_time").to_pydict()
+    expected = read_mcap(str(tmp_path / "**" / "*.mcap")).sort("log_time").select("log_time").to_pydict()
     assert expected == {"log_time": [1, 2, 3, 4, 5] if top_level_file else [4, 5]}
     path = str(tmp_path) + ("/" if trailing_slash else "")
-    assert daft.read_mcap(path).sort("log_time").select("log_time").to_pydict() == expected
+    assert read_mcap(path).sort("log_time").select("log_time").to_pydict() == expected
 
 
 def test_recursive_discovery_preserves_exact_file_and_explicit_glob(tmp_path):
     path = tmp_path / "extensionless"
     path.write_bytes(mcap_bytes())
-    assert daft.read_mcap(path).count_rows() == 3
+    assert read_mcap(path).count_rows() == 3
     (tmp_path / "a.mcap").write_bytes(mcap_bytes())
     (tmp_path / "nested").mkdir()
     (tmp_path / "nested" / "b.mcap").write_bytes(mcap_bytes())
-    assert daft.read_mcap(str(tmp_path / "*.mcap")).count_rows() == 3
+    assert read_mcap(str(tmp_path / "*.mcap")).count_rows() == 3
 
 
 def test_nanosecond_where_matches_explicit_time_bound(tmp_path):
     start = 1609459200000000000
     path = tmp_path / "time.mcap"
     path.write_bytes(mcap_bytes(range(start, start + 5)))
-    expected = daft.read_mcap(path, end_time=start + 2).select("sequence").to_pydict()
+    expected = read_mcap(path, end_time=start + 2).select("sequence").to_pydict()
     assert expected == {"sequence": [0, 1]}
-    assert daft.read_mcap(path).where(daft.col("log_time") < start + 2).select("sequence").to_pydict() == expected
+    # Native log_time is uint64; cast the bound so Python ints are not inferred as int64.
+    bound = daft.lit(start + 2).cast(daft.DataType.uint64())
+    assert read_mcap(path).where(daft.col("log_time") < bound).select("sequence").to_pydict() == expected
 
 
 def test_timestamp_pushdown_preserves_residual_semantics(tmp_path):
     start = 1609459200000000000
     path = tmp_path / "time.mcap"
     path.write_bytes(mcap_bytes(range(start, start + 5)))
-    df = daft.read_mcap(path)
-    predicate = daft.col("log_time") >= start + 2
+    df = read_mcap(path)
+    # Native log_time is uint64; cast the bound so Python ints are not inferred as int64.
+    bound = daft.lit(start + 2).cast(daft.DataType.uint64())
+    predicate = daft.col("log_time") >= bound
     pushed = df.where(predicate).select("sequence").to_pydict()
     # /absent does not occur in the fixture; OR prevents constraint extraction.
     residual = df.where(predicate | (daft.col("topic") == "/absent")).select("sequence").to_pydict()
@@ -80,7 +90,7 @@ def test_chunk_crc_is_checked_in_both_reader_modes(tmp_path, index_types):
     path = tmp_path / "corrupt.mcap"
     path.write_bytes(damaged)
     with pytest.raises(Exception, match="(?i)crc"):
-        daft.read_mcap(path).collect()
+        read_mcap(path).collect()
 
 
 @pytest.mark.parametrize("compression", list(CompressionType))
@@ -94,7 +104,7 @@ def test_indexed_chunk_crc_validation_for_all_compressions(tmp_path, compression
     path = tmp_path / "corrupt.mcap"
     path.write_bytes(contents)
     with pytest.raises(Exception, match="(?i)crc"):
-        daft.read_mcap(path).limit(1).collect()
+        read_mcap(path).limit(1).collect()
 
 
 @pytest.mark.parametrize("compression", list(CompressionType))
@@ -105,7 +115,7 @@ def test_overlapping_chunks_preserve_time_order_and_ties(tmp_path, compression):
     expected = [msg.sequence for _, _, msg in reader.iter_messages()]
     path = tmp_path / "overlapping.mcap"
     path.write_bytes(contents)
-    result = daft.read_mcap(path, batch_size=2).select("sequence").to_pydict()
+    result = read_mcap(path, batch_size=2).select("sequence").to_pydict()
     assert result == {"sequence": expected}
 
 
@@ -138,8 +148,8 @@ def test_http_without_byte_range_support(advertise_ranges):
         if not advertise_ranges:
             with daft.open_file(url, "rb") as source:
                 assert len(list(make_reader(source, decoder_factories=[]).iter_messages())) == 1000
-        assert daft.read_mcap(url).count_rows() == 1000
-        assert daft.read_mcap(url).limit(3).select("log_time").to_pydict() == {"log_time": [0, 1, 2]}
+        assert read_mcap(url).count_rows() == 1000
+        assert read_mcap(url).limit(3).select("log_time").to_pydict() == {"log_time": [0, 1, 2]}
     finally:
         server.shutdown()
         server.server_close()

@@ -224,7 +224,6 @@ class DataSourceTask(ABC):
         pushdowns: Pushdowns | None = None,
         num_rows: int | None = None,
         size_bytes: int | None = None,
-        partition_values: RecordBatch | None = None,
         stats: RecordBatch | None = None,
         storage_config: StorageConfig | None = None,
     ) -> DataSourceTask:
@@ -236,7 +235,6 @@ class DataSourceTask(ABC):
             pushdowns=pushdowns._to_pypushdowns() if pushdowns is not None else None,
             num_rows=num_rows,
             size_bytes=size_bytes,
-            partition_values=partition_values._recordbatch if partition_values is not None else None,
             stats=stats._recordbatch if stats is not None else None,
             storage_config=storage_config,
         )

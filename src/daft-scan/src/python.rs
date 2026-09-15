@@ -186,7 +186,6 @@ impl PyDataSourceTask {
         pushdowns = None,
         num_rows = None,
         size_bytes = None,
-        partition_values = None,
         stats = None,
         storage_config = None,
     ))]
@@ -197,7 +196,6 @@ impl PyDataSourceTask {
         pushdowns: Option<pylib_scan_info::PyPushdowns>,
         num_rows: Option<i64>,
         size_bytes: Option<u64>,
-        partition_values: Option<PyRecordBatch>,
         stats: Option<PyRecordBatch>,
         storage_config: Option<StorageConfig>,
     ) -> PyResult<Self> {
@@ -208,7 +206,7 @@ impl PyDataSourceTask {
             pushdowns,
             num_rows,
             size_bytes,
-            partition_values,
+            None,
             stats,
             storage_config,
             None,

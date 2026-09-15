@@ -56,6 +56,22 @@ The `read_mcap` function returns a DataFrame with the following schema:
 | `sequence` | `uint32` | Sequence number of the message |
 | `data` | `binary` | Raw message payload |
 
+If `use_legacy_types=True`, the DataFrame schema will match the legacy implementation.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `source_path` | `string` | Path of the MCAP file containing the message |
+| `topic` | `string` | The topic name the message was published on |
+| `log_time` | `int64` | Timestamp when the message was logged (nanoseconds) |
+| `publish_time` | `int64` | Timestamp when the message was published (nanoseconds) |
+| `sequence` | `int32` | Sequence number of the message |
+| `data` | `string` | Message payload |
+
+
+!!! warning "Deprecated `use_legacy_types=True` flag"
+
+    `use_legacy_types=True` is deprecated and will be removed in v0.9.0. Update your script to use the currently emitted column types.
+
 ## Filtering Options
 
 ### Time Range
@@ -71,9 +87,10 @@ df = daft.read_mcap(
 df.show()
 ```
 
-!!! warning "Unsigned timestamp migration"
+!!! warning "Unsigned timestamp bounds"
 
-    As shown in the [output schema](#output-schema), MCAP timestamps now use the format's native `uint64` type instead of `int64`. `start_time`, `end_time`, and times returned by `topic_start_time_resolver` must therefore be between `0` and `2**64 - 1`. Negative time values accepted by earlier Daft versions now raise `OverflowError`.
+    Ensure that `start_time`, `end_time`, and times returned by `topic_start_time_resolver` must be between
+    `0` and `2**64 - 1` to match the internal MCAP timestamp format. Negative time values raise `OverflowError`.
 
 ### Topic Filtering
 
@@ -87,16 +104,6 @@ df = daft.read_mcap(
 df.show()
 ```
 
-### Ordering
-
-Indexed MCAP files (files with a summary and chunk indexes, the common case)
-are read in `log_time` order within each file, even when messages are
-physically out of order across chunks. Files without an index stream in file
-order, and ordering across multiple files is not guaranteed.
-
-HTTP servers that do not support byte-range requests require a full-file
-download and buffer. Indexed files still retain per-file `log_time` ordering.
-
 ### Batch Size
 
 Control memory usage by adjusting the batch size:
@@ -109,11 +116,6 @@ df = daft.read_mcap(
 ```
 
 ## Advanced: Topic Start Time Resolver
-
-!!! warning "Deprecated"
-    `topic_start_time_resolver` is deprecated and will be removed in a future
-    release. Use explicit `topics` and `start_time` values for MCAP scans.
-    Dedicated support for custom video decoding will be added separately.
 
 For advanced use cases, you can provide a callable that computes per-file, per-topic start times. This is useful for resuming reads from specific positions:
 
