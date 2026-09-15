@@ -54,6 +54,8 @@ repos:
   - id: pretty-format-toml
     args: [--autofix, --no-sort]
     exclude: (Cargo.lock|uv.lock)
+    additional_dependencies:
+    - toml-sort==0.24.4
   - id: pretty-format-yaml
     args: [--autofix, --preserve-quotes]
     exclude: k8s/charts/.*/templates/.*\.ya?ml$
