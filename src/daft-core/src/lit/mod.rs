@@ -431,16 +431,28 @@ impl Literal {
             Self::Float16(val) => write!(buffer, "{}", val),
             Self::Float32(val) => write!(buffer, "{}", val),
             Self::Float64(val) => write!(buffer, "{}", val),
-            Self::Utf8(val) => write!(buffer, "'{}'", val),
+            // Double embedded single quotes (SQL-standard escaping) so the literal parses.
+            Self::Utf8(val) => write!(buffer, "'{}'", val.replace('\'', "''")),
             Self::Date(val) => write!(buffer, "DATE '{}'", display_date32(*val)),
             Self::Timestamp(val, tu, tz) => write!(
                 buffer,
                 "TIMESTAMP '{}'",
                 display_timestamp(*val, tu, tz).replace('T', " ")
             ),
-            Self::Decimal(..)
-            | Self::Uuid(..)
-            | Self::List(..)
+            Self::Decimal(val, precision, scale) => {
+                if *scale < 0 {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        format!(
+                            "Cannot display Decimal({}, {}) as SQL: negative scale not supported",
+                            precision, scale
+                        ),
+                    ));
+                }
+                write!(buffer, "{}", display_decimal128(*val, *precision, *scale))
+            }
+            Self::Uuid(val) => write!(buffer, "'{}'", val),
+            Self::List(..)
             | Self::Time(..)
             | Self::Binary(..)
             | Self::Duration(..)
@@ -685,6 +697,23 @@ mod test {
 
     use super::{FromLiteral, Literal};
 
+    fn display_sql(lit: &Literal) -> String {
+        let mut buf = Vec::new();
+        lit.display_sql(&mut buf).expect("display_sql failed");
+        String::from_utf8(buf).expect("display_sql produced invalid UTF-8")
+    }
+
+    #[test]
+    fn test_display_sql_utf8_escapes_single_quotes() {
+        assert_eq!(display_sql(&Literal::Utf8("hello".into())), "'hello'");
+        // Embedded single quotes must be doubled so the emitted literal parses.
+        assert_eq!(display_sql(&Literal::Utf8("O'Brien".into())), "'O''Brien'");
+        assert_eq!(
+            display_sql(&Literal::Utf8("x' OR '1'='1".into())),
+            "'x'' OR ''1''=''1'"
+        );
+    }
+
     #[test]
     fn test_roundtrip() -> DaftResult<()> {
         fn roundtrip<V: Into<Literal> + FromLiteral + Clone + std::fmt::Debug + PartialEq>(
@@ -708,5 +737,49 @@ mod test {
         roundtrip("test".to_string())?;
 
         Ok(())
+    }
+
+    #[test]
+    fn test_display_sql_uuid() {
+        use uuid::Uuid;
+        let uuid = Uuid::parse_str("12345678-1234-5678-1234-567812345678").unwrap();
+        let lit = Literal::Uuid(uuid);
+        let mut buf = Vec::<u8>::new();
+        lit.display_sql(&mut buf).unwrap();
+        assert_eq!(
+            String::from_utf8(buf).unwrap(),
+            "'12345678-1234-5678-1234-567812345678'"
+        );
+    }
+
+    #[test]
+    fn test_display_sql_decimal_positive_scale() {
+        // 123.45 with precision=5, scale=2
+        let lit = Literal::Decimal(12345, 5, 2);
+        let mut buf = Vec::<u8>::new();
+        lit.display_sql(&mut buf).unwrap();
+        assert_eq!(String::from_utf8(buf).unwrap(), "123.45");
+    }
+
+    #[test]
+    fn test_display_sql_decimal_zero_scale() {
+        let lit = Literal::Decimal(1500, 4, 0);
+        let mut buf = Vec::<u8>::new();
+        lit.display_sql(&mut buf).unwrap();
+        assert_eq!(String::from_utf8(buf).unwrap(), "1500");
+    }
+
+    #[test]
+    fn test_display_sql_decimal_negative_scale_returns_error() {
+        let lit = Literal::Decimal(1500, 4, -2);
+        let mut buf = Vec::<u8>::new();
+        let result = lit.display_sql(&mut buf);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("negative scale"),
+            "Expected negative scale error, got: {}",
+            err
+        );
     }
 }

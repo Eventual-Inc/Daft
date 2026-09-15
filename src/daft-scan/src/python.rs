@@ -17,8 +17,8 @@ pub use wrappers::{PyDataSourceTaskWrapper, PyDataSourceWrapper};
 
 use crate::{
     CsvSourceConfig, DataSourceRef, DataSourceTaskRef, FileFormatConfig, JsonSourceConfig,
-    ParquetSourceConfig, ScanSource, ScanSourceKind, ScanTask, SourceConfig, TextSourceConfig,
-    WarcSourceConfig, clustering::PyClusteringKeys, source::ShimSourceTask,
+    McapSourceConfig, ParquetSourceConfig, ScanSource, ScanSourceKind, ScanTask, SourceConfig,
+    TextSourceConfig, WarcSourceConfig, clustering::PyClusteringKeys, source::ShimSourceTask,
     storage_config::StorageConfig,
 };
 
@@ -59,41 +59,19 @@ impl PyDataSource {
 #[derive(Clone)]
 pub struct PyDataSourceTask(DataSourceTaskRef);
 
-#[pymethods]
 impl PyDataSourceTask {
-    fn schema(&self) -> PySchema {
-        PySchema {
-            schema: self.0.schema(),
-        }
-    }
-
-    /// Create a task that reads a Parquet file using the native reader.
-    ///
-    /// This wraps a native `ScanTask` in a `ShimSourceTask` (which implements
-    /// `DataSourceTask`), so it can be yielded from `DataSource.get_tasks()` and
-    /// the `ScanOperator` bridge will unwrap it back to a `ScanTask` for execution.
     #[allow(clippy::too_many_arguments)]
-    #[staticmethod]
-    #[pyo3(signature = (
-        path,
-        schema,
-        *,
-        pushdowns = None,
-        num_rows = None,
-        size_bytes = None,
-        partition_values = None,
-        stats = None,
-        storage_config = None,
-    ))]
-    fn parquet(
+    fn new_file_task(
         path: String,
         schema: PySchema,
+        file_format_config: FileFormatConfig,
         pushdowns: Option<pylib_scan_info::PyPushdowns>,
         num_rows: Option<i64>,
         size_bytes: Option<u64>,
         partition_values: Option<PyRecordBatch>,
         stats: Option<PyRecordBatch>,
         storage_config: Option<StorageConfig>,
+        iceberg_delete_files: Option<Vec<String>>,
     ) -> PyResult<Self> {
         let storage_config = storage_config.unwrap_or_default().into();
 
@@ -125,16 +103,14 @@ impl PyDataSourceTask {
             kind: ScanSourceKind::File {
                 path,
                 chunk_spec: None,
-                iceberg_delete_files: None,
+                iceberg_delete_files,
                 parquet_metadata: None,
             },
         };
 
         let scan_task = Arc::new(ScanTask::new(
             vec![source],
-            Arc::new(SourceConfig::File(FileFormatConfig::Parquet(
-                ParquetSourceConfig::default(),
-            ))),
+            Arc::new(SourceConfig::File(file_format_config)),
             schema.schema,
             storage_config,
             pushdowns,
@@ -142,6 +118,99 @@ impl PyDataSourceTask {
         ));
 
         Ok(Self(Arc::new(ShimSourceTask::new(scan_task))))
+    }
+}
+
+#[pymethods]
+impl PyDataSourceTask {
+    fn schema(&self) -> PySchema {
+        PySchema {
+            schema: self.0.schema(),
+        }
+    }
+
+    /// Create a task that reads a Parquet file using the native reader.
+    ///
+    /// This wraps a native `ScanTask` in a `ShimSourceTask` (which implements
+    /// `DataSourceTask`), so it can be yielded from `DataSource.get_tasks()` and
+    /// the `ScanOperator` bridge will unwrap it back to a `ScanTask` for execution.
+    #[allow(clippy::too_many_arguments)]
+    #[staticmethod]
+    #[pyo3(signature = (
+        path,
+        schema,
+        *,
+        parquet_config = None,
+        pushdowns = None,
+        num_rows = None,
+        size_bytes = None,
+        partition_values = None,
+        stats = None,
+        storage_config = None,
+        iceberg_delete_files = None,
+    ))]
+    fn parquet(
+        path: String,
+        schema: PySchema,
+        parquet_config: Option<ParquetSourceConfig>,
+        pushdowns: Option<pylib_scan_info::PyPushdowns>,
+        num_rows: Option<i64>,
+        size_bytes: Option<u64>,
+        partition_values: Option<PyRecordBatch>,
+        stats: Option<PyRecordBatch>,
+        storage_config: Option<StorageConfig>,
+        iceberg_delete_files: Option<Vec<String>>,
+    ) -> PyResult<Self> {
+        Self::new_file_task(
+            path,
+            schema,
+            FileFormatConfig::Parquet(parquet_config.unwrap_or_default()),
+            pushdowns,
+            num_rows,
+            size_bytes,
+            partition_values,
+            stats,
+            storage_config,
+            iceberg_delete_files,
+        )
+    }
+
+    /// Create a task that reads an MCAP file using the native reader.
+    #[allow(clippy::too_many_arguments)]
+    #[staticmethod]
+    #[pyo3(signature = (
+        path,
+        schema,
+        *,
+        mcap_config = None,
+        pushdowns = None,
+        num_rows = None,
+        size_bytes = None,
+        stats = None,
+        storage_config = None,
+    ))]
+    fn mcap(
+        path: String,
+        schema: PySchema,
+        mcap_config: Option<McapSourceConfig>,
+        pushdowns: Option<pylib_scan_info::PyPushdowns>,
+        num_rows: Option<i64>,
+        size_bytes: Option<u64>,
+        stats: Option<PyRecordBatch>,
+        storage_config: Option<StorageConfig>,
+    ) -> PyResult<Self> {
+        Self::new_file_task(
+            path,
+            schema,
+            FileFormatConfig::Mcap(mcap_config.unwrap_or_default()),
+            pushdowns,
+            num_rows,
+            size_bytes,
+            None,
+            stats,
+            storage_config,
+            None,
+        )
     }
 }
 
@@ -181,6 +250,12 @@ impl PyFileFormatConfig {
         Self(Arc::new(FileFormatConfig::Warc(config)))
     }
 
+    /// Create an MCAP file format config.
+    #[staticmethod]
+    fn from_mcap_config(config: McapSourceConfig) -> Self {
+        Self(Arc::new(FileFormatConfig::Mcap(config)))
+    }
+
     /// Create a TEXT file format config.
     #[staticmethod]
     fn from_text_config(config: TextSourceConfig) -> Self {
@@ -208,6 +283,10 @@ impl PyFileFormatConfig {
                 .into_pyobject(py)
                 .map(|c| c.unbind().into_any()),
             FileFormatConfig::Text(config) => config
+                .clone()
+                .into_pyobject(py)
+                .map(|c| c.unbind().into_any()),
+            FileFormatConfig::Mcap(config) => config
                 .clone()
                 .into_pyobject(py)
                 .map(|c| c.unbind().into_any()),

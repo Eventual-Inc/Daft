@@ -461,6 +461,11 @@ impl GlobScanOperator {
                 FileFormatConfig::Text(..) => {
                     return Err(DaftError::ValueError("Text schema is fixed".to_string()));
                 }
+                FileFormatConfig::Mcap(_) => {
+                    return Err(DaftError::ValueError(
+                        "MCAP schemas do not need to be inferred".to_string(),
+                    ));
+                }
             };
 
             let schema = match user_provided_schema {
@@ -631,7 +636,12 @@ impl ScanOperator for GlobScanOperator {
             format!("Glob paths = [{}]", condensed_glob_paths),
         ];
         lines.extend(self.file_format_config.multiline_display());
-        lines.extend(self.storage_config.multiline_display());
+        let backends =
+            common_io_config::IoBackendKind::from_uris(self.glob_paths.iter().map(|s| s.as_str()));
+        lines.extend(
+            self.storage_config
+                .multiline_display_with_backends(backends.as_deref()),
+        );
 
         lines
     }

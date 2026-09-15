@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_io_config::IOConfig;
+use common_io_config::{IOConfig, IoBackendKind};
 use common_py_serde::impl_bincode_py_state_serialization;
 use common_runtime::{RuntimeRef, get_io_runtime};
 use daft_io::{IOClient, get_io_client};
@@ -47,12 +47,23 @@ impl StorageConfig {
 
     #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
+        self.multiline_display_with_backends(None)
+    }
+
+    /// Display storage config, optionally filtering IOConfig backends by scheme.
+    #[must_use]
+    pub fn multiline_display_with_backends(
+        &self,
+        backends: Option<&[IoBackendKind]>,
+    ) -> Vec<String> {
         let mut res = vec![];
         if let Some(io_config) = &self.io_config {
-            res.push(format!(
-                "IO config = {}",
-                io_config.multiline_display().join(", ")
-            ));
+            let lines = io_config.multiline_display_for_backends(backends);
+            if lines.is_empty() {
+                res.push("IO config = <default>".to_string());
+            } else {
+                res.push(format!("IO config = {}", lines.join(", ")));
+            }
         }
         res.push(format!("Use multithreading = {}", self.multithreaded_io));
         res

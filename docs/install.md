@@ -82,14 +82,6 @@ Depending on your use case, you may need to install Daft with additional depende
       </label>
 
       <label class="checkbox-item">
-        <input type="checkbox" id="hudi" data-extra="hudi">
-        <span class="checkmark"></span>
-        <div class="checkbox-content">
-          <strong>Apache Hudi</strong> <code>hudi</code>
-        </div>
-      </label>
-
-      <label class="checkbox-item">
         <input type="checkbox" id="unity" data-extra="unity">
         <span class="checkmark"></span>
         <div class="checkbox-content">
@@ -110,6 +102,110 @@ Depending on your use case, you may need to install Daft with additional depende
         <span class="checkmark"></span>
         <div class="checkbox-content">
           <strong>ClickHouse</strong> <code>clickhouse</code>
+        </div>
+      </label>
+
+      <label class="checkbox-item">
+        <input type="checkbox" id="azure" data-extra="azure">
+        <span class="checkmark"></span>
+        <div class="checkbox-content">
+          <strong>Azure Blob Storage</strong> <code>azure</code>
+        </div>
+      </label>
+
+      <label class="checkbox-item">
+        <input type="checkbox" id="google" data-extra="google">
+        <span class="checkmark"></span>
+        <div class="checkbox-content">
+          <strong>Google Gemini</strong> <code>google</code>
+        </div>
+      </label>
+
+      <label class="checkbox-item">
+        <input type="checkbox" id="kafka" data-extra="kafka">
+        <span class="checkmark"></span>
+        <div class="checkbox-content">
+          <strong>Apache Kafka</strong> <code>kafka</code>
+        </div>
+      </label>
+
+      <label class="checkbox-item">
+        <input type="checkbox" id="gravitino" data-extra="gravitino">
+        <span class="checkmark"></span>
+        <div class="checkbox-content">
+          <strong>Apache Gravitino</strong> <code>gravitino</code>
+        </div>
+      </label>
+
+      <label class="checkbox-item">
+        <input type="checkbox" id="postgres" data-extra="postgres">
+        <span class="checkmark"></span>
+        <div class="checkbox-content">
+          <strong>PostgreSQL</strong> <code>postgres</code>
+        </div>
+      </label>
+
+      <label class="checkbox-item">
+        <input type="checkbox" id="sql" data-extra="sql">
+        <span class="checkmark"></span>
+        <div class="checkbox-content">
+          <strong>SQL Databases</strong> <code>sql</code>
+        </div>
+      </label>
+
+      <label class="checkbox-item">
+        <input type="checkbox" id="pandas" data-extra="pandas">
+        <span class="checkmark"></span>
+        <div class="checkbox-content">
+          <strong>pandas</strong> <code>pandas</code>
+        </div>
+      </label>
+
+      <label class="checkbox-item">
+        <input type="checkbox" id="numpy" data-extra="numpy">
+        <span class="checkmark"></span>
+        <div class="checkbox-content">
+          <strong>NumPy</strong> <code>numpy</code>
+        </div>
+      </label>
+
+      <label class="checkbox-item">
+        <input type="checkbox" id="audio" data-extra="audio">
+        <span class="checkmark"></span>
+        <div class="checkbox-content">
+          <strong>Audio</strong> <code>audio</code>
+        </div>
+      </label>
+
+      <label class="checkbox-item">
+        <input type="checkbox" id="video" data-extra="video">
+        <span class="checkmark"></span>
+        <div class="checkbox-content">
+          <strong>Video</strong> <code>video</code>
+        </div>
+      </label>
+
+      <label class="checkbox-item">
+        <input type="checkbox" id="hdf5" data-extra="hdf5">
+        <span class="checkmark"></span>
+        <div class="checkbox-content">
+          <strong>HDF5</strong> <code>hdf5</code>
+        </div>
+      </label>
+
+      <label class="checkbox-item">
+        <input type="checkbox" id="http" data-extra="http">
+        <span class="checkmark"></span>
+        <div class="checkbox-content">
+          <strong>HTTP</strong> <code>http</code>
+        </div>
+      </label>
+
+      <label class="checkbox-item">
+        <input type="checkbox" id="mcap" data-extra="mcap">
+        <span class="checkmark"></span>
+        <div class="checkbox-content">
+          <strong>MCAP</strong> <code>mcap</code>
         </div>
       </label>
     </div>

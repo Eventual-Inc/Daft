@@ -18,24 +18,24 @@ import daft
 import daft.exceptions
 from daft import DataType
 from daft.daft import (
-    FileFormatConfig,
     ParquetSourceConfig,
     PyField,
-    PyPartitionField,
-    PyPushdowns,
     S3Config,
-    ScanTask,
     StorageConfig,
 )
+from daft.expressions import ExpressionsProjection
 from daft.io.delta_lake._deltalake import delta_schema_to_pyarrow
 from daft.io.delta_lake.utils import construct_delta_file_path
 from daft.io.object_store_options import io_config_to_storage_options
-from daft.io.scan import ScanOperator
+from daft.io.partitioning import PartitionField
+from daft.io.source import DataSource, DataSourceTask
 from daft.logical.schema import Schema
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import AsyncIterator, Iterator
     from datetime import datetime
+
+    from daft.io.pushdowns import Pushdowns
 
 logger = logging.getLogger(__name__)
 
@@ -123,7 +123,7 @@ def get_s3_bucket_region(bucket_name: str) -> str | None:
         return None
 
 
-class DeltaLakeScanOperator(ScanOperator):
+class DeltaLakeDataSource(DataSource):
     def __init__(
         self,
         table_uri: str,
@@ -131,8 +131,6 @@ class DeltaLakeScanOperator(ScanOperator):
         version: int | str | datetime | None = None,
         ignore_deletion_vectors: bool = False,
     ) -> None:
-        super().__init__()
-
         # Unfortunately delta-rs doesn't do very good inference of credentials for S3. Thus the current Daft behavior of passing
         # in `None` for credentials will cause issues when instantiating the DeltaTable without credentials.
         #
@@ -221,38 +219,26 @@ class DeltaLakeScanOperator(ScanOperator):
             self._stats_physical_to_logical: dict[str, str] = {}
         else:
             field_id_mapping, self._stats_physical_to_logical = _column_mapping_maps(delta_schema)
-        self._file_format_config = FileFormatConfig.from_parquet_config(
-            ParquetSourceConfig(field_id_mapping=field_id_mapping)
-        )
+        self._parquet_config = ParquetSourceConfig(field_id_mapping=field_id_mapping)
 
         partition_columns = set(self._table.metadata().partition_columns)
-        self._partition_keys = [
-            PyPartitionField(field._field) for field in self._schema if field.name in partition_columns
+        self._partition_fields = [
+            PartitionField.create(field) for field in self._schema if field.name in partition_columns
         ]
         self._ignore_deletion_vectors = ignore_deletion_vectors
 
+    @property
     def schema(self) -> Schema:
         return self._schema
 
+    @property
     def name(self) -> str:
-        return "DeltaLakeScanOperator"
+        return f"DeltaLakeDataSource({self._table.metadata().name})"
 
-    def display_name(self) -> str:
-        return f"DeltaLakeScanOperator({self._table.metadata().name})"
+    def get_partition_fields(self) -> list[PartitionField]:
+        return self._partition_fields
 
-    def partitioning_keys(self) -> list[PyPartitionField]:
-        return self._partition_keys
-
-    def multiline_display(self) -> list[str]:
-        return [
-            self.display_name(),
-            f"Schema = {self._schema}",
-            f"Partitioning keys = {self.partitioning_keys()}",
-            # TODO(Clark): Improve repr of storage config here.
-            f"Storage config = {self._storage_config}",
-        ]
-
-    def to_scan_tasks(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
+    async def get_tasks(self, pushdowns: Pushdowns) -> AsyncIterator[DataSourceTask]:
         import pyarrow as pa
 
         metadata = self._table.metadata()
@@ -271,11 +257,11 @@ class DeltaLakeScanOperator(ScanOperator):
         # TODO(Clark): Push limit and filter expressions into deltalake action fetch, to prune the files returned.
         # Issue: https://github.com/Eventual-Inc/Daft/issues/1953
         add_actions = pa.table(self._table.get_add_actions())
-        if len(self.partitioning_keys()) > 0 and pushdowns.partition_filters is None:
+        if self._partition_fields and pushdowns.partition_filters is None:
             logger.warning(
                 "%s has partitioning keys = %s, but no partition filter was specified. This will result in a full table scan.",
-                self.display_name(),
-                self.partitioning_keys(),
+                self.name,
+                self._partition_fields,
             )
 
         # TODO(Clark): Add support for deletion vectors.
@@ -289,7 +275,6 @@ class DeltaLakeScanOperator(ScanOperator):
 
         limit_files = pushdowns.limit is not None and pushdowns.filters is None and pushdowns.partition_filters is None
         rows_left = pushdowns.limit if pushdowns.limit is not None else 0
-        scan_tasks = []
 
         # Determine which partition field name is used in the schema
         # Deltalake versions <1.2.0 use "partition_values", >=1.2.0 use "partition"
@@ -346,9 +331,14 @@ class DeltaLakeScanOperator(ScanOperator):
                             type=dtype.field(field_idx).type,
                         )
                     arrays[field_name] = daft.Series.from_arrow(arrow_arr, field_name)
-                partition_values = daft.recordbatch.RecordBatch.from_pydict(arrays)._recordbatch
+                partition_values = daft.recordbatch.RecordBatch.from_pydict(arrays)
             else:
                 partition_values = None
+
+            if partition_values is not None and pushdowns.partition_filters is not None:
+                filtered = partition_values.filter(ExpressionsProjection([pushdowns.partition_filters]))
+                if len(filtered) == 0:
+                    continue
 
             # Populate scan task with column-wise stats.
             schema_names = add_actions.schema.names
@@ -385,33 +375,20 @@ class DeltaLakeScanOperator(ScanOperator):
                 stats = daft.recordbatch.RecordBatch.from_pydict(arrays)
             else:
                 stats = None
-            st = ScanTask.catalog_scan_task(
-                file=path,
-                file_format=self._file_format_config,
-                schema=self._schema._schema,
+            task = DataSourceTask.parquet(
+                path=path,
+                schema=self._schema,
+                parquet_config=self._parquet_config,
                 num_rows=record_count,
                 storage_config=self._storage_config,
                 size_bytes=size_bytes,
-                iceberg_delete_files=None,
                 pushdowns=pushdowns,
                 partition_values=partition_values,
-                stats=stats._recordbatch if stats is not None else None,
+                stats=stats,
             )
-            if st is None:
-                continue
             if record_count is not None:
                 rows_left -= record_count
-            scan_tasks.append(st)
-        return iter(scan_tasks)
-
-    def can_absorb_filter(self) -> bool:
-        return False
-
-    def can_absorb_limit(self) -> bool:
-        return False
-
-    def can_absorb_select(self) -> bool:
-        return True
+            yield task
 
 
 # Returns True if the Delta Lake library does not return the deletion vectors in the add_actions.

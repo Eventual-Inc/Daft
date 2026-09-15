@@ -42,6 +42,7 @@ impl Default for AzureConfig {
 impl AzureConfig {
     #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
+        let defaults = Self::default();
         let mut res = vec![];
         if let Some(storage_account) = &self.storage_account {
             res.push(format!("Storage account = {storage_account}"));
@@ -64,52 +65,38 @@ impl AzureConfig {
         if let Some(client_secret) = &self.client_secret {
             res.push(format!("Client Secret = {client_secret}"));
         }
-        res.push(format!(
-            "Use Fabric Endpoint = {}",
-            self.use_fabric_endpoint
-        ));
-        res.push(format!("Anonymous = {}", self.anonymous));
+        if self.use_fabric_endpoint != defaults.use_fabric_endpoint {
+            res.push(format!(
+                "Use Fabric Endpoint = {}",
+                self.use_fabric_endpoint
+            ));
+        }
+        if self.anonymous != defaults.anonymous {
+            res.push(format!("Anonymous = {}", self.anonymous));
+        }
         if let Some(endpoint_url) = &self.endpoint_url {
             res.push(format!("Endpoint URL = {endpoint_url}"));
         }
-        res.push(format!("Use SSL = {}", self.use_ssl));
-        res.push(format!(
-            "Max connections = {}",
-            self.max_connections_per_io_thread
-        ));
+        if self.use_ssl != defaults.use_ssl {
+            res.push(format!("Use SSL = {}", self.use_ssl));
+        }
+        if self.max_connections_per_io_thread != defaults.max_connections_per_io_thread {
+            res.push(format!(
+                "Max connections = {}",
+                self.max_connections_per_io_thread
+            ));
+        }
         res
     }
 }
 
 impl Display for AzureConfig {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-        write!(
-            f,
-            "AzureConfig
-    storage_account: {:?}
-    access_key: {:?}
-    sas_token: {:?}
-    bearer_token: {:?}
-    tenant_id: {:?}
-    client_id: {:?}
-    client_secret: {:?}
-    use_fabric_endpoint: {:?}
-    anonymous: {:?}
-    endpoint_url: {:?}
-    use_ssl: {:?}
-    max_connections_per_io_thread: {:?}",
-            self.storage_account,
-            self.access_key,
-            self.sas_token,
-            self.bearer_token,
-            self.tenant_id,
-            self.client_id,
-            self.client_secret,
-            self.use_fabric_endpoint,
-            self.anonymous,
-            self.endpoint_url,
-            self.use_ssl,
-            self.max_connections_per_io_thread
-        )
+        let lines = self.multiline_display();
+        if lines.is_empty() {
+            write!(f, "AzureConfig {{}}")
+        } else {
+            write!(f, "AzureConfig\n    {}", lines.join("\n    "))
+        }
     }
 }

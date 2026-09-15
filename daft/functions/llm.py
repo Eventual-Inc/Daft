@@ -118,14 +118,14 @@ class _vLLMGenerator:
     def __init__(
         self,
         model: str = "facebook/opt-125m",
-        generation_config: dict[str, Any] = {},
+        generation_config: dict[str, Any] | None = None,
     ) -> None:
         try:
             from vllm import LLM
         except ImportError:
             raise ImportError("Please install the vllm package to use this provider.")
         self.model = model
-        self.generation_config = generation_config
+        self.generation_config = generation_config or {}
         self.llm = LLM(model=self.model)
 
     def __call__(self, input_prompt_column: Series) -> list[str]:
@@ -140,7 +140,7 @@ class _OpenAIGenerator:
     def __init__(
         self,
         model: str = "gpt-4o",
-        generation_config: dict[str, Any] = {},
+        generation_config: dict[str, Any] | None = None,
     ) -> None:
         import asyncio
 
@@ -150,8 +150,9 @@ class _OpenAIGenerator:
             raise ImportError("Please install the openai package to use this provider.")
         self.model = model
         client_params_keys = ["base_url", "api_key", "timeout", "max_retries"]
-        client_params_opts = {key: value for key, value in generation_config.items() if key in client_params_keys}
 
+        generation_config = generation_config or {}
+        client_params_opts = {key: value for key, value in generation_config.items() if key in client_params_keys}
         self.generation_config = {k: v for k, v in generation_config.items() if k not in client_params_keys}
 
         self.llm = AsyncOpenAI(**client_params_opts)

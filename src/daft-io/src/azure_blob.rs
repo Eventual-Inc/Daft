@@ -734,6 +734,7 @@ impl ObjectSource for AzureBlobSource {
         Ok(LSResult {
             files,
             continuation_token: None,
+            not_found_if_empty: false,
         })
     }
 

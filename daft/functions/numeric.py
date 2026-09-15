@@ -178,7 +178,7 @@ def log10(expr: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("log10", expr)
 
 
-def log(expr: Expression, base: int | float = math.e) -> Expression:
+def log(expr: Expression, base: float = math.e) -> Expression:
     """The elementwise log with given base, of a numeric expression.
 
     Args:
@@ -243,7 +243,7 @@ def expm1(expr: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("expm1", expr)
 
 
-def between(expr: Expression, lower: Expression | int | float, upper: Expression | int | float) -> Expression:
+def between(expr: Expression, lower: Expression | float, upper: Expression | float) -> Expression:
     """Checks if values in the Expression are between lower and upper, inclusive.
 
     Args:
@@ -304,6 +304,15 @@ def conv(expr: Expression, from_base: int, to_base: int) -> Expression:
     magnitude exceeds 2^63.
     """
     return Expression._call_builtin_scalar_fn("conv", expr, from_base, to_base)
+
+
+def try_divide(dividend: Expression, divisor: Expression) -> Expression:
+    """Divides two numbers, returning NULL where the divisor is 0.
+
+    Equivalent to ``dividend / divisor`` (true division), except rows whose
+    divisor is 0 produce NULL instead of infinity or NaN.
+    """
+    return Expression._call_builtin_scalar_fn("try_divide", dividend, divisor)
 
 
 def is_nan(expr: Expression) -> Expression:

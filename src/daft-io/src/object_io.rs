@@ -276,6 +276,8 @@ pub struct FileMetadata {
 pub struct LSResult {
     pub files: Vec<FileMetadata>,
     pub continuation_token: Option<String>,
+    /// Whether an empty result across all pages means that the requested path was not found.
+    pub not_found_if_empty: bool,
 }
 
 use async_stream::stream;
@@ -356,31 +358,33 @@ pub trait ObjectSource: Sync + Send {
         let uri = uri.to_string();
         let s = stream! {
             let lsr = self.ls(&uri, posix, None, page_size, io_stats.clone()).await?;
+            let mut found_any = !lsr.files.is_empty();
+            let not_found_if_empty = lsr.not_found_if_empty;
             for fm in lsr.files {
                 yield Ok(fm);
             }
 
-            let mut continuation_token = lsr.continuation_token.clone();
-            while continuation_token.is_some() {
-                // Note: There might some race conditions here that the list response is empty
-                // even though the continuation token of previous response is not empty, so skip NotFound error here.
-                // TODO(desmond): Ideally we should patch how `ls` produces NotFound errors. See issue #4982
-                let lsr_result = self.ls(&uri, posix, continuation_token.as_deref(), page_size, io_stats.clone()).await;
-                match lsr_result {
-                    Ok(lsr) => {
-                        continuation_token.clone_from(&lsr.continuation_token);
-                        for fm in lsr.files {
-                            yield Ok(fm);
-                        }
-                    },
-                    Err(err) => {
-                        if matches!(err, super::Error::NotFound { .. }) {
-                            continuation_token = None;
-                        } else {
-                            yield Err(err);
-                        }
-                    }
+            let mut continuation_token = lsr.continuation_token;
+            while let Some(token) = continuation_token {
+                let lsr = self
+                    .ls(&uri, posix, Some(&token), page_size, io_stats.clone())
+                    .await?;
+                found_any |= !lsr.files.is_empty();
+                continuation_token = lsr.continuation_token;
+                for fm in lsr.files {
+                    yield Ok(fm);
                 }
+            }
+
+            if !found_any && not_found_if_empty {
+                yield Err(super::Error::NotFound {
+                    path: uri.clone(),
+                    source: std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        "listing returned no files",
+                    )
+                    .into(),
+                });
             }
         };
         Ok(s.boxed())

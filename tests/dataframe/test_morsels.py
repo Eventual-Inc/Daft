@@ -1,19 +1,23 @@
 from __future__ import annotations
 
 import io
-import os
 import re
 
 import pytest
 
 import daft
+from daft.daft import testing as native_testing_utils
 from tests.conftest import get_tests_daft_runner_name
 from tests.utils import clean_explain_output
 
 pytestmark = pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="requires Native Runner to be in use")
 
 NOOP_QUAL = "tests.dataframe.test_morsels.make_noop_udf.<locals>.noop"
-CONCURRENCY = os.cpu_count()
+
+
+def _runtime_concurrency() -> int:
+    # Use the same Rust runtime value used when constructing the physical plan.
+    return native_testing_utils.get_compute_runtime_num_worker_threads()
 
 
 def make_noop_udf(batch_size: int, dtype: daft.DataType = daft.DataType.int64()):
@@ -49,7 +53,7 @@ def test_batch_size_from_udf_propagated_to_scan(dynamic_batching):
     * UDF {NOOP_QUAL}:
     |   Expr = {_noop_func_id(noop_id)}(col(0: a)) as a
     |   Passthrough Columns = []
-    |   Properties = {{ batch_size = 10, concurrency = {CONCURRENCY}, on_error = raise, async = false, scalar = false }}
+    |   Properties = {{ batch_size = 10, concurrency = {_runtime_concurrency()}, on_error = raise, async = false, scalar = false }}
     |   Resource request = {{ num_gpus = 0 }}
     |   Stats = {{ Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }}
     |   Batch Size = 10
@@ -90,7 +94,7 @@ def test_batch_size_from_udf_propagated_through_ops_to_scan():
 * UDF {NOOP_QUAL}:
 |   Expr = {_noop_func_id(noop_id)}(col(0: __TruncateRootUDF_0-0-0__)) as data
 |   Passthrough Columns = []
-|   Properties = {{ batch_size = 10, concurrency = {CONCURRENCY}, on_error = raise, async = false, scalar = false }}
+|   Properties = {{ batch_size = 10, concurrency = {_runtime_concurrency()}, on_error = raise, async = false, scalar = false }}
 |   Resource request = {{ num_gpus = 0 }}
 |   Stats = {{ Approx num rows = 5, Approx size bytes = 156 B, Accumulated selectivity = 1.00 }}
 |   Batch Size = 10
@@ -104,115 +108,7 @@ def test_batch_size_from_udf_propagated_through_ops_to_scan():
 |   Batch Size = Range(0, 10]
 |
 * Project: url_download(col(0: data), lit(true), lit("raise"), lit(32), lit(PyObject(IOConfig:
-|   S3Config
-|       region_name: None
-|       endpoint_url: None
-|       key_id: None
-|       session_token: None
-|       access_key: None
-|       credentials_provider: None
-|       buffer_time: None
-|       max_connections: 32
-|       retry_initial_backoff_ms: 1000
-|       connect_timeout_ms: 30000
-|       read_timeout_ms: 30000
-|       num_tries: 25
-|       retry_mode: Some("adaptive")
-|       anonymous: false
-|       use_ssl: true
-|       verify_ssl: true
-|       check_hostname_ssl: true
-|       requester_pays: false
-|       force_virtual_addressing: false
-|       multipart_size: 8388608
-|       multipart_max_concurrency: 100
-|       custom_retry_msgs:[]
-|   AzureConfig
-|       storage_account: None
-|       access_key: None
-|       sas_token: None
-|       bearer_token: None
-|       tenant_id: None
-|       client_id: None
-|       client_secret: None
-|       use_fabric_endpoint: false
-|       anonymous: false
-|       endpoint_url: None
-|       use_ssl: true
-|       max_connections_per_io_thread: 8
-|   GCSConfig
-|       project_id: None
-|       anonymous: false
-|       max_connections_per_io_thread: 8
-|       retry_initial_backoff_ms: 1000
-|       connect_timeout_ms: 30000
-|       read_timeout_ms: 30000
-|       num_tries: 5
-|   TosConfig
-|       region: None
-|       endpoint: None
-|       access_key: None
-|       secret_key: ***
-|       security_token: ***
-|       anonymous: false
-|       max_retries: 3
-|       retry_timeout_ms: 30000
-|       connect_timeout_ms: 10000
-|       read_timeout_ms: 30000
-|       max_concurrent_requests: 50
-|       max_connections_per_io_thread: 50
-|   CosConfig
-|       region: None
-|       endpoint: None
-|       secret_id: None
-|       secret_key: ***
-|       security_token: ***
-|       anonymous: false
-|       max_retries: 3
-|       retry_timeout_ms: 30000
-|       connect_timeout_ms: 10000
-|       read_timeout_ms: 30000
-|       max_concurrent_requests: 50
-|       max_connections_per_io_thread: 50
-|   GooseFSConfig
-|       root: None
-|       master_addr: None
-|       block_size: None
-|       chunk_size: None
-|       write_type: None
-|       auth_type: None
-|       auth_username: None
-|       auth_password: ***
-|       anonymous: false
-|       max_retries: 3
-|       retry_timeout_ms: 30000
-|       connect_timeout_ms: 10000
-|       read_timeout_ms: 30000
-|       max_concurrent_requests: 50
-|       max_connections_per_io_thread: 50
-|   HdfsConfig
-|       name_node: None
-|       root: None
-|   HTTPConfig
-|   User agent = daft/0.0.1
-|   Retry initial backoff ms = 1000
-|   Connect timeout ms = 30000
-|   Read timeout ms = 30000
-|   Max retries = 5
-|   UnityConfig
-|       endpoint: None
-|       token: None
-|   GravitinoConfig
-|       endpoint: None
-|       metalake_name: None
-|       auth_type:None
-|       username: None
-|       password: None
-|       token: None
-|   HuggingFaceConfig
-|   Anonymous = false
-|   Use Xet = true
-|   ))) as {id_placeholder}, col(0: data)
+|   S3 config = {{ Max connections = 32 }}))) as {id_placeholder}, col(0: data)
 |   Stats = {{ Approx num rows = 5, Approx size bytes = 156 B, Accumulated selectivity = 1.00 }}
 |   Batch Size = Range(0, 10]
 |
@@ -240,7 +136,7 @@ def test_batch_size_from_multiple_udfs_do_not_override_each_other():
 * UDF {NOOP_QUAL}:
 |   Expr = {_noop_func_id(noop_ids[0])}(col(0: __TruncateRootUDF_0-0-0__)) as a
 |   Passthrough Columns = []
-|   Properties = {{ batch_size = 30, concurrency = {CONCURRENCY}, on_error = raise, async = false, scalar = false }}
+|   Properties = {{ batch_size = 30, concurrency = {_runtime_concurrency()}, on_error = raise, async = false, scalar = false }}
 |   Resource request = {{ num_gpus = 0 }}
 |   Stats = {{ Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }}
 |   Batch Size = 30
@@ -248,7 +144,7 @@ def test_batch_size_from_multiple_udfs_do_not_override_each_other():
 * UDF {NOOP_QUAL}:
 |   Expr = {_noop_func_id(noop_ids[1])}(col(0: __TruncateRootUDF_1-0-0__)) as __TruncateRootUDF_0-0-0__
 |   Passthrough Columns = []
-|   Properties = {{ batch_size = 20, concurrency = {CONCURRENCY}, on_error = raise, async = false, scalar = false }}
+|   Properties = {{ batch_size = 20, concurrency = {_runtime_concurrency()}, on_error = raise, async = false, scalar = false }}
 |   Resource request = {{ num_gpus = 0 }}
 |   Stats = {{ Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }}
 |   Batch Size = 20
@@ -256,7 +152,7 @@ def test_batch_size_from_multiple_udfs_do_not_override_each_other():
 * UDF {NOOP_QUAL}:
 |   Expr = {_noop_func_id(noop_ids[2])}(col(0: a)) as __TruncateRootUDF_1-0-0__
 |   Passthrough Columns = []
-|   Properties = {{ batch_size = 10, concurrency = {CONCURRENCY}, on_error = raise, async = false, scalar = false }}
+|   Properties = {{ batch_size = 10, concurrency = {_runtime_concurrency()}, on_error = raise, async = false, scalar = false }}
 |   Resource request = {{ num_gpus = 0 }}
 |   Stats = {{ Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }}
 |   Batch Size = 10
@@ -284,7 +180,7 @@ def test_batch_size_from_udf_not_propagated_through_agg():
 * UDF {NOOP_QUAL}:
 |   Expr = {_noop_func_id(noop_id)}(col(0: a)) as a
 |   Passthrough Columns = []
-|   Properties = {{ batch_size = 10, concurrency = {CONCURRENCY}, on_error = raise, async = false, scalar = false }}
+|   Properties = {{ batch_size = 10, concurrency = {_runtime_concurrency()}, on_error = raise, async = false, scalar = false }}
 |   Resource request = {{ num_gpus = 0 }}
 |   Stats = {{ Approx num rows = 4, Approx size bytes = 32 B, Accumulated selectivity = 0.80 }}
 |   Batch Size = 10
@@ -318,7 +214,7 @@ def test_batch_size_from_udf_not_propagated_through_join():
 * UDF {NOOP_QUAL}:
 |   Expr = {_noop_func_id(noop_id)}(col(0: a)) as a
 |   Passthrough Columns = []
-|   Properties = {{ batch_size = 10, concurrency = {CONCURRENCY}, on_error = raise, async = false, scalar = false }}
+|   Properties = {{ batch_size = 10, concurrency = {_runtime_concurrency()}, on_error = raise, async = false, scalar = false }}
 |   Resource request = {{ num_gpus = 0 }}
 |   Stats = {{ Approx num rows = 5, Approx size bytes = 37 B, Accumulated selectivity = 0.90 }}
 |   Batch Size = 10
@@ -416,7 +312,7 @@ def test_batch_size_from_into_batches_before_udf():
 * UDF {NOOP_QUAL}:
 |   Expr = {_noop_func_id(noop_id)}(col(0: a)) as a
 |   Passthrough Columns = []
-|   Properties = {{ batch_size = 10, concurrency = {CONCURRENCY}, on_error = raise, async = false, scalar = false }}
+|   Properties = {{ batch_size = 10, concurrency = {_runtime_concurrency()}, on_error = raise, async = false, scalar = false }}
 |   Resource request = {{ num_gpus = 0 }}
 |   Stats = {{ Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }}
 |   Batch Size = 10
