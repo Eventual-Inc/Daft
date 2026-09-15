@@ -37,8 +37,23 @@ fn execute_select(_: &Session, select: DataFrame) -> SQLPlannerResult<Option<Dat
     Ok(Some(select))
 }
 
-fn execute_set(_: &Session, _: statement::Set) -> SQLPlannerResult<Option<DataFrame>> {
-    unsupported_sql_err!("SET statement")
+fn execute_set(sess: &Session, set: statement::Set) -> SQLPlannerResult<Option<DataFrame>> {
+    let option = set
+        .option
+        .trim_matches(|c| c == '"' || c == '`')
+        .replace(' ', "")
+        .to_ascii_lowercase();
+    match option.as_str() {
+        "identifier_mode" | "daft.identifier_mode" => {
+            sess.set_identifier_mode(&set.value)?;
+            Ok(None)
+        }
+        "catalog" => {
+            sess.set_catalog(Some(&set.value))?;
+            Ok(None)
+        }
+        other => unsupported_sql_err!("SET {other}"),
+    }
 }
 
 fn execute_use(sess: &Session, use_: statement::Use) -> SQLPlannerResult<Option<DataFrame>> {

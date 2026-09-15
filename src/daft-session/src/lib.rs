@@ -4,6 +4,7 @@ mod options;
 mod session;
 
 pub use function::ScalarFunction;
+pub use options::IdentifierMode;
 pub use session::*;
 
 #[cfg(feature = "python")]
