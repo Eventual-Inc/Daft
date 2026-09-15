@@ -21,7 +21,7 @@ use std::{
 
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
-use daft_local_execution::testing::NativeExecutor;
+use daft_local_execution::testing::{EnqueueOutcome, NativeExecutor};
 use daft_local_plan::{ExecutionStats, Input, InputId, SourceId};
 use daft_micropartition::MicroPartition;
 
@@ -233,19 +233,35 @@ async fn execute_swordfish_task_on_executor(
         inputs.insert(source_id, Input::InMemory(micro_partitions));
     }
 
-    let (fingerprint, run_fut) = {
-        let mut exec = executor.lock().unwrap();
-        exec.run(
-            &plan,
-            config,
-            vec![], // subscribers
-            Some(context),
-            inputs,
-            input_id,
-            true, // maintain_order
-        )?
+    const MAX_ENQUEUE_ATTEMPTS: usize = 5;
+    let mut attempt = 0;
+    let (fingerprint, result) = loop {
+        attempt += 1;
+        let (fingerprint, run_fut) = {
+            let mut exec = executor.lock().unwrap();
+            exec.run(
+                &plan,
+                config.clone(),
+                vec![], // subscribers
+                Some(context.clone()),
+                inputs.clone(),
+                input_id,
+                true, // maintain_order
+            )?
+        };
+        match run_fut.await? {
+            EnqueueOutcome::Ready(result) => break (fingerprint, result),
+            EnqueueOutcome::PipelineFinished if attempt < MAX_ENQUEUE_ATTEMPTS => {
+                executor.lock().unwrap().discard_finished_plan(fingerprint);
+            }
+            EnqueueOutcome::PipelineFinished => {
+                return Err(common_error::DaftError::InternalError(format!(
+                    "cannot enqueue input_id={input_id}: reused pipeline kept finishing across \
+                     {MAX_ENQUEUE_ATTEMPTS} rebuild attempts"
+                )));
+            }
+        }
     };
-    let result = run_fut.await?;
     // Mirror the production Python flow: drain this input_id's output so the
     // pipeline has finished reading bytes before stats are harvested.
     let partitions = result.collect_partitions_for_testing().await;

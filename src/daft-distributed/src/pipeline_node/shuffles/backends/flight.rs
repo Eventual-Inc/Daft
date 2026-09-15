@@ -128,7 +128,10 @@ pub(crate) async fn emit_read_tasks(
         let shuffle_read_plan = LocalPhysicalPlan::shuffle_read(
             node_id,
             schema.clone(),
-            ShuffleReadBackend::Flight,
+            ShuffleReadBackend::Flight {
+                shuffle_id: 0,
+                server_cache_mapping: Default::default(),
+            },
             StatsState::NotMaterialized,
             LocalNodeContext::new(Some(node_id as usize)),
         );

@@ -55,7 +55,12 @@ impl IntoPartitionsNode {
             plan_config.config.clone(),
             ClusteringStrategy::Explicit(BoundClusteringSpec::unknown(num_partitions)),
         );
-        let shuffle_context = ShuffleContext::new(&context, schema, backend);
+        let shuffle_context = ShuffleContext::new(
+            &context,
+            schema,
+            backend,
+            child.config().clustering_spec.num_partitions(),
+        );
 
         Self {
             config,

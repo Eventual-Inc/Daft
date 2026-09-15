@@ -222,6 +222,14 @@ class RaySwordfishActor:
         # We import PyDaftContext inside the function because PyDaftContext is not serializable.
         from daft.daft import PyDaftContext
 
+        # Lazily inject the Celeborn client the first time this actor runs a
+        # plan under the Celeborn shuffle backend. Gating on the selected
+        # algorithm rather than on the presence of the connection parameters
+        # means a Celeborn run that is missing them fails loudly here, instead
+        # of silently reaching plan translation with no client.
+        if exec_cfg.shuffle_algorithm == "celeborn":
+            self.native_executor.set_celeborn_client(exec_cfg)
+
         with profile():
             resolved_inputs, task_id = await self._resolve_inputs(context, inputs)
 

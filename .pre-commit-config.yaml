@@ -108,6 +108,14 @@ repos:
     types: [rust]
     args: [--]
 
+  - id: celeborn-stub
+    name: Build celeborn client stub
+    description: Satisfy the celeborn feature's link step without a C++ toolchain
+    entry: make celeborn-stub
+    language: system
+    types: [rust]
+    pass_filenames: false
+
   - id: cargo-check-default
     name: cargo check (default)
     description: Check the package for errors with default features.

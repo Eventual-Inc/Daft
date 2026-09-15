@@ -7,6 +7,8 @@ mod results;
 mod translate;
 use daft_micropartition::MicroPartitionRef;
 use daft_scan::ScanTaskRef;
+#[cfg(feature = "celeborn")]
+pub use plan::CelebornShuffleReadInput;
 pub use plan::{
     AsofJoin, CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleReadInput,
     GatherWrite, GlobScan, HashAggregate, HashJoin, InMemoryScan, IntoBatches, IntoPartitions,
@@ -45,6 +47,8 @@ pub enum Input {
     ScanTasks(Vec<ScanTaskRef>),
     GlobPaths(Vec<String>),
     FlightShuffle(Vec<FlightShuffleReadInput>),
+    #[cfg(feature = "celeborn")]
+    CelebornShuffle(Vec<CelebornShuffleReadInput>),
     #[serde(skip)]
     InMemory(Vec<MicroPartitionRef>),
 }

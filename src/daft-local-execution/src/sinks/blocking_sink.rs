@@ -19,6 +19,8 @@ use daft_micropartition::MicroPartition;
 use daft_partition_refs::FlightPartitionRef;
 use tracing::info_span;
 
+#[cfg(feature = "celeborn")]
+use crate::sinks::shuffle_metadata::ShufflePartitionMeta;
 use crate::{
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput,
     channel::{Receiver, Sender, create_channel},
@@ -35,7 +37,10 @@ pub(crate) type BlockingSinkSinkResult<Op> =
 pub(crate) enum BlockingSinkOutput {
     Partitions(Vec<MicroPartition>),
     FlightPartitionRefs(Vec<FlightPartitionRef>),
+    #[cfg(feature = "celeborn")]
+    ShufflePartitionMetas(Vec<ShufflePartitionMeta>),
 }
+
 pub(crate) type BlockingSinkFinalizeResult = OperatorOutput<DaftResult<BlockingSinkOutput>>;
 
 pub(crate) trait BlockingSink: Send + Sync {
@@ -285,6 +290,17 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                             })
                             .await;
                     }
+                }
+                #[cfg(feature = "celeborn")]
+                BlockingSinkOutput::ShufflePartitionMetas(metas) => {
+                    let total_rows: usize = metas.iter().map(|m| m.num_rows).sum();
+                    let total_bytes: usize = metas.iter().map(|m| m.size_bytes).sum();
+                    tracing::debug!(
+                        partitions = metas.len(),
+                        total_rows,
+                        total_bytes,
+                        "Celeborn shuffle write complete"
+                    );
                 }
             }
             if let Some((store, _, _)) = &checkpoint {

@@ -195,6 +195,14 @@ skip = "tests/series/*,target,.git,.venv,venv,data,*.csv,*.csv.*,*.html,*.json,*
 
 [tool.maturin]
 # "python" tells pyo3 we want to build an extension module (skips linking against libpython.so)
+#
+# The `celeborn` feature is deliberately not listed: it links against the Apache
+# Celeborn C++ client, which has no published prebuilt artifact, so enabling it
+# by default would make every wheel build depend on a C++ toolchain (folly, glog,
+# gflags, OpenSSL). Build a Celeborn-capable wheel with
+# `maturin build --features python,celeborn`, pointing CELEBORN_CPP_PREFIX at an
+# install of the client. Without the feature, `shuffle_algorithm="celeborn"` is
+# rejected at plan translation rather than silently falling back to Ray.
 features = ["python"]
 # Include pre-built dashboard frontend assets in the sdist so they're available
 # inside maturin's Docker container for manylinux builds (the assets are gitignored

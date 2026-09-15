@@ -229,6 +229,107 @@ impl MicroPartition {
 
         Ok(Self::new_loaded(schema, Arc::new(tables), None))
     }
+
+    /// Decode a buffer holding one or more **concatenated** Arrow IPC streams
+    /// into a flat list of `RecordBatch`es.
+    ///
+    /// Celeborn stores one self-contained IPC stream per map-side push, so a
+    /// reduce partition read back is a concatenation of them and each needs its
+    /// own decoder. Zero-row batches are dropped, and the Arrow schema is
+    /// converted to a Daft `Schema` once and shared by every batch instead of
+    /// once per push.
+    ///
+    /// Takes the transport bytes by value so the decoded arrays can borrow from
+    /// them instead of being copied out. Misaligned array data still falls back
+    /// to a copy inside the decoder. The caller must hold no other reference to
+    /// the bytes, or the arrays keep the whole buffer alive.
+    pub fn read_record_batches_from_ipc_streams(
+        buffer: bytes::Bytes,
+    ) -> DaftResult<Vec<RecordBatch>> {
+        // Shares the `bytes::Bytes` allocation rather than copying it: the
+        // conversion just moves the pointer into an `Arc` deallocation handle.
+        let mut buffer = arrow::buffer::Buffer::from(buffer);
+        let mut out = Vec::new();
+        // Keyed by the *Arrow* schema so the equality check never has to redo
+        // the (allocating) Arrow -> Daft conversion just to compare.
+        let mut converted: Option<(arrow::datatypes::SchemaRef, SchemaRef)> = None;
+        let mut decoder = arrow_ipc::reader::StreamDecoder::new();
+
+        while !buffer.is_empty() {
+            let arrow_batch = match decoder.decode(&mut buffer) {
+                Ok(Some(arrow_batch)) => arrow_batch,
+                // Buffer exhausted without completing a message. Either a clean
+                // end (the `finish` below accepts it) or truncated data.
+                Ok(None) => break,
+                Err(e) => {
+                    // A decoder latches to its finished state at the stream's
+                    // end-of-stream marker and reports whatever follows as an
+                    // error. Here that is the normal case, not a failure: the
+                    // next map-side push starts, so give it a fresh decoder.
+                    // `finish` distinguishes the two — a decoder that stopped on
+                    // a real error is left mid-message and rejects it.
+                    if decoder.finish().is_err() {
+                        return Err(e.into());
+                    }
+                    decoder = arrow_ipc::reader::StreamDecoder::new();
+                    continue;
+                }
+            };
+
+            let (arrow_schema, arrow_arrays, num_rows) = arrow_batch.into_parts();
+            // Drop empty batches here so callers never have to: they carry no
+            // rows, so all they would do is pad every downstream concat and the
+            // size accounting that decides Morsel boundaries. A partition made
+            // only of them therefore decodes to nothing, which leaves the reduce
+            // reader on its `sent_any == false` path — the one that emits the
+            // single empty Morsel the pipeline contract wants, with the declared
+            // schema (see `shuffle_read.rs`).
+            if num_rows == 0 {
+                continue;
+            }
+            let schema = match &converted {
+                // Every push writes the same schema, so reuse the converted one.
+                // Batches within one stream even share the schema `Arc`, which
+                // the pointer check settles without walking the field list.
+                Some((prev, daft)) if Arc::ptr_eq(prev, &arrow_schema) || prev == &arrow_schema => {
+                    Arc::clone(daft)
+                }
+                // Arrow schema equality covers metadata, which a Daft schema does
+                // not carry, so two pushes that are identical as far as the engine
+                // is concerned can still land here. Re-check on the Daft side and
+                // only reject what a concat of the decoded batches would reject
+                // anyway.
+                Some((_, daft)) => {
+                    let daft = Arc::clone(daft);
+                    let next: SchemaRef = Arc::new(arrow_schema.as_ref().try_into()?);
+                    if next != daft {
+                        return Err(DaftError::SchemaMismatch(format!(
+                            "concatenated IPC streams have mismatched schemas: {daft} vs {next}"
+                        )));
+                    }
+                    // Re-key the cache on this stream's Arrow schema so its
+                    // remaining batches take the cheap path again, and keep handing
+                    // out the one Daft schema `Arc` — `MicroPartition::new_loaded`
+                    // compares every batch's schema, which a shared `Arc` settles
+                    // by pointer.
+                    converted = Some((arrow_schema, Arc::clone(&daft)));
+                    daft
+                }
+                None => {
+                    let daft: SchemaRef = Arc::new(arrow_schema.as_ref().try_into()?);
+                    converted = Some((arrow_schema, daft.clone()));
+                    daft
+                }
+            };
+
+            out.push(RecordBatch::from_arrow(schema, arrow_arrays)?);
+        }
+
+        // Catches a partition truncated mid-message, which would otherwise be
+        // silently short a batch.
+        decoder.finish()?;
+        Ok(out)
+    }
 }
 
 fn prune_fields_from_schema(
@@ -893,6 +994,110 @@ mod tests {
         let roundtrip_table = MicroPartition::read_from_ipc_stream(&ipc_stream)?;
         assert_eq!(batch1, roundtrip_table.record_batches()[0]);
         assert_eq!(batch2, roundtrip_table.record_batches()[1]);
+        Ok(())
+    }
+
+    fn int_batch(values: &[i32]) -> DaftResult<RecordBatch> {
+        let strings = vec!["x"; values.len()];
+        RecordBatch::from_nonempty_columns(vec![
+            Int32Array::from_slice("a", values).into_series(),
+            Utf8Array::from_slice("b", strings.as_slice()).into_series(),
+        ])
+    }
+
+    fn ipc_stream_of(batches: Vec<RecordBatch>, schema: &Arc<Schema>) -> DaftResult<Vec<u8>> {
+        MicroPartition::new_loaded(schema.clone(), Arc::new(batches), None).write_to_ipc_stream()
+    }
+
+    /// A Celeborn reduce partition is the map-side pushes concatenated, so the
+    /// buffer holds several self-contained IPC streams back to back — including
+    /// pushes that carried no batches at all.
+    #[test]
+    fn test_ipc_concatenated_streams() -> DaftResult<()> {
+        let first = int_batch(&[1, 2])?;
+        let second = int_batch(&[3])?;
+        let third = int_batch(&[4, 5, 6])?;
+        let schema = first.schema.clone();
+
+        let mut buffer = ipc_stream_of(vec![first.clone(), second.clone()], &schema)?;
+        buffer.extend_from_slice(&ipc_stream_of(vec![], &schema)?);
+        buffer.extend_from_slice(&ipc_stream_of(vec![third.clone()], &schema)?);
+
+        let decoded =
+            MicroPartition::read_record_batches_from_ipc_streams(bytes::Bytes::from(buffer))?;
+        assert_eq!(decoded, vec![first, second, third]);
+        Ok(())
+    }
+
+    /// A partition cut short mid-message must fail rather than come back quietly
+    /// missing rows.
+    #[test]
+    fn test_ipc_concatenated_streams_truncated() -> DaftResult<()> {
+        let batch = int_batch(&[1, 2, 3])?;
+        let schema = batch.schema.clone();
+        let mut buffer = ipc_stream_of(vec![batch.clone()], &schema)?;
+        buffer.extend_from_slice(&ipc_stream_of(vec![batch], &schema)?);
+        buffer.truncate(buffer.len() - 16);
+
+        assert!(
+            MicroPartition::read_record_batches_from_ipc_streams(bytes::Bytes::from(buffer))
+                .is_err()
+        );
+        Ok(())
+    }
+
+    /// Every push writes the same schema, so a mismatch means something upstream
+    /// is wrong; say so here instead of failing obscurely in the concat.
+    #[test]
+    fn test_ipc_concatenated_streams_schema_mismatch() -> DaftResult<()> {
+        let batch = int_batch(&[1, 2])?;
+        let other = RecordBatch::from_nonempty_columns(vec![
+            Float64Array::from_slice("a", &[1., 2.]).into_series(),
+            Utf8Array::from_slice("b", &["x", "x"]).into_series(),
+        ])?;
+
+        let mut buffer = ipc_stream_of(vec![batch.clone()], &batch.schema)?;
+        buffer.extend_from_slice(&ipc_stream_of(vec![other.clone()], &other.schema)?);
+
+        let err = MicroPartition::read_record_batches_from_ipc_streams(bytes::Bytes::from(buffer))
+            .unwrap_err();
+        assert!(
+            matches!(err, common_error::DaftError::SchemaMismatch(_)),
+            "expected a schema mismatch, got {err:?}"
+        );
+        Ok(())
+    }
+
+    /// An Arrow schema carries metadata that a Daft schema does not, so two
+    /// pushes the engine considers identical can still differ on the Arrow side.
+    /// The read must go through, and all batches must keep sharing one Daft
+    /// schema (`MicroPartition::new_loaded` compares every batch's schema).
+    #[test]
+    fn test_ipc_concatenated_streams_arrow_metadata_differs() -> DaftResult<()> {
+        fn ipc_stream_with_metadata(batch: &RecordBatch) -> DaftResult<Vec<u8>> {
+            let arrow_batch: arrow_array::RecordBatch = batch.clone().try_into()?;
+            let schema = Arc::new(arrow_batch.schema().as_ref().clone().with_metadata(
+                std::iter::once(("celeborn.push".to_string(), "7".to_string())).collect(),
+            ));
+            let arrow_batch =
+                arrow_array::RecordBatch::try_new(schema.clone(), arrow_batch.columns().to_vec())?;
+
+            let mut buffer = Vec::new();
+            let mut writer = arrow_ipc::writer::StreamWriter::try_new(&mut buffer, &schema)?;
+            writer.write(&arrow_batch)?;
+            writer.finish()?;
+            Ok(buffer)
+        }
+
+        let first = int_batch(&[1, 2])?;
+        let second = int_batch(&[3])?;
+        let mut buffer = ipc_stream_of(vec![first.clone()], &first.schema)?;
+        buffer.extend_from_slice(&ipc_stream_with_metadata(&second)?);
+
+        let decoded =
+            MicroPartition::read_record_batches_from_ipc_streams(bytes::Bytes::from(buffer))?;
+        assert_eq!(decoded, vec![first, second]);
+        assert!(Arc::ptr_eq(&decoded[0].schema, &decoded[1].schema));
         Ok(())
     }
 }

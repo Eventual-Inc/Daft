@@ -2425,6 +2425,11 @@ pub enum ShuffleBackend {
         shuffle_dirs: Vec<String>,
         compression: Option<String>,
     },
+    #[cfg(feature = "celeborn")]
+    Celeborn {
+        shuffle_id: u64,
+        num_mappers: u32,
+    },
 }
 
 impl ShuffleBackend {
@@ -2432,6 +2437,8 @@ impl ShuffleBackend {
         match self {
             Self::Ray => "Ray",
             Self::Flight { .. } => "Flight",
+            #[cfg(feature = "celeborn")]
+            Self::Celeborn { .. } => "Celeborn",
         }
     }
 }
@@ -2451,7 +2458,15 @@ pub struct VLLMProject {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ShuffleReadBackend {
     Ray,
-    Flight,
+    Flight {
+        shuffle_id: u64,
+        server_cache_mapping: HashMap<String, Vec<u32>>,
+    },
+    #[cfg(feature = "celeborn")]
+    Celeborn {
+        shuffle_id: u64,
+        num_mappers: u32,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -2494,6 +2509,12 @@ pub struct FlightShuffleReadInput {
     pub shuffle_id: u64,
     pub partition_idx: u32,
     pub inputs_by_server: Arc<BTreeMap<String, Vec<u32>>>,
+}
+
+#[cfg(feature = "celeborn")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CelebornShuffleReadInput {
+    pub partition_idx: usize,
 }
 
 #[cfg(test)]
