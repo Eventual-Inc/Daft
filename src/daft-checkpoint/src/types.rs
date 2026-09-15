@@ -70,6 +70,7 @@ pub enum FileFormat {
     Iceberg,
     Parquet,
     DeltaLake,
+    Lance,
 }
 
 /// Opaque file metadata produced by a sink writer.
