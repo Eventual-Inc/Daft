@@ -6,7 +6,7 @@ use common_metrics::{
     ops::{NodeCategory, NodeType},
 };
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, ShuffleReadBackend};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, ShuffleBackend};
 use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::TryStreamExt;
@@ -15,6 +15,7 @@ use crate::{
     pipeline_node::{
         ClusteringStrategy, DistributedPipelineNode, MaterializedOutput, NodeID,
         PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
+        shuffles::backends::{ShuffleContext, attach_refs, read_backend},
         sort::range_repartition_two_sides,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
@@ -39,6 +40,7 @@ pub(crate) struct SortMergeJoinNode {
     right_on: Vec<BoundExpr>,
     join_type: JoinType,
     num_partitions: usize,
+    shuffle_context: ShuffleContext,
 
     // Child nodes
     left: DistributedPipelineNode,
@@ -59,6 +61,7 @@ impl SortMergeJoinNode {
         left: DistributedPipelineNode,
         right: DistributedPipelineNode,
         output_schema: SchemaRef,
+        backend: ShuffleBackend,
     ) -> Self {
         let context = PipelineNodeContext::new(
             plan_config.query_idx,
@@ -69,10 +72,11 @@ impl SortMergeJoinNode {
             NodeCategory::StreamingSink,
         );
         let config = PipelineNodeConfig::new(
-            output_schema,
+            output_schema.clone(),
             plan_config.config.clone(),
             ClusteringStrategy::Passthrough { child: &left },
         );
+        let shuffle_context = ShuffleContext::new(&context, output_schema, backend);
         Self {
             config,
             context,
@@ -80,6 +84,7 @@ impl SortMergeJoinNode {
             right_on,
             join_type,
             num_partitions,
+            shuffle_context,
             left,
             right,
         }
@@ -87,7 +92,10 @@ impl SortMergeJoinNode {
 
     fn multiline_display(&self) -> Vec<String> {
         use itertools::Itertools;
-        let mut res = vec!["SortMergeJoin".to_string()];
+        let mut res = vec![format!(
+            "SortMergeJoin({})",
+            self.shuffle_context.backend().name()
+        )];
         res.push(format!("Type: {}", self.join_type));
         res.push(format!(
             "Left: Join key = {}",
@@ -102,16 +110,20 @@ impl SortMergeJoinNode {
     }
 
     /// Creates and submits a sort-merge join task for a pair of partition groups.
+    /// `backend` is the backend the partition groups were written with: `Ray` for
+    /// inputs materialized directly by the children, and the node's own backend
+    /// for groups that came out of the range repartition.
     async fn create_and_submit_join_task(
         self: &Arc<Self>,
         left_partition_group: Vec<MaterializedOutput>,
         right_partition_group: Vec<MaterializedOutput>,
+        backend: &ShuffleBackend,
         result_tx: &Sender<SwordfishTaskBuilder>,
     ) -> DaftResult<()> {
         let left_shuffle_read_plan = LocalPhysicalPlan::shuffle_read(
             self.left.node_id(),
             self.left.config().schema.clone(),
-            ShuffleReadBackend::Ray,
+            read_backend(backend),
             StatsState::NotMaterialized,
             LocalNodeContext::new(Some(self.left.node_id() as usize)),
         );
@@ -124,7 +136,7 @@ impl SortMergeJoinNode {
         let right_shuffle_read_plan = LocalPhysicalPlan::shuffle_read(
             self.right.node_id(),
             self.right.config().schema.clone(),
-            ShuffleReadBackend::Ray,
+            read_backend(backend),
             StatsState::NotMaterialized,
             LocalNodeContext::new(Some(self.right.node_id() as usize)),
         );
@@ -147,9 +159,9 @@ impl SortMergeJoinNode {
         );
 
         // Create the task
-        let builder = SwordfishTaskBuilder::new(plan, self.as_ref(), self.node_id())
-            .with_psets(self.left.node_id(), left_psets)
-            .with_psets(self.right.node_id(), right_psets);
+        let builder = SwordfishTaskBuilder::new(plan, self.as_ref(), self.node_id());
+        let builder = attach_refs(builder, backend, self.left.node_id(), left_psets);
+        let builder = attach_refs(builder, backend, self.right.node_id(), right_psets);
 
         result_tx.send(builder).await.ok();
         Ok(())
@@ -176,6 +188,7 @@ impl SortMergeJoinNode {
             self.left.config().schema.clone(),
             self.right.config().schema.clone(),
             num_partitions,
+            self.shuffle_context.backend().clone(),
             self.as_ref(),
             task_id_counter,
             scheduler_handle,
@@ -196,6 +209,7 @@ impl SortMergeJoinNode {
             self.create_and_submit_join_task(
                 left_partition_group,
                 right_partition_group,
+                self.shuffle_context.backend(),
                 result_tx,
             )
             .await?;
@@ -239,8 +253,14 @@ impl SortMergeJoinNode {
 
         // Special case: if both sides have only 1 partition, just do a direct join
         if left_materialized.len() == 1 && right_materialized.len() == 1 {
-            self.create_and_submit_join_task(left_materialized, right_materialized, &result_tx)
-                .await
+            // No shuffle happened, so the inputs are plain refs from the children.
+            self.create_and_submit_join_task(
+                left_materialized,
+                right_materialized,
+                &ShuffleBackend::Ray,
+                &result_tx,
+            )
+            .await
         } else {
             // Multi-partition join case: sample, repartition, and join
             self.range_shuffle_and_join(
@@ -282,6 +302,7 @@ impl PipelineNodeImpl for SortMergeJoinNode {
     ) -> TaskBuilderStream {
         let left_input = self.left.clone().produce_tasks(plan_context);
         let right_input = self.right.clone().produce_tasks(plan_context);
+        self.shuffle_context.register_cleanup(plan_context);
         let (result_tx, result_rx) = create_channel(1);
         plan_context.spawn(self.execution_loop(
             left_input,
