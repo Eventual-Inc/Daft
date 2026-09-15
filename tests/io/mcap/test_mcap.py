@@ -14,6 +14,7 @@ from mcap.writer import Writer as MCAPWriter
 from mcap_ros2.writer import Writer
 
 import daft
+from daft import DataType
 from daft.daft import McapSourceConfig
 from daft.filesystem import _resolve_paths_and_filesystem
 from daft.io import IOConfig, S3Config
@@ -451,10 +452,10 @@ def test_mcap_use_legacy_types_schema_and_deprecation(tmp_path):
     with pytest.warns(DeprecationWarning, match="use_legacy_types"):
         legacy_df = daft.read_mcap(path, use_legacy_types=True)
 
-    assert legacy_df.schema()["log_time"].dtype == daft.DataType.int64()
-    assert legacy_df.schema()["publish_time"].dtype == daft.DataType.int64()
-    assert legacy_df.schema()["sequence"].dtype == daft.DataType.int32()
-    assert legacy_df.schema()["data"].dtype == daft.DataType.string()
+    assert legacy_df.schema()["log_time"].dtype == DataType.int64()
+    assert legacy_df.schema()["publish_time"].dtype == DataType.int64()
+    assert legacy_df.schema()["sequence"].dtype == DataType.int32()
+    assert legacy_df.schema()["data"].dtype == DataType.string()
     assert legacy_df.select("log_time", "publish_time", "sequence", "data").to_pydict() == {
         "log_time": [1],
         "publish_time": [2],
@@ -466,10 +467,10 @@ def test_mcap_use_legacy_types_schema_and_deprecation(tmp_path):
         warnings.simplefilter("error", DeprecationWarning)
         native_df = daft.read_mcap(path)
 
-    assert native_df.schema()["log_time"].dtype == daft.DataType.uint64()
-    assert native_df.schema()["publish_time"].dtype == daft.DataType.uint64()
-    assert native_df.schema()["sequence"].dtype == daft.DataType.uint32()
-    assert native_df.schema()["data"].dtype == daft.DataType.binary()
+    assert native_df.schema()["log_time"].dtype == DataType.uint64()
+    assert native_df.schema()["publish_time"].dtype == DataType.uint64()
+    assert native_df.schema()["sequence"].dtype == DataType.uint32()
+    assert native_df.schema()["data"].dtype == DataType.binary()
     assert native_df.select("log_time", "publish_time", "sequence", "data").to_pydict() == {
         "log_time": [1],
         "publish_time": [2],
@@ -516,7 +517,7 @@ def test_nanosecond_where_matches_explicit_time_bound(tmp_path):
     expected = daft.read_mcap(path, end_time=start + 2).select("sequence").to_pydict()
     assert expected == {"sequence": [0, 1]}
     # Native log_time is uint64; cast the bound so Python ints are not inferred as int64.
-    bound = daft.lit(start + 2).cast(daft.DataType.uint64())
+    bound = daft.lit(start + 2).cast(DataType.uint64())
     assert daft.read_mcap(path).where(daft.col("log_time") < bound).select("sequence").to_pydict() == expected
 
 
@@ -526,7 +527,7 @@ def test_timestamp_pushdown_preserves_residual_semantics(tmp_path):
     path.write_bytes(mcap_bytes(range(start, start + 5)))
     df = daft.read_mcap(path)
     # Native log_time is uint64; cast the bound so Python ints are not inferred as int64.
-    bound = daft.lit(start + 2).cast(daft.DataType.uint64())
+    bound = daft.lit(start + 2).cast(DataType.uint64())
     predicate = daft.col("log_time") >= bound
     pushed = df.where(predicate).select("sequence").to_pydict()
     # /absent does not occur in the fixture; OR prevents constraint extraction.
