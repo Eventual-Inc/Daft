@@ -55,6 +55,8 @@ def test_accumulate_small_micropartitions(schema, tmp_path):
 
     with patch("daft_lance.lance_data_sink.lance", fake):
         sink = LanceDataSink(uri=str(tmp_path / "tbl"), schema=schema, mode="create", max_rows_per_file=25)
+        # 0.5.0 resolves the target table in start(); write() asserts it has run.
+        sink.start()
         mps = [_make_mp(10), _make_mp(20), _make_mp(30)]
         results = list(sink.write(iter(mps)))
 
@@ -69,6 +71,8 @@ def test_flush_remaining_at_end(schema, tmp_path):
 
     with patch("daft_lance.lance_data_sink.lance", fake):
         sink = LanceDataSink(uri=str(tmp_path / "tbl"), schema=schema, mode="create", max_rows_per_file=25)
+        # 0.5.0 resolves the target table in start(); write() asserts it has run.
+        sink.start()
         mps = [_make_mp(10), _make_mp(5)]
         results = list(sink.write(iter(mps)))
 
@@ -83,6 +87,8 @@ def test_large_micropartition_writes_directly(schema, tmp_path):
 
     with patch("daft_lance.lance_data_sink.lance", fake):
         sink = LanceDataSink(uri=str(tmp_path / "tbl"), schema=schema, mode="create", max_rows_per_file=25)
+        # 0.5.0 resolves the target table in start(); write() asserts it has run.
+        sink.start()
         mps = [_make_mp(30)]
         results = list(sink.write(iter(mps)))
 
@@ -92,15 +98,22 @@ def test_large_micropartition_writes_directly(schema, tmp_path):
     assert sum(r.rows_written for r in results) == 30
 
 
-def test_no_accumulation_when_param_missing(schema, tmp_path):
+def test_accumulates_under_default_threshold(schema, tmp_path):
+    """Without an explicit threshold, daft-lance buffers against its own large default.
+
+    Accumulation is unconditional since daft-lance 0.5.0: ``max_rows_per_file`` always
+    has a value, so small micropartitions coalesce instead of becoming one fragment each.
+    """
     fake = FakeLanceModule()._bind()
 
     with patch("daft_lance.lance_data_sink.lance", fake):
         sink = LanceDataSink(uri=str(tmp_path / "tbl"), schema=schema, mode="create")
+        # 0.5.0 resolves the target table in start(); write() asserts it has run.
+        sink.start()
         mps = [_make_mp(10), _make_mp(5)]
         results = list(sink.write(iter(mps)))
 
-    # Expect two separate writes corresponding to each micropartition
-    assert len(fake.calls) == 2
-    assert [t.num_rows for t in fake.calls] == [10, 5]
-    assert [r.rows_written for r in results] == [10, 5]
+    # Both micropartitions stay well under the default threshold, so they flush together.
+    assert len(fake.calls) == 1
+    assert fake.calls[0].num_rows == 15
+    assert sum(r.rows_written for r in results) == 15

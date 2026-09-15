@@ -144,7 +144,7 @@ df = daft.from_pydict({"a": [1, 2, 3, 4]})
 meta = df.write_lance("/tmp/lance/my_table.lance")
 meta.show()  # Contains metadata such as num_fragments / num_deleted_rows / num_small_files / version
 
-# Overwrite existing table with extra parameters (passed to lance.write_fragments)
+# Overwrite existing table with extra parameters (forwarded to the Lance writer)
 meta2 = df.write_lance("/tmp/lance/my_table.lance", mode="overwrite", max_bytes_per_file=1024)
 meta2.show()
 
@@ -214,6 +214,46 @@ This ensures that the resulting Lance table uses the exact schema you specify, e
     - If `schema` is not provided, Daft uses the current DataFrame schema.
     - If a `pyarrow.Schema` is provided, data will be aligned to that schema before writing (type/order/nullability).
     - If the target dataset already exists and the write is not an overwrite, data is converted to the existing table schema for compatibility.
+
+## Addressing Tables Through a Lance Namespace
+
+Instead of a URI, a table can be addressed through a [Lance Namespace](https://github.com/lancedb/lance-namespace):
+pass `namespace_impl` (the implementation, e.g. `"dir"` or `"rest"`), `namespace_properties` (how to
+connect to it) and `table_id` (the table identifier within the namespace). The namespace resolves the
+table's physical location and vends storage credentials, so no `uri` is needed — the two forms are
+mutually exclusive and passing both raises a `ValueError`.
+
+Both [`daft.read_lance()`][daft.read_lance] and [`df.write_lance()`][daft.dataframe.DataFrame.write_lance]
+accept these parameters, including `mode="merge"`.
+
+=== "🐍 Python"
+
+    ```python
+    import daft
+
+    namespace = {
+        "namespace_impl": "rest",
+        "namespace_properties": {"uri": "http://localhost:9001/lance"},
+        "table_id": ["catalog", "schema", "my_table"],
+    }
+
+    # Write
+    df = daft.from_pydict({"a": [1, 2, 3, 4]})
+    df.write_lance(**namespace).show()
+
+    # Read
+    daft.read_lance(**namespace).show()
+    ```
+
+    A local directory namespace needs no service and is handy for testing:
+
+    ```python
+    namespace = {
+        "namespace_impl": "dir",
+        "namespace_properties": {"root": "/tmp/lance/tables"},
+        "table_id": ["my_table"],
+    }
+    ```
 
 ## Advanced Usage
 

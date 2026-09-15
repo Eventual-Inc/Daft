@@ -2349,19 +2349,28 @@ class DataFrame:
     @DataframePublicAPI
     def write_lance(
         self,
-        uri: str | pathlib.Path,
+        uri: str | pathlib.Path | None = None,
         mode: Literal["create", "append", "overwrite", "merge"] = "create",
         io_config: IOConfig | None = None,
         schema: Union[Schema, "pyarrow.Schema"] | None = None,
         left_on: str | None = None,
         right_on: str | None = None,
+        *,
+        table_id: list[str] | None = None,
+        namespace_impl: str | None = None,
+        namespace_properties: dict[str, str] | None = None,
         **kwargs: Any,
     ) -> "DataFrame":
         """Writes the DataFrame to a Lance table.
 
+        The table is addressed either by ``uri`` or through a Lance Namespace
+        (``namespace_impl`` + ``namespace_properties`` + ``table_id``). The two forms are
+        mutually exclusive.
+
         Args:
           uri: The URI of the Lance table to write to. Accepts a local path or an
-            object-store URI like "s3://bucket/path".
+            object-store URI like "s3://bucket/path". Mutually exclusive with the
+            namespace parameters.
           mode: The write mode. One of "create", "append", "overwrite", or "merge".
           - "create" will create the dataset if it does not exist, otherwise raise an error.
           - "append" will append to the existing dataset if it exists, otherwise raise an error.
@@ -2379,7 +2388,14 @@ class DataFrame:
               - If omitted, defaults to ``"_rowaddr"``.
               - If ``right_on`` is omitted, it defaults to the value of ``left_on``.
               - The DataFrame passed to ``write_lance(mode="merge")`` must contain ``fragment_id`` and the join key column specified by ``right_on`` (or ``_rowaddr`` by default).
-          **kwargs: Additional keyword arguments to pass to the Lance writer.
+          table_id (Optional[list[str]]): Table identifier within the namespace, e.g. ``["catalog", "schema", "table"]``. Mutually exclusive with ``uri``.
+          namespace_impl (Optional[str]): Lance Namespace implementation, e.g. ``"dir"`` or ``"rest"``.
+          namespace_properties (Optional[dict[str, str]]): Properties for connecting to the namespace, e.g. ``{"root": "/data"}`` for ``"dir"`` or ``{"uri": "http://host:port"}`` for ``"rest"``.
+          **kwargs: Additional keyword arguments to pass to the Lance writer. The accepted set is
+            defined by ``daft_lance.lance_data_sink.LanceDataSink`` (for example ``max_rows_per_file``,
+            ``max_rows_per_group``, ``max_bytes_per_file``, ``blob_columns``, ``data_storage_version``,
+            ``enable_stable_row_ids``, ``storage_options`` and ``compact_after_write``); an unrecognized
+            argument raises ``TypeError``.
 
         Returns:
             DataFrame: A DataFrame containing metadata about the written Lance table, such as number of fragments, number of deleted rows, number of small files, and version.
@@ -2387,6 +2403,7 @@ class DataFrame:
         Raises:
             TypeError: If ``schema`` is provided but not a Daft Schema or a pyarrow.Schema
             ValueError: When appending and the data schema cannot be cast to the existing table schema
+            ValueError: If neither ``uri`` nor a complete namespace triple is given, or if both are
 
         Examples:
             >>> import daft
@@ -2418,7 +2435,6 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 4 of 4 rows)
             >>> # Pass additional keyword arguments to the Lance writer
-            >>> # All additional keyword arguments are passed to `lance.write_fragments`
             >>> df.write_lance("/tmp/lance/my_table.lance", mode="overwrite", max_bytes_per_file=1024)  # doctest: +SKIP
             ╭───────────────┬──────────────────┬─────────────────┬─────────╮
             │ num_fragments ┆ num_deleted_rows ┆ num_small_files ┆ version │
@@ -2429,50 +2445,61 @@ class DataFrame:
             ╰───────────────┴──────────────────┴─────────────────┴─────────╯
             <BLANKLINE>
             (Showing first 1 of 1 rows)
+            >>> # Address the table through a Lance Namespace instead of a URI
+            >>> df.write_lance(
+            ...     namespace_impl="rest",
+            ...     namespace_properties={"uri": "http://localhost:9001/lance"},
+            ...     table_id=["catalog", "schema", "table"],
+            ... )  # doctest: +SKIP
         """
         from daft import context as _context
-        from daft.io.lance.lance_data_sink import LanceDataSink
-        from daft.io.object_store_options import io_config_to_storage_options
 
-        if schema is None:
-            schema = self.schema()
-
-        uri_str = str(uri)
-        if uri_str.startswith("rest://"):
-            raise ValueError(
-                "rest:// Lance URIs are no longer supported by DataFrame.write_lance. "
-                "The previous REST-namespace integration did not match the real "
-                "lance-namespace API and has been removed."
-            )
-
-        # Non-merge modes do not support schema evolution or custom join keys
-        if mode != "merge":
-            sanitized_kwargs = {k: v for k, v in kwargs.items() if k not in ("left_on", "right_on")}
-            sink = LanceDataSink(uri, schema, mode, io_config, **sanitized_kwargs)
-            return self.write_sink(sink)
-
-        # Merge mode semantics
         try:
-            import lance
+            from daft.io.lance.lance_data_sink import LanceDataSink
+            from daft.io.lance.namespace import TABLE_NOT_FOUND_ERRORS, validate_uri_or_namespace
+            from daft.io.lance.utils import construct_lance_dataset_handle
         except ImportError as e:
             raise ImportError(
                 "Unable to import the `lance` package, please ensure that Daft is installed with the lance extra dependency: `pip install daft[lance]`"
             ) from e
 
-        io_config = _context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
-        storage_options = io_config_to_storage_options(io_config, str(uri) if isinstance(uri, pathlib.Path) else uri)
+        if schema is None:
+            schema = self.schema()
 
-        # Attempt to load dataset; if not exists, behave like create
-        lance_ds = None
-        try:
-            lance_ds = lance.dataset(uri, storage_options=storage_options)
-        except (ValueError, FileNotFoundError, OSError) as _e:
-            lance_ds = None
+        namespace_kwargs: dict[str, Any] = {
+            "table_id": table_id,
+            "namespace_impl": namespace_impl,
+            "namespace_properties": namespace_properties,
+        }
+        # Surface addressing mistakes here rather than letting them fall through to the
+        # "dataset does not exist, create it" branch below.
+        validate_uri_or_namespace(uri, namespace_impl, table_id, namespace_properties)
 
-        if lance_ds is None:
+        # Non-merge modes do not support schema evolution or custom join keys
+        if mode != "merge":
             sanitized_kwargs = {k: v for k, v in kwargs.items() if k not in ("left_on", "right_on")}
-            sink = LanceDataSink(uri, schema, "create", io_config, **sanitized_kwargs)
+            sink = LanceDataSink(uri, schema, mode, io_config, **namespace_kwargs, **sanitized_kwargs)
             return self.write_sink(sink)
+
+        # Merge mode semantics
+        io_config = _context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
+
+        # The handle resolves the namespace (when used), derives storage options from the
+        # io_config and pins the snapshot that both the schema diff below and the merge
+        # workers operate on. If it cannot be opened, the dataset does not exist yet and
+        # merge degrades to a create.
+        handle = None
+        try:
+            handle = construct_lance_dataset_handle(uri, io_config=io_config, **namespace_kwargs)
+        except TABLE_NOT_FOUND_ERRORS:
+            handle = None
+
+        if handle is None:
+            sanitized_kwargs = {k: v for k, v in kwargs.items() if k not in ("left_on", "right_on")}
+            sink = LanceDataSink(uri, schema, "create", io_config, **namespace_kwargs, **sanitized_kwargs)
+            return self.write_sink(sink)
+
+        lance_ds = handle.dataset
 
         # Dataset exists: detect schema evolution by checking new columns in incoming DF
         existing_fields: set[str] = set()
@@ -2496,7 +2523,7 @@ class DataFrame:
             # Pure append: no schema evolution. Ensure merge-specific params are not forwarded.
             sanitized_kwargs = {k: v for k, v in kwargs.items() if k not in ("left_on", "right_on")}
 
-            sink = LanceDataSink(uri, schema, "append", io_config, **sanitized_kwargs)
+            sink = LanceDataSink(uri, schema, "append", io_config, **namespace_kwargs, **sanitized_kwargs)
             return self.write_sink(sink)
 
         # Schema evolution: route to per-fragment merge keyed by provided business key or default '_rowaddr'
@@ -2518,17 +2545,17 @@ class DataFrame:
 
         from daft.io.lance.lance_merge_column import merge_columns_from_df
 
-        merge_columns_from_df(
+        # ``merge_columns_from_df`` returns the post-merge dataset, so there is no need to
+        # reopen by URI here -- which a namespace-addressed table would not have anyway.
+        dataset = merge_columns_from_df(
             df=self,
             lance_ds=lance_ds,
-            uri=uri,
+            open_context=handle.worker_open_context(),
             left_on=join_left,
             right_on=join_right,
-            storage_options=storage_options,
         )
 
         # Build and return stats DataFrame similar to sink.finalize
-        dataset = lance.dataset(uri, storage_options=storage_options)
         stats = dataset.stats.dataset_stats()
         from daft.dependencies import pa as _pa
         from daft.recordbatch import MicroPartition

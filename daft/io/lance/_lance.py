@@ -23,7 +23,7 @@ __all__ = [
 
 @PublicAPI
 def read_lance(
-    uri: str | os.PathLike[str],
+    uri: str | os.PathLike[str] | None = None,
     io_config: Any = None,
     version: Any = None,
     asof: Any = None,
@@ -35,12 +35,21 @@ def read_lance(
     fragment_group_size: Any = None,
     include_fragment_id: Any = None,
     checkpoint: Any = None,
+    *,
+    table_id: Any = None,
+    namespace_impl: Any = None,
+    namespace_properties: Any = None,
 ) -> Any:
     """Create a DataFrame from a LanceDB table.
 
+    The table is addressed either by ``uri`` or through a Lance Namespace
+    (``namespace_impl`` + ``namespace_properties`` + ``table_id``). The two forms are
+    mutually exclusive.
+
     Args:
         uri: The URI of the Lance table to read from. Accepts a local path or an
-            object-store URI like "s3://bucket/path".
+            object-store URI like "s3://bucket/path". Mutually exclusive with the
+            namespace parameters.
         io_config: A custom IOConfig to use when accessing LanceDB data. Defaults to None.
         version : optional, int | str
             If specified, load a specific version of the Lance dataset. Else, loads the
@@ -90,6 +99,14 @@ def read_lance(
         checkpoint: Optional :class:`daft.CheckpointConfig` for progress tracking across runs. Bundles the
             checkpoint store, the source key column (``on=``), and optional anti-join tuning. Rows whose key
             already exists in the store are skipped on re-run. Requires the Ray runner.
+        table_id : optional, list[str]
+            Table identifier within the namespace, e.g. ``["catalog", "schema", "table"]``.
+            Mutually exclusive with ``uri``.
+        namespace_impl : optional, str
+            Lance Namespace implementation, e.g. ``"dir"`` or ``"rest"``.
+        namespace_properties : optional, dict[str, str]
+            Properties for connecting to the namespace, e.g. ``{"root": "/data"}`` for
+            ``"dir"`` or ``{"uri": "http://host:port"}`` for ``"rest"``.
 
     Returns:
         DataFrame: a DataFrame with the schema converted from the specified LanceDB table
@@ -115,6 +132,14 @@ def read_lance(
         >>> io_config = IOConfig(s3=S3Config(region="us-west-2", anonymous=True))
         >>> df = daft.read_lance("s3://daft-oss-public-data/lance/words-test-dataset", io_config=io_config)
         >>> df.show()
+
+        Read a table addressed through a Lance Namespace instead of a URI:
+        >>> df = daft.read_lance(
+        ...     namespace_impl="rest",
+        ...     namespace_properties={"uri": "http://localhost:9001/lance"},
+        ...     table_id=["catalog", "schema", "table"],
+        ... )  # doctest: +SKIP
+        >>> df.show()  # doctest: +SKIP
     """
     return _daft_lance.read_lance(
         uri,
@@ -129,6 +154,9 @@ def read_lance(
         fragment_group_size=fragment_group_size,
         include_fragment_id=include_fragment_id,
         checkpoint=checkpoint,
+        table_id=table_id,
+        namespace_impl=namespace_impl,
+        namespace_properties=namespace_properties,
     )
 
 
