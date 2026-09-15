@@ -166,4 +166,8 @@ daft.set_runner_ray(
 )
 ```
 
-Or via environment variables (useful for Ray Jobs / KubeRay manifests): `DAFT_AUTOSCALING_DOWNSCALE_ENABLED` (default: false), `DAFT_AUTOSCALING_DOWNSCALE_IDLE_SECONDS` (default: 60), `DAFT_AUTOSCALING_MIN_SURVIVOR_WORKERS` (default: 1), and `DAFT_AUTOSCALING_PENDING_RELEASE_EXCLUDE_SECONDS` (default: 120).
+Or via environment variables (useful for Ray Jobs / KubeRay manifests): `DAFT_AUTOSCALING_DOWNSCALE_ENABLED` (default: false), `DAFT_AUTOSCALING_DOWNSCALE_IDLE_SECONDS` (default: 60), `DAFT_AUTOSCALING_MIN_SURVIVOR_WORKERS` (default: 1), `DAFT_AUTOSCALING_PENDING_RELEASE_EXCLUDE_SECONDS` (default: 120), and `DAFT_AUTOSCALING_REAPER_INTERVAL_SECONDS` (default: 5) which controls how often the background reaper checks for idle workers.
+
+!!! note "How retirement works"
+
+    Idle workers are retired by a background reaper that runs for the lifetime of the Daft session, independent of query boundaries. Retirement is two-phase: a worker idle for at least `DAFT_AUTOSCALING_DOWNSCALE_IDLE_SECONDS` is first hidden from the scheduler (draining), then released on a later reaper cycle if it is still idle. When a query finishes, Daft clears its outstanding autoscaler requests but does **not** immediately kill idle workers — they stay warm for the next query until they pass the idle threshold. The last `DAFT_AUTOSCALING_MIN_SURVIVOR_WORKERS` workers (default: 1) are kept alive as a warm pool for as long as the driver process lives, so on shared clusters you may want to set it to 0 for one-shot jobs.
