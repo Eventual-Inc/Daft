@@ -24,6 +24,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _glob_pattern(path: str) -> str:
+    """Expand directory inputs to ``**/*.mcap``; leave files and explicit globs alone."""
+    if any(character in path for character in "*?[") or path.lower().endswith(".mcap"):
+        return path
+    return f"{path.rstrip('/')}/**/*.mcap"
+
+
 def _topic_start_time_resolver(
     file_path: str,
     start_time: int | None,
@@ -148,10 +155,10 @@ class MCAPSource(DataSource):
         )
 
     async def get_tasks(self, pushdowns: Pushdowns) -> AsyncIterator[DataSourceTask]:
+        pattern = _glob_pattern(self._file_path)
+
         file_infos = [
-            file_info
-            for file_info in io_glob(self._file_path, io_config=self._io_config, recursive=True)
-            if file_info["type"] == "File"
+            file_info for file_info in io_glob(pattern, io_config=self._io_config) if file_info["type"] == "File"
         ]
         if not file_infos:
             raise FileNotFoundError(f"No files found at {self._file_path}")

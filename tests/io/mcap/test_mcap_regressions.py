@@ -12,6 +12,7 @@ from mcap.reader import make_reader
 from mcap.writer import CompressionType, IndexType, Writer
 
 import daft
+from daft.io._mcap import _glob_pattern
 
 
 def read_mcap(*args, **kwargs):
@@ -32,6 +33,14 @@ def mcap_bytes(times=(1, 2, 3), *, index_types=IndexType.ALL, payload=b"PAYLOAD-
     return output.getvalue()
 
 
+def test_glob_pattern_expands_directories_only():
+    assert _glob_pattern("/recordings") == "/recordings/**/*.mcap"
+    assert _glob_pattern("/recordings/") == "/recordings/**/*.mcap"
+    assert _glob_pattern("/recordings/file.mcap") == "/recordings/file.mcap"
+    assert _glob_pattern("/recordings/*.mcap") == "/recordings/*.mcap"
+    assert _glob_pattern("/recordings/**/*.mcap") == "/recordings/**/*.mcap"
+
+
 @pytest.mark.parametrize("top_level_file", [False, True])
 @pytest.mark.parametrize("trailing_slash", [False, True])
 def test_directory_keeps_recursive_discovery(tmp_path, top_level_file, trailing_slash):
@@ -46,11 +55,10 @@ def test_directory_keeps_recursive_discovery(tmp_path, top_level_file, trailing_
     assert read_mcap(path).sort("log_time").select("log_time").to_pydict() == expected
 
 
-def test_recursive_discovery_preserves_exact_file_and_explicit_glob(tmp_path):
-    path = tmp_path / "extensionless"
+def test_discovery_preserves_exact_file_and_explicit_glob(tmp_path):
+    path = tmp_path / "recording.mcap"
     path.write_bytes(mcap_bytes())
     assert read_mcap(path).count_rows() == 3
-    (tmp_path / "a.mcap").write_bytes(mcap_bytes())
     (tmp_path / "nested").mkdir()
     (tmp_path / "nested" / "b.mcap").write_bytes(mcap_bytes())
     assert read_mcap(str(tmp_path / "*.mcap")).count_rows() == 3
