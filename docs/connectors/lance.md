@@ -133,7 +133,7 @@ You can also use this mechanism to perform SQL-based projections (calculations) 
 
 ## Writing to Lance
 
-Use [`df.write_lance()`][daft.dataframe.DataFrame.write_lance] to write a DataFrame to a Lance dataset. Supported modes include `create`, `append`, and `overwrite`.
+Use [`df.write_lance()`][daft.dataframe.DataFrame.write_lance] to write a DataFrame to a Lance dataset. Supported modes include `create`, `append`, `overwrite`, and `insert_overwrite`.
 
 === "🐍 Python"
 
@@ -151,6 +151,43 @@ meta2.show()
 # Append rows (must be compatible with the existing table schema)
 meta3 = df.write_lance("/tmp/lance/my_table.lance", mode="append")
 ```
+
+### Conditional overwrite
+
+`insert_overwrite` removes rows matching a Lance SQL predicate and adds the input
+rows in one commit. The target table must already exist; it is not compatible
+with `use_mem_wal=True`.
+
+```python
+replacement = daft.from_pydict({"day": ["2026-09-15"], "value": [42]})
+replacement.write_lance(
+    "/tmp/lance/events.lance",
+    mode="insert_overwrite",
+    overwrite_where="day = '2026-09-15'",
+)
+```
+
+### Lance Namespace tables
+
+Address a table through a Lance Namespace by supplying `table_id`,
+`namespace_impl`, and `namespace_properties` instead of a URI. Namespace
+resolution and any catalog-vended storage credentials are handled by
+`daft-lance`.
+
+```python
+namespace = {
+    "namespace_impl": "dir",
+    "namespace_properties": {"root": "/tmp/lance_tables"},
+    "table_id": ["orders"],
+}
+
+daft.from_pydict({"id": [1, 2]}).write_lance(mode="create", **namespace)
+orders = daft.read_lance(**namespace)
+```
+
+URI and Namespace targets are mutually exclusive. `mode="merge"` remains
+available for URI targets; use `daft_lance.merge_columns_df` directly for a
+Namespace table.
 
 ### For S3-compatible services (e.g. Volcengine TOS), configure IO options for authentication and endpoints:
 

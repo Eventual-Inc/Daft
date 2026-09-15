@@ -30,6 +30,10 @@ def read_lance(
     fragment_group_size: Any = None,
     include_fragment_id: Any = None,
     checkpoint: Any = None,
+    *,
+    table_id: list[str] | None = None,
+    namespace_impl: str | None = None,
+    namespace_properties: dict[str, str] | None = None,
 ) -> Any:
     """Create a DataFrame from a LanceDB table.
 
@@ -124,4 +128,7 @@ def read_lance(
         fragment_group_size=fragment_group_size,
         include_fragment_id=include_fragment_id,
         checkpoint=checkpoint,
+        table_id=table_id,
+        namespace_impl=namespace_impl,
+        namespace_properties=namespace_properties,
     )
