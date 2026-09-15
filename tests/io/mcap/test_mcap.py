@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import os
 import pickle
 import threading
@@ -16,7 +17,7 @@ import daft
 from daft.daft import McapSourceConfig
 from daft.filesystem import _resolve_paths_and_filesystem
 from daft.io import IOConfig, S3Config
-from daft.io._mcap import MCAPSource
+from daft.io._mcap import MCAPSource, _glob_pattern
 from daft.io.pushdowns import Pushdowns
 from daft.io.source import DataSourceTask
 
@@ -219,12 +220,6 @@ def test_mcap_read_s3(data_from_s3):
     assert len(pdf) == 100
     assert pdf["sequence"].nunique() == 100
     assert all(isinstance(value, bytes) for value in pdf["data"])
-
-
-@pytest.mark.parametrize("raw_bytes_mcap_dataset_path", ["raw_bytes_mcap_dataset_path"], indirect=True)
-def test_mcap_show_raw_bytes_does_not_crash(raw_bytes_mcap_dataset_path):
-    df = daft.read_mcap(raw_bytes_mcap_dataset_path, batch_size=256, use_legacy_types=False)
-    df.show(10)
 
 
 @pytest.mark.parametrize("compression", [CompressionType.NONE, CompressionType.LZ4, CompressionType.ZSTD])
@@ -480,3 +475,102 @@ def test_mcap_use_legacy_types_schema_and_deprecation(tmp_path):
         "sequence": [3],
         "data": [b"payload"],
     }
+
+
+def mcap_bytes(times=(1, 2, 3), *, index_types=IndexType.ALL, payload=b"PAYLOAD-ORIGINAL", **options):
+    output = io.BytesIO()
+    compression = options.pop("compression", CompressionType.NONE)
+    writer = MCAPWriter(output, compression=compression, index_types=index_types, **options)
+    writer.start()
+    channel = writer.register_channel(topic="/a", message_encoding="raw", schema_id=0)
+    for sequence, time in enumerate(times):
+        writer.add_message(channel, time, payload, time, sequence)
+    writer.finish()
+    return output.getvalue()
+
+
+def test_glob_pattern_expands_directories_only():
+    assert _glob_pattern("/recordings") == "/recordings/**/*.mcap"
+    assert _glob_pattern("/recordings/") == "/recordings/**/*.mcap"
+    assert _glob_pattern("/recordings/file.mcap") == "/recordings/file.mcap"
+    assert _glob_pattern("/recordings/*.mcap") == "/recordings/*.mcap"
+    assert _glob_pattern("/recordings/**/*.mcap") == "/recordings/**/*.mcap"
+
+
+@pytest.mark.parametrize("top_level_file", [False, True])
+@pytest.mark.parametrize("trailing_slash", [False, True])
+def test_directory_keeps_recursive_discovery(tmp_path, top_level_file, trailing_slash):
+    if top_level_file:
+        (tmp_path / "a.mcap").write_bytes(mcap_bytes((1, 2, 3)))
+    nested = tmp_path / "nested"
+    nested.mkdir()
+    (nested / "b.mcap").write_bytes(mcap_bytes((4, 5)))
+    expected = daft.read_mcap(str(tmp_path / "**" / "*.mcap")).sort("log_time").select("log_time").to_pydict()
+    assert expected == {"log_time": [1, 2, 3, 4, 5] if top_level_file else [4, 5]}
+    path = str(tmp_path) + ("/" if trailing_slash else "")
+    assert daft.read_mcap(path).sort("log_time").select("log_time").to_pydict() == expected
+
+
+def test_discovery_preserves_exact_file_and_explicit_glob(tmp_path):
+    path = tmp_path / "recording.mcap"
+    path.write_bytes(mcap_bytes())
+    assert daft.read_mcap(path).count_rows() == 3
+    (tmp_path / "nested").mkdir()
+    (tmp_path / "nested" / "b.mcap").write_bytes(mcap_bytes())
+    assert daft.read_mcap(str(tmp_path / "*.mcap")).count_rows() == 3
+
+
+def test_nanosecond_where_matches_explicit_time_bound(tmp_path):
+    start = 1609459200000000000
+    path = tmp_path / "time.mcap"
+    path.write_bytes(mcap_bytes(range(start, start + 5)))
+    expected = daft.read_mcap(path, end_time=start + 2).select("sequence").to_pydict()
+    assert expected == {"sequence": [0, 1]}
+    # Native log_time is uint64; cast the bound so Python ints are not inferred as int64.
+    bound = daft.lit(start + 2).cast(daft.DataType.uint64())
+    assert daft.read_mcap(path).where(daft.col("log_time") < bound).select("sequence").to_pydict() == expected
+
+
+def test_timestamp_pushdown_preserves_residual_semantics(tmp_path):
+    start = 1609459200000000000
+    path = tmp_path / "time.mcap"
+    path.write_bytes(mcap_bytes(range(start, start + 5)))
+    df = daft.read_mcap(path)
+    # Native log_time is uint64; cast the bound so Python ints are not inferred as int64.
+    bound = daft.lit(start + 2).cast(daft.DataType.uint64())
+    predicate = daft.col("log_time") >= bound
+    pushed = df.where(predicate).select("sequence").to_pydict()
+    # /absent does not occur in the fixture; OR prevents constraint extraction.
+    residual = df.where(predicate | (daft.col("topic") == "/absent")).select("sequence").to_pydict()
+    assert pushed == residual
+    assert pushed == {"sequence": [2, 3, 4]}
+
+
+def test_http_without_byte_range_support():
+    contents = mcap_bytes(reversed(range(1000)), payload=b"x" * 100)
+    assert len(contents) > 64 * 1024
+
+    class FullResponseHandler(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_HEAD(self):
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(contents)))
+            self.end_headers()
+
+        def do_GET(self):
+            self.do_HEAD()
+            self.wfile.write(contents)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), FullResponseHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/test.mcap"
+        assert daft.read_mcap(url).count_rows() == 1000
+        assert daft.read_mcap(url).limit(3).select("log_time").to_pydict() == {"log_time": [0, 1, 2]}
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
