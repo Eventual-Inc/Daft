@@ -19,9 +19,9 @@ import daft
 pyiceberg = pytest.importorskip("pyiceberg")
 
 from pyiceberg.catalog.sql import SqlCatalog
-from pyiceberg.partitioning import PartitionField, PartitionSpec
+from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.transforms import IdentityTransform
+from pyiceberg.transforms import BucketTransform, IdentityTransform, TruncateTransform
 from pyiceberg.types import LongType, NestedField, StringType
 
 
@@ -183,3 +183,177 @@ def test_read_iceberg_partition_column_projection(local_catalog):
     assert df.select("part").sort("part").to_pydict() == {"part": ["a", "a", "b"]}
     assert df.where(daft.col("part") == "a").sort("v").to_pydict() == {"part": ["a", "a"], "v": [1, 3]}
     assert df.count_rows() == 3
+
+
+def _evolution_schema() -> Schema:
+    return Schema(
+        NestedField(field_id=1, name="dt", type=StringType(), required=False),
+        NestedField(field_id=2, name="region", type=StringType(), required=False),
+        NestedField(field_id=3, name="x", type=LongType(), required=False),
+    )
+
+
+def _seed_then_evolve(local_catalog, name, initial_spec, evolve):
+    """Write under `initial_spec`, evolve, then write again."""
+    table = local_catalog.create_table(f"default.{name}", _evolution_schema(), partition_spec=initial_spec)
+    daft.from_pydict({"dt": ["a", "a", "b"], "region": ["cn", "us", "cn"], "x": [1, 2, 3]}).write_iceberg(table)
+    table.refresh()
+
+    with table.update_spec() as update:
+        evolve(update)
+    table.refresh()
+
+    daft.from_pydict({"dt": ["a", "b"], "region": ["cn", "us"], "x": [4, 5]}).write_iceberg(table)
+    table.refresh()
+    return table
+
+
+def _dt_spec() -> PartitionSpec:
+    return PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="dt"))
+
+
+def test_filter_on_field_added_by_partition_evolution(local_catalog):
+    """Rows written before the table was partitioned still have to be filtered.
+
+    Their file carries no partition value for `dt`, so it holds both matching and
+    non-matching rows and cannot be settled from partition metadata.
+    """
+    table = _seed_then_evolve(
+        local_catalog,
+        "evolution_added_field",
+        UNPARTITIONED_PARTITION_SPEC,
+        lambda update: update.add_field("dt", IdentityTransform(), "dt"),
+    )
+
+    result = daft.read_iceberg(table).where(daft.col("dt") == "a").to_pydict()
+
+    assert sorted(result["x"]) == [1, 2, 4]
+    assert set(result["dt"]) == {"a"}
+
+
+def test_filter_on_second_field_added_by_partition_evolution(local_catalog):
+    """A field absent from the older spec must not be evaluated against its partition record."""
+    table = _seed_then_evolve(
+        local_catalog,
+        "evolution_second_field",
+        _dt_spec(),
+        lambda update: update.add_field("region", IdentityTransform(), "region"),
+    )
+
+    result = daft.read_iceberg(table).where(daft.col("region") == "cn").to_pydict()
+
+    assert sorted(result["x"]) == [1, 3, 4]
+    assert set(result["region"]) == {"cn"}
+
+
+def test_filter_on_field_present_in_every_spec(local_catalog):
+    """Evolution that leaves the filtered field in place keeps partition pruning usable."""
+    table = _seed_then_evolve(
+        local_catalog,
+        "evolution_field_kept",
+        _dt_spec(),
+        lambda update: update.add_field("region", IdentityTransform(), "region"),
+    )
+
+    result = daft.read_iceberg(table).where(daft.col("dt") == "a").to_pydict()
+
+    assert sorted(result["x"]) == [1, 2, 4]
+    assert set(result["dt"]) == {"a"}
+
+
+def test_filter_on_field_dropped_from_the_current_spec(local_catalog):
+    """With the field gone from the current spec the predicate stays a plain row filter."""
+    table = _seed_then_evolve(
+        local_catalog,
+        "evolution_dropped_field",
+        _dt_spec(),
+        lambda update: update.remove_field("dt"),
+    )
+
+    result = daft.read_iceberg(table).where(daft.col("dt") == "a").to_pydict()
+
+    assert sorted(result["x"]) == [1, 2, 4]
+    assert set(result["dt"]) == {"a"}
+
+
+def test_partition_pruning_still_applies_without_evolution(local_catalog):
+    """The unevolved path must keep pruning whole partitions rather than filtering rows."""
+    table = local_catalog.create_table("default.no_evolution", _evolution_schema(), partition_spec=_dt_spec())
+    daft.from_pydict({"dt": ["a", "a", "b"], "region": ["cn", "us", "cn"], "x": [1, 2, 3]}).write_iceberg(table)
+    table.refresh()
+
+    result = daft.read_iceberg(table).where(daft.col("dt") == "a").to_pydict()
+
+    assert sorted(result["x"]) == [1, 2]
+
+
+def test_filter_when_a_transform_replaces_an_identity_partition(local_catalog):
+    """Re-partitioning a column from identity to truncate must not lose the older rows.
+
+    The current spec's field is derived, so a predicate on the source column is not
+    something the older files' identity values can be matched against by name.
+    """
+    table = _seed_then_evolve(
+        local_catalog,
+        "evolution_transform_changed",
+        _dt_spec(),
+        lambda update: (update.remove_field("dt"), update.add_field("dt", TruncateTransform(1), "dt_trunc")),
+    )
+
+    result = daft.read_iceberg(table).where(daft.col("dt") == "a").to_pydict()
+
+    assert sorted(result["x"]) == [1, 2, 4]
+
+
+def test_filter_on_a_non_identity_field_added_by_evolution(local_catalog):
+    """A bucketed field added later names a partition column absent from the data schema."""
+    table = _seed_then_evolve(
+        local_catalog,
+        "evolution_bucket_added",
+        _dt_spec(),
+        lambda update: update.add_field("x", BucketTransform(4), "x_bucket_4"),
+    )
+
+    result = daft.read_iceberg(table).where(daft.col("x") == 1).to_pydict()
+
+    assert sorted(result["x"]) == [1]
+
+
+def test_filter_mixing_identity_and_non_identity_partition_fields(local_catalog):
+    """Only the clauses a file's partition record settles may be treated as covered."""
+    schema = _evolution_schema()
+    table = local_catalog.create_table("default.evolution_mixed", schema, partition_spec=UNPARTITIONED_PARTITION_SPEC)
+    daft.from_pydict({"dt": ["a", "a", "b", "b"], "region": ["cn"] * 4, "x": [1, 2, 3, 4]}).write_iceberg(table)
+    table.refresh()
+
+    with table.update_spec() as update:
+        update.add_field("dt", IdentityTransform(), "dt")
+        update.add_field("x", BucketTransform(4), "x_bucket_4")
+    table.refresh()
+    daft.from_pydict({"dt": ["a", "b"], "region": ["cn"] * 2, "x": [1, 5]}).write_iceberg(table)
+    table.refresh()
+
+    result = daft.read_iceberg(table).where((daft.col("dt") == "a") & (daft.col("x") == 1)).to_pydict()
+
+    assert sorted(result["x"]) == [1, 1]
+
+
+def test_filter_reading_a_snapshot_from_before_the_evolution(local_catalog):
+    """Time travel reads files whose spec predates the field the current spec carries."""
+    schema = _evolution_schema()
+    table = local_catalog.create_table(
+        "default.evolution_time_travel", schema, partition_spec=UNPARTITIONED_PARTITION_SPEC
+    )
+    daft.from_pydict({"dt": ["a", "a", "b"], "region": ["cn"] * 3, "x": [1, 2, 3]}).write_iceberg(table)
+    table.refresh()
+    old_snapshot = table.current_snapshot().snapshot_id
+
+    with table.update_spec() as update:
+        update.add_field("dt", IdentityTransform(), "dt")
+    table.refresh()
+    daft.from_pydict({"dt": ["a", "b"], "region": ["cn"] * 2, "x": [4, 5]}).write_iceberg(table)
+    table.refresh()
+
+    result = daft.read_iceberg(table, snapshot_id=old_snapshot).where(daft.col("dt") == "a").to_pydict()
+
+    assert sorted(result["x"]) == [1, 2]
