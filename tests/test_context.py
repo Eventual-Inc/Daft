@@ -90,8 +90,30 @@ print(runner.worker_startup_timeout)
             [sys.executable, "-c", script],
             capture_output=True,
             env={"RAY_DISABLE_DASHBOARD": "1"},
+            check=False,
         )
         assert result.stdout.decode().strip() == "ray\n321"
+
+
+def test_set_runner_ray_rejects_zero_bisect_timeout():
+    """Test that a zero bisect timeout is rejected before initializing the Ray runner."""
+    script = """
+import daft
+
+try:
+    daft.set_runner_ray(autoscale_strategy="bisect", autoscale_bisect_timeout_secs=0)
+except ValueError as error:
+    print(error)
+"""
+
+    with with_null_env():
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            env={"RAY_DISABLE_DASHBOARD": "1"},
+        )
+        assert result.returncode == 0
+        assert result.stdout.decode().strip() == "autoscale_bisect_timeout_secs must be greater than zero"
 
 
 def test_implicit_set_runner_ray():
