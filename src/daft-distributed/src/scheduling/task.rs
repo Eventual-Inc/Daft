@@ -597,7 +597,7 @@ impl SwordfishTaskBuilder {
 pub(crate) enum TaskStatus {
     Success {
         result: MaterializedOutput,
-        stats: ExecutionStats,
+        stats: Box<ExecutionStats>,
     },
     Failed {
         error: DaftError,
@@ -872,7 +872,7 @@ pub(super) mod tests {
                 }
                 TaskStatus::Success {
                     result: task.task_result,
-                    stats: ExecutionStats::new("".into(), vec![]),
+                    stats: Box::new(ExecutionStats::new("".into(), vec![])),
                 }
             }
         }
