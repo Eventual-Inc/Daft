@@ -37,6 +37,7 @@ use crate::{
     ExecutionRuntimeContext, PipelineCreationSnafu,
     channel::create_unbounded_channel,
     concat::ConcatNode,
+    input_cancel::InputCancelRegistry,
     input_sender::InputSender,
     intermediate_ops::{
         distributed_actor_pool_project::DistributedActorPoolProjectOperator,
@@ -231,10 +232,18 @@ pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
         downstream_requirement: MorselSizeRequirement,
         default_requirement: MorselSizeRequirement,
     );
+    /// Start this node and everything below it.
+    ///
+    /// `input_cancel` is the cancellation scope this node lives in: producers
+    /// under it poll it to learn that nothing downstream wants more data for an
+    /// `input_id`. Nodes forward it to their children verbatim; only a
+    /// `StreamingSink` that opts into `cancels_inputs` substitutes a fresh
+    /// scope for its own subtree.
     fn start(
         self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
+        input_cancel: &InputCancelRegistry,
     ) -> crate::Result<crate::channel::Receiver<PipelineMessage>>;
 
     fn as_tree_display(&self) -> &dyn TreeDisplay;

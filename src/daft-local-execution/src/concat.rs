@@ -12,6 +12,7 @@ use daft_logical_plan::stats::StatsState;
 use crate::{
     ExecutionRuntimeContext,
     channel::{Receiver, Sender, create_channel},
+    input_cancel::InputCancelRegistry,
     pipeline::{BuilderContext, MorselSizeRequirement, PipelineMessage, PipelineNode},
     runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
 };
@@ -189,12 +190,17 @@ impl PipelineNode for ConcatNode {
         self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
+        input_cancel: &InputCancelRegistry,
     ) -> crate::Result<Receiver<PipelineMessage>> {
         let node_id = self.node_id();
         let name = self.name();
 
-        let left_receiver = self.left.start(maintain_order, runtime_handle)?;
-        let right_receiver = self.right.start(maintain_order, runtime_handle)?;
+        let left_receiver = self
+            .left
+            .start(maintain_order, runtime_handle, input_cancel)?;
+        let right_receiver = self
+            .right
+            .start(maintain_order, runtime_handle, input_cancel)?;
 
         let (destination_sender, destination_receiver) = create_channel(1);
 

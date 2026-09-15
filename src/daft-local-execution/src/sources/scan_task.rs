@@ -25,6 +25,7 @@ use crate::{
         Receiver, Sender, UnboundedReceiver, UnboundedSender, create_channel,
         create_unbounded_channel,
     },
+    input_cancel::InputCancelRegistry,
     pipeline::{InputId, NodeName, PipelineMessage},
     sources::{
         scan_task_reader,
@@ -78,6 +79,7 @@ impl ScanTaskSource {
         schema: SchemaRef,
         maintain_order: bool,
         skipped_corrupt_files: SkippedCorruptFilesCollector,
+        input_cancel: InputCancelRegistry,
     ) -> common_runtime::RuntimeTask<DaftResult<()>> {
         let io_runtime = get_io_runtime(true);
 
@@ -126,6 +128,7 @@ impl ScanTaskSource {
                         sender,
                         input_id,
                         skipped_corrupt_files.clone(),
+                        input_cancel.clone(),
                     ));
                 }
 
@@ -230,6 +233,7 @@ impl Source for ScanTaskSource {
         maintain_order: bool,
         stats_provider: StatsProvider,
         chunk_size: usize,
+        input_cancel: InputCancelRegistry,
     ) -> DaftResult<SourceStream<'static>> {
         let (output_sender, output_receiver) = create_channel::<PipelineMessage>(1);
         let input_receiver = self.receiver;
@@ -244,6 +248,7 @@ impl Source for ScanTaskSource {
             self.schema.clone(),
             maintain_order,
             self.skipped_corrupt_files.clone(),
+            input_cancel,
         );
         let result_stream = output_receiver.into_stream().map(Ok);
         let combined_stream = combine_stream(result_stream, processor_task.map(|x| x?));
@@ -488,8 +493,22 @@ async fn forward_scan_task_stream(
     sender: ScanTaskOutputSender,
     input_id: InputId,
     skipped_corrupt_files: SkippedCorruptFilesCollector,
+    input_cancel: InputCancelRegistry,
 ) -> DaftResult<InputId> {
     let schema = scan_task.materialized_schema();
+    // Checked before the read is even opened, then again between morsels. This
+    // is deliberately an early *return* rather than skipping the spawn back in
+    // the processor loop: returning normally keeps every piece of flush
+    // bookkeeping intact — `input_id_pending_counts` still decrements to zero
+    // and emits the input's `Flush`, and the order-preserving flattener still
+    // receives the `is_last` marker it is waiting on. Skipping the spawn would
+    // strand both, and the input would never complete.
+    if input_cancel.is_cancelled(input_id) {
+        // Falls through to the `!has_data` branch below, which emits one empty
+        // morsel. Downstream nodes complete an input only once they have seen
+        // data for it, so a cancelled scan task must still say *something*.
+        return finish_forwarding(false, schema, &sender, input_id).await;
+    }
     let mut stream = stream_scan_task(
         scan_task,
         io_stats,
@@ -500,7 +519,15 @@ async fn forward_scan_task_stream(
     )
     .await?;
     let mut has_data = false;
-    while let Some(result) = stream.next().await {
+    loop {
+        // Before the read, not after: checking after `next()` would still pay
+        // for one more chunk of decode before noticing.
+        if input_cancel.is_cancelled(input_id) {
+            break;
+        }
+        let Some(result) = stream.next().await else {
+            break;
+        };
         has_data = true;
         let partition = result?;
         match &sender {
@@ -523,10 +550,21 @@ async fn forward_scan_task_stream(
         }
     }
 
-    // If no data was emitted, send empty micropartition
+    finish_forwarding(has_data, schema, &sender, input_id).await
+}
+
+/// Tail of [`forward_scan_task_stream`]: emits one empty micropartition when
+/// the scan task produced nothing, so that every scan task is visible
+/// downstream as at least one message.
+async fn finish_forwarding(
+    has_data: bool,
+    schema: SchemaRef,
+    sender: &ScanTaskOutputSender,
+    input_id: InputId,
+) -> DaftResult<InputId> {
     if !has_data {
         let empty = MicroPartition::empty(Some(schema));
-        match &sender {
+        match sender {
             ScanTaskOutputSender::Pipeline(s) => {
                 let _ = s
                     .send(PipelineMessage::Morsel {

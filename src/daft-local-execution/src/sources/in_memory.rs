@@ -13,6 +13,7 @@ use tracing::instrument;
 use super::source::Source;
 use crate::{
     channel::{Sender, UnboundedReceiver, create_channel},
+    input_cancel::InputCancelRegistry,
     pipeline::{InputId, NodeName, PipelineMessage},
     sources::source::{SourceStream, StatsProvider},
 };
@@ -129,6 +130,7 @@ impl Source for InMemorySource {
         _maintain_order: bool,
         stats_provider: StatsProvider,
         _chunk_size: usize,
+        _input_cancel: InputCancelRegistry,
     ) -> DaftResult<SourceStream<'static>> {
         let (output_sender, output_receiver) = create_channel::<PipelineMessage>(1);
         let input_receiver = self.receiver;

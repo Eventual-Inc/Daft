@@ -26,6 +26,7 @@ use snafu::ResultExt;
 use crate::{
     ExecutionRuntimeContext, PipelineExecutionSnafu,
     channel::create_channel,
+    input_cancel::InputCancelRegistry,
     pipeline::{BuilderContext, MorselSizeRequirement, NodeName, PipelineMessage, PipelineNode},
     runtime_stats::{RuntimeStats, RuntimeStatsManagerHandle},
 };
@@ -141,11 +142,21 @@ pub trait Source: Send + Sync {
     fn name(&self) -> NodeName;
     fn op_type(&self) -> NodeType;
     fn multiline_display(&self) -> Vec<String>;
+    /// Start producing data.
+    ///
+    /// `input_cancel` reports which `input_id`s nothing downstream wants more
+    /// data for. Honoring it is optional but is where the savings of an early
+    /// `LIMIT` actually come from: a source that keeps reading just feeds
+    /// morsels to an operator that will throw them away. A source that does
+    /// honor it must still emit at least one message per input it has already
+    /// been handed — downstream nodes complete an input only after they have
+    /// seen data for it.
     fn get_data(
         self: Box<Self>,
         maintain_order: bool,
         stats_provider: StatsProvider,
         chunk_size: usize,
+        input_cancel: InputCancelRegistry,
     ) -> DaftResult<SourceStream<'static>>;
     fn schema(&self) -> &SchemaRef;
 }
@@ -256,6 +267,7 @@ impl PipelineNode for SourceNode {
         self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
+        input_cancel: &InputCancelRegistry,
     ) -> crate::Result<crate::channel::Receiver<PipelineMessage>> {
         let stats_manager = runtime_handle.stats_manager();
         let node_id = self.node_id();
@@ -273,7 +285,12 @@ impl PipelineNode for SourceNode {
 
         let mut source_stream = self
             .source
-            .get_data(maintain_order, stats_provider.clone(), chunk_size.into())
+            .get_data(
+                maintain_order,
+                stats_provider.clone(),
+                chunk_size.into(),
+                input_cancel.clone(),
+            )
             .with_context(|_| PipelineExecutionSnafu {
                 node_name: name.to_string(),
             })?;

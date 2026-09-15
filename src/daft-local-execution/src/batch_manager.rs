@@ -139,6 +139,20 @@ where
         }
     }
 
+    /// Empties `input_id`'s buffer, dropping the data, but leaves the input
+    /// registered.
+    ///
+    /// Used when nothing downstream wants more data for the input yet the
+    /// input must still complete through its normal flush path. `drain` is
+    /// not a substitute: it *removes* the entry, which flips `has_input` to
+    /// false and changes how a later `Flush` for that input is handled.
+    pub fn discard_buffered(&mut self, input_id: InputId) -> DaftResult<()> {
+        if let Some(input) = self.inputs.get_mut(&input_id) {
+            let _ = input.buffer.pop_all()?;
+        }
+        Ok(())
+    }
+
     /// Returns true if the given input has been seen (via `push`).
     pub fn has_input(&self, input_id: InputId) -> bool {
         self.inputs.contains_key(&input_id)

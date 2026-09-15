@@ -71,7 +71,7 @@ impl StreamingSink for DistributedLimitSink {
 
                     let num_rows = input.len();
                     let iid = state.input_id.clone();
-                    let (skip, take, _done) = common_runtime::python::execute_python_coroutine::<
+                    let (skip, take, done) = common_runtime::python::execute_python_coroutine::<
                         _,
                         (i64, i64, bool),
                     >(move |py| {
@@ -91,9 +91,21 @@ impl StreamingSink for DistributedLimitSink {
                         input.slice(skip, skip + take)?
                     };
 
+                    // `done` means the counter actor has handed out the last of
+                    // the global limit — to us or to some other task. Either
+                    // way this task's remaining input can no longer contribute,
+                    // so tell the framework to stop producing it. Every further
+                    // morsel would otherwise cost a full `claim` round-trip and
+                    // all the upstream work that produced it, only to be sliced
+                    // down to nothing.
+                    let output = Some(output.into());
                     Ok((
                         state,
-                        StreamingSinkOutput::NeedMoreInput(Some(output.into())),
+                        if done {
+                            StreamingSinkOutput::InputSatisfied(output)
+                        } else {
+                            StreamingSinkOutput::NeedMoreInput(output)
+                        },
                     ))
                 },
                 Span::current(),
@@ -142,5 +154,9 @@ impl StreamingSink for DistributedLimitSink {
         crate::dynamic_batching::StaticBatchingStrategy::new(
             self.morsel_size_requirement().unwrap_or_default(),
         )
+    }
+
+    fn cancels_inputs(&self) -> bool {
+        true
     }
 }

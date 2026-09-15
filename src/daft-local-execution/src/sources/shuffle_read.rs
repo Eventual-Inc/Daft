@@ -22,6 +22,7 @@ use tracing::instrument;
 use super::source::{Source, SourceStream, StatsProvider};
 use crate::{
     channel::{Sender, UnboundedReceiver, create_channel},
+    input_cancel::InputCancelRegistry,
     pipeline::{NodeName, PipelineMessage},
 };
 
@@ -238,6 +239,7 @@ impl Source for ShuffleReadSource {
         _maintain_order: bool,
         _stats_provider: StatsProvider,
         _chunk_size: usize,
+        _input_cancel: InputCancelRegistry,
     ) -> DaftResult<SourceStream<'static>> {
         let (output_sender, output_receiver) = create_channel::<PipelineMessage>(1);
         let processor_task = self.spawn_flight_shuffle_processor(output_sender);

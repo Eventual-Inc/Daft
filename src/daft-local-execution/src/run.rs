@@ -46,6 +46,7 @@ use {
 use crate::{
     ExecutionRuntimeContext,
     channel::{Sender, UnboundedSender, create_channel, create_unbounded_channel},
+    input_cancel::InputCancelRegistry,
     pipeline::{
         BuilderContext, PipelineMessage, translate_physical_plan_to_pipeline, viz_pipeline_ascii,
         viz_pipeline_mermaid,
@@ -341,7 +342,13 @@ async fn run_execution_loop(
     let memory_manager = get_or_init_memory_manager();
     let mut runtime_handle =
         ExecutionRuntimeContext::new(memory_manager.clone(), stats_manager_handle);
-    let mut output_receiver = pipeline.start(maintain_order, &mut runtime_handle)?;
+    // Root cancellation scope. Nothing cancels in it — only a `StreamingSink`
+    // that opts into `cancels_inputs` creates a scope it may write to — but
+    // every node needs one to forward, and a sink below a cancelling sink
+    // inherits that sink's scope through this same parameter.
+    let root_input_cancel = InputCancelRegistry::new();
+    let mut output_receiver =
+        pipeline.start(maintain_order, &mut runtime_handle, &root_input_cancel)?;
 
     let mut message_router = MessageRouter::new();
     let mut input_senders = Some(input_senders);
