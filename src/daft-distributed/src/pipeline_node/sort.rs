@@ -20,7 +20,7 @@ use super::{PipelineNodeImpl, TaskBuilderStream, clustering::BoundClusteringSpec
 use crate::{
     pipeline_node::{
         ClusteringStrategy, DistributedPipelineNode, MaterializedOutput, NodeID,
-        PipelineNodeConfig, PipelineNodeContext,
+        PipelineNodeConfig, PipelineNodeContext, shuffles::backends::ShuffleContext,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -31,10 +31,7 @@ use crate::{
         RuntimeStats,
         stats::{BaseCounters, RuntimeStatsRef},
     },
-    utils::{
-        channel::{Sender, create_channel},
-        transpose::transpose_materialized_outputs_from_vec,
-    },
+    utils::channel::{Sender, create_channel},
 };
 
 const SAMPLE_PHASE: &str = "sample";
@@ -256,6 +253,7 @@ pub(crate) fn create_range_repartition_tasks(
     descending: Vec<bool>,
     boundaries: RecordBatch,
     num_partitions: usize,
+    backend: ShuffleBackend,
     pipeline_node: &dyn PipelineNodeImpl,
     task_id_counter: &TaskIDCounter,
     scheduler_handle: &SchedulerHandle<SwordfishTask>,
@@ -277,7 +275,7 @@ pub(crate) fn create_range_repartition_tasks(
                 in_memory_source_plan,
                 num_partitions,
                 input_schema.clone(),
-                ShuffleBackend::Ray,
+                backend.clone(),
                 RepartitionSpec::Range(RangeRepartitionConfig::new(
                     Some(num_partitions),
                     boundaries.clone(),
@@ -375,6 +373,7 @@ pub(crate) async fn range_repartition_two_sides(
         descending.clone(),
         left_boundaries.clone(),
         num_partitions,
+        ShuffleBackend::Ray,
         pipeline_node,
         task_id_counter,
         scheduler_handle,
@@ -402,6 +401,7 @@ pub(crate) async fn range_repartition_two_sides(
         descending,
         right_boundaries,
         num_partitions,
+        ShuffleBackend::Ray,
         pipeline_node,
         task_id_counter,
         scheduler_handle,
@@ -447,6 +447,7 @@ pub(crate) struct SortNode {
     descending: Vec<bool>,
     nulls_first: Vec<bool>,
     needs_range_repartition: bool,
+    shuffle_context: ShuffleContext,
     child: DistributedPipelineNode,
 }
 
@@ -461,6 +462,7 @@ impl SortNode {
         descending: Vec<bool>,
         nulls_first: Vec<bool>,
         output_schema: SchemaRef,
+        backend: ShuffleBackend,
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
@@ -475,7 +477,7 @@ impl SortNode {
         let needs_range_repartition =
             needs_range_repartition(&child, &sort_by, &descending, &nulls_first);
         let config = PipelineNodeConfig::new(
-            output_schema,
+            output_schema.clone(),
             plan_config.config.clone(),
             ClusteringStrategy::Explicit(BoundClusteringSpec::Range(RangeClusteringConfig::new(
                 child.config().clustering_spec.num_partitions(),
@@ -484,6 +486,7 @@ impl SortNode {
                 nulls_first.clone(),
             ))),
         );
+        let shuffle_context = ShuffleContext::new(&context, output_schema, backend);
         Self {
             config,
             context,
@@ -491,6 +494,7 @@ impl SortNode {
             descending,
             nulls_first,
             needs_range_repartition,
+            shuffle_context,
             child,
         }
     }
@@ -602,6 +606,7 @@ impl SortNode {
             self.descending.clone(),
             boundaries,
             num_partitions,
+            self.shuffle_context.backend().clone(),
             self.as_ref(),
             &task_id_counter,
             &scheduler_handle,
@@ -614,30 +619,31 @@ impl SortNode {
             .flatten()
             .collect::<Vec<_>>();
 
-        let transposed_outputs =
-            transpose_materialized_outputs_from_vec(partitioned_outputs, num_partitions);
-
-        for partition_group in transposed_outputs {
-            let (in_memory_source_plan, psets) =
-                MaterializedOutput::into_in_memory_scan_with_psets_and_phase(
-                    partition_group,
-                    self.config.schema.clone(),
-                    self.node_id(),
-                    FINAL_SORT_PHASE,
-                );
-            let plan = LocalPhysicalPlan::sort(
-                in_memory_source_plan,
-                self.sort_by.clone(),
-                self.descending.clone(),
-                self.nulls_first.clone(),
-                StatsState::NotMaterialized,
-                LocalNodeContext::new(Some(self.node_id() as usize)).with_phase(FINAL_SORT_PHASE),
-            );
-            let task = SwordfishTaskBuilder::new(plan, self.as_ref(), self.node_id())
-                .with_psets(self.node_id(), psets);
-            let _ = result_tx.send(task).await;
-        }
-        Ok(())
+        // Final sort phase: one read task per range partition, sorted locally. The
+        // backend decides how the map outputs are grouped and read back (Ray object
+        // refs vs. flight cache).
+        let sort_by = self.sort_by.clone();
+        let descending = self.descending.clone();
+        let nulls_first = self.nulls_first.clone();
+        let node_id = self.node_id();
+        self.shuffle_context
+            .emit_read_tasks_from_stream(
+                futures::stream::iter(partitioned_outputs.into_iter().map(Ok)),
+                num_partitions,
+                self.as_ref(),
+                result_tx,
+                &mut |_, input| {
+                    Ok(LocalPhysicalPlan::sort(
+                        input,
+                        sort_by.clone(),
+                        descending.clone(),
+                        nulls_first.clone(),
+                        StatsState::NotMaterialized,
+                        LocalNodeContext::new(Some(node_id as usize)).with_phase(FINAL_SORT_PHASE),
+                    ))
+                },
+            )
+            .await
     }
 }
 
@@ -660,7 +666,7 @@ impl PipelineNodeImpl for SortNode {
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         use itertools::Itertools;
-        let mut res = vec!["Sort".to_string()];
+        let mut res = vec![format!("Sort({})", self.shuffle_context.backend().name())];
         res.push(format!(
             "Sort by: {}",
             self.sort_by.iter().map(|e| e.to_string()).join(", ")
@@ -685,6 +691,7 @@ impl PipelineNodeImpl for SortNode {
         plan_context: &mut PlanExecutionContext,
     ) -> TaskBuilderStream {
         let input_node = self.child.clone().produce_tasks(plan_context);
+        self.shuffle_context.register_cleanup(plan_context);
         let (result_tx, result_rx) = create_channel(1);
         plan_context.spawn(self.execution_loop(
             input_node,
@@ -720,6 +727,7 @@ mod tests {
             vec![false],
             vec![false],
             test_schema(),
+            ShuffleBackend::Ray,
             source,
         );
         DistributedPipelineNode::new(Arc::new(sort_node), meter)
