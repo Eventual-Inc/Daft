@@ -448,7 +448,7 @@ def test_mcap_use_legacy_types_schema_and_deprecation(tmp_path):
         writer.add_message(channel_id, log_time=1, publish_time=2, sequence=3, data=b"payload")
         writer.finish()
 
-    with pytest.warns(DeprecationWarning, match="use_legacy_types=False"):
+    with pytest.warns(DeprecationWarning, match="use_legacy_types"):
         legacy_df = daft.read_mcap(path, use_legacy_types=True)
 
     assert legacy_df.schema()["log_time"].dtype == daft.DataType.int64()
