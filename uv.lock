@@ -1547,6 +1547,7 @@ all = [
     { name = "h5py" },
     { name = "httpx" },
     { name = "huggingface-hub" },
+    { name = "librosa" },
     { name = "mypy-boto3-glue" },
     { name = "numpy" },
     { name = "openai" },
