@@ -39,6 +39,62 @@ def test_lancedb_roundtrip(lance_dataset_path):
     assert df_loaded.to_pydict() == df1.concat(df2).to_pydict()
 
 
+def test_lancedb_namespace_roundtrip(tmp_path):
+    namespace = {
+        "namespace_impl": "dir",
+        "namespace_properties": {"root": str(tmp_path)},
+        "table_id": ["orders"],
+    }
+    df1 = daft.from_pydict({"id": [1, 2]})
+    df2 = daft.from_pydict({"id": [3]})
+
+    df1.write_lance(mode="create", **namespace)
+    df2.write_lance(mode="append", **namespace)
+
+    assert daft.read_lance(**namespace).to_pydict() == {"id": [1, 2, 3]}
+
+
+def test_lancedb_namespace_rejects_uri_target(lance_dataset_path, tmp_path):
+    namespace = {
+        "namespace_impl": "dir",
+        "namespace_properties": {"root": str(tmp_path)},
+        "table_id": ["orders"],
+    }
+
+    with pytest.raises(ValueError, match="Cannot provide both 'uri' and namespace parameters"):
+        daft.read_lance(lance_dataset_path, **namespace)
+
+
+def test_lancedb_write_rejects_legacy_rest_uri():
+    with pytest.raises(ValueError, match="rest:// Lance URIs are no longer supported"):
+        daft.from_pydict({"id": [1]}).write_lance("rest://catalog/orders", mode="create")
+
+
+def test_lancedb_insert_overwrite(lance_dataset_path):
+    initial = daft.from_pydict({"day": ["d1", "d2", "d2"], "id": [1, 2, 3]})
+    replacement = daft.from_pydict({"day": ["d2", "d2"], "id": [20, 30]})
+    initial.write_lance(lance_dataset_path, mode="create", max_rows_per_file=2)
+
+    replacement.write_lance(
+        lance_dataset_path,
+        mode="insert_overwrite",
+        overwrite_where="day = 'd2'",
+    )
+
+    result = daft.read_lance(lance_dataset_path).to_pydict()
+    assert sorted(zip(result["day"], result["id"])) == [("d1", 1), ("d2", 20), ("d2", 30)]
+
+
+def test_lancedb_merge_rejects_namespace_target(tmp_path):
+    with pytest.raises(ValueError, match="does not support Lance Namespace"):
+        daft.from_pydict({"id": [1]}).write_lance(
+            mode="merge",
+            namespace_impl="dir",
+            namespace_properties={"root": str(tmp_path)},
+            table_id=["orders"],
+        )
+
+
 @pytest.mark.integration()
 def test_lancedb_minio(minio_io_config):
     df1 = daft.from_pydict(data1)
