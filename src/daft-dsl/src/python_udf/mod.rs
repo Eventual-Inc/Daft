@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 pub use batch::{BatchPyFn, batch_udf};
 use common_error::DaftResult;
+use common_treenode::TreeNode;
 use daft_core::prelude::*;
 #[cfg(feature = "python")]
 pub use retry::{retry_after_ms_from_error, retry_with_backoff};
@@ -67,11 +68,50 @@ impl PyScalarFn {
         match self {
             Self::RowWise(RowWisePyFn {
                 func_id,
+                function_name,
                 args,
                 return_dtype,
+                input_dtypes,
                 ..
-            })
-            | Self::Batch(BatchPyFn {
+            }) => {
+                // Planning-time validation of declared input type signatures, consistent with
+                // native expressions. Only args with a declared (non-`None`) dtype are checked;
+                // unannotated/`Any` params are left unconstrained.
+                //
+                // We only validate while the args are still the user's original (unbound)
+                // expressions. Once columns are bound to indices, the `SplitUDFs` optimizer
+                // may have rewritten the UDF's children into a reordered intermediate
+                // projection, at which point positional matching against `input_dtypes` is no
+                // longer reliable. Any real type mismatch is already caught by the earlier
+                // (pre-binding) `to_field` call, so skipping here loses no coverage.
+                let has_bound_arg = args.iter().any(|arg| {
+                    arg.exists(|e| {
+                        matches!(e.as_ref(), crate::Expr::Column(crate::Column::Bound(_)))
+                    })
+                });
+                if !has_bound_arg {
+                    for (arg, expected) in args.iter().zip(input_dtypes.iter()) {
+                        if let Some(expected) = expected {
+                            let actual = arg.to_field(schema)?.dtype;
+                            // All-null columns have dtype `Null`; accept them, consistent with
+                            // native expression validation, so Optional-aware UDFs can handle `None`.
+                            common_error::ensure!(
+                                actual == DataType::Null || &actual == expected,
+                                TypeError: "Expects input to '{function_name}' to be {expected}, but received {actual}",
+                            );
+                        }
+                    }
+                }
+
+                let field_name = if let Some(first_child) = args.first() {
+                    first_child.get_name(schema)?
+                } else {
+                    func_id.to_string()
+                };
+
+                Ok(Field::new(field_name, return_dtype.clone()))
+            }
+            Self::Batch(BatchPyFn {
                 func_id,
                 args,
                 return_dtype,

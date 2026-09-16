@@ -271,8 +271,14 @@ pub fn row_wise_udf(
     original_args: Py<PyAny>,
     expr_args: Vec<PyExpr>,
     ray_options: Option<Py<PyAny>>,
+    input_dtypes: Option<Vec<Option<PyDataType>>>,
 ) -> PyResult<PyExpr> {
-    let args = expr_args.into_iter().map(|pyexpr| pyexpr.expr).collect();
+    let args: Vec<_> = expr_args.into_iter().map(|pyexpr| pyexpr.expr).collect();
+    let input_dtypes = input_dtypes
+        .unwrap_or_else(|| vec![None; args.len()])
+        .into_iter()
+        .map(|opt| opt.map(|pydtype| pydtype.dtype))
+        .collect();
 
     // Convert string on_error to OnError enum
     let on_error_enum = on_error
@@ -310,6 +316,7 @@ pub fn row_wise_udf(
             original_args.into(),
             args,
             ray_options.map(|o| o.into()),
+            input_dtypes,
         )
         .into(),
     })

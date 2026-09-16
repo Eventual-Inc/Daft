@@ -39,6 +39,7 @@ pub fn row_wise_udf(
     original_args: RuntimePyObject,
     args: Vec<ExprRef>,
     ray_options: Option<RuntimePyObject>,
+    input_dtypes: Vec<Option<DataType>>,
 ) -> Expr {
     Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
         func_id: Arc::from(func_id),
@@ -57,6 +58,7 @@ pub fn row_wise_udf(
         use_process,
         max_concurrency,
         ray_options,
+        input_dtypes,
     })))
 }
 
@@ -78,6 +80,10 @@ pub struct RowWisePyFn {
     pub max_retries: Option<usize>,
     pub on_error: crate::functions::python::OnError,
     pub ray_options: Option<RuntimePyObject>,
+    /// Declared input dtype per argument for planning-time signature validation.
+    /// `None` for an argument means it was unannotated (or `Any`), so it is not validated.
+    #[serde(default)]
+    pub input_dtypes: Vec<Option<DataType>>,
 }
 
 impl Display for RowWisePyFn {
@@ -113,6 +119,7 @@ impl RowWisePyFn {
             max_retries: self.max_retries,
             on_error: self.on_error,
             ray_options: self.ray_options.clone(),
+            input_dtypes: self.input_dtypes.clone(),
         }
     }
 
