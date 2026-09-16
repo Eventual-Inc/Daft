@@ -2447,6 +2447,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
+        # daft-lance is an optional dependency.
         from daft_lance import merge_columns_df as _merge_columns_df
         from daft_lance import write_lance as _write_lance
 
