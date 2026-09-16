@@ -10,16 +10,16 @@ import pytest
 
 @contextlib.contextmanager
 def with_otel_endpoint():
-    old_otel_endpoint = os.getenv("DAFT_DEV_OTEL_EXPORTER_OTLP_ENDPOINT")
-    os.environ["DAFT_DEV_OTEL_EXPORTER_OTLP_ENDPOINT"] = "grpc://localhost:4317"
+    old_otel_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+    os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "grpc://localhost:4317"
 
     try:
         yield
     finally:
         if old_otel_endpoint is not None:
-            os.environ["DAFT_DEV_OTEL_EXPORTER_OTLP_ENDPOINT"] = old_otel_endpoint
+            os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = old_otel_endpoint
         else:
-            del os.environ["DAFT_DEV_OTEL_EXPORTER_OTLP_ENDPOINT"]
+            del os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"]
 
 
 def test_basic_otel_usage() -> None:
