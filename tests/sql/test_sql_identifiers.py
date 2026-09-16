@@ -67,3 +67,39 @@ def test_sql_set_identifier_mode_insensitive():
     sess.create_temp_table("T", _df("T"))
     assert sess.sql("SET identifier_mode = 'insensitive'") is None
     assert_ok(sess, "t", find="T")
+
+
+def test_sql_set_identifier_mode_normalized_alias():
+    sess = Session()
+    sess.create_temp_table("t", _df("t"))
+    assert sess.sql("SET identifier_mode = 'normalized'") is None
+    # Unquoted identifiers are lowercased, so T resolves to the table stored as t.
+    assert_ok(sess, "T", find="t")
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SET identifier_mode = 'insensitive'",
+        'SET "identifier_mode" = \'insensitive\'',
+        "SET daft.identifier_mode = 'insensitive'",
+        'SET "daft"."identifier_mode" = \'insensitive\'',
+    ],
+)
+def test_sql_set_identifier_mode_quoted_and_qualified(sql: str):
+    sess = Session()
+    sess.create_temp_table("T", _df("T"))
+    assert sess.sql(sql) is None
+    assert_ok(sess, "t", find="T")
+
+
+def test_sql_set_quoted_option_with_internal_space_is_unknown():
+    sess = Session()
+    with pytest.raises(Exception, match=r"Unsupported SQL: 'SET identifier _mode'"):
+        sess.sql('SET "identifier _mode" = \'insensitive\'')
+
+
+def test_sql_set_invalid_identifier_mode():
+    sess = Session()
+    with pytest.raises(Exception, match=r"Invalid identifier identifier_mode 'x'"):
+        sess.sql("SET identifier_mode = 'x'")

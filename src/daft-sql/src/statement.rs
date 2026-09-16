@@ -30,8 +30,10 @@ pub type Select = LogicalPlanRef;
 #[derive(Clone)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Set {
-    pub option: String,
-    pub value: String,
+    /// Identifier parts of the option name, each lowercased.
+    pub option: Vec<String>,
+    /// Session variable value; `None` represents SQL NULL.
+    pub value: Option<String>,
 }
 
 /// SHOW TABLES [ {FROM|IN} <catalog>[.<namespace>] ] [ LIKE <pattern> ]
@@ -182,29 +184,34 @@ impl SQLPlanner<'_> {
                 if values.len() != 1 {
                     unsupported_sql_err!("SET with multiple values")
                 }
+                let option = variable
+                    .0
+                    .iter()
+                    .map(|part| {
+                        Self::object_name_part_to_string(part).map(|s| s.to_ascii_lowercase())
+                    })
+                    .collect::<SQLPlannerResult<Vec<_>>>()?;
                 Ok(Statement::Set(Set {
-                    option: variable.to_string(),
-                    value: Self::set_value_to_string(&values[0])?,
+                    option,
+                    value: Self::set_value_to_option(&values[0])?,
                 }))
             }
             other => unsupported_sql_err!("SET statement: {other}"),
         }
     }
 
-    fn set_value_to_string(expr: &ast::Expr) -> SQLPlannerResult<String> {
+    fn set_value_to_option(expr: &ast::Expr) -> SQLPlannerResult<Option<String>> {
         match expr {
             ast::Expr::Value(v) => match &v.value {
                 ast::Value::SingleQuotedString(s)
                 | ast::Value::DoubleQuotedString(s)
                 | ast::Value::DollarQuotedString(ast::DollarQuotedString { value: s, .. }) => {
-                    Ok(s.clone())
+                    Ok(Some(s.clone()))
                 }
-                ast::Value::Number(n, _) => Ok(n.clone()),
-                ast::Value::Boolean(b) => Ok(b.to_string()),
-                ast::Value::Null => Ok("null".to_string()),
+                ast::Value::Null => Ok(None),
                 other => unsupported_sql_err!("SET value {other}"),
             },
-            ast::Expr::Identifier(ident) => Ok(ident.value.clone()),
+            ast::Expr::Identifier(ident) => Ok(Some(ident.value.clone())),
             other => unsupported_sql_err!("SET value {other}"),
         }
     }
@@ -645,41 +652,77 @@ mod test {
         );
     }
 
-    #[test]
-    fn test_set_identifier_mode() {
-        let statement = parse_sql("SET identifier_mode = 'insensitive'");
+    fn plan_set(sql: &str) -> Statement {
+        let statement = parse_sql(sql);
         let session = Session::default();
         let mut planner = SQLPlanner::new(&session);
-        let plan = planner.plan_statement(&statement).unwrap();
-        if let Statement::Set(set) = plan {
-            assert_eq!(set.option.to_lowercase(), "identifier_mode");
-            assert_eq!(set.value, "insensitive");
-        } else {
+        planner.plan_statement(&statement).unwrap()
+    }
+
+    #[test]
+    fn test_set_identifier_mode() {
+        let Statement::Set(set) = plan_set("SET identifier_mode = 'insensitive'") else {
             panic!("Expected Set statement");
-        }
+        };
+        assert_eq!(set.option, ["identifier_mode"]);
+        assert_eq!(set.value.as_deref(), Some("insensitive"));
+    }
+
+    #[test]
+    fn test_set_quoted_and_qualified_option_names() {
+        let Statement::Set(set) = plan_set(r#"SET "identifier_mode" = 'insensitive'"#) else {
+            panic!("Expected Set statement");
+        };
+        assert_eq!(set.option, ["identifier_mode"]);
+
+        let Statement::Set(set) = plan_set(r#"SET "daft"."identifier_mode" = 'insensitive'"#)
+        else {
+            panic!("Expected Set statement");
+        };
+        assert_eq!(set.option, ["daft", "identifier_mode"]);
+
+        let Statement::Set(set) = plan_set(r#"SET "identifier _mode" = 'insensitive'"#) else {
+            panic!("Expected Set statement");
+        };
+        assert_eq!(set.option, ["identifier _mode"]);
     }
 
     #[test]
     fn test_set_catalog_unquoted() {
-        let statement = parse_sql("SET catalog = my_cat");
+        let Statement::Set(set) = plan_set("SET catalog = my_cat") else {
+            panic!("Expected Set statement");
+        };
+        assert_eq!(set.option, ["catalog"]);
+        assert_eq!(set.value.as_deref(), Some("my_cat"));
+    }
+
+    #[test]
+    fn test_set_catalog_null() {
+        let Statement::Set(set) = plan_set("SET catalog = NULL") else {
+            panic!("Expected Set statement");
+        };
+        assert_eq!(set.option, ["catalog"]);
+        assert_eq!(set.value, None);
+    }
+
+    #[test]
+    fn test_set_boolean_value_is_unsupported() {
+        let statement = parse_sql("SET identifier_mode = TRUE");
         let session = Session::default();
         let mut planner = SQLPlanner::new(&session);
-        let plan = planner.plan_statement(&statement).unwrap();
-        if let Statement::Set(set) = plan {
-            assert_eq!(set.option.to_lowercase(), "catalog");
-            assert_eq!(set.value, "my_cat");
-        } else {
-            panic!("Expected Set statement");
-        }
+        let err = planner.plan_statement(&statement).unwrap_err();
+        assert!(
+            err.to_string().contains("SET value true"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]
     fn test_set_unknown_plans_without_panic() {
-        let statement = parse_sql("SET not_a_real_option = 'x'");
-        let session = Session::default();
-        let mut planner = SQLPlanner::new(&session);
-        let plan = planner.plan_statement(&statement).unwrap();
-        assert!(matches!(plan, Statement::Set(_)));
+        assert!(matches!(
+            plan_set("SET not_a_real_option = 'x'"),
+            Statement::Set(_)
+        ));
     }
 
     #[test]
@@ -688,8 +731,9 @@ mod test {
         let session = Session::default();
         let mut planner = SQLPlanner::new(&session);
         let err = planner.plan_statement(&statement).unwrap_err();
+        let message = err.to_string();
         assert!(
-            err.to_string().to_lowercase().contains("set"),
+            message.contains("SET statement") && message.contains("TIME ZONE"),
             "unexpected error: {err}"
         );
     }

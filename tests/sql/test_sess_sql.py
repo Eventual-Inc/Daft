@@ -154,7 +154,29 @@ def test_sql_set_catalog(sess: Session):
     assert sess.sql("select * from tbl_cat_2_11") is not None
 
 
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SET catalog = 'cat_2'",
+        'SET "catalog" = \'cat_2\'',
+        "SET daft.catalog = 'cat_2'",
+        'SET "daft"."catalog" = \'cat_2\'',
+    ],
+)
+def test_sql_set_catalog_quoted_and_qualified(sess: Session, sql: str):
+    assert sess.sql(sql) is None
+    sess.set_namespace("ns_1")
+    assert sess.sql("select * from tbl_cat_2_11") is not None
+
+
+def test_sql_set_catalog_null_clears_current(sess: Session):
+    sess.set_catalog("cat_1")
+    assert sess.current_catalog() is not None
+    assert sess.sql("SET catalog = NULL") is None
+    assert sess.current_catalog() is None
+
+
 def test_sql_set_unsupported_does_not_panic():
     sess = Session()
-    with pytest.raises(Exception, match="SET"):
+    with pytest.raises(Exception, match=r"Unsupported SQL: 'SET not_a_real_option'"):
         sess.sql("SET not_a_real_option = 'x'")
