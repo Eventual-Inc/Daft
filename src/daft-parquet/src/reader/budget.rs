@@ -323,21 +323,31 @@ impl Drop for BudgetPermit {
     }
 }
 
-/// The process-wide budget used by all owned-mode parquet readers.
-/// `DAFT_PARQUET_RESIDENT_BUDGET_MB`: unset → 256MB default; `0` → unlimited.
-pub(crate) fn process_budget() -> &'static Arc<ByteBudget> {
-    static BUDGET: OnceLock<Arc<ByteBudget>> = OnceLock::new();
-    BUDGET.get_or_init(|| {
-        let total = match std::env::var("DAFT_PARQUET_RESIDENT_BUDGET_MB")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok())
-        {
-            Some(0) => None,
-            Some(mb) => Some(mb.saturating_mul(1024 * 1024)),
-            None => Some(256 * 1024 * 1024),
-        };
-        ByteBudget::new(total)
-    })
+/// The process-wide budget used by every local and remote parquet reader.
+/// `DAFT_PARQUET_READER_MEMORY_BUDGET_BYTES`: unset or `0` is unlimited.
+/// Configuration is read once so concurrent readers cannot observe different
+/// process limits; malformed values are a deterministic reader error.
+pub(crate) fn process_budget() -> crate::Result<Arc<ByteBudget>> {
+    static BUDGET: OnceLock<Result<Arc<ByteBudget>, String>> = OnceLock::new();
+    match BUDGET.get_or_init(|| match std::env::var("DAFT_PARQUET_READER_MEMORY_BUDGET_BYTES") {
+        Ok(value) => match value.parse::<usize>() {
+            Ok(0) => Ok(ByteBudget::new(None)),
+            Ok(bytes) => Ok(ByteBudget::new(Some(bytes))),
+            Err(_) => Err(format!(
+                "DAFT_PARQUET_READER_MEMORY_BUDGET_BYTES must be an unsigned byte count or 0, got {value:?}"
+            )),
+        },
+        Err(std::env::VarError::NotPresent) => Ok(ByteBudget::new(None)),
+        Err(e) => Err(format!(
+            "failed to read DAFT_PARQUET_READER_MEMORY_BUDGET_BYTES: {e}"
+        )),
+    }) {
+        Ok(budget) => Ok(budget.clone()),
+        Err(message) => Err(crate::Error::ReaderInternal {
+            path: "parquet reader configuration".to_string(),
+            message: message.clone(),
+        }),
+    }
 }
 
 #[cfg(test)]

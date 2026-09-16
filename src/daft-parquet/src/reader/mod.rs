@@ -11,14 +11,15 @@ use std::{
 
 use arrow::{array::ArrayRef, datatypes::Schema as ArrowSchema};
 use chunk_source::{
-    ChunkSource, ChunkSourceBuilder, LocalChunkSource, RgAccess, open_local_file,
-    prepare_remote_chunk_source,
+    ChunkSourceBuilder, LocalChunkSource, RangePhase, RgAccess, RowGroupSourcePlan,
+    open_local_file, prepare_remote_chunk_source,
 };
 use common_error::DaftResult;
-use common_runtime::{JoinSet, get_compute_runtime};
+use common_runtime::get_compute_runtime;
 use daft_core::prelude::*;
 use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr, optimization::get_required_columns};
 use daft_recordbatch::RecordBatch;
+use field_reader::leaves_for_top_fields;
 use futures::{Stream, StreamExt, stream::BoxStream};
 use parquet::{
     arrow::arrow_reader::{ArrowReaderMetadata, RowSelection, RowSelector},
@@ -79,7 +80,6 @@ async fn open_chunk_source(
                 path: Arc::from(*path),
                 file,
                 file_len,
-                metadata: arrow_metadata.metadata().clone(),
             };
             Ok((ChunkSourceBuilder::Local(cs), arrow_metadata))
         }
@@ -316,69 +316,6 @@ struct RgInputs {
     pred_arrays: Vec<ArrayRef>,
 }
 
-/// Build the per-RG input bundles for the streaming decoder.
-///
-/// Without a pushed predicate prefilter, this just forwards offset/delete/limit
-/// selections. With one, it first decodes predicate columns, evaluates the mask,
-/// and uses that same mask for both filtered predicate arrays and a data-column
-/// `RowSelection`.
-#[allow(clippy::too_many_arguments)]
-async fn build_rg_inputs(
-    chunk_source: &Arc<ChunkSource>,
-    metadata: &Arc<ParquetMetaData>,
-    arrow_schema: &Arc<ArrowSchema>,
-    rg_indices: &[usize],
-    plan: &ColumnPlan,
-    opts: &ParquetReadOptions,
-    path: &Arc<str>,
-) -> DaftResult<Vec<RgInputs>> {
-    let base_selections = build_base_selections(metadata, rg_indices, opts);
-
-    // If no predicate, then we can just return the base selections for the whole RG immediately.
-    // Otherwise, we can pre-filter based on the predicate
-    let Some(prefilter_predicate) = opts
-        .predicate
-        .as_ref()
-        .filter(|_| plan.predicate_pushed && !plan.data_col_indices.is_empty())
-    else {
-        return Ok(base_selections
-            .into_iter()
-            .map(|selection| RgInputs {
-                selection,
-                pred_arrays: Vec::new(),
-            })
-            .collect());
-    };
-
-    let setup = PredPrefilter::try_new(arrow_schema, plan, prefilter_predicate, opts)?;
-
-    let mut selected_rows_remaining = opts.num_rows.unwrap_or(usize::MAX);
-    let mut out: Vec<RgInputs> = Vec::with_capacity(rg_indices.len());
-
-    let access = RgAccess::Source(chunk_source.clone());
-    for (&rg_idx, base_sel) in rg_indices.iter().zip(base_selections) {
-        if selected_rows_remaining == 0 {
-            break;
-        }
-        out.push(
-            prefilter_one_rg(
-                &access,
-                metadata,
-                arrow_schema,
-                plan,
-                path,
-                &setup,
-                rg_idx,
-                base_sel,
-                Some(&mut selected_rows_remaining),
-            )
-            .await?,
-        );
-    }
-
-    Ok(out)
-}
-
 /// Per-file setup for the predicate prefilter pass, shared across RGs.
 struct PredPrefilter {
     pred_arrow_schema: Arc<ArrowSchema>,
@@ -532,9 +469,8 @@ async fn prefilter_one_rg(
 /// Shared per-file state for an RG-decoding task. One `Arc<RgTaskCtx>` is
 /// cloned per RG task — replaces the previous fistful-of-Arcs cloning ritual.
 ///
-/// Per-RG processor selection happens in `build_rg_stream` based on
-/// `plan.data_col_indices.is_empty()`: empty → PredOnly path, non-empty →
-/// Default path.
+/// Per-RG processor selection happens in the unified coordinator: an empty
+/// data set uses the predicate-only decoder, otherwise phase-two decodes data.
 pub(super) struct RgTaskCtx {
     pub(super) path: Arc<str>,
     pub(super) metadata: Arc<ParquetMetaData>,
@@ -542,60 +478,6 @@ pub(super) struct RgTaskCtx {
     pub(super) plan: ColumnPlan,
     pub(super) predicate: Option<ExprRef>,
     pub(super) chunk_size: usize,
-}
-
-/// One bounded channel per RG, drained in RG order. In-file output is always
-/// RG-ordered: `maintain_order=false` at the scan layer only reorders BETWEEN
-/// scan tasks; downstream code (and tests) expect file-order output within
-/// a single file.
-fn build_rg_stream(
-    ctx: Arc<RgTaskCtx>,
-    chunk_source: Arc<ChunkSource>,
-    rg_indices: Vec<usize>,
-    rg_inputs: Vec<RgInputs>,
-) -> BoxStream<'static, DaftResult<RecordBatch>> {
-    use tokio_stream::wrappers::ReceiverStream;
-
-    // Capacity 1: each task runs ~one batch ahead — cross-RG overlap, bounded memory.
-    let (senders, receivers): (Vec<_>, Vec<_>) = (0..rg_inputs.len())
-        .map(|_| tokio::sync::mpsc::channel::<DaftResult<RecordBatch>>(1))
-        .unzip();
-
-    let compute = get_compute_runtime();
-    let mut joinset: JoinSet<DaftResult<()>> = JoinSet::new();
-    for (rg_pos, (sender, inputs)) in senders.into_iter().zip(rg_inputs).enumerate() {
-        let ctx = ctx.clone();
-        let access = RgAccess::Source(chunk_source.clone());
-        let rg_idx = rg_indices[rg_pos];
-        joinset.spawn_on(
-            async move {
-                let mut sub_stream = if ctx.plan.data_col_indices.is_empty() {
-                    process_rg_predicate_only(ctx.clone(), access, rg_idx, inputs.selection).await
-                } else {
-                    process_rg_with_data_cols(
-                        ctx,
-                        access,
-                        rg_idx,
-                        inputs.selection,
-                        inputs.pred_arrays,
-                    )
-                    .await
-                };
-                while let Some(item) = sub_stream.next().await {
-                    if sender.send(item).await.is_err() {
-                        break;
-                    }
-                }
-                DaftResult::Ok(())
-            },
-            &compute,
-        );
-    }
-
-    let inner_streams = receivers.into_iter().map(ReceiverStream::new);
-    let merged: BoxStream<'static, DaftResult<RecordBatch>> =
-        Box::pin(futures::stream::iter(inner_streams).flatten());
-    common_runtime::combine_stream(merged, async move { joinset.join_all().await }).boxed()
 }
 
 fn count_only_stream(
@@ -682,6 +564,16 @@ pub async fn stream_parquet(
             futures::stream::empty().boxed(),
         ));
     }
+    // A predicate normally prevents pruning from applying the global limit,
+    // because the limit is defined after filtering. Zero is the exception:
+    // it can never produce a row, so do not construct phase plans or issue
+    // local/remote data reads merely to have the outer stream discard them.
+    if opts.num_rows == Some(0) {
+        return Ok((
+            plan.return_daft_schema.clone(),
+            futures::stream::empty().boxed(),
+        ));
+    }
     if plan.read_col_indices.is_empty() {
         return count_only_stream(
             &prepared.parquet_metadata,
@@ -701,71 +593,42 @@ pub async fn stream_parquet(
         chunk_size,
     });
 
-    // Owned mode (default): per-RG lifecycle admitted through the
-    // process-wide byte budget. Local sources fall back to legacy this
-    // round (per-call preads, nothing resident to bound).
-    let cs_builder = if reader_mode_owned() {
-        match cs_builder.build_plan(&prepared.parquet_metadata, &rg_indices) {
-            Ok(remote_plan) => {
-                let base_selections =
-                    build_base_selections(&prepared.parquet_metadata, &rg_indices, opts);
-                let pred_setup =
-                    match ctx.predicate.as_ref().filter(|_| {
-                        ctx.plan.predicate_pushed && !ctx.plan.data_col_indices.is_empty()
-                    }) {
-                        Some(pred) => Some(Arc::new(PredPrefilter::try_new(
-                            &prepared.arrow_schema,
-                            &ctx.plan,
-                            pred,
-                            opts,
-                        )?)),
-                        None => None,
-                    };
-                let stream = stream_parquet_owned(
-                    Arc::new(remote_plan),
-                    ctx,
-                    rg_indices,
-                    base_selections,
-                    pred_setup,
-                );
-                return Ok((return_schema, apply_cross_rg_limit(stream, opts.num_rows)));
-            }
-            Err(local_builder) => *local_builder,
-        }
+    // Range plans are made only after the final column plan is known.  Arrow
+    // top-level fields can map to multiple physical leaves, so do the exact
+    // expansion here rather than guessing from user column names at open time.
+    let predicate_leaves = if ctx.plan.predicate_pushed {
+        leaves_for_top_fields(&prepared.parquet_metadata, &ctx.plan.pred_col_indices)
     } else {
-        cs_builder
+        Vec::new()
     };
-
-    // Legacy path: spawn every byte-range fetch now (remote) — pruned set only.
-    let chunk_source = Arc::new(cs_builder.build(prepared.parquet_metadata.clone(), &rg_indices));
-
-    let rg_inputs = build_rg_inputs(
-        &chunk_source,
+    let data_fields = if ctx.plan.predicate_pushed {
+        &ctx.plan.data_col_indices
+    } else {
+        &ctx.plan.read_col_indices
+    };
+    let data_leaves = leaves_for_top_fields(&prepared.parquet_metadata, data_fields);
+    let source_plan = Arc::new(cs_builder.build_plan(
         &prepared.parquet_metadata,
-        &prepared.arrow_schema,
         &rg_indices,
-        &ctx.plan,
-        opts,
-        &path,
-    )
-    .await?;
-
-    let stream = build_rg_stream(ctx, chunk_source, rg_indices, rg_inputs);
-
+        &predicate_leaves,
+        &data_leaves,
+    ));
+    let base_selections = build_base_selections(&prepared.parquet_metadata, &rg_indices, opts);
+    let pred_setup = match ctx
+        .predicate
+        .as_ref()
+        .filter(|_| ctx.plan.predicate_pushed && !ctx.plan.data_col_indices.is_empty())
+    {
+        Some(pred) => Some(Arc::new(PredPrefilter::try_new(
+            &prepared.arrow_schema,
+            &ctx.plan,
+            pred,
+            opts,
+        )?)),
+        None => None,
+    };
+    let stream = stream_parquet_owned(source_plan, ctx, rg_indices, base_selections, pred_setup)?;
     Ok((return_schema, apply_cross_rg_limit(stream, opts.num_rows)))
-}
-
-/// `DAFT_PARQUET_READER_MODE`: `legacy` → eager whole-file path; anything
-/// else (default) → owned per-RG lifecycle. Same-binary A/B toggle for the
-/// prototype; the legacy path is slated for removal in the upstream PR.
-fn reader_mode_owned() -> bool {
-    static MODE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *MODE.get_or_init(|| {
-        !matches!(
-            std::env::var("DAFT_PARQUET_READER_MODE").as_deref(),
-            Ok("legacy")
-        )
-    })
 }
 
 /// Decode lookahead: how many RG tasks may exist concurrently (download of
@@ -807,15 +670,15 @@ type InflightRg = (
 /// - No cross-RG limit state enters the tasks; `apply_cross_rg_limit`
 ///   truncates at the single ordered exit.
 fn stream_parquet_owned(
-    remote_plan: Arc<chunk_source::RemoteChunkSourcePlan>,
+    source_plan: Arc<RowGroupSourcePlan>,
     ctx: Arc<RgTaskCtx>,
     rg_indices: Vec<usize>,
     base_selections: Vec<Option<RowSelection>>,
     pred_setup: Option<Arc<PredPrefilter>>,
-) -> BoxStream<'static, DaftResult<RecordBatch>> {
+) -> crate::Result<BoxStream<'static, DaftResult<RecordBatch>>> {
     use tokio_stream::wrappers::ReceiverStream;
 
-    let budget = budget::process_budget().clone();
+    let budget = budget::process_budget()?;
     let lookahead = rg_lookahead();
     let compute = get_compute_runtime();
 
@@ -836,44 +699,93 @@ fn stream_parquet_owned(
                 let Some((occurrence, (rg_idx, base_sel))) = pending.pop_front() else {
                     break;
                 };
-                // Synchronous FIFO registration — the admission ORDER is
-                // fixed here; the WAIT happens inside the task.
-                let reservation = budget.reserve(remote_plan.occurrence_bytes(occurrence));
+                // Register both possible phases here, in occurrence order.
+                // Tasks may await them later, but never choose their own FIFO
+                // position based on runtime scheduling.  The data reservation
+                // is dropped untouched when phase one rejects the RG.
+                let predicate_reservation = ctx.plan.predicate_pushed.then(|| {
+                    budget.reserve(source_plan.phase_bytes(occurrence, RangePhase::Predicate))
+                });
+                let data_reservation = (!ctx.plan.data_col_indices.is_empty())
+                    .then(|| budget.reserve(source_plan.phase_bytes(occurrence, RangePhase::Data)));
                 let (tx, rx) = tokio::sync::mpsc::channel::<DaftResult<RecordBatch>>(1);
-                let remote_plan = remote_plan.clone();
+                let source_plan = source_plan.clone();
                 let ctx = ctx.clone();
                 let pred_setup = pred_setup.clone();
                 let task = compute.spawn(async move {
-                    let permit = reservation.acquire().await;
-                    let resident =
-                        Arc::new(remote_plan.download_occurrence(occurrence, permit).await?);
-                    let access = RgAccess::Resident(resident.clone());
-
-                    let inputs = match &pred_setup {
-                        Some(setup) => {
-                            prefilter_one_rg(
-                                &access,
-                                &ctx.metadata,
-                                &ctx.arrow_schema,
-                                &ctx.plan,
-                                &ctx.path,
-                                setup,
-                                rg_idx,
-                                base_sel,
-                                None, // no cross-RG limit state in concurrent tasks
-                            )
-                            .await?
-                        }
-                        None => RgInputs {
-                            selection: base_sel,
-                            pred_arrays: Vec::new(),
-                        },
+                    // Phase one owns only predicate ranges.  In particular a
+                    // wholly rejected RG never admits or reads data-only bytes.
+                    let (inputs, predicate_access) = if ctx.plan.predicate_pushed {
+                        let permit = predicate_reservation
+                            .expect("pushed predicate has predicate reservation")
+                            .acquire()
+                            .await;
+                        let access = RgAccess::Resident(Arc::new(
+                            source_plan
+                                .download(occurrence, rg_idx, RangePhase::Predicate, permit)
+                                .await?,
+                        ));
+                        let inputs = match &pred_setup {
+                            Some(setup) => {
+                                prefilter_one_rg(
+                                    &access,
+                                    &ctx.metadata,
+                                    &ctx.arrow_schema,
+                                    &ctx.plan,
+                                    &ctx.path,
+                                    setup,
+                                    rg_idx,
+                                    base_sel,
+                                    None,
+                                )
+                                .await?
+                            }
+                            None => RgInputs {
+                                selection: base_sel,
+                                pred_arrays: Vec::new(),
+                            },
+                        };
+                        (inputs, Some(access))
+                    } else {
+                        (
+                            RgInputs {
+                                selection: base_sel,
+                                pred_arrays: Vec::new(),
+                            },
+                            None,
+                        )
                     };
 
+                    // Predicate-only projections consume the phase-one owner
+                    // directly. Otherwise release predicate compressed bytes
+                    // before admitting the data phase; filtered Arrow arrays
+                    // remain valid independently of the source bytes.
                     let mut sub_stream = if ctx.plan.data_col_indices.is_empty() {
-                        process_rg_predicate_only(ctx.clone(), access, rg_idx, inputs.selection)
-                            .await
+                        process_rg_predicate_only(
+                            ctx.clone(),
+                            predicate_access.expect("predicate-only is pushed"),
+                            rg_idx,
+                            inputs.selection,
+                        )
+                        .await
+                    } else if inputs
+                        .selection
+                        .as_ref()
+                        .is_some_and(|selection| selection.row_count() == 0)
+                    {
+                        drop(predicate_access);
+                        futures::stream::empty().boxed()
                     } else {
+                        drop(predicate_access);
+                        let permit = data_reservation
+                            .expect("data decode has data reservation")
+                            .acquire()
+                            .await;
+                        let access = RgAccess::Resident(Arc::new(
+                            source_plan
+                                .download(occurrence, rg_idx, RangePhase::Data, permit)
+                                .await?,
+                        ));
                         process_rg_with_data_cols(
                             ctx.clone(),
                             access,
@@ -913,5 +825,5 @@ fn stream_parquet_owned(
     });
 
     let merged: BoxStream<'static, DaftResult<RecordBatch>> = Box::pin(ReceiverStream::new(out_rx));
-    common_runtime::combine_stream(merged, async move { coordinator.await? }).boxed()
+    Ok(common_runtime::combine_stream(merged, async move { coordinator.await? }).boxed())
 }
