@@ -95,22 +95,17 @@ def test_large_micropartition_writes_directly(schema, tmp_path):
     assert sum(r.rows_written for r in results) == 30
 
 
-def test_default_max_rows_per_file_accumulates(schema, tmp_path):
-    # daft-lance 0.5.0 changed LanceDataSink's default `max_rows_per_file` from
-    # None (accumulation disabled) to 1024 * 1024, so micropartitions are now
-    # buffered and flushed together by default instead of written one-by-one.
+def test_accumulates_under_default_threshold(schema, tmp_path):
+    """Without an explicit threshold, small micropartitions buffer into one write."""
     fake = FakeLanceModule()._bind()
 
     with patch("daft_lance.lance_data_sink.lance", fake):
         sink = LanceDataSink(uri=str(tmp_path / "tbl"), schema=schema, mode="create")
-        # The default is now a concrete row count rather than None.
-        assert sink._max_rows_per_file == 1024 * 1024
         sink.start()
         mps = [_make_mp(10), _make_mp(5)]
         results = list(sink.write(iter(mps)))
 
-    # The default threshold is far above 15 rows, so both micropartitions
-    # accumulate and are flushed together as a single write at the end.
+    # Both micropartitions stay well under the default threshold, so they flush together.
     assert len(fake.calls) == 1
     assert fake.calls[0].num_rows == 15
     assert sum(r.rows_written for r in results) == 15

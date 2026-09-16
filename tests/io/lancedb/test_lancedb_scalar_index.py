@@ -95,15 +95,6 @@ def generate_multi_fragment_dataset(tmp_path, num_fragments=4, rows_per_fragment
 class TestDistributedIndexing:
     """Test cases for distributed indexing functionality."""
 
-    @pytest.mark.xfail(
-        reason=(
-            "Known upstream issue: daft-lance 0.5.0 + pylance 11.0.0 does not populate"
-            " index type metadata (reports 'Unknown'/empty type_url) for indices built"
-            " through the non-segmented distributed path (_create_partitioned_index);"
-            " building the same index with segmented=True reports the type correctly."
-        ),
-        strict=False,
-    )
     def test_build_distributed_index_search_functionality(self, multi_fragment_lance_dataset):
         """Test that the built index actually works for searching."""
         dataset_uri = multi_fragment_lance_dataset
@@ -128,7 +119,8 @@ class TestDistributedIndexing:
                 break
 
         assert text_index is not None, "Text index not found"
-        assert text_index["type"] == "Inverted", f"Expected Inverted index, got {text_index['type']}"
+        index_type = updated_dataset.stats.index_stats(text_index["name"])["index_type"]
+        assert index_type == "Inverted", f"Expected Inverted index, got {index_type}"
 
         # Test full-text search functionality
         search_term = "Python"
@@ -296,15 +288,6 @@ class TestDistributedIndexing:
         error_msg = str(exc_info.value)
         assert "already exists" in error_msg and index_name in error_msg
 
-    @pytest.mark.xfail(
-        reason=(
-            "Known upstream issue: daft-lance 0.5.0 + pylance 11.0.0 does not populate"
-            " index type metadata (reports 'Unknown'/empty type_url) for indices built"
-            " through the non-segmented distributed path (_create_partitioned_index);"
-            " building the same index with segmented=True reports the type correctly."
-        ),
-        strict=False,
-    )
     def test_build_distributed_index_replace_true_overwrite_existing(self, multi_fragment_lance_dataset):
         """Test that replace=True successfully overwrites existing index."""
         dataset_uri = multi_fragment_lance_dataset
@@ -348,7 +331,8 @@ class TestDistributedIndexing:
                 break
 
         assert final_index is not None, "Index should still exist after replacement"
-        assert final_index["type"] == "Inverted", "Index type should remain Inverted"
+        final_index_type = updated_dataset.stats.index_stats(index_name)["index_type"]
+        assert final_index_type == "Inverted", "Index type should remain Inverted"
 
         # Test that the replaced index still works for searching
         search_term = "Python"

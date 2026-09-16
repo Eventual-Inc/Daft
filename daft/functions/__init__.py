@@ -158,7 +158,6 @@ from .list import (
     seq,
     to_list,
 )
-from .llm import llm_generate
 from .misc import (
     monotonically_increasing_id,
     uuid,
@@ -496,7 +495,6 @@ __all__ = [
     "list_min",
     "list_sort",
     "list_sum",
-    "llm_generate",
     "ln",
     "log",
     "log1p",
