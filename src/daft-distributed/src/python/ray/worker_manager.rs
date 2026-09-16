@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
@@ -86,6 +86,78 @@ fn cluster_capacity_grew(
         || current_cluster_cpus > bisect.cluster_cpus_at_last_request
         || current_cluster_gpus > bisect.cluster_gpus_at_last_request
         || current_cluster_memory > bisect.cluster_memory_at_last_request
+}
+
+struct BundleSelection<'a> {
+    bundles: Vec<&'a TaskResourceRequest>,
+    total_cpus: f64,
+    total_gpus: f64,
+    total_memory: usize,
+}
+
+impl BundleSelection<'_> {
+    fn satisfies(&self, request_cpus: f64, request_gpus: f64, request_memory: usize) -> bool {
+        (request_cpus <= 0.0 || self.total_cpus >= request_cpus)
+            && (request_gpus <= 0.0 || self.total_gpus >= request_gpus)
+            && (request_memory == 0 || self.total_memory >= request_memory)
+    }
+}
+
+/// Select bundles across resource shapes in round-robin order until the target is satisfied.
+///
+/// Pending tasks are commonly grouped by plan stage, so sequential selection can consume all
+/// CPU-only bundles before reaching CPU+GPU bundles. Interleaving exact resource-request shapes
+/// keeps a bisected request representative of heterogeneous pending demand.
+fn select_bundles_round_robin(
+    bundles: &[TaskResourceRequest],
+    request_cpus: f64,
+    request_gpus: f64,
+    request_memory: usize,
+) -> BundleSelection<'_> {
+    let mut shape_indices = HashMap::<ResourceRequest, usize>::new();
+    let mut shape_buckets = Vec::<VecDeque<&TaskResourceRequest>>::new();
+
+    for bundle in bundles {
+        let bucket_index = match shape_indices.get(&bundle.resource_request) {
+            Some(index) => *index,
+            None => {
+                let index = shape_buckets.len();
+                shape_indices.insert(bundle.resource_request.clone(), index);
+                shape_buckets.push(VecDeque::new());
+                index
+            }
+        };
+        shape_buckets[bucket_index].push_back(bundle);
+    }
+
+    let mut selection = BundleSelection {
+        bundles: Vec::new(),
+        total_cpus: 0.0,
+        total_gpus: 0.0,
+        total_memory: 0,
+    };
+
+    loop {
+        let mut selected_in_round = false;
+        for bucket in &mut shape_buckets {
+            let Some(bundle) = bucket.pop_front() else {
+                continue;
+            };
+            selected_in_round = true;
+            selection.total_cpus += bundle.resource_request.num_cpus().unwrap_or(0.0);
+            selection.total_gpus += bundle.resource_request.num_gpus().unwrap_or(0.0);
+            selection.total_memory += bundle.resource_request.memory_bytes().unwrap_or(0);
+            selection.bundles.push(bundle);
+
+            if selection.satisfies(request_cpus, request_gpus, request_memory) {
+                return selection;
+            }
+        }
+
+        if !selected_in_round {
+            return selection;
+        }
+    }
 }
 
 struct RayWorkerManagerState {
@@ -740,27 +812,11 @@ impl RayWorkerManager {
             }
         };
 
-        // Select bundles until all non-zero dimensions are satisfied
-        let mut cpu_sum = 0.0;
-        let mut gpu_sum = 0.0;
-        let mut memory_sum: usize = 0;
-        let mut selected_bundles = Vec::new();
-        for bundle in &bundles {
-            cpu_sum += bundle.resource_request.num_cpus().unwrap_or(0.0);
-            gpu_sum += bundle.resource_request.num_gpus().unwrap_or(0.0);
-            memory_sum += bundle.resource_request.memory_bytes().unwrap_or(0);
-            selected_bundles.push(bundle);
-            // Break when we've accumulated enough in ALL non-zero dimensions
-            let cpu_satisfied = request_cpus <= 0.0 || cpu_sum >= request_cpus;
-            let gpu_satisfied = request_gpus <= 0.0 || gpu_sum >= request_gpus;
-            let memory_satisfied = request_memory == 0 || memory_sum >= request_memory;
-            if cpu_satisfied && gpu_satisfied && memory_satisfied {
-                break;
-            }
-        }
+        let selection =
+            select_bundles_round_robin(&bundles, request_cpus, request_gpus, request_memory);
 
         // Send request to Ray
-        Self::send_bundles_to_ray(&selected_bundles)?;
+        Self::send_bundles_to_ray(&selection.bundles)?;
 
         // Scaling up should immediately allow workers on recently retired nodes to be re-created,
         // and force a refresh so we can observe newly provisioned nodes quickly.
@@ -772,9 +828,9 @@ impl RayWorkerManager {
             cluster_cpus_at_last_request: current_cluster_cpus,
             cluster_gpus_at_last_request: current_cluster_gpus,
             cluster_memory_at_last_request: current_cluster_memory,
-            last_requested_cpus: cpu_sum,
-            last_requested_gpus: gpu_sum,
-            last_requested_memory: memory_sum,
+            last_requested_cpus: selection.total_cpus,
+            last_requested_gpus: selection.total_gpus,
+            last_requested_memory: selection.total_memory,
             last_request_time: Instant::now(),
             worker_ids_at_last_request: state.ray_workers.keys().cloned().collect(),
         });
@@ -786,6 +842,16 @@ impl RayWorkerManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn task_request(
+        num_cpus: Option<f64>,
+        num_gpus: Option<f64>,
+        memory_bytes: Option<usize>,
+    ) -> TaskResourceRequest {
+        TaskResourceRequest::new(
+            ResourceRequest::try_new_internal(num_cpus, num_gpus, memory_bytes).unwrap(),
+        )
+    }
 
     fn worker_ids(ids: &[&str]) -> HashSet<WorkerId> {
         ids.iter().map(|id| Arc::<str>::from(*id)).collect()
@@ -857,5 +923,56 @@ mod tests {
                 .to_string()
                 .contains("autoscale_bisect_timeout_secs must be greater than zero")
         );
+    }
+
+    #[test]
+    fn round_robin_selection_balances_mixed_resource_shapes() {
+        let mut bundles = Vec::new();
+        bundles.extend((0..100).map(|_| task_request(Some(1.0), None, None)));
+        bundles.extend((0..100).map(|_| task_request(Some(1.0), Some(1.0), None)));
+
+        let selection = select_bundles_round_robin(&bundles, 100.0, 50.0, 0);
+        let cpu_only_count = selection
+            .bundles
+            .iter()
+            .filter(|bundle| bundle.resource_request.num_gpus().is_none())
+            .count();
+        let gpu_count = selection
+            .bundles
+            .iter()
+            .filter(|bundle| bundle.resource_request.num_gpus() == Some(1.0))
+            .count();
+
+        assert_eq!(selection.bundles.len(), 100);
+        assert_eq!(cpu_only_count, 50);
+        assert_eq!(gpu_count, 50);
+        assert_eq!(selection.total_cpus, 100.0);
+        assert_eq!(selection.total_gpus, 50.0);
+    }
+
+    #[test]
+    fn round_robin_selection_handles_homogeneous_bundles() {
+        let bundles = (0..100)
+            .map(|_| task_request(Some(1.0), None, None))
+            .collect::<Vec<_>>();
+
+        let selection = select_bundles_round_robin(&bundles, 50.0, 0.0, 0);
+
+        assert_eq!(selection.bundles.len(), 50);
+        assert_eq!(selection.total_cpus, 50.0);
+        assert_eq!(selection.total_gpus, 0.0);
+    }
+
+    #[test]
+    fn round_robin_selection_handles_gpu_only_bundles() {
+        let bundles = (0..100)
+            .map(|_| task_request(None, Some(1.0), None))
+            .collect::<Vec<_>>();
+
+        let selection = select_bundles_round_robin(&bundles, 0.0, 50.0, 0);
+
+        assert_eq!(selection.bundles.len(), 50);
+        assert_eq!(selection.total_cpus, 0.0);
+        assert_eq!(selection.total_gpus, 50.0);
     }
 }
