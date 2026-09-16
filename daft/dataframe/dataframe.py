@@ -2487,6 +2487,7 @@ class DataFrame:
             raise ValueError('DataFrame.write_lance(mode="merge") requires a URI target.')
         if overwrite_where is not None:
             raise ValueError('overwrite_where is only supported with mode="insert_overwrite".')
+        assert uri_str is not None
         try:
             import lance
         except ImportError as e:
