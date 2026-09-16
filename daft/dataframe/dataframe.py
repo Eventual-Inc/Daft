@@ -2458,6 +2458,7 @@ class DataFrame:
         # merge mode. Keeping this facade thin ensures Namespace and conditional
         # overwrite behavior stays aligned with the extension.
         if mode != "merge":
+            # daft-lance is an optional dependency.
             from daft.io.lance._lance import write_lance as write_lance_impl
 
             return write_lance_impl(

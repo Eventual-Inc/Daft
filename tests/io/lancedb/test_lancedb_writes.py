@@ -40,6 +40,9 @@ def test_lancedb_roundtrip(lance_dataset_path):
 
 
 def test_lancedb_namespace_roundtrip(tmp_path):
+    import lance
+    import lance_namespace
+
     namespace = {
         "namespace_impl": "dir",
         "namespace_properties": {"root": str(tmp_path)},
@@ -52,6 +55,11 @@ def test_lancedb_namespace_roundtrip(tmp_path):
     df2.write_lance(mode="append", **namespace)
 
     assert daft.read_lance(**namespace).to_pydict() == {"id": [1, 2, 3]}
+
+    namespace_client = lance_namespace.connect("dir", namespace["namespace_properties"])
+    assert lance.dataset(None, namespace_client=namespace_client, table_id=namespace["table_id"]).to_table().to_pydict() == {
+        "id": [1, 2, 3]
+    }
 
 
 def test_lancedb_namespace_rejects_uri_target(lance_dataset_path, tmp_path):
@@ -71,6 +79,8 @@ def test_lancedb_write_rejects_legacy_rest_uri():
 
 
 def test_lancedb_insert_overwrite(lance_dataset_path):
+    import lance
+
     initial = daft.from_pydict({"day": ["d1", "d2", "d2"], "id": [1, 2, 3]})
     replacement = daft.from_pydict({"day": ["d2", "d2"], "id": [20, 30]})
     initial.write_lance(lance_dataset_path, mode="create", max_rows_per_file=2)
@@ -83,6 +93,9 @@ def test_lancedb_insert_overwrite(lance_dataset_path):
 
     result = daft.read_lance(lance_dataset_path).to_pydict()
     assert sorted(zip(result["day"], result["id"])) == [("d1", 1), ("d2", 20), ("d2", 30)]
+
+    lance_result = lance.dataset(lance_dataset_path).to_table().to_pydict()
+    assert sorted(zip(lance_result["day"], lance_result["id"])) == [("d1", 1), ("d2", 20), ("d2", 30)]
 
 
 def test_lancedb_merge_rejects_namespace_target(tmp_path):
