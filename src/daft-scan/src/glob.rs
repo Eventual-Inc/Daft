@@ -461,6 +461,11 @@ impl GlobScanOperator {
                 FileFormatConfig::Text(..) => {
                     return Err(DaftError::ValueError("Text schema is fixed".to_string()));
                 }
+                FileFormatConfig::Mcap(_) => {
+                    return Err(DaftError::ValueError(
+                        "MCAP schemas do not need to be inferred".to_string(),
+                    ));
+                }
             };
 
             let schema = match user_provided_schema {

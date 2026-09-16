@@ -483,10 +483,7 @@ impl ObjectSource for HFSource {
         use crate::object_store_glob::glob;
 
         let path = glob_path.parse::<HFPath>()?;
-        let glob_path = match &path {
-            HFPath::Hf(parts) if parts.repo_type == HFRepoType::Buckets => parts.to_string(),
-            _ => glob_path.to_string(),
-        };
+        let glob_path = path.canonical_glob_path(glob_path);
 
         // Ensure fanout_limit is None because HTTP ObjectSource does not support prefix listing
         let fanout_limit = None;
@@ -509,7 +506,8 @@ impl ObjectSource for HFSource {
                 // Buckets are plain object storage with no parquet-conversion API, so they
                 // always go through regular globbing.
                 if file_format == Some(FileFormat::Parquet)
-                    && parts.repo_type != HFRepoType::Buckets
+                    && parts.repo_type == HFRepoType::Datasets
+                    && parts.revision == "main"
                 {
                     let res =
                         try_parquet_api(parts, limit, io_stats.clone(), &self.http_source.client)

@@ -335,9 +335,21 @@ impl SQLLiteral for usize {
     where
         Self: Sized,
     {
-        expr.as_literal()
-            .and_then(|lit| lit.as_i64().map(|v| v as Self))
-            .ok_or_else(|| PlannerError::invalid_operation("Expected an integer literal"))
+        // Reuse daft-core's conversion policy rather than keeping a second one here:
+        // it accepts every integer width, where `as_i64` silently rejects unsigned
+        // literals. The message is ours because the core error mentions `usize`.
+        let lit = expr
+            .as_literal()
+            .ok_or_else(|| PlannerError::invalid_operation("Expected an integer literal"))?;
+        match lit.try_as_usize() {
+            Ok(Some(value)) => Ok(value),
+            Ok(None) => Err(PlannerError::invalid_operation(
+                "Expected an integer literal",
+            )),
+            Err(_) => Err(PlannerError::invalid_operation(format!(
+                "Expected a non-negative integer literal, got {lit}"
+            ))),
+        }
     }
 }
 

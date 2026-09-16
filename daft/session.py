@@ -365,9 +365,8 @@ class Session:
             # TODO relax this constraint by joining with the catalog name
             raise ValueError("Cannot create a table without a current catalog")
 
-        if len(identifier) == 1:
-            if ns := self.current_namespace():
-                identifier = ns + identifier
+        if len(identifier) == 1 and (ns := self.current_namespace()):
+            identifier = ns + identifier
 
         return catalog.create_table(identifier, source, properties)
 
@@ -395,9 +394,8 @@ class Session:
             # TODO relax this constraint by joining with the catalog name
             raise ValueError("Cannot create a table without a current catalog")
 
-        if len(identifier) == 1:
-            if ns := self.current_namespace():
-                identifier = ns + identifier
+        if len(identifier) == 1 and (ns := self.current_namespace()):
+            identifier = ns + identifier
 
         return catalog.create_table_if_not_exists(identifier, source, properties)
 
@@ -482,9 +480,8 @@ class Session:
         if not (catalog := self.current_catalog()):
             raise ValueError("Cannot drop a table without a current catalog")
 
-        if len(identifier) == 1:
-            if ns := self.current_namespace():
-                identifier = ns + identifier
+        if len(identifier) == 1 and (ns := self.current_namespace()):
+            identifier = ns + identifier
 
         return catalog.drop_table(identifier)
 

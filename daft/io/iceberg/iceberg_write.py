@@ -5,6 +5,17 @@ import uuid
 import warnings
 from typing import TYPE_CHECKING, Any
 
+from pyiceberg.expressions import AlwaysFalse
+
+# `_StrictMetricsEvaluator` is private to pyiceberg, but it is stable across the supported
+# versions (>=0.7.0, <=0.11.1) and has no public equivalent.
+from pyiceberg.expressions.visitors import (
+    _StrictMetricsEvaluator,
+    expression_evaluator,
+    strict_projection,
+)
+from pyiceberg.schema import Schema as IcebergSchema
+
 from daft import Expression, col, lit
 from daft.datatype import DataType
 from daft.expressions.expressions import ExpressionsProjection
@@ -15,9 +26,10 @@ from daft.recordbatch.partitioning import PartitionedTable, partition_strings_to
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from pyiceberg.expressions import BooleanExpression as IcebergBooleanExpression
     from pyiceberg.manifest import DataFile
     from pyiceberg.partitioning import PartitionField as IcebergPartitionField
-    from pyiceberg.schema import Schema as IcebergSchema
+    from pyiceberg.partitioning import PartitionSpec as IcebergPartitionSpec
     from pyiceberg.table import TableProperties as IcebergTableProperties
     from pyiceberg.typedef import Record as IcebergRecord
 
@@ -296,3 +308,77 @@ def partitioned_table_to_iceberg_iter(
         arrow_table = coerce_pyarrow_table_to_schema(partitioned.table.to_arrow(), schema)
 
         yield arrow_table, root_path, make_iceberg_record(None)
+
+
+def validate_data_files_match_filter(
+    data_files: list[DataFile],
+    overwrite_filter: IcebergBooleanExpression,
+    schema: IcebergSchema,
+    spec: IcebergPartitionSpec,
+) -> None:
+    """Raise if any newly written data file may hold rows outside ``overwrite_filter``.
+
+    Follows Iceberg's ``OverwriteFiles.validateAddedFilesMatchOverwriteFilter``: a file is
+    accepted when its partition value proves every row matches, or failing that when the
+    file's column statistics do. Both tests are conservative, so a file that cannot be
+    proven to match is rejected. Statistics only ever widen (truncated bounds cover more
+    than the real range), so the failure mode is refusing a valid write rather than
+    admitting an invalid one.
+
+    Both tests are needed. Partition values are stored whole while column bounds are
+    truncated (16 bytes by default), so a long partition value only passes the partition
+    test, and a predicate over a non-partition column only passes the metrics test.
+    """
+    # `strict_projection` gives the partitions that contain only matching rows. It returns
+    # AlwaysFalse when the predicate cannot be projected onto the spec at all, e.g. an
+    # unpartitioned table or a predicate over non-partition columns.
+    partition_evaluator = None
+    projected = strict_projection(schema, spec)(overwrite_filter)
+    if not isinstance(projected, AlwaysFalse):
+        partition_evaluator = expression_evaluator(
+            IcebergSchema(*spec.partition_type(schema).fields), projected, case_sensitive=True
+        )
+
+    metrics_evaluator = _StrictMetricsEvaluator(schema, overwrite_filter)
+
+    for data_file in data_files:
+        if partition_evaluator is not None and partition_evaluator(data_file.partition):
+            continue
+        if metrics_evaluator.eval(data_file):
+            continue
+        raise ValueError(
+            f"Cannot write rows that do not match overwrite_filter {overwrite_filter}: "
+            f"{data_file.file_path} holds rows outside the filter, or its statistics are not "
+            "sufficient to prove otherwise. Filter the DataFrame down to the rows the filter "
+            "covers, or pass validate_overwrite_filter=False to write anyway."
+        )
+
+
+def data_file_partition_values(
+    data_file: DataFile,
+    specs: dict[int, IcebergPartitionSpec],
+    default_spec: IcebergPartitionSpec,
+) -> dict[str, Any]:
+    """Map a data file's partition record to ``{partition field name: value}``.
+
+    The record is read by index rather than by attribute, since pyiceberg's ``Record`` is a
+    positional ``StructProtocol`` and 0.9 dropped the attribute access older versions had.
+
+    Its fields follow the partition spec the file was written with, which after spec
+    evolution is not the table's current one, so files read back from a manifest are
+    resolved through ``specs`` by their own ``spec_id``. Files that were just built have no
+    ``spec_id`` (pyiceberg keeps it outside the record and only fills it in on read) and
+    were written with ``default_spec``.
+
+    Keys are Iceberg partition field names such as ``x_bucket_4``, not source column names,
+    matching both the read side's partitioning keys and Iceberg's directory layout. Values
+    are the transformed partition values as Iceberg stores them.
+    """
+    try:
+        spec = specs.get(data_file.spec_id, default_spec)
+    except AttributeError:
+        spec = default_spec
+    record = data_file.partition
+    # A record shorter than its spec means truncated metadata. Skip the missing tail
+    # rather than raising, since this only feeds the write's informational result.
+    return {field.name: record[idx] for idx, field in enumerate(spec.fields) if idx < len(record)}
