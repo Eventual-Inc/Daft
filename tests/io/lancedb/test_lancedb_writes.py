@@ -57,9 +57,9 @@ def test_lancedb_namespace_roundtrip(tmp_path):
     assert daft.read_lance(**namespace).to_pydict() == {"id": [1, 2, 3]}
 
     namespace_client = lance_namespace.connect("dir", namespace["namespace_properties"])
-    assert lance.dataset(None, namespace_client=namespace_client, table_id=namespace["table_id"]).to_table().to_pydict() == {
-        "id": [1, 2, 3]
-    }
+    assert lance.dataset(
+        None, namespace_client=namespace_client, table_id=namespace["table_id"]
+    ).to_table().to_pydict() == {"id": [1, 2, 3]}
 
 
 def test_lancedb_namespace_rejects_uri_target(lance_dataset_path, tmp_path):
