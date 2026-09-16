@@ -226,8 +226,8 @@ class Func(Generic[P, T, C]):
 
     def _derive_function_names(self) -> tuple[str, str]:
         """Compute a unique name for the function using its module and qualified name."""
-        module_name = getattr(self, "__module__")
-        qual_name: str = getattr(self, "__qualname__")
+        module_name = self.__module__
+        qual_name: str = self.__qualname__
 
         if self.name_override:
             name = self.name_override
@@ -296,7 +296,11 @@ class Func(Generic[P, T, C]):
         # Match positional args to parameter names, then keyword args by name.
         # Extra positional args past the fixed params fall to a `*args` param (if any);
         # keyword args not naming a fixed param fall to a `**kwargs` param (if any).
-        pos_names = [p.name for p in params if p.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)]
+        pos_names = [
+            p.name
+            for p in params
+            if p.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+        ]
         var_pos = next((p.name for p in params if p.kind == inspect.Parameter.VAR_POSITIONAL), None)
         fixed_kw_names = {p.name for p in params if p.kind != inspect.Parameter.VAR_KEYWORD}
         var_kw = next((p.name for p in params if p.kind == inspect.Parameter.VAR_KEYWORD), None)
@@ -340,7 +344,7 @@ class Func(Generic[P, T, C]):
 
         # When building expression-based UDFs, we must avoid incorrectly sharing call-site state across multiple uses of the same function.
         call_seq = getattr(self, "_daft_call_seq", 0)
-        setattr(self, "_daft_call_seq", call_seq + 1)
+        self._daft_call_seq = call_seq + 1
         call_id = f"{self.func_id}-{call_seq}"
 
         check_serializable(
@@ -393,7 +397,7 @@ class Func(Generic[P, T, C]):
                     self.on_error,
                     (args, kwargs),
                     expr_args,
-                    ray_options if ray_options else None,
+                    ray_options or None,
                     input_dtypes,
                 )
             ).explode()
@@ -416,7 +420,7 @@ class Func(Generic[P, T, C]):
                     self.on_error,
                     (args, kwargs),
                     expr_args,
-                    ray_options if ray_options else None,
+                    ray_options or None,
                 )
             )
         else:
@@ -437,7 +441,7 @@ class Func(Generic[P, T, C]):
                     self.on_error,
                     (args, kwargs),
                     expr_args,
-                    ray_options if ray_options else None,
+                    ray_options or None,
                     input_dtypes,
                 )
             )

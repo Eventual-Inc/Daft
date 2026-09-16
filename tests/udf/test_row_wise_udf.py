@@ -70,7 +70,7 @@ def test_row_wise_udf_should_infer_dtype_from_function():
 def test_func_requires_return_dtype_when_no_annotation():
     with pytest.raises(
         ValueError,
-        match="Daft functions require either a return type hint or the `return_dtype` argument to be specified.",
+        match=r"Daft functions require either a return type hint or the `return_dtype` argument to be specified.",
     ):
 
         @daft.func()
@@ -199,7 +199,7 @@ def test_row_wise_async_udf_max_concurrency(max_concurrency):
 
 
 def test_sync_func_max_concurrency_raises():
-    with pytest.raises(ValueError, match="max_concurrency.*synchronous"):
+    with pytest.raises(ValueError, match=r"max_concurrency.*synchronous"):
 
         @daft.func(max_concurrency=2)
         def my_sync_add(a: int, b: int) -> int:
@@ -583,7 +583,7 @@ def test_row_wise_udf_input_type_signature_validation():
     # Mismatched input type errors during planning, not at runtime.
     with pytest.raises(
         daft.exceptions.DaftCoreException,
-        match="Expects input to '.*my_upper' to be String, but received List",
+        match=r"Expects input to '.*my_upper' to be String, but received List",
     ):
         df.select(my_upper(df["ints_list"]))
 
@@ -603,7 +603,7 @@ def test_row_wise_udf_input_type_signature_validation():
         return "" if s is None else s.upper()
 
     assert df.select(opt_upper(df["s"])).to_pydict() == {"s": ["A", "B"]}
-    with pytest.raises(daft.exceptions.DaftCoreException, match="Expects input to '.*opt_upper' to be String"):
+    with pytest.raises(daft.exceptions.DaftCoreException, match=r"Expects input to '.*opt_upper' to be String"):
         df.select(opt_upper(df["ints_list"]))
 
 
@@ -617,7 +617,7 @@ def test_row_wise_udf_variadic_input_type_validation():
 
     # Every variadic positional expression is validated, not just the first.
     assert df.select(concat_all(df["s"], df["s"])).to_pydict() == {"s": ["aa", "bb"]}
-    with pytest.raises(daft.exceptions.DaftCoreException, match="Expects input to '.*concat_all' to be String"):
+    with pytest.raises(daft.exceptions.DaftCoreException, match=r"Expects input to '.*concat_all' to be String"):
         df.select(concat_all(df["s"], df["ints_list"]))
 
     @daft.func
@@ -626,7 +626,7 @@ def test_row_wise_udf_variadic_input_type_validation():
 
     # Variadic keyword expressions are validated against the `**kwargs` annotation.
     assert df.select(join_kwargs(a=df["s"], b=df["s"])).to_pydict() == {"s": ["aa", "bb"]}
-    with pytest.raises(daft.exceptions.DaftCoreException, match="Expects input to '.*join_kwargs' to be String"):
+    with pytest.raises(daft.exceptions.DaftCoreException, match=r"Expects input to '.*join_kwargs' to be String"):
         df.select(join_kwargs(a=df["s"], b=df["ints_list"]))
 
 
