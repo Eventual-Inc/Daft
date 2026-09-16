@@ -144,7 +144,7 @@ df = daft.from_pydict({"a": [1, 2, 3, 4]})
 meta = df.write_lance("/tmp/lance/my_table.lance")
 meta.show()  # Contains metadata such as num_fragments / num_deleted_rows / num_small_files / version
 
-# Overwrite existing table with extra parameters (passed to lance.write_fragments)
+# Overwrite existing table with extra parameters (forwarded to the Lance writer)
 meta2 = df.write_lance("/tmp/lance/my_table.lance", mode="overwrite", max_bytes_per_file=1024)
 meta2.show()
 
