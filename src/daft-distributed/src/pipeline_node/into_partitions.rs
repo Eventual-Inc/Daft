@@ -198,28 +198,35 @@ impl IntoPartitionsNode {
             let submittable_task =
                 into_partitions_builder.build(self.context.query_idx, task_id_counter);
             let submitted_task = submittable_task.submit(scheduler_handle)?;
-            submitted_tasks.push(submitted_task);
+            submitted_tasks.push((num_outputs, submitted_task));
         }
 
         let mut output_futures = OrderedJoinSet::new();
-        for task in submitted_tasks {
-            output_futures.spawn(task);
+        for (num_outputs, task) in submitted_tasks {
+            output_futures.spawn(async move { task.await.map(|output| (num_outputs, output)) });
         }
 
         // Collect all the outputs and emit a new pass-through task for each output ref.
         while let Some(result) = output_futures.join_next().await {
-            let materialized_outputs = result??;
-            if let Some(output) = materialized_outputs {
-                for output in output.split_into_materialized_outputs() {
-                    let partition_refs = output.into_inner().0;
-                    let builder = self.shuffle_context.build_refs_task_builder(
-                        partition_refs,
-                        self.as_ref(),
-                        |input| input,
-                    );
-                    if result_tx.send(builder).await.is_err() {
-                        break;
-                    }
+            let (num_outputs, materialized_output) = result??;
+            let partition_refs = match materialized_output {
+                Some(output) => output
+                    .split_into_materialized_outputs()
+                    .into_iter()
+                    .map(|output| output.into_inner().0)
+                    .collect::<Vec<_>>(),
+                // Limit can cancel non-contributing tasks. Their planned
+                // output slots still need schema-preserving empty partitions.
+                None => (0..num_outputs).map(|_| Vec::new()).collect(),
+            };
+            for partition_refs in partition_refs {
+                let builder = self.shuffle_context.build_refs_task_builder(
+                    partition_refs,
+                    self.as_ref(),
+                    |input| input,
+                );
+                if result_tx.send(builder).await.is_err() {
+                    return Ok(());
                 }
             }
         }
@@ -241,9 +248,12 @@ impl IntoPartitionsNode {
         // rather than when its loop ends — see `LimitNode::limit_execution_loop`.
         let input_builders: Vec<SwordfishTaskBuilder> = input_stream.collect().await;
         let num_input_tasks = input_builders.len();
+        let can_cancel = input_builders
+            .iter()
+            .any(SwordfishTaskBuilder::has_cancel_token);
 
         match num_input_tasks.cmp(&self.num_partitions) {
-            std::cmp::Ordering::Equal => {
+            std::cmp::Ordering::Equal if !can_cancel => {
                 if self
                     .config
                     .execution_config
@@ -278,8 +288,9 @@ impl IntoPartitionsNode {
                 )
                 .await?;
             }
-            std::cmp::Ordering::Less => {
-                // Too few tasks - split
+            std::cmp::Ordering::Less | std::cmp::Ordering::Equal => {
+                // Splitting into one output also preserves a cancelled task's
+                // slot when the counts match, using the selected shuffle backend.
                 self.split_tasks(
                     input_builders,
                     &scheduler_handle,

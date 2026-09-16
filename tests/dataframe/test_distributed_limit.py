@@ -190,7 +190,7 @@ def _materialize_with_deadline(df, timeout_s=120):
     def target():
         try:
             outcome["result"] = df.to_pydict()
-        except BaseException as e:
+        except BaseException as e:  # noqa: BLE001 - Re-raise in the calling test thread.
             outcome["error"] = e
 
     thread = threading.Thread(target=target, daemon=True)
