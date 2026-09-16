@@ -522,6 +522,7 @@ impl PushDownProjection {
             }
             LogicalPlan::VLLMProject(..) => Ok(Transformed::no(plan)),
             LogicalPlan::StageCheckpointKeys(_) => Ok(Transformed::no(plan)),
+            LogicalPlan::CommonSubplan(..) => Ok(Transformed::no(plan)),
             LogicalPlan::SubqueryAlias(_) => unreachable!("Alias should have been optimized away"),
         }
     }

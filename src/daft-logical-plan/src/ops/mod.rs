@@ -1,5 +1,6 @@
 mod agg;
 mod asof_join;
+mod common_subplan;
 mod concat;
 mod distinct;
 mod explode;
@@ -32,6 +33,7 @@ mod window;
 pub use agg::Aggregate;
 pub use asof_join::AsofJoin;
 pub(crate) use asof_join::get_right_cols_to_drop;
+pub use common_subplan::CommonSubplan;
 pub use concat::Concat;
 pub use distinct::Distinct;
 pub use explode::Explode;
