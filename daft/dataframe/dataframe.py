@@ -2430,8 +2430,10 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
+        from daft_lance import merge_columns_df as _merge_columns_df
+        from daft_lance import write_lance as _write_lance
+
         from daft import context as _context
-        from daft.io.lance.lance_data_sink import LanceDataSink
         from daft.io.object_store_options import io_config_to_storage_options
 
         if schema is None:
@@ -2445,13 +2447,12 @@ class DataFrame:
                 "lance-namespace API and has been removed."
             )
 
-        # Non-merge modes do not support schema evolution or custom join keys
+        # Non-merge modes are fully handled by daft-lance's own write_lance.
         if mode != "merge":
-            sanitized_kwargs = {k: v for k, v in kwargs.items() if k not in ("left_on", "right_on")}
-            sink = LanceDataSink(uri, schema, mode, io_config, **sanitized_kwargs)
-            return self.write_sink(sink)
+            return _write_lance(self, uri, mode=mode, io_config=io_config, schema=schema, **kwargs)
 
-        # Merge mode semantics
+        # Merge mode is not a native daft-lance write mode, so Daft decides between
+        # create/append/column-merge here and delegates the actual work to daft-lance.
         try:
             import lance
         except ImportError as e:
@@ -2460,19 +2461,18 @@ class DataFrame:
             ) from e
 
         io_config = _context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
-        storage_options = io_config_to_storage_options(io_config, str(uri) if isinstance(uri, pathlib.Path) else uri)
+        storage_options = io_config_to_storage_options(io_config, uri_str)
 
         # Attempt to load dataset; if not exists, behave like create
-        lance_ds = None
         try:
             lance_ds = lance.dataset(uri, storage_options=storage_options)
-        except (ValueError, FileNotFoundError, OSError) as _e:
+        except (ValueError, FileNotFoundError, OSError):
             lance_ds = None
 
+        sanitized_kwargs = {k: v for k, v in kwargs.items() if k not in ("left_on", "right_on")}
+
         if lance_ds is None:
-            sanitized_kwargs = {k: v for k, v in kwargs.items() if k not in ("left_on", "right_on")}
-            sink = LanceDataSink(uri, schema, "create", io_config, **sanitized_kwargs)
-            return self.write_sink(sink)
+            return _write_lance(self, uri, mode="create", io_config=io_config, schema=schema, **sanitized_kwargs)
 
         # Dataset exists: detect schema evolution by checking new columns in incoming DF
         existing_fields: set[str] = set()
@@ -2493,11 +2493,8 @@ class DataFrame:
         new_cols = [c for c in self.column_names if c not in existing_fields and c not in meta_exclusions]
 
         if len(new_cols) == 0:
-            # Pure append: no schema evolution. Ensure merge-specific params are not forwarded.
-            sanitized_kwargs = {k: v for k, v in kwargs.items() if k not in ("left_on", "right_on")}
-
-            sink = LanceDataSink(uri, schema, "append", io_config, **sanitized_kwargs)
-            return self.write_sink(sink)
+            # Pure append: no schema evolution.
+            return _write_lance(self, uri, mode="append", io_config=io_config, schema=schema, **sanitized_kwargs)
 
         # Schema evolution: route to per-fragment merge keyed by provided business key or default '_rowaddr'
         join_left = left_on or "_rowaddr"
@@ -2516,16 +2513,7 @@ class DataFrame:
                 f"DataFrame must contain join key column '{join_right}' for per-fragment merge in mode='merge'." + hint
             )
 
-        from daft.io.lance.lance_merge_column import merge_columns_from_df
-        from daft.io.lance.namespace import DatasetOpenContext
-
-        merge_columns_from_df(
-            df=self,
-            lance_ds=lance_ds,
-            open_context=DatasetOpenContext.from_dataset(lance_ds, str(uri), storage_options=storage_options),
-            left_on=join_left,
-            right_on=join_right,
-        )
+        _merge_columns_df(self, uri, io_config, left_on=join_left, right_on=join_right)
 
         # Build and return stats DataFrame similar to sink.finalize
         dataset = lance.dataset(uri, storage_options=storage_options)
