@@ -2349,23 +2349,32 @@ class DataFrame:
     @DataframePublicAPI
     def write_lance(
         self,
-        uri: str | pathlib.Path,
-        mode: Literal["create", "append", "overwrite", "merge"] = "create",
+        uri: str | pathlib.Path | None = None,
+        mode: Literal["create", "append", "overwrite", "insert_overwrite", "merge"] = "create",
         io_config: IOConfig | None = None,
         schema: Union[Schema, "pyarrow.Schema"] | None = None,
         left_on: str | None = None,
         right_on: str | None = None,
+        *,
+        overwrite_where: str | None = None,
+        table_id: list[str] | None = None,
+        namespace_impl: str | None = None,
+        namespace_properties: dict[str, str] | None = None,
         **kwargs: Any,
     ) -> "DataFrame":
         """Writes the DataFrame to a Lance table.
 
         Args:
           uri: The URI of the Lance table to write to. Accepts a local path or an
-            object-store URI like "s3://bucket/path".
-          mode: The write mode. One of "create", "append", "overwrite", or "merge".
+            object-store URI like "s3://bucket/path". Mutually exclusive with
+            the namespace parameters.
+          mode: The write mode. One of "create", "append", "overwrite",
+            "insert_overwrite", or "merge".
           - "create" will create the dataset if it does not exist, otherwise raise an error.
           - "append" will append to the existing dataset if it exists, otherwise raise an error.
           - "overwrite" will overwrite the existing dataset if it exists, otherwise raise an error.
+          - "insert_overwrite" atomically removes rows matching ``overwrite_where``
+            and appends this DataFrame's rows. The table must already exist.
           - "merge" will add new columns to the existing dataset.
           io_config (IOConfig, optional): configurations to use when interacting with remote storage.
           schema (Schema | pyarrow.Schema, optional): Desired schema to enforce during write.
@@ -2379,6 +2388,14 @@ class DataFrame:
               - If omitted, defaults to ``"_rowaddr"``.
               - If ``right_on`` is omitted, it defaults to the value of ``left_on``.
               - The DataFrame passed to ``write_lance(mode="merge")`` must contain ``fragment_id`` and the join key column specified by ``right_on`` (or ``_rowaddr`` by default).
+          overwrite_where: SQL predicate selecting rows to replace. Required only
+            for ``mode="insert_overwrite"``.
+          table_id: Table identifier within a Lance Namespace, e.g.
+            ``["catalog", "schema", "table"]``. Namespace targets do not
+            support ``mode="merge"`` through this Daft facade.
+          namespace_impl: Lance Namespace implementation, such as ``"dir"`` or
+            ``"rest"``.
+          namespace_properties: Properties for connecting to the namespace.
           **kwargs: Additional keyword arguments to pass to the Lance writer. daft-lance
             validates these against a fixed set; an unrecognized argument raises ``TypeError``.
 
@@ -2430,6 +2447,44 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
+        uri_str = str(uri) if uri is not None else None
+        if uri_str is not None and uri_str.startswith("rest://"):
+            raise ValueError(
+                "rest:// Lance URIs are no longer supported by DataFrame.write_lance. "
+                "Use the Lance Namespace parameters instead."
+            )
+
+        # daft-lance owns all current write modes except Daft's legacy schema-evolution
+        # merge mode. Keeping this facade thin ensures Namespace and conditional
+        # overwrite behavior stays aligned with the extension.
+        if mode != "merge":
+            # daft-lance is an optional dependency.
+            from daft.io.lance._lance import write_lance as write_lance_impl
+
+            return write_lance_impl(
+                self,
+                uri=uri,
+                mode=mode,
+                io_config=io_config,
+                schema=schema,
+                overwrite_where=overwrite_where,
+                table_id=table_id,
+                namespace_impl=namespace_impl,
+                namespace_properties=namespace_properties,
+                **kwargs,
+            )
+
+        # Merge mode semantics
+        if table_id is not None or namespace_impl is not None or namespace_properties is not None:
+            raise ValueError(
+                'DataFrame.write_lance(mode="merge") does not support Lance Namespace targets. '
+                "Use daft_lance.merge_columns_df directly for Namespace tables."
+            )
+        if uri is None:
+            raise ValueError('DataFrame.write_lance(mode="merge") requires a URI target.')
+        if overwrite_where is not None:
+            raise ValueError('overwrite_where is only supported with mode="insert_overwrite".')
+
         from daft import context as _context
         from daft.io.lance.lance_data_sink import LanceDataSink
         from daft.io.object_store_options import io_config_to_storage_options
@@ -2437,21 +2492,6 @@ class DataFrame:
         if schema is None:
             schema = self.schema()
 
-        uri_str = str(uri)
-        if uri_str.startswith("rest://"):
-            raise ValueError(
-                "rest:// Lance URIs are no longer supported by DataFrame.write_lance. "
-                "The previous REST-namespace integration did not match the real "
-                "lance-namespace API and has been removed."
-            )
-
-        # Non-merge modes do not support schema evolution or custom join keys
-        if mode != "merge":
-            sanitized_kwargs = {k: v for k, v in kwargs.items() if k not in ("left_on", "right_on")}
-            sink = LanceDataSink(uri, schema, mode, io_config, **sanitized_kwargs)
-            return self.write_sink(sink)
-
-        # Merge mode semantics
         try:
             import lance
         except ImportError as e:
