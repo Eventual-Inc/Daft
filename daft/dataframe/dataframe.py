@@ -2464,6 +2464,7 @@ class DataFrame:
                 "Use the Lance Namespace parameters instead."
             )
 
+        # Non-merge modes are fully handled by daft-lance's write_lance.
         if mode != "merge":
             return _write_lance(
                 self,
@@ -2488,6 +2489,9 @@ class DataFrame:
         if overwrite_where is not None:
             raise ValueError('overwrite_where is only supported with mode="insert_overwrite".')
         assert uri_str is not None
+
+        # Merge mode is not a native daft-lance write mode, so Daft decides between
+        # create/append/column-merge here and delegates the actual work to daft-lance.
         try:
             import lance
         except ImportError as e:
