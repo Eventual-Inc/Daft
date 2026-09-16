@@ -605,3 +605,37 @@ def test_row_wise_udf_input_type_signature_validation():
     assert df.select(opt_upper(df["s"])).to_pydict() == {"s": ["A", "B"]}
     with pytest.raises(daft.exceptions.DaftCoreException, match="Expects input to '.*opt_upper' to be String"):
         df.select(opt_upper(df["ints_list"]))
+
+
+def test_row_wise_udf_variadic_input_type_validation():
+    """Variadic `*args`/`**kwargs` inputs are validated too, not silently skipped."""
+    df = daft.from_pydict({"ints_list": [[1], [1, 2, 3]], "s": ["a", "b"]})
+
+    @daft.func
+    def concat_all(*values: str) -> str:
+        return "".join(values)
+
+    # Every variadic positional expression is validated, not just the first.
+    assert df.select(concat_all(df["s"], df["s"])).to_pydict() == {"s": ["aa", "bb"]}
+    with pytest.raises(daft.exceptions.DaftCoreException, match="Expects input to '.*concat_all' to be String"):
+        df.select(concat_all(df["s"], df["ints_list"]))
+
+    @daft.func
+    def join_kwargs(**values: str) -> str:
+        return "".join(values.values())
+
+    # Variadic keyword expressions are validated against the `**kwargs` annotation.
+    assert df.select(join_kwargs(a=df["s"], b=df["s"])).to_pydict() == {"s": ["aa", "bb"]}
+    with pytest.raises(daft.exceptions.DaftCoreException, match="Expects input to '.*join_kwargs' to be String"):
+        df.select(join_kwargs(a=df["s"], b=df["ints_list"]))
+
+
+def test_row_wise_udf_all_null_input_accepted():
+    """All-null columns (dtype Null) are accepted, consistent with native validation."""
+    df = daft.from_pydict({"n": [None, None]}).with_column("n", daft.col("n").cast(daft.DataType.null()))
+
+    @daft.func
+    def opt_upper(s: str | None) -> str:
+        return "" if s is None else s.upper()
+
+    assert df.select(opt_upper(df["n"])).to_pydict() == {"n": ["", ""]}

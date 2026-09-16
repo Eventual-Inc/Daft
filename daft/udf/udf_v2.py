@@ -294,14 +294,25 @@ class Func(Generic[P, T, C]):
             return None if inferred == DataType.python() else inferred
 
         # Match positional args to parameter names, then keyword args by name.
-        pos_names = [p.name for p in params if p.kind != inspect.Parameter.KEYWORD_ONLY]
+        # Extra positional args past the fixed params fall to a `*args` param (if any);
+        # keyword args not naming a fixed param fall to a `**kwargs` param (if any).
+        pos_names = [p.name for p in params if p.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)]
+        var_pos = next((p.name for p in params if p.kind == inspect.Parameter.VAR_POSITIONAL), None)
+        fixed_kw_names = {p.name for p in params if p.kind != inspect.Parameter.VAR_KEYWORD}
+        var_kw = next((p.name for p in params if p.kind == inspect.Parameter.VAR_KEYWORD), None)
         result: list[DataType | None] = []
         for i, arg in enumerate(args):
             if isinstance(arg, Expression):
-                result.append(dtype_for(pos_names[i]) if i < len(pos_names) else None)
+                if i < len(pos_names):
+                    result.append(dtype_for(pos_names[i]))
+                else:
+                    result.append(dtype_for(var_pos) if var_pos is not None else None)
         for key, arg in kwargs.items():
             if isinstance(arg, Expression):
-                result.append(dtype_for(key))
+                if key in fixed_kw_names:
+                    result.append(dtype_for(key))
+                else:
+                    result.append(dtype_for(var_kw) if var_kw is not None else None)
         return result
 
     @overload

@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 pub use batch::{BatchPyFn, batch_udf};
 use common_error::DaftResult;
+use common_treenode::TreeNode;
 use daft_core::prelude::*;
 #[cfg(feature = "python")]
 pub use retry::{retry_after_ms_from_error, retry_with_backoff};
@@ -83,7 +84,6 @@ impl PyScalarFn {
                 // projection, at which point positional matching against `input_dtypes` is no
                 // longer reliable. Any real type mismatch is already caught by the earlier
                 // (pre-binding) `to_field` call, so skipping here loses no coverage.
-                use common_treenode::TreeNode;
                 let has_bound_arg = args.iter().any(|arg| {
                     arg.exists(|e| {
                         matches!(e.as_ref(), crate::Expr::Column(crate::Column::Bound(_)))
@@ -93,8 +93,10 @@ impl PyScalarFn {
                     for (arg, expected) in args.iter().zip(input_dtypes.iter()) {
                         if let Some(expected) = expected {
                             let actual = arg.to_field(schema)?.dtype;
+                            // All-null columns have dtype `Null`; accept them, consistent with
+                            // native expression validation, so Optional-aware UDFs can handle `None`.
                             common_error::ensure!(
-                                &actual == expected,
+                                actual == DataType::Null || &actual == expected,
                                 TypeError: "Expects input to '{function_name}' to be {expected}, but received {actual}",
                             );
                         }
