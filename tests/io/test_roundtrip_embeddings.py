@@ -37,10 +37,10 @@ def _make_check_embeddings(
             raise ValueError(f"Expecting {test_df.count_rows()} rows but got a DataFrame with {loaded_df.count_rows()}")
 
         l_rows = loaded_df.to_pydict()[embeddings_col]
-        for i, (t, l) in enumerate(zip(test_rows, l_rows)):  # noqa: E741
-            assert isinstance(l, np.ndarray), f"Row {i} expected a numpy array when loading, got a {type(l)}: {l}"
-            assert l.dtype == t.dtype, f"Row {i} has wrong dtype. Expected={t.dtype} vs. found={l.dtype}"
-            assert (t == l).all(), f"Row {i} failed equality check: test_df={t} vs. loaded={l}"
+        for i, (t, row) in enumerate(zip(test_rows, l_rows)):
+            assert isinstance(row, np.ndarray), f"Row {i} expected a numpy array when loading, got a {type(row)}: {row}"
+            assert row.dtype == t.dtype, f"Row {i} has wrong dtype. Expected={t.dtype} vs. found={row.dtype}"
+            assert (t == row).all(), f"Row {i} failed equality check: test_df={t} vs. loaded={row}"
 
     return _check_embeddings
 

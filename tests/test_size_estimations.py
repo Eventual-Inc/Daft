@@ -209,8 +209,7 @@ def test_json_config_affects_estimations(tmpdir, inflation_factor, expected_size
     # Create a newline delimited JSON file
     file_path = tmpdir / "test_config.json"
     with open(file_path, "w") as f:
-        for value in data:
-            f.write(json.dumps({"foo": value}) + "\n")
+        f.writelines(json.dumps({"foo": value}) + "\n" for value in data)
 
     # Test with the specified inflation factor
     with execution_config_ctx(json_inflation_factor=inflation_factor):

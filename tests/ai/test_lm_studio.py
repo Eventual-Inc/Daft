@@ -75,3 +75,27 @@ def test_lm_studio_text_embedder(model, embedding_dim):
             assert len(embeddings) == len(text_data)
             assert all(isinstance(embedding, np.ndarray) for embedding in embeddings)
             assert all(len(embedding) == embedding_dim for embedding in embeddings)
+
+
+def test_lm_studio_dimension_probe_forwards_extra_body():
+    extra_body = {"input_type": "passage"}
+    response = CreateEmbeddingResponse(
+        data=[OpenAIEmbedding(embedding=[0.1] * 1024, index=0, object="embedding")],
+        model="custom-model",
+        object="list",
+        usage={"prompt_tokens": 0, "total_tokens": 0},
+    )
+
+    with patch("openai.resources.embeddings.Embeddings.create", return_value=response) as mock_create:
+        descriptor = LMStudioProvider().get_text_embedder(
+            model="custom-model",
+            extra_body=extra_body,
+        )
+
+        assert descriptor.get_dimensions().size == 1024
+        mock_create.assert_called_once_with(
+            input="dimension probe",
+            model="custom-model",
+            encoding_format="float",
+            extra_body=extra_body,
+        )
