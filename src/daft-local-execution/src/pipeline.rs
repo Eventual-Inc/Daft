@@ -1042,16 +1042,81 @@ fn physical_plan_to_pipeline(
             context,
             ..
         }) => {
-            let sort_sink = SortSink::new(sort_by.clone(), descending.clone(), nulls_first.clone());
-            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
-            BlockingSinkNode::new(
+            // Evaluate allocating keys once, before Sort takes ownership of its runs.
+            // These columns then participate in run accounting, spilling and merging just
+            // like input columns; merge never estimates or reevaluates expression outputs.
+            let mut keys = sort_by.clone();
+            let mut child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            let output_projection = if sort_by
+                .iter()
+                .any(|key| crate::sinks::sort::key_allocates(key.inner()))
+            {
+                let projections = (|| -> DaftResult<_> {
+                    use daft_dsl::{bound_col, expr::bound_expr::BoundExpr};
+                    let input_schema = input.schema();
+                    let original = input_schema
+                        .fields()
+                        .iter()
+                        .enumerate()
+                        .map(|(i, field)| BoundExpr::new_unchecked(bound_col(i, field.clone())))
+                        .collect::<Vec<_>>();
+                    let mut projection = original.clone();
+                    let mut fields = input_schema.fields().to_vec();
+                    for (i, key) in keys.iter_mut().enumerate() {
+                        if !crate::sinks::sort::key_allocates(key.inner()) {
+                            continue;
+                        }
+                        let mut name = format!("__daft_sort_key_{i}");
+                        while fields.iter().any(|field| field.name.as_ref() == name) {
+                            name.push('_');
+                        }
+                        let expr = key.inner().clone().alias(name);
+                        let field = expr.to_field(input_schema)?;
+                        *key = BoundExpr::new_unchecked(bound_col(fields.len(), field.clone()));
+                        fields.push(field);
+                        projection.push(BoundExpr::new_unchecked(expr));
+                    }
+                    let keyed_schema = Arc::new(Schema::new(fields));
+                    Ok((
+                        ProjectOperator::new(projection, input_schema.clone())?,
+                        ProjectOperator::new(original, keyed_schema)?,
+                    ))
+                })()
+                .with_context(|_| PipelineCreationSnafu {
+                    plan_name: physical_plan.name(),
+                })?;
+                child_node = IntermediateNode::new(
+                    Arc::new(projections.0),
+                    child_node,
+                    stats_state.clone(),
+                    ctx,
+                    context,
+                )
+                .boxed();
+                Some(projections.1)
+            } else {
+                None
+            };
+            let sort_sink = SortSink::new(keys, descending.clone(), nulls_first.clone());
+            let sorted = BlockingSinkNode::new(
                 Arc::new(sort_sink),
                 child_node,
                 stats_state.clone(),
                 ctx,
                 context,
             )
-            .boxed()
+            .boxed();
+            match output_projection {
+                Some(projection) => IntermediateNode::new(
+                    Arc::new(projection),
+                    sorted,
+                    stats_state.clone(),
+                    ctx,
+                    context,
+                )
+                .boxed(),
+                None => sorted,
+            }
         }
         LocalPhysicalPlan::TopN(TopN {
             input,

@@ -329,8 +329,10 @@ pub fn task_events_enabled() -> bool {
 /// Receives inputs via `enqueue_input_rx`, routes pipeline outputs to
 /// per-input_id channels, and runs until the pipeline finishes, errors,
 /// or is cancelled.
+#[allow(clippy::too_many_arguments)]
 async fn run_execution_loop(
     cancel: CancellationToken,
+    plan_fingerprint: u64,
     stats_manager: RuntimeStatsManager,
     mut enqueue_input_rx: crate::channel::Receiver<EnqueueInputMessage>,
     input_senders: Arc<HashMap<SourceId, crate::input_sender::InputSender>>,
@@ -338,9 +340,16 @@ async fn run_execution_loop(
     maintain_order: bool,
 ) -> DaftResult<()> {
     let stats_manager_handle = stats_manager.handle();
-    let memory_manager = get_or_init_memory_manager();
+    let memory_manager = get_or_init_memory_manager()?;
+    let pipeline_pool = memory_manager.create_pipeline_pool(
+        format!("pipeline-{plan_fingerprint}"),
+        memory_manager.total_bytes(),
+    );
+    let spill_manager =
+        crate::resource_manager::create_spill_manager(format!("pipeline-{plan_fingerprint}"))
+            .map_err(|error| common_error::DaftError::ComputeError(error.to_string()))?;
     let mut runtime_handle =
-        ExecutionRuntimeContext::new(memory_manager.clone(), stats_manager_handle);
+        ExecutionRuntimeContext::new(pipeline_pool, spill_manager, stats_manager_handle);
     let mut output_receiver = pipeline.start(maintain_order, &mut runtime_handle)?;
 
     let mut message_router = MessageRouter::new();
@@ -385,6 +394,9 @@ async fn run_execution_loop(
             msg = output_receiver.recv() => {
                 match msg {
                     Some(msg) => {
+                        if let PipelineMessage::Flush(input_id) = &msg {
+                            runtime_handle.memory_context().finish_input(*input_id);
+                        }
                         message_router.route_message(msg);
                     }
                     None => {
@@ -516,6 +528,7 @@ impl NativeExecutor {
             let input_senders = Arc::new(input_senders);
             let task = run_execution_loop(
                 cancel,
+                fingerprint,
                 stats_manager,
                 enqueue_input_rx,
                 input_senders,

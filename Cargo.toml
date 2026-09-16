@@ -226,6 +226,7 @@ members = [
   "src/daft-local-plan",
   "src/daft-logical-plan",
   "src/daft-mcap",
+  "src/daft-memory",
   "src/daft-micropartition",
   "src/daft-parquet",
   "src/daft-partition-refs",
