@@ -29,7 +29,7 @@ def custom_metadata():
 def commit_properties():
     @contextlib.contextmanager
     def _(deltalake):
-        setattr(deltalake, "CommitProperties", _FakeCommitProperties)
+        deltalake.CommitProperties = _FakeCommitProperties
         try:
             yield
         finally:

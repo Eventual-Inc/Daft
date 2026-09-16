@@ -118,9 +118,7 @@ class DeltaJSONEncoder(json.JSONEncoder):
 
         if isinstance(obj, bytes):
             return obj.decode("unicode_escape", "backslashreplace")
-        elif isinstance(obj, date):
-            return obj.isoformat()
-        elif isinstance(obj, datetime):
+        elif isinstance(obj, date) or isinstance(obj, datetime):
             return obj.isoformat()
         elif isinstance(obj, Decimal):
             return str(obj)
@@ -140,7 +138,7 @@ def make_deltalake_add_action(
     stats = get_file_stats_from_metadata(metadata)
 
     # remove leading slash
-    path = path[1:] if path.startswith("/") else path
+    path = path.removeprefix("/")
     return AddAction(
         path,
         size,
