@@ -11,13 +11,17 @@ use daft_catalog::Identifier;
 use daft_core::prelude::*;
 use daft_dsl::{
     Column, Expr, ExprRef, PlanRef, Subquery, UnresolvedColumn,
-    functions::{FunctionExpr, ScalarUDF, scalar::ScalarFn, struct_::StructExpr},
+    functions::{
+        BuiltinScalarFn, BuiltinScalarFnVariant, FunctionArg as DslFunctionArg, FunctionArgs,
+        FunctionExpr, ScalarUDF, scalar::ScalarFn, struct_::StructExpr,
+    },
     has_agg, lit, null_lit, resolved_col, unresolved_col,
 };
 use daft_functions::{
     invalid_argument_err,
     numeric::{ceil::ceil, floor::floor},
 };
+use daft_functions_temporal::time::ConvertTimeZone;
 use daft_functions_utf8::{ilike, like, to_date, to_datetime};
 use daft_logical_plan::{
     JoinOptions, LogicalPlanBuilder, LogicalPlanRef,
@@ -1766,7 +1770,29 @@ impl SQLPlanner<'_> {
             SQLExpr::AllOp { .. } => unsupported_sql_err!("ALL"),
             SQLExpr::Convert { .. } => unsupported_sql_err!("CONVERT"),
             SQLExpr::Cast { .. } => unsupported_sql_err!("CAST"),
-            SQLExpr::AtTimeZone { .. } => unsupported_sql_err!("AT TIME ZONE"),
+            SQLExpr::AtTimeZone {
+                timestamp,
+                time_zone,
+            } => {
+                let ts = self.plan_expr(timestamp)?;
+                let tz_expr = self.plan_expr(time_zone)?;
+                let tz = tz_expr
+                    .as_literal()
+                    .and_then(|l| l.as_str())
+                    .ok_or_else(|| {
+                        PlannerError::invalid_operation(
+                            "AT TIME ZONE timezone must be a string literal".to_string(),
+                        )
+                    })?;
+                Ok(BuiltinScalarFn {
+                    func: BuiltinScalarFnVariant::Sync(Arc::new(ConvertTimeZone)),
+                    inputs: FunctionArgs::new_unchecked(vec![
+                        DslFunctionArg::unnamed(ts),
+                        DslFunctionArg::named("to_timezone".to_string(), lit(tz.to_string())),
+                    ]),
+                }
+                .into())
+            }
             SQLExpr::Extract {
                 field,
                 syntax: _,
@@ -2646,5 +2672,15 @@ mod tests {
         assert!(!is_table_path(&ObjectName(vec![
             ObjectNamePart::Identifier(Ident::new("path/to/file.ext"))
         ])));
+    }
+
+    #[test]
+    fn test_at_time_zone_sql_expr() {
+        crate::planner::sql_expr("ts AT TIME ZONE 'UTC'").expect("AT TIME ZONE should plan");
+        let err = crate::planner::sql_expr("ts AT TIME ZONE tz").unwrap_err();
+        assert!(
+            err.to_string().contains("string literal"),
+            "unexpected error: {err}"
+        );
     }
 }
