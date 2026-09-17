@@ -5,6 +5,7 @@ arrow-array = {workspace = true}
 arrow-buffer = {workspace = true}
 arrow-ipc = {workspace = true}
 arrow-schema = {workspace = true}
+async-stream = {workspace = true}
 async-trait = {workspace = true}
 common-checkpoint-config = {path = "../common/checkpoint-config", default-features = false}
 common-daft-config = {path = "../common/daft-config", default-features = false}
@@ -34,6 +35,7 @@ daft-text = {path = "../daft-text", default-features = false}
 daft-local-plan = {path = "../daft-local-plan", default-features = false}
 daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
 daft-mcap = {path = "../daft-mcap", default-features = false}
+daft-memory = {path = "../daft-memory", default-features = false}
 daft-micropartition = {path = "../daft-micropartition", default-features = false}
 daft-parquet = {path = "../daft-parquet", default-features = false}
 daft-partition-refs = {path = "../daft-partition-refs", default-features = false}
@@ -61,6 +63,8 @@ serde_json = {workspace = true}
 opentelemetry = {workspace = true}
 dashmap = {workspace = true}
 sysinfo = {workspace = true}
+thiserror = {workspace = true}
+uuid = {workspace = true}
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemalloc-ctl = {version = "0.7.0", features = ["stats"]}

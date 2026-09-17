@@ -544,19 +544,21 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
         let name: Arc<str> = node_info.name.clone();
         let child_rx = child.start(maintain_order, runtime_handle)?;
         let (output_tx, output_rx) = create_channel(1);
-        let memory_manager = runtime_handle.memory_manager();
+        let memory_pool = runtime_handle.memory_pool();
         let stats_manager = runtime_handle.stats_manager();
         let batch_manager = BatchManager::new(op.batching_strategy());
 
         let compute_runtime = get_compute_runtime();
         let task_spawner = ExecutionTaskSpawner::new(
             compute_runtime.clone(),
-            memory_manager.clone(),
+            memory_pool.clone(),
+            runtime_handle.spill_manager(),
             info_span!("StreamingSink::Execute"),
         );
         let finalize_spawner = ExecutionTaskSpawner::new(
             compute_runtime,
-            memory_manager,
+            memory_pool,
+            runtime_handle.spill_manager(),
             info_span!("StreamingSink::Finalize"),
         );
 

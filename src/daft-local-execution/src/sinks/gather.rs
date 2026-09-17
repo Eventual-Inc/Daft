@@ -93,7 +93,7 @@ impl GatherState {
 
 fn collect_output(backend: &LocalShuffleBackend, states: Vec<GatherState>) -> BlockingSinkOutput {
     match backend {
-        LocalShuffleBackend::Ray => BlockingSinkOutput::Partitions(
+        LocalShuffleBackend::Ray => BlockingSinkOutput::partitions(
             states
                 .into_iter()
                 .flat_map(|s| match s {
@@ -134,6 +134,7 @@ impl BlockingSink for GatherSink {
         input: MicroPartition,
         mut state: Self::State,
         _runtime_stats: Arc<Self::Stats>,
+        _spill_scope: crate::spilling::SpillScopeId,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         spawner
@@ -151,6 +152,7 @@ impl BlockingSink for GatherSink {
     fn finalize(
         &self,
         states: Vec<Self::State>,
+        _spill_scope: crate::spilling::SpillScopeId,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult {
         let backend = self.backend.clone();

@@ -201,6 +201,7 @@ impl BlockingSink for WriteSink {
         input: MicroPartition,
         mut state: Self::State,
         runtime_stats: Arc<Self::Stats>,
+        _spill_scope: crate::spilling::SpillScopeId,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         spawner
@@ -225,6 +226,7 @@ impl BlockingSink for WriteSink {
     fn finalize(
         &self,
         states: Vec<Self::State>,
+        _spill_scope: crate::spilling::SpillScopeId,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult {
         let file_schema = self.file_schema.clone();
@@ -248,7 +250,7 @@ impl BlockingSink for WriteSink {
                         }
                     }
                     let mp = MicroPartition::new_loaded(file_schema, results.into(), None);
-                    Ok(BlockingSinkOutput::Partitions(vec![mp]))
+                    Ok(BlockingSinkOutput::partitions(vec![mp]))
                 },
                 Span::current(),
             )
