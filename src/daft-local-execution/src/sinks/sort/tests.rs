@@ -830,17 +830,25 @@ async fn final_output_reclaims_while_downstream_is_not_polling() {
         assert!(root.exists());
         drop(downstream);
         while let Some(partition) = stream.next().await {
-            for batch in partition.unwrap().record_batches() {
+            let partition = partition.unwrap();
+            // A restored frame remains accounted until its output handoff completes.
+            assert!(manager.used_bytes() > 0);
+            assert!(
+                spawner
+                    .try_reserve_memory(manager.total_bytes())
+                    .unwrap()
+                    .is_none()
+            );
+            for batch in partition.record_batches() {
                 for row in 0..batch.len() {
                     assert_eq!(batch.get_column(0).i64().unwrap().get(row), Some(count));
                     count += 1;
                 }
             }
-            // Restoring an output must not leave reader reservations behind either.
-            let downstream = spawner.reserve_memory(32 * 1024 * 1024).await.unwrap();
-            drop(downstream);
         }
         assert_eq!(count, 100_000);
+        let downstream = spawner.reserve_memory(manager.total_bytes()).await.unwrap();
+        drop(downstream);
         drop(stream);
         assert_eq!(manager.used_bytes(), 0);
         assert_no_spill_files(&root);

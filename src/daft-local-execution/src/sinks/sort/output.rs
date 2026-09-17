@@ -8,6 +8,11 @@ fn spill_error(error: impl std::fmt::Display) -> DaftError {
     DaftError::ComputeError(error.to_string())
 }
 
+struct OutputHandoff {
+    partition: MicroPartition,
+    memory: Option<MemoryPermit>,
+}
+
 /// Selected rows are contiguous within each cursor, even when the merge order
 /// alternates between cursors. Slice once per contributing cursor, concatenate
 /// those ranges, then apply the merge permutation in one columnar take.
@@ -108,7 +113,7 @@ pub(super) fn reclaim_output(
 ) -> SortStream {
     let mut target = spawner.register_release_target("sort-output");
     target.set_reclaim_bytes(reclaim_bytes);
-    let (requests, mut demand) = mpsc::channel::<oneshot::Sender<Option<MicroPartition>>>(1);
+    let (requests, mut demand) = mpsc::channel::<oneshot::Sender<Option<OutputHandoff>>>(1);
     let task = spawner.clone().spawn(
         async move {
             let mut files = VecDeque::new();
@@ -140,7 +145,9 @@ pub(super) fn reclaim_output(
                         let Some(reply) = next else { return Ok(()) };
                         match stream.next().await.transpose()? {
                             Some(partition) => {
-                                if reply.send(Some(partition)).is_err() { return Ok(()) }
+                                if reply.send(Some(OutputHandoff { partition, memory: None })).is_err() {
+                                    return Ok(())
+                                }
                             }
                             None => {
                                 drop(stream);
@@ -185,13 +192,14 @@ pub(super) fn reclaim_output(
                         Some((batch, memory, mut reader)) => {
                             position = Some(reader.position().map_err(spill_error)?);
                             drop(reader);
-                            drop(memory);
-                            // Ownership passes to pipeline output, not to another retained cursor.
-                            break Some(MicroPartition::new_loaded(
-                                schema.clone(),
-                                Arc::new(vec![batch]),
-                                None,
-                            ));
+                            break Some(OutputHandoff {
+                                partition: MicroPartition::new_loaded(
+                                    schema.clone(),
+                                    Arc::new(vec![batch]),
+                                    None,
+                                ),
+                                memory: Some(memory),
+                            });
                         }
                         None => {
                             files.pop_front();
@@ -216,7 +224,11 @@ pub(super) fn reclaim_output(
             let (reply, response) = oneshot::channel();
             if requests.send(reply).await.is_err() { break }
             match response.await {
-                Ok(Some(partition)) => yield partition,
+                Ok(Some(OutputHandoff { partition, memory })) => {
+                    // Keep restored output accounted while a downstream send is blocked.
+                    yield partition;
+                    drop(memory);
+                }
                 Ok(None) | Err(_) => break,
             }
         }

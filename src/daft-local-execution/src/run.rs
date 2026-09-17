@@ -325,20 +325,31 @@ pub fn task_events_enabled() -> bool {
     }
 }
 
+struct ExecutionLoopParams {
+    cancel: CancellationToken,
+    plan_fingerprint: u64,
+    stats_manager: RuntimeStatsManager,
+    input_senders: Arc<HashMap<SourceId, crate::input_sender::InputSender>>,
+    pipeline: Box<dyn crate::pipeline::PipelineNode>,
+    maintain_order: bool,
+}
+
 /// The core execution loop that drives a pipeline to completion.
 /// Receives inputs via `enqueue_input_rx`, routes pipeline outputs to
 /// per-input_id channels, and runs until the pipeline finishes, errors,
 /// or is cancelled.
-#[allow(clippy::too_many_arguments)]
 async fn run_execution_loop(
-    cancel: CancellationToken,
-    plan_fingerprint: u64,
-    stats_manager: RuntimeStatsManager,
+    params: ExecutionLoopParams,
     mut enqueue_input_rx: crate::channel::Receiver<EnqueueInputMessage>,
-    input_senders: Arc<HashMap<SourceId, crate::input_sender::InputSender>>,
-    pipeline: Box<dyn crate::pipeline::PipelineNode>,
-    maintain_order: bool,
 ) -> DaftResult<()> {
+    let ExecutionLoopParams {
+        cancel,
+        plan_fingerprint,
+        stats_manager,
+        input_senders,
+        pipeline,
+        maintain_order,
+    } = params;
     let stats_manager_handle = stats_manager.handle();
     let memory_manager = get_or_init_memory_manager()?;
     let pipeline_pool = memory_manager.create_pipeline_pool(
@@ -527,13 +538,15 @@ impl NativeExecutor {
 
             let input_senders = Arc::new(input_senders);
             let task = run_execution_loop(
-                cancel,
-                fingerprint,
-                stats_manager,
+                ExecutionLoopParams {
+                    cancel,
+                    plan_fingerprint: fingerprint,
+                    stats_manager,
+                    input_senders,
+                    pipeline,
+                    maintain_order,
+                },
                 enqueue_input_rx,
-                input_senders,
-                pipeline,
-                maintain_order,
             );
 
             let task_handle = RuntimeTask::new(handle, task);

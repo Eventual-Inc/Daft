@@ -14,7 +14,10 @@ use common_metrics::{
     ops::{NodeCategory, NodeInfo, NodeType},
 };
 use daft_core::{join::JoinSide, prelude::Schema};
-use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
+use daft_dsl::{
+    bound_col, common_treenode::ConcreteTreeNode, expr::bound_expr::BoundExpr,
+    join::get_common_join_cols,
+};
 pub use daft_local_plan::InputId;
 use daft_local_plan::{
     AsofJoin, CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleReadInput,
@@ -1052,7 +1055,6 @@ fn physical_plan_to_pipeline(
                 .any(|key| crate::sinks::sort::key_allocates(key.inner()))
             {
                 let projections = (|| -> DaftResult<_> {
-                    use daft_dsl::{bound_col, expr::bound_expr::BoundExpr};
                     let input_schema = input.schema();
                     let original = input_schema
                         .fields()

@@ -5,6 +5,7 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
+use arrow_schema::DataType;
 use common_error::{DaftError, DaftResult};
 use common_metrics::ops::NodeType;
 use daft_core::{
@@ -206,9 +207,7 @@ impl SortParams {
     }
 }
 
-fn comparator_type_bytes(dtype: &arrow_schema::DataType) -> u64 {
-    use arrow_schema::DataType;
-
+fn comparator_type_bytes(dtype: &DataType) -> u64 {
     // Each type node can own a boxed closure, two nullable array/buffer views
     // and a Vec entry. Nested comparators recursively own their child closures.
     // This includes the nullable float path, which captures entire arrays.
