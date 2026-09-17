@@ -1,6 +1,6 @@
 # Identifiers
 
-Daft's SQL identifiers are **case-sensitive by default**, but support a case-insensitive and a case-normalize mode. For both the case-insensitive and case-sensitive modes, identifiers are case-preserved and are matched based upon the mode. For the case-normalize mode, unquoted (regular) identifiers are normalized to lowercase and double-quoted (delimited) identifiers are case-preserved. You can configure these modes via the `SessionOptions` when creating a session. These modes apply when resolving attached catalogs, attached tables, and columns via the session.
+Daft's SQL identifiers are **case-sensitive by default**, but support a case-insensitive and a case-normalize mode. For both the case-insensitive and case-sensitive modes, identifiers are case-preserved and are matched based upon the mode. For the case-normalize mode, unquoted (regular) identifiers are normalized to lowercase and double-quoted (delimited) identifiers are case-preserved. You can configure these modes with `SET identifier_mode`. These modes apply when resolving attached catalogs, attached tables, and columns via the session.
 
 !!! warning "Warning"
 
@@ -59,8 +59,17 @@ SELECT "🍺" FROM "🍻"
 
 ## Configuration
 
-The identifier mode is configured at the session level. Currently, Daft uses **case-sensitive** mode by default.
+The identifier mode is configured at the session level. Daft uses **case-sensitive** mode by default.
 
-!!! note "Future Configuration"
+```sql
+SET identifier_mode = 'insensitive';
+SET identifier_mode = 'normalize';
+```
 
-    Python APIs for configuring the identifier mode are planned for a future release. For now, the default case-sensitive mode is used.
+`normalized` is accepted as an alias for `normalize`. You can also qualify the option with `daft.`:
+
+```sql
+SET daft.identifier_mode = 'sensitive';
+```
+
+See [SET](statements/set.md) for the full statement syntax.
