@@ -2369,8 +2369,8 @@ class DataFrame:
             object-store URI like "s3://bucket/path". Mutually exclusive with
             the namespace parameters.
           mode: The write mode. One of "create", "append", "overwrite", or
-            "insert_overwrite". ``"merge"`` is deprecated and will be removed
-            in the next breaking release.
+            "insert_overwrite". ``"merge"`` is deprecated in v0.8.0 and will
+            be removed in v0.9.0.
           - "create" will create the dataset if it does not exist, otherwise raise an error.
           - "append" will append to the existing dataset if it exists, otherwise raise an error.
           - "overwrite" will overwrite the existing dataset if it exists, otherwise raise an error.
@@ -2464,8 +2464,8 @@ class DataFrame:
 
         if mode == "merge":
             warnings.warn(
-                'DataFrame.write_lance(mode="merge") is deprecated and will be removed in the next '
-                "breaking release. Use write_lance(mode='create') for a new table, "
+                'DataFrame.write_lance(mode="merge") is deprecated in v0.8.0 and will be removed '
+                "in v0.9.0. Use write_lance(mode='create') for a new table, "
                 "write_lance(mode='append') when adding rows, or "
                 "daft_lance.merge_columns_df for column merges.",
                 DeprecationWarning,

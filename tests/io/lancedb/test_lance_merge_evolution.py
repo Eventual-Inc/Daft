@@ -47,7 +47,7 @@ def test_merge_evolution_rowaddr(lance_dataset_path):
     )
 
     # Merge mode column evolution by _rowaddr
-    with pytest.warns(DeprecationWarning, match=r"daft_lance\.merge_columns_df"):
+    with pytest.warns(DeprecationWarning, match=r"removed in v0\.9\.0"):
         df_subset.write_lance(lance_dataset_path, mode="merge")
 
     # New column exists with correct values; row count unchanged
@@ -99,7 +99,7 @@ def test_merge_evolution_business_key(lance_dataset_path):
     )
 
     # Merge by business key
-    with pytest.warns(DeprecationWarning, match=r"daft_lance\.merge_columns_df"):
+    with pytest.warns(DeprecationWarning, match=r"removed in v0\.9\.0"):
         df_subset.write_lance(lance_dataset_path, mode="merge", left_on="frame_key", right_on="frame_key")
 
     df_after = daft.read_lance(lance_dataset_path)

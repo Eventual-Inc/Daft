@@ -189,9 +189,9 @@ URI and Namespace targets are mutually exclusive.
 
 ### Migrating from `mode="merge"`
 
-`DataFrame.write_lance(mode="merge")` is deprecated and will be removed in
-the next breaking release. Its behavior depended on the target table and input
-schema; migrate each case to an explicit operation:
+`DataFrame.write_lance(mode="merge")` is deprecated in v0.8.0 and will be
+removed in v0.9.0. Its behavior depended on the target table and input schema;
+migrate each case to an explicit operation:
 
 ```python
 # No target table: create it explicitly.

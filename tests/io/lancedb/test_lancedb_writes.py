@@ -100,7 +100,7 @@ def test_lancedb_insert_overwrite(lance_dataset_path):
 
 def test_lancedb_merge_rejects_namespace_target(tmp_path):
     with (
-        pytest.warns(DeprecationWarning, match=r"daft_lance\.merge_columns_df"),
+        pytest.warns(DeprecationWarning, match=r"removed in v0\.9\.0"),
         pytest.raises(ValueError, match="does not support Lance Namespace"),
     ):
         daft.from_pydict({"id": [1]}).write_lance(
