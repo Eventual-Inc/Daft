@@ -14,6 +14,16 @@ Daft natively supports reading and writing data to major cloud object storage pr
 | [Tencent Cloud COS](cos.md) | `cos://`, `cosn://` | [`CosConfig`][daft.io.CosConfig] |
 | [GooseFS](goosefs.md) | `goosefs://` | [`GooseFSConfig`][daft.io.GooseFSConfig] |
 
+!!! note "Additional OpenDAL-backed filesystems"
+
+    Daft also supports a wide range of additional object storage protocols — such as `oss://`, `obs://`, `tos://`, `webdav://`, `ftp://` and more — through the [OpenDAL](https://opendal.apache.org/) Python library. Install the `extra-fs` extra to enable them:
+
+    ```bash
+    pip install -U "daft[extra-fs]"
+    ```
+
+    These backends use the Python OpenDAL bindings at runtime, so no special Daft build is required. Writes are buffered in memory, up to 1GB per file. The `goosefs://`, `github://`, `hdfs://`, `sftp://` and `ftps://` protocols are not shipped in the Python wheel — use Daft's native HDFS support for `hdfs://` instead. See [Installation](../install.md) for details.
+
 ## Table Formats
 
 Daft reads and writes the major open table formats.

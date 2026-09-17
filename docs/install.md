@@ -208,6 +208,14 @@ Depending on your use case, you may need to install Daft with additional depende
           <strong>MCAP</strong> <code>mcap</code>
         </div>
       </label>
+
+      <label class="checkbox-item">
+        <input type="checkbox" id="extra-fs" data-extra="extra-fs">
+        <span class="checkmark"></span>
+        <div class="checkbox-content">
+          <strong>Additional Filesystems</strong> <code>extra-fs</code>
+        </div>
+      </label>
     </div>
 
   </div>
