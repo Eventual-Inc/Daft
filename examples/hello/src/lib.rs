@@ -1,6 +1,9 @@
 use std::{ffi::CStr, sync::Arc};
 
-use arrow_array::{Array, ArrayRef};
+use arrow_array::{
+    Array, ArrayRef, Int64Array,
+    builder::{FixedSizeListBuilder, Int64Builder},
+};
 use arrow_schema::{DataType, Field};
 use daft_ext::{daft_extension, prelude::*};
 
@@ -12,6 +15,7 @@ struct HelloExtension;
 impl DaftExtension for HelloExtension {
     fn install(session: &mut dyn DaftSession) {
         session.define_function(Arc::new(Greet));
+        session.define_function(Arc::new(Splat));
         session.define_aggregate_function(Arc::new(StringCount));
     }
 }
@@ -21,6 +25,117 @@ impl DaftExtension for HelloExtension {
 #[daft_func]
 fn greet(name: &str) -> String {
     format!("Hello, {}!", name)
+}
+
+// ── Scalar Function with a value-dependent output type ─────────────
+
+/// The most one call may produce, so a typo in a query can't ask for a
+/// terabyte-wide column.
+const SPLAT_MAX_COUNT: i64 = 1 << 20;
+
+/// `splat(value, count)` repeats each value into a `FixedSizeList` of length
+/// `count`. The *width of the output type* comes from the value of `count`,
+/// which is only knowable because planning hands us foldable literals.
+struct Splat;
+
+impl DaftScalarFunction for Splat {
+    fn name(&self) -> &CStr {
+        c"splat"
+    }
+
+    fn return_field(&self, args: &[ArgDescriptor]) -> DaftResult<ArrowSchema> {
+        if args.len() != 2 {
+            return Err(DaftError::TypeError(format!(
+                "splat: expected 2 arguments, got {}",
+                args.len()
+            )));
+        }
+
+        let value_field = import_field(args[0].field())?;
+        if *value_field.data_type() != DataType::Int64 {
+            return Err(DaftError::TypeError(format!(
+                "splat: expected an Int64 first argument, got {:?}",
+                value_field.data_type()
+            )));
+        }
+
+        // `count` is only present when the argument is a literal; a column here
+        // is a planning error, not a runtime one.
+        let count = validate_count(literal_i64(&args[1])?.ok_or_else(|| {
+            DaftError::TypeError("splat: 'count' must be a literal, not a column".to_string())
+        })?)?;
+
+        let item = Field::new("item", DataType::Int64, true);
+        // Name the output after the first argument, per the convention in the
+        // authoring guide — Daft derives an expression's name from its first
+        // input, and a different name here breaks projection pushdown.
+        export_field(&Field::new(
+            value_field.name(),
+            DataType::FixedSizeList(Arc::new(item), count as i32),
+            true,
+        ))
+    }
+
+    fn call(&self, mut args: Vec<ArrowData>) -> DaftResult<ArrowData> {
+        if args.len() != 2 {
+            // The host handed us ownership of these; release them rather than
+            // leaking on the way out.
+            for arg in &mut args {
+                unsafe { arg.release() };
+            }
+            return Err(DaftError::TypeError(format!(
+                "splat: expected 2 arguments in call, got {}",
+                args.len()
+            )));
+        }
+        let mut args = args.into_iter();
+        let values_data = args.next().expect("checked above");
+        let counts_data = args.next().expect("checked above");
+
+        let name = import_field(&values_data.schema)?.name().clone();
+        let values = import_array(values_data)?;
+        let counts = import_array(counts_data)?;
+
+        let values = downcast_i64(&values, "value")?;
+        let counts = downcast_i64(&counts, "count")?;
+        if counts.is_empty() || counts.is_null(0) {
+            return Err(DaftError::TypeError(
+                "splat: 'count' must not be null".to_string(),
+            ));
+        }
+        let count = validate_count(counts.value(0))?;
+
+        let mut builder = FixedSizeListBuilder::new(Int64Builder::new(), count as i32)
+            .with_field(Arc::new(Field::new("item", DataType::Int64, true)));
+        for i in 0..values.len() {
+            let value = (!values.is_null(i)).then(|| values.value(i));
+            for _ in 0..count {
+                builder.values().append_option(value);
+            }
+            builder.append(value.is_some());
+        }
+
+        export_array(Arc::new(builder.finish()), &name)
+    }
+}
+
+fn downcast_i64<'a>(array: &'a ArrayRef, what: &str) -> DaftResult<&'a Int64Array> {
+    array.as_any().downcast_ref::<Int64Array>().ok_or_else(|| {
+        DaftError::TypeError(format!(
+            "splat: expected an Int64 {what}, got {:?}",
+            array.data_type()
+        ))
+    })
+}
+
+/// `return_field` and `call` must agree on the width, so they share this.
+fn validate_count(count: i64) -> DaftResult<i64> {
+    if count <= 0 || count > SPLAT_MAX_COUNT {
+        return Err(DaftError::TypeError(format!(
+            "splat: 'count' must be between 1 and {SPLAT_MAX_COUNT}, got {count}"
+        )));
+    }
+    Ok(count)
 }
 
 // ── Aggregate Function ─────────────────────────────────────────────

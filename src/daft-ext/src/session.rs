@@ -57,7 +57,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        abi::{ArrowData, ArrowSchema, FFI_AggregateFunction, FFI_ScalarFunction},
+        abi::{ArgDescriptor, ArrowData, ArrowSchema, FFI_AggregateFunction, FFI_ScalarFunction},
         error::DaftResult,
         function::DaftScalarFunction,
     };
@@ -112,7 +112,7 @@ mod tests {
             fn name(&self) -> &CStr {
                 c"my_add"
             }
-            fn return_field(&self, _: &[ArrowSchema]) -> DaftResult<ArrowSchema> {
+            fn return_field(&self, _: &[ArgDescriptor]) -> DaftResult<ArrowSchema> {
                 Ok(export_schema(&Schema::new(vec![Field::new(
                     "sum",
                     DataType::Int32,
@@ -160,7 +160,7 @@ mod tests {
             fn name(&self) -> &CStr {
                 c"fn_a"
             }
-            fn return_field(&self, _: &[ArrowSchema]) -> DaftResult<ArrowSchema> {
+            fn return_field(&self, _: &[ArgDescriptor]) -> DaftResult<ArrowSchema> {
                 Ok(export_schema(&Schema::new(vec![Field::new(
                     "a",
                     DataType::Int32,
@@ -177,7 +177,7 @@ mod tests {
             fn name(&self) -> &CStr {
                 c"fn_b"
             }
-            fn return_field(&self, _: &[ArrowSchema]) -> DaftResult<ArrowSchema> {
+            fn return_field(&self, _: &[ArgDescriptor]) -> DaftResult<ArrowSchema> {
                 Ok(export_schema(&Schema::new(vec![Field::new(
                     "b",
                     DataType::Utf8,

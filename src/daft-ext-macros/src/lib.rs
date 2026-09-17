@@ -190,7 +190,7 @@ fn daft_func_batch_impl(
 
             fn return_field(
                 &self,
-                args: &[::daft_ext::abi::ArrowSchema],
+                args: &[::daft_ext::abi::ArgDescriptor],
             ) -> ::daft_ext::prelude::DaftResult<::daft_ext::abi::ArrowSchema> {
                 if args.len() != #param_count {
                     return Err(::daft_ext::prelude::DaftError::TypeError(
@@ -203,7 +203,7 @@ fn daft_func_batch_impl(
                 let name = if args.is_empty() {
                     #ffi_name_str.to_string()
                 } else {
-                    ::daft_ext::prelude::import_field(&args[0])?
+                    ::daft_ext::prelude::import_field(args[0].field())?
                         .name()
                         .clone()
                 };
@@ -512,7 +512,7 @@ fn daft_func_impl(
             let idx = i;
             quote! {
                 {
-                    let __field = ::daft_ext::prelude::import_field(&args[#idx])?;
+                    let __field = ::daft_ext::prelude::import_field(args[#idx].field())?;
                     let __expected = #expected_dtype;
                     if *__field.data_type() != __expected {
                         return Err(::daft_ext::prelude::DaftError::TypeError(
@@ -539,7 +539,7 @@ fn daft_func_impl(
 
             fn return_field(
                 &self,
-                args: &[::daft_ext::abi::ArrowSchema],
+                args: &[::daft_ext::abi::ArgDescriptor],
             ) -> ::daft_ext::prelude::DaftResult<::daft_ext::abi::ArrowSchema> {
                 if args.len() != #param_count {
                     return Err(::daft_ext::prelude::DaftError::TypeError(
@@ -555,7 +555,7 @@ fn daft_func_impl(
                 let name = if args.is_empty() {
                     #ffi_name_str.to_string()
                 } else {
-                    ::daft_ext::prelude::import_field(&args[0])?
+                    ::daft_ext::prelude::import_field(args[0].field())?
                         .name()
                         .clone()
                 };
