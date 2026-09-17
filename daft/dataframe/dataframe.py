@@ -2368,14 +2368,14 @@ class DataFrame:
           uri: The URI of the Lance table to write to. Accepts a local path or an
             object-store URI like "s3://bucket/path". Mutually exclusive with
             the namespace parameters.
-          mode: The write mode. One of "create", "append", "overwrite",
-            "insert_overwrite", or "merge".
+          mode: The write mode. One of "create", "append", "overwrite", or
+            "insert_overwrite". ``"merge"`` is deprecated in v0.8.0 and will
+            be removed in v0.9.0.
           - "create" will create the dataset if it does not exist, otherwise raise an error.
           - "append" will append to the existing dataset if it exists, otherwise raise an error.
           - "overwrite" will overwrite the existing dataset if it exists, otherwise raise an error.
           - "insert_overwrite" atomically removes rows matching ``overwrite_where``
             and appends this DataFrame's rows. The table must already exist.
-          - "merge" will add new columns to the existing dataset.
           io_config (IOConfig, optional): configurations to use when interacting with remote storage.
           schema (Schema | pyarrow.Schema, optional): Desired schema to enforce during write.
             - If omitted, Daft will use the DataFrame's current schema.
@@ -2384,10 +2384,8 @@ class DataFrame:
               on the pyarrow schema is preserved during create/overwrite.
             - If the target Lance dataset already exists, the data will be cast to the existing table schema
               to ensure compatibility unless ``mode="overwrite"``.
-          left_on/right_on (Optional[str]): Only supported in ``mode="merge"``. Specify the join key for aligning rows when merging new columns.
-              - If omitted, defaults to ``"_rowaddr"``.
-              - If ``right_on`` is omitted, it defaults to the value of ``left_on``.
-              - The DataFrame passed to ``write_lance(mode="merge")`` must contain ``fragment_id`` and the join key column specified by ``right_on`` (or ``_rowaddr`` by default).
+          left_on/right_on: Deprecated with ``mode="merge"``. Pass them to
+            ``daft_lance.merge_columns_df`` instead.
           overwrite_where: SQL predicate selecting rows to replace. Required only
             for ``mode="insert_overwrite"``.
           table_id: Table identifier within a Lance Namespace, e.g.
@@ -2462,6 +2460,16 @@ class DataFrame:
             raise ValueError(
                 "rest:// Lance URIs are no longer supported by DataFrame.write_lance. "
                 "Use the Lance Namespace parameters instead."
+            )
+
+        if mode == "merge":
+            warnings.warn(
+                'DataFrame.write_lance(mode="merge") is deprecated in v0.8.0 and will be removed '
+                "in v0.9.0. Use write_lance(mode='create') for a new table, "
+                "write_lance(mode='append') when adding rows, or "
+                "daft_lance.merge_columns_df for column merges.",
+                DeprecationWarning,
+                stacklevel=2,
             )
 
         # Non-merge modes are fully handled by daft-lance's write_lance.

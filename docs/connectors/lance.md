@@ -185,9 +185,45 @@ daft.from_pydict({"id": [1, 2]}).write_lance(mode="create", **namespace)
 orders = daft.read_lance(**namespace)
 ```
 
-URI and Namespace targets are mutually exclusive. `mode="merge"` remains
-available for URI targets; use `daft_lance.merge_columns_df` directly for a
-Namespace table.
+URI and Namespace targets are mutually exclusive.
+
+### Migrating from `mode="merge"`
+
+`DataFrame.write_lance(mode="merge")` is deprecated in v0.8.0 and will be
+removed in v0.9.0. Its behavior depended on the target table and input schema;
+migrate each case to an explicit operation:
+
+```python
+# No target table: create it explicitly.
+df.write_lance("/tmp/lance/my_table.lance", mode="create")
+
+# No new columns: append rows explicitly.
+df.write_lance("/tmp/lance/my_table.lance", mode="append")
+```
+
+For a per-fragment column merge, call `daft_lance.merge_columns_df` directly.
+Read `fragment_id` and the join key from Lance first. The default join key is
+`_rowaddr`; pass `left_on` and `right_on` for a business key.
+
+```python
+from daft_lance import merge_columns_df
+
+source = daft.read_lance(
+    "/tmp/lance/my_table.lance",
+    default_scan_options={"with_row_address": True},
+    include_fragment_id=True,
+)
+updates = (
+    source.select("fragment_id", "_rowaddr", "score")
+    .with_column("normalized_score", daft.col("score") / 100)
+    .select("fragment_id", "_rowaddr", "normalized_score")
+)
+merge_columns_df(updates, "/tmp/lance/my_table.lance")
+```
+
+For example, to use `id` as the join key, call
+`merge_columns_df(updates, "/tmp/lance/my_table.lance", left_on="id",
+right_on="id")` after retaining `fragment_id` and `id` in `updates`.
 
 ### For S3-compatible services (e.g. Volcengine TOS), configure IO options for authentication and endpoints:
 
