@@ -10,7 +10,6 @@ import pytest
 import requests
 
 import daft
-from daft import udf
 
 
 @contextlib.contextmanager
@@ -153,7 +152,7 @@ def test_dashboard_queries_api(dashboard_url):
 def test_dashboard_ray_flotilla(dashboard_url):
     daft.set_runner_ray(address="auto", noop_if_initialized=True)
 
-    @udf(return_dtype=daft.DataType.int64())
+    @daft.func.batch(return_dtype=daft.DataType.int64())
     def slow_inc(x):
         time.sleep(0.1)
         return [i + 1 for i in x.to_pylist()]

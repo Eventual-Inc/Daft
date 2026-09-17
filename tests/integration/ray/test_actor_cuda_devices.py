@@ -7,7 +7,6 @@ import pytest
 import ray
 
 import daft
-from daft import udf
 from daft.datatype import DataType
 from daft.internal.gpu import cuda_visible_devices
 from tests.conftest import get_tests_daft_runner_name
@@ -31,16 +30,17 @@ def reset_runner_with_gpus(num_gpus):
         yield
 
 
-@pytest.mark.parametrize("concurrency", [1, 2])
+@pytest.mark.parametrize("max_concurrency", [1, 2])
 @pytest.mark.parametrize("num_gpus", [1, 2])
-def test_actor_pool_udf_cuda_env_var(concurrency, num_gpus):
-    with reset_runner_with_gpus(concurrency * num_gpus):
+def test_actor_pool_udf_cuda_env_var(max_concurrency, num_gpus):
+    with reset_runner_with_gpus(max_concurrency * num_gpus):
 
-        @udf(return_dtype=DataType.string(), num_gpus=num_gpus)
+        @daft.cls(gpus=num_gpus, max_concurrency=max_concurrency)
         class GetCudaVisibleDevices:
             def __init__(self):
                 self.cuda_visible_devices = os.environ["CUDA_VISIBLE_DEVICES"]
 
+            @daft.method.batch(return_dtype=DataType.string())
             def __call__(self, data):
                 assert os.environ["CUDA_VISIBLE_DEVICES"] == self.cuda_visible_devices
 
@@ -50,29 +50,28 @@ def test_actor_pool_udf_cuda_env_var(concurrency, num_gpus):
 
                 return [self.cuda_visible_devices] * len(data)
 
-        GetCudaVisibleDevices = GetCudaVisibleDevices.with_concurrency(concurrency)
-
         df = daft.from_pydict({"x": [1, 2, 3, 4]})
         df = df.repartition(4)
-        df = df.select(GetCudaVisibleDevices(df["x"]))
+        df = df.select(GetCudaVisibleDevices()(df["x"]))
 
         result = df.to_pydict()
 
         unique_visible_devices = set(result["x"])
-        assert len(unique_visible_devices) == concurrency
+        assert len(unique_visible_devices) == max_concurrency
 
         all_devices = (",".join(unique_visible_devices)).split(",")
-        assert len(all_devices) == concurrency * num_gpus
+        assert len(all_devices) == max_concurrency * num_gpus
 
 
 def test_actor_pool_udf_fractional_gpu():
     with reset_runner_with_gpus(1):
 
-        @udf(return_dtype=DataType.string(), num_gpus=0.5)
+        @daft.cls(gpus=0.5, max_concurrency=2)
         class FractionalGpuUdf:
             def __init__(self):
                 self.cuda_visible_devices = os.environ["CUDA_VISIBLE_DEVICES"]
 
+            @daft.method.batch(return_dtype=DataType.string())
             def __call__(self, data):
                 assert os.environ["CUDA_VISIBLE_DEVICES"] == self.cuda_visible_devices
 
@@ -82,11 +81,9 @@ def test_actor_pool_udf_fractional_gpu():
 
                 return [self.cuda_visible_devices] * len(data)
 
-        FractionalGpuUdf = FractionalGpuUdf.with_concurrency(2)
-
         df = daft.from_pydict({"x": [1, 2]})
         df = df.into_partitions(2)
-        df = df.select(FractionalGpuUdf(df["x"]))
+        df = df.select(FractionalGpuUdf()(df["x"]))
 
         result = df.to_pydict()
 
