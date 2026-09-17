@@ -148,6 +148,9 @@ pub trait Source: Send + Sync {
         chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>>;
     fn schema(&self) -> &SchemaRef;
+    fn applied_scan_pushdowns(&self) -> Option<(bool, bool)> {
+        None
+    }
 }
 
 pub(crate) struct SourceNode {
@@ -165,12 +168,22 @@ impl SourceNode {
         ctx: &BuilderContext,
         context: &LocalNodeContext,
     ) -> Self {
-        let info = ctx.next_node_info(
+        let mut info = ctx.next_node_info(
             source.name().into(),
             source.op_type(),
             NodeCategory::Source,
             context,
         );
+        if let Some((filter_applied, projection_applied)) = source.applied_scan_pushdowns() {
+            info.context.insert(
+                "profile.scan.filter_applied".to_string(),
+                filter_applied.to_string(),
+            );
+            info.context.insert(
+                "profile.scan.projection_applied".to_string(),
+                projection_applied.to_string(),
+            );
+        }
         Self {
             source,
             meter: ctx.meter.clone(),
