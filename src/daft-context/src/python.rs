@@ -1,7 +1,10 @@
 use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::{PyDaftEventLogConfig, PyDaftExecutionConfig, PyDaftPlanningConfig};
-use common_metrics::QueryEndState;
+use common_metrics::{
+    QueryEndState,
+    snapshot::{StatSnapshotImpl, decode_execution_stats},
+};
 use daft_core::python::PySchema;
 use pyo3::prelude::*;
 
@@ -338,6 +341,36 @@ impl PyDaftContext {
                 .collect(),
         );
         let all_stats = vec![(node_id, stats_map)];
+        py.detach(|| {
+            self.inner
+                .notify_exec_emit_stats(query_id.into(), all_stats)
+        })?;
+        Ok(())
+    }
+
+    /// Emit one `Stats` event carrying the final per-node totals of a finished execution.
+    ///
+    /// `encoded` is the payload of `PyExecutionStats.encode()`. Used by the Ray runner to replay
+    /// the scheduler actor's final stats on the driver, whose subscribers otherwise never see
+    /// operator-level events emitted inside the actor.
+    pub fn notify_exec_emit_execution_stats(
+        &self,
+        py: Python,
+        query_id: String,
+        encoded: Vec<u8>,
+    ) -> PyResult<()> {
+        let (nodes, _skipped_corrupt_files) = decode_execution_stats(&encoded).map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!(
+                "Failed to decode execution stats: {e}"
+            ))
+        })?;
+        if nodes.is_empty() {
+            return Ok(());
+        }
+        let all_stats = nodes
+            .into_iter()
+            .map(|(node_info, snapshot)| (node_info.id, snapshot.to_stats()))
+            .collect::<Vec<_>>();
         py.detach(|| {
             self.inner
                 .notify_exec_emit_stats(query_id.into(), all_stats)

@@ -205,10 +205,6 @@ def test_execution_events_inherit_from_event_base():
     assert isinstance(OperatorFinished(query_id="q", node_id=1, name="scan"), Event)
 
 
-@pytest.mark.skipif(
-    get_tests_daft_runner_name() == "ray",
-    reason="bytes.read is not yet emitted to Python subscribers on Ray Flotilla",
-)
 def test_csv_scan_reports_bytes_read(tmp_path):
     subscriber = MockSubscriber()
 
