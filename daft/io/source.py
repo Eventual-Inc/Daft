@@ -83,6 +83,12 @@ class DataSource(ABC):
         task whose pushdowns carry the count aggregation; get_tasks is
         then responsible for producing the count result (e.g. from catalog
         metadata) instead of scanning data files.
+
+        A source that returns true must honor the rest of the pushdowns when it
+        produces that count. In particular `partition_filters` may be set while
+        `filters` is None, since the optimizer moves predicates it resolved
+        against partition values alone out of `filters`; counting without
+        applying them reports rows the query excluded.
         """
         return False
 
