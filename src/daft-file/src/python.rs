@@ -18,7 +18,7 @@ use tracing::{Span, instrument};
 
 use crate::file::{DaftFile, FileCursor};
 
-type ReadResult = Result<(Vec<u8>, usize, bool, FileCursor), (PyErr, FileCursor)>;
+type ReadResult = Result<(Vec<u8>, usize, FileCursor), (PyErr, FileCursor)>;
 type SeekResult = Result<(u64, FileCursor), (PyErr, FileCursor)>;
 
 #[pyclass(name = "_PyFileTracingSpan", unsendable)]
@@ -254,19 +254,19 @@ impl PyDaftFile {
                 match cursor.read_to_end(&mut buffer) {
                     Ok(bytes_read) => {
                         buffer.truncate(bytes_read);
-                        Ok((buffer, bytes_read, true, cursor))
+                        Ok((buffer, bytes_read, cursor))
                     }
                     Err(e) => Err((PyIOError::new_err(e.to_string()), cursor)),
                 }
             } else {
-                if current_position == current_size {
-                    return Ok((vec![], 0usize, false, cursor));
+                if current_position >= current_size {
+                    return Ok((vec![], 0usize, cursor));
                 }
                 let mut buffer = vec![0u8; size as usize];
                 match cursor.read(&mut buffer) {
                     Ok(bytes_read) => {
                         buffer.truncate(bytes_read);
-                        Ok((buffer, bytes_read, false, cursor))
+                        Ok((buffer, bytes_read, cursor))
                     }
                     Err(e) => Err((PyIOError::new_err(e.to_string()), cursor)),
                 }
@@ -274,13 +274,9 @@ impl PyDaftFile {
         });
 
         match result {
-            Ok((buffer, bytes_read, is_read_all, cursor_back)) => {
+            Ok((buffer, bytes_read, cursor_back)) => {
                 self.inner.cursor = Some(cursor_back);
-                if is_read_all {
-                    self.inner.position = bytes_read;
-                } else {
-                    self.inner.position += bytes_read;
-                }
+                self.inner.position += bytes_read;
                 Ok(buffer)
             }
             Err((e, cursor_back)) => {
