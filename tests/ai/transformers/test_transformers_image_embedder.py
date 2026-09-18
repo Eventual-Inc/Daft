@@ -17,6 +17,7 @@ from PIL import Image
 
 import daft
 from daft.ai.protocols import ImageEmbedderDescriptor
+from daft.ai.transformers.protocols import image_embedder as image_embedder_module
 from daft.ai.transformers.protocols.image_embedder import _get_embeddings_from_output
 from daft.ai.transformers.provider import TransformersProvider
 from daft.ai.typing import EmbeddingDimensions
@@ -92,7 +93,6 @@ def _random_images(count: int) -> list[np.ndarray]:
 
 def _stub_embedder(monkeypatch, model):
     """Instantiates a TransformersImageEmbedder against a stub model, without hitting Hugging Face."""
-    from daft.ai.transformers.protocols import image_embedder as image_embedder_module
 
     class _StubModel:
         """Forwards to the stub model, but tolerates the `.to(device)` call like a real nn.Module."""
