@@ -539,6 +539,10 @@ impl SwordfishTaskBuilder {
         self
     }
 
+    pub fn has_cancel_token(&self) -> bool {
+        self.cancel_token.is_some()
+    }
+
     /// Build the SubmittableTask directly, which can be submitted to the scheduler.
     /// The task_id is assigned from the provided task_id_counter at build time.
     pub fn build(
