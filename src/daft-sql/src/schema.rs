@@ -193,14 +193,28 @@ pub(crate) fn sql_dtype_to_dtype(dtype: &sqlparser::ast::DataType) -> SQLPlanner
         SQLDataType::Date => DataType::Date,
         SQLDataType::Interval { .. } => DataType::Interval,
         SQLDataType::Time(precision, tz) => match tz {
-            TimezoneInfo::None => DataType::Time(timeunit_from_precision(*precision)?),
-            _ => unsupported_sql_err!("`time` with timezone is; found tz={}", tz),
+            TimezoneInfo::None | TimezoneInfo::WithoutTimeZone => {
+                DataType::Time(timeunit_from_precision(*precision)?)
+            }
+            TimezoneInfo::WithTimeZone | TimezoneInfo::Tz => {
+                unsupported_sql_err!(
+                    "`time` with timezone is not supported because Arrow's Time64 type does not support timezone. Use `timestamp` instead."
+                )
+            }
         },
         SQLDataType::Datetime(_) => unsupported_sql_err!("`datetime` is not supported"),
-        SQLDataType::Timestamp(prec, tz) => match tz {
-            TimezoneInfo::None => DataType::Timestamp(timeunit_from_precision(*prec)?, None),
-            _ => unsupported_sql_err!("`timestamp` with timezone"),
-        },
+        SQLDataType::Timestamp(prec, tz) => {
+            match tz {
+                TimezoneInfo::None | TimezoneInfo::WithoutTimeZone => {
+                    // TIMESTAMP or TIMESTAMP WITHOUT TIME ZONE -> no timezone
+                    DataType::Timestamp(timeunit_from_precision(*prec)?, None)
+                }
+                TimezoneInfo::WithTimeZone | TimezoneInfo::Tz => {
+                    // TIMESTAMP WITH TIME ZONE / TIMESTAMPTZ -> stored as UTC
+                    DataType::Timestamp(timeunit_from_precision(*prec)?, Some("UTC".to_string()))
+                }
+            }
+        }
         // ---------------------------------
         // string
         // ---------------------------------
@@ -318,7 +332,7 @@ pub(crate) fn timeunit_from_precision(prec: Option<u64>) -> SQLPlannerResult<Tim
 
 #[cfg(test)]
 mod test {
-    use daft_core::prelude::{DataType, Field, ImageMode};
+    use daft_core::prelude::{DataType, Field, ImageMode, TimeUnit};
     use rstest::rstest;
 
     #[rstest]
@@ -357,6 +371,27 @@ mod test {
     #[case("numeric(10, 2)", DataType::Decimal128(10, 2))]
     #[case("numeric(38, 9)", DataType::Decimal128(38, 9))]
     #[case("date", DataType::Date)]
+    #[case("time", DataType::Time(TimeUnit::Microseconds))]
+    #[case("time(3)", DataType::Time(TimeUnit::Milliseconds))]
+    #[case("time(6)", DataType::Time(TimeUnit::Microseconds))]
+    #[case("time(9)", DataType::Time(TimeUnit::Nanoseconds))]
+    #[case("timestamp", DataType::Timestamp(TimeUnit::Microseconds, None))]
+    #[case("timestamp(3)", DataType::Timestamp(TimeUnit::Milliseconds, None))]
+    #[case("timestamp(6)", DataType::Timestamp(TimeUnit::Microseconds, None))]
+    #[case("timestamp(9)", DataType::Timestamp(TimeUnit::Nanoseconds, None))]
+    #[case(
+        "timestamp without time zone",
+        DataType::Timestamp(TimeUnit::Microseconds, None)
+    )]
+    #[case("time without time zone", DataType::Time(TimeUnit::Microseconds))]
+    #[case(
+        "timestamp with time zone",
+        DataType::Timestamp(TimeUnit::Microseconds, Some("UTC".to_string()))
+    )]
+    #[case(
+        "timestamptz",
+        DataType::Timestamp(TimeUnit::Microseconds, Some("UTC".to_string()))
+    )]
     #[case("tensor(float)", DataType::Tensor(Box::new(DataType::Float64)))]
     #[case("tensor(float, 10, 10, 10)", DataType::FixedShapeTensor(Box::new(DataType::Float64), vec![10, 10, 10]))]
     #[case("image", DataType::Image(None))]
@@ -407,6 +442,21 @@ mod test {
     fn test_sql_datatype(#[case] sql: &str, #[case] expected: DataType) {
         let result = super::try_parse_dtype(sql).unwrap();
         assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case(
+        "time with time zone",
+        "`time` with timezone is not supported because Arrow's Time64 type does not support timezone. Use `timestamp` instead."
+    )]
+    #[case(
+        "timetz",
+        "`time` with timezone is not supported because Arrow's Time64 type does not support timezone. Use `timestamp` instead."
+    )]
+    fn test_timezone_not_supported(#[case] sql: &str, #[case] expected: &str) {
+        let result = super::try_parse_dtype(sql).unwrap_err().to_string();
+        let e = format!("Unsupported SQL: '{expected}'");
+        assert_eq!(result, e);
     }
 
     #[rstest]
