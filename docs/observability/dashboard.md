@@ -88,6 +88,23 @@ python script.py
 
 To make the UI accessible to humans (not just Daft processes), expose the dashboard port through whatever mechanism your platform uses — a Kubernetes `Service` plus `Ingress`, an SSH tunnel, `ray attach --port-forward`, or a cloud load balancer.
 
+### Linking to the Ray Dashboard
+
+Each query records a link to the Ray dashboard so you can jump from a Daft query to the corresponding Ray job. By default Daft asks Ray for that address, which yields a cluster-internal URL like `http://10.0.0.5:8265` — not reachable from your browser if the Ray dashboard is served through an ingress proxy.
+
+Set `DAFT_RAY_DASHBOARD_URL` on the driver to override it with the address humans actually use:
+
+```bash
+export DAFT_RAY_DASHBOARD_URL=https://ray.example.com
+```
+
+Notes:
+
+- The value is used verbatim except that Daft prepends `http://` if you omit a scheme, and appends the current Ray job route (`/#/jobs/<job_id>`) unless the URL already contains a `#` fragment.
+- The URL is display-only — Daft never makes requests to it, so it does not need to be reachable from the cluster.
+- The override is honored even when `RAY_DISABLE_DASHBOARD=1`, since Ray's built-in dashboard being off says nothing about whether an externally hosted one exists.
+- Prefer this over Ray's `RAY_OVERRIDE_DASHBOARD_URL`, which strips the scheme from the value it is given (Ray stores URLs without a protocol), so an `https://` ingress ends up rendered as `http://`.
+
 ### Production Readiness
 
 - The dashboard has no built-in authentication. Do not expose it directly to the public internet. Place it behind an authenticating ingress or a VPN.
