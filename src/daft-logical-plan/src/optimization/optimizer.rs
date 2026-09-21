@@ -12,9 +12,10 @@ use super::{
         LiftProjectFromAgg, MaterializeScans, OptimizerRule, PushDownAggregation,
         PushDownAntiSemiJoin, PushDownFilter, PushDownJoinPredicate, PushDownLimit,
         PushDownProjection, PushDownShard, ReorderJoins, RewriteCheckpointSource,
-        RewriteCountDistinct, RewriteOffset, ShardScans, SimplifyExpressionsRule,
-        SimplifyNullFilteredJoin, SplitExplodeFromProject, SplitGranularProjection, SplitUDFs,
-        SplitUDFsFromFilters, UnnestPredicateSubquery, UnnestScalarSubquery,
+        RewriteCountDistinct, RewriteOffset, RewriteStartsWith, ShardScans,
+        SimplifyExpressionsRule, SimplifyNullFilteredJoin, SplitExplodeFromProject,
+        SplitGranularProjection, SplitUDFs, SplitUDFsFromFilters, UnnestPredicateSubquery,
+        UnnestScalarSubquery,
     },
 };
 use crate::{LogicalPlan, optimization::rules::SplitVLLM};
@@ -140,6 +141,15 @@ impl OptimizerBuilder {
             RuleBatch::new(
                 vec![Box::new(SimplifyExpressionsRule::new())],
                 RuleExecutionStrategy::FixedPoint(None),
+            ),
+            // --- Rewrite starts_with filters into range predicates ---
+            // This must run before PushDownFilter: the scan expression rewriter
+            // treats any ScalarFn as a UDF and would strand a lone `starts_with`
+            // filter in a residual Filter op, while the rewritten comparisons
+            // land in scan pushdowns where min/max stats can prune with them.
+            RuleBatch::new(
+                vec![Box::new(RewriteStartsWith::new())],
+                RuleExecutionStrategy::Once,
             ),
             // --- Filter out null join keys ---
             // This rule should be run once, before any filter pushdown rules.
