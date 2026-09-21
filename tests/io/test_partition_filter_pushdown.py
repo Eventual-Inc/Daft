@@ -11,11 +11,13 @@ rather than relying on fragile string matching.
 
 from __future__ import annotations
 
+import datetime
 from collections.abc import AsyncIterator
 from typing import Any
 
 from daft.expressions import Expression, col, lit
 from daft.expressions.visitor import PredicateVisitor
+from daft.functions import partition_days, partition_iceberg_bucket, partition_months
 from daft.io.partitioning import PartitionField, PartitionTransform
 from daft.io.pushdowns import Pushdowns
 from daft.io.source import DataSource, DataSourceTask
@@ -339,6 +341,137 @@ def test_identity_pred_with_cast_sibling_both_pushed_down():
     result = extract_comparison(pushdowns.partition_filters)
     ops = _collect_ops(result)
     assert len(ops) >= 2, f"Expected at least 2 comparison predicates in partition_filters, got {len(ops)}: {result}"
+
+
+def _make_day_partition_field(partition_col: str, source_col: str) -> PartitionField:
+    """Build a PartitionField with Day transform."""
+    return PartitionField.create(
+        field=Field.create(partition_col, DataType.date()),
+        source_field=Field.create(source_col, DataType.timestamp(timeunit=TimeUnit.from_str("us"))),
+        transform=PartitionTransform.day(),
+    )
+
+
+def _make_bucket_partition_field(partition_col: str, source_col: str, num_buckets: int) -> PartitionField:
+    """Build a PartitionField with IcebergBucket transform."""
+    return PartitionField.create(
+        field=Field.create(partition_col, DataType.int32()),
+        source_field=Field.create(source_col, DataType.int64()),
+        transform=PartitionTransform.iceberg_bucket(num_buckets),
+    )
+
+
+_TS_COLUMNS = [("ts", DataType.timestamp(timeunit=TimeUnit.from_str("us")))]
+
+
+def test_day_transform_predicate_eq_pushes_partition_filter():
+    """partition_days(ts) == <date> on a day-partitioned table must produce a partition filter on the partition field."""
+    pfield = _make_day_partition_field("p_day", "ts")
+    pushdowns = _build_df_and_capture(
+        columns=_TS_COLUMNS,
+        partition_fields=[pfield],
+        filter_expr=partition_days(col("ts")) == lit(datetime.date(2024, 1, 1)),
+    )
+
+    assert pushdowns.partition_filters is not None, "Expected a partition filter to be pushed down"
+    result = extract_comparison(pushdowns.partition_filters)
+    assert result["op"] == "equal", f"Expected equal, got op={result['op']}"
+    assert result["left"]["name"] == "p_day", f"Expected partition column 'p_day', got: {result['left']}"
+    # Partition pruning is file-level; the original predicate must also remain as a data filter.
+    assert pushdowns.filters is not None, "Expected the original predicate to remain as a data filter"
+
+
+def test_day_transform_predicate_comparison_is_not_relaxed():
+    """partition_days(ts) < <date> compares the partition value itself, so the strict operator is preserved."""
+    pfield = _make_day_partition_field("p_day", "ts")
+    pushdowns = _build_df_and_capture(
+        columns=_TS_COLUMNS,
+        partition_fields=[pfield],
+        filter_expr=partition_days(col("ts")) < lit(datetime.date(2024, 1, 1)),
+    )
+
+    assert pushdowns.partition_filters is not None, "Expected a partition filter to be pushed down"
+    result = extract_comparison(pushdowns.partition_filters)
+    assert result["op"] == "less_than", f"Exact transform predicate must NOT be relaxed, got op={result['op']}"
+    assert result["left"]["name"] == "p_day", f"Expected partition column 'p_day', got: {result['left']}"
+    assert pushdowns.filters is not None, "Expected the original predicate to remain as a data filter"
+
+
+def test_day_transform_predicate_not_eq_pushes_partition_filter():
+    """partition_days(ts) != <date> is precise on the partition value, unlike != on the source column."""
+    pfield = _make_day_partition_field("p_day", "ts")
+    pushdowns = _build_df_and_capture(
+        columns=_TS_COLUMNS,
+        partition_fields=[pfield],
+        filter_expr=partition_days(col("ts")) != lit(datetime.date(2024, 1, 1)),
+    )
+
+    assert pushdowns.partition_filters is not None, "Expected a partition filter to be pushed down"
+    result = extract_comparison(pushdowns.partition_filters)
+    assert result["op"] == "not_equal", f"Expected not_equal, got op={result['op']}"
+    assert result["left"]["name"] == "p_day", f"Expected partition column 'p_day', got: {result['left']}"
+    assert pushdowns.filters is not None, "Expected the original predicate to remain as a data filter"
+
+
+def test_mismatched_transform_predicate_is_not_pushed():
+    """partition_months(ts) on a day-partitioned table must NOT produce a partition filter."""
+    pfield = _make_day_partition_field("p_day", "ts")
+    pushdowns = _build_df_and_capture(
+        columns=_TS_COLUMNS,
+        partition_fields=[pfield],
+        filter_expr=partition_months(col("ts")) == lit(648),
+    )
+
+    assert pushdowns.partition_filters is None, (
+        f"Mismatched transform must not be pushed as a partition filter, got: {pushdowns.partition_filters}"
+    )
+    # It is still a valid data-level filter.
+    assert pushdowns.filters is not None, "Expected the predicate to be pushed as a data filter"
+
+
+def test_bucket_transform_predicate_requires_matching_num_buckets():
+    """partition_iceberg_bucket(id, n) only maps to the partition field when n matches the table's bucket count."""
+    pfield = _make_bucket_partition_field("p_bucket", "id", 16)
+    pushdowns = _build_df_and_capture(
+        columns=[("id", DataType.int64())],
+        partition_fields=[pfield],
+        filter_expr=partition_iceberg_bucket(col("id"), 16) == lit(3),
+    )
+
+    assert pushdowns.partition_filters is not None, "Expected a partition filter to be pushed down"
+    result = extract_comparison(pushdowns.partition_filters)
+    assert result["op"] == "equal", f"Expected equal, got op={result['op']}"
+    assert result["left"]["name"] == "p_bucket", f"Expected partition column 'p_bucket', got: {result['left']}"
+    assert pushdowns.filters is not None, "Expected the original predicate to remain as a data filter"
+
+    pushdowns = _build_df_and_capture(
+        columns=[("id", DataType.int64())],
+        partition_fields=[pfield],
+        filter_expr=partition_iceberg_bucket(col("id"), 8) == lit(3),
+    )
+    assert pushdowns.partition_filters is None, (
+        f"Bucket count mismatch must not be pushed as a partition filter, got: {pushdowns.partition_filters}"
+    )
+
+
+def test_day_transform_predicate_and_data_predicate():
+    """A transform predicate AND a plain data predicate: partition filter for the former, data filter keeps both."""
+    pfield = _make_day_partition_field("p_day", "ts")
+    pushdowns = _build_df_and_capture(
+        columns=[("ts", DataType.timestamp(timeunit=TimeUnit.from_str("us"))), ("x", DataType.int32())],
+        partition_fields=[pfield],
+        filter_expr=(partition_days(col("ts")) == lit(datetime.date(2024, 1, 1))) & (col("x") > lit(5)),
+    )
+
+    assert pushdowns.partition_filters is not None, "Expected a partition filter to be pushed down"
+    result = extract_comparison(pushdowns.partition_filters)
+    assert result["op"] == "equal", f"Expected equal, got op={result['op']}"
+    assert result["left"]["name"] == "p_day", f"Expected partition column 'p_day', got: {result['left']}"
+    # Both conjuncts must remain in the data-level filter.
+    assert pushdowns.filters is not None, "Expected the original predicates to remain as data filters"
+    data_ops = _collect_ops(extract_comparison(pushdowns.filters))
+    assert "equal" in data_ops, f"Expected the transform predicate in the data filter, got ops: {data_ops}"
+    assert "greater_than" in data_ops, f"Expected the data-column predicate in the data filter, got ops: {data_ops}"
 
 
 def test_identity_pred_with_scalar_fn_both_directions():
