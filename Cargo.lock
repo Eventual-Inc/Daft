@@ -6276,11 +6276,13 @@ checksum = "4f20562cc7447fcc915fc5c23df305a412ea80a733c9f2fd9e2d267e2815be6d"
 dependencies = [
  "opendal-core",
  "opendal-http-transport-reqwest",
+ "opendal-layer-timeout",
  "opendal-service-cos",
  "opendal-service-fs",
  "opendal-service-github",
  "opendal-service-goosefs",
  "opendal-service-hdfs",
+ "opendal-service-http",
  "opendal-service-obs",
  "opendal-service-oss",
  "opendal-service-tos",
@@ -6324,6 +6326,16 @@ dependencies = [
  "http-body 1.0.1",
  "opendal-core",
  "reqwest 0.13.4",
+]
+
+[[package]]
+name = "opendal-layer-timeout"
+version = "0.58.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a704141924500f3803c05ed871b53305d2a2f11cb5ef20160c3ee688a1857f66"
+dependencies = [
+ "opendal-core",
+ "tokio",
 ]
 
 [[package]]
@@ -6399,6 +6411,18 @@ dependencies = [
  "opendal-core",
  "serde",
  "tokio",
+]
+
+[[package]]
+name = "opendal-service-http"
+version = "0.58.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d2fd1f0f28bd052e068d9bb4bc5d30a09de22a4f7cea24558dbeef2b91090cc3"
+dependencies = [
+ "http 1.4.0",
+ "log",
+ "opendal-core",
+ "serde",
 ]
 
 [[package]]
