@@ -22,7 +22,9 @@ from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import BucketTransform, IdentityTransform, TruncateTransform
-from pyiceberg.types import LongType, NestedField, StringType
+from pyiceberg.types import LongType, NestedField, StringType, StructType
+
+from daft.io.iceberg.iceberg_scan import IcebergDataSource, _IcebergCountTask
 
 
 @pytest.fixture
@@ -35,6 +37,22 @@ def local_catalog(tmp_path):
     catalog.create_namespace("default")
     yield catalog
     catalog.engine.dispose()
+
+
+@pytest.fixture
+def captured_iceberg_scan(monkeypatch):
+    """Record the optimizer's pushdowns and the tasks actually emitted by the source."""
+    pushdowns, tasks = [], []
+    get_tasks = IcebergDataSource.get_tasks
+
+    async def capture(source, pushed):
+        pushdowns.append(pushed)
+        async for task in get_tasks(source, pushed):
+            tasks.append(task)
+            yield task
+
+    monkeypatch.setattr(IcebergDataSource, "get_tasks", capture)
+    return pushdowns, tasks
 
 
 def _metadata_path(table) -> Path:
@@ -246,7 +264,7 @@ def test_filter_on_second_field_added_by_partition_evolution(local_catalog):
     assert set(result["region"]) == {"cn"}
 
 
-def test_filter_on_field_present_in_every_spec(local_catalog):
+def test_filter_on_field_present_in_every_spec(local_catalog, captured_iceberg_scan):
     """Evolution that leaves the filtered field in place keeps partition pruning usable."""
     table = _seed_then_evolve(
         local_catalog,
@@ -259,6 +277,9 @@ def test_filter_on_field_present_in_every_spec(local_catalog):
 
     assert sorted(result["x"]) == [1, 2, 4]
     assert set(result["dt"]) == {"a"}
+    pushdowns, _ = captured_iceberg_scan
+    assert pushdowns[-1].partition_filters is not None
+    assert pushdowns[-1].filters is None
 
 
 def test_filter_on_field_dropped_from_the_current_spec(local_catalog):
@@ -276,7 +297,7 @@ def test_filter_on_field_dropped_from_the_current_spec(local_catalog):
     assert set(result["dt"]) == {"a"}
 
 
-def test_partition_pruning_still_applies_without_evolution(local_catalog):
+def test_partition_pruning_still_applies_without_evolution(local_catalog, captured_iceberg_scan):
     """The unevolved path must keep pruning whole partitions rather than filtering rows."""
     table = local_catalog.create_table("default.no_evolution", _evolution_schema(), partition_spec=_dt_spec())
     daft.from_pydict({"dt": ["a", "a", "b"], "region": ["cn", "us", "cn"], "x": [1, 2, 3]}).write_iceberg(table)
@@ -285,6 +306,9 @@ def test_partition_pruning_still_applies_without_evolution(local_catalog):
     result = daft.read_iceberg(table).where(daft.col("dt") == "a").to_pydict()
 
     assert sorted(result["x"]) == [1, 2]
+    pushdowns, _ = captured_iceberg_scan
+    assert pushdowns[-1].partition_filters is not None
+    assert pushdowns[-1].filters is None
 
 
 def test_filter_when_a_transform_replaces_an_identity_partition(local_catalog):
@@ -408,12 +432,7 @@ def test_count_rows_with_partition_predicate_matching_nothing(partitioned_counts
 
 
 def test_count_rows_when_partition_field_is_renamed(local_catalog):
-    """The partition field name need not match the source column it partitions on.
-
-    The predicate then references a name absent from the data schema, so it cannot be
-    forwarded to PyIceberg as a row filter and no metadata pruning happens. The count
-    still has to come out right, which is what the per-file partition check is for.
-    """
+    """The partition field name need not match the source column it partitions on."""
     schema = Schema(
         NestedField(field_id=1, name="dt", type=StringType(), required=False),
         NestedField(field_id=2, name="x", type=LongType(), required=False),
@@ -482,7 +501,7 @@ def test_count_rows_matches_scan_after_partition_field_is_added(local_catalog):
     assert df.count_rows() == len(df.to_pydict()["x"])
 
 
-def test_count_rows_with_field_present_in_every_spec(local_catalog):
+def test_count_rows_with_field_present_in_every_spec(local_catalog, captured_iceberg_scan):
     """Evolution that leaves the filtered field in place keeps the metadata count exact."""
     partition_spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="dt"))
     table = _evolving_table(local_catalog, "count_field_in_all_specs", partition_spec)
@@ -495,6 +514,10 @@ def test_count_rows_with_field_present_in_every_spec(local_catalog):
     df = daft.read_iceberg(table).where(daft.col("dt") == "a")
 
     assert df.count_rows() == 3
+    pushdowns, tasks = captured_iceberg_scan
+    assert pushdowns[-1].partition_filters is not None
+    assert pushdowns[-1].filters is None
+    assert len(tasks) == 1 and isinstance(tasks[0], _IcebergCountTask)
     assert df.count_rows() == len(df.to_pydict()["x"])
 
 
@@ -512,3 +535,131 @@ def test_count_rows_after_partition_field_is_dropped(local_catalog):
 
     assert df.count_rows() == 3
     assert df.count_rows() == len(df.to_pydict()["x"])
+
+
+@pytest.mark.parametrize(("source", "buckets", "value", "expected"), [("x", 8, 1, [1]), ("dt", 4, "a", [1, 2, 4])])
+def test_filter_after_partition_name_is_reused(local_catalog, captured_iceberg_scan, source, buckets, value, expected):
+    """Matching names do not make a different source column or bucket count equivalent."""
+    spec = PartitionSpec(PartitionField(source_id=3, field_id=1000, transform=BucketTransform(4), name="bucket"))
+    table = _evolving_table(local_catalog, "reused_partition_name", spec)
+    with table.update_spec() as update:
+        update.remove_field("bucket")
+    with table.update_spec() as update:
+        update.add_field(source, BucketTransform(buckets), "bucket")
+    table.refresh()
+    _write(table, dt=["a", "b"], region=["cn", "us"], x=[4, 5])
+
+    result = daft.read_iceberg(table).where(daft.col(source) == value).to_pydict()
+
+    assert sorted(result["x"]) == expected
+    pushdowns, _ = captured_iceberg_scan
+    assert pushdowns[-1].partition_filters is None
+    assert pushdowns[-1].filters is not None
+    assert daft.read_iceberg(table).where(daft.col(source) == value).count_rows() == len(expected)
+
+
+@pytest.mark.parametrize(("old_name", "new_name"), [("dt", "dt_part"), ("dt_part", "dt")])
+def test_partition_field_rename_preserves_pruning_and_count(local_catalog, captured_iceberg_scan, old_name, new_name):
+    """Old and current partition records both use the query's canonical source-column name."""
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name=old_name))
+    table = _seed_then_evolve(
+        local_catalog, "renamed_identity", spec, lambda update: update.rename_field(old_name, new_name)
+    )
+    pushdowns, tasks = captured_iceberg_scan
+
+    result = daft.read_iceberg(table).where(daft.col("dt") == "a").sort("x").to_pydict()
+
+    assert result == {"dt": ["a"] * 3, "region": ["cn", "us", "cn"], "x": [1, 2, 4]}
+    assert pushdowns[-1].partition_filters is not None
+    assert pushdowns[-1].filters is None
+    tasks.clear()
+
+    assert daft.read_iceberg(table).where(daft.col("dt") == "a").count_rows() == 3
+    assert pushdowns[-1].partition_filters is not None
+    assert pushdowns[-1].filters is None
+    assert len(tasks) == 1 and isinstance(tasks[0], _IcebergCountTask)
+
+
+def test_v1_removed_partition_does_not_replace_data_with_null(local_catalog, captured_iceberg_scan):
+    """A v1 dropped field remains as void metadata, which is not a constant data column."""
+    table = local_catalog.create_table(
+        "default.v1_removed_partition",
+        _evolution_schema(),
+        partition_spec=_dt_spec(),
+        properties={"format-version": "1"},
+    )
+    table.append(pa.table({"dt": ["a", "b", None], "region": ["cn"] * 3, "x": [1, 2, 3]}))
+    with table.update_spec() as update:
+        update.remove_field("dt")
+    table.append(pa.table({"dt": ["a", "b", None], "region": ["us"] * 3, "x": [4, 5, 6]}))
+    table.refresh()
+
+    assert str(table.spec().fields[0].transform) == "void"
+    assert daft.read_iceberg(table).sort("x").to_pydict() == {
+        "dt": ["a", "b", None, "a", "b", None],
+        "region": ["cn"] * 3 + ["us"] * 3,
+        "x": [1, 2, 3, 4, 5, 6],
+    }
+    for predicate, expected in [(daft.col("dt") == "a", [1, 4]), (daft.col("dt").is_null(), [3, 6])]:
+        assert daft.read_iceberg(table).where(predicate).sort("x").to_pydict()["x"] == expected
+        pushdowns, _ = captured_iceberg_scan
+        assert pushdowns[-1].partition_filters is None
+        assert pushdowns[-1].filters is not None
+        assert daft.read_iceberg(table).where(predicate).count_rows() == len(expected)
+    assert daft.read_iceberg(table).count_rows() == 6
+
+
+@pytest.mark.parametrize("historical", [False, True])
+def test_metadata_count_survives_added_partition_field(local_catalog, captured_iceberg_scan, historical):
+    """Evolution must not disable metadata-only counts when no row predicate needs evaluation."""
+    table = _evolving_table(local_catalog, "evolved_metadata_count", UNPARTITIONED_PARTITION_SPEC)
+    old_snapshot = table.current_snapshot().snapshot_id
+    with table.update_spec() as update:
+        update.add_field("dt", IdentityTransform(), "dt")
+    table.refresh()
+    _write(table, dt=["a", "b"], region=["cn", "us"], x=[4, 5])
+    _, tasks = captured_iceberg_scan
+    tasks.clear()
+
+    kwargs = {"snapshot_id": old_snapshot} if historical else {}
+    assert daft.read_iceberg(table, **kwargs).count_rows() == (3 if historical else 5)
+    assert len(tasks) == 1 and isinstance(tasks[0], _IcebergCountTask)
+
+
+def test_snapshot_before_partition_source_column_was_added(local_catalog, captured_iceberg_scan):
+    """The latest spec may reference a column absent from the historical snapshot's schema."""
+    table = local_catalog.create_table("default.historical_partition_source", Schema(NestedField(1, "x", LongType())))
+    table.append(pa.table({"x": [1, 2]}))
+    old_snapshot = table.current_snapshot().snapshot_id
+    with table.update_schema() as update:
+        update.add_column("dt", StringType())
+    with table.update_spec() as update:
+        update.add_field("dt", IdentityTransform(), "dt")
+    table.append(pa.table({"x": [3], "dt": ["a"]}))
+    table.refresh()
+
+    assert daft.read_iceberg(table, snapshot_id=old_snapshot).sort("x").to_pydict() == {"x": [1, 2]}
+    _, tasks = captured_iceberg_scan
+    tasks.clear()
+    assert daft.read_iceberg(table, snapshot_id=old_snapshot).count_rows() == 2
+    assert len(tasks) == 1 and isinstance(tasks[0], _IcebergCountTask)
+
+
+def test_nested_partition_source_does_not_replace_top_level_column(local_catalog, captured_iceberg_scan):
+    """Partitioning s.x must neither inject its values into x nor settle a filter on x."""
+    schema = Schema(NestedField(1, "x", LongType()), NestedField(2, "s", StructType(NestedField(3, "x", LongType()))))
+    spec = PartitionSpec(PartitionField(source_id=3, field_id=1000, transform=IdentityTransform(), name="s_x"))
+    table = local_catalog.create_table("default.nested_partition_source", schema, partition_spec=spec)
+    table.append(
+        pa.table(
+            {"x": [1, 2], "s": [{"x": 10}, {"x": 20}]},
+            schema=pa.schema([("x", pa.int64()), ("s", pa.struct([("x", pa.int64())]))]),
+        )
+    )
+    table.refresh()
+
+    assert daft.read_iceberg(table).sort("x").to_pydict() == {"x": [1, 2], "s": [{"x": 10}, {"x": 20}]}
+    assert daft.read_iceberg(table).where(daft.col("x") == 1).to_pydict() == {"x": [1], "s": [{"x": 10}]}
+    pushdowns, _ = captured_iceberg_scan
+    assert pushdowns[-1].partition_filters is None
+    assert pushdowns[-1].filters is not None
