@@ -4,7 +4,7 @@ import warnings
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
-from daft.daft import ParquetSourceConfig, PyDataSourceTask, StorageConfig
+from daft.daft import McapSourceConfig, ParquetSourceConfig, PyDataSourceTask, StorageConfig
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
@@ -83,6 +83,12 @@ class DataSource(ABC):
         task whose pushdowns carry the count aggregation; get_tasks is
         then responsible for producing the count result (e.g. from catalog
         metadata) instead of scanning data files.
+
+        A source that returns true must honor the rest of the pushdowns when it
+        produces that count. In particular `partition_filters` may be set while
+        `filters` is None, since the optimizer moves predicates it resolved
+        against partition values alone out of `filters`; counting without
+        applying them reports rows the query excluded.
         """
         return False
 
@@ -211,6 +217,32 @@ class DataSourceTask(ABC):
             stats=stats._recordbatch if stats is not None else None,
             storage_config=storage_config,
             iceberg_delete_files=iceberg_delete_files,
+        )
+
+        return _RustDataSourceTask(inner)
+
+    @staticmethod
+    def mcap(
+        path: str,
+        schema: Schema,
+        *,
+        mcap_config: McapSourceConfig | None = None,
+        pushdowns: Pushdowns | None = None,
+        num_rows: int | None = None,
+        size_bytes: int | None = None,
+        stats: RecordBatch | None = None,
+        storage_config: StorageConfig | None = None,
+    ) -> DataSourceTask:
+        """Create a task that reads an MCAP file using the native reader."""
+        inner = PyDataSourceTask.mcap(
+            path=path,
+            schema=schema._schema,
+            mcap_config=mcap_config,
+            pushdowns=pushdowns._to_pypushdowns() if pushdowns is not None else None,
+            num_rows=num_rows,
+            size_bytes=size_bytes,
+            stats=stats._recordbatch if stats is not None else None,
+            storage_config=storage_config,
         )
 
         return _RustDataSourceTask(inner)
