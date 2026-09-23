@@ -308,7 +308,7 @@ pub fn minhash_in(
 
     let mut min_hash_values: Vec<SimdU64> = vec![MAX_HASH_SIMD; num_simd_vectors];
 
-    let hashes = s.windowed_words_in(word_ngram_size, alloc).map(|w| {
+    let hashes: Vec<u64> = s.windowed_words_in(word_ngram_size, alloc).map(|w| {
         let mut h = hasher.build_hasher();
         h.write(w.as_bytes());
 
@@ -316,19 +316,20 @@ pub fn minhash_in(
         let result = u32::from_le_bytes(le);
 
         u64::from(result)
-    });
+    }).collect();
 
-    let mut chunks = hashes.array_chunks::<SIMD_LANES>();
+    let hashes_len = hashes.len();
+    let num_chunks = hashes_len / SIMD_LANES;
 
-    for chunk in chunks.by_ref() {
-        let chunk_simd = SimdU64::from_array(chunk);
+    for i in 0..num_chunks {
+        let chunk_start = i * SIMD_LANES;
+        let chunk: &[u64; SIMD_LANES] = hashes[chunk_start..chunk_start + SIMD_LANES].try_into().unwrap();
+        let chunk_simd = SimdU64::from_array(*chunk);
         simd_permute_and_min_batch(chunk_simd, perm_a_simd, perm_b_simd, &mut min_hash_values);
     }
 
-    if let Some(remainder) = chunks.into_remainder() {
-        for hash in remainder {
-            simd_permute_and_min_single(hash, perm_a_simd, perm_b_simd, &mut min_hash_values);
-        }
+    for hash in &hashes[num_chunks * SIMD_LANES..] {
+        simd_permute_and_min_single(*hash, perm_a_simd, perm_b_simd, &mut min_hash_values);
     }
 
     // Convert SIMD results to a flat vector of u32 values
