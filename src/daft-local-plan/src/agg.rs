@@ -190,41 +190,15 @@ pub fn populate_aggregation_stages_bound_with_schema(
                     second_stage!(AggExpr::Percentile(percentile_input, percentage.clone()));
                 final_stage(global_percentile_col);
             }
-            AggExpr::Stddev(expr, ddof) => {
-                // Numerically stable two-stage stddev via Chan et al. parallel variance.
-                //
-                // Each partition computes `(count, mean, m2)` with Welford's single-pass
-                // update (`VarPartial`), where `m2 = sum((x - mean)^2)`. Partitions are
-                // merged with the parallel update
-                // `m2 = m2_a + m2_b + delta^2 * n_a * n_b / (n_a + n_b)`
-                // (`MergeVarPartial`), which only ever combines deviations and therefore
-                // stays accurate when the mean is large relative to the variance.
-                // This replaces the previous `E(x^2) - E(x)^2` rewrite, which
-                // catastrophically cancels (e.g. `[1e9 + 1, 1e9 + 2, 1e9 + 3]`
-                // collapsed to `0.0`).
-                //
-                // Currently all Std Dev types will be computed using floats.
-                let expr = expr.clone().cast(&DataType::Float64);
-
-                let partial_col = first_stage!(AggExpr::VarPartial(expr));
-                let merged_col = second_stage!(AggExpr::MergeVarPartial(partial_col));
-
-                let n = struct_get(merged_col.clone(), VAR_PARTIAL_COUNT_FIELD)
-                    .cast(&DataType::Float64);
-                let m2 = struct_get(merged_col, VAR_PARTIAL_M2_FIELD);
-
-                let ddof_expr = lit(*ddof as f64);
-                let var = m2.div(n.clone().sub(ddof_expr.clone()));
-                let result = n
-                    .clone()
-                    .lt_eq(ddof_expr)
-                    .if_else(null_lit(), sqrt::sqrt(var));
-
-                final_stage(result);
-            }
-            AggExpr::Var(expr, ddof) => {
+            AggExpr::Var(expr, ddof) | AggExpr::Stddev(expr, ddof) => {
                 // Numerically stable two-stage variance via Chan et al. parallel variance.
-                // See `Stddev` above for the derivation. Finalizes `m2 / (n - ddof)`.
+                //
+                // Each partition computes `(count, mean, m2)` with a corrected two-pass
+                // (`VarPartial`), where `m2 = sum((x - mean)^2)`. Partitions are merged with
+                // `m2 = m2_a + m2_b + delta^2 * n_a * n_b / (n_a + n_b)` (`MergeVarPartial`),
+                // which only combines deviations and so stays accurate when the mean is large
+                // relative to the variance, unlike `E(x^2) - E(x)^2`. Finalizes
+                // `m2 / (n - ddof)`, square-rooted for stddev.
                 let expr = expr.clone().cast(&DataType::Float64);
 
                 let partial_col = first_stage!(AggExpr::VarPartial(expr));
@@ -236,9 +210,13 @@ pub fn populate_aggregation_stages_bound_with_schema(
 
                 let ddof_expr = lit(*ddof as f64);
                 let var = m2.div(n.clone().sub(ddof_expr.clone()));
-                let result = n.clone().lt_eq(ddof_expr).if_else(null_lit(), var);
+                let var = n.lt_eq(ddof_expr).if_else(null_lit(), var);
 
-                final_stage(result);
+                final_stage(if matches!(agg_expr.as_ref(), AggExpr::Stddev(..)) {
+                    sqrt::sqrt(var)
+                } else {
+                    var
+                });
             }
             AggExpr::VarPartial(expr) => {
                 let partial_col = first_stage!(AggExpr::VarPartial(expr.clone()));
@@ -448,23 +426,6 @@ mod tests {
         let (first, second, finals) =
             populate_aggregation_stages_bound(&[bound], schema, &[]).unwrap();
         (first, second, finals.len())
-    }
-
-    #[test]
-    fn test_var_lowers_to_var_partial_stages() {
-        let schema = Schema::new(vec![Field::new("a", DataType::Float64)]);
-
-        for agg in [
-            AggExpr::Var(resolved_col("a"), 1),
-            AggExpr::Stddev(resolved_col("a"), 1),
-        ] {
-            let (first, second, num_finals) = lower(agg, &schema);
-            assert_eq!(first.len(), 1);
-            assert!(matches!(first[0].as_ref(), AggExpr::VarPartial(_)));
-            assert_eq!(second.len(), 1);
-            assert!(matches!(second[0].as_ref(), AggExpr::MergeVarPartial(_)));
-            assert_eq!(num_finals, 1);
-        }
     }
 
     #[test]

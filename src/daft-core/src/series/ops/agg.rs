@@ -515,39 +515,31 @@ impl Series {
 
     pub fn var_partial(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
         let target_type = try_variance_aggregation_supertype(self.data_type())?;
-        match target_type {
-            DataType::Float64 => {
-                let casted = self.cast(&DataType::Float64)?;
-                let casted = casted.f64()?;
-                let result = match groups {
-                    Some(groups) => casted.grouped_var_partial(groups)?,
-                    None => casted.var_partial()?,
-                }
-                .into_series();
-                Ok(result)
-            }
-            _ => Err(DaftError::not_implemented(format!(
-                "Variance partial not implemented for {target_type}, source type: {}",
+        if !matches!(target_type, DataType::Float64) {
+            return Err(DaftError::not_implemented(format!(
+                "Variance partial is not implemented for {target_type}, source type: {}",
                 self.data_type()
-            ))),
+            )));
         }
+
+        let casted = self.cast(&DataType::Float64)?;
+        let casted = casted.f64()?;
+        Ok(groups
+            .map_or_else(
+                || casted.var_partial(),
+                |groups| casted.grouped_var_partial(groups),
+            )?
+            .into_series())
     }
 
     pub fn merge_var_partial(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
-        match self.data_type() {
-            DataType::Struct(_) => {
-                let struct_array = self.struct_()?;
-                let result = match groups {
-                    Some(groups) => struct_array.grouped_merge_var_partial(groups)?,
-                    None => struct_array.merge_var_partial()?,
-                }
-                .into_series();
-                Ok(result)
-            }
-            other => Err(DaftError::TypeError(format!(
-                "Merge variance partial is not implemented for type {other}"
-            ))),
-        }
+        let array = self.struct_()?;
+        Ok(groups
+            .map_or_else(
+                || array.merge_var_partial(),
+                |groups| array.grouped_merge_var_partial(groups),
+            )?
+            .into_series())
     }
 }
 

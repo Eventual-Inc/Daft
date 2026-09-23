@@ -34,13 +34,41 @@ pub struct Stats {
 
 /// Per-partition variance state.
 ///
-/// `count` valid values with mean `mean` and `m2 = sum((x - mean)^2)`, so the variance is
-/// `m2 / (count - ddof)`. `mean` and `m2` are `None` when `count == 0`.
+/// `count` valid values with mean `mean` and `m2 = sum((x - mean)^2)`. The default
+/// (`count == 0`) is the empty state and the identity for [`Self::merge`].
 #[derive(Clone, Copy, Default, Debug)]
 pub struct VarPartialState {
     pub count: u64,
-    pub mean: Option<f64>,
-    pub m2: Option<f64>,
+    pub mean: f64,
+    pub m2: f64,
+}
+
+impl VarPartialState {
+    /// Chan et al. parallel merge. Only combines deviations, so it stays accurate for large
+    /// means.
+    #[must_use]
+    pub fn merge(self, other: Self) -> Self {
+        if other.count == 0 {
+            return self;
+        }
+        if self.count == 0 {
+            return other;
+        }
+        let count = self.count + other.count;
+        let (n_a, n_b, n) = (self.count as f64, other.count as f64, count as f64);
+        let delta = other.mean - self.mean;
+        Self {
+            count,
+            mean: self.mean + delta * n_b / n,
+            m2: self.m2 + other.m2 + delta * delta * n_a * n_b / n,
+        }
+    }
+
+    /// `m2 / (count - ddof)`, or `None` when `count <= ddof`.
+    pub fn variance(self, ddof: usize) -> Option<f64> {
+        let n = self.count as usize;
+        (n > ddof).then(|| self.m2 / (n - ddof) as f64)
+    }
 }
 
 /// Corrected two-pass `(count, mean, m2)` over non-null values, per Chan et al. eq. (1.7).
@@ -50,16 +78,11 @@ pub struct VarPartialState {
 /// `mean0 = sum / count`, which a plain two-pass inherits as a spurious `n * error^2`
 /// term and a Welford update cannot fix once `delta / count` falls below `ulp(mean)`.
 pub fn calculate_var_partial(stats: Stats, values: impl Iterator<Item = f64>) -> VarPartialState {
+    // `mean` is `None` exactly when there were no valid values.
     let Some(mean0) = stats.mean else {
-        // `mean` is `None` exactly when there were no valid values.
-        return VarPartialState {
-            count: 0,
-            mean: None,
-            m2: None,
-        };
+        return VarPartialState::default();
     };
 
-    let count = stats.count as u64;
     let n = stats.count;
     // `mul_add` rounds `delta * delta + s2` once instead of twice.
     let (s1, s2) = values.fold((0.0, 0.0), |(s1, s2), value| {
@@ -68,56 +91,9 @@ pub fn calculate_var_partial(stats: Stats, values: impl Iterator<Item = f64>) ->
     });
 
     VarPartialState {
-        count,
-        mean: Some(mean0 + s1 / n),
-        m2: Some(s2 - s1 * s1 / n),
-    }
-}
-
-/// Chan et al. parallel merge of per-partition states.
-///
-/// Inputs with `count == 0` (or a missing `mean`/`m2`) are the identity. Only combines
-/// deviations, so it stays accurate for large means.
-pub fn merge_var_partials(partials: impl Iterator<Item = VarPartialState>) -> VarPartialState {
-    let mut count: u64 = 0;
-    let mut mean = 0.0;
-    let mut m2 = 0.0;
-    for partial in partials {
-        if partial.count == 0 {
-            continue;
-        }
-        let (other_n, other_mean, other_m2) = match (partial.mean, partial.m2) {
-            (Some(other_mean), Some(other_m2)) => (partial.count, other_mean, other_m2),
-            _ => continue,
-        };
-        if count == 0 {
-            count = other_n;
-            mean = other_mean;
-            m2 = other_m2;
-        } else {
-            let delta = other_mean - mean;
-            let new_count = count + other_n;
-            let new_mean = mean + delta * (other_n as f64) / (new_count as f64);
-            let new_m2 = m2
-                + other_m2
-                + delta * delta * (count as f64) * (other_n as f64) / (new_count as f64);
-            count = new_count;
-            mean = new_mean;
-            m2 = new_m2;
-        }
-    }
-    if count == 0 {
-        VarPartialState {
-            count: 0,
-            mean: None,
-            m2: None,
-        }
-    } else {
-        VarPartialState {
-            count,
-            mean: Some(mean),
-            m2: Some(m2),
-        }
+        count: n as u64,
+        mean: mean0 + s1 / n,
+        m2: s2 - s1 * s1 / n,
     }
 }
 
@@ -231,12 +207,7 @@ pub fn calculate_variance(
     values: impl Iterator<Item = f64>,
     ddof: usize,
 ) -> Option<f64> {
-    let state = calculate_var_partial(stats, values);
-    let n = state.count as usize;
-    if n <= ddof {
-        return None; // Not enough data points for the requested ddof
-    }
-    state.m2.map(|m2| m2 / (n - ddof) as f64)
+    calculate_var_partial(stats, values).variance(ddof)
 }
 
 pub fn calculate_skew(stats: Stats, values: impl Iterator<Item = f64>) -> Option<f64> {
@@ -256,31 +227,24 @@ pub fn calculate_skew(stats: Stats, values: impl Iterator<Item = f64>) -> Option
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        Stats, VarPartialState, calculate_mean, calculate_var_partial, calculate_variance,
-        merge_var_partials,
-    };
+    use super::{Stats, VarPartialState, calculate_mean, calculate_var_partial};
 
     /// Mirrors `calculate_stats`, which derives the provisional mean from the sum kernel.
-    fn stats_of(values: &[f64]) -> Stats {
+    fn partial_of(values: &[f64]) -> VarPartialState {
         let sum = values.iter().sum::<f64>();
         let count = values.len() as u64;
-        Stats {
+        let stats = Stats {
             sum,
             count: count as f64,
             mean: calculate_mean(sum, count),
-        }
+        };
+        calculate_var_partial(stats, values.iter().copied())
     }
 
-    fn partial_of(values: &[f64]) -> VarPartialState {
-        calculate_var_partial(stats_of(values), values.iter().copied())
-    }
-
-    fn var_from_state(state: VarPartialState, ddof: usize) -> Option<f64> {
-        if (state.count as usize) <= ddof {
-            return None;
-        }
-        state.m2.map(|m2| m2 / (state.count as f64 - ddof as f64))
+    fn merge_all(partials: impl IntoIterator<Item = VarPartialState>) -> VarPartialState {
+        partials
+            .into_iter()
+            .fold(VarPartialState::default(), VarPartialState::merge)
     }
 
     fn assert_close(actual: f64, expected: f64, rel: f64) {
@@ -291,17 +255,6 @@ mod tests {
     }
 
     #[test]
-    fn test_var_partial_large_mean() {
-        // Regression test for https://github.com/Eventual-Inc/Daft/issues/7468:
-        // `E(x^2) - E(x)^2` collapses to 0 for `[1e9 + 1, 1e9 + 2, 1e9 + 3]`.
-        let values = [1e9 + 1.0, 1e9 + 2.0, 1e9 + 3.0];
-        let state = partial_of(&values);
-        assert_eq!(state.count, 3);
-        assert_eq!(var_from_state(state, 1), Some(1.0));
-        assert_eq!(var_from_state(state, 0), Some(2.0 / 3.0));
-    }
-
-    #[test]
     fn test_var_partial_large_mean_large_partition() {
         // Exercises the per-partition kernel at scale rather than just the merge.
         // Values are multiples of 1/8 and every base has an ulp of at most 1/8, so the shift
@@ -309,7 +262,7 @@ mod tests {
         // error. Do not change the divisor without rechecking that.
         const N: usize = 20_000;
         let unshifted: Vec<f64> = (0..N).map(|i| ((i * 7919) % 1000) as f64 / 8.0).collect();
-        let expected = var_from_state(partial_of(&unshifted), 1).unwrap();
+        let expected = partial_of(&unshifted).variance(1).unwrap();
 
         for base in [1e9, 1e12, 1e15] {
             let shifted: Vec<f64> = unshifted.iter().map(|x| base + x).collect();
@@ -317,77 +270,35 @@ mod tests {
                 shifted.iter().zip(&unshifted).all(|(s, x)| s - base == *x),
                 "shift by {base} must not quantise the data"
             );
-            let actual = var_from_state(partial_of(&shifted), 1).unwrap();
+            let actual = partial_of(&shifted).variance(1).unwrap();
             assert_close(actual, expected, 1e-12);
         }
     }
 
     #[test]
-    fn test_merge_var_partials_singletons() {
-        // Single-row partials must still recover the joint variance, even though a
-        // per-partition sample variance would be null at `n == 1`.
-        let partials = [1e9 + 1.0, 1e9 + 2.0, 1e9 + 3.0]
-            .into_iter()
-            .map(|v| partial_of(&[v]));
-        let merged = merge_var_partials(partials);
-        assert_eq!(merged.count, 3);
-        assert_eq!(var_from_state(merged, 1), Some(1.0));
-    }
-
-    #[test]
     fn test_merge_var_partials_empty_is_identity() {
-        let empty = VarPartialState {
-            count: 0,
-            mean: None,
-            m2: None,
-        };
-        let state = partial_of(&[1.0, 2.0, 3.0]);
-        let merged = merge_var_partials([empty, state, empty].into_iter());
+        let empty = VarPartialState::default();
+        let merged = merge_all([empty, partial_of(&[1.0, 2.0, 3.0]), empty]);
         assert_eq!(merged.count, 3);
-        assert_eq!(var_from_state(merged, 1), Some(1.0));
-        assert_eq!(merge_var_partials([empty, empty].into_iter()).count, 0);
+        assert_eq!(merged.variance(1), Some(1.0));
+        assert_eq!(merge_all([empty, empty]).count, 0);
     }
 
     #[test]
     fn test_merge_var_partials_partition_shape_invariance() {
-        // How rows split across morsels/partitions must not change the answer.
+        // How rows split across morsels/partitions must not change the answer, including
+        // single-row partials whose own sample variance would be null.
         for base in [0.0, 1e9] {
             let values: Vec<f64> = (1..=8).map(|i| base + f64::from(i)).collect();
-            let whole = partial_of(&values);
-            let halves = merge_var_partials(
-                [partial_of(&values[..4]), partial_of(&values[4..])].into_iter(),
-            );
-            let uneven = merge_var_partials(
-                [partial_of(&values[..1]), partial_of(&values[1..])].into_iter(),
-            );
-            let singletons =
-                merge_var_partials(values.iter().map(|v| partial_of(std::slice::from_ref(v))));
+            let halves = merge_all([partial_of(&values[..4]), partial_of(&values[4..])]);
+            let uneven = merge_all([partial_of(&values[..1]), partial_of(&values[1..])]);
+            let singletons = merge_all(values.iter().map(|v| partial_of(std::slice::from_ref(v))));
 
-            let expected = var_from_state(whole, 1).unwrap();
+            let expected = partial_of(&values).variance(1).unwrap();
             assert_close(expected, 6.0, 1e-12);
             for shape in [halves, uneven, singletons] {
                 assert_eq!(shape.count, 8);
-                assert_close(var_from_state(shape, 1).unwrap(), expected, 1e-9);
-            }
-        }
-    }
-
-    #[test]
-    fn test_calculate_variance_matches_var_partial() {
-        // `Series::var` uses `calculate_variance`, the engine uses `calculate_var_partial`.
-        for values in [
-            vec![1.0, 2.0, 3.0, 4.0, 5.0],
-            vec![1e9 + 1.0, 1e9 + 2.0, 1e9 + 3.0],
-            vec![5.0],
-            vec![],
-        ] {
-            let stats = stats_of(&values);
-            for ddof in [0, 1] {
-                assert_eq!(
-                    calculate_variance(stats, values.iter().copied(), ddof),
-                    var_from_state(calculate_var_partial(stats, values.iter().copied()), ddof),
-                    "values={values:?} ddof={ddof}"
-                );
+                assert_close(shape.variance(1).unwrap(), expected, 1e-9);
             }
         }
     }

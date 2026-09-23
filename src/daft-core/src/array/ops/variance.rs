@@ -19,8 +19,14 @@ fn build_var_partial_struct(
     states: Vec<VarPartialState>,
 ) -> DaftResult<StructArray> {
     let counts: Vec<Option<u64>> = states.iter().map(|s| Some(s.count)).collect();
-    let means: Vec<Option<f64>> = states.iter().map(|s| s.mean).collect();
-    let m2s: Vec<Option<f64>> = states.iter().map(|s| s.m2).collect();
+    let means: Vec<Option<f64>> = states
+        .iter()
+        .map(|s| (s.count > 0).then_some(s.mean))
+        .collect();
+    let m2s: Vec<Option<f64>> = states
+        .iter()
+        .map(|s| (s.count > 0).then_some(s.m2))
+        .collect();
 
     let count_field = Arc::new(Field::new(stats::VAR_PARTIAL_COUNT_FIELD, DataType::UInt64));
     let mean_field = Arc::new(Field::new(stats::VAR_PARTIAL_MEAN_FIELD, DataType::Float64));
@@ -42,28 +48,16 @@ fn build_var_partial_struct(
     ))
 }
 
-fn struct_row_to_state(count: Option<u64>, mean: Option<f64>, m2: Option<f64>) -> VarPartialState {
-    match count {
-        None | Some(0) => VarPartialState {
-            count: 0,
-            mean: None,
-            m2: None,
-        },
-        Some(n) => match (mean, m2) {
-            (Some(mean), Some(m2)) => VarPartialState {
-                count: n,
-                mean: Some(mean),
-                m2: Some(m2),
-            },
-            // A partial with a positive count must carry a mean and m2; treat
-            // malformed rows as identity rather than corrupting the merge.
-            _ => VarPartialState {
-                count: 0,
-                mean: None,
-                m2: None,
-            },
-        },
-    }
+/// Reads rows of a `var_partial` struct. Null fields read as zero, so a null row is the empty state.
+fn var_partial_rows(array: &StructArray) -> DaftResult<impl Fn(usize) -> VarPartialState> {
+    let counts = array.get(stats::VAR_PARTIAL_COUNT_FIELD)?.u64()?.clone();
+    let means = array.get(stats::VAR_PARTIAL_MEAN_FIELD)?.f64()?.clone();
+    let m2s = array.get(stats::VAR_PARTIAL_M2_FIELD)?.f64()?.clone();
+    Ok(move |i| VarPartialState {
+        count: counts.get(i).unwrap_or(0),
+        mean: means.get(i).unwrap_or(0.0),
+        m2: m2s.get(i).unwrap_or(0.0),
+    })
 }
 
 impl DaftVarianceAggable for DataArray<Float64Type> {
@@ -116,27 +110,22 @@ impl DaftMergeVarPartialAggable for StructArray {
     type Output = DaftResult<Self>;
 
     fn merge_var_partial(&self) -> Self::Output {
-        let counts = self.get(stats::VAR_PARTIAL_COUNT_FIELD)?.u64()?.clone();
-        let means = self.get(stats::VAR_PARTIAL_MEAN_FIELD)?.f64()?.clone();
-        let m2s = self.get(stats::VAR_PARTIAL_M2_FIELD)?.f64()?.clone();
-        let partials =
-            (0..self.len()).map(|i| struct_row_to_state(counts.get(i), means.get(i), m2s.get(i)));
-        let merged = stats::merge_var_partials(partials);
+        let row = var_partial_rows(self)?;
+        let merged = (0..self.len())
+            .map(row)
+            .fold(VarPartialState::default(), VarPartialState::merge);
         build_var_partial_struct(self.name(), vec![merged])
     }
 
     fn grouped_merge_var_partial(&self, groups: &GroupIndices) -> Self::Output {
-        let counts = self.get(stats::VAR_PARTIAL_COUNT_FIELD)?.u64()?.clone();
-        let means = self.get(stats::VAR_PARTIAL_MEAN_FIELD)?.f64()?.clone();
-        let m2s = self.get(stats::VAR_PARTIAL_M2_FIELD)?.f64()?.clone();
+        let row = var_partial_rows(self)?;
         let states = groups
             .iter()
             .map(|group| {
-                let partials = group.iter().map(|&index| {
-                    let i = index as usize;
-                    struct_row_to_state(counts.get(i), means.get(i), m2s.get(i))
-                });
-                stats::merge_var_partials(partials)
+                group
+                    .iter()
+                    .map(|&index| row(index as usize))
+                    .fold(VarPartialState::default(), VarPartialState::merge)
             })
             .collect();
         build_var_partial_struct(self.name(), states)

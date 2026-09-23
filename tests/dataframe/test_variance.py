@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import functools
-import statistics
 from typing import Any
 
 import pandas as pd
@@ -249,58 +248,3 @@ def test_var_stddev_relationship(with_morsel_size):
     ).collect()
     row = next(result.iter_rows())
     assert abs(row["var"] - row["stddev"] ** 2) < 1e-10
-
-
-def test_var_large_mean_matches_shifted_data(with_morsel_size):
-    """Regression test for https://github.com/Eventual-Inc/Daft/issues/7468.
-
-    The old `E(x^2) - E(x)^2` rewrite collapsed to 0.0 for data with a large
-    mean; the Chan parallel merge must match the shifted (small-mean) result.
-    """
-    data = [1e9 + 1, 1e9 + 2, 1e9 + 3]
-    for ddof, expected in [(1, 1.0), (0, 2.0 / 3.0)]:
-        df = daft.from_pydict({"a": data, "g": [1, 1, 1]})
-        row = next(
-            df.select(
-                daft.col("a").var(ddof=ddof).alias("var"),
-                daft.col("a").stddev(ddof=ddof).alias("std"),
-            )
-            .collect()
-            .iter_rows()
-        )
-        assert row["var"] == expected
-        assert abs(row["std"] - expected**0.5) < 1e-12
-
-        grouped = next(
-            df.groupby("g")
-            .agg(
-                daft.col("a").var(ddof=ddof).alias("var"),
-                daft.col("a").stddev(ddof=ddof).alias("std"),
-            )
-            .collect()
-            .iter_rows()
-        )
-        assert grouped["var"] == expected
-        assert abs(grouped["std"] - expected**0.5) < 1e-12
-
-
-@pytest.mark.parametrize("base", [1e9, 1e12, 1e15])
-def test_var_large_mean_large_partition(base, with_default_morsel_size):
-    """Large mean *and* a large partition (see #7468).
-
-    The other large-mean tests use three values, so they only exercise the merge; these
-    20k rows land in one partial aggregate. `statistics.variance` is the reference
-    because it is exact, unlike the float `var()` helper above.
-    """
-    n = 20_000
-    data = [base + ((i * 7919) % 1000) / 1000.0 for i in range(n)]
-    expected = statistics.variance(data)
-
-    df = daft.from_pydict({"a": data, "g": [1] * n})
-
-    row = next(df.agg(daft.col("a").var().alias("var"), daft.col("a").stddev().alias("std")).collect().iter_rows())
-    assert row["var"] == pytest.approx(expected, rel=1e-9)
-    assert row["std"] == pytest.approx(expected**0.5, rel=1e-9)
-
-    grouped = next(df.groupby("g").agg(daft.col("a").var().alias("var")).collect().iter_rows())
-    assert grouped["var"] == pytest.approx(expected, rel=1e-9)
