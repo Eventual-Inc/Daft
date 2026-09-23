@@ -163,16 +163,10 @@ impl HFSource {
         hf_config: &HuggingFaceConfig,
         http_config: &HTTPConfig,
     ) -> super::Result<Arc<Self>> {
-        if http_config.bearer_token.is_some() {
-            log::warn!(
-                "Using `HttpConfig.bearer_token` to authenticate Hugging Face requests is deprecated and will be removed in Daft v0.6. Instead, specify your Hugging Face token in `daft.io.HuggingFaceConfig`."
-            );
-        }
-
         let mut combined_config = http_config.clone();
         if hf_config.anonymous {
             combined_config.bearer_token = None;
-        } else if hf_config.token.is_some() {
+        } else {
             combined_config.bearer_token.clone_from(&hf_config.token);
         }
 

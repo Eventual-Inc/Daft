@@ -133,7 +133,7 @@ You can also use this mechanism to perform SQL-based projections (calculations) 
 
 ## Writing to Lance
 
-Use [`df.write_lance()`][daft.dataframe.DataFrame.write_lance] to write a DataFrame to a Lance dataset. Supported modes include `create`, `append`, and `overwrite`.
+Use [`df.write_lance()`][daft.dataframe.DataFrame.write_lance] to write a DataFrame to a Lance dataset. Supported modes include `create`, `append`, `overwrite`, and `insert_overwrite`.
 
 === "🐍 Python"
 
@@ -151,6 +151,79 @@ meta2.show()
 # Append rows (must be compatible with the existing table schema)
 meta3 = df.write_lance("/tmp/lance/my_table.lance", mode="append")
 ```
+
+### Conditional overwrite
+
+`insert_overwrite` removes rows matching a Lance SQL predicate and adds the input
+rows in one commit. The target table must already exist; it is not compatible
+with `use_mem_wal=True`.
+
+```python
+replacement = daft.from_pydict({"day": ["2026-09-15"], "value": [42]})
+replacement.write_lance(
+    "/tmp/lance/events.lance",
+    mode="insert_overwrite",
+    overwrite_where="day = '2026-09-15'",
+)
+```
+
+### Lance Namespace tables
+
+Address a table through a Lance Namespace by supplying `table_id`,
+`namespace_impl`, and `namespace_properties` instead of a URI. Namespace
+resolution and any catalog-vended storage credentials are handled by
+`daft-lance`.
+
+```python
+namespace = {
+    "namespace_impl": "dir",
+    "namespace_properties": {"root": "/tmp/lance_tables"},
+    "table_id": ["orders"],
+}
+
+daft.from_pydict({"id": [1, 2]}).write_lance(mode="create", **namespace)
+orders = daft.read_lance(**namespace)
+```
+
+URI and Namespace targets are mutually exclusive.
+
+### Migrating from `mode="merge"`
+
+`DataFrame.write_lance(mode="merge")` is deprecated in v0.8.0 and will be
+removed in v0.9.0. Its behavior depended on the target table and input schema;
+migrate each case to an explicit operation:
+
+```python
+# No target table: create it explicitly.
+df.write_lance("/tmp/lance/my_table.lance", mode="create")
+
+# No new columns: append rows explicitly.
+df.write_lance("/tmp/lance/my_table.lance", mode="append")
+```
+
+For a per-fragment column merge, call `daft_lance.merge_columns_df` directly.
+Read `fragment_id` and the join key from Lance first. The default join key is
+`_rowaddr`; pass `left_on` and `right_on` for a business key.
+
+```python
+from daft_lance import merge_columns_df
+
+source = daft.read_lance(
+    "/tmp/lance/my_table.lance",
+    default_scan_options={"with_row_address": True},
+    include_fragment_id=True,
+)
+updates = (
+    source.select("fragment_id", "_rowaddr", "score")
+    .with_column("normalized_score", daft.col("score") / 100)
+    .select("fragment_id", "_rowaddr", "normalized_score")
+)
+merge_columns_df(updates, "/tmp/lance/my_table.lance")
+```
+
+For example, to use `id` as the join key, call
+`merge_columns_df(updates, "/tmp/lance/my_table.lance", left_on="id",
+right_on="id")` after retaining `fragment_id` and `id` in `updates`.
 
 ### For S3-compatible services (e.g. Volcengine TOS), configure IO options for authentication and endpoints:
 
