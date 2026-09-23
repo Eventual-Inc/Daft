@@ -51,7 +51,15 @@ def _assert_filter_matches_full_scan(path, predicate) -> None:
     assert sort_arrow_table(actual, *actual.column_names) == sort_arrow_table(expected, *expected.column_names)
 
 
-def _write_log_table(path, fields: list[dict], files: list[tuple[pa.Table, dict | None]], config=None) -> None:
+def _plan(df) -> str:
+    buf = io.StringIO()
+    df.explain(show_all=True, file=buf)
+    return buf.getvalue()
+
+
+def _write_log_table(
+    path, fields: list[dict], files: list[tuple[pa.Table, dict | None]], config=None, protocol=(1, 2)
+) -> None:
     """Hand-write a Delta log so each file's stats are exactly what the test says."""
     (path / "_delta_log").mkdir(parents=True)
     adds = []
@@ -69,7 +77,7 @@ def _write_log_table(path, fields: list[dict], files: list[tuple[pa.Table, dict 
             add["stats"] = json.dumps(stats)
         adds.append({"add": add})
     actions = [
-        {"protocol": {"minReaderVersion": 1, "minWriterVersion": 2}},
+        {"protocol": {"minReaderVersion": protocol[0], "minWriterVersion": protocol[1]}},
         {
             "metaData": {
                 "id": str(uuid.uuid4()),
@@ -321,13 +329,7 @@ def test_stats_skip_column_mapped_table_by_logical_name(tmp_path):
             ),
         ],
         config={"delta.columnMapping.mode": "name", "delta.columnMapping.maxColumnId": "1"},
-    )
-    # Hand-written log needs the column-mapping protocol version.
-    log = path / "_delta_log" / "00000000000000000000.json"
-    log.write_text(
-        log.read_text().replace(
-            '"minReaderVersion": 1, "minWriterVersion": 2', '"minReaderVersion": 2, "minWriterVersion": 5'
-        )
+        protocol=(2, 5),
     )
     assert len(_tasks(path, filters=col("a") == 11)) == 1
     _assert_filter_matches_full_scan(path, col("a") == 11)
@@ -396,12 +398,6 @@ def metadata_counts(monkeypatch) -> list:
 
     monkeypatch.setattr(DeltaLakeDataSource, "_count_from_metadata", spy)
     return results
-
-
-def _plan(df) -> str:
-    buf = io.StringIO()
-    df.explain(show_all=True, file=buf)
-    return buf.getvalue()
 
 
 @pytest.mark.parametrize(

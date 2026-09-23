@@ -42,7 +42,7 @@ class _Col:
         t = self.dtype
         if pa.types.is_string(t) or pa.types.is_large_string(t) or pa.types.is_binary(t) or pa.types.is_floating(t):
             return None
-        if pa.types.is_timestamp(self.dtype):
+        if pa.types.is_timestamp(t):
             return pc.add(pc.field("max", self.physical), pa.scalar(_TIMESTAMP_MAX_SLACK))
         return pc.field("max", self.physical)
 
