@@ -1,6 +1,8 @@
-# LeRobot v3 datasets with Daft
+# LeRobot datasets with Daft
 
-[LeRobot Dataset v3.0](https://huggingface.co/docs/lerobot/lerobot-dataset-v3) stores robot learning data as chunked Parquet (`meta/episodes`, `data/`) and per-camera MP4 shards under `videos/`. Daft exposes this layout under [`daft.datasets.lerobot`](../api/datasets.md) so you can stay at **episode granularity** for filtering, then expand to **frames** only for the episodes you need.
+[LeRobot](https://huggingface.co/docs/lerobot/lerobot-dataset-v3) stores robot learning data as Parquet (`meta/`, `data/`) plus per-camera MP4 under `videos/`. Daft exposes this layout under [`daft.datasets.lerobot`](../api/datasets.md) so you can stay at **episode granularity** for filtering, then expand to **frames** only for the episodes you need.
+
+The reader accepts **v2.0 / v2.1** (one Parquet and one MP4 per episode) and **v3.0** (many episodes packed into shared Parquet/MP4 shards). Version is taken from `meta/info.json` → `codebase_version`.
 
 !!! warning "Beta"
 
@@ -8,7 +10,7 @@
 
 ## Frame-level reads
 
-Use [`daft.datasets.lerobot.read`](../api/datasets.md#daft.datasets.lerobot.read) for the common case: a lazy DataFrame with one row per frame, episode metadata broadcast onto each frame. Pass `load_video_frames=True` (or a camera key / list of keys) to also decode each row's camera image from the MP4 shards.
+Use [`daft.datasets.lerobot.read`](../api/datasets.md#daft.datasets.lerobot.read) for the common case: a lazy DataFrame with one row per frame, episode metadata broadcast onto each frame. Pass `load_video_frames=True` (or a camera key / list of keys) to also decode each row's camera image from the MP4 files.
 
 ```python
 import daft
@@ -20,12 +22,17 @@ df = lerobot.read("your-org/your-robot-dataset", load_video_frames=True)
 `dataset_uri` can be:
 
 - A local directory that contains `meta/`, `data/`, etc.
-- An `hf://datasets/org/name` URI (Hub layout matches the on-disk v3 tree)
+- An `hf://datasets/org/name` URI (Hub layout matches the on-disk tree)
 - A bare `org/name` string, which is interpreted as `hf://datasets/org/name`
 
 ## Episode metadata
 
-Use [`daft.datasets.lerobot.read_episodes`](../api/datasets.md#daft.datasets.lerobot.read_episodes) to scan `meta/episodes/**/*.parquet` (one row per episode). Per-episode `meta/` and `stats/` columns are hidden by default; opt in with `include_meta=True` / `include_stats=True`.
+Use [`daft.datasets.lerobot.read_episodes`](../api/datasets.md#daft.datasets.lerobot.read_episodes) for one row per episode:
+
+- **v3:** `meta/episodes/**/*.parquet`
+- **v2:** `meta/episodes.jsonl` (any extra per-episode fields in that file are kept as columns)
+
+Per-episode `meta/` and `stats/` columns are hidden by default; opt in with `include_meta=True` / `include_stats=True`. On v2.1, stats are joined from `meta/episodes_stats.jsonl`.
 
 ```python
 import daft
@@ -41,11 +48,25 @@ frames = load_episode_frames(long, repo)
 
 ## Tasks
 
-[`read_tasks`](../api/datasets.md#daft.datasets.lerobot.read_tasks) loads task metadata, preferring `meta/tasks.parquet` and falling back to legacy `meta/tasks.jsonl`.
+[`read_tasks`](../api/datasets.md#daft.datasets.lerobot.read_tasks) loads task metadata, preferring `meta/tasks.parquet` and falling back to `meta/tasks.jsonl` (the v2 default).
 
 ## Video frames
 
-With `load_video_frames`, [`read`](../api/datasets.md#daft.datasets.lerobot.read) decodes each frame from its MP4 shard by **timestamp**: a shard packs many episodes back to back, so Daft combines the episode's `from_timestamp` offset within the shard with the frame's episode-local `timestamp`, and matches the closest decoded frame within half a frame period. Decoding requires PyAV and Pillow (`pip install av pillow`).
+With `load_video_frames`, [`read`](../api/datasets.md#daft.datasets.lerobot.read) decodes each frame from its MP4 by **timestamp**: Daft combines the episode's `from_timestamp` offset within the file with the frame's episode-local `timestamp`, and matches the closest decoded frame within half a frame period.
+
+- **v3:** a shard packs many episodes back to back, so `from_timestamp` is where that episode starts inside the shard.
+- **v2:** each episode has its own MP4, so `from_timestamp` is `0`.
+
+Decoding requires PyAV and Pillow (`pip install av pillow`).
+
+## Layout cheat sheet
+
+| | v2.0 / v2.1 | v3.0 |
+|---|---|---|
+| Episode metadata | `meta/episodes.jsonl` | `meta/episodes/**/*.parquet` |
+| Frame data | `data/chunk-XXX/episode_YYYYYY.parquet` | `data/chunk-XXX/file-YYY.parquet` (many episodes) |
+| Video | one MP4 per episode per camera | shared MP4 shards + `from_timestamp` |
+| Tasks | `meta/tasks.jsonl` | `meta/tasks.parquet` (jsonl fallback) |
 
 ## API reference
 

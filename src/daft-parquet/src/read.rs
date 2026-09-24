@@ -523,12 +523,26 @@ pub async fn stream_parquet_count_pushdown(
     io_stats: Option<IOStatsRef>,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     aggregation: &ExprRef,
+    row_groups: Option<&[i64]>,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let parquet_metadata =
         read_parquet_metadata(url, io_client, io_stats, field_id_mapping.clone()).await?;
 
     // Currently only CountMode::All is supported for count pushdown.
-    let count = parquet_metadata.num_rows();
+    //
+    // When the ScanTask constrains the read to specific row groups, count only those.
+    // Indices are positional into the full footer, mirroring `prune_row_groups`.
+    let count = match row_groups {
+        None => parquet_metadata.num_rows(),
+        Some(rgs) => {
+            let arrow_md = parquet_metadata.as_arrowrs();
+            let indices = crate::helpers::validate_requested_row_groups(arrow_md, rgs, url)?;
+            indices
+                .iter()
+                .map(|&i| arrow_md.row_group(i).num_rows() as usize)
+                .sum()
+        }
+    };
     let count_field = daft_core::datatypes::Field::new(
         aggregation.name(),
         daft_core::datatypes::DataType::UInt64,

@@ -1,9 +1,9 @@
-use std::{any::Any, collections::BTreeMap, sync::Arc};
+use std::{any::Any, collections::BTreeMap, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::stream::BoxStream;
-use opendal::{EntryMode, Operator};
+use opendal::{EntryMode, Operator, layers::TimeoutLayer};
 use snafu::ResultExt;
 
 use crate::{
@@ -16,25 +16,34 @@ use crate::{
 };
 
 pub(crate) struct OpenDALSource {
+    /// Deadline-bounded operator for reads and metadata operations.
     operator: Operator,
+    /// Unbounded operator for writes and deletes; see `get_client` for why.
+    write_operator: Operator,
     scheme: String,
 }
 
 impl OpenDALSource {
     /// List the OpenDAL service schemes that are compiled into this build.
-    fn available_schemes() -> &'static [&'static str] {
-        &[
+    fn available_schemes() -> Vec<&'static str> {
+        #[cfg_attr(not(feature = "hdfs"), allow(unused_mut))]
+        let mut schemes = vec![
             "oss", "cos", "obs", "tos", "goosefs", "memory", "fs", "github",
-        ]
+        ];
+        #[cfg(feature = "hdfs")]
+        schemes.push("hdfs");
+        schemes
     }
 
     pub async fn get_client(
         scheme: &str,
         config: &BTreeMap<String, String>,
     ) -> super::Result<Arc<dyn ObjectSource>> {
-        // Ensure all compiled-in OpenDAL services are registered in the global
-        // OperatorRegistry. This is a no-op after the first call.
-        opendal::init_default_registry();
+        // Register compiled-in OpenDAL services and install the process-wide
+        // HTTP transport. OpenDAL 0.58+ splits HTTP into a separate transport
+        // that must be installed before cloud services can make requests.
+        // Safe to call repeatedly (registry init and transport install are once).
+        opendal::install_default();
 
         let operator =
             Operator::via_iter(scheme, config.clone()).map_err(|e: opendal::Error| {
@@ -53,8 +62,43 @@ impl OpenDALSource {
                 }
             })?;
 
+        // OpenDAL's default operator stack carries no deadlines and its shared
+        // HTTP client never times out, so a silently dropped connection (e.g.
+        // a load balancer reaping idle connections without a RST) would stall
+        // reads forever. Enforce OpenDAL's TimeoutLayer defaults on the read
+        // path (60s per control operation, 10s between body reads), overridable
+        // per backend via the `timeout_ms` / `io_timeout_ms` config keys.
+        //
+        // Writes and deletes deliberately keep their previous unbounded
+        // behavior: io_timeout bounds the *whole* body of a write call, so any
+        // finite default would also cap how long a part upload may take and
+        // break slow-but-legitimate uploads.
+        //
+        // NOTE: if a RetryLayer is ever added here, keep it outside the
+        // TimeoutLayer; a TimeoutLayer added outside a RetryLayer can drop
+        // retry futures mid-state-restore (see TimeoutLayer's
+        // cancellation-safety notes in opendal).
+        let mut timeouts = TimeoutLayer::default();
+        if let Some(timeout) = config_duration_ms(scheme, config, "timeout_ms")? {
+            timeouts = timeouts.with_timeout(timeout);
+        }
+        if let Some(io_timeout) = config_duration_ms(scheme, config, "io_timeout_ms")? {
+            timeouts = timeouts.with_io_timeout(io_timeout);
+        }
+        for key in ["timeout", "io_timeout"] {
+            if config.contains_key(key) {
+                log::warn!(
+                    "OpenDAL backend config key '{key}' is not an OpenDAL service setting and \
+                     is ignored; use 'timeout_ms' / 'io_timeout_ms' to configure deadlines"
+                );
+            }
+        }
+        let write_operator = operator.clone();
+        let operator = operator.layer(timeouts);
+
         Ok(Arc::new(Self {
             operator,
+            write_operator,
             scheme: scheme.to_string(),
         }))
     }
@@ -70,6 +114,39 @@ fn url_to_opendal_path(uri: &str) -> super::Result<String> {
     let path = parsed.path();
     let path = path.strip_prefix('/').unwrap_or(path);
     Ok(path.to_string())
+}
+
+/// Largest accepted deadline override (24h), as a sanity bound: operations
+/// slower than this should be treated as hung rather than waited out.
+const MAX_TIMEOUT_MS: u64 = 24 * 60 * 60 * 1000;
+
+/// Read a deadline override from an OpenDAL backend config map. OpenDAL
+/// services ignore config keys they do not know, so daft-specific deadline
+/// keys ride along in the same map; malformed values fail client creation
+/// rather than silently dropping the user's timeout.
+fn config_duration_ms(
+    scheme: &str,
+    config: &BTreeMap<String, String>,
+    key: &str,
+) -> super::Result<Option<Duration>> {
+    let Some(raw) = config.get(key) else {
+        return Ok(None);
+    };
+    let invalid = || super::Error::UnableToCreateClient {
+        store: super::SourceType::OpenDAL {
+            scheme: scheme.to_string(),
+        },
+        source: format!(
+            "invalid config value for '{key}': '{raw}' \
+             (expected milliseconds between 1 and {MAX_TIMEOUT_MS})"
+        )
+        .into(),
+    };
+    let millis = raw.parse::<u64>().map_err(|_| invalid())?;
+    if !(1..=MAX_TIMEOUT_MS).contains(&millis) {
+        return Err(invalid());
+    }
+    Ok(Some(Duration::from_millis(millis)))
 }
 
 pub struct OpenDALMultipartWriter {
@@ -146,7 +223,7 @@ impl ObjectSource for OpenDALSource {
     ) -> super::Result<Option<Box<dyn MultipartWriter>>> {
         let path = url_to_opendal_path(uri)?;
         let writer = self
-            .operator
+            .write_operator
             .writer(&path)
             .await
             .map_err(|e| opendal_err_to_daft_err(e, uri, &self.scheme))?;
@@ -233,7 +310,7 @@ impl ObjectSource for OpenDALSource {
         _io_stats: Option<IOStatsRef>,
     ) -> super::Result<()> {
         let path = url_to_opendal_path(uri)?;
-        self.operator
+        self.write_operator
             .write(&path, data)
             .await
             .map(|_| ())
@@ -247,6 +324,11 @@ impl ObjectSource for OpenDALSource {
             .stat(&path)
             .await
             .map_err(|e| opendal_err_to_daft_err(e, uri, &self.scheme))?;
+        if meta.is_dir() {
+            return Err(super::Error::NotAFile {
+                path: uri.to_string(),
+            });
+        }
         Ok(meta.content_length() as usize)
     }
 
@@ -285,6 +367,7 @@ impl ObjectSource for OpenDALSource {
             return Ok(LSResult {
                 files: vec![],
                 continuation_token: None,
+                not_found_if_empty: false,
             });
         }
 
@@ -295,10 +378,12 @@ impl ObjectSource for OpenDALSource {
             .await
             .map_err(|e| opendal_err_to_daft_err(e, path, &self.scheme))?;
 
-        // Reconstruct the URL prefix for file paths
+        // Reconstruct the URL prefix for file paths.
+        // Use authority (host:port) rather than host_str so schemes like HDFS
+        // (hdfs://host:port) generate correct URLs.
         let parsed = url::Url::parse(path).context(super::InvalidUrlSnafu { path })?;
-        let base_url = if let Some(host) = parsed.host_str() {
-            format!("{}://{}", parsed.scheme(), host)
+        let base_url = if !parsed.authority().is_empty() {
+            format!("{}://{}", parsed.scheme(), parsed.authority())
         } else {
             format!("{}://", parsed.scheme())
         };
@@ -332,12 +417,13 @@ impl ObjectSource for OpenDALSource {
         Ok(LSResult {
             files,
             continuation_token: None,
+            not_found_if_empty: false,
         })
     }
 
     async fn delete(&self, uri: &str, _io_stats: Option<IOStatsRef>) -> super::Result<()> {
         let path = url_to_opendal_path(uri)?;
-        self.operator
+        self.write_operator
             .delete(&path)
             .await
             .map_err(|e| opendal_err_to_daft_err(e, uri, &self.scheme))
@@ -350,6 +436,8 @@ impl ObjectSource for OpenDALSource {
 
 #[cfg(test)]
 mod tests {
+    use std::io::{Read, Write};
+
     use super::*;
 
     #[tokio::test]
@@ -485,5 +573,138 @@ mod tests {
             url_to_opendal_path("memory://test/hello.txt").unwrap(),
             "hello.txt"
         );
+    }
+
+    /// Serve valid HTTP response headers that promise a body, then never send
+    /// the body — what a client sees when a connection is silently dropped
+    /// mid-response (e.g. an LB reaping idle connections without a RST).
+    fn spawn_stalled_http_server() -> String {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            while let Ok((mut socket, _)) = listener.accept() {
+                std::thread::spawn(move || {
+                    // Drain the request; we do not care about its contents.
+                    let _ = socket.read(&mut [0u8; 4096]);
+                    let _ = socket.write_all(
+                        b"HTTP/1.1 200 OK\r\nContent-Length: 1024\r\nConnection: close\r\n\r\n",
+                    );
+                    // Hold the socket open until the client gives up: the
+                    // promised body never arrives.
+                    let _ = socket.read(&mut [0u8; 4096]);
+                });
+            }
+        });
+        format!("http://{addr}")
+    }
+
+    /// True when an environment proxy would intercept the loopback endpoint:
+    /// http_proxy/all_proxy is set and no_proxy does not exempt the endpoint's
+    /// host. CI has no proxy configured, so the test runs there.
+    fn loopback_intercepted_by_proxy() -> bool {
+        let proxy_set = ["http_proxy", "HTTP_PROXY", "all_proxy", "ALL_PROXY"]
+            .iter()
+            .any(|k| std::env::var(k).map(|v| !v.is_empty()).unwrap_or(false));
+        if !proxy_set {
+            return false;
+        }
+        let no_proxy = std::env::var("no_proxy")
+            .or_else(|_| std::env::var("NO_PROXY"))
+            .unwrap_or_default();
+        // The stalled server binds 127.0.0.1, so only a wildcard or an exact
+        // host match exempts it (reqwest matches no_proxy entries by host).
+        !no_proxy
+            .split(',')
+            .map(str::trim)
+            .any(|entry| matches!(entry, "*" | "127.0.0.1"))
+    }
+
+    #[tokio::test]
+    async fn test_opendal_stalled_read_times_out() {
+        // The loopback server must be reached directly. Proxies configured
+        // through the http_proxy/all_proxy environment variables would answer
+        // for it instead, unless no_proxy exempts the loopback host.
+        if loopback_intercepted_by_proxy() {
+            eprintln!("skipping test_opendal_stalled_read_times_out: proxy configured");
+            return;
+        }
+
+        let endpoint = spawn_stalled_http_server();
+        let config = BTreeMap::from([
+            ("endpoint".to_string(), endpoint),
+            ("io_timeout_ms".to_string(), "2000".to_string()),
+        ]);
+        let source = OpenDALSource::get_client("http", &config)
+            .await
+            .expect("Failed to create http client");
+
+        let start = std::time::Instant::now();
+        let result = source
+            .get("http://test/stalled.txt", None, None)
+            .await
+            .expect("get failed");
+        // The outer timeout keeps this a fast red test rather than a hung CI
+        // job if the deadline layering ever regresses.
+        let bytes = tokio::time::timeout(Duration::from_secs(30), result.bytes())
+            .await
+            .expect("stalled read must terminate")
+            .expect_err("stalled read must fail, not hang");
+        // Fails within the configured deadline instead of hanging forever.
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "elapsed: {bytes}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_opendal_invalid_timeout_config_fails_client_creation() {
+        let config = BTreeMap::from([("io_timeout_ms".to_string(), "soon".to_string())]);
+        let err = config_duration_ms("memory", &config, "io_timeout_ms")
+            .expect_err("malformed value must be rejected");
+        assert!(format!("{err:?}").contains("io_timeout_ms"));
+        assert!(format!("{err:?}").contains("milliseconds"));
+        assert!(OpenDALSource::get_client("memory", &config).await.is_err());
+
+        for bad in ["0", "86400001"] {
+            let config = BTreeMap::from([("timeout_ms".to_string(), bad.to_string())]);
+            assert!(
+                config_duration_ms("memory", &config, "timeout_ms").is_err(),
+                "out-of-range value '{bad}' must be rejected"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_opendal_fs_multipart_write() {
+        let dir = tempfile::tempdir().expect("tempdir failed");
+        let config = BTreeMap::from([(
+            "root".to_string(),
+            dir.path().to_str().expect("utf-8 tempdir path").to_string(),
+        )]);
+        let source = OpenDALSource::get_client("fs", &config)
+            .await
+            .expect("Failed to create fs client");
+
+        let mut writer = source
+            .clone()
+            .create_multipart_writer("fs://localhost/multipart.bin")
+            .await
+            .expect("writer creation failed")
+            .expect("expected a multipart writer");
+        writer
+            .put_part(Bytes::from_static(b"hello "))
+            .await
+            .expect("put_part failed");
+        writer
+            .put_part(Bytes::from_static(b"world"))
+            .await
+            .expect("put_part failed");
+        writer.complete().await.expect("complete failed");
+
+        // Verify with the local filesystem directly rather than reading back
+        // through the same OpenDAL implementation that wrote the data, so
+        // writer and reader defects cannot mask each other.
+        let written = std::fs::read(dir.path().join("multipart.bin")).expect("file missing");
+        assert_eq!(written, b"hello world");
     }
 }

@@ -52,7 +52,6 @@ part2 = daft.from_pydict({"a": [False, False, True], "b": [4, 5, 6], "c": ["jkl"
 def test_append(table):
     table.append(part1)
     assert_eq(table.read(), part1)
-    #
     table.append(part2)
     assert_eq(table.read(), part2.concat(part1))
 
@@ -61,6 +60,5 @@ def test_append(table):
 def test_ovewrite(table):
     table.append(part1)
     assert_eq(table.read(), part1)
-    #
     table.overwrite(part2)
     assert_eq(table.read(), part2)

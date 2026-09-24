@@ -64,6 +64,7 @@ impl Default for TosConfig {
 impl TosConfig {
     #[must_use]
     pub fn multiline_display(&self) -> Vec<String> {
+        let defaults = Self::default();
         let mut res = vec![];
         if let Some(region) = &self.region {
             res.push(format!("Region name = {region}"));
@@ -80,24 +81,42 @@ impl TosConfig {
         if self.security_token.is_some() {
             res.push("Security token = ***".to_string());
         }
-        res.push(format!("Anonymous = {}", self.anonymous));
-        res.push(format!("Max retries = {}", self.max_retries));
-        res.push(format!("Retry timeout = {}ms", self.retry_timeout_ms));
-        res.push(format!("Connect timeout = {}ms", self.connect_timeout_ms));
-        res.push(format!("Read timeout = {}ms", self.read_timeout_ms));
-        res.push(format!(
-            "Max concurrent requests = {}",
-            self.max_concurrent_requests
-        ));
-        res.push(format!(
-            "Max connections = {}",
-            self.max_connections_per_io_thread
-        ));
-        res.push(format!("Multipart size = {}", self.multipart_size));
-        res.push(format!(
-            "Multipart max concurrency = {}",
-            self.multipart_max_concurrency
-        ));
+        if self.anonymous != defaults.anonymous {
+            res.push(format!("Anonymous = {}", self.anonymous));
+        }
+        if self.max_retries != defaults.max_retries {
+            res.push(format!("Max retries = {}", self.max_retries));
+        }
+        if self.retry_timeout_ms != defaults.retry_timeout_ms {
+            res.push(format!("Retry timeout = {}ms", self.retry_timeout_ms));
+        }
+        if self.connect_timeout_ms != defaults.connect_timeout_ms {
+            res.push(format!("Connect timeout = {}ms", self.connect_timeout_ms));
+        }
+        if self.read_timeout_ms != defaults.read_timeout_ms {
+            res.push(format!("Read timeout = {}ms", self.read_timeout_ms));
+        }
+        if self.max_concurrent_requests != defaults.max_concurrent_requests {
+            res.push(format!(
+                "Max concurrent requests = {}",
+                self.max_concurrent_requests
+            ));
+        }
+        if self.max_connections_per_io_thread != defaults.max_connections_per_io_thread {
+            res.push(format!(
+                "Max connections = {}",
+                self.max_connections_per_io_thread
+            ));
+        }
+        if self.multipart_size != defaults.multipart_size {
+            res.push(format!("Multipart size = {}", self.multipart_size));
+        }
+        if self.multipart_max_concurrency != defaults.multipart_max_concurrency {
+            res.push(format!(
+                "Multipart max concurrency = {}",
+                self.multipart_max_concurrency
+            ));
+        }
         res
     }
 

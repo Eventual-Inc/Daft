@@ -9,7 +9,10 @@ use serde::{Deserialize, Serialize};
 use {
     common_py_serde::{deserialize_py_object, serialize_py_object},
     daft_schema::python::{datatype::PyTimeUnit, field::PyField},
-    pyo3::{Py, PyAny, PyResult, Python, pyclass, pymethods, types::PyAnyMethods},
+    pyo3::{
+        Py, PyAny, PyResult, Python, exceptions::PyValueError, pyclass, pymethods,
+        types::PyAnyMethods,
+    },
 };
 
 /// Configuration for parsing a particular file format.
@@ -22,6 +25,7 @@ pub enum FileFormatConfig {
     Warc(WarcSourceConfig),
     Text(TextSourceConfig),
     Avro(AvroSourceConfig),
+    Mcap(McapSourceConfig),
 }
 #[cfg(not(debug_assertions))]
 impl std::fmt::Debug for FileFormatConfig {
@@ -45,6 +49,7 @@ impl FileFormatConfig {
             Self::Warc(_) => "Warc".to_string(),
             Self::Text(_) => "Text".to_string(),
             Self::Avro(_) => "Avro".to_string(),
+            Self::Mcap(_) => "Mcap".to_string(),
         }
     }
 
@@ -57,6 +62,7 @@ impl FileFormatConfig {
             Self::Warc(source) => source.multiline_display(),
             Self::Text(source) => source.multiline_display(),
             Self::Avro(source) => source.multiline_display(),
+            Self::Mcap(source) => source.multiline_display(),
         }
     }
 }
@@ -70,6 +76,7 @@ impl From<&FileFormatConfig> for FileFormat {
             FileFormatConfig::Warc(_) => Self::Warc,
             FileFormatConfig::Text(_) => Self::Text,
             FileFormatConfig::Avro(_) => Self::Avro,
+            FileFormatConfig::Mcap(_) => Self::Mcap,
         }
     }
 }
@@ -452,6 +459,74 @@ impl WarcSourceConfig {
 }
 
 impl_bincode_py_state_serialization!(WarcSourceConfig);
+
+/// Configuration for an MCAP data source.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "daft.daft", get_all, from_py_object)
+)]
+pub struct McapSourceConfig {
+    pub batch_size: usize,
+    pub start_time: Option<u64>,
+    pub end_time: Option<u64>,
+    pub topics: Option<Vec<String>>,
+}
+
+impl Default for McapSourceConfig {
+    fn default() -> Self {
+        Self {
+            batch_size: 1000,
+            start_time: None,
+            end_time: None,
+            topics: None,
+        }
+    }
+}
+
+impl McapSourceConfig {
+    #[must_use]
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![format!("Batch size = {}", self.batch_size)];
+        if let Some(start_time) = self.start_time {
+            res.push(format!("Start time = {start_time}"));
+        }
+        if let Some(end_time) = self.end_time {
+            res.push(format!("End time = {end_time}"));
+        }
+        if let Some(topics) = &self.topics {
+            res.push(format!("Topics = [{}]", topics.join(", ")));
+        }
+        res
+    }
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl McapSourceConfig {
+    /// Create a config for an MCAP data source.
+    #[new]
+    #[pyo3(signature = (batch_size=1000, start_time=None, end_time=None, topics=None))]
+    fn new(
+        batch_size: usize,
+        start_time: Option<u64>,
+        end_time: Option<u64>,
+        topics: Option<Vec<String>>,
+    ) -> PyResult<Self> {
+        if batch_size == 0 {
+            return Err(PyValueError::new_err("MCAP batch_size must be positive"));
+        }
+        Ok(Self {
+            batch_size,
+            start_time,
+            end_time,
+            topics,
+        })
+    }
+}
+
+impl_bincode_py_state_serialization!(McapSourceConfig);
 
 /// Configuration for a Text data source.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]

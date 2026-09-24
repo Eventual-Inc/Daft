@@ -9,15 +9,15 @@ use daft_logical_plan::partitioning::RepartitionSpec;
 use daft_micropartition::MicroPartition;
 use daft_partition_refs::FlightPartitionRef;
 use daft_recordbatch::RecordBatch;
-use daft_shuffles::{
-    oneshot_writer::write_partitions_one_shot, server::flight_server::ShuffleFlightServer,
-    shuffle_cache::CHUNK_TARGET_BYTES,
-};
+use daft_shuffles::{oneshot_writer::write_partitions_one_shot, shuffle_cache::CHUNK_TARGET_BYTES};
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkOutput, BlockingSinkSinkResult,
+use super::{
+    blocking_sink::{
+        BlockingSink, BlockingSinkFinalizeResult, BlockingSinkOutput, BlockingSinkSinkResult,
+    },
+    shuffle_backend::LocalShuffleBackend,
 };
 use crate::{
     ExecutionTaskSpawner,
@@ -91,35 +91,13 @@ impl RepartitionAccState {
     }
 }
 
-// TODO: unify shuffle backends in all local operations
-#[derive(Clone)]
-enum RepartitionBackend {
-    Ray,
-    Flight {
-        shuffle_id: u64,
-        shuffle_dirs: Vec<String>,
-        local_server: Arc<ShuffleFlightServer>,
-        shuffle_address: String,
-        compression: Option<arrow_ipc::CompressionType>,
-    },
-}
-
-impl RepartitionBackend {
-    fn name(&self) -> &'static str {
-        match &self {
-            Self::Ray => "Ray",
-            Self::Flight { .. } => "Flight",
-        }
-    }
-}
-
 fn repartition_buffer_threshold_bytes(
-    backend: &RepartitionBackend,
+    backend: &LocalShuffleBackend,
     num_partitions: usize,
 ) -> usize {
     match backend {
-        RepartitionBackend::Ray => REPARTITION_MAX_BUFFER_THRESHOLD_BYTES,
-        RepartitionBackend::Flight { .. } => CHUNK_TARGET_BYTES
+        LocalShuffleBackend::Ray => REPARTITION_MAX_BUFFER_THRESHOLD_BYTES,
+        LocalShuffleBackend::Flight(_) => CHUNK_TARGET_BYTES
             .saturating_mul(num_partitions.max(1))
             .clamp(
                 REPARTITION_MIN_BUFFER_THRESHOLD_BYTES,
@@ -129,7 +107,7 @@ fn repartition_buffer_threshold_bytes(
 }
 
 pub struct RepartitionSink {
-    backend: RepartitionBackend,
+    backend: LocalShuffleBackend,
     schema: SchemaRef,
     repartition_spec: RepartitionSpec,
     bound_keys: Vec<BoundExpr>,
@@ -137,47 +115,18 @@ pub struct RepartitionSink {
 }
 
 impl RepartitionSink {
-    pub fn new_ray(
+    pub fn new(
         schema: SchemaRef,
         repartition_spec: RepartitionSpec,
         num_partitions: usize,
+        backend: LocalShuffleBackend,
     ) -> DaftResult<Self> {
         let bound_keys = match &repartition_spec {
             RepartitionSpec::Hash(config) => BoundExpr::bind_all(&config.by, &schema)?,
             RepartitionSpec::Random(_) | RepartitionSpec::Range(_) => Vec::new(),
         };
         Ok(Self {
-            backend: RepartitionBackend::Ray,
-            schema,
-            repartition_spec,
-            bound_keys,
-            num_partitions,
-        })
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn try_new_flight(
-        num_partitions: usize,
-        schema: SchemaRef,
-        shuffle_id: u64,
-        repartition_spec: RepartitionSpec,
-        shuffle_dirs: Vec<String>,
-        compression: Option<String>,
-        local_server: Arc<ShuffleFlightServer>,
-        shuffle_address: String,
-    ) -> DaftResult<Self> {
-        let bound_keys = match &repartition_spec {
-            RepartitionSpec::Hash(config) => BoundExpr::bind_all(&config.by, &schema)?,
-            RepartitionSpec::Random(_) | RepartitionSpec::Range(_) => Vec::new(),
-        };
-        Ok(Self {
-            backend: RepartitionBackend::Flight {
-                shuffle_id,
-                shuffle_dirs,
-                local_server,
-                shuffle_address,
-                compression: parse_compression(compression.as_deref())?,
-            },
+            backend,
             schema,
             repartition_spec,
             bound_keys,
@@ -240,7 +189,7 @@ impl BlockingSink for RepartitionSink {
                         flatten_per_partition(states, num_partitions, schema.clone())?;
 
                     match backend {
-                        RepartitionBackend::Ray => {
+                        LocalShuffleBackend::Ray => {
                             let mut joinset = OrderedJoinSet::new();
                             for data in per_partition {
                                 joinset.spawn(async move {
@@ -259,32 +208,30 @@ impl BlockingSink for RepartitionSink {
                             }
                             Ok(BlockingSinkOutput::Partitions(partitions))
                         }
-                        RepartitionBackend::Flight {
-                            shuffle_id,
-                            shuffle_dirs,
-                            local_server,
-                            shuffle_address,
-                            compression,
-                        } => {
+                        LocalShuffleBackend::Flight(ctx) => {
+                            let compression = parse_compression(ctx.compression.as_deref())?;
                             let partition_caches = write_partitions_one_shot(
                                 input_id,
-                                shuffle_id,
-                                &shuffle_dirs,
+                                ctx.shuffle_id,
+                                &ctx.shuffle_dirs,
                                 schema,
                                 compression,
                                 per_partition,
                             )
                             .await?;
 
-                            local_server
-                                .register_shuffle_partitions(shuffle_id, partition_caches.clone())
+                            ctx.local_server
+                                .register_shuffle_partitions(
+                                    ctx.shuffle_id,
+                                    partition_caches.clone(),
+                                )
                                 .await?;
                             Ok(BlockingSinkOutput::FlightPartitionRefs(
                                 partition_caches
                                     .into_iter()
                                     .map(|partition| FlightPartitionRef {
-                                        shuffle_id,
-                                        server_address: shuffle_address.clone(),
+                                        shuffle_id: ctx.shuffle_id,
+                                        server_address: ctx.shuffle_address.clone(),
                                         partition_ref_id: partition.partition_ref_id,
                                         num_rows: partition.num_rows,
                                         size_bytes: partition.size_bytes,

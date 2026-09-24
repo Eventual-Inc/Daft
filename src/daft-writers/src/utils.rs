@@ -145,7 +145,7 @@ mod tests {
     };
     use daft_recordbatch::RecordBatch;
 
-    use crate::utils::record_batch_to_partition_path;
+    use crate::utils::{build_object_path, record_batch_to_partition_path};
 
     #[test]
     fn test_record_batch_to_partition_string() -> DaftResult<()> {
@@ -216,6 +216,42 @@ mod tests {
             result.as_ref().unwrap_err().to_string(),
             "DaftError::InternalError Only single row RecordBatches can be converted to partition strings"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_build_object_path_preserves_port() -> DaftResult<()> {
+        use std::path::PathBuf;
+
+        // Regression guard: a port-bearing authority (e.g. an HDFS name node)
+        // must keep its port with the bucket and never leak it into the key,
+        // which previously produced an invalid path like `localhost/:9000/...`.
+        let path = build_object_path(
+            "hdfs://localhost:9000/tmp/out",
+            PathBuf::new(),
+            "file.parquet".to_string(),
+        )?;
+        assert_eq!(path, PathBuf::from("localhost:9000/tmp/out/file.parquet"));
+
+        // With a partition path.
+        let path = build_object_path(
+            "hdfs://localhost:9000/tmp/out",
+            PathBuf::from("year=2023"),
+            "file.parquet".to_string(),
+        )?;
+        assert_eq!(
+            path,
+            PathBuf::from("localhost:9000/tmp/out/year=2023/file.parquet")
+        );
+
+        // Port-less authority (e.g. S3) is unaffected.
+        let path = build_object_path(
+            "s3://bucket/prefix",
+            PathBuf::new(),
+            "file.parquet".to_string(),
+        )?;
+        assert_eq!(path, PathBuf::from("bucket/prefix/file.parquet"));
+
         Ok(())
     }
 }

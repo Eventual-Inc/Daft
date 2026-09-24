@@ -712,7 +712,7 @@ def test_actor_udf_with_into_partitions_does_not_deadlock():
     with execution_config_ctx(actor_udf_ready_timeout=30):
         df = daft.from_pydict({"a": [1, 2, 3]})
 
-        @udf(return_dtype=DataType.int64(), concurrency=1, num_cpus=1)
+        @udf(return_dtype=DataType.int64(), concurrency=1, num_cpus=0)
         def udf_1(data):
             return data
 

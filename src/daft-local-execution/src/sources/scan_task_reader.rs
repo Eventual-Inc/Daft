@@ -8,8 +8,8 @@ use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::{ParquetReadOptions, ParquetSchemaInferenceOptions};
 use daft_recordbatch::RecordBatch;
 use daft_scan::{
-    ChunkSpec, CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig, ScanTask,
-    SourceConfig, TextSourceConfig,
+    ChunkSpec, CsvSourceConfig, FileFormatConfig, JsonSourceConfig, McapSourceConfig,
+    ParquetSourceConfig, ScanTask, SourceConfig, TextSourceConfig,
 };
 use daft_text::{TextConvertOptions, TextReadOptions};
 use daft_warc::WarcConvertOptions;
@@ -80,6 +80,9 @@ pub(crate) async fn read_scan_task(
                 read_text(scan_task, cfg, url, io_client, io_stats, chunk_size).await
             }
             FileFormatConfig::Avro(_cfg) => read_avro(scan_task, url, io_client, io_stats).await,
+            FileFormatConfig::Mcap(cfg) => {
+                read_mcap(scan_task, cfg, url, file_column_names, io_client, io_stats).await
+            }
         },
         #[cfg(feature = "python")]
         SourceConfig::Database(cfg) => read_database(scan_task, cfg).await,
@@ -107,23 +110,39 @@ async fn read_parquet(
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let source = scan_task.sources.first().unwrap();
 
+    let row_groups = match source.get_chunk_spec() {
+        Some(ChunkSpec::Parquet(rgs)) => Some(rgs.clone()),
+        _ => None,
+    };
+
     if let Some(aggregation) = &scan_task.pushdowns.aggregation
-        && let Expr::Agg(AggExpr::Count(_, _)) = aggregation.as_ref()
+        && let Expr::Agg(AggExpr::Count(_, count_mode)) = aggregation.as_ref()
     {
+        // The optimizer guarantees built-in sources never reach here with row-level
+        // processing. Error loudly if a custom ScanOperator breaks that: falling back
+        // isn't safe, since the post-pushdown schema is a single count field and
+        // `SUM` over a null-filled batch yields null instead of a count.
+        let has_deletes = delete_map
+            .as_ref()
+            .and_then(|m| m.get(url))
+            .is_some_and(|d| !d.is_empty());
+        if let Some(reason) =
+            parquet_count_pushdown_unsupported_reason(count_mode, &scan_task.pushdowns, has_deletes)
+        {
+            return Err(common_error::DaftError::InternalError(reason));
+        }
+
         return count_pushdown_stream(
             url,
             io_client,
             io_stats,
             cfg.field_id_mapping.clone(),
             aggregation,
+            row_groups,
         )
         .await;
     }
 
-    let row_groups = match source.get_chunk_spec() {
-        Some(ChunkSpec::Parquet(rgs)) => Some(rgs.clone()),
-        _ => None,
-    };
     let opts = ParquetReadOptions {
         columns: file_column_names,
         num_rows: scan_task.pushdowns.limit,
@@ -151,12 +170,38 @@ async fn read_parquet(
     .await
 }
 
+/// Returns `Some(reason)` if the count can't be served from parquet metadata alone.
+/// A non-`All` count mode, filter, limit, or delete rows all require row-level
+/// processing the metadata shortcut can't do.
+fn parquet_count_pushdown_unsupported_reason(
+    count_mode: &daft_core::count_mode::CountMode,
+    pushdowns: &daft_scan::Pushdowns,
+    has_deletes: bool,
+) -> Option<String> {
+    if !matches!(count_mode, daft_core::count_mode::CountMode::All) {
+        return Some(format!(
+            "unsupported count mode for parquet count pushdown: {count_mode:?}"
+        ));
+    }
+    if pushdowns.filters.is_some() {
+        return Some("parquet metadata count pushdown cannot apply row-level filters".to_string());
+    }
+    if pushdowns.limit.is_some() {
+        return Some("parquet metadata count pushdown cannot apply a limit".to_string());
+    }
+    if has_deletes {
+        return Some("parquet metadata count pushdown cannot apply delete rows".to_string());
+    }
+    None
+}
+
 async fn count_pushdown_stream(
     url: &str,
     io_client: Arc<daft_io::IOClient>,
     io_stats: IOStatsRef,
     field_id_mapping: Option<Arc<std::collections::BTreeMap<i32, daft_core::prelude::Field>>>,
     aggregation: &daft_dsl::ExprRef,
+    row_groups: Option<Vec<i64>>,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     daft_parquet::read::stream_parquet_count_pushdown(
         url,
@@ -164,6 +209,7 @@ async fn count_pushdown_stream(
         Some(io_stats),
         field_id_mapping,
         aggregation,
+        row_groups.as_deref(),
     )
     .await
 }
@@ -276,6 +322,28 @@ async fn read_warc(
     daft_warc::stream_warc(url, io_client, io_stats, convert_options, None).await
 }
 
+async fn read_mcap(
+    scan_task: &ScanTask,
+    cfg: &McapSourceConfig,
+    url: &str,
+    file_column_names: Option<Vec<String>>,
+    io_client: Arc<daft_io::IOClient>,
+    io_stats: IOStatsRef,
+) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
+    let read_options = daft_mcap::McapReadOptions {
+        batch_size: cfg.batch_size,
+        start_time: cfg.start_time,
+        end_time: cfg.end_time,
+        topics: cfg.topics.clone(),
+    };
+    let convert_options = daft_mcap::McapConvertOptions {
+        predicate: scan_task.pushdowns.filters.clone(),
+        include_columns: file_column_names,
+        limit: scan_task.pushdowns.limit,
+    };
+    daft_mcap::stream_mcap(url, io_client, io_stats, read_options, convert_options).await
+}
+
 async fn read_text(
     scan_task: &ScanTask,
     cfg: &TextSourceConfig,
@@ -367,4 +435,55 @@ async fn read_python_function(
     let iter = daft_micropartition::python::read_pyfunc_into_table_iter(scan_task.clone())?;
     let stream = futures::stream::iter(iter.map(|r| r.map_err(|e| e.into())));
     Ok(Box::pin(stream))
+}
+
+#[cfg(test)]
+mod tests {
+    use daft_core::count_mode::CountMode;
+    use daft_scan::Pushdowns;
+
+    use super::parquet_count_pushdown_unsupported_reason;
+
+    #[test]
+    fn count_all_no_pushdowns_is_supported() {
+        let reason = parquet_count_pushdown_unsupported_reason(
+            &CountMode::All,
+            &Pushdowns::default(),
+            false,
+        );
+        assert_eq!(reason, None);
+    }
+
+    #[test]
+    fn non_all_count_mode_errors() {
+        for mode in [CountMode::Valid, CountMode::Null] {
+            let reason =
+                parquet_count_pushdown_unsupported_reason(&mode, &Pushdowns::default(), false);
+            assert!(
+                reason.is_some_and(|r| r.contains("count mode")),
+                "expected count-mode error for {mode:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn filter_errors() {
+        let pushdowns = Pushdowns::default().with_filters(Some(daft_dsl::lit(true)));
+        let reason = parquet_count_pushdown_unsupported_reason(&CountMode::All, &pushdowns, false);
+        assert!(reason.is_some_and(|r| r.contains("filter")));
+    }
+
+    #[test]
+    fn limit_errors() {
+        let pushdowns = Pushdowns::default().with_limit(Some(10));
+        let reason = parquet_count_pushdown_unsupported_reason(&CountMode::All, &pushdowns, false);
+        assert!(reason.is_some_and(|r| r.contains("limit")));
+    }
+
+    #[test]
+    fn delete_rows_error() {
+        let reason =
+            parquet_count_pushdown_unsupported_reason(&CountMode::All, &Pushdowns::default(), true);
+        assert!(reason.is_some_and(|r| r.contains("delete rows")));
+    }
 }

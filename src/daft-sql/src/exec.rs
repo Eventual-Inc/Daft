@@ -1,11 +1,17 @@
 use std::{collections::HashMap, sync::Arc};
 
+use daft_catalog::error::CatalogError;
 use daft_context::partition_cache::logical_plan_from_micropartitions;
 use daft_core::{prelude::Utf8Array, series::IntoSeries};
 use daft_logical_plan::{LogicalPlan, LogicalPlanBuilder};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use daft_session::Session;
+#[cfg(feature = "python")]
+use pyo3::Python;
+
+#[cfg(feature = "python")]
+pyo3::import_exception!(daft.catalog, TableAlreadyExistsError);
 
 use crate::{
     SQLPlanner,
@@ -29,6 +35,7 @@ pub(crate) fn execute_statement(
         Statement::Set(set) => execute_set(sess, set),
         Statement::Use(use_) => execute_use(sess, use_),
         Statement::ShowTables(show_tables) => execute_show_tables(sess, show_tables),
+        Statement::CreateTable(create_table) => execute_create_table(sess, create_table),
     }
 }
 
@@ -44,6 +51,90 @@ fn execute_use(sess: &Session, use_: statement::Use) -> SQLPlannerResult<Option<
     sess.set_catalog(Some(&use_.catalog))?;
     sess.set_namespace(use_.namespace.as_ref())?;
     Ok(None)
+}
+
+fn execute_create_table(
+    sess: &Session,
+    create_table: statement::CreateTable,
+) -> SQLPlannerResult<Option<DataFrame>> {
+    let name = &create_table.name;
+    let schema = create_table.schema;
+
+    // Resolve the catalog and identifier.
+    let (catalog, ident) = if name.has_qualifier() {
+        if sess.has_catalog(name.get(0)) {
+            // Catalog-qualified: dispatch to the named catalog.
+            let catalog = sess.get_catalog(name.get(0))?;
+            let ident = name.drop(1);
+            (catalog, ident)
+        } else if name.len() >= 3 {
+            // 3+ parts where the first is not a known catalog: error.
+            return Err(PlannerError::invalid_operation(format!(
+                "Catalog '{}' not found",
+                name.get(0)
+            )));
+        } else {
+            // 2-part name where the first is not a catalog: schema-qualified.
+            let catalog = sess.current_catalog()?.ok_or_else(|| {
+                PlannerError::invalid_operation(
+                    "Cannot create a table without a current catalog. Use 'USE <catalog>' or provide a catalog-qualified name.".to_string(),
+                )
+            })?;
+            // Keep the full name as ident (schema.table).
+            (catalog, name.clone())
+        }
+    } else {
+        // Unqualified: prepend the current namespace.
+        let catalog = sess.current_catalog()?.ok_or_else(|| {
+            PlannerError::invalid_operation(
+                "Cannot create a table without a current catalog. Use 'USE <catalog>' or provide a catalog-qualified name.".to_string(),
+            )
+        })?;
+        let ident = {
+            let namespace = sess.current_namespace()?;
+            if let Some(ref namespace) = namespace {
+                if !namespace.is_empty() {
+                    name.qualify(namespace.clone())
+                } else {
+                    name.clone()
+                }
+            } else {
+                name.clone()
+            }
+        };
+        (catalog, ident)
+    };
+
+    // Try to create the table. If IF NOT EXISTS is specified and the table
+    // already exists (either pre-existing or created concurrently by another
+    // caller), treat it as success – the existing table satisfies the
+    // IF NOT EXISTS contract.
+    match catalog.create_table(&ident, Arc::new(schema)) {
+        Ok(_) => Ok(None),
+        Err(e) => {
+            if create_table.if_not_exists && is_table_already_exists_error(&e) {
+                Ok(None)
+            } else {
+                Err(e.into())
+            }
+        }
+    }
+}
+
+/// Returns true if the error indicates the table already exists.
+///
+/// Daft-native catalogs surface this as CatalogError::ObjectAlreadyExists
+/// (PyCatalogWrapper translates the typed TableAlreadyExistsError back into
+/// this variant).
+fn is_table_already_exists_error(e: &CatalogError) -> bool {
+    match e {
+        CatalogError::ObjectAlreadyExists { .. } => true,
+        #[cfg(feature = "python")]
+        CatalogError::PythonError { source } => {
+            Python::attach(|py| source.is_instance_of::<TableAlreadyExistsError>(py))
+        }
+        _ => false,
+    }
 }
 
 fn execute_show_tables(

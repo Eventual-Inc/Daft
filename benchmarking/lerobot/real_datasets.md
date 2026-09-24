@@ -3,7 +3,7 @@
 The batched decode was validated against the original per-row decode on six
 public LeRobot v3 datasets from Hugging Face, chosen to cover the codec, fps,
 resolution, and camera-count diversity found in the wild. Remote reads over
-`hf://`, single machine; measured 2026-07-01.
+`hf://`, single machine (Apple M4 Max, 36 GB); measured 2026-07-01.
 
 ## Method
 

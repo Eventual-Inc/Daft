@@ -31,14 +31,7 @@ def _make_mock_container(frame_times: list[float], key_frames: list[bool] | None
         frame.to_ndarray.return_value = np.zeros((2, 2, 3), dtype="uint8")
         frames.append(frame)
 
-    def decode_side_effect(*args, **kwargs):  # type: ignore[override]
-        if decode_side_effect.frames:
-            frame = decode_side_effect.frames.pop(0)
-            return iter([frame])
-        raise StopIteration
-
-    decode_side_effect.frames = frames.copy()  # type: ignore[attr-defined]
-    mock_container.decode.side_effect = decode_side_effect
+    mock_container.decode.return_value = iter(frames)
 
     return mock_container
 
@@ -51,7 +44,14 @@ def test_read_video_eof():
     mock_stream.type = "video"
     mock_stream.codec_context = MagicMock()
     mock_container.streams = [mock_stream]
-    mock_container.decode.side_effect = av.EOFError(0, "mock message", "mock.mp4")
+
+    # pyav raises EOFError while iterating the decode generator, not on the
+    # decode() call itself - so model it on iteration.
+    def _raise_eof():
+        raise av.EOFError(0, "mock message", "mock.mp4")
+        yield  # pragma: no cover - makes this a generator
+
+    mock_container.decode.return_value = _raise_eof()
 
     # Create single task because we only want to test `_list_frames`.
     task = _VideoFramesSourceTask(
@@ -133,6 +133,33 @@ def test_list_frames_no_sampling_returns_all_frames():
 
     assert [f.frame_time for f in frames] == frame_times
     assert [f.frame_index for f in frames] == list(range(len(frame_times)))
+
+
+def test_list_frames_uses_single_decode_generator():
+    """Regression test for #5172.
+
+    _list_frames must decode with a single generator. recreating
+    container.decode(stream) each iteration drops buffered frames and, for some
+    containers (.mkv/.webm), yields zero frames while .mp4 survives it.
+    """
+    frame_times = [0.0, 0.5, 1.0, 1.5, 2.0]
+    mock_container = _make_mock_container(frame_times)
+
+    task = _VideoFramesSourceTask(
+        path="test.mkv",
+        image_height=480,
+        image_width=640,
+        is_key_frame=None,
+        io_config=None,
+        sample_interval_seconds=None,
+    )
+
+    with patch("av.open", return_value=mock_container):
+        frames = list(task._list_frames("test.mkv", "dummy_file"))
+
+    # all frames returned, decode() called exactly once.
+    assert [f.frame_time for f in frames] == frame_times
+    assert mock_container.decode.call_count == 1
 
 
 def test_list_frames_sampling_by_seconds_filters_frames():

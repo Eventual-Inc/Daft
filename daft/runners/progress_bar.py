@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 
@@ -103,6 +104,11 @@ class ProgressBar:
             del p
 
 
+# All tqdm writes happen on this single long-lived thread; writing from the native (Rust)
+# threads leaks fds in Jupyter. See issue #7253 for details.
+_writer = ThreadPoolExecutor(max_workers=1, thread_name_prefix="daft-progress-bar-writer")
+
+
 # Progress Bar for local execution, should only be used in the native executor
 class SwordfishProgressBar:
     def __init__(self) -> None:
@@ -121,6 +127,9 @@ class SwordfishProgressBar:
         return pbar_id
 
     def update_bar(self, pbar_id: int, message: str) -> None:
+        _writer.submit(self._update_bar, pbar_id, message)
+
+    def _update_bar(self, pbar_id: int, message: str) -> None:
         self.pbars[pbar_id] = message
 
         # Create combined bar on first update
@@ -144,6 +153,11 @@ class SwordfishProgressBar:
         pass
 
     def close(self) -> None:
+        # Wait for the close (and any queued updates before it) to be written, so the
+        # bar is fully drawn before query results are displayed.
+        _writer.submit(self._close).result()
+
+    def _close(self) -> None:
         if self.pbar is not None:
             self.pbar.close()
             self.pbar = None

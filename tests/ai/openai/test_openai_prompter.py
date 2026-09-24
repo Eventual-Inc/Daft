@@ -442,6 +442,86 @@ def test_openai_prompter_client_params_separation():
         assert prompter.generation_config["max_tokens"] == 100
 
 
+def test_openai_prompter_udf_params_separation():
+    """Test that UDF params are not forwarded as generation params."""
+    with patch("daft.ai.openai.protocols.prompter.AsyncOpenAI") as mock_openai_class:
+        prompter = create_prompter(
+            generation_config={
+                "on_error": "ignore",
+                "concurrency": 8,
+                "num_gpus": 1,
+                "batch_size": 4,
+                "max_retries": 10,
+                "temperature": 0,
+            }
+        )
+
+        assert prompter.generation_config == {"temperature": 0}
+
+        client_call_kwargs = mock_openai_class.call_args.kwargs
+        assert client_call_kwargs["max_retries"] == 10
+        assert "on_error" not in client_call_kwargs
+        assert "concurrency" not in client_call_kwargs
+        assert "num_gpus" not in client_call_kwargs
+        assert "batch_size" not in client_call_kwargs
+
+
+@pytest.mark.parametrize("use_chat_completions", [False, True])
+@pytest.mark.parametrize("structured", [False, True])
+def test_openai_request_does_not_receive_udf_options(use_chat_completions, structured):
+    """Test that UDF params are excluded from all OpenAI request paths."""
+
+    async def _test():
+        return_format = SimpleResponse if structured else None
+        prompter = create_prompter(
+            return_format=return_format,
+            use_chat_completions=use_chat_completions,
+            on_error="ignore",
+            concurrency=8,
+            num_gpus=1,
+            batch_size=4,
+            max_retries=10,
+            temperature=0,
+        )
+
+        mock_client = AsyncMock()
+        if use_chat_completions:
+            mock_response = Mock(usage=None)
+            message = Mock()
+            if structured:
+                message.parsed = SimpleResponse(answer="Yes", confidence=0.95)
+                request = mock_client.beta.chat.completions.parse
+            else:
+                message.content = "Yes"
+                request = mock_client.chat.completions.create
+            mock_response.choices = [Mock(message=message)]
+        else:
+            if structured:
+                mock_response = Mock(
+                    output_parsed=SimpleResponse(answer="Yes", confidence=0.95),
+                    usage=None,
+                )
+                request = mock_client.responses.parse
+            else:
+                mock_response = Mock(output_text="Yes", usage=None)
+                request = mock_client.responses.create
+
+        request.return_value = mock_response
+        prompter.llm = mock_client
+
+        await prompter.prompt(("Is this a test?",))
+
+        request_kwargs = request.call_args.kwargs
+        assert request_kwargs["temperature"] == 0
+        assert "on_error" not in request_kwargs
+        assert "concurrency" not in request_kwargs
+        assert "num_gpus" not in request_kwargs
+        assert "batch_size" not in request_kwargs
+        assert "max_retries" not in request_kwargs
+
+    run_async(_test())
+
+
 def test_openai_prompter_error_handling():
     """Test that errors from the API are propagated."""
 
@@ -976,7 +1056,7 @@ def test_openai_prompter_chat_completions_structured_output():
         mock_message.parsed = expected_output
         mock_choice.message = mock_message
         mock_response.choices = [mock_choice]
-        mock_client.chat.completions.parse = AsyncMock(return_value=mock_response)
+        mock_client.beta.chat.completions.parse = AsyncMock(return_value=mock_response)
 
         prompter = create_prompter(return_format=SimpleResponse, use_chat_completions=True)
         prompter.llm = mock_client
@@ -986,7 +1066,7 @@ def test_openai_prompter_chat_completions_structured_output():
         assert isinstance(result, SimpleResponse)
         assert result.answer == "Yes"
         assert result.confidence == 0.95
-        mock_client.chat.completions.parse.assert_called_once_with(
+        mock_client.beta.chat.completions.parse.assert_called_once_with(
             model="gpt-4o-mini",
             messages=[
                 {
@@ -1125,7 +1205,7 @@ def test_openai_prompter_chat_completions_complex_structured_output():
         mock_message.parsed = expected_output
         mock_choice.message = mock_message
         mock_response.choices = [mock_choice]
-        mock_client.chat.completions.parse = AsyncMock(return_value=mock_response)
+        mock_client.beta.chat.completions.parse = AsyncMock(return_value=mock_response)
 
         prompter = create_prompter(return_format=ComplexResponse, use_chat_completions=True)
         prompter.llm = mock_client
@@ -1136,6 +1216,47 @@ def test_openai_prompter_chat_completions_complex_structured_output():
         assert result.summary == "Test summary"
         assert len(result.key_points) == 3
         assert result.sentiment == "positive"
+
+    run_async(_test())
+
+
+def test_openai_prompter_chat_completions_parse_routes_through_beta_namespace():
+    """Regression for https://github.com/Eventual-Inc/Daft/issues/5888.
+
+    Older openai SDKs (<1.92) only expose `.parse()` under `client.beta.chat.completions`;
+    calling `client.chat.completions.parse` raises AttributeError. The prompter must
+    route structured-output calls through the beta namespace so it works across
+    the openai SDK range the `openai` extra accepts (`openai<2.21.0`).
+    """
+
+    async def _test():
+        from openai import AsyncOpenAI
+
+        # Build a client that simulates the older SDK: `.parse()` exists only on
+        # `beta.chat.completions`, and accessing it on the main namespace raises.
+        mock_client = Mock(spec=AsyncOpenAI)
+        mock_response = Mock()
+        mock_choice = Mock()
+        mock_message = Mock()
+        mock_message.parsed = SimpleResponse(answer="ok", confidence=1.0)
+        mock_choice.message = mock_message
+        mock_response.choices = [mock_choice]
+        mock_response.usage = None
+        mock_client.beta.chat.completions.parse = AsyncMock(return_value=mock_response)
+
+        # If anything tries to touch `client.chat.completions.parse` (the buggy
+        # path), surface it loudly rather than silently returning a Mock.
+        chat_completions = Mock(spec=[])  # spec=[] => no attributes
+        mock_client.chat = Mock()
+        mock_client.chat.completions = chat_completions
+
+        prompter = create_prompter(return_format=SimpleResponse, use_chat_completions=True)
+        prompter.llm = mock_client
+
+        result = await prompter.prompt(("does this route correctly?",))
+
+        assert isinstance(result, SimpleResponse)
+        mock_client.beta.chat.completions.parse.assert_called_once()
 
     run_async(_test())
 
@@ -1172,7 +1293,7 @@ def test_openai_prompter_chat_completions_with_image_structured_output():
         mock_message.parsed = expected_output
         mock_choice.message = mock_message
         mock_response.choices = [mock_choice]
-        mock_client.chat.completions.parse = AsyncMock(return_value=mock_response)
+        mock_client.beta.chat.completions.parse = AsyncMock(return_value=mock_response)
 
         prompter = create_prompter(return_format=ComplexResponse, use_chat_completions=True)
         prompter.llm = mock_client
@@ -1188,7 +1309,7 @@ def test_openai_prompter_chat_completions_with_image_structured_output():
         assert result.sentiment == "positive"
 
         # Verify the call was made with image
-        call_args = mock_client.chat.completions.parse.call_args
+        call_args = mock_client.beta.chat.completions.parse.call_args
         messages = call_args.kwargs["messages"]
         assert len(messages) == 1
         assert isinstance(messages[0]["content"], list)
