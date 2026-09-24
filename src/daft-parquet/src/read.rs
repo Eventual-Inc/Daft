@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use arrow::array::ArrayRef;
 use common_error::DaftResult;
@@ -91,7 +91,7 @@ pub struct ParquetReadOptions {
     pub row_groups: Option<Vec<i64>>,
     pub predicate: Option<ExprRef>,
     pub schema_infer: ParquetSchemaInferenceOptions,
-    pub field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
+    pub field_id_mapping: Option<Arc<crate::FieldIdMapping>>,
     pub delete_rows: Option<Vec<i64>>,
     pub batch_size: Option<usize>,
     // TODO(arrow-rs): wire this through to the arrowrs reader to skip redundant footer reads.
@@ -120,7 +120,7 @@ pub struct ParquetBulkReadOptions {
     pub num_rows: Option<usize>,
     pub predicate: Option<ExprRef>,
     pub schema_infer: ParquetSchemaInferenceOptions,
-    pub field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
+    pub field_id_mapping: Option<Arc<crate::FieldIdMapping>>,
     pub batch_size: Option<usize>,
     pub num_parallel_tasks: usize,
     /// Per-uri overrides. Must be empty or `len() == uris.len()`.
@@ -454,7 +454,7 @@ pub async fn read_parquet_schema_and_metadata(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     schema_inference_options: ParquetSchemaInferenceOptions,
-    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
+    field_id_mapping: Option<Arc<crate::FieldIdMapping>>,
 ) -> DaftResult<(Schema, DaftParquetMetadata)> {
     let metadata = crate::metadata::read_parquet_metadata(
         uri,
@@ -474,7 +474,7 @@ pub async fn read_parquet_metadata(
     uri: &str,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
-    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
+    field_id_mapping: Option<Arc<crate::FieldIdMapping>>,
 ) -> DaftResult<DaftParquetMetadata> {
     let metadata = crate::metadata::read_parquet_metadata(
         uri,
@@ -492,7 +492,7 @@ pub async fn read_parquet_metadata_bulk(
     uris: &[&str],
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
-    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
+    field_id_mapping: Option<Arc<crate::FieldIdMapping>>,
 ) -> DaftResult<Vec<DaftParquetMetadata>> {
     let io_runtime = get_io_runtime(true);
     let mut joinset: OrderedJoinSet<DaftResult<DaftParquetMetadata>> = OrderedJoinSet::new();
@@ -521,7 +521,7 @@ pub async fn stream_parquet_count_pushdown(
     url: &str,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
-    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
+    field_id_mapping: Option<Arc<crate::FieldIdMapping>>,
     aggregation: &ExprRef,
     row_groups: Option<&[i64]>,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
@@ -563,7 +563,7 @@ pub fn read_parquet_statistics(
     uris: &Series,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
-    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
+    field_id_mapping: Option<Arc<crate::FieldIdMapping>>,
 ) -> DaftResult<RecordBatch> {
     if uris.data_type() != &DataType::Utf8 {
         return Err(common_error::DaftError::ValueError(format!(

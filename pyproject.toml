@@ -19,7 +19,7 @@ maintainers = [
 ]
 name = "daft"
 readme = "README.rst"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.15"
 
 [project.scripts]
 daft = "daft.cli:main"
@@ -32,17 +32,17 @@ repository = "https://github.com/Eventual-Inc/Daft"
 all = ["daft[audio, aws, azure, clickhouse, deltalake, google, gravitino, hdf5, http, huggingface, iceberg, kafka, lance, mcap, numpy, openai, pandas, postgres, ray, sql, transformers, turbopuffer, unity, video]"]
 audio = ["soundfile >= 0.13.0,<0.14.0", "librosa >= 0.11.0,<0.12.0"]
 aws = ["boto3<1.44.0", "mypy-boto3-glue"]
-azure = ["fsspec<2026.8.0", "adlfs<2026.5.0"]
+azure = ["fsspec<2026.10.0", "adlfs<2026.5.0"]
 clickhouse = ["clickhouse_connect<1.1.0"]
 deltalake = ["deltalake >= 1.6.0,< 1.7.0"]
 gcp = []
 google = ["google-genai<2.7.0", "numpy<2.4.0", "pillow==12.2.0"]
 gravitino = ["requests>=2.28.0,<3.0.0"]
 hdf5 = ["h5py>=3.16.0,<4.0.0", "numpy<2.4.0"]
-http = ["fsspec[http]<2026.8.0"]
+http = ["fsspec[http]<2026.10.0"]
 hudi = []
-huggingface = ["huggingface-hub<1.17.0", "datasets<4.9.0", "fsspec<2026.8.0"]
-iceberg = ["pyiceberg >= 0.7.0, != 0.9.1, != 0.10.0, <= 0.11.1"]
+huggingface = ["huggingface-hub<1.17.0", "datasets<5.1.0", "fsspec<2026.10.0"]
+iceberg = ["pyiceberg >= 0.7.0, != 0.9.1, != 0.10.0, < 0.13"]
 kafka = ["confluent-kafka"]
 lance = ["daft-lance>=0.5.0,<0.6.0"]
 # The reader is native. Retain the extra as a no-op for installation compatibility.
@@ -104,7 +104,7 @@ dev = [
   "opencv-python==4.13.0.92",
   "tiktoken==0.13.0",
   "duckdb==1.5.3",
-  "datasets==4.8.5",
+  "datasets==5.0.1",
   "torch==2.11.0",
   "torchvision==0.26.0",
   "jax==0.6.2",
@@ -117,8 +117,8 @@ dev = [
   # Lance
   "daft-lance==0.5.0",
   # Iceberg
-  "pyiceberg==0.11.1",
-  "pydantic==2.12.4",
+  "pyiceberg==0.12.0",
+  "pydantic==2.13.5",
   "tenacity==9.1.4",
   # Delta Lake
   "deltalake==1.6.0",
@@ -135,15 +135,15 @@ dev = [
   "sqlglot==30.8.0",
   "pyodbc==5.3.0",
   # AWS
-  "s3fs==2024.9.0",
+  "s3fs==2026.6.0",
   "boto3==1.36.2",
   "boto3-stubs[essential,glue,s3,s3tables]==1.38.46",
-  "moto[glue,s3,server]==5.1.21",
+  "moto[glue,s3,server]==5.2.3",
   # Azure
   "adlfs==2024.7.0",
   "azure-storage-blob==12.27.1",
   # GCS
-  "gcsfs==2024.9.0.post1",
+  "gcsfs==2026.6.0",
   # Hugging Face
   "huggingface-hub==1.16.1",
   # AI

@@ -198,7 +198,7 @@ async fn count_pushdown_stream(
     url: &str,
     io_client: Arc<daft_io::IOClient>,
     io_stats: IOStatsRef,
-    field_id_mapping: Option<Arc<std::collections::BTreeMap<i32, daft_core::prelude::Field>>>,
+    field_id_mapping: Option<Arc<daft_parquet::FieldIdMapping>>,
     aggregation: &daft_dsl::ExprRef,
     row_groups: Option<Vec<i64>>,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {

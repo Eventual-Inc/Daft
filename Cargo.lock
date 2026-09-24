@@ -3440,6 +3440,7 @@ dependencies = [
  "path_macro",
  "pyo3",
  "serde",
+ "serde_json",
  "snafu",
  "tango-bench",
  "tokio",

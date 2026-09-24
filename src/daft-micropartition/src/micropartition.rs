@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{HashMap, HashSet},
     fmt::Display,
     pin::Pin,
     sync::Arc,
@@ -535,7 +535,7 @@ fn read_parquet_into_loaded_micropartition<T: AsRef<str>>(
     num_parallel_tasks: usize,
     schema_infer_options: &ParquetSchemaInferenceOptions,
     catalog_provided_schema: Option<SchemaRef>,
-    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
+    field_id_mapping: Option<Arc<daft_parquet::FieldIdMapping>>,
     chunk_size: Option<usize>,
 ) -> DaftResult<MicroPartition> {
     let delete_map = iceberg_delete_files
@@ -632,7 +632,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
     multithreaded_io: bool,
     schema_infer_options: &ParquetSchemaInferenceOptions,
     catalog_provided_schema: Option<SchemaRef>,
-    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
+    field_id_mapping: Option<Arc<daft_parquet::FieldIdMapping>>,
     parquet_metadata: Option<Vec<Arc<DaftParquetMetadata>>>,
     chunk_size: Option<usize>,
     aggregation_pushdown: Option<&Expr>,

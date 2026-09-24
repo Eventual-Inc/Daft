@@ -212,9 +212,13 @@ class IcebergDataSource(DataSource):
         self._storage_config = storage_config
 
         field_id_mapping = visit(iceberg_schema, SchemaFieldIdMappingVisitor())
+        # Files added with `add_files` often have no parquet field IDs. Iceberg stores a
+        # name-to-id fallback in this table property.
+        name_mapping = iceberg_table.metadata.properties.get("schema.name-mapping.default")
         self._parquet_config = ParquetSourceConfig(
             field_id_mapping=field_id_mapping,
             ignore_corrupt_files=ignore_corrupt_files,
+            name_mapping=name_mapping,
         )
 
         self._schema = convert_iceberg_schema(iceberg_schema)

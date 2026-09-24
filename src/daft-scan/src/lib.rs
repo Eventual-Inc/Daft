@@ -11,6 +11,7 @@ use std::{
 use common_display::DisplayAs;
 use common_error::DaftError;
 use daft_parquet::DaftParquetMetadata;
+pub use daft_parquet::FieldIdMapping;
 use daft_schema::schema::{Schema, SchemaRef};
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
 use either::Either;

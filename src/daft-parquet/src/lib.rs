@@ -5,6 +5,7 @@ mod helpers;
 pub mod metadata;
 mod metadata_adapter;
 mod reader;
+pub use metadata::{FieldIdMapping, MappedField};
 pub use metadata_adapter::{DaftParquetMetadata, DaftRowGroupMetaData, RowGroupList};
 #[cfg(feature = "python")]
 pub mod python;
@@ -99,10 +100,9 @@ pub enum Error {
 
     #[snafu(display(
         "{path} carries no parquet field IDs, but a field ID mapping was supplied, so every \
-         mapped column would read as null. Tables registered with `add_files` rely on the \
-         `schema.name-mapping.default` property, which Daft does not apply yet"
+         mapped column would read as null. {hint}"
     ))]
-    MissingParquetFieldIds { path: String },
+    MissingParquetFieldIds { path: String, hint: &'static str },
 
     /// Remote fetch tasks store their results in a `Shared` future whose error
     /// type must be `Clone`, so we keep `Arc<Error>` internally and surface the

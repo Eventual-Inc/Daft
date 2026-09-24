@@ -4,6 +4,7 @@ use bytes::{Bytes, BytesMut};
 use common_runtime::get_io_runtime;
 use daft_core::datatypes::Field;
 use daft_io::{GetRange, IOClient, IOStatsRef};
+use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
 use crate::{Error, ParquetMetadataSnafu, task_err};
@@ -21,6 +22,301 @@ const ARROW_SCHEMA_KEY: &str = "ARROW:schema";
 /// Extract the optional field ID from a parquet `BasicTypeInfo`.
 fn get_field_id(info: &parquet::schema::types::BasicTypeInfo) -> Option<i32> {
     info.has_id().then(|| info.id())
+}
+
+/// One node of an Iceberg `schema.name-mapping.default` document.
+///
+/// See <https://iceberg.apache.org/spec/#name-mapping-serialization>.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
+pub struct MappedField {
+    #[serde(rename = "field-id", default)]
+    pub field_id: Option<i32>,
+    pub names: Vec<String>,
+    #[serde(default)]
+    pub fields: Vec<MappedField>,
+}
+
+/// Field-id projection for catalog reads.
+///
+/// `ids` renames parquet columns that already carry field IDs. `name_mapping` assigns those
+/// IDs first when a file (typically registered with Iceberg `add_files`) has none.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
+pub struct FieldIdMapping {
+    pub ids: BTreeMap<i32, Field>,
+    #[serde(default)]
+    pub name_mapping: Vec<MappedField>,
+}
+
+impl FieldIdMapping {
+    pub fn new(
+        ids: BTreeMap<i32, Field>,
+        name_mapping_json: Option<&str>,
+    ) -> Result<Self, serde_json::Error> {
+        let name_mapping = match name_mapping_json {
+            Some(json) => serde_json::from_str(json)?,
+            None => Vec::new(),
+        };
+        Ok(Self { ids, name_mapping })
+    }
+}
+
+fn find_mapped<'a>(scope: &'a [MappedField], name: &str) -> Option<&'a MappedField> {
+    scope
+        .iter()
+        .find(|field| field.names.iter().any(|n| n == name))
+}
+
+fn is_list(tp: &parquet::schema::types::Type) -> bool {
+    use parquet::basic::{ConvertedType, LogicalType};
+    let info = tp.get_basic_info();
+    matches!(info.logical_type_ref(), Some(LogicalType::List))
+        || info.converted_type() == ConvertedType::LIST
+}
+
+fn is_map(tp: &parquet::schema::types::Type) -> bool {
+    use parquet::basic::{ConvertedType, LogicalType};
+    let info = tp.get_basic_info();
+    matches!(info.logical_type_ref(), Some(LogicalType::Map))
+        || info.converted_type() == ConvertedType::MAP
+}
+
+/// Parquet LIST backwards-compatibility: true when the repeated child *is* the element
+/// (2-level list) rather than a wrapper around it. Mirrors Iceberg's `isOldListElementType`.
+fn repeated_is_list_element(
+    list: &parquet::schema::types::Type,
+    repeated: &parquet::schema::types::Type,
+) -> bool {
+    use parquet::schema::types::Type;
+    match repeated {
+        Type::PrimitiveType { .. } => true,
+        Type::GroupType { fields, .. } => {
+            let name = repeated.get_basic_info().name();
+            let parent = list.get_basic_info().name();
+            fields.len() > 1 || name == "array" || name == format!("{parent}_tuple")
+        }
+    }
+}
+
+fn rebuild_type(
+    tp: &parquet::schema::types::Type,
+    id: Option<i32>,
+    children: Option<Vec<Arc<parquet::schema::types::Type>>>,
+) -> parquet::schema::types::Type {
+    use parquet::schema::types::Type;
+    let info = tp.get_basic_info();
+    match tp {
+        Type::PrimitiveType {
+            physical_type,
+            type_length,
+            scale,
+            precision,
+            ..
+        } => Type::primitive_type_builder(info.name(), *physical_type)
+            .with_repetition(info.repetition())
+            .with_converted_type(info.converted_type())
+            .with_logical_type(info.logical_type_ref().cloned())
+            .with_length(*type_length)
+            .with_precision(*precision)
+            .with_scale(*scale)
+            .with_id(id)
+            .build()
+            .expect("rebuilding primitive type with same attributes should not fail"),
+        Type::GroupType { fields, .. } => {
+            let fields = children.unwrap_or_else(|| fields.clone());
+            Type::group_type_builder(info.name())
+                .with_repetition(info.repetition())
+                .with_converted_type(info.converted_type())
+                .with_logical_type(info.logical_type_ref().cloned())
+                .with_fields(fields)
+                .with_id(id)
+                .build()
+                .expect("rebuilding group type with same attributes should not fail")
+        }
+    }
+}
+
+/// Assign field IDs from an Iceberg name mapping. Unmatched nodes keep a missing ID and are
+/// dropped later by the field-id projection.
+fn assign_mapped(
+    tp: &parquet::schema::types::Type,
+    mapped: Option<&MappedField>,
+) -> parquet::schema::types::Type {
+    use parquet::schema::types::Type;
+    if is_list(tp) {
+        return assign_list(tp, mapped);
+    }
+    if is_map(tp) {
+        return assign_map(tp, mapped);
+    }
+    let id = mapped.and_then(|field| field.field_id);
+    match tp {
+        Type::PrimitiveType { .. } => rebuild_type(tp, id, None),
+        Type::GroupType { fields, .. } => {
+            let child_scope = mapped.map(|field| field.fields.as_slice()).unwrap_or(&[]);
+            let children = fields
+                .iter()
+                .map(|child| {
+                    Arc::new(assign_mapped(
+                        child,
+                        find_mapped(child_scope, child.get_basic_info().name()),
+                    ))
+                })
+                .collect();
+            rebuild_type(tp, id, Some(children))
+        }
+    }
+}
+
+fn assign_list(
+    tp: &parquet::schema::types::Type,
+    mapped: Option<&MappedField>,
+) -> parquet::schema::types::Type {
+    let id = mapped.and_then(|field| field.field_id);
+    let fields = tp.get_fields();
+    let Some(repeated) = fields.first() else {
+        return rebuild_type(tp, id, None);
+    };
+    let element = mapped.and_then(|field| find_mapped(&field.fields, "element"));
+    let new_repeated = if repeated_is_list_element(tp, repeated) {
+        assign_mapped(repeated, element)
+    } else {
+        let inner = repeated.get_fields();
+        let children = if let Some(element_type) = inner.first() {
+            vec![Arc::new(assign_mapped(element_type, element))]
+        } else {
+            Vec::new()
+        };
+        rebuild_type(repeated, None, Some(children))
+    };
+    rebuild_type(tp, id, Some(vec![Arc::new(new_repeated)]))
+}
+
+fn assign_map(
+    tp: &parquet::schema::types::Type,
+    mapped: Option<&MappedField>,
+) -> parquet::schema::types::Type {
+    let id = mapped.and_then(|field| field.field_id);
+    let fields = tp.get_fields();
+    let Some(repeated) = fields.first() else {
+        return rebuild_type(tp, id, None);
+    };
+    let kv = repeated.get_fields();
+    let (Some(key), Some(value)) = (kv.first(), kv.get(1)) else {
+        return rebuild_type(tp, id, None);
+    };
+    let key_mapped = mapped.and_then(|field| find_mapped(&field.fields, "key"));
+    let value_mapped = mapped.and_then(|field| find_mapped(&field.fields, "value"));
+    let new_repeated = rebuild_type(
+        repeated,
+        None,
+        Some(vec![
+            Arc::new(assign_mapped(key, key_mapped)),
+            Arc::new(assign_mapped(value, value_mapped)),
+        ]),
+    );
+    rebuild_type(tp, id, Some(vec![Arc::new(new_repeated)]))
+}
+
+fn top_level_has_field_ids(root: &parquet::schema::types::Type) -> bool {
+    root.get_fields()
+        .iter()
+        .any(|field| get_field_id(field.get_basic_info()).is_some())
+}
+
+/// Stamp name-mapping field IDs onto a schema that has none, keeping column order so row-group
+/// chunks still line up with leaf descriptors.
+fn stamp_name_mapping(
+    metadata: Arc<parquet::file::metadata::ParquetMetaData>,
+    name_mapping: &[MappedField],
+    path: &str,
+) -> crate::Result<Arc<parquet::file::metadata::ParquetMetaData>> {
+    use parquet::{
+        file::metadata::{ColumnChunkMetaData, ParquetMetaData, RowGroupMetaData},
+        schema::types::{SchemaDescriptor, Type},
+    };
+
+    let old_root = metadata.file_metadata().schema_descr().root_schema();
+    let new_fields: Vec<_> = old_root
+        .get_fields()
+        .iter()
+        .map(|field| {
+            Arc::new(assign_mapped(
+                field,
+                find_mapped(name_mapping, field.get_basic_info().name()),
+            ))
+        })
+        .collect();
+    let new_root = Type::group_type_builder(old_root.name())
+        .with_fields(new_fields)
+        .build()
+        .with_context(|_| ParquetMetadataSnafu {
+            path: path.to_string(),
+        })?;
+    let new_schema_descr = Arc::new(SchemaDescriptor::new(Arc::new(new_root)));
+    let stamped_columns = new_schema_descr.columns();
+
+    let new_row_groups: Result<Vec<RowGroupMetaData>, _> = metadata
+        .row_groups()
+        .iter()
+        .map(|rg| {
+            if rg.columns().len() != stamped_columns.len() {
+                return Err(Error::ReaderInternal {
+                    path: path.to_string(),
+                    message: format!(
+                        "name mapping changed the parquet leaf count from {} to {}",
+                        rg.columns().len(),
+                        stamped_columns.len()
+                    ),
+                });
+            }
+            let new_columns: Vec<ColumnChunkMetaData> = rg
+                .columns()
+                .iter()
+                .enumerate()
+                .map(|(i, col)| {
+                    let mut builder = ColumnChunkMetaData::builder(stamped_columns[i].clone())
+                        .set_encodings_mask(*col.encodings_mask())
+                        .set_num_values(col.num_values())
+                        .set_compression(col.compression())
+                        .set_data_page_offset(col.data_page_offset())
+                        .set_total_compressed_size(col.compressed_size())
+                        .set_total_uncompressed_size(col.uncompressed_size())
+                        .set_index_page_offset(col.index_page_offset())
+                        .set_dictionary_page_offset(col.dictionary_page_offset())
+                        .set_bloom_filter_offset(col.bloom_filter_offset())
+                        .set_bloom_filter_length(col.bloom_filter_length())
+                        .set_offset_index_offset(col.offset_index_offset())
+                        .set_offset_index_length(col.offset_index_length())
+                        .set_column_index_offset(col.column_index_offset())
+                        .set_column_index_length(col.column_index_length())
+                        .set_unencoded_byte_array_data_bytes(col.unencoded_byte_array_data_bytes());
+                    if let Some(stats) = col.statistics() {
+                        builder = builder.set_statistics(stats.clone());
+                    }
+                    if let Some(file_path) = col.file_path() {
+                        builder = builder.set_file_path(file_path.to_string());
+                    }
+                    builder
+                        .build()
+                        .expect("column chunk rebuild should not fail")
+                })
+                .collect();
+            let total_byte_size: i64 = new_columns.iter().map(|c| c.uncompressed_size()).sum();
+            RowGroupMetaData::builder(new_schema_descr.clone())
+                .set_num_rows(rg.num_rows())
+                .set_total_byte_size(total_byte_size)
+                .set_column_metadata(new_columns)
+                .build()
+                .with_context(|_| ParquetMetadataSnafu {
+                    path: path.to_string(),
+                })
+        })
+        .collect();
+
+    Ok(Arc::new(ParquetMetaData::new(
+        rebuild_file_metadata(metadata.file_metadata(), new_schema_descr, false),
+        new_row_groups?,
+    )))
 }
 
 /// Rewrite children of a group type per the field_id_mapping.
@@ -130,12 +426,35 @@ fn recurse_children_only(
 /// 2. Drop columns without a field_id or without a corresponding mapping entry
 pub(crate) fn apply_field_ids_to_arrowrs_parquet_metadata(
     metadata: Arc<parquet::file::metadata::ParquetMetaData>,
-    field_id_mapping: &BTreeMap<i32, Field>,
+    field_id_mapping: &FieldIdMapping,
     path: &str,
 ) -> crate::Result<Arc<parquet::file::metadata::ParquetMetaData>> {
     use parquet::{
         file::metadata::{ColumnChunkMetaData, ParquetMetaData, RowGroupMetaData},
         schema::types::{SchemaDescriptor, Type},
+    };
+
+    let field_ids = &field_id_mapping.ids;
+    let mut used_name_mapping = false;
+    let metadata = if !metadata
+        .file_metadata()
+        .schema_descr()
+        .root_schema()
+        .get_fields()
+        .is_empty()
+        && !top_level_has_field_ids(metadata.file_metadata().schema_descr().root_schema())
+    {
+        if field_id_mapping.name_mapping.is_empty() {
+            return Err(Error::MissingParquetFieldIds {
+                path: path.to_string(),
+                hint: "Tables registered with `add_files` need the Iceberg \
+                       `schema.name-mapping.default` property so columns can be matched by name",
+            });
+        }
+        used_name_mapping = true;
+        stamp_name_mapping(metadata, &field_id_mapping.name_mapping, path)?
+    } else {
+        metadata
     };
 
     let old_schema = metadata.file_metadata().schema_descr();
@@ -144,14 +463,15 @@ pub(crate) fn apply_field_ids_to_arrowrs_parquet_metadata(
     // A file with no field IDs at all cannot be matched against the mapping, so every
     // mapped column would silently read as null. Fail instead — a partially-annotated
     // file is still handled below, where unmapped children are dropped on purpose.
-    if !old_root.get_fields().is_empty()
-        && !old_root
-            .get_fields()
-            .iter()
-            .any(|field| get_field_id(field.get_basic_info()).is_some())
-    {
+    if !old_root.get_fields().is_empty() && !top_level_has_field_ids(old_root) {
         return Err(Error::MissingParquetFieldIds {
             path: path.to_string(),
+            hint: if used_name_mapping {
+                "The supplied `schema.name-mapping.default` did not match any column in this file"
+            } else {
+                "Tables registered with `add_files` need the Iceberg \
+                 `schema.name-mapping.default` property so columns can be matched by name"
+            },
         });
     }
 
@@ -159,9 +479,7 @@ pub(crate) fn apply_field_ids_to_arrowrs_parquet_metadata(
     let new_fields: Vec<_> = old_root
         .get_fields()
         .iter()
-        .filter_map(|field| {
-            rewrite_arrowrs_type_with_field_ids(field, field_id_mapping).map(Arc::new)
-        })
+        .filter_map(|field| rewrite_arrowrs_type_with_field_ids(field, field_ids).map(Arc::new))
         .collect();
 
     let new_root = Type::group_type_builder(old_root.name())
@@ -520,7 +838,7 @@ pub(crate) async fn read_parquet_metadata(
     file_size: Option<usize>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
-    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
+    field_id_mapping: Option<Arc<FieldIdMapping>>,
     default_footer_read_size: Option<usize>,
 ) -> super::Result<Arc<parquet::file::metadata::ParquetMetaData>> {
     let (data, remaining) = fetch_parquet_footer_bytes(

@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_io_config::IOConfig;
@@ -7,7 +7,7 @@ use daft_scan::{
     CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig, ScanOperatorRef,
     glob::GlobScanOperator, storage_config::StorageConfig,
 };
-use daft_schema::{field::Field, schema::SchemaRef};
+use daft_schema::schema::SchemaRef;
 #[cfg(feature = "python")]
 use {daft_scan::python::pylib::ScanOperatorHandle, pyo3::prelude::*};
 
@@ -17,7 +17,7 @@ pub struct ParquetScanBuilder {
     pub glob_paths: Vec<String>,
     pub infer_schema: bool,
     pub coerce_int96_timestamp_unit: TimeUnit,
-    pub field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
+    pub field_id_mapping: Option<Arc<daft_scan::FieldIdMapping>>,
     pub row_groups: Option<Vec<Option<Vec<i64>>>>,
     pub chunk_size: Option<usize>,
     pub io_config: Option<IOConfig>,
@@ -59,7 +59,7 @@ impl ParquetScanBuilder {
         self.coerce_int96_timestamp_unit = unit;
         self
     }
-    pub fn field_id_mapping(mut self, field_id_mapping: Arc<BTreeMap<i32, Field>>) -> Self {
+    pub fn field_id_mapping(mut self, field_id_mapping: Arc<daft_scan::FieldIdMapping>) -> Self {
         self.field_id_mapping = Some(field_id_mapping);
         self
     }

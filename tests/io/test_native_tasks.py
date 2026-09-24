@@ -224,6 +224,97 @@ def test_field_id_mapping_without_field_ids_raises(tmp_path: Path):
         FieldIdMappingSource(path, schema).read().to_pydict()
 
 
+def test_name_mapping_assigns_field_ids_when_file_has_none(tmp_path: Path):
+    """Iceberg add_files parquet has no field IDs; schema.name-mapping.default supplies them."""
+    path = str(tmp_path / "add_files.parquet")
+    pq.write_table(pa.table({"col_a": [1, 2, 3], "col_b": ["x", "y", "z"]}), path)
+    schema = Schema.from_pydict({"a": DataType.int64(), "b": DataType.string()})
+    name_mapping = '[{"field-id": 1, "names": ["col_a"]}, {"field-id": 2, "names": ["col_b"]}]'
+
+    class NameMappingSource(DataSource):
+        @property
+        def name(self) -> str:
+            return "NameMappingSource"
+
+        @property
+        def schema(self) -> Schema:
+            return schema
+
+        async def get_tasks(self, pushdowns) -> AsyncIterator[DataSourceTask]:
+            mapping = {1: schema["a"]._field, 2: schema["b"]._field}
+            yield DataSourceTask.parquet(
+                path=path,
+                schema=schema,
+                pushdowns=pushdowns,
+                parquet_config=ParquetSourceConfig(field_id_mapping=mapping, name_mapping=name_mapping),
+            )
+
+    result = NameMappingSource().read().sort("a").to_pydict()
+    assert result == {"a": [1, 2, 3], "b": ["x", "y", "z"]}
+
+
+def test_name_mapping_reads_nested_list(tmp_path: Path):
+    """Name mapping assigns ids through a 3-level list of structs."""
+    path = str(tmp_path / "nested.parquet")
+    point = pa.struct([("x", pa.float64()), ("y", pa.float64())])
+    pq.write_table(
+        pa.table(
+            {
+                "row_id": ["r1"],
+                "transforms": [[{"x": 1.0, "y": 2.0}, {"x": 3.0, "y": 4.0}]],
+            },
+            schema=pa.schema([("row_id", pa.string()), ("transforms", pa.list_(point))]),
+        ),
+        path,
+    )
+    point = DataType.struct({"x": DataType.float64(), "y": DataType.float64()})
+    schema = Schema.from_pydict(
+        {
+            "row_id": DataType.string(),
+            "transforms": DataType.list(point),
+        }
+    )
+    element_schema = Schema.from_pydict({"element": point})
+    point_schema = Schema.from_pydict({"x": DataType.float64(), "y": DataType.float64()})
+    name_mapping = """[
+      {"field-id": 1, "names": ["row_id"]},
+      {"field-id": 2, "names": ["transforms"], "fields": [
+        {"field-id": 3, "names": ["element"], "fields": [
+          {"field-id": 4, "names": ["x"]},
+          {"field-id": 5, "names": ["y"]}
+        ]}
+      ]}
+    ]"""
+
+    class NestedNameMappingSource(DataSource):
+        @property
+        def name(self) -> str:
+            return "NestedNameMappingSource"
+
+        @property
+        def schema(self) -> Schema:
+            return schema
+
+        async def get_tasks(self, pushdowns) -> AsyncIterator[DataSourceTask]:
+            mapping = {
+                1: schema["row_id"]._field,
+                2: schema["transforms"]._field,
+                3: element_schema["element"]._field,
+                4: point_schema["x"]._field,
+                5: point_schema["y"]._field,
+            }
+            yield DataSourceTask.parquet(
+                path=path,
+                schema=schema,
+                pushdowns=pushdowns,
+                parquet_config=ParquetSourceConfig(field_id_mapping=mapping, name_mapping=name_mapping),
+            )
+
+    result = NestedNameMappingSource().read().to_pydict()
+    assert result["row_id"] == ["r1"]
+    assert result["transforms"] == [[{"x": 1.0, "y": 2.0}, {"x": 3.0, "y": 4.0}]]
+
+
 def test_field_id_mapping_with_field_ids_reads_values(tmp_path: Path):
     """A file that does carry field IDs still reads through the mapping."""
     path = str(tmp_path / "with_field_ids.parquet")

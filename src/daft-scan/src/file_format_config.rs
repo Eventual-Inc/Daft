@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, hash::Hash, sync::Arc};
 
 use common_file_formats::FileFormat;
 use common_py_serde::impl_bincode_py_state_serialization;
-use daft_schema::{field::Field, time_unit::TimeUnit};
+use daft_schema::time_unit::TimeUnit;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
 use {
@@ -91,7 +91,7 @@ pub struct ParquetSourceConfig {
     /// data according to the provided field_ids.
     ///
     /// See: https://github.com/apache/parquet-format/blob/master/src/main/thrift/parquet.thrift#L456-L459
-    pub field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
+    pub field_id_mapping: Option<Arc<daft_parquet::FieldIdMapping>>,
     pub row_groups: Option<Vec<Option<Vec<i64>>>>,
     pub chunk_size: Option<usize>,
     /// If true, corrupt or unreadable Parquet files are silently skipped instead of raising an
@@ -113,6 +113,7 @@ impl ParquetSourceConfig {
             res.push(format!(
                 "Field ID to Fields = {{{}}}",
                 mapping
+                    .ids
                     .iter()
                     .map(|(fid, f)| format!("{fid}: {f}"))
                     .collect::<Vec<String>>()
@@ -159,24 +160,43 @@ impl Default for ParquetSourceConfig {
 impl ParquetSourceConfig {
     /// Create a config for a Parquet data source.
     #[new]
-    #[pyo3(signature = (coerce_int96_timestamp_unit=None, field_id_mapping=None, row_groups=None, chunk_size=None, ignore_corrupt_files=false))]
+    #[pyo3(signature = (coerce_int96_timestamp_unit=None, field_id_mapping=None, row_groups=None, chunk_size=None, ignore_corrupt_files=false, name_mapping=None))]
     fn new(
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
         field_id_mapping: Option<BTreeMap<i32, PyField>>,
         row_groups: Option<Vec<Option<Vec<i64>>>>,
         chunk_size: Option<usize>,
         ignore_corrupt_files: bool,
-    ) -> Self {
-        Self {
+        name_mapping: Option<String>,
+    ) -> PyResult<Self> {
+        if name_mapping.is_some() && field_id_mapping.is_none() {
+            return Err(PyValueError::new_err(
+                "name_mapping requires field_id_mapping",
+            ));
+        }
+        let field_id_mapping = field_id_mapping
+            .map(|map| {
+                daft_parquet::FieldIdMapping::new(
+                    map.into_iter().map(|(k, v)| (k, v.field)).collect(),
+                    name_mapping.as_deref(),
+                )
+                .map(Arc::new)
+                .map_err(|e| {
+                    PyValueError::new_err(format!(
+                        "invalid Iceberg schema.name-mapping.default JSON: {e}"
+                    ))
+                })
+            })
+            .transpose()?;
+        Ok(Self {
             coerce_int96_timestamp_unit: coerce_int96_timestamp_unit
                 .unwrap_or_else(|| TimeUnit::Nanoseconds.into())
                 .into(),
-            field_id_mapping: field_id_mapping
-                .map(|map| Arc::new(map.into_iter().map(|(k, v)| (k, v.field)).collect())),
+            field_id_mapping,
             row_groups,
             chunk_size,
             ignore_corrupt_files,
-        }
+        })
     }
 
     #[getter]
