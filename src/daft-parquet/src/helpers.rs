@@ -66,9 +66,8 @@ pub fn build_offset_row_selection(offset: usize, total_rows: usize) -> RowSelect
 
 /// Sorted, deduplicated view of positional delete indices.
 ///
-/// Callers typically pass sorted data, in which case this borrows. Hoist this out
-/// of per-row-group loops: the sortedness probe is O(n), so normalizing once per
-/// row group turns row group pruning into O(row groups x deletes).
+/// Already-sorted input is borrowed, not copied. The sortedness probe is O(n), so
+/// hoist this out of per-row-group loops.
 pub fn normalize_deletes(delete_rows: &[i64]) -> Cow<'_, [i64]> {
     debug_assert!(
         delete_rows.iter().all(|&r| r >= 0),
@@ -94,47 +93,6 @@ fn count_deletes_in_sorted_range(sorted: &[i64], lo: usize, hi: usize) -> usize 
     let start = sorted.partition_point(|&r| (r as usize) < lo);
     let end = sorted.partition_point(|&r| (r as usize) < hi);
     end - start
-}
-
-/// File-relative index of the first row of every row group.
-pub fn row_group_file_starts(metadata: &ParquetMetaData) -> Vec<usize> {
-    let mut starts = Vec::with_capacity(metadata.num_row_groups());
-    let mut acc = 0usize;
-    for rg_idx in 0..metadata.num_row_groups() {
-        starts.push(acc);
-        acc += metadata.row_group(rg_idx).num_rows() as usize;
-    }
-    starts
-}
-
-/// Rows in `rg_indices` that actually reach the consumer, i.e. physical rows
-/// minus the positional deletes falling inside those row groups.
-///
-/// This is the same quantity the row-level path derives from
-/// `RowSelection::row_count()`; keep the two in agreement.
-pub fn visible_rows_in_row_groups(
-    metadata: &ParquetMetaData,
-    rg_indices: &[usize],
-    delete_rows: Option<&[i64]>,
-) -> usize {
-    let physical: usize = rg_indices
-        .iter()
-        .map(|&i| metadata.row_group(i).num_rows() as usize)
-        .sum();
-    let Some(deletes) = delete_rows.filter(|d| !d.is_empty()) else {
-        return physical;
-    };
-    let normalized = normalize_deletes(deletes);
-    let starts = row_group_file_starts(metadata);
-    let deleted: usize = rg_indices
-        .iter()
-        .map(|&i| {
-            let start = starts[i];
-            let end = start + metadata.row_group(i).num_rows() as usize;
-            count_deletes_in_sorted_range(&normalized, start, end)
-        })
-        .sum();
-    physical.saturating_sub(deleted)
 }
 
 /// Build a `RowSelection` for a single row group from Iceberg positional
@@ -297,10 +255,8 @@ pub fn validate_requested_row_groups(
 ///   limit only after filtering, so later RGs may still be needed)
 /// - `predicate` stats: drop RGs the min/max stats prove can't match
 ///
-/// `delete_rows` holds Iceberg positional deletes. Those rows never reach the
-/// consumer, so they must not count against the `num_rows` budget — otherwise a
-/// heavily-deleted RG exhausts the budget and later RGs are dropped, returning
-/// fewer rows than requested.
+/// `delete_rows` are Iceberg positional deletes, which do not reach the consumer
+/// and so do not count against the `num_rows` budget.
 ///
 /// Returns RG indices in original (file) order.
 #[allow(clippy::too_many_arguments)]
@@ -322,7 +278,12 @@ pub fn prune_row_groups(
 
     // File-relative row starts for ALL RGs — start_offset is a file-level
     // skip, not relative to `candidates`.
-    let rg_file_start = row_group_file_starts(metadata);
+    let mut rg_file_start = Vec::with_capacity(num_row_groups);
+    let mut acc = 0usize;
+    for rg_idx in 0..num_row_groups {
+        rg_file_start.push(acc);
+        acc += metadata.row_group(rg_idx).num_rows() as usize;
+    }
 
     // Normalize once, not once per candidate row group.
     let normalized_deletes = delete_rows.map(normalize_deletes);
@@ -388,10 +349,7 @@ mod tests {
         schema::types::{SchemaDescriptor, Type},
     };
 
-    use super::{
-        count_deletes_in_sorted_range, normalize_deletes, prune_row_groups,
-        visible_rows_in_row_groups,
-    };
+    use super::{count_deletes_in_sorted_range, normalize_deletes, prune_row_groups};
 
     /// `ParquetMetaData` with `rows_per_group.len()` row groups and no statistics.
     fn metadata_with_row_groups(rows_per_group: &[i64]) -> ParquetMetaData {
@@ -450,28 +408,6 @@ mod tests {
     }
 
     #[test]
-    fn visible_rows_subtracts_deletes_in_selected_row_groups() {
-        let metadata = metadata_with_row_groups(&[50, 50, 50, 50]);
-        // 40 deletes in RG0, 1 in RG2.
-        let deletes: Vec<i64> = (0..40).chain(std::iter::once(120)).collect();
-
-        assert_eq!(visible_rows_in_row_groups(&metadata, &[0], None), 50);
-        assert_eq!(
-            visible_rows_in_row_groups(&metadata, &[0], Some(&deletes)),
-            10
-        );
-        // RG1 has no deletes; RG2 has one.
-        assert_eq!(
-            visible_rows_in_row_groups(&metadata, &[1, 2], Some(&deletes)),
-            99
-        );
-        assert_eq!(
-            visible_rows_in_row_groups(&metadata, &[0, 1, 2, 3], Some(&deletes)),
-            159
-        );
-    }
-
-    #[test]
     fn limit_budget_counts_only_visible_rows() {
         let metadata = metadata_with_row_groups(&[50, 50, 50, 50]);
         let schema = Schema::empty();
@@ -495,35 +431,5 @@ mod tests {
         )
         .unwrap();
         assert_eq!(kept, vec![0, 1]);
-    }
-
-    #[test]
-    fn start_offset_and_deletes_compose() {
-        let metadata = metadata_with_row_groups(&[50, 50, 50, 50]);
-        let schema = Schema::empty();
-        // Deletes straddle the offset: 20..29 are skipped by the offset anyway,
-        // only 30..49 reduce what RG0 contributes.
-        let deletes: Vec<i64> = (20..50).collect();
-
-        // Offset 30 drops nothing wholesale (RG0 ends at 50 > 30), and RG0's
-        // visible span [30, 50) is entirely deleted, so the budget is untouched
-        // and later row groups must be kept.
-        let kept = prune_row_groups(
-            &metadata,
-            None,
-            30,
-            Some(20),
-            Some(&deletes),
-            None,
-            &schema,
-            "t",
-        )
-        .unwrap();
-        assert_eq!(kept, vec![0, 1]);
-
-        // Same offset without deletes: RG0's 20 visible rows fill the budget.
-        let kept =
-            prune_row_groups(&metadata, None, 30, Some(20), None, None, &schema, "t").unwrap();
-        assert_eq!(kept, vec![0]);
     }
 }
