@@ -7,7 +7,11 @@ from openai import OpenAI
 from openai._types import omit
 
 from daft import DataType
-from daft.ai.openai.protocols.text_embedder import OpenAITextEmbedder, get_input_text_token_limit_for_model
+from daft.ai.openai.protocols.text_embedder import (
+    OpenAITextEmbedder,
+    _embedding_request_options,
+    get_input_text_token_limit_for_model,
+)
 from daft.ai.protocols import TextEmbedder, TextEmbedderDescriptor
 from daft.ai.typing import EmbeddingDimensions, EmbedTextOptions, Options, UDFOptions
 from daft.utils import from_dict
@@ -66,6 +70,7 @@ class LMStudioTextEmbedderDescriptor(TextEmbedderDescriptor):
                 input="dimension probe",
                 model=self.model_name,
                 encoding_format="float",
+                **_embedding_request_options(self.embed_options),
             )
             size = len(response.data[0].embedding)
             return EmbeddingDimensions(size=size, dtype=DataType.float32())

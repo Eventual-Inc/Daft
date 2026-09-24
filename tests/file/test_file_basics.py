@@ -555,14 +555,12 @@ def test_file_partial_range_raises(tmp_path: Path):
     path = str(temp_file.absolute())
 
     f_position_only = daft.File(path, position=10)
-    with pytest.raises(Exception):
-        with f_position_only.open() as fh:
-            fh.read()
+    with pytest.raises(Exception), f_position_only.open() as fh:
+        fh.read()
 
     f_size_only = daft.File(path, size=10)
-    with pytest.raises(Exception):
-        with f_size_only.open() as fh:
-            fh.read()
+    with pytest.raises(Exception), f_size_only.open() as fh:
+        fh.read()
 
 
 # ── buffer_size tests ──

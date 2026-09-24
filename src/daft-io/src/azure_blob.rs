@@ -28,6 +28,7 @@ const AZURE_DELIMITER: &str = "/";
 const DEFAULT_GLOB_FANOUT_LIMIT: usize = 1024;
 const AZURE_STORAGE_RESOURCE: &str = "https://storage.azure.com/.default";
 const AZURE_STORE_SUFFIX: &str = ".dfs.core.windows.net";
+const AZURE_FABRIC_SUFFIX: &str = ".dfs.fabric.microsoft.com";
 
 #[derive(Debug, Snafu)]
 enum Error {
@@ -108,8 +109,14 @@ fn parse_azure_uri(uri: &str) -> super::Result<ParsedAzureUri> {
     // It also supports PROTOCOL://account.dfs.core.windows.net/container/path-part/file
     // but it is not documented
     // https://github.com/fsspec/adlfs/blob/5c24b2e886fc8e068a313819ce3db9b7077c27e3/adlfs/spec.py#L364
+    //
+    // Microsoft Fabric / OneLake uses the same container@host form on its own host:
+    // PROTOCOL://workspace@onelake.dfs.fabric.microsoft.com/lakehouse/path-part/file
     if let Some(host) = uri.host_str() {
-        if host.ends_with(AZURE_STORE_SUFFIX) {
+        let account_name = host
+            .strip_suffix(AZURE_STORE_SUFFIX)
+            .or_else(|| host.strip_suffix(AZURE_FABRIC_SUFFIX));
+        if let Some(account_name) = account_name {
             match uri.username() {
                 "" => {
                     if let Some((container, key)) = uri.path().split_once('/') {
@@ -121,8 +128,7 @@ fn parse_azure_uri(uri: &str) -> super::Result<ParsedAzureUri> {
                 }
             }
 
-            let account_name_len = host.len() - AZURE_STORE_SUFFIX.len();
-            parsed.account_name = Some(host[..account_name_len].into());
+            parsed.account_name = Some(account_name.into());
         } else {
             parsed.container_and_key = Some((host.into(), uri.path().into()));
         }
@@ -740,5 +746,45 @@ impl ObjectSource for AzureBlobSource {
 
     fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_azure_uri;
+
+    #[test]
+    fn test_parse_azure_uri_onelake_container_at_host() {
+        // Microsoft Fabric / OneLake: the workspace is the container and the account
+        // name is derived from the *.dfs.fabric.microsoft.com host.
+        let uri = "abfss://ws-guid@onelake.dfs.fabric.microsoft.com/lh-guid/Files/x.csv";
+        let parsed = parse_azure_uri(uri).unwrap();
+        assert_eq!(parsed.protocol, "abfss");
+        assert_eq!(parsed.account_name.as_deref(), Some("onelake"));
+        let (container, key) = parsed.container_and_key.unwrap();
+        assert_eq!(container, "ws-guid");
+        assert_eq!(key, "/lh-guid/Files/x.csv");
+    }
+
+    #[test]
+    fn test_parse_azure_uri_storage_container_at_host() {
+        let uri = "abfss://container@account.dfs.core.windows.net/path/f.parquet";
+        let parsed = parse_azure_uri(uri).unwrap();
+        assert_eq!(parsed.protocol, "abfss");
+        assert_eq!(parsed.account_name.as_deref(), Some("account"));
+        let (container, key) = parsed.container_and_key.unwrap();
+        assert_eq!(container, "container");
+        assert_eq!(key, "/path/f.parquet");
+    }
+
+    #[test]
+    fn test_parse_azure_uri_bare_container() {
+        // PROTOCOL://container/path form: no account name in the URI.
+        let parsed = parse_azure_uri("az://container/path/f.parquet").unwrap();
+        assert_eq!(parsed.protocol, "az");
+        assert_eq!(parsed.account_name, None);
+        let (container, key) = parsed.container_and_key.unwrap();
+        assert_eq!(container, "container");
+        assert_eq!(key, "/path/f.parquet");
     }
 }

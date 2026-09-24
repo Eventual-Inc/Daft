@@ -8,8 +8,8 @@ use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::read::{ParquetReadOptions, ParquetSchemaInferenceOptions};
 use daft_recordbatch::RecordBatch;
 use daft_scan::{
-    ChunkSpec, CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig, ScanTask,
-    SourceConfig, TextSourceConfig,
+    ChunkSpec, CsvSourceConfig, FileFormatConfig, JsonSourceConfig, McapSourceConfig,
+    ParquetSourceConfig, ScanTask, SourceConfig, TextSourceConfig,
 };
 use daft_text::{TextConvertOptions, TextReadOptions};
 use daft_warc::WarcConvertOptions;
@@ -78,6 +78,9 @@ pub(crate) async fn read_scan_task(
             FileFormatConfig::Warc(_) => read_warc(scan_task, url, io_client, io_stats).await,
             FileFormatConfig::Text(cfg) => {
                 read_text(scan_task, cfg, url, io_client, io_stats, chunk_size).await
+            }
+            FileFormatConfig::Mcap(cfg) => {
+                read_mcap(scan_task, cfg, url, file_column_names, io_client, io_stats).await
             }
         },
         #[cfg(feature = "python")]
@@ -316,6 +319,28 @@ async fn read_warc(
         predicate: scan_task.pushdowns.filters.clone(),
     };
     daft_warc::stream_warc(url, io_client, io_stats, convert_options, None).await
+}
+
+async fn read_mcap(
+    scan_task: &ScanTask,
+    cfg: &McapSourceConfig,
+    url: &str,
+    file_column_names: Option<Vec<String>>,
+    io_client: Arc<daft_io::IOClient>,
+    io_stats: IOStatsRef,
+) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
+    let read_options = daft_mcap::McapReadOptions {
+        batch_size: cfg.batch_size,
+        start_time: cfg.start_time,
+        end_time: cfg.end_time,
+        topics: cfg.topics.clone(),
+    };
+    let convert_options = daft_mcap::McapConvertOptions {
+        predicate: scan_task.pushdowns.filters.clone(),
+        include_columns: file_column_names,
+        limit: scan_task.pushdowns.limit,
+    };
+    daft_mcap::stream_mcap(url, io_client, io_stats, read_options, convert_options).await
 }
 
 async fn read_text(

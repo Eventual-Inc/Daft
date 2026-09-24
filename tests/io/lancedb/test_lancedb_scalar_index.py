@@ -119,7 +119,8 @@ class TestDistributedIndexing:
                 break
 
         assert text_index is not None, "Text index not found"
-        assert text_index["type"] == "Inverted", f"Expected Inverted index, got {text_index['type']}"
+        index_type = updated_dataset.stats.index_stats(text_index["name"])["index_type"]
+        assert index_type == "Inverted", f"Expected Inverted index, got {index_type}"
 
         # Test full-text search functionality
         search_term = "Python"
@@ -330,7 +331,8 @@ class TestDistributedIndexing:
                 break
 
         assert final_index is not None, "Index should still exist after replacement"
-        assert final_index["type"] == "Inverted", "Index type should remain Inverted"
+        final_index_type = updated_dataset.stats.index_stats(index_name)["index_type"]
+        assert final_index_type == "Inverted", "Index type should remain Inverted"
 
         # Test that the replaced index still works for searching
         search_term = "Python"
