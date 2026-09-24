@@ -138,9 +138,7 @@ def to_partition_representation(value: Any) -> Any:
 
     Most transforms already do this, but the identity transforms preserve the original value type so we need to convert it.
 
-    Temporal values are delegated to pyiceberg so the epoch handling stays in one
-    place. ``datetime_to_micros`` picks an aware or naive epoch to match the value;
-    subtracting a naive epoch from a timezone-aware value raises ``TypeError``.
+    ``datetime_to_micros`` picks an aware or naive epoch to match the value's ``tzinfo``.
     """
     if value is None:
         return None

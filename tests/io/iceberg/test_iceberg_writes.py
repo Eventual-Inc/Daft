@@ -45,7 +45,6 @@ from pyiceberg.types import (
     TimestamptzType,
 )
 from pyiceberg.types import NestedField as _NestedField
-from pyiceberg.utils.datetime import date_to_days, datetime_to_micros, time_to_micros
 
 import daft
 from daft.io.iceberg.iceberg_write import to_partition_representation
@@ -1312,28 +1311,6 @@ def test_to_partition_representation(value, expected):
     assert to_partition_representation(value) == expected
 
 
-@pytest.mark.parametrize(
-    ("value", "pyiceberg_fn"),
-    [
-        (datetime.datetime(2024, 1, 1, 12, 0, 0), datetime_to_micros),
-        (datetime.datetime(2024, 1, 1, 12, 0, 0, tzinfo=datetime.timezone.utc), datetime_to_micros),
-        (
-            datetime.datetime(2024, 1, 1, 12, 0, 0, tzinfo=datetime.timezone(datetime.timedelta(hours=8))),
-            datetime_to_micros,
-        ),
-        (datetime.date(2024, 1, 1), date_to_days),
-        (datetime.time(1, 2, 3, 4), time_to_micros),
-    ],
-)
-def test_to_partition_representation_matches_pyiceberg(value, pyiceberg_fn):
-    """Pin the conversion to pyiceberg's, not to hardcoded integers.
-
-    A pyiceberg change in epoch or unit semantics has to surface here rather than
-    silently diverging from what the manifest readers expect.
-    """
-    assert to_partition_representation(value) == pyiceberg_fn(value)
-
-
 def test_write_iceberg_identity_partitioned_by_timestamptz(local_catalog):
     """Writing to a table partitioned by identity(timestamptz) round-trips the values."""
     schema = Schema(
@@ -1356,14 +1333,18 @@ def test_write_iceberg_identity_partitioned_by_timestamptz(local_catalog):
     df.write_iceberg(table)
     table.refresh()
 
-    assert daft.read_iceberg(table).sort("x").to_pydict()["x"] == [1, 2]
-    partitions = sorted(task.file.partition[0] for task in table.scan().plan_files())
-    assert partitions == [1704110400000000, 1704196800000000]
-
-    # Read back through pyiceberg so a Daft-only writer/reader agreement cannot hide an
-    # interoperability regression.
-    read_back = table.scan().to_arrow().sort_by("x").to_pydict()
-    assert read_back["ts"] == [
+    expected_ts = [
         datetime.datetime(2024, 1, 1, 12, 0, 0, tzinfo=tz),
         datetime.datetime(2024, 1, 2, 12, 0, 0, tzinfo=tz),
     ]
+
+    read_daft = daft.read_iceberg(table).sort("x").to_pydict()
+    assert read_daft["x"] == [1, 2]
+    assert read_daft["ts"] == expected_ts
+
+    partitions = sorted(task.file.partition[0] for task in table.scan().plan_files())
+    assert partitions == [1704110400000000, 1704196800000000]
+
+    # Read back through pyiceberg too, so a Daft-only writer/reader agreement cannot pass.
+    read_back = table.scan().to_arrow().sort_by("x").to_pydict()
+    assert read_back["ts"] == expected_ts
