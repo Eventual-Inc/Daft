@@ -419,9 +419,8 @@ impl SQLFunctions {
 
     /// Add a [FunctionExpr] to the [SQLFunctions] instance.
     ///
-    /// The name is lowercased on the way in. Lookup lowercases the parsed function
-    /// name (SQL function names are case-insensitive), so a mixed-case key would be
-    /// unreachable — normalizing here makes that class of bug unrepresentable.
+    /// The name is lowercased here because lookup lowercases the parsed function name,
+    /// so a mixed-case key would never be found.
     pub fn add_fn<F: SQLFunction + 'static>(&mut self, name: &str, func: F) {
         let key = name.to_lowercase();
         self.docsmap

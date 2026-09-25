@@ -1,7 +1,7 @@
 use daft_logical_plan::LogicalPlanBuilder;
 use sqlparser::ast::TableFunctionArgs;
 
-use super::SQLTableFunction;
+use super::{SQLTableFunction, expr_to_iocfg};
 use crate::{SQLPlanner, error::SQLPlannerResult, unsupported_sql_err};
 
 pub(super) struct ReadDeltalakeFunction;
@@ -14,15 +14,15 @@ impl SQLTableFunction for ReadDeltalakeFunction {
         args: &TableFunctionArgs,
     ) -> SQLPlannerResult<LogicalPlanBuilder> {
         let (uri, io_config) = match args.args.as_slice() {
-            [uri] => (uri, Some(daft_context::get_context().io_config())),
+            [uri] => (uri, None),
             [uri, io_config] => {
                 let args = planner.parse_function_args(
                     std::slice::from_ref(io_config),
                     &["io_config"],
                     0,
                 )?;
-                let io_config = super::resolve_io_config(&args)?;
-                (uri, Some(io_config))
+                let io_config = args.get_named("io_config").map(expr_to_iocfg).transpose()?;
+                (uri, io_config)
             }
             _ => unsupported_sql_err!("Expected one or two arguments"),
         };

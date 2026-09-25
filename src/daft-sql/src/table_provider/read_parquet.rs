@@ -9,6 +9,7 @@ use crate::{
     error::{PlannerError, SQLPlannerResult},
     functions::SQLFunctionArguments,
     invalid_operation_err,
+    modules::config::expr_to_iocfg,
     planner::SQLPlanner,
     schema::try_parse_schema,
 };
@@ -50,7 +51,7 @@ impl TryFrom<SQLFunctionArguments> for ParquetScanBuilder {
             .map(try_parse_schema)
             .transpose()?
             .map(Arc::new);
-        let io_config = Some(super::resolve_io_config(&args)?);
+        let io_config = args.get_named("io_config").map(expr_to_iocfg).transpose()?;
 
         Ok(Self {
             glob_paths,
