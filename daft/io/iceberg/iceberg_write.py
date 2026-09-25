@@ -15,6 +15,7 @@ from pyiceberg.expressions.visitors import (
     strict_projection,
 )
 from pyiceberg.schema import Schema as IcebergSchema
+from pyiceberg.utils.datetime import date_to_days, datetime_to_micros, time_to_micros
 
 from daft import Expression, col, lit
 from daft.datatype import DataType
@@ -136,19 +137,18 @@ def to_partition_representation(value: Any) -> Any:
     """Converts a partition value to the format expected by Iceberg metadata.
 
     Most transforms already do this, but the identity transforms preserve the original value type so we need to convert it.
+
+    ``datetime_to_micros`` picks an aware or naive epoch to match the value's ``tzinfo``.
     """
     if value is None:
         return None
 
     if isinstance(value, datetime.datetime):
-        # Convert to microseconds since epoch
-        return (value - datetime.datetime(1970, 1, 1)) // datetime.timedelta(microseconds=1)
+        return datetime_to_micros(value)
     elif isinstance(value, datetime.date):
-        # Convert to days since epoch
-        return (value - datetime.date(1970, 1, 1)) // datetime.timedelta(days=1)
+        return date_to_days(value)
     elif isinstance(value, datetime.time):
-        # Convert to microseconds since midnight
-        return (value.hour * 60 * 60 + value.minute * 60 + value.second) * 1_000_000 + value.microsecond
+        return time_to_micros(value)
     elif isinstance(value, uuid.UUID):
         return str(value)
     else:
