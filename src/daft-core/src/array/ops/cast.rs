@@ -1056,10 +1056,14 @@ impl TensorArray {
                             .expect("Number of channels should fit into a uint8"),
                     );
 
-                    modes.push(mode.unwrap_or(ImageMode::try_from_num_channels(
+                    // The type-level mode stays `None` even when all rows share one mode:
+                    // refining it would violate the plan-time/runtime dtype equality
+                    // invariant, since the cast is planned as `Image(None)`.
+                    let row_mode = mode.unwrap_or(ImageMode::try_from_num_channels(
                         shape[2].try_into().unwrap(),
-                        &DataType::UInt8,
-                    )?) as u8);
+                        inner_dtype,
+                    )?);
+                    modes.push(row_mode as u8);
                 }
                 Ok(ImageArray::from_list_array(
                     self.name(),
