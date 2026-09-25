@@ -18,8 +18,8 @@ pub use builder::{LogicalPlanBuilder, PyLogicalPlanBuilder};
 pub use daft_core::join::{AsofJoinStrategy, JoinStrategy, JoinType};
 #[cfg(feature = "python")]
 use daft_scan::{
-    CsvSourceConfig, DatabaseSourceConfig, JsonSourceConfig, ParquetSourceConfig, TextSourceConfig,
-    WarcSourceConfig, python::PyFileFormatConfig,
+    CsvSourceConfig, DatabaseSourceConfig, JsonSourceConfig, McapSourceConfig, ParquetSourceConfig,
+    TextSourceConfig, WarcSourceConfig, python::PyFileFormatConfig,
 };
 pub use logical_plan::{LogicalPlan, LogicalPlanRef};
 pub use ops::join::JoinOptions;
@@ -51,6 +51,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<ParquetSourceConfig>()?;
     parent.add_class::<JsonSourceConfig>()?;
     parent.add_class::<WarcSourceConfig>()?;
+    parent.add_class::<McapSourceConfig>()?;
     parent.add_class::<TextSourceConfig>()?;
     parent.add_class::<CsvSourceConfig>()?;
     parent.add_class::<DatabaseSourceConfig>()?;

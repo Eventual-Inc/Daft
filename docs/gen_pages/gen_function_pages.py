@@ -49,8 +49,7 @@ def build_function_category_map() -> list[FunctionCategory]:
                 description = docstring_split[1]
 
             # strip period from title
-            if title.endswith("."):
-                title = title[:-1]
+            title = title.removesuffix(".")
 
             cat = FunctionCategory(title, description, [])
             categories[module_name] = cat

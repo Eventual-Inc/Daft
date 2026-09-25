@@ -18,6 +18,7 @@ from daft.daft import (
 )
 from daft.dependencies import pa
 from daft.expressions import ExpressionsProjection
+from daft.expressions.visitor import _ColumnVisitor
 from daft.io.iceberg._expressions import convert_row_filter
 from daft.io.iceberg._metadata import (
     convert_iceberg_data_type,
@@ -360,12 +361,50 @@ class IcebergDataSource(DataSource):
     def _create_count_tasks(self, pushdowns: Pushdowns, field_name: str) -> Iterator[DataSourceTask]:
         """Create count pushdown task using Iceberg metadata."""
         try:
-            iceberg_tasks = self._iceberg_table.scan(limit=None, snapshot_id=self._snapshot_id).plan_files()
+            if pushdowns.filters is not None:
+                # A row-level predicate cannot be answered from record counts: a file
+                # surviving metadata pruning may still hold rows that do not match.
+                yield from self._create_regular_tasks(pushdowns)
+                return
+
+            # Forwarding the predicate lets PyIceberg drop whole manifests from its partition
+            # summaries instead of materializing every data file entry for us to filter.
+            # It only ever returns a superset of the matching files, and degrades to no
+            # pruning when the predicate cannot be converted, so the per-file check below
+            # remains the authority on what is counted.
+            row_filter = convert_row_filter(pushdowns._to_pypushdowns(), self._iceberg_schema)
+            iceberg_tasks = self._iceberg_table.scan(
+                row_filter=row_filter, limit=None, snapshot_id=self._snapshot_id
+            ).plan_files()
             total_count = 0
 
-            # Aggregate row counts from all data files
+            # Aggregate row counts from all data files. `partition_filters` holds the
+            # predicates the optimizer resolved against partition values alone and then
+            # dropped from `filters`, so applying them here is what keeps the count honest.
+            # Partition records are stored whole, unlike the truncated column bounds
+            # PyIceberg prunes on, so this check is exact: every row of a surviving file
+            # matches the predicate.
+            required_fields = (
+                _ColumnVisitor().visit(pushdowns.partition_filters)
+                if pushdowns.partition_filters is not None
+                else set()
+            )
+
             for task in iceberg_tasks:
                 data_file = task.file
+                if pushdowns.partition_filters is not None:
+                    pspec = self._iceberg_record_to_partition_spec(
+                        self._iceberg_table.specs()[data_file.spec_id], data_file.partition
+                    )
+                    # A file written under an older spec need not carry the fields the
+                    # predicate partitions on: partition evolution can add a field long
+                    # after data was written without it. Such a file mixes matching and
+                    # non-matching rows, so its rows have to be read to be counted.
+                    if pspec is None or not required_fields.issubset(pspec.schema().column_names()):
+                        yield from self._create_regular_tasks(pushdowns)
+                        return
+                    if len(pspec.filter(ExpressionsProjection([pushdowns.partition_filters]))) == 0:
+                        continue
                 total_count += data_file.record_count
 
             result_schema = Schema.from_pyarrow_schema(pa.schema([pa.field(field_name, pa.uint64())]))
