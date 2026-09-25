@@ -862,6 +862,10 @@ fn try_create_accumulator(
 ///
 /// Uses schema-level type inference (`to_field`) instead of expression evaluation
 /// to avoid materializing computed columns just for a dtype check.
+///
+/// `VarPartial` (the first stage of `Var`/`Stddev`) is deliberately absent: accumulators are
+/// single-pass streaming, variance needs two passes, so inlining it would make the result
+/// depend on which path the planner picked.
 pub(super) fn can_inline_agg(to_agg: &[BoundAggExpr], source: &RecordBatch) -> bool {
     // Quick check: bail immediately if any agg type isn't supported.
     if !to_agg.iter().all(|e| {

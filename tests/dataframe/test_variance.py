@@ -44,6 +44,9 @@ TESTS = [
     [nums := [None, 100, None], var(nums, ddof=0), var(nums, ddof=1)],
     [nums := [1, 2, 3, 4, 5], var(nums, ddof=0), var(nums, ddof=1)],
     [nums := [None] * 10 + [100], var(nums, ddof=0), var(nums, ddof=1)],
+    # Large mean, tiny spread: E(x^2) - E(x)^2 collapses to 0 here (see #7468).
+    [nums := [1e9 + 1, 1e9 + 2, 1e9 + 3], var(nums, ddof=0), var(nums, ddof=1)],
+    [nums := [1e12, 1e12 + 1, 1e12 + 2], var(nums, ddof=0), var(nums, ddof=1)],
 ]
 
 
@@ -176,6 +179,8 @@ GROUPED_TESTS = [
     [rows := [("k0", 100), ("k0", 100), ("k0", 100)], *grouped_var(rows)],
     [rows := [("k0", 0), ("k0", 1), ("k0", 2)], *grouped_var(rows)],
     [rows := [("k0", None), ("k0", None), ("k0", 100)], *grouped_var(rows)],
+    # Large mean, plus a single-row group that must stay NULL at ddof=1 (see #7468).
+    [rows := [("k0", 1e9 + 1), ("k0", 1e9 + 2), ("k1", 1e9 + 3)], *grouped_var(rows)],
 ]
 
 

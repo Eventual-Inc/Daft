@@ -1,9 +1,12 @@
 use common_error::DaftResult;
-use daft_core::prelude::{CountMode, DataType, Field, Schema};
+use daft_core::{
+    prelude::{CountMode, DataType, Field, Schema},
+    utils::stats::{VAR_PARTIAL_COUNT_FIELD, VAR_PARTIAL_M2_FIELD},
+};
 use daft_dsl::{
     AggExpr, ApproxPercentileParams, ExprRef, SketchType, bound_col,
     expr::bound_expr::{BoundAggExpr, BoundExpr},
-    functions::agg::merge_mean,
+    functions::{agg::merge_mean, struct_::get as struct_get},
     lit, null_lit,
 };
 use daft_functions::numeric::sqrt;
@@ -187,76 +190,43 @@ pub fn populate_aggregation_stages_bound_with_schema(
                     second_stage!(AggExpr::Percentile(percentile_input, percentage.clone()));
                 final_stage(global_percentile_col);
             }
-            AggExpr::Stddev(expr, ddof) => {
-                // The stddev calculation we're performing here is:
-                // stddev(X, ddof) = sqrt((E(X^2) - E(X)^2) * n / (n - ddof))
-                // where X is the sub_expr.
+            AggExpr::Var(expr, ddof) | AggExpr::Stddev(expr, ddof) => {
+                // Numerically stable two-stage variance via Chan et al. parallel variance.
                 //
-                // First stage, we compute `sum(X^2)`, `sum(X)` and `count(X)`.
-                // Second stage, we `global_sqsum := sum(sum(X^2))`, `global_sum := sum(sum(X))` and `global_count := sum(count(X))` in order to get the global versions of the first stage.
-                // In the final projection, we then compute:
-                // `sqrt(((global_sqsum / global_count) - (global_sum / global_count) ^ 2) * global_count / (global_count - ddof))`.
-
-                // This is a workaround since we have different code paths for single stage and two stage aggregations.
-                // Currently all Std Dev types will be computed using floats.
+                // Each partition computes `(count, mean, m2)` with a corrected two-pass
+                // (`VarPartial`), where `m2 = sum((x - mean)^2)`. Partitions are merged with
+                // `m2 = m2_a + m2_b + delta^2 * n_a * n_b / (n_a + n_b)` (`MergeVarPartial`),
+                // which only combines deviations and so stays accurate when the mean is large
+                // relative to the variance, unlike `E(x^2) - E(x)^2`. Finalizes
+                // `m2 / (n - ddof)`, square-rooted for stddev.
                 let expr = expr.clone().cast(&DataType::Float64);
 
-                let sum_col = first_stage!(AggExpr::Sum(expr.clone()));
-                let sq_sum_col = first_stage!(AggExpr::Sum(expr.clone().mul(expr.clone())));
-                let count_col = first_stage!(AggExpr::Count(expr, CountMode::Valid));
+                let partial_col = first_stage!(AggExpr::VarPartial(expr));
+                let merged_col = second_stage!(AggExpr::MergeVarPartial(partial_col));
 
-                let global_sum_col = second_stage!(AggExpr::Sum(sum_col));
-                let global_sq_sum_col = second_stage!(AggExpr::Sum(sq_sum_col));
-                let global_count_col = second_stage!(AggExpr::Sum(count_col));
-
-                let n = global_count_col.clone().cast(&DataType::Float64);
-                let sq_mean = global_sq_sum_col.div(n.clone());
-                let mean = global_sum_col.clone().div(n.clone());
-                let mean_sq = mean.clone().mul(mean);
-                let pop_var = sq_mean.sub(mean_sq);
+                let n = struct_get(merged_col.clone(), VAR_PARTIAL_COUNT_FIELD)
+                    .cast(&DataType::Float64);
+                let m2 = struct_get(merged_col, VAR_PARTIAL_M2_FIELD);
 
                 let ddof_expr = lit(*ddof as f64);
-                let adjusted = pop_var.mul(n.clone()).div(n.clone().sub(ddof_expr.clone()));
-                let result = n
-                    .clone()
-                    .lt_eq(ddof_expr)
-                    .if_else(null_lit(), sqrt::sqrt(adjusted));
+                let var = m2.div(n.clone().sub(ddof_expr.clone()));
+                let var = n.lt_eq(ddof_expr).if_else(null_lit(), var);
 
-                final_stage(result);
+                final_stage(if matches!(agg_expr.as_ref(), AggExpr::Stddev(..)) {
+                    sqrt::sqrt(var)
+                } else {
+                    var
+                });
             }
-            AggExpr::Var(expr, ddof) => {
-                // The variance calculation we're performing here is:
-                // var(X, ddof) = (E(X^2) - E(X)^2) * n / (n - ddof)
-                // where X is the sub_expr.
-                //
-                // First stage, we compute `sum(X^2)`, `sum(X)` and `count(X)`.
-                // Second stage, we get global versions: `global_sqsum`, `global_sum`, `global_count`.
-                // In the final projection, we compute:
-                // ((global_sqsum / global_count) - (global_sum / global_count) ^ 2) * global_count / (global_count - ddof)
-
-                let expr = expr.clone().cast(&DataType::Float64);
-
-                let sum_col = first_stage!(AggExpr::Sum(expr.clone()));
-                let sq_sum_col = first_stage!(AggExpr::Sum(expr.clone().mul(expr.clone())));
-                let count_col = first_stage!(AggExpr::Count(expr, CountMode::Valid));
-
-                let global_sum_col = second_stage!(AggExpr::Sum(sum_col));
-                let global_sq_sum_col = second_stage!(AggExpr::Sum(sq_sum_col));
-                let global_count_col = second_stage!(AggExpr::Sum(count_col));
-
-                // Population variance = (sqsum/n - (sum/n)^2)
-                let n = global_count_col.clone().cast(&DataType::Float64);
-                let sq_mean = global_sq_sum_col.div(n.clone());
-                let mean = global_sum_col.clone().div(n.clone());
-                let mean_sq = mean.clone().mul(mean);
-                let pop_var = sq_mean.sub(mean_sq);
-
-                // Adjust for ddof: sample_var = pop_var * n / (n - ddof)
-                let ddof_expr = lit(*ddof as f64);
-                let adjusted = pop_var.mul(n.clone()).div(n.clone().sub(ddof_expr.clone()));
-                let result = n.clone().lt_eq(ddof_expr).if_else(null_lit(), adjusted);
-
-                final_stage(result);
+            AggExpr::VarPartial(expr) => {
+                let partial_col = first_stage!(AggExpr::VarPartial(expr.clone()));
+                let merged_col = second_stage!(AggExpr::MergeVarPartial(partial_col));
+                final_stage(merged_col);
+            }
+            AggExpr::MergeVarPartial(expr) => {
+                let merged_col = first_stage!(AggExpr::MergeVarPartial(expr.clone()));
+                let global_merged_col = second_stage!(AggExpr::MergeVarPartial(merged_col));
+                final_stage(global_merged_col);
             }
             AggExpr::Min(expr) => {
                 let min_col = first_stage!(AggExpr::Min(expr.clone()));
@@ -439,4 +409,42 @@ pub fn populate_aggregation_stages_bound_with_schema(
         (second_stage_aggs.into_iter().collect(), second_stage_schema),
         final_exprs,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use daft_core::{
+        prelude::{DataType, Field, Schema},
+        utils::stats::var_partial_dtype,
+    };
+    use daft_dsl::{AggExpr, expr::bound_expr::BoundAggExpr, resolved_col};
+
+    use super::populate_aggregation_stages_bound;
+
+    fn lower(agg: AggExpr, schema: &Schema) -> (Vec<BoundAggExpr>, Vec<BoundAggExpr>, usize) {
+        let bound = BoundAggExpr::try_new(agg, schema).unwrap();
+        let (first, second, finals) =
+            populate_aggregation_stages_bound(&[bound], schema, &[]).unwrap();
+        (first, second, finals.len())
+    }
+
+    #[test]
+    fn test_var_partial_stages_are_self_lowering() {
+        // Flotilla re-lowers the aggs it hands to each Swordfish task, so the partial
+        // variants must be lowerable themselves, like `ApproxSketch`/`MergeSketch`.
+        let value_schema = Schema::new(vec![Field::new("a", DataType::Float64)]);
+        let (first, second, num_finals) =
+            lower(AggExpr::VarPartial(resolved_col("a")), &value_schema);
+        assert!(matches!(first[0].as_ref(), AggExpr::VarPartial(_)));
+        assert!(matches!(second[0].as_ref(), AggExpr::MergeVarPartial(_)));
+        assert_eq!(num_finals, 1);
+
+        // Merging is associative, so `MergeVarPartial` lowers to itself on both stages.
+        let partial_schema = Schema::new(vec![Field::new("a", var_partial_dtype())]);
+        let (first, second, num_finals) =
+            lower(AggExpr::MergeVarPartial(resolved_col("a")), &partial_schema);
+        assert!(matches!(first[0].as_ref(), AggExpr::MergeVarPartial(_)));
+        assert!(matches!(second[0].as_ref(), AggExpr::MergeVarPartial(_)));
+        assert_eq!(num_finals, 1);
+    }
 }
