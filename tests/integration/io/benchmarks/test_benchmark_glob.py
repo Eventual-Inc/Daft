@@ -99,7 +99,7 @@ def generate_right_skew_dirs_partitioned_data():
     ]
     other_partition_paths = [
         "/".join(f"part_col_{i}={val}" for i, val in enumerate([first_level_val, *part_vals])) + f"/{i}.parquet"
-        for first_level_val in range(0, 9)
+        for first_level_val in range(9)
         for part_vals in itertools.product([str(i) for i in range(8)], repeat=2)
         for i in range(10)
     ]

@@ -186,6 +186,37 @@ def test_sql_read_iceberg_uses_default_io_config(tmp_path, monkeypatch):
         catalog.engine.dispose()
 
 
+def test_sql_read_iceberg_accepts_named_path(tmp_path):
+    """`read_iceberg` takes the metadata location positionally or as a named `path` argument.
+
+    The other table functions (`read_parquet`, `read_csv`, `read_json`) already accept both forms.
+    """
+    catalog = SqlCatalog(
+        "default",
+        uri=f"sqlite:///{tmp_path}/pyiceberg_catalog.db",
+        warehouse=f"file://{tmp_path}",
+    )
+    try:
+        catalog.create_namespace("default")
+        table = catalog.create_table("default.t_named", Schema(NestedField(1, "x", LongType())))
+        daft.from_pydict({"x": [1, 2, 3]}).write_iceberg(table)
+        table.refresh()
+        metadata_location = _metadata_path(table.metadata_location)
+
+        positional = daft.sql(f"SELECT * FROM read_iceberg('{metadata_location}')")
+        named = daft.sql(f"SELECT * FROM read_iceberg(path => '{metadata_location}')")
+        assert named.sort("x").to_pydict() == positional.sort("x").to_pydict() == {"x": [1, 2, 3]}
+    finally:
+        catalog.engine.dispose()
+
+
+def test_sql_read_iceberg_missing_path_raises():
+    """A missing path is a planner error, not a Rust panic surfacing as PanicException."""
+    with pytest.raises(Exception, match="path is required for `read_iceberg`") as exc_info:
+        daft.sql("SELECT * FROM read_iceberg()")
+    assert exc_info.type.__name__ == "InvalidSQLException"
+
+
 @pytest.mark.skip(
     "invoke manually via `uv run tests/sql/test_table_functions/test_read_iceberg.py <metadata_location>`"
 )

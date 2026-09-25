@@ -26,6 +26,7 @@ log = {workspace = true}
 opendal = {version = "0.58", default-features = false, features = [
   "executors-tokio",  # Use tokio for async execution
   "http-transport-reqwest",  # Reqwest HTTP transport (required for cloud services in 0.58+)
+  "layers-timeout",  # TimeoutLayer guarding against stalled IO (no default timeouts otherwise)
   "services-oss",  # Alibaba Cloud Object Storage Service
   "services-cos",  # Tencent Cloud Object Storage
   "services-obs",  # Huawei Cloud Object Storage
@@ -56,6 +57,9 @@ version = "0.12.19"
 
 [dev-dependencies]
 md5 = "0.8.0"
+opendal = {version = "0.58", default-features = false, features = [
+  "services-http"  # HTTP backend (used for stalled-response timeout tests)
+]}
 tempfile = "3.23.0"
 
 [features]

@@ -145,7 +145,6 @@ pub struct DaftExecutionConfig {
     pub pre_shuffle_merge_partition_threshold: usize,
     pub scantask_max_parallel: usize,
     pub native_parquet_writer: bool,
-    pub min_cpu_per_task: f64,
     pub actor_udf_ready_timeout: usize,
     pub maintain_order: bool,
     pub enable_dynamic_batching: bool,
@@ -192,7 +191,6 @@ impl Default for DaftExecutionConfig {
             pre_shuffle_merge_partition_threshold: 200,
             scantask_max_parallel: 8,
             native_parquet_writer: true,
-            min_cpu_per_task: 0.5,
             actor_udf_ready_timeout: 120,
             maintain_order: true,
             enable_dynamic_batching: false,
@@ -208,7 +206,6 @@ impl DaftExecutionConfig {
     const ENV_DAFT_SHUFFLE_ALGORITHM: &'static str = "DAFT_SHUFFLE_ALGORITHM";
     const ENV_DAFT_SCANTASK_MAX_PARALLEL: &'static str = "DAFT_SCANTASK_MAX_PARALLEL";
     const ENV_DAFT_NATIVE_PARQUET_WRITER: &'static str = "DAFT_NATIVE_PARQUET_WRITER";
-    const ENV_DAFT_MIN_CPU_PER_TASK: &'static str = "DAFT_MIN_CPU_PER_TASK";
     const ENV_DAFT_ACTOR_UDF_READY_TIMEOUT: &'static str = "DAFT_ACTOR_UDF_READY_TIMEOUT";
     const ENV_PARQUET_INFLATION_FACTOR: &'static str = "DAFT_PARQUET_INFLATION_FACTOR";
     const ENV_CSV_INFLATION_FACTOR: &'static str = "DAFT_CSV_INFLATION_FACTOR";
@@ -236,16 +233,6 @@ impl DaftExecutionConfig {
 
         if let Some(val) = parse_bool_from_env(Self::ENV_DAFT_NATIVE_PARQUET_WRITER) {
             cfg.native_parquet_writer = val;
-        }
-
-        if let Some(val) =
-            parse_number_from_env(Self::ENV_DAFT_MIN_CPU_PER_TASK, cfg.min_cpu_per_task)
-        {
-            log::warn!(
-                "{} is deprecated as of v0.7.0 and has no effect on distributed scheduling. It will be removed from v0.8.0 onwards.",
-                Self::ENV_DAFT_MIN_CPU_PER_TASK
-            );
-            cfg.min_cpu_per_task = val;
         }
 
         if let Some(val) = parse_number_from_env(
@@ -511,28 +498,6 @@ mod tests {
 
             unsafe {
                 std::env::remove_var(DaftExecutionConfig::ENV_DAFT_NATIVE_PARQUET_WRITER);
-            }
-        }
-
-        // ENV_DAFT_MIN_CPU_PER_TASK
-        {
-            let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.min_cpu_per_task, 0.5);
-
-            unsafe {
-                std::env::set_var(DaftExecutionConfig::ENV_DAFT_MIN_CPU_PER_TASK, "0.1");
-            }
-            let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.min_cpu_per_task, 0.1);
-
-            unsafe {
-                std::env::set_var(DaftExecutionConfig::ENV_DAFT_MIN_CPU_PER_TASK, "invalid");
-            }
-            let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.min_cpu_per_task, 0.5);
-
-            unsafe {
-                std::env::remove_var(DaftExecutionConfig::ENV_DAFT_MIN_CPU_PER_TASK);
             }
         }
 

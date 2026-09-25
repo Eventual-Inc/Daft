@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING
 
 from pyiceberg.expressions import AlwaysTrue
 from pyiceberg.expressions import BooleanExpression as IcebergBooleanExpression
+from pyiceberg.expressions.parser import parse as parse_iceberg_predicate
+from pyiceberg.expressions.visitors import bind
 
 from daft.daft import PyExpr
 from daft.expressions.expressions import Expression
@@ -118,3 +120,31 @@ def convert_filter(filter: PyExpr | None, schema: IcebergSchema) -> IcebergBoole
     except Exception as e:
         logger.warning("Could not convert filter to Iceberg expression, skipping pushdown: %s", e)
         return None
+
+
+def convert_overwrite_filter(
+    overwrite_filter: Expression | PyExpr | str,
+    schema: IcebergSchema,
+) -> IcebergBooleanExpression:
+    """Normalize a user-provided overwrite filter into an unbound Iceberg BooleanExpression.
+
+    Unlike the read-side helpers, an unconvertible predicate raises instead of falling back
+    to a best-effort result: the filter decides which rows an overwrite deletes, so widening
+    it to ``AlwaysTrue`` or dropping it would destroy data.
+
+    The expression is also bound against ``schema`` so that unknown column references are
+    reported before any data files are written.
+    """
+    if isinstance(overwrite_filter, str):
+        expr = parse_iceberg_predicate(overwrite_filter)
+    elif isinstance(overwrite_filter, (Expression, PyExpr)):
+        expr = convert_expression_to_iceberg(overwrite_filter, schema)
+    else:
+        raise TypeError(
+            "overwrite_filter must be a Daft Expression or an Iceberg predicate string, "
+            f"got {type(overwrite_filter).__name__}"
+        )
+
+    # Raises if the predicate references fields that are not in the table schema.
+    bind(schema, expr, case_sensitive=True)
+    return expr
