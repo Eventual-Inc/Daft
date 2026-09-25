@@ -64,6 +64,37 @@ pub fn build_offset_row_selection(offset: usize, total_rows: usize) -> RowSelect
     }
 }
 
+/// Sorted, deduplicated view of positional delete indices.
+///
+/// Already-sorted input is borrowed, not copied. The sortedness probe is O(n), so
+/// hoist this out of per-row-group loops.
+pub fn normalize_deletes(delete_rows: &[i64]) -> Cow<'_, [i64]> {
+    debug_assert!(
+        delete_rows.iter().all(|&r| r >= 0),
+        "delete_rows contains negative values"
+    );
+    if delete_rows.windows(2).any(|w| w[0] >= w[1]) {
+        let mut sorted = delete_rows.to_vec();
+        sorted.sort_unstable();
+        sorted.dedup();
+        Cow::Owned(sorted)
+    } else {
+        Cow::Borrowed(delete_rows)
+    }
+}
+
+/// Number of deletes in the file-global range `[lo, hi)` of an already-normalized
+/// slice. `sorted` must be sorted ascending and non-negative — otherwise the
+/// `(r as usize)` comparison is not monotonic over it and the result is garbage.
+fn count_deletes_in_sorted_range(sorted: &[i64], lo: usize, hi: usize) -> usize {
+    if sorted.is_empty() || hi <= lo {
+        return 0;
+    }
+    let start = sorted.partition_point(|&r| (r as usize) < lo);
+    let end = sorted.partition_point(|&r| (r as usize) < hi);
+    end - start
+}
+
 /// Build a `RowSelection` for a single row group from Iceberg positional
 /// delete indices.
 pub fn build_single_rg_delete_selection(
@@ -71,19 +102,7 @@ pub fn build_single_rg_delete_selection(
     rg_global_start: usize,
     rg_rows: usize,
 ) -> RowSelection {
-    debug_assert!(
-        delete_rows.iter().all(|&r| r >= 0),
-        "delete_rows contains negative values"
-    );
-    // Normalize: ensure sorted+unique (callers typically pass sorted data).
-    let normalized: Cow<'_, [i64]> = if delete_rows.windows(2).any(|w| w[0] >= w[1]) {
-        let mut sorted = delete_rows.to_vec();
-        sorted.sort_unstable();
-        sorted.dedup();
-        Cow::Owned(sorted)
-    } else {
-        Cow::Borrowed(delete_rows)
-    };
+    let normalized = normalize_deletes(delete_rows);
 
     let rg_end = rg_global_start + rg_rows;
     let lo = normalized.partition_point(|&r| (r as usize) < rg_global_start);
@@ -236,6 +255,9 @@ pub fn validate_requested_row_groups(
 ///   limit only after filtering, so later RGs may still be needed)
 /// - `predicate` stats: drop RGs the min/max stats prove can't match
 ///
+/// `delete_rows` are Iceberg positional deletes, which do not reach the consumer
+/// and so do not count against the `num_rows` budget.
+///
 /// Returns RG indices in original (file) order.
 #[allow(clippy::too_many_arguments)]
 pub fn prune_row_groups(
@@ -243,6 +265,7 @@ pub fn prune_row_groups(
     requested_row_groups: Option<&[i64]>,
     start_offset: usize,
     num_rows: Option<usize>,
+    delete_rows: Option<&[i64]>,
     predicate: Option<&ExprRef>,
     schema: &Schema,
     uri: &str,
@@ -261,6 +284,9 @@ pub fn prune_row_groups(
         rg_file_start.push(acc);
         acc += metadata.row_group(rg_idx).num_rows() as usize;
     }
+
+    // Normalize once, not once per candidate row group.
+    let normalized_deletes = delete_rows.map(normalize_deletes);
 
     let mut rows_remaining: i64 = if predicate.is_none() {
         num_rows.map(|n| n as i64).unwrap_or(i64::MAX)
@@ -303,12 +329,107 @@ pub fn prune_row_groups(
             }
         }
         result.push(rg_idx);
-        let contrib = if rg_start < start_offset {
-            rg_end - start_offset
-        } else {
-            rg_rows
-        };
+        let visible_start = rg_start.max(start_offset);
+        let deleted = normalized_deletes.as_deref().map_or(0, |d| {
+            count_deletes_in_sorted_range(d, visible_start, rg_end)
+        });
+        let contrib = (rg_end - visible_start).saturating_sub(deleted);
         rows_remaining = rows_remaining.saturating_sub(contrib as i64);
     }
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use daft_core::prelude::Schema;
+    use parquet::{
+        file::metadata::{FileMetaData, ParquetMetaData, RowGroupMetaData},
+        schema::types::{SchemaDescriptor, Type},
+    };
+
+    use super::{count_deletes_in_sorted_range, normalize_deletes, prune_row_groups};
+
+    /// `ParquetMetaData` with `rows_per_group.len()` row groups and no statistics.
+    fn metadata_with_row_groups(rows_per_group: &[i64]) -> ParquetMetaData {
+        let schema = Arc::new(Type::group_type_builder("schema").build().unwrap());
+        let descr = Arc::new(SchemaDescriptor::new(schema));
+        let row_groups = rows_per_group
+            .iter()
+            .map(|&n| {
+                RowGroupMetaData::builder(descr.clone())
+                    .set_num_rows(n)
+                    .build()
+                    .unwrap()
+            })
+            .collect();
+        let file_metadata =
+            FileMetaData::new(2, rows_per_group.iter().sum(), None, None, descr, None);
+        ParquetMetaData::new(file_metadata, row_groups)
+    }
+
+    #[test]
+    fn counts_deletes_inside_range_only() {
+        let deletes = [0i64, 1, 2, 50, 51, 199];
+        assert_eq!(count_deletes_in_sorted_range(&deletes, 0, 50), 3);
+        assert_eq!(count_deletes_in_sorted_range(&deletes, 50, 100), 2);
+        assert_eq!(count_deletes_in_sorted_range(&deletes, 100, 150), 0);
+        assert_eq!(count_deletes_in_sorted_range(&deletes, 150, 200), 1);
+    }
+
+    #[test]
+    fn range_bounds_are_half_open() {
+        let deletes = [10i64];
+        assert_eq!(count_deletes_in_sorted_range(&deletes, 10, 11), 1);
+        assert_eq!(count_deletes_in_sorted_range(&deletes, 11, 20), 0);
+        assert_eq!(count_deletes_in_sorted_range(&deletes, 0, 10), 0);
+    }
+
+    #[test]
+    fn empty_or_inverted_range_counts_nothing() {
+        assert_eq!(count_deletes_in_sorted_range(&[], 0, 100), 0);
+        assert_eq!(count_deletes_in_sorted_range(&[5i64], 10, 10), 0);
+        assert_eq!(count_deletes_in_sorted_range(&[5i64], 10, 5), 0);
+    }
+
+    #[test]
+    fn unsorted_and_duplicate_deletes_are_normalized() {
+        let deletes = [51i64, 0, 50, 0, 2, 1];
+        let normalized = normalize_deletes(&deletes);
+        assert_eq!(&*normalized, &[0i64, 1, 2, 50, 51]);
+        assert_eq!(count_deletes_in_sorted_range(&normalized, 0, 50), 3);
+        assert_eq!(count_deletes_in_sorted_range(&normalized, 50, 100), 2);
+        // Already-sorted input is borrowed, not copied.
+        assert!(matches!(
+            normalize_deletes(&[0i64, 1, 2]),
+            std::borrow::Cow::Borrowed(_)
+        ));
+    }
+
+    #[test]
+    fn limit_budget_counts_only_visible_rows() {
+        let metadata = metadata_with_row_groups(&[50, 50, 50, 50]);
+        let schema = Schema::empty();
+        let deletes: Vec<i64> = (0..40).collect();
+
+        // Without deletes a limit of 20 is satisfied by RG0 alone.
+        let kept =
+            prune_row_groups(&metadata, None, 0, Some(20), None, None, &schema, "t").unwrap();
+        assert_eq!(kept, vec![0]);
+
+        // RG0 only yields 10 visible rows, so RG1 is still needed.
+        let kept = prune_row_groups(
+            &metadata,
+            None,
+            0,
+            Some(20),
+            Some(&deletes),
+            None,
+            &schema,
+            "t",
+        )
+        .unwrap();
+        assert_eq!(kept, vec![0, 1]);
+    }
 }
