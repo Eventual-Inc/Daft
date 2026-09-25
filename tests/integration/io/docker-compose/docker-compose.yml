@@ -10,13 +10,13 @@ services:
     # this service is isolated to the integration-test environment.
     - ./seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro
     ports:
-    - 9000:9000
+    - "127.0.0.1:9000:9000"
     environment:
       AWS_ACCESS_KEY_ID: minioadmin
       AWS_SECRET_ACCESS_KEY: minioadmin
     command: [mini, -dir=/data, -s3.port=9000, -s3.config=/etc/seaweedfs/s3.json]
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9333/cluster/status"]
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://127.0.0.1:9000/"]
       interval: 1s
       timeout: 2s
       retries: 20

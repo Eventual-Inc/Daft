@@ -76,10 +76,10 @@ services:
         aliases:
         - warehouse.seaweedfs
     ports:
-    - 9000:9000
+    - "127.0.0.1:9000:9000"
     command: [mini, -dir=/data, -s3.port=9000, -s3.domainName=seaweedfs]
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9333/cluster/status"]
+      test: ["CMD-SHELL", "curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:9000/ | grep -qx 403"]
       interval: 1s
       timeout: 2s
       retries: 20

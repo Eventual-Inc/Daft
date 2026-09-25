@@ -35,13 +35,13 @@ services:
     volumes:
     - gravitino-seaweedfs-data:/data
     ports:
-    - "${MINIO_PORT:-9001}:9000"
+    - "127.0.0.1:${SEAWEED_PORT:-9001}:9000"
     environment:
       AWS_ACCESS_KEY_ID: minioadmin
       AWS_SECRET_ACCESS_KEY: minioadmin
     command: [mini, -dir=/data, -s3.port=9000]
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9333/cluster/status"]
+      test: ["CMD-SHELL", "curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:9000/ | grep -qx 403"]
       interval: 1s
       timeout: 2s
       retries: 20
