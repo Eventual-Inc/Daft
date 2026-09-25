@@ -140,6 +140,13 @@ impl BlockingSink for WindowOrderByOnlySink {
                                 WindowExpr::DenseRank => {
                                     sorted.window_rank_col(name, &params.order_by, true)
                                 }
+                                WindowExpr::CumeDist => {
+                                    sorted.window_cume_dist_col(name, &params.order_by)
+                                }
+                                WindowExpr::PercentRank => {
+                                    sorted.window_percent_rank_col(name, &params.order_by)
+                                }
+                                WindowExpr::Ntile(n) => sorted.window_ntile_col(name, *n),
                                 _ => Err(DaftError::ValueError(
                                     format!(
                                         "Unsupported window function for order by only: {:?}",

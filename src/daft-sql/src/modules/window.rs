@@ -10,10 +10,9 @@ pub struct SQLRowNumber;
 
 impl SQLFunction for SQLRowNumber {
     fn to_expr(&self, inputs: &[FunctionArg], _planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
-        assert!(
-            inputs.is_empty(),
-            "ROW_NUMBER() does not take any arguments"
-        );
+        if !inputs.is_empty() {
+            invalid_operation_err!("ROW_NUMBER() does not take any arguments");
+        }
         Ok(Expr::WindowFunction(WindowExpr::RowNumber).arced())
     }
 
@@ -32,7 +31,9 @@ pub struct SQLRank;
 
 impl SQLFunction for SQLRank {
     fn to_expr(&self, inputs: &[FunctionArg], _planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
-        assert!(inputs.is_empty(), "RANK() does not take any arguments");
+        if !inputs.is_empty() {
+            invalid_operation_err!("RANK() does not take any arguments");
+        }
         Ok(Expr::WindowFunction(WindowExpr::Rank).arced())
     }
 
@@ -49,10 +50,9 @@ pub struct SQLDenseRank;
 
 impl SQLFunction for SQLDenseRank {
     fn to_expr(&self, inputs: &[FunctionArg], _planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
-        assert!(
-            inputs.is_empty(),
-            "DENSE_RANK() does not take any arguments"
-        );
+        if !inputs.is_empty() {
+            invalid_operation_err!("DENSE_RANK() does not take any arguments");
+        }
         Ok(Expr::WindowFunction(WindowExpr::DenseRank).arced())
     }
 
@@ -69,10 +69,9 @@ pub struct SQLLag;
 
 impl SQLFunction for SQLLag {
     fn to_expr(&self, inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
-        assert!(
-            !inputs.is_empty() && inputs.len() <= 3,
-            "LAG() takes 1, 2 or 3 arguments: LAG(value, offset, default)"
-        );
+        if inputs.is_empty() || inputs.len() > 3 {
+            invalid_operation_err!("LAG() takes 1, 2 or 3 arguments: LAG(value, offset, default)");
+        }
 
         let value = planner.plan_function_arg(&inputs[0])?.into_inner();
 
@@ -118,10 +117,11 @@ pub struct SQLLead;
 
 impl SQLFunction for SQLLead {
     fn to_expr(&self, inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
-        assert!(
-            !inputs.is_empty() && inputs.len() <= 3,
-            "LEAD() takes 1, 2 or 3 arguments: LEAD(value, offset, default)"
-        );
+        if inputs.is_empty() || inputs.len() > 3 {
+            invalid_operation_err!(
+                "LEAD() takes 1, 2 or 3 arguments: LEAD(value, offset, default)"
+            );
+        }
 
         let value = planner.plan_function_arg(&inputs[0])?.into_inner();
 
@@ -161,6 +161,196 @@ impl SQLFunction for SQLLead {
     }
 }
 
+pub struct SQLCumeDist;
+
+impl SQLFunction for SQLCumeDist {
+    fn to_expr(&self, inputs: &[FunctionArg], _planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
+        if !inputs.is_empty() {
+            invalid_operation_err!("CUME_DIST() does not take any arguments");
+        }
+        Ok(Expr::WindowFunction(WindowExpr::CumeDist).arced())
+    }
+
+    fn docstrings(&self, alias: &str) -> String {
+        format!(
+            "{alias}() OVER(... ORDER BY ...) - Returns the cumulative distribution of a value within a partition"
+        )
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &[]
+    }
+}
+
+pub struct SQLPercentRank;
+
+impl SQLFunction for SQLPercentRank {
+    fn to_expr(&self, inputs: &[FunctionArg], _planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
+        if !inputs.is_empty() {
+            invalid_operation_err!("PERCENT_RANK() does not take any arguments");
+        }
+        Ok(Expr::WindowFunction(WindowExpr::PercentRank).arced())
+    }
+
+    fn docstrings(&self, alias: &str) -> String {
+        format!(
+            "{alias}() OVER(... ORDER BY ...) - Returns the relative rank of a row, (rank - 1) / (total_rows - 1)"
+        )
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &[]
+    }
+}
+
+pub struct SQLNtile;
+
+impl SQLFunction for SQLNtile {
+    fn to_expr(&self, inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
+        if inputs.len() != 1 {
+            invalid_operation_err!("NTILE() takes exactly 1 argument: NTILE(n)");
+        }
+        let n_expr = planner.plan_function_arg(&inputs[0])?.into_inner();
+        let n = if let Some(v) = n_expr.as_literal().and_then(|lit| lit.as_i64()) {
+            v
+        } else {
+            invalid_operation_err!("ntile(n): n must be a literal integer")
+        };
+        if n < 1 {
+            invalid_operation_err!("ntile(n): n must be >= 1");
+        }
+        Ok(Expr::WindowFunction(WindowExpr::Ntile(n)).arced())
+    }
+
+    fn docstrings(&self, alias: &str) -> String {
+        format!(
+            "{alias}(n) OVER(... ORDER BY ...) - Splits an ordered partition into `n` buckets and returns the bucket number (1-based)"
+        )
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["n"]
+    }
+}
+
+pub struct SQLFirstValue;
+
+impl SQLFunction for SQLFirstValue {
+    fn to_expr(&self, inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
+        if inputs.is_empty() || inputs.len() > 2 {
+            invalid_operation_err!(
+                "FIRST_VALUE() takes 1 or 2 arguments: FIRST_VALUE(value [, ignore_nulls])"
+            );
+        }
+        let value = planner.plan_function_arg(&inputs[0])?.into_inner();
+        let ignore_nulls = if inputs.len() == 2 {
+            let ig = planner.plan_function_arg(&inputs[1])?.into_inner();
+            ig.as_literal()
+                .and_then(|lit| lit.as_bool())
+                .ok_or_else(|| crate::error::PlannerError::InvalidOperation {
+                    message:
+                        "first_value(value, ignore_nulls): ignore_nulls must be a boolean literal"
+                            .to_string(),
+                })?
+        } else {
+            false
+        };
+        Ok(Expr::WindowFunction(WindowExpr::FirstValue(value, ignore_nulls)).arced())
+    }
+
+    fn docstrings(&self, alias: &str) -> String {
+        format!(
+            "{alias}(value [, ignore_nulls]) OVER(... ROWS BETWEEN ...) - Returns the first value in the window frame"
+        )
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["value", "ignore_nulls"]
+    }
+}
+
+pub struct SQLLastValue;
+
+impl SQLFunction for SQLLastValue {
+    fn to_expr(&self, inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
+        if inputs.is_empty() || inputs.len() > 2 {
+            invalid_operation_err!(
+                "LAST_VALUE() takes 1 or 2 arguments: LAST_VALUE(value [, ignore_nulls])"
+            );
+        }
+        let value = planner.plan_function_arg(&inputs[0])?.into_inner();
+        let ignore_nulls = if inputs.len() == 2 {
+            let ig = planner.plan_function_arg(&inputs[1])?.into_inner();
+            ig.as_literal()
+                .and_then(|lit| lit.as_bool())
+                .ok_or_else(|| crate::error::PlannerError::InvalidOperation {
+                    message:
+                        "last_value(value, ignore_nulls): ignore_nulls must be a boolean literal"
+                            .to_string(),
+                })?
+        } else {
+            false
+        };
+        Ok(Expr::WindowFunction(WindowExpr::LastValue(value, ignore_nulls)).arced())
+    }
+
+    fn docstrings(&self, alias: &str) -> String {
+        format!(
+            "{alias}(value [, ignore_nulls]) OVER(... ROWS BETWEEN ...) - Returns the last value in the window frame"
+        )
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["value", "ignore_nulls"]
+    }
+}
+
+pub struct SQLNthValue;
+
+impl SQLFunction for SQLNthValue {
+    fn to_expr(&self, inputs: &[FunctionArg], planner: &SQLPlanner) -> SQLPlannerResult<ExprRef> {
+        if inputs.len() < 2 || inputs.len() > 3 {
+            invalid_operation_err!(
+                "NTH_VALUE() takes 2 or 3 arguments: NTH_VALUE(value, n [, ignore_nulls])"
+            );
+        }
+        let value = planner.plan_function_arg(&inputs[0])?.into_inner();
+        let n_expr = planner.plan_function_arg(&inputs[1])?.into_inner();
+        let n = n_expr
+            .as_literal()
+            .and_then(|lit| lit.as_i64())
+            .ok_or_else(|| crate::error::PlannerError::InvalidOperation {
+                message: "nth_value(value, n): n must be a literal integer".to_string(),
+            })?;
+        if n < 1 {
+            invalid_operation_err!("nth_value(value, n): n must be >= 1");
+        }
+        let ignore_nulls = if inputs.len() == 3 {
+            let ig = planner.plan_function_arg(&inputs[2])?.into_inner();
+            ig.as_literal()
+                .and_then(|lit| lit.as_bool())
+                .ok_or_else(|| crate::error::PlannerError::InvalidOperation {
+                    message:
+                        "nth_value(value, n, ignore_nulls): ignore_nulls must be a boolean literal"
+                            .to_string(),
+                })?
+        } else {
+            false
+        };
+        Ok(Expr::WindowFunction(WindowExpr::NthValue(value, n, ignore_nulls)).arced())
+    }
+
+    fn docstrings(&self, alias: &str) -> String {
+        format!(
+            "{alias}(value, n [, ignore_nulls]) OVER(... ROWS BETWEEN ...) - Returns the n-th value (1-based) in the window frame"
+        )
+    }
+
+    fn arg_names(&self) -> &'static [&'static str] {
+        &["value", "n", "ignore_nulls"]
+    }
+}
+
 pub struct SQLModuleWindow;
 
 impl SQLModule for SQLModuleWindow {
@@ -170,5 +360,11 @@ impl SQLModule for SQLModuleWindow {
         registry.add_fn("dense_rank", SQLDenseRank {});
         registry.add_fn("lag", SQLLag {});
         registry.add_fn("lead", SQLLead {});
+        registry.add_fn("cume_dist", SQLCumeDist {});
+        registry.add_fn("percent_rank", SQLPercentRank {});
+        registry.add_fn("ntile", SQLNtile {});
+        registry.add_fn("first_value", SQLFirstValue {});
+        registry.add_fn("last_value", SQLLastValue {});
+        registry.add_fn("nth_value", SQLNthValue {});
     }
 }

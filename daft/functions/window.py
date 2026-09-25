@@ -427,3 +427,116 @@ def last_value(expr: Expression, ignore_nulls: bool = False) -> Expression:
         (Showing first 8 rows)
     """
     return Expression._from_pyexpr(expr._expr.last_value(ignore_nulls))
+
+
+def nth_value(expr: Expression, n: int, ignore_nulls: bool = False) -> Expression:
+    """Returns the n-th value (1-based) in the window frame.
+
+    Must be used with ``over()`` to specify the window partition, order, and frame.
+    When ``ignore_nulls=True``, null values are skipped and the n-th non-null
+    value within the frame is returned. If the frame contains fewer than ``n``
+    qualifying rows, the result for that row is ``None``.
+
+    Args:
+        expr (Expression): The input expression.
+        n (int): The 1-based position to read from the frame. Must be ``>= 1``.
+        ignore_nulls: whether to ignore null values. Defaults to False.
+
+    Returns:
+        Expression: The n-th value in the window frame, or ``None`` if not
+        enough rows are available.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import nth_value
+        >>>
+        >>> df = daft.from_pydict(
+        ...     {
+        ...         "category": ["A", "A", "A", "A", "B", "B", "B", "B"],
+        ...         "time": [1, 2, 3, 4, 1, 2, 3, 4],
+        ...         "value": [10, 20, 30, 40, 100, 200, 300, 400],
+        ...     }
+        ... )
+        >>>
+        >>> window = (
+        ...     daft.Window()
+        ...     .partition_by("category")
+        ...     .order_by("time")
+        ...     .rows_between(daft.Window.unbounded_preceding, daft.Window.unbounded_following)
+        ... )
+        >>> df = df.with_column("nth2", nth_value(df["value"], 2).over(window))
+        >>> df.sort(["category", "time"]).show()  # doctest: +SKIP
+    """
+    if n < 1:
+        raise ValueError(f"nth_value() requires n >= 1, got {n}")
+    return Expression._from_pyexpr(expr._expr.nth_value(int(n), ignore_nulls))
+
+
+def cume_dist() -> Expression:
+    """Return the cumulative distribution within an ordered window partition.
+
+    `cume_dist()` returns, for each row, the fraction of rows whose ``ORDER BY``
+    values are less than or equal to the current row's value. Rows that compare
+    equal under ``ORDER BY`` (peers) share the same ``cume_dist`` value. The
+    result is a ``Float64`` in the range ``(0, 1]``.
+
+    Examples:
+        >>> import daft
+        >>> from daft.window import Window
+        >>> from daft.functions import cume_dist
+        >>> df = daft.from_pydict({"value": [1, 2, 2, 3]})
+        >>> window = Window().order_by("value")
+        >>> df.with_column("cd", cume_dist().over(window)).sort("value").collect()  # doctest: +SKIP
+
+    Returns:
+        Expression: The cumulative distribution of the current row.
+    """
+    return Expression._from_pyexpr(native.cume_dist())
+
+
+def percent_rank() -> Expression:
+    """Return the percent rank within an ordered window partition.
+
+    `percent_rank()` returns ``(rank - 1) / (total_rows - 1)`` where ``rank``
+    matches Spark/ANSI ``RANK()`` (with gaps for ties). When the partition has
+    a single row the result is ``0.0``. The result is a ``Float64``.
+
+    Examples:
+        >>> import daft
+        >>> from daft.window import Window
+        >>> from daft.functions import percent_rank
+        >>> df = daft.from_pydict({"value": [1, 1, 2, 3]})
+        >>> window = Window().order_by("value")
+        >>> df.with_column("pr", percent_rank().over(window)).sort("value").collect()  # doctest: +SKIP
+
+    Returns:
+        Expression: The percent rank of the current row.
+    """
+    return Expression._from_pyexpr(native.percent_rank())
+
+
+def ntile(n: int) -> Expression:
+    """Split an ordered window partition into ``n`` buckets and return the bucket number.
+
+    Buckets are 1-based. Rows are assigned to buckets as evenly as possible: the
+    first ``partition_size mod n`` buckets receive one extra row. Bucket numbers
+    are assigned in ``ORDER BY`` order; tied rows are NOT guaranteed to share
+    the same bucket — this matches Spark and PostgreSQL semantics.
+
+    Args:
+        n: The number of buckets. Must be ``>= 1``.
+
+    Examples:
+        >>> import daft
+        >>> from daft.window import Window
+        >>> from daft.functions import ntile
+        >>> df = daft.from_pydict({"value": [10, 20, 30, 40, 50, 60, 70]})
+        >>> window = Window().order_by("value")
+        >>> df.with_column("bucket", ntile(3).over(window)).sort("value").collect()  # doctest: +SKIP
+
+    Returns:
+        Expression: The 1-based bucket number for the current row.
+    """
+    if n < 1:
+        raise ValueError(f"ntile() requires n >= 1, got {n}")
+    return Expression._from_pyexpr(native.ntile(int(n)))
