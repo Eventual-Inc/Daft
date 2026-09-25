@@ -16,6 +16,7 @@ common-tracing = {path = "src/common/tracing", default-features = false}
 common-version = {path = "src/common/version", default-features = false}
 daft-ai = {path = "src/daft-ai", default-features = false}
 daft-algebra = {path = "src/daft-algebra", default-features = false}
+daft-avro = {path = "src/daft-avro", default-features = false}
 daft-catalog = {path = "src/daft-catalog", default-features = false}
 daft-checkpoint = {path = "src/daft-checkpoint", default-features = false}
 daft-cli = {path = "src/daft-cli", default-features = false}
@@ -77,6 +78,7 @@ python = [
   "common-system-info/python",
   "common-metrics/python",
   "daft-ai/python",
+  "daft-avro/python",
   "daft-catalog/python",
   "daft-checkpoint/python",
   "daft-checkpoint/s3",
@@ -198,6 +200,7 @@ members = [
   "src/common/metrics",
   "src/daft-ai",
   "src/daft-algebra",
+  "src/daft-avro",
   "src/daft-catalog",
   "src/daft-checkpoint",
   "src/daft-context",

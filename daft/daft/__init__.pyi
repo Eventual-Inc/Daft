@@ -251,6 +251,7 @@ class FileFormat(Enum):
     Warc = 4
     Text = 5
     Mcap = 6
+    Avro = 7
 
     def ext(self) -> str: ...
 
@@ -327,6 +328,11 @@ class WarcSourceConfig:
 
     def __init__(self) -> None: ...
 
+class AvroSourceConfig:
+    """Configuration of an Avro data source."""
+
+    def __init__(self) -> None: ...
+
 class McapSourceConfig:
     """Configuration of an MCAP data source."""
 
@@ -378,6 +384,7 @@ class FileFormatConfig:
         | JsonSourceConfig
         | WarcSourceConfig
         | TextSourceConfig
+        | AvroSourceConfig
         | McapSourceConfig
     )
 
@@ -400,6 +407,11 @@ class FileFormatConfig:
     @staticmethod
     def from_mcap_config(config: McapSourceConfig) -> FileFormatConfig:
         """Create an MCAP file format config."""
+        ...
+
+    @staticmethod
+    def from_avro_config(config: AvroSourceConfig) -> FileFormatConfig:
+        """Create an Avro file format config."""
         ...
 
     @staticmethod
