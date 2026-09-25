@@ -229,6 +229,29 @@ def test_str_to_datetime():
     )
 
 
+@pytest.mark.parametrize("input_type", [pa.string(), pa.null()], ids=["utf8", "null"])
+@pytest.mark.parametrize("length", [0, 3])
+@pytest.mark.parametrize(
+    "format, timezone",
+    [
+        pytest.param("%Y-%m-%d %H:%M:%S", None, id="naive_format"),
+        pytest.param("%Y-%m-%dT%H:%M:%S%z", None, id="offset_format"),
+        pytest.param("%Y-%m-%dT%H:%M:%S%z", "Asia/Shanghai", id="offset_format_explicit_tz"),
+        pytest.param("%Y-%m-%d %H:%M:%S", "Asia/Shanghai", id="naive_format_explicit_tz"),
+    ],
+)
+def test_str_to_datetime_all_null_resolve_matches_runtime(format, timezone, length, input_type):
+    # https://github.com/Eventual-Inc/Daft/issues/7470
+    s = Series.from_arrow(pa.array([None] * length, type=input_type), name="col")
+
+    assert_typing_resolve_vs_runtime_behavior(
+        data=[s],
+        expr=col("col").to_datetime(format, timezone),
+        run_kernel=lambda: s.str.to_datetime(format, timezone),
+        resolvable=True,
+    )
+
+
 @pytest.mark.parametrize("remove_punct", [False, True])
 @pytest.mark.parametrize("lowercase", [False, True])
 @pytest.mark.parametrize("nfd_unicode", [False, True])
