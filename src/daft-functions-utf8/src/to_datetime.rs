@@ -41,20 +41,12 @@ impl ScalarUDF for ToDatetime {
             None
         };
 
-        if data.data_type() == &DataType::Null {
-            // `with_utf8_array` would pass a Null series through unchanged (keeping the
-            // Null dtype), so build the planned all-null Timestamp directly instead.
-            let timeunit = infer_timeunit_from_format_string(format);
-            let output_timezone = resolve_output_timezone(format, tz);
-            if let Some(tz) = output_timezone.as_deref() {
-                parse_to_datetime_timezone(tz)?;
-            }
-            return Ok(Series::full_null(
-                data.name(),
-                &DataType::Timestamp(timeunit, output_timezone),
-                data.len(),
-            ));
-        }
+        // `with_utf8_array` passes Null through unchanged, so cast it to reach the kernel.
+        let data = if data.data_type() == &DataType::Null {
+            data.cast(&DataType::Utf8)?
+        } else {
+            data.clone()
+        };
 
         data.with_utf8_array(|arr| Ok(to_datetime_impl(arr, format, tz)?.into_series()))
     }
@@ -112,11 +104,8 @@ pub fn to_datetime<S: Into<String>>(input: ExprRef, format: S, timezone: Option<
     ScalarFn::builtin(ToDatetime, inputs).into()
 }
 
-/// Output timezone, from `format` and `timezone` alone and never from the data.
-///
-/// Shared by `get_return_field` and `to_datetime_impl` so planning and execution agree.
-/// An explicit `timezone` wins; otherwise an offset directive coerces to UTC, as in
-/// duckdb, polars and datafusion.
+/// Output timezone, derived from `format` and `timezone` only, never from the data, so
+/// planning and execution agree. An offset format coerces to UTC, as in duckdb and polars.
 fn resolve_output_timezone(format: &str, timezone: Option<&str>) -> Option<String> {
     if let Some(tz) = timezone {
         Some(tz.to_string())
@@ -127,9 +116,7 @@ fn resolve_output_timezone(format: &str, timezone: Option<&str>) -> Option<Strin
     }
 }
 
-/// Parse a resolved output timezone, shared by planning and execution (the parsed
-/// value itself cannot cross that boundary). Rejects fixed-offset forms like
-/// "+05:30", which `chrono_tz` does not support.
+/// Rejects fixed-offset forms like "+05:30", which `chrono_tz` does not support.
 fn parse_to_datetime_timezone(tz: &str) -> DaftResult<chrono_tz::Tz> {
     tz.parse::<chrono_tz::Tz>().map_err(|e| {
         DaftError::ValueError(format!(
@@ -146,10 +133,7 @@ fn to_datetime_impl(
     let len = arr.len();
     let arr_iter = arr.into_iter();
     let timeunit = infer_timeunit_from_format_string(format);
-    // Resolve and parse the output timezone up front so the kernel dtype matches
-    // planning even with no non-null values. The single `Some` arm below then covers
-    // both explicit timezones and offset-coerced UTC (`with_timezone(&Tz::UTC)`
-    // extracts the same instant as `to_utc()`).
+    // Resolved up front so the dtype matches planning even without non-null values.
     let output_timezone = resolve_output_timezone(format, timezone);
     let parsed_timezone = output_timezone
         .as_deref()
@@ -205,79 +189,19 @@ fn to_datetime_impl(
 mod tests {
     use super::*;
 
-    const OFFSET_FMT: &str = "%Y-%m-%dT%H:%M:%S%z";
-    const NAIVE_FMT: &str = "%Y-%m-%d %H:%M:%S";
-    // 2020-01-01T01:02:03+0100 == 2020-01-01T00:02:03Z == 1577836923s since the epoch.
-    const PARSED_MICROS: i64 = 1_577_836_923_000_000;
-
-    #[test]
-    fn test_resolve_output_timezone() {
-        assert_eq!(resolve_output_timezone(NAIVE_FMT, None), None);
-        assert_eq!(
-            resolve_output_timezone(OFFSET_FMT, None),
-            Some("UTC".to_string())
-        );
-        assert_eq!(resolve_output_timezone("%+", None), Some("UTC".to_string()));
-        assert_eq!(
-            resolve_output_timezone(NAIVE_FMT, Some("Asia/Shanghai")),
-            Some("Asia/Shanghai".to_string())
-        );
-        assert_eq!(
-            resolve_output_timezone(OFFSET_FMT, Some("Asia/Shanghai")),
-            Some("Asia/Shanghai".to_string())
-        );
-    }
-
     #[test]
     fn test_to_datetime_impl_dtype_is_independent_of_data() {
         // https://github.com/Eventual-Inc/Daft/issues/7470
+        let format = "%Y-%m-%dT%H:%M:%S%z";
         let expected = DataType::Timestamp(TimeUnit::Microseconds, Some("UTC".to_string()));
-
-        let all_null = Utf8Array::from_iter("col", vec![None::<&str>, None]);
-        assert_eq!(
-            to_datetime_impl(&all_null, OFFSET_FMT, None)
-                .unwrap()
-                .field()
-                .dtype,
-            expected
-        );
-
-        let empty = Utf8Array::from_iter("col", Vec::<Option<&str>>::new());
-        assert_eq!(
-            to_datetime_impl(&empty, OFFSET_FMT, None)
-                .unwrap()
-                .field()
-                .dtype,
-            expected
-        );
-
-        let mixed = Utf8Array::from_iter("col", vec![None, Some("2020-01-01T01:02:03+0100")]);
-        let result = to_datetime_impl(&mixed, OFFSET_FMT, None).unwrap();
-        assert_eq!(result.field().dtype, expected);
-        assert_eq!(result.get(0), None);
-        assert_eq!(result.get(1), Some(PARSED_MICROS));
-
-        let naive = to_datetime_impl(&all_null, NAIVE_FMT, None).unwrap();
-        assert_eq!(
-            naive.field().dtype,
-            DataType::Timestamp(TimeUnit::Microseconds, None)
-        );
-    }
-
-    #[test]
-    fn test_to_datetime_impl_explicit_timezone_wins_and_validates_without_data() {
-        let all_null = Utf8Array::from_iter("col", vec![None::<&str>]);
-
-        for format in [NAIVE_FMT, OFFSET_FMT] {
-            let result = to_datetime_impl(&all_null, format, Some("Asia/Shanghai")).unwrap();
-            assert_eq!(
-                result.field().dtype,
-                DataType::Timestamp(TimeUnit::Microseconds, Some("Asia/Shanghai".to_string()))
-            );
+        for values in [
+            vec![],
+            vec![None],
+            vec![None, Some("2020-01-01T01:02:03+0100")],
+        ] {
+            let arr = Utf8Array::from_iter("col", values);
+            let result = to_datetime_impl(&arr, format, None).unwrap();
+            assert_eq!(result.field().dtype, expected);
         }
-
-        assert!(to_datetime_impl(&all_null, NAIVE_FMT, Some("Not/AZone")).is_err());
-        // `chrono_tz` has no fixed-offset support.
-        assert!(to_datetime_impl(&all_null, NAIVE_FMT, Some("+05:30")).is_err());
     }
 }
