@@ -189,18 +189,27 @@ impl Drop for IndicatifProgressBarManager {
 
 impl ProgressBar for IndicatifProgressBarManager {
     fn initialize_node(&self, node_id: NodeID) {
-        let pb = self.pbars.get(node_id).unwrap();
+        let Some(pb) = self.pbars.get(node_id) else {
+            log::warn!("No progress bar registered for node {node_id}; skipping initialize");
+            return;
+        };
         pb.enable_steady_tick(TICK_INTERVAL);
     }
 
     fn finalize_node(&self, node_id: NodeID, last_snapshot: &StatSnapshot) {
-        let pb = self.pbars.get(node_id).unwrap();
+        let Some(pb) = self.pbars.get(node_id) else {
+            log::warn!("No progress bar registered for node {node_id}; skipping finalize");
+            return;
+        };
         pb.set_message(last_snapshot.to_message());
         pb.finish();
     }
 
     fn handle_event(&self, node_id: NodeID, event: &StatSnapshot) {
-        let pb = self.pbars.get(node_id).unwrap();
+        let Some(pb) = self.pbars.get(node_id) else {
+            log::warn!("No progress bar registered for node {node_id}; skipping event");
+            return;
+        };
         pb.set_message(event.to_message());
     }
 
@@ -318,7 +327,10 @@ mod python {
         fn initialize_node(&self, _: NodeID) {}
 
         fn finalize_node(&self, node_id: NodeID, last_snapshot: &StatSnapshot) {
-            let pb_id = self.node_id_to_pb_id.get(&node_id).unwrap();
+            let Some(pb_id) = self.node_id_to_pb_id.get(&node_id) else {
+                log::warn!("No progress bar registered for node {node_id}; skipping finalize");
+                return;
+            };
             self.update_bar(*pb_id, &last_snapshot.to_message())
                 .expect("Failed to update TQDM progress bar");
 
@@ -326,7 +338,10 @@ mod python {
         }
 
         fn handle_event(&self, node_id: NodeID, event: &StatSnapshot) {
-            let pb_id = self.node_id_to_pb_id.get(&node_id).unwrap();
+            let Some(pb_id) = self.node_id_to_pb_id.get(&node_id) else {
+                log::warn!("No progress bar registered for node {node_id}; skipping event");
+                return;
+            };
             self.update_bar(*pb_id, &event.to_message())
                 .expect("Failed to update TQDM progress bar");
         }
@@ -359,5 +374,36 @@ mod tests {
 
         // This panics in make_new_bar due to byte-level string slicing on multi-byte UTF-8
         let _manager = IndicatifProgressBarManager::new(&node_info_map, false);
+    }
+
+    #[test]
+    fn indicatif_skips_unregistered_node_without_panic() {
+        // Regression for #6991: a node_id dispatched to the progress bar that was never
+        // registered (a construction/dispatch mismatch, or non-consecutive node ids)
+        // must warn and skip rather than panic the running query.
+        use common_metrics::snapshot::DefaultSnapshot;
+
+        let node_info = Arc::new(NodeInfo {
+            name: "node".into(),
+            id: 0,
+            ..Default::default()
+        });
+        let mut node_info_map = HashMap::new();
+        node_info_map.insert(0, node_info);
+        let manager = IndicatifProgressBarManager::new(&node_info_map, false);
+
+        let snapshot = StatSnapshot::Default(DefaultSnapshot {
+            cpu_us: 0,
+            rows_in: 0,
+            rows_out: 0,
+            bytes_in: 0,
+            bytes_out: 0,
+            num_tasks: 0,
+        });
+
+        // node_id 99 was never registered; each of these previously unwrapped and panicked.
+        manager.initialize_node(99);
+        manager.finalize_node(99, &snapshot);
+        manager.handle_event(99, &snapshot);
     }
 }
