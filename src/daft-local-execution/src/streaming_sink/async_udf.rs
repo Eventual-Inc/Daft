@@ -262,7 +262,14 @@ impl StreamingSink for AsyncUdfSink {
                                 .udf_properties
                                 .concurrency
                                 .map(|c| c.get())
-                                .unwrap_or_else(get_max_inflight_tasks);
+                                .unwrap_or_else(get_max_inflight_tasks)
+                                .max(
+                                    params
+                                        .udf_properties
+                                        .min_concurrency
+                                        .map(|c| c.get())
+                                        .unwrap_or(1),
+                                );
                             while num_inflight_tasks > max_inflight_tasks {
                                 if let Some(join_res) = state.task_set.join_next().await {
                                     let batch = join_res??;
