@@ -297,6 +297,47 @@ def test_flight_into_partitions(flight_shuffle_ctx, input_partitions, output_par
 
 @pytest.mark.skipif(
     get_tests_daft_runner_name() != "ray",
+    reason="shuffle tests are meant for the ray runner",
+)
+@pytest.mark.parametrize(
+    "input_partitions, output_partitions",
+    [(8, 2), (7, 1)],
+)
+def test_flight_into_partitions_coalesce_from_scan(flight_shuffle_ctx, input_partitions, output_partitions):
+    """Coalesce over a genuine multi-task source under `flight_shuffle`.
+
+    Regression test for #7002. The optimizer folds consecutive `into_partitions`
+    calls (DropRepartition), so the coalesce parametrizations of
+    `test_flight_into_partitions` collapse into a single split from one partition
+    and never reach the distributed coalesce branch. A multi-partition scan source
+    does reach it, and previously panicked with "expected flight partition ref"
+    because coalesce submitted its input tasks without a flight write sink.
+    """
+    rows_per_partition = 100
+    with flight_shuffle_ctx():
+        df = read_generator(
+            generator(input_partitions, lambda: rows_per_partition, lambda: 8),
+            schema=daft.Schema._from_field_name_and_types(
+                [
+                    ("ids", daft.DataType.uint64()),
+                    ("ints", daft.DataType.uint64()),
+                    ("bytes", daft.DataType.binary()),
+                ]
+            ),
+        ).into_partitions(output_partitions)
+
+        buf = io.StringIO()
+        df.explain(show_all=True, file=buf)
+        plan = buf.getvalue()
+        assert "IntoPartitions(Flight)" in plan, f"expected IntoPartitions(Flight) in plan:\n{plan}"
+
+        collected = df.collect()
+        assert len(list(collected.iter_partitions())) == output_partitions
+        assert len(collected) == input_partitions * rows_per_partition
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
     reason="distributed IntoPartitions tests require the ray runner",
 )
 @pytest.mark.parametrize(
