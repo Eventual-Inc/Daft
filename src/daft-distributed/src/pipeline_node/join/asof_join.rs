@@ -8,10 +8,12 @@ use common_metrics::{
 use daft_dsl::{
     AggExpr, bound_col,
     expr::bound_expr::{BoundAggExpr, BoundExpr},
+    lit,
 };
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, ShuffleReadBackend};
 use daft_logical_plan::{AsofJoinStrategy, stats::StatsState};
 use daft_schema::{
+    dtype::DataType,
     field::Field,
     schema::{Schema, SchemaRef},
 };
@@ -450,10 +452,11 @@ impl AsofJoinNode {
             .collect()
     }
 
-    /// Builds and submits a task reducing `inputs` to the extreme right row(s) for carryover.
-    /// Without by-keys this is a single top_n(limit=1) row; with by-keys it is the extreme
-    /// row(s) *per group* (window max/min of the on-key over the by-keys, keeping matching rows).
-    /// `descending=true` picks the max (backward carryover); `false` picks the min (forward carryover).
+    /// Builds and submits a task reducing `inputs` to the carryover rows: every right row whose
+    /// on-key equals the partition extreme (per by-key group, or over the whole frame when there are
+    /// no by-keys). `descending=true` keeps the max on-key (backward carryover), `false` the min
+    /// (forward). Keeping *all* rows tied at the extreme rather than one means the local operator
+    /// stays the single place tie-breaks happen; the carryover only promises not to drop a candidate.
     fn submit_carryover_task(
         &self,
         inputs: Vec<MaterializedOutput>,
@@ -474,77 +477,94 @@ impl AsofJoinNode {
             phase,
         );
 
-        let plan = if self.right_by.is_empty() {
-            let composite_keys = self.right_composite_key();
-            let n_keys = composite_keys.len();
-            LocalPhysicalPlan::top_n(
-                in_memory_scan,
-                composite_keys,
-                vec![descending; n_keys],
-                vec![false; n_keys],
-                1,
-                None,
-                StatsState::NotMaterialized,
-                context,
-            )
+        const EXTREME_COL: &str = "__asof_carryover_extreme";
+        const PART_COL: &str = "__asof_carryover_part";
+        let on_expr = self.right_on.inner().clone();
+        let on_field = on_expr.to_field(&right_schema)?;
+        let agg = if descending {
+            AggExpr::Max(on_expr.clone())
         } else {
-            const EXTREME_COL: &str = "__asof_carryover_extreme";
-            let on_expr = self.right_on.inner().clone();
-            let on_field = on_expr.to_field(&right_schema)?;
-            let agg = if descending {
-                AggExpr::Max(on_expr.clone())
-            } else {
-                AggExpr::Min(on_expr.clone())
-            };
+            AggExpr::Min(on_expr.clone())
+        };
 
-            let extreme_field = Field::new(EXTREME_COL, on_field.dtype);
-            let window_schema = Arc::new(Schema::new(
+        // Partition by the by-keys, or by an injected constant column when there are none (the whole
+        // frame is one partition; window_partition_only requires a non-empty partition_by).
+        let (windowed_input, partition_by, base_schema) = if self.right_by.is_empty() {
+            let part_field = Field::new(PART_COL, DataType::Boolean);
+            let base_schema = Arc::new(Schema::new(
                 right_schema
                     .fields()
                     .iter()
                     .cloned()
-                    .chain(std::iter::once(extreme_field.clone())),
+                    .chain(std::iter::once(part_field.clone())),
             ));
-            let window = LocalPhysicalPlan::window_partition_only(
-                in_memory_scan,
-                self.right_by.clone(),
-                window_schema,
-                StatsState::NotMaterialized,
-                vec![BoundAggExpr::new_unchecked(agg)],
-                vec![EXTREME_COL.to_string()],
-                context.clone(),
-            );
-
-            // Rows with a null on-key compare to null and are filtered out, which is correct:
-            // they can never be an asof match.
-            let predicate =
-                BoundExpr::new_unchecked(on_expr.eq(bound_col(right_schema.len(), extreme_field)));
-            let filtered = LocalPhysicalPlan::filter(
-                window,
-                predicate,
-                StatsState::NotMaterialized,
-                context.clone(),
-            );
-
-            let projection = right_schema
+            let mut projection: Vec<BoundExpr> = right_schema
                 .fields()
                 .iter()
                 .enumerate()
                 .map(|(i, f)| BoundExpr::new_unchecked(bound_col(i, f.clone())))
                 .collect();
-            LocalPhysicalPlan::project(
-                filtered,
+            projection.push(BoundExpr::new_unchecked(lit(true).alias(PART_COL)));
+            let scan = LocalPhysicalPlan::project(
+                in_memory_scan,
                 projection,
-                right_schema,
+                base_schema.clone(),
                 StatsState::NotMaterialized,
-                context,
-            )
+                context.clone(),
+            );
+            let part_col = BoundExpr::new_unchecked(bound_col(right_schema.len(), part_field));
+            (scan, vec![part_col], base_schema)
+        } else {
+            (in_memory_scan, self.right_by.clone(), right_schema.clone())
         };
 
+        let extreme_field = Field::new(EXTREME_COL, on_field.dtype);
+        let window_schema = Arc::new(Schema::new(
+            base_schema
+                .fields()
+                .iter()
+                .cloned()
+                .chain(std::iter::once(extreme_field.clone())),
+        ));
+        let window = LocalPhysicalPlan::window_partition_only(
+            windowed_input,
+            partition_by,
+            window_schema,
+            StatsState::NotMaterialized,
+            vec![BoundAggExpr::new_unchecked(agg)],
+            vec![EXTREME_COL.to_string()],
+            context.clone(),
+        );
+
+        // Keep every row whose on-key equals the partition extreme. Null on-keys compare to null and
+        // drop out, which is correct: they can never be an asof match.
+        let predicate =
+            BoundExpr::new_unchecked(on_expr.eq(bound_col(base_schema.len(), extreme_field)));
+        let filtered = LocalPhysicalPlan::filter(
+            window,
+            predicate,
+            StatsState::NotMaterialized,
+            context.clone(),
+        );
+
+        // Project back to the right schema, dropping the extreme and any injected partition column.
+        let projection = right_schema
+            .fields()
+            .iter()
+            .enumerate()
+            .map(|(i, f)| BoundExpr::new_unchecked(bound_col(i, f.clone())))
+            .collect();
+        let plan = LocalPhysicalPlan::project(
+            filtered,
+            projection,
+            right_schema.clone(),
+            StatsState::NotMaterialized,
+            context,
+        );
+
         SwordfishTaskBuilder::new(plan, self, node_id)
-            // Forward (min) and backward (max) carryover tasks have identical top_n plans but
-            // compute different results, so give them distinct fingerprints to avoid
-            // sharing a worker pipeline and producing incorrect outputs.
+            // Backward (max) and forward (min) carryover tasks differ only in the window agg, so
+            // give them distinct fingerprints to avoid sharing a worker pipeline.
             .extend_fingerprint(u32::from(descending))
             .with_psets(node_id, psets)
             .with_strategy(strategy)
