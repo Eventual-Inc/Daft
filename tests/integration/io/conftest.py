@@ -10,7 +10,10 @@ import uuid
 from collections.abc import Generator
 from typing import TypeAlias, TypeVar
 
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
+from azure.storage.blob import BlobServiceClient
 
 import daft
 
@@ -86,14 +89,12 @@ def azurite_connection_string() -> str:
 @contextlib.contextmanager
 def azurite_create_container(
     container_name: str | None = None,
-) -> YieldFixture[tuple[object, str, daft.io.IOConfig]]:
+) -> YieldFixture[tuple[BlobServiceClient, str, daft.io.IOConfig]]:
     """Creates a container in Azurite.
 
     Yields a tuple of (BlobServiceClient, container_name, io_config).
     If container_name is not provided, generates a unique one using UUID.
     """
-    from azure.storage.blob import BlobServiceClient
-
     if container_name is None:
         container_name = f"container-{uuid.uuid4()}"
 
@@ -113,16 +114,14 @@ def azurite_create_container(
         blob_service.delete_container(container_name)
 
 
-def azurite_upload_bytes(blob_service: object, container: str, blob_name: str, data: bytes) -> str:
+def azurite_upload_bytes(blob_service: BlobServiceClient, container: str, blob_name: str, data: bytes) -> str:
     """Upload bytes to Azurite and return the az:// URL."""
     blob_service.get_blob_client(container=container, blob=blob_name).upload_blob(data, overwrite=True)
     return f"az://{container}/{blob_name}"
 
 
-def azurite_upload_parquet(blob_service: object, container: str, blob_name: str, table: object) -> str:
+def azurite_upload_parquet(blob_service: BlobServiceClient, container: str, blob_name: str, table: pa.Table) -> str:
     """Write a pyarrow table to Azurite as parquet and return the az:// URL."""
-    import pyarrow.parquet as pq
-
     buffer = io.BytesIO()
     pq.write_table(table, buffer)
     return azurite_upload_bytes(blob_service, container, blob_name, buffer.getvalue())

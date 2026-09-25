@@ -3,10 +3,16 @@ services:
   # Azurite is a local Azure Blob Storage emulator
   # Test fixtures populate data via azure.storage.blob (see tests/integration/io/conftest.py)
   azurite:
-    image: mcr.microsoft.com/azure-storage/azurite
+    image: mcr.microsoft.com/azure-storage/azurite:3.35.0@sha256:647c63a91102a9d8e8000aab803436e1fc85fbb285e7ce830a82ee5d6661cf37
     ports:
-    - 10000:10000
+    - "127.0.0.1:10000:10000"
     command: [azurite-blob, --loose, --blobHost, 0.0.0.0]
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 10000"]
+      interval: 1s
+      timeout: 2s
+      retries: 20
+      start_period: 5s
 
   # SeaweedFS provides the S3-compatible object store used by the I/O tests.
   # Test fixtures populate data via S3 APIs such as boto3 or s3fs

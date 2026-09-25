@@ -468,9 +468,12 @@ impl AzureBlobSource {
         let protocol = protocol.to_string();
         let container_name = container_name.to_string();
         let prefix = prefix.to_string();
+        // URI paths include a leading slash, but Azure blob names do not. Keep
+        // the original prefix for error paths while normalizing the API query.
+        let request_prefix = prefix.trim_start_matches(AZURE_DELIMITER).to_string();
 
         // Paginated response stream from Azure API.
-        let mut responses_stream = container_client.list_blobs().prefix(prefix.clone());
+        let mut responses_stream = container_client.list_blobs().prefix(request_prefix);
 
         // Setting delimiter will trigger "directory-mode" which is a posix-like ls for the current directory
         if *posix {
