@@ -8,6 +8,8 @@ import pytest
 
 import daft
 from daft import DataType as dt
+from daft.io import IOConfig, S3Config
+from tests.utils import explain_to_text
 
 # TODO chore: make an asset fixture for all tests (beyond just sql).
 
@@ -285,3 +287,40 @@ def test_sql_read_negative_size_option_rejected(function, path, option):
     with pytest.raises(Exception, match="Expected a non-negative integer literal") as exc_info:
         daft.sql(f"SELECT * FROM {function}('{path}', {option} => -1)")
     assert exc_info.type.__name__ == "InvalidSQLException"
+
+
+def _io_config_line(df) -> str | None:
+    for line in explain_to_text(df).splitlines():
+        if "IO config" in line:
+            return line.strip()
+    return None
+
+
+@pytest.fixture
+def default_io_config_sample_files(tmp_path):
+    parquet_path = tmp_path / "a.parquet"
+    papq.write_table(pa.table({"x": [1, 2, 3]}), parquet_path)
+    csv_path = tmp_path / "a.csv"
+    csv_path.write_text("x\n1\n2\n")
+    json_path = tmp_path / "a.jsonl"
+    json_path.write_text('{"x": 1}\n{"x": 2}\n')
+    return {
+        "read_parquet": parquet_path.as_posix(),
+        "read_csv": csv_path.as_posix(),
+        "read_json": json_path.as_posix(),
+    }
+
+
+@pytest.mark.parametrize("function", ["read_parquet", "read_csv", "read_json"])
+def test_sql_reader_uses_default_io_config(default_io_config_sample_files, function):
+    """A SQL reader with no io_config argument picks up the context default, as Python does."""
+    path = default_io_config_sample_files[function]
+    default = IOConfig(s3=S3Config(region_name="us-west-2"))
+
+    with daft.context.planning_config_ctx(default_io_config=default):
+        sql_line = _io_config_line(daft.sql(f"SELECT * FROM {function}('{path}')"))
+        python_line = _io_config_line(getattr(daft, function)(path))
+
+    assert sql_line is not None
+    assert "us-west-2" in sql_line
+    assert sql_line == python_line
