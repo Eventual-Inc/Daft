@@ -483,8 +483,6 @@ pub(crate) fn expr_to_iocfg(expr: &ExprRef) -> SQLPlannerResult<IOConfig> {
             let retry_mode = get_value!("retry_mode", Utf8)?;
             let anonymous = get_value!("anonymous", Boolean)?;
             let use_ssl = get_value!("use_ssl", Boolean)?;
-            let verify_ssl = get_value!("verify_ssl", Boolean)?;
-            let check_hostname_ssl = get_value!("check_hostname_ssl", Boolean)?;
             let requester_pays = get_value!("requester_pays", Boolean)?;
             let force_virtual_addressing = get_value!("force_virtual_addressing", Boolean)?;
             let profile_name = get_value!("profile_name", Utf8)?;
@@ -513,8 +511,6 @@ pub(crate) fn expr_to_iocfg(expr: &ExprRef) -> SQLPlannerResult<IOConfig> {
                 retry_mode,
                 anonymous: anonymous.unwrap_or(default.anonymous),
                 use_ssl: use_ssl.unwrap_or(default.use_ssl),
-                verify_ssl: verify_ssl.unwrap_or(default.verify_ssl),
-                check_hostname_ssl: check_hostname_ssl.unwrap_or(default.check_hostname_ssl),
                 requester_pays: requester_pays.unwrap_or(default.requester_pays),
                 force_virtual_addressing: force_virtual_addressing
                     .unwrap_or(default.force_virtual_addressing),

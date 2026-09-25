@@ -558,8 +558,6 @@ impl S3Config {
         retry_mode=None,
         anonymous=None,
         use_ssl=None,
-        verify_ssl=None,
-        check_hostname_ssl=None,
         requester_pays=None,
         force_virtual_addressing=None,
         profile_name=None,
@@ -583,8 +581,6 @@ impl S3Config {
         retry_mode: Option<String>,
         anonymous: Option<bool>,
         use_ssl: Option<bool>,
-        verify_ssl: Option<bool>,
-        check_hostname_ssl: Option<bool>,
         requester_pays: Option<bool>,
         force_virtual_addressing: Option<bool>,
         profile_name: Option<String>,
@@ -621,8 +617,6 @@ impl S3Config {
                 retry_mode: retry_mode.or(def.retry_mode),
                 anonymous: anonymous.unwrap_or(def.anonymous),
                 use_ssl: use_ssl.unwrap_or(def.use_ssl),
-                verify_ssl: verify_ssl.unwrap_or(def.verify_ssl),
-                check_hostname_ssl: check_hostname_ssl.unwrap_or(def.check_hostname_ssl),
                 requester_pays: requester_pays.unwrap_or(def.requester_pays),
                 force_virtual_addressing: force_virtual_addressing
                     .unwrap_or(def.force_virtual_addressing),
@@ -652,8 +646,6 @@ impl S3Config {
         retry_mode=None,
         anonymous=None,
         use_ssl=None,
-        verify_ssl=None,
-        check_hostname_ssl=None,
         requester_pays=None,
         force_virtual_addressing=None,
         profile_name=None,
@@ -678,8 +670,6 @@ impl S3Config {
         retry_mode: Option<String>,
         anonymous: Option<bool>,
         use_ssl: Option<bool>,
-        verify_ssl: Option<bool>,
-        check_hostname_ssl: Option<bool>,
         requester_pays: Option<bool>,
         force_virtual_addressing: Option<bool>,
         profile_name: Option<String>,
@@ -717,8 +707,6 @@ impl S3Config {
                 retry_mode: retry_mode.or_else(|| self.config.retry_mode.clone()),
                 anonymous: anonymous.unwrap_or(self.config.anonymous),
                 use_ssl: use_ssl.unwrap_or(self.config.use_ssl),
-                verify_ssl: verify_ssl.unwrap_or(self.config.verify_ssl),
-                check_hostname_ssl: check_hostname_ssl.unwrap_or(self.config.check_hostname_ssl),
                 requester_pays: requester_pays.unwrap_or(self.config.requester_pays),
                 force_virtual_addressing: force_virtual_addressing
                     .unwrap_or(self.config.force_virtual_addressing),
@@ -854,18 +842,6 @@ impl S3Config {
     #[getter]
     pub fn use_ssl(&self) -> PyResult<Option<bool>> {
         Ok(Some(self.config.use_ssl))
-    }
-
-    /// AWS Verify SSL
-    #[getter]
-    pub fn verify_ssl(&self) -> PyResult<Option<bool>> {
-        Ok(Some(self.config.verify_ssl))
-    }
-
-    /// AWS Check SSL Hostname
-    #[getter]
-    pub fn check_hostname_ssl(&self) -> PyResult<Option<bool>> {
-        Ok(Some(self.config.check_hostname_ssl))
     }
 
     /// AWS Requester Pays

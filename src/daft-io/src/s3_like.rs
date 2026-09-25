@@ -611,23 +611,7 @@ async fn build_s3_conf(config: &S3Config) -> super::Result<s3::Config> {
             })
         }
 
-        fn no_verify_hostname_client() -> SharedHttpClient {
-            unimplemented!(
-                "Setting `S3Config.check_hostname_ssl` is no longer supported. See this GitHub Issue for more info: https://github.com/Eventual-Inc/Daft/issues/4530"
-            );
-        }
-
-        fn no_verify_client() -> SharedHttpClient {
-            unimplemented!(
-                "Setting `S3Config.verify_ssl` is no longer supported. See this GitHub Issue for more info: https://github.com/Eventual-Inc/Daft/issues/4530"
-            );
-        }
-
-        match (config.verify_ssl, config.check_hostname_ssl) {
-            (true, true) => default_client(),
-            (true, false) => no_verify_hostname_client(),
-            (false, _) => no_verify_client(),
-        }
+        default_client()
     };
 
     let timeout_config = TimeoutConfig::builder()

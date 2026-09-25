@@ -33,8 +33,6 @@ pub struct S3Config {
     pub retry_mode: Option<String>,
     pub anonymous: bool,
     pub use_ssl: bool,
-    pub verify_ssl: bool,
-    pub check_hostname_ssl: bool,
     pub requester_pays: bool,
     pub force_virtual_addressing: bool,
     pub profile_name: Option<String>,
@@ -199,12 +197,6 @@ impl S3Config {
         if self.use_ssl != defaults.use_ssl {
             res.push(format!("Use SSL = {}", self.use_ssl));
         }
-        if self.verify_ssl != defaults.verify_ssl {
-            res.push(format!("Verify SSL = {}", self.verify_ssl));
-        }
-        if self.check_hostname_ssl != defaults.check_hostname_ssl {
-            res.push(format!("Check hostname SSL = {}", self.check_hostname_ssl));
-        }
         if self.requester_pays != defaults.requester_pays {
             res.push(format!("Requester pays = {}", self.requester_pays));
         }
@@ -256,8 +248,6 @@ impl Default for S3Config {
             retry_mode: Some("adaptive".to_string()),
             anonymous: false,
             use_ssl: true,
-            verify_ssl: true,
-            check_hostname_ssl: true,
             requester_pays: false,
             force_virtual_addressing: false,
             profile_name: None,
