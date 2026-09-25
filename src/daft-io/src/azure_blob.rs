@@ -10,7 +10,8 @@ use azure_identity::{
     WorkloadIdentityCredential,
 };
 use azure_storage_blob::{
-    BlobClient, BlobClientOptions, BlobServiceClient, BlobServiceClientOptions,
+    BlobClient, BlobClientOptions, BlobContainerClient, BlobContainerClientOptions,
+    BlobServiceClient, BlobServiceClientOptions,
     models::{
         BlobClientDownloadOptions, BlobClientGetPropertiesResultHeaders,
         BlobContainerClientListBlobsHierarchicalOptions, BlobContainerClientListBlobsOptions,
@@ -40,6 +41,11 @@ const AZURE_STORE_SUFFIX: &str = ".dfs.core.windows.net";
 /// still accepts this version, and delimiter listing does not need the latest.
 const AZURE_REST_API_VERSION: &str = "2025-01-05";
 const AZURE_FABRIC_SUFFIX: &str = ".dfs.fabric.microsoft.com";
+
+fn azure_blob_request_prefix(prefix: &str) -> Option<String> {
+    let prefix = prefix.trim_start_matches(AZURE_DELIMITER).to_string();
+    (!prefix.is_empty()).then_some(prefix)
+}
 
 #[derive(Debug, Snafu)]
 enum Error {
@@ -381,6 +387,7 @@ pub struct AzureBlobSource {
     blob_client: Arc<BlobServiceClient>,
     token_credential: Option<Arc<dyn TokenCredential>>,
     blob_client_options: BlobClientOptions,
+    blob_container_client_options: BlobContainerClientOptions,
     connection_pool_sema: Arc<tokio::sync::Semaphore>,
 }
 
@@ -477,6 +484,10 @@ impl AzureBlobSource {
             version: AZURE_REST_API_VERSION.to_string(),
         };
         let blob_client_options = BlobClientOptions {
+            client_options: client_options.clone(),
+            version: AZURE_REST_API_VERSION.to_string(),
+        };
+        let blob_container_client_options = BlobContainerClientOptions {
             client_options,
             version: AZURE_REST_API_VERSION.to_string(),
         };
@@ -493,6 +504,7 @@ impl AzureBlobSource {
             blob_client: blob_client.into(),
             token_credential,
             blob_client_options,
+            blob_container_client_options,
             connection_pool_sema,
         }
         .into())
@@ -503,6 +515,15 @@ impl AzureBlobSource {
             blob_url(self.blob_client.url(), container, key),
             self.token_credential.clone(),
             Some(self.blob_client_options.clone()),
+        )
+        .context(AzureGenericSnafu {})?)
+    }
+
+    fn blob_container_client_for(&self, container: &str) -> super::Result<BlobContainerClient> {
+        Ok(BlobContainerClient::new(
+            blob_url(self.blob_client.url(), container, ""),
+            self.token_credential.clone(),
+            Some(self.blob_container_client_options.clone()),
         )
         .context(AzureGenericSnafu {})?)
     }
@@ -692,14 +713,23 @@ impl AzureBlobSource {
         let protocol = protocol.to_string();
         let container_name = container_name.to_string();
         let prefix = prefix.to_string();
-        let container_client = self.blob_client.blob_container_client(&container_name);
+        // URI paths include a leading slash, but Azure blob names do not. Keep
+        // the original prefix for error paths while normalizing the API query.
+        let request_prefix = azure_blob_request_prefix(&prefix);
 
         let s = async_stream::stream! {
+            let container_client = match self.blob_container_client_for(&container_name) {
+                Ok(client) => client,
+                Err(error) => {
+                    yield Err(error);
+                    return;
+                }
+            };
             let request_path = format!("{}://{}{}", &protocol, &container_name, &prefix);
             if posix {
                 // Setting a delimiter triggers "directory-mode" which is a posix-like ls for the current directory.
                 let options = BlobContainerClientListBlobsHierarchicalOptions {
-                    prefix: Some(prefix.clone()),
+                    prefix: request_prefix.clone(),
                     ..Default::default()
                 };
                 let mut pager =
@@ -759,7 +789,7 @@ impl AzureBlobSource {
                 }
             } else {
                 let options = BlobContainerClientListBlobsOptions {
-                    prefix: Some(prefix.clone()),
+                    prefix: request_prefix.clone(),
                     ..Default::default()
                 };
                 let mut pager = match container_client.list_blobs(Some(options)) {
@@ -1028,14 +1058,9 @@ mod tests {
     use azure_core::http::Url;
 
     use super::{
-        blob_url, ensure_trailing_slash, parse_azure_uri, parse_hierarchical_listing_xml,
-        unescape_xml,
+        azure_blob_request_prefix, blob_url, ensure_trailing_slash, parse_azure_uri,
+        parse_hierarchical_listing_xml, unescape_xml,
     };
-    use crate::azure_blob::AZURE_DELIMITER;
-
-    fn azure_blob_request_prefix(prefix: &str) -> String {
-        prefix.trim_start_matches(AZURE_DELIMITER).to_string()
-    }
 
     #[test]
     fn parses_repeated_hns_blob_prefixes() {
@@ -1114,9 +1139,15 @@ mod tests {
 
     #[test]
     fn test_azure_blob_request_prefix() {
-        assert_eq!(azure_blob_request_prefix("/"), "");
-        assert_eq!(azure_blob_request_prefix("/nested/path/"), "nested/path/");
-        assert_eq!(azure_blob_request_prefix("nested/path/"), "nested/path/");
+        assert_eq!(azure_blob_request_prefix("/"), None);
+        assert_eq!(
+            azure_blob_request_prefix("/nested/path/"),
+            Some("nested/path/".to_string())
+        );
+        assert_eq!(
+            azure_blob_request_prefix("nested/path/"),
+            Some("nested/path/".to_string())
+        );
     }
 
     #[test]
