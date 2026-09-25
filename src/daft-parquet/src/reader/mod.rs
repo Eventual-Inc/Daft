@@ -1,3 +1,4 @@
+mod budget;
 mod chunk_source;
 mod field_reader;
 mod rg_processor;
@@ -10,13 +11,15 @@ use std::{
 
 use arrow::{array::ArrayRef, datatypes::Schema as ArrowSchema};
 use chunk_source::{
-    ChunkSource, ChunkSourceBuilder, LocalChunkSource, open_local_file, prepare_remote_chunk_source,
+    ChunkSourceBuilder, LocalChunkSource, RangePhase, RgAccess, RowGroupSourcePlan,
+    open_local_file, prepare_remote_chunk_source,
 };
 use common_error::DaftResult;
-use common_runtime::{JoinSet, get_compute_runtime};
+use common_runtime::get_compute_runtime;
 use daft_core::prelude::*;
 use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr, optimization::get_required_columns};
 use daft_recordbatch::RecordBatch;
+use field_reader::leaves_for_top_fields;
 use futures::{Stream, StreamExt, stream::BoxStream};
 use parquet::{
     arrow::arrow_reader::{ArrowReaderMetadata, RowSelection, RowSelector},
@@ -77,7 +80,6 @@ async fn open_chunk_source(
                 path: Arc::from(*path),
                 file,
                 file_len,
-                metadata: arrow_metadata.metadata().clone(),
             };
             Ok((ChunkSourceBuilder::Local(cs), arrow_metadata))
         }
@@ -314,215 +316,168 @@ struct RgInputs {
     pred_arrays: Vec<ArrayRef>,
 }
 
-/// Build the per-RG input bundles for the streaming decoder.
+/// Per-file setup for the predicate prefilter pass, shared across RGs.
+struct PredPrefilter {
+    pred_arrow_schema: Arc<ArrowSchema>,
+    bound_pred: BoundExpr,
+    chunk_size: usize,
+}
+
+impl PredPrefilter {
+    fn try_new(
+        arrow_schema: &Arc<ArrowSchema>,
+        plan: &ColumnPlan,
+        prefilter_predicate: &ExprRef,
+        opts: &ParquetReadOptions,
+    ) -> DaftResult<Self> {
+        // Limit set → chunked streaming for early termination. Unbounded → one
+        // chunk per col so per-chunk arrow setup costs collapse to per-RG.
+        let chunk_size = match opts.num_rows {
+            Some(_) => opts.batch_size.unwrap_or(DEFAULT_BATCH_SIZE).max(1),
+            None => usize::MAX,
+        };
+        let pred_arrow_schema = schema_from_indices(arrow_schema, &plan.pred_col_indices);
+        // Bind predicate once across all RGs — same chunk schema everywhere.
+        let chunk_daft_schema = Arc::new(Schema::try_from(pred_arrow_schema.as_ref())?);
+        let bound_pred = BoundExpr::try_new(
+            substitute_missing_cols(prefilter_predicate, &chunk_daft_schema)?,
+            &chunk_daft_schema,
+        )?;
+        Ok(Self {
+            pred_arrow_schema,
+            bound_pred,
+            chunk_size,
+        })
+    }
+}
+
+/// Run the predicate prefilter for ONE row group: decode predicate columns,
+/// evaluate the mask, and produce the refined `RowSelection` + filtered
+/// predicate arrays.
 ///
-/// Without a pushed predicate prefilter, this just forwards offset/delete/limit
-/// selections. With one, it first decodes predicate columns, evaluates the mask,
-/// and uses that same mask for both filtered predicate arrays and a data-column
-/// `RowSelection`.
+/// `cross_rg_remaining`: the legacy sequential pass threads the global
+/// `num_rows` limit through here (truncate the mask, stop early). The owned
+/// pipeline passes `None` — RG tasks run concurrently, so cross-RG limit
+/// state must not enter them; the outer `apply_cross_rg_limit` is the single
+/// point of truncation (lookahead RGs may do some extra work — accepted).
 #[allow(clippy::too_many_arguments)]
-async fn build_rg_inputs(
-    chunk_source: &Arc<ChunkSource>,
+async fn prefilter_one_rg(
+    access: &RgAccess,
     metadata: &Arc<ParquetMetaData>,
     arrow_schema: &Arc<ArrowSchema>,
-    rg_indices: &[usize],
     plan: &ColumnPlan,
-    opts: &ParquetReadOptions,
     path: &Arc<str>,
-) -> DaftResult<Vec<RgInputs>> {
-    let base_selections = build_base_selections(metadata, rg_indices, opts);
-
-    // If no predicate, then we can just return the base selections for the whole RG immediately.
-    // Otherwise, we can pre-filter based on the predicate
-    let Some(prefilter_predicate) = opts
-        .predicate
+    setup: &PredPrefilter,
+    rg_idx: usize,
+    base_sel: Option<RowSelection>,
+    mut cross_rg_remaining: Option<&mut usize>,
+) -> DaftResult<RgInputs> {
+    let total_selected = base_sel
         .as_ref()
-        .filter(|_| plan.predicate_pushed && !plan.data_col_indices.is_empty())
-    else {
-        return Ok(base_selections
-            .into_iter()
-            .map(|selection| RgInputs {
-                selection,
-                pred_arrays: Vec::new(),
-            })
-            .collect());
-    };
+        .map(|s| s.row_count())
+        .unwrap_or_else(|| metadata.row_group(rg_idx).num_rows() as usize);
 
-    // Limit set → chunked streaming for early termination. Unbounded → one
-    // chunk per col so per-chunk arrow setup costs collapse to per-RG.
-    let chunk_size = match opts.num_rows {
-        Some(_) => opts.batch_size.unwrap_or(DEFAULT_BATCH_SIZE).max(1),
-        None => usize::MAX,
-    };
-    let pred_arrow_schema = schema_from_indices(arrow_schema, &plan.pred_col_indices);
-    // Bind predicate once across all RGs — same chunk schema everywhere.
-    let chunk_daft_schema = Arc::new(Schema::try_from(pred_arrow_schema.as_ref())?);
-    let bound_pred = BoundExpr::try_new(
-        substitute_missing_cols(prefilter_predicate, &chunk_daft_schema)?,
-        &chunk_daft_schema,
-    )?;
+    let (mut col_receivers, _col_handles) = spawn_col_decoders(
+        &plan.pred_col_indices,
+        access,
+        metadata,
+        arrow_schema,
+        base_sel.as_ref(),
+        rg_idx,
+        setup.chunk_size,
+        path,
+    )
+    .await?;
 
-    let mut selected_rows_remaining = opts.num_rows.unwrap_or(usize::MAX);
-    let mut out: Vec<RgInputs> = Vec::with_capacity(rg_indices.len());
+    let mut predicate_selectors: Vec<RowSelector> = Vec::new();
+    let mut filtered_pred_by_col: Vec<Vec<ArrayRef>> = (0..plan.pred_col_indices.len())
+        .map(|_| Vec::new())
+        .collect();
+    let mut processed_rows = 0usize;
 
-    for (&rg_idx, base_sel) in rg_indices.iter().zip(base_selections) {
-        if selected_rows_remaining == 0 {
+    loop {
+        let Some(chunks) = recv_one_chunk(&mut col_receivers).await? else {
             break;
+        };
+        let chunk_rows = chunks[0].len();
+        let daft_pred = record_batch_from_arrow(
+            setup.pred_arrow_schema.clone(),
+            chunks.clone(),
+            path.as_ref(),
+        )?;
+        let mut mask = eval_predicate_mask(&daft_pred, &setup.bound_pred)?;
+
+        let mut selected_rows = mask.true_count();
+        if let Some(remaining) = cross_rg_remaining.as_deref_mut()
+            && selected_rows > *remaining
+        {
+            mask = truncate_mask_to_n_trues(&mask, *remaining);
+            selected_rows = *remaining;
         }
-        let total_selected = base_sel
-            .as_ref()
-            .map(|s| s.row_count())
-            .unwrap_or_else(|| metadata.row_group(rg_idx).num_rows() as usize);
 
-        let (mut col_receivers, _col_handles) = spawn_col_decoders(
-            &plan.pred_col_indices,
-            chunk_source,
-            metadata,
-            arrow_schema,
-            base_sel.as_ref(),
-            rg_idx,
-            chunk_size,
-            path,
-        )
-        .await?;
-
-        let mut predicate_selectors: Vec<RowSelector> = Vec::new();
-        let mut filtered_pred_by_col: Vec<Vec<ArrayRef>> = (0..plan.pred_col_indices.len())
-            .map(|_| Vec::new())
-            .collect();
-        let mut processed_rows = 0usize;
-
-        loop {
-            let Some(chunks) = recv_one_chunk(&mut col_receivers).await? else {
-                break;
-            };
-            let chunk_rows = chunks[0].len();
-            let daft_pred =
-                record_batch_from_arrow(pred_arrow_schema.clone(), chunks.clone(), path.as_ref())?;
-            let mask = eval_predicate_mask(&daft_pred, &bound_pred)?;
-
-            let selected_rows = mask.true_count();
-            let (mask, selected_rows) = if selected_rows > selected_rows_remaining {
-                (
-                    truncate_mask_to_n_trues(&mask, selected_rows_remaining),
-                    selected_rows_remaining,
-                )
-            } else {
-                (mask, selected_rows)
-            };
-
-            let filtered = filter_arrays_by_mask(&chunks, &mask, path.as_ref())?;
-            for (col_pos, filtered) in filtered.into_iter().enumerate() {
-                filtered_pred_by_col[col_pos].push(filtered);
-            }
-            predicate_selectors.extend(bool_array_to_row_selection(&mask).iter().copied());
-            processed_rows += chunk_rows;
-            selected_rows_remaining -= selected_rows;
-            if selected_rows_remaining == 0 {
+        let filtered = filter_arrays_by_mask(&chunks, &mask, path.as_ref())?;
+        for (col_pos, filtered) in filtered.into_iter().enumerate() {
+            filtered_pred_by_col[col_pos].push(filtered);
+        }
+        predicate_selectors.extend(bool_array_to_row_selection(&mask).iter().copied());
+        processed_rows += chunk_rows;
+        if let Some(remaining) = cross_rg_remaining.as_deref_mut() {
+            *remaining -= selected_rows;
+            if *remaining == 0 {
                 break;
             }
         }
-        // Dropping receivers closes the channels → spawned decoders abort.
-        drop(col_receivers);
-
-        // Concat per-col filtered chunks into one ArrayRef per col. Zero rows
-        // processed (e.g. base_sel selected 0 rows) → empty array of the col's
-        // data type.
-        let pred_arrays: Vec<ArrayRef> = plan
-            .pred_col_indices
-            .iter()
-            .enumerate()
-            .map(|(col_pos, &col_idx)| {
-                let chunks = &filtered_pred_by_col[col_pos];
-                if chunks.is_empty() {
-                    arrow::array::new_empty_array(arrow_schema.field(col_idx).data_type())
-                } else {
-                    let refs: Vec<&dyn arrow::array::Array> =
-                        chunks.iter().map(|a| a.as_ref()).collect();
-                    arrow::compute::concat(&refs).expect("concat per-col chunks")
-                }
-            })
-            .collect();
-
-        let unprocessed = total_selected - processed_rows;
-        if unprocessed > 0 {
-            predicate_selectors.push(RowSelector::skip(unprocessed));
-        }
-        let pred_sel = RowSelection::from(predicate_selectors);
-        let selection = Some(match &base_sel {
-            Some(base) => refine_selection(base, &pred_sel),
-            None => pred_sel,
-        });
-
-        out.push(RgInputs {
-            selection,
-            pred_arrays,
-        });
     }
+    // Dropping receivers closes the channels → spawned decoders abort.
+    drop(col_receivers);
 
-    Ok(out)
+    // Concat per-col filtered chunks into one ArrayRef per col. Zero rows
+    // processed (e.g. base_sel selected 0 rows) → empty array of the col's
+    // data type.
+    let pred_arrays: Vec<ArrayRef> = plan
+        .pred_col_indices
+        .iter()
+        .enumerate()
+        .map(|(col_pos, &col_idx)| {
+            let chunks = &filtered_pred_by_col[col_pos];
+            if chunks.is_empty() {
+                arrow::array::new_empty_array(arrow_schema.field(col_idx).data_type())
+            } else {
+                let refs: Vec<&dyn arrow::array::Array> =
+                    chunks.iter().map(|a| a.as_ref()).collect();
+                arrow::compute::concat(&refs).expect("concat per-col chunks")
+            }
+        })
+        .collect();
+
+    let unprocessed = total_selected - processed_rows;
+    if unprocessed > 0 {
+        predicate_selectors.push(RowSelector::skip(unprocessed));
+    }
+    let pred_sel = RowSelection::from(predicate_selectors);
+    let selection = Some(match &base_sel {
+        Some(base) => refine_selection(base, &pred_sel),
+        None => pred_sel,
+    });
+
+    Ok(RgInputs {
+        selection,
+        pred_arrays,
+    })
 }
 
 /// Shared per-file state for an RG-decoding task. One `Arc<RgTaskCtx>` is
 /// cloned per RG task — replaces the previous fistful-of-Arcs cloning ritual.
 ///
-/// Per-RG processor selection happens in `build_rg_stream` based on
-/// `plan.data_col_indices.is_empty()`: empty → PredOnly path, non-empty →
-/// Default path.
+/// Per-RG processor selection happens in the unified coordinator: an empty
+/// data set uses the predicate-only decoder, otherwise phase-two decodes data.
 pub(super) struct RgTaskCtx {
     pub(super) path: Arc<str>,
-    pub(super) chunk_source: Arc<ChunkSource>,
     pub(super) metadata: Arc<ParquetMetaData>,
     pub(super) arrow_schema: Arc<ArrowSchema>,
     pub(super) plan: ColumnPlan,
     pub(super) predicate: Option<ExprRef>,
     pub(super) chunk_size: usize,
-}
-
-/// One bounded channel per RG, drained in RG order. In-file output is always
-/// RG-ordered: `maintain_order=false` at the scan layer only reorders BETWEEN
-/// scan tasks; downstream code (and tests) expect file-order output within
-/// a single file.
-fn build_rg_stream(
-    ctx: Arc<RgTaskCtx>,
-    rg_indices: Vec<usize>,
-    rg_inputs: Vec<RgInputs>,
-) -> BoxStream<'static, DaftResult<RecordBatch>> {
-    use tokio_stream::wrappers::ReceiverStream;
-
-    // Capacity 1: each task runs ~one batch ahead — cross-RG overlap, bounded memory.
-    let (senders, receivers): (Vec<_>, Vec<_>) = (0..rg_inputs.len())
-        .map(|_| tokio::sync::mpsc::channel::<DaftResult<RecordBatch>>(1))
-        .unzip();
-
-    let compute = get_compute_runtime();
-    let mut joinset: JoinSet<DaftResult<()>> = JoinSet::new();
-    for (rg_pos, (sender, inputs)) in senders.into_iter().zip(rg_inputs).enumerate() {
-        let ctx = ctx.clone();
-        let rg_idx = rg_indices[rg_pos];
-        joinset.spawn_on(
-            async move {
-                let mut sub_stream = if ctx.plan.data_col_indices.is_empty() {
-                    process_rg_predicate_only(ctx.clone(), rg_idx, inputs.selection).await
-                } else {
-                    process_rg_with_data_cols(ctx, rg_idx, inputs.selection, inputs.pred_arrays)
-                        .await
-                };
-                while let Some(item) = sub_stream.next().await {
-                    if sender.send(item).await.is_err() {
-                        break;
-                    }
-                }
-                DaftResult::Ok(())
-            },
-            &compute,
-        );
-    }
-
-    let inner_streams = receivers.into_iter().map(ReceiverStream::new);
-    let merged: BoxStream<'static, DaftResult<RecordBatch>> =
-        Box::pin(futures::stream::iter(inner_streams).flatten());
-    common_runtime::combine_stream(merged, async move { joinset.join_all().await }).boxed()
 }
 
 fn count_only_stream(
@@ -609,6 +564,16 @@ pub async fn stream_parquet(
             futures::stream::empty().boxed(),
         ));
     }
+    // A predicate normally prevents pruning from applying the global limit,
+    // because the limit is defined after filtering. Zero is the exception:
+    // it can never produce a row, so do not construct phase plans or issue
+    // local/remote data reads merely to have the outer stream discard them.
+    if opts.num_rows == Some(0) {
+        return Ok((
+            plan.return_daft_schema.clone(),
+            futures::stream::empty().boxed(),
+        ));
+    }
     if plan.read_col_indices.is_empty() {
         return count_only_stream(
             &prepared.parquet_metadata,
@@ -618,31 +583,247 @@ pub async fn stream_parquet(
         );
     }
 
-    // Now spawn the byte-range fetches (remote) — pruned set only.
-    let chunk_source = Arc::new(cs_builder.build(prepared.parquet_metadata.clone(), &rg_indices));
-
-    let rg_inputs = build_rg_inputs(
-        &chunk_source,
-        &prepared.parquet_metadata,
-        &prepared.arrow_schema,
-        &rg_indices,
-        &plan,
-        opts,
-        &path,
-    )
-    .await?;
-
     let return_schema = plan.return_daft_schema.clone();
     let ctx = Arc::new(RgTaskCtx {
-        path,
-        chunk_source,
-        metadata: prepared.parquet_metadata,
-        arrow_schema: prepared.arrow_schema,
+        path: path.clone(),
+        metadata: prepared.parquet_metadata.clone(),
+        arrow_schema: prepared.arrow_schema.clone(),
         plan,
         predicate: opts.predicate.clone(),
         chunk_size,
     });
-    let stream = build_rg_stream(ctx, rg_indices, rg_inputs);
 
+    // Range plans are made only after the final column plan is known.  Arrow
+    // top-level fields can map to multiple physical leaves, so do the exact
+    // expansion here rather than guessing from user column names at open time.
+    let predicate_leaves = if ctx.plan.predicate_pushed {
+        leaves_for_top_fields(&prepared.parquet_metadata, &ctx.plan.pred_col_indices)
+    } else {
+        Vec::new()
+    };
+    let data_fields = if ctx.plan.predicate_pushed {
+        &ctx.plan.data_col_indices
+    } else {
+        &ctx.plan.read_col_indices
+    };
+    let data_leaves = leaves_for_top_fields(&prepared.parquet_metadata, data_fields);
+    let source_plan = Arc::new(cs_builder.build_plan(
+        &prepared.parquet_metadata,
+        &rg_indices,
+        &predicate_leaves,
+        &data_leaves,
+    ));
+    let base_selections = build_base_selections(&prepared.parquet_metadata, &rg_indices, opts);
+    let pred_setup = match ctx
+        .predicate
+        .as_ref()
+        .filter(|_| ctx.plan.predicate_pushed && !ctx.plan.data_col_indices.is_empty())
+    {
+        Some(pred) => Some(Arc::new(PredPrefilter::try_new(
+            &prepared.arrow_schema,
+            &ctx.plan,
+            pred,
+            opts,
+        )?)),
+        None => None,
+    };
+    let stream = stream_parquet_owned(source_plan, ctx, rg_indices, base_selections, pred_setup)?;
     Ok((return_schema, apply_cross_rg_limit(stream, opts.num_rows)))
+}
+
+/// Decode lookahead: how many RG tasks may exist concurrently (download of
+/// RG i+1 overlaps decode of RG i). Bounds TASK COUNT only — resident memory
+/// is bounded by the byte budget, network in-flight by the IO client pool.
+fn rg_lookahead() -> usize {
+    static L: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *L.get_or_init(|| {
+        std::env::var("DAFT_PARQUET_RG_LOOKAHEAD")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(2)
+            .max(1)
+    })
+}
+
+/// One in-flight RG: its task handle paired with the channel its batches
+/// arrive on. The coordinator drains the front receiver and then awaits the
+/// matching task to surface Err/panic.
+type InflightRg = (
+    common_runtime::RuntimeTask<DaftResult<()>>,
+    tokio::sync::mpsc::Receiver<DaftResult<RecordBatch>>,
+);
+
+/// Owned-mode pipeline. Structure (each piece is load-bearing):
+///
+/// - The coordinator registers budget reservations **synchronously** in RG
+///   occurrence order and never awaits admission itself — awaiting here
+///   while the front RG blocks on a full output channel is the v1 deadlock
+///   (front can't finish → can't release budget → next permit never comes).
+///   Each RG task awaits its own reservation.
+/// - Per-RG tasks are `RuntimeTask`s (abort-on-drop) owned by the
+///   coordinator, which is itself a `RuntimeTask` owned by the returned
+///   stream: dropping the stream (limit hit, consumer cancelled) cascades
+///   into aborting every task, whose `ResidentRowGroup`/reservation Drops
+///   release bytes and budget.
+/// - After a RG's channel closes the coordinator explicitly awaits its task
+///   handle, so an Err or panic surfaces instead of hanging the pipeline.
+/// - No cross-RG limit state enters the tasks; `apply_cross_rg_limit`
+///   truncates at the single ordered exit.
+fn stream_parquet_owned(
+    source_plan: Arc<RowGroupSourcePlan>,
+    ctx: Arc<RgTaskCtx>,
+    rg_indices: Vec<usize>,
+    base_selections: Vec<Option<RowSelection>>,
+    pred_setup: Option<Arc<PredPrefilter>>,
+) -> crate::Result<BoxStream<'static, DaftResult<RecordBatch>>> {
+    use tokio_stream::wrappers::ReceiverStream;
+
+    let budget = budget::process_budget()?;
+    let lookahead = rg_lookahead();
+    let compute = get_compute_runtime();
+
+    let (out_tx, out_rx) = tokio::sync::mpsc::channel::<DaftResult<RecordBatch>>(1);
+
+    let coordinator: common_runtime::RuntimeTask<DaftResult<()>> = compute.spawn(async move {
+        let compute = get_compute_runtime();
+        let mut inflight: std::collections::VecDeque<InflightRg> =
+            std::collections::VecDeque::new();
+        let mut pending = rg_indices
+            .into_iter()
+            .zip(base_selections)
+            .enumerate()
+            .collect::<std::collections::VecDeque<_>>();
+
+        loop {
+            while inflight.len() < lookahead {
+                let Some((occurrence, (rg_idx, base_sel))) = pending.pop_front() else {
+                    break;
+                };
+                // Register both possible phases here, in occurrence order.
+                // Tasks may await them later, but never choose their own FIFO
+                // position based on runtime scheduling.  The data reservation
+                // is dropped untouched when phase one rejects the RG.
+                let predicate_reservation = ctx.plan.predicate_pushed.then(|| {
+                    budget.reserve(source_plan.phase_bytes(occurrence, RangePhase::Predicate))
+                });
+                let data_reservation = (!ctx.plan.data_col_indices.is_empty())
+                    .then(|| budget.reserve(source_plan.phase_bytes(occurrence, RangePhase::Data)));
+                let (tx, rx) = tokio::sync::mpsc::channel::<DaftResult<RecordBatch>>(1);
+                let source_plan = source_plan.clone();
+                let ctx = ctx.clone();
+                let pred_setup = pred_setup.clone();
+                let task = compute.spawn(async move {
+                    // Phase one owns only predicate ranges.  In particular a
+                    // wholly rejected RG never admits or reads data-only bytes.
+                    let (inputs, predicate_access) = if ctx.plan.predicate_pushed {
+                        let permit = predicate_reservation
+                            .expect("pushed predicate has predicate reservation")
+                            .acquire()
+                            .await;
+                        let access = RgAccess::Resident(Arc::new(
+                            source_plan
+                                .download(occurrence, rg_idx, RangePhase::Predicate, permit)
+                                .await?,
+                        ));
+                        let inputs = match &pred_setup {
+                            Some(setup) => {
+                                prefilter_one_rg(
+                                    &access,
+                                    &ctx.metadata,
+                                    &ctx.arrow_schema,
+                                    &ctx.plan,
+                                    &ctx.path,
+                                    setup,
+                                    rg_idx,
+                                    base_sel,
+                                    None,
+                                )
+                                .await?
+                            }
+                            None => RgInputs {
+                                selection: base_sel,
+                                pred_arrays: Vec::new(),
+                            },
+                        };
+                        (inputs, Some(access))
+                    } else {
+                        (
+                            RgInputs {
+                                selection: base_sel,
+                                pred_arrays: Vec::new(),
+                            },
+                            None,
+                        )
+                    };
+
+                    // Predicate-only projections consume the phase-one owner
+                    // directly. Otherwise release predicate compressed bytes
+                    // before admitting the data phase; filtered Arrow arrays
+                    // remain valid independently of the source bytes.
+                    let mut sub_stream = if ctx.plan.data_col_indices.is_empty() {
+                        process_rg_predicate_only(
+                            ctx.clone(),
+                            predicate_access.expect("predicate-only is pushed"),
+                            rg_idx,
+                            inputs.selection,
+                        )
+                        .await
+                    } else if inputs
+                        .selection
+                        .as_ref()
+                        .is_some_and(|selection| selection.row_count() == 0)
+                    {
+                        drop(predicate_access);
+                        futures::stream::empty().boxed()
+                    } else {
+                        drop(predicate_access);
+                        let permit = data_reservation
+                            .expect("data decode has data reservation")
+                            .acquire()
+                            .await;
+                        let access = RgAccess::Resident(Arc::new(
+                            source_plan
+                                .download(occurrence, rg_idx, RangePhase::Data, permit)
+                                .await?,
+                        ));
+                        process_rg_with_data_cols(
+                            ctx.clone(),
+                            access,
+                            rg_idx,
+                            inputs.selection,
+                            inputs.pred_arrays,
+                        )
+                        .await
+                    };
+                    while let Some(item) = sub_stream.next().await {
+                        if tx.send(item).await.is_err() {
+                            break;
+                        }
+                    }
+                    // sub_stream (and its decoders) dropped here; `resident`
+                    // follows — bytes and permit release together.
+                    DaftResult::Ok(())
+                });
+                inflight.push_back((task, rx));
+            }
+
+            let Some((task, mut rx)) = inflight.pop_front() else {
+                break; // nothing pending, nothing inflight — done
+            };
+            while let Some(item) = rx.recv().await {
+                if out_tx.send(item).await.is_err() {
+                    // Consumer went away; dropping `inflight`/`task` aborts
+                    // everything and releases budget via Drop.
+                    return Ok(());
+                }
+            }
+            // Channel closed: harvest the task so errors and panics surface
+            // (a panic here is a JoinError, mapped into DaftError::External).
+            task.await??;
+        }
+        Ok(())
+    });
+
+    let merged: BoxStream<'static, DaftResult<RecordBatch>> = Box::pin(ReceiverStream::new(out_rx));
+    Ok(common_runtime::combine_stream(merged, async move { coordinator.await? }).boxed())
 }
