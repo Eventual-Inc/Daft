@@ -1531,7 +1531,19 @@ jobs:
     - uses: actions/checkout@v7
       with:
         fetch-depth: 0
+    - name: Check if Cargo.lock changed
+      id: lockfile
+      env:
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      run: |
+        if git diff --quiet "${BASE_SHA}" "${GITHUB_SHA}" -- Cargo.lock; then
+          echo "changed=false" >> "$GITHUB_OUTPUT"
+          echo "Cargo.lock unchanged; skipping rust dependency diff."
+        else
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+        fi
     - name: Compare Cargo.lock to base (external crates budget)
+      if: steps.lockfile.outputs.changed == 'true'
       env:
         BASE_SHA: ${{ github.event.pull_request.base.sha }}
       run: |
@@ -1546,7 +1558,7 @@ jobs:
           --markdown-summary | tee rust_dep_report.md >> "$GITHUB_STEP_SUMMARY"
     - name: Post sticky PR comment
       # Even if last step fails, post the comment
-      if: (failure() || success()) && github.event.pull_request.head.repo.full_name == github.repository
+      if: steps.lockfile.outputs.changed == 'true' && (failure() || success()) && github.event.pull_request.head.repo.full_name == github.repository
       uses: marocchino/sticky-pull-request-comment@v3
       with:
         header: rust-dependency-budget
