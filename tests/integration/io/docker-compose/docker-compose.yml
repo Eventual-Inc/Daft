@@ -1,7 +1,21 @@
 services:
 
+  # Azurite is a local Azure Blob Storage emulator
+  # Test fixtures populate data via azure.storage.blob (see tests/integration/io/conftest.py)
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:3.35.0@sha256:647c63a91102a9d8e8000aab803436e1fc85fbb285e7ce830a82ee5d6661cf37
+    ports:
+    - "127.0.0.1:10000:10000"
+    command: [azurite-blob, --loose, --blobHost, 0.0.0.0]
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 10000"]
+      interval: 1s
+      timeout: 2s
+      retries: 20
+      start_period: 5s
+
   # SeaweedFS provides the S3-compatible object store used by the I/O tests.
-  # Test fixtures populate it directly using S3 APIs such as boto3 or s3fs.
+  # Test fixtures populate data via S3 APIs such as boto3 or s3fs
   seaweedfs:
     image: chrislusf/seaweedfs:4.47@sha256:ce9e796f1fe6f06968f4c04bdaf8f678dad9c8acdfef3d244133d71bfa6bf882
     volumes:
@@ -16,7 +30,7 @@ services:
       AWS_SECRET_ACCESS_KEY: minioadmin
     command: [mini, -dir=/data, -s3.port=9000, -s3.config=/etc/seaweedfs/s3.json]
     healthcheck:
-      test: ["CMD-SHELL", "curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:9000/ | grep -qx 403"]
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://127.0.0.1:9000/"]
       interval: 1s
       timeout: 2s
       retries: 20

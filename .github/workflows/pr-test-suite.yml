@@ -543,6 +543,7 @@ jobs:
       uses: isbang/compose-action@v3.1.0
       with:
         compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
+        up-flags: --wait --wait-timeout 600
         down-flags: --volumes
     - name: Run IO integration tests
       run: |

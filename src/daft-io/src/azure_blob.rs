@@ -30,6 +30,10 @@ const AZURE_STORAGE_RESOURCE: &str = "https://storage.azure.com/.default";
 const AZURE_STORE_SUFFIX: &str = ".dfs.core.windows.net";
 const AZURE_FABRIC_SUFFIX: &str = ".dfs.fabric.microsoft.com";
 
+fn azure_blob_request_prefix(prefix: &str) -> String {
+    prefix.trim_start_matches(AZURE_DELIMITER).to_string()
+}
+
 #[derive(Debug, Snafu)]
 enum Error {
     // Input errors.
@@ -468,9 +472,12 @@ impl AzureBlobSource {
         let protocol = protocol.to_string();
         let container_name = container_name.to_string();
         let prefix = prefix.to_string();
+        // URI paths include a leading slash, but Azure blob names do not. Keep
+        // the original prefix for error paths while normalizing the API query.
+        let request_prefix = azure_blob_request_prefix(&prefix);
 
         // Paginated response stream from Azure API.
-        let mut responses_stream = container_client.list_blobs().prefix(prefix.clone());
+        let mut responses_stream = container_client.list_blobs().prefix(request_prefix);
 
         // Setting delimiter will trigger "directory-mode" which is a posix-like ls for the current directory
         if *posix {
@@ -751,7 +758,40 @@ impl ObjectSource for AzureBlobSource {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_azure_uri;
+    use std::sync::Arc;
+
+    use azure_storage::StorageCredentials;
+    use tokio::sync::Semaphore;
+
+    use super::{AzureBlobSource, BlobServiceClient, azure_blob_request_prefix, parse_azure_uri};
+
+    #[test]
+    fn test_azure_blob_request_prefix() {
+        assert_eq!(azure_blob_request_prefix("/"), "");
+        assert_eq!(azure_blob_request_prefix("/nested/path/"), "nested/path/");
+        assert_eq!(azure_blob_request_prefix("nested/path/"), "nested/path/");
+    }
+
+    #[tokio::test]
+    async fn test_list_directory_constructs_stream_with_normalized_prefix() {
+        let blob_client = BlobServiceClient::new("account", StorageCredentials::anonymous());
+        let source = AzureBlobSource {
+            blob_client: Arc::new(blob_client),
+            connection_pool_sema: Arc::new(Semaphore::new(1)),
+        };
+        let container_client = source.blob_client.container_client("container");
+
+        let _stream = source
+            .list_directory_delimiter_stream(
+                &container_client,
+                "az",
+                "container",
+                "/nested/path/",
+                &true,
+                None,
+            )
+            .await;
+    }
 
     #[test]
     fn test_parse_azure_uri_onelake_container_at_host() {
