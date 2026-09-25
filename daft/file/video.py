@@ -238,9 +238,8 @@ class VideoFile(File):
                     continue
 
                 # Stop at end_time
-                if end_time is not None:
-                    if frame.time is not None and frame.time > end_time:
-                        break
+                if end_time is not None and frame.time is not None and frame.time > end_time:
+                    break
 
                 if is_key_frame is False and frame.key_frame:
                     frame_index += 1

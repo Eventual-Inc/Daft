@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from pyiceberg.catalog import Catalog as InnerCatalog
 from pyiceberg.catalog import load_catalog
 from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
+from pyiceberg.exceptions import TableAlreadyExistsError as PyIcebergTableAlreadyExistsError
 from pyiceberg.io.pyarrow import _pyarrow_to_schema_without_ids
 from pyiceberg.partitioning import PartitionField as PyIcebergPartitionField
 from pyiceberg.partitioning import PartitionSpec as PyIcebergPartitionSpec
@@ -23,7 +24,16 @@ from pyiceberg.transforms import (
     YearTransform,
 )
 
-from daft.catalog import Catalog, Function, Identifier, NotFoundError, Properties, Schema, Table
+from daft.catalog import (
+    Catalog,
+    Function,
+    Identifier,
+    NotFoundError,
+    Properties,
+    Schema,
+    Table,
+    TableAlreadyExistsError,
+)
 from daft.io.iceberg._iceberg import read_iceberg
 
 if TYPE_CHECKING:
@@ -165,17 +175,20 @@ class IcebergCatalog(Catalog):
         iceberg_schema = assign_fresh_schema_ids(_pyarrow_to_schema_without_ids(pa_schema))
         partition_spec = self._partition_fields_to_pyiceberg_spec(iceberg_schema, partition_fields)
         t = IcebergTable.__new__(IcebergTable)
-        if partition_spec is not None:
-            t._inner = self._inner.create_table(
-                i,
-                schema=iceberg_schema,
-                partition_spec=partition_spec,
-            )
-        else:
-            t._inner = self._inner.create_table(
-                i,
-                schema=iceberg_schema,
-            )
+        try:
+            if partition_spec is not None:
+                t._inner = self._inner.create_table(
+                    i,
+                    schema=iceberg_schema,
+                    partition_spec=partition_spec,
+                )
+            else:
+                t._inner = self._inner.create_table(
+                    i,
+                    schema=iceberg_schema,
+                )
+        except PyIcebergTableAlreadyExistsError as e:
+            raise TableAlreadyExistsError(f"Table {identifier} already exists") from e
         return t
 
     ###
@@ -249,6 +262,7 @@ class IcebergTable(Table):
 
     _read_options = {"snapshot_id", "branch", "tag", "ignore_corrupt_files"}
     _write_options: set[str] = set()
+    _overwrite_options: set[str] = {"overwrite_filter", "validate_overwrite_filter"}
 
     def __init__(self) -> None:
         raise RuntimeError("IcebergTable.__init__ is not supported, please use `Table.from_iceberg` instead.")
@@ -286,9 +300,14 @@ class IcebergTable(Table):
         df.write_iceberg(self._inner, mode="append")
 
     def overwrite(self, df: DataFrame, **options: Any) -> None:
-        self._validate_options("Iceberg write", options, IcebergTable._write_options)
+        self._validate_options("Iceberg overwrite", options, IcebergTable._overwrite_options)
 
-        df.write_iceberg(self._inner, mode="overwrite")
+        df.write_iceberg(
+            self._inner,
+            mode="overwrite",
+            overwrite_filter=options.get("overwrite_filter"),
+            validate_overwrite_filter=options.get("validate_overwrite_filter", True),
+        )
 
 
 def _to_pyiceberg_ident(ident: Identifier | str) -> tuple[str, ...] | str:

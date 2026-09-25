@@ -1,27 +1,34 @@
 services:
 
   # Azurite is a local Azure Blob Storage emulator
-  # Test fixtures should populate data via azure.storage.blob (see tests/integration/io/conftest.py)
+  # Test fixtures populate data via azure.storage.blob (see tests/integration/io/conftest.py)
   azurite:
     image: mcr.microsoft.com/azure-storage/azurite
     ports:
     - 10000:10000
     command: [azurite-blob, --loose, --blobHost, 0.0.0.0]
 
-  # MinIO is an S3-compatible API object store
-  # Test fixtures should populate data in MinIO directly using S3 APIs such as boto3 or s3fs
-  minio:
-    image: quay.io/minio/minio
+  # SeaweedFS provides the S3-compatible object store used by the I/O tests.
+  # Test fixtures populate data via S3 APIs such as boto3 or s3fs
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.47@sha256:ce9e796f1fe6f06968f4c04bdaf8f678dad9c8acdfef3d244133d71bfa6bf882
     volumes:
     - /data
+    # SeaweedFS requires an explicit anonymous identity for multipart uploads;
+    # this service is isolated to the integration-test environment.
+    - ./seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro
     ports:
-    - 9000:9000
+    - "127.0.0.1:9000:9000"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    command:
-    - server
-    - /data
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+    command: [mini, -dir=/data, -s3.port=9000, -s3.config=/etc/seaweedfs/s3.json]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:9000/ | grep -qx 403"]
+      interval: 1s
+      timeout: 2s
+      retries: 20
+      start_period: 5s
 
   # Use nginx to serve static files
   # Test fixtures should dump data in the `/tmp/daft-integration-testing/nginx` folder
@@ -44,13 +51,19 @@ services:
 
   # Bigtable emulator for integration testing
   bigtable-emulator:
-    image: google/cloud-sdk
+    # Use Google's multi-arch emulator image for native ARM and x86-64 support.
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators@sha256:45a15cc163d2df13137478856b4b9bb90426100fa8aec542269460c10110b727
     container_name: bigtable-emulator
     ports:
     - "127.0.0.1:8086:8086"
     command: gcloud beta emulators bigtable start --host-port=0.0.0.0:8086
     environment:
     - BIGTABLE_EMULATOR_HOST=0.0.0.0:8086
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8086'"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
 
   redpanda:
     image: redpandadata/redpanda:v25.1.3

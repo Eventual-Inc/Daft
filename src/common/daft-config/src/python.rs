@@ -116,7 +116,6 @@ impl PyDaftExecutionConfig {
         pre_shuffle_merge_partition_threshold=None,
         scantask_max_parallel=None,
         native_parquet_writer=None,
-        min_cpu_per_task=None,
         actor_udf_ready_timeout=None,
         maintain_order=None,
         enable_dynamic_batching=None,
@@ -154,7 +153,6 @@ impl PyDaftExecutionConfig {
         pre_shuffle_merge_partition_threshold: Option<usize>,
         scantask_max_parallel: Option<usize>,
         native_parquet_writer: Option<bool>,
-        min_cpu_per_task: Option<f64>,
         actor_udf_ready_timeout: Option<usize>,
         maintain_order: Option<bool>,
         enable_dynamic_batching: Option<bool>,
@@ -266,10 +264,6 @@ impl PyDaftExecutionConfig {
 
         if let Some(native_parquet_writer) = native_parquet_writer {
             config.native_parquet_writer = native_parquet_writer;
-        }
-
-        if let Some(min_cpu_per_task) = min_cpu_per_task {
-            config.min_cpu_per_task = min_cpu_per_task;
         }
 
         if let Some(actor_udf_ready_timeout) = actor_udf_ready_timeout {
@@ -449,11 +443,6 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn scantask_max_parallel(&self) -> PyResult<usize> {
         Ok(self.config.scantask_max_parallel)
-    }
-
-    #[getter]
-    fn min_cpu_per_task(&self) -> PyResult<f64> {
-        Ok(self.config.min_cpu_per_task)
     }
 
     #[getter]

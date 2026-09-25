@@ -1,19 +1,23 @@
 from __future__ import annotations
 
 import io
-import os
 import re
 
 import pytest
 
 import daft
+from daft.daft import testing as native_testing_utils
 from tests.conftest import get_tests_daft_runner_name
 from tests.utils import clean_explain_output
 
 pytestmark = pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="requires Native Runner to be in use")
 
 NOOP_QUAL = "tests.dataframe.test_morsels.make_noop_udf.<locals>.noop"
-CONCURRENCY = os.cpu_count()
+
+
+def _runtime_concurrency() -> int:
+    # Use the same Rust runtime value used when constructing the physical plan.
+    return native_testing_utils.get_compute_runtime_num_worker_threads()
 
 
 def make_noop_udf(batch_size: int, dtype: daft.DataType = daft.DataType.int64()):
@@ -49,7 +53,7 @@ def test_batch_size_from_udf_propagated_to_scan(dynamic_batching):
     * UDF {NOOP_QUAL}:
     |   Expr = {_noop_func_id(noop_id)}(col(0: a)) as a
     |   Passthrough Columns = []
-    |   Properties = {{ batch_size = 10, concurrency = {CONCURRENCY}, on_error = raise, async = false, scalar = false }}
+    |   Properties = {{ batch_size = 10, concurrency = {_runtime_concurrency()}, on_error = raise, async = false, scalar = false }}
     |   Resource request = {{ num_gpus = 0 }}
     |   Stats = {{ Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }}
     |   Batch Size = 10
@@ -90,7 +94,7 @@ def test_batch_size_from_udf_propagated_through_ops_to_scan():
 * UDF {NOOP_QUAL}:
 |   Expr = {_noop_func_id(noop_id)}(col(0: __TruncateRootUDF_0-0-0__)) as data
 |   Passthrough Columns = []
-|   Properties = {{ batch_size = 10, concurrency = {CONCURRENCY}, on_error = raise, async = false, scalar = false }}
+|   Properties = {{ batch_size = 10, concurrency = {_runtime_concurrency()}, on_error = raise, async = false, scalar = false }}
 |   Resource request = {{ num_gpus = 0 }}
 |   Stats = {{ Approx num rows = 5, Approx size bytes = 156 B, Accumulated selectivity = 1.00 }}
 |   Batch Size = 10
@@ -132,7 +136,7 @@ def test_batch_size_from_multiple_udfs_do_not_override_each_other():
 * UDF {NOOP_QUAL}:
 |   Expr = {_noop_func_id(noop_ids[0])}(col(0: __TruncateRootUDF_0-0-0__)) as a
 |   Passthrough Columns = []
-|   Properties = {{ batch_size = 30, concurrency = {CONCURRENCY}, on_error = raise, async = false, scalar = false }}
+|   Properties = {{ batch_size = 30, concurrency = {_runtime_concurrency()}, on_error = raise, async = false, scalar = false }}
 |   Resource request = {{ num_gpus = 0 }}
 |   Stats = {{ Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }}
 |   Batch Size = 30
@@ -140,7 +144,7 @@ def test_batch_size_from_multiple_udfs_do_not_override_each_other():
 * UDF {NOOP_QUAL}:
 |   Expr = {_noop_func_id(noop_ids[1])}(col(0: __TruncateRootUDF_1-0-0__)) as __TruncateRootUDF_0-0-0__
 |   Passthrough Columns = []
-|   Properties = {{ batch_size = 20, concurrency = {CONCURRENCY}, on_error = raise, async = false, scalar = false }}
+|   Properties = {{ batch_size = 20, concurrency = {_runtime_concurrency()}, on_error = raise, async = false, scalar = false }}
 |   Resource request = {{ num_gpus = 0 }}
 |   Stats = {{ Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }}
 |   Batch Size = 20
@@ -148,7 +152,7 @@ def test_batch_size_from_multiple_udfs_do_not_override_each_other():
 * UDF {NOOP_QUAL}:
 |   Expr = {_noop_func_id(noop_ids[2])}(col(0: a)) as __TruncateRootUDF_1-0-0__
 |   Passthrough Columns = []
-|   Properties = {{ batch_size = 10, concurrency = {CONCURRENCY}, on_error = raise, async = false, scalar = false }}
+|   Properties = {{ batch_size = 10, concurrency = {_runtime_concurrency()}, on_error = raise, async = false, scalar = false }}
 |   Resource request = {{ num_gpus = 0 }}
 |   Stats = {{ Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }}
 |   Batch Size = 10
@@ -176,7 +180,7 @@ def test_batch_size_from_udf_not_propagated_through_agg():
 * UDF {NOOP_QUAL}:
 |   Expr = {_noop_func_id(noop_id)}(col(0: a)) as a
 |   Passthrough Columns = []
-|   Properties = {{ batch_size = 10, concurrency = {CONCURRENCY}, on_error = raise, async = false, scalar = false }}
+|   Properties = {{ batch_size = 10, concurrency = {_runtime_concurrency()}, on_error = raise, async = false, scalar = false }}
 |   Resource request = {{ num_gpus = 0 }}
 |   Stats = {{ Approx num rows = 4, Approx size bytes = 32 B, Accumulated selectivity = 0.80 }}
 |   Batch Size = 10
@@ -210,7 +214,7 @@ def test_batch_size_from_udf_not_propagated_through_join():
 * UDF {NOOP_QUAL}:
 |   Expr = {_noop_func_id(noop_id)}(col(0: a)) as a
 |   Passthrough Columns = []
-|   Properties = {{ batch_size = 10, concurrency = {CONCURRENCY}, on_error = raise, async = false, scalar = false }}
+|   Properties = {{ batch_size = 10, concurrency = {_runtime_concurrency()}, on_error = raise, async = false, scalar = false }}
 |   Resource request = {{ num_gpus = 0 }}
 |   Stats = {{ Approx num rows = 5, Approx size bytes = 37 B, Accumulated selectivity = 0.90 }}
 |   Batch Size = 10
@@ -308,7 +312,7 @@ def test_batch_size_from_into_batches_before_udf():
 * UDF {NOOP_QUAL}:
 |   Expr = {_noop_func_id(noop_id)}(col(0: a)) as a
 |   Passthrough Columns = []
-|   Properties = {{ batch_size = 10, concurrency = {CONCURRENCY}, on_error = raise, async = false, scalar = false }}
+|   Properties = {{ batch_size = 10, concurrency = {_runtime_concurrency()}, on_error = raise, async = false, scalar = false }}
 |   Resource request = {{ num_gpus = 0 }}
 |   Stats = {{ Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }}
 |   Batch Size = 10

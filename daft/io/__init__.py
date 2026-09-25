@@ -18,6 +18,7 @@ from daft.daft import (
     HuggingFaceConfig,
 )
 from daft.lazy_import import LazyImport
+from daft.io._avro import read_avro
 from daft.io._blob import read_blob
 from daft.io._csv import read_csv
 from daft.io._text import read_text
@@ -31,7 +32,8 @@ from daft.io._parquet import read_parquet
 from daft.io._sql import read_sql
 from daft.io._warc import read_warc
 from daft.io.huggingface import read_huggingface
-from daft.io.mcap._mcap import read_mcap
+from daft.io._mcap import read_mcap
+from daft.io.webdataset import read_webdataset
 from daft.io._range import _range
 from daft.io._files import from_files
 from daft.io.file_path import from_glob_path
@@ -72,6 +74,7 @@ __all__ = [
     "_range",
     "from_files",
     "from_glob_path",
+    "read_avro",
     "read_blob",
     "read_csv",
     "read_deltalake",
@@ -88,4 +91,5 @@ __all__ = [
     "read_text",
     "read_video_frames",
     "read_warc",
+    "read_webdataset",
 ]
