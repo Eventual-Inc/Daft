@@ -8,7 +8,7 @@
 # "License"); you may not use this file except in compliance
 # with the License.  You may obtain a copy of the License at
 #
-#   http://www.apache.org/licenses/LICENSE-2.0
+# http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing,
 # software distributed under the License is distributed on an
@@ -20,14 +20,14 @@
 
 set -ex
 
-if [ $(docker ps -q --filter "name=pyiceberg-minio" --filter "status=running" ) ]; then
-    echo "Minio backend running"
+if [ $(docker ps -q --filter "name=pyiceberg-seaweedfs" --filter "status=running" ) ]; then
+    echo "SeaweedFS backend running"
 else
     docker-compose -f docker-compose.yml kill
     docker-compose -f docker-compose.yml up -d
-    while [ -z $(docker ps -q --filter "name=pyiceberg-minio" --filter "status=running" ) ]
+    while [ -z $(docker ps -q --filter "name=pyiceberg-seaweedfs" --filter "status=running" ) ]
     do
-      echo "Waiting for Minio"
+      echo "Waiting for SeaweedFS"
       sleep 1
     done
 fi
