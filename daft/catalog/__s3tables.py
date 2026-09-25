@@ -9,7 +9,16 @@ import boto3
 import botocore
 from botocore.exceptions import ClientError
 
-from daft.catalog import Catalog, Function, Identifier, NotFoundError, Properties, Schema, Table
+from daft.catalog import (
+    Catalog,
+    Function,
+    Identifier,
+    NotFoundError,
+    Properties,
+    Schema,
+    Table,
+    TableAlreadyExistsError,
+)
 from daft.catalog.__iceberg import IcebergCatalog
 from daft.io import read_iceberg
 
@@ -80,7 +89,6 @@ class S3Path(Sequence[str]):
 
 
 class S3Catalog(Catalog):
-    #
     _client: S3TablesClient
     _table_bucket_arn: str
     _io_config: IOConfig
@@ -173,6 +181,10 @@ class S3Catalog(Catalog):
                 metadata=_to_metadata(schema),
             )
             return self.get_table(ident)
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "ConflictException":
+                raise TableAlreadyExistsError(f"Table {ident} already exists") from e
+            raise ValueError(f"Failed to create table: {e}") from e
         except Exception as e:
             raise ValueError(f"Failed to create table: {e}") from e
 
@@ -321,10 +333,8 @@ class S3Catalog(Catalog):
 
 
 class S3Table(Table):
-    #
     _catalog: S3Catalog
     _path: S3Path
-    #
     metadata_location: str | None
 
     def __init__(

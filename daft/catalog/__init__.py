@@ -67,6 +67,7 @@ __all__ = [
     "Properties",
     "Schema",
     "Table",
+    "TableAlreadyExistsError",
 ]
 
 
@@ -75,6 +76,14 @@ Properties = dict[str, Any]
 
 class NotFoundError(Exception):
     """Raised when some catalog object is not able to be found."""
+
+
+class TableAlreadyExistsError(ValueError):
+    """Raised when a table already exists in a catalog.
+
+    Subclasses ValueError for backwards compatibility with code that
+    catches ValueError on duplicate creation.
+    """
 
 
 class Catalog(ABC):
@@ -410,14 +419,14 @@ class Catalog(ABC):
             raise ImportError("pypaimon is required: pip install pypaimon")
 
     @staticmethod
-    def from_postgres(connection_string: str, extensions: list[str] | None = ["vector"]) -> Catalog:
+    def from_postgres(connection_string: str, extensions: Sequence[str] | None = ("vector",)) -> Catalog:
         """Create a Daft Catalog from a PostgreSQL connection string.
 
         Args:
             connection_string (str): a PostgreSQL connection string
-            extensions (list[str], optional): List of PostgreSQL extensions to create if they don't exist.
+            extensions (Sequence[str], optional): List of PostgreSQL extensions to create if they don't exist.
                 For each extension, "CREATE EXTENSION IF NOT EXISTS <extension>" will be executed.
-                Defaults to ["vector"] (pgvector extension, if available).
+                Defaults to ("vector",) (pgvector extension, if available).
 
         Returns:
             Catalog: a new Catalog instance to a PostgreSQL database.
@@ -545,10 +554,12 @@ class Catalog(ABC):
         Returns:
             Table: the existing table (if exists) or the new table instance.
         """
-        if self.has_table(identifier):
-            return self.get_table(identifier)
-        else:
+        try:
             return self.create_table(identifier, source, properties)
+        except TableAlreadyExistsError:
+            # Create-then-catch instead of check-then-create to avoid the
+            # TOCTOU race of checking existence before creating.
+            return self.get_table(identifier)
 
     ###
     # has_*

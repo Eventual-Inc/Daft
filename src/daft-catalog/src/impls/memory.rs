@@ -7,7 +7,7 @@ use daft_micropartition::{
     MicroPartition,
     partitioning::{MicroPartitionSet, PartitionSet},
 };
-use indexmap::IndexMap;
+use indexmap::{IndexMap, map::Entry};
 
 use crate::{
     Catalog, FunctionRef, Identifier, Table, TableRef,
@@ -129,29 +129,34 @@ impl Catalog for MemoryCatalog {
     fn create_table(&self, ident: &Identifier, schema: SchemaRef) -> CatalogResult<TableRef> {
         let (namespace, table_name) = Self::split_table_ident(ident)?;
 
-        {
-            let tables = self.tables.read().unwrap();
+        // Build the table before taking the lock: MemoryTable::new registers
+        // the partition set with the (Python) runner and can release the GIL,
+        // so holding the lock across this call can deadlock with a concurrent
+        // creator that holds the GIL while waiting on the lock.
+        let table = Arc::new(MemoryTable::new(table_name.to_string(), schema)?);
 
-            let Some(namespace_tables) = tables.get(&namespace) else {
-                return Err(CatalogError::ObjectNotFound {
+        // Insert with conflict detection: entry() reports "already exists"
+        // from the insert operation itself, so there is no separate check
+        // that could race with a concurrent creator. The write lock keeps
+        // the entry lookup and insert atomic across threads.
+        let mut tables = self.tables.write().unwrap();
+
+        let namespace_tables =
+            tables
+                .get_mut(&namespace)
+                .ok_or_else(|| CatalogError::ObjectNotFound {
                     type_: "namespace".to_string(),
-                    ident: namespace.unwrap(),
-                });
-            };
+                    ident: namespace.clone().unwrap(),
+                })?;
 
-            if namespace_tables.contains_key(table_name) {
+        match namespace_tables.entry(table_name.to_string()) {
+            Entry::Vacant(slot) => {
+                slot.insert(table.clone());
+            }
+            Entry::Occupied(_) => {
                 return Err(CatalogError::obj_already_exists("table", ident));
             }
         }
-
-        let table = Arc::new(MemoryTable::new(table_name.to_string(), schema)?);
-
-        self.tables
-            .write()
-            .unwrap()
-            .get_mut(&namespace)
-            .unwrap()
-            .insert(table_name.to_string(), table.clone());
 
         Ok(table)
     }
