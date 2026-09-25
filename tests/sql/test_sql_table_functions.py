@@ -8,6 +8,7 @@ import pytest
 
 import daft
 from daft import DataType as dt
+from tests.utils import explain_to_text
 
 # TODO chore: make an asset fixture for all tests (beyond just sql).
 
@@ -285,3 +286,23 @@ def test_sql_read_negative_size_option_rejected(function, path, option):
     with pytest.raises(Exception, match="Expected a non-negative integer literal") as exc_info:
         daft.sql(f"SELECT * FROM {function}('{path}', {option} => -1)")
     assert exc_info.type.__name__ == "InvalidSQLException"
+
+
+@pytest.fixture
+def io_config_sample_parquet(tmp_path):
+    path = tmp_path / "a.parquet"
+    papq.write_table(pa.table({"x": [1, 2, 3]}), path)
+    return path.as_posix()
+
+
+@pytest.mark.parametrize(
+    "spelling", ["S3Config", "s3config", "S3CONFIG"], ids=["mixed_case", "lower_case", "upper_case"]
+)
+def test_sql_config_constructors_are_case_insensitive(io_config_sample_parquet, spelling):
+    """Config constructors resolve under any casing, like every other SQL function."""
+    query = (
+        f"SELECT * FROM read_parquet('{io_config_sample_parquet}', "
+        f"io_config := {spelling}(region_name => 'eu-central-1'))"
+    )
+
+    assert "eu-central-1" in explain_to_text(daft.sql(query))

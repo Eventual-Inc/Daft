@@ -418,10 +418,14 @@ impl SQLFunctions {
     }
 
     /// Add a [FunctionExpr] to the [SQLFunctions] instance.
+    ///
+    /// The name is lowercased here because lookup lowercases the parsed function name,
+    /// so a mixed-case key would never be found.
     pub fn add_fn<F: SQLFunction + 'static>(&mut self, name: &str, func: F) {
+        let key = name.to_lowercase();
         self.docsmap
-            .insert(name.to_string(), (func.docstrings(name), func.arg_names()));
-        self.map.insert(name.to_string(), Arc::new(func));
+            .insert(key.clone(), (func.docstrings(name), func.arg_names()));
+        self.map.insert(key, Arc::new(func));
     }
 
     /// Get a function by name from the [SQLFunctions] instance.
