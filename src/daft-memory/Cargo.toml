@@ -1,0 +1,11 @@
+[package]
+name = "daft-memory"
+version = {workspace = true}
+edition = {workspace = true}
+
+[dependencies]
+thiserror = {workspace = true}
+tokio = {workspace = true, features = ["sync"]}
+
+[lints]
+workspace = true

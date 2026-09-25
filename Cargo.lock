@@ -3270,6 +3270,7 @@ dependencies = [
  "arrow-buffer 59.0.0",
  "arrow-ipc",
  "arrow-schema 59.0.0",
+ "async-stream",
  "async-trait",
  "common-checkpoint-config",
  "common-daft-config",
@@ -3299,6 +3300,7 @@ dependencies = [
  "daft-local-plan",
  "daft-logical-plan",
  "daft-mcap",
+ "daft-memory",
  "daft-micropartition",
  "daft-parquet",
  "daft-partition-refs",
@@ -3323,11 +3325,13 @@ dependencies = [
  "smallvec",
  "snafu",
  "sysinfo",
+ "thiserror 2.0.18",
  "tikv-jemalloc-ctl",
  "tokio",
  "tokio-stream",
  "tokio-util",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -3420,6 +3424,14 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+]
+
+[[package]]
+name = "daft-memory"
+version = "0.3.0-dev0"
+dependencies = [
+ "thiserror 2.0.18",
+ "tokio",
 ]
 
 [[package]]

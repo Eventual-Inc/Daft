@@ -80,6 +80,7 @@ impl BlockingSink for WindowOrderByOnlySink {
         input: MicroPartition,
         mut state: Self::State,
         _runtime_stats: Arc<Self::Stats>,
+        _spill_scope: crate::spilling::SpillScopeId,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let sink_name = self.name().to_string();
@@ -98,6 +99,7 @@ impl BlockingSink for WindowOrderByOnlySink {
     fn finalize(
         &self,
         states: Vec<Self::State>,
+        _spill_scope: crate::spilling::SpillScopeId,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult {
         let params = self.params.clone();
@@ -116,7 +118,7 @@ impl BlockingSink for WindowOrderByOnlySink {
                         .collect();
 
                     if all_batches.is_empty() {
-                        return Ok(BlockingSinkOutput::Partitions(vec![MicroPartition::empty(
+                        return Ok(BlockingSinkOutput::partitions(vec![MicroPartition::empty(
                             Some(params.original_schema.clone()),
                         )]));
                     }
@@ -157,7 +159,7 @@ impl BlockingSink for WindowOrderByOnlySink {
                         sorted.union(&RecordBatch::from_nonempty_columns(new_cols)?)?
                     };
 
-                    Ok(BlockingSinkOutput::Partitions(vec![
+                    Ok(BlockingSinkOutput::partitions(vec![
                         MicroPartition::new_loaded(
                             params.original_schema.clone(),
                             vec![result].into(),
