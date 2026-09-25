@@ -1,19 +1,26 @@
 services:
 
-  # MinIO is an S3-compatible API object store
-  # Test fixtures should populate data in MinIO directly using S3 APIs such as boto3 or s3fs
-  minio:
-    image: quay.io/minio/minio
+  # SeaweedFS provides the S3-compatible object store used by the I/O tests.
+  # Test fixtures populate it directly using S3 APIs such as boto3 or s3fs.
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.47@sha256:ce9e796f1fe6f06968f4c04bdaf8f678dad9c8acdfef3d244133d71bfa6bf882
     volumes:
     - /data
+    # SeaweedFS requires an explicit anonymous identity for multipart uploads;
+    # this service is isolated to the integration-test environment.
+    - ./seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro
     ports:
-    - 9000:9000
+    - "127.0.0.1:9000:9000"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    command:
-    - server
-    - /data
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+    command: [mini, -dir=/data, -s3.port=9000, -s3.config=/etc/seaweedfs/s3.json]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:9000/ | grep -qx 403"]
+      interval: 1s
+      timeout: 2s
+      retries: 20
+      start_period: 5s
 
   # Use nginx to serve static files
   # Test fixtures should dump data in the `/tmp/daft-integration-testing/nginx` folder

@@ -33,7 +33,7 @@ from .test_utils import (
 
 @pytest.fixture
 def s3_bucket(gravitino_minio_io_config):
-    """Creates a MinIO bucket for testing."""
+    """Creates an S3 bucket in SeaweedFS for testing."""
     bucket_name = f"gravitino-test-{uuid.uuid4().hex[:8]}"
 
     fs = s3fs.S3FileSystem(
@@ -72,7 +72,7 @@ def prepared_s3_fileset(
     gravitino_minio_io_config,
     s3_bucket,
 ):
-    """Creates a Gravitino fileset backed by MinIO S3 storage with test data."""
+    """Creates a Gravitino fileset backed by SeaweedFS S3 storage with test data."""
     # Write test data to S3 in a subfolder
     sample_data = {"id": [1, 2, 3], "value": ["alpha", "beta", "gamma"]}
     df = daft.from_pydict(sample_data)
@@ -110,7 +110,7 @@ def prepared_s3_fileset(
         catalog_name,
         properties={
             "filesystem-providers": "s3",
-            "s3-endpoint": "http://daft-gravitino-minio:9000",
+            "s3-endpoint": "http://daft-gravitino-seaweedfs:9000",
             "s3-access-key-id": "minioadmin",
             "s3-secret-access-key": "minioadmin",
         },
@@ -240,7 +240,7 @@ def test_s3_fileset_partitioned_data(
         catalog_name,
         properties={
             "filesystem-providers": "s3",
-            "s3-endpoint": "http://daft-gravitino-minio:9000",
+            "s3-endpoint": "http://daft-gravitino-seaweedfs:9000",
             "s3-access-key-id": "minioadmin",
             "s3-secret-access-key": "minioadmin",
         },
@@ -311,7 +311,7 @@ def test_s3_fileset_empty_glob(
         catalog_name,
         properties={
             "filesystem-providers": "s3",
-            "s3-endpoint": "http://daft-gravitino-minio:9000",
+            "s3-endpoint": "http://daft-gravitino-seaweedfs:9000",
             "s3-access-key-id": "minioadmin",
             "s3-secret-access-key": "minioadmin",
         },
@@ -400,7 +400,7 @@ def empty_s3_fileset(
         catalog_name,
         properties={
             "filesystem-providers": "s3",
-            "s3-endpoint": "http://daft-gravitino-minio:9000",
+            "s3-endpoint": "http://daft-gravitino-seaweedfs:9000",
             "s3-access-key-id": "minioadmin",
             "s3-secret-access-key": "minioadmin",
         },
