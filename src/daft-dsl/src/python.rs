@@ -10,7 +10,6 @@ use std::{
 use common_error::DaftError;
 use common_hashable_float_wrapper::FloatWrapper;
 use common_py_serde::impl_bincode_py_state_serialization;
-use common_resource_request::ResourceRequest;
 use daft_core::{
     datatypes::{IntervalValue, IntervalValueBuilder},
     prelude::*,
@@ -189,69 +188,6 @@ pub fn coalesce(items: Vec<PyExpr>) -> PyExpr {
     Expr::Coalesce(items.into_iter().map(|item| item.into()).collect()).into()
 }
 
-#[allow(clippy::too_many_arguments)]
-#[pyfunction(signature = (
-    name,
-    inner,
-    bound_args,
-    expressions,
-    return_dtype,
-    init_args,
-    resource_request=None,
-    batch_size=None,
-    concurrency=None,
-    use_process=None,
-    ray_options=None,
-))]
-pub fn udf(
-    name: &str,
-    inner: Py<PyAny>,
-    bound_args: Py<PyAny>,
-    expressions: Vec<PyExpr>,
-    return_dtype: PyDataType,
-    init_args: Py<PyAny>,
-    resource_request: Option<ResourceRequest>,
-    batch_size: Option<usize>,
-    concurrency: Option<usize>,
-    use_process: Option<bool>,
-    ray_options: Option<Py<PyAny>>,
-) -> PyResult<PyExpr> {
-    use crate::functions::python::udf;
-
-    if let Some(batch_size) = batch_size
-        && batch_size == 0
-    {
-        return Err(PyValueError::new_err(format!(
-            "Error creating UDF: batch size must be positive (got {batch_size})"
-        )));
-    }
-
-    let expressions_map: Vec<ExprRef> = expressions.into_iter().map(|pyexpr| pyexpr.expr).collect();
-
-    let concurrency = concurrency
-        .map(|c| {
-            NonZeroUsize::new(c)
-                .ok_or_else(|| PyValueError::new_err("concurrency for udf must be non-zero"))
-        })
-        .transpose()?;
-    Ok(PyExpr {
-        expr: udf(
-            name,
-            inner.into(),
-            bound_args.into(),
-            &expressions_map,
-            return_dtype.dtype,
-            init_args.into(),
-            resource_request,
-            batch_size,
-            concurrency,
-            use_process,
-            ray_options.map(|r| r.into()),
-        )?
-        .into(),
-    })
-}
-
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 pub fn row_wise_udf(
@@ -409,13 +345,6 @@ pub fn udaf_expr(
             inputs,
         ),
     })
-}
-
-/// Initializes all uninitialized UDFs in the expression
-#[pyfunction]
-pub fn initialize_udfs(expr: PyExpr) -> PyResult<PyExpr> {
-    use crate::functions::python::initialize_udfs;
-    Ok(initialize_udfs(expr.expr)?.into())
 }
 
 #[pyclass(module = "daft.daft", from_py_object)]

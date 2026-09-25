@@ -5,7 +5,7 @@ use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_core::prelude::*;
 use daft_dsl::{
     AggExpr, Column, Expr, ExprRef, PlanRef, ResolvedColumn, UnresolvedColumn,
-    expr::{MapGroupsFn, window::WindowSpec},
+    expr::window::WindowSpec,
     functions::{
         BuiltinScalarFn, FunctionArg, FunctionArgs, FunctionExpr, scalar::ScalarFn,
         struct_::StructExpr,
@@ -259,22 +259,13 @@ fn convert_udfs_to_map_groups(expr: &ExprRef) -> DaftResult<ExprRef> {
     expr
         .clone()
         .transform(|e| match e.as_ref() {
-            Expr::Function { func, inputs } if matches!(func, FunctionExpr::Python(_)) => {
-                let FunctionExpr::Python(legacy_udf) = func else {
-                    unreachable!("Matched Python function but not LegacyPythonUDF");
-                };
-                Ok(Transformed::yes(Arc::new(Expr::Agg(AggExpr::MapGroups {
-                    func: MapGroupsFn::Legacy(legacy_udf.clone()),
-                    inputs: inputs.clone(),
-                }))))
-            }
             Expr::ScalarFn(ScalarFn::Python(py_scalar_fn)) => match py_scalar_fn {
                 PyScalarFn::RowWise(_) => Err(DaftError::ValueError(
                     "Row-wise Python UDFs (daft.func or @daft.method) are not supported in aggregations; use daft.func.batch or @daft.method.batch for group-wise UDFs, or apply the row-wise UDF in a projection before aggregation.".to_string(),
                 )),
                 PyScalarFn::Batch(_) => Ok(Transformed::yes(Arc::new(Expr::Agg(
                     AggExpr::MapGroups {
-                        func: MapGroupsFn::Python(py_scalar_fn.clone()),
+                        func: py_scalar_fn.clone(),
                         inputs: py_scalar_fn.args(),
                     },
                 )))),
