@@ -1,0 +1,28 @@
+{
+  "identities": [
+    {
+      "name": "anonymous",
+      "actions": [
+        "Read",
+        "List",
+        "Write"
+      ]
+    },
+    {
+      "name": "daft-ci",
+      "credentials": [
+        {
+          "accessKey": "minioadmin",
+          "secretKey": "minioadmin"
+        }
+      ],
+      "actions": [
+        "Admin",
+        "Read",
+        "List",
+        "Tagging",
+        "Write"
+      ]
+    }
+  ]
+}
