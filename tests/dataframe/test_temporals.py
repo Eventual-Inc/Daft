@@ -1390,3 +1390,16 @@ def test_convert_timezone_sql() -> None:
     result = daft.sql("SELECT convert_timezone('America/New_York', ts) AS ny FROM df").to_pydict()
     expected = datetime(2021, 1, 1, 7, 0, tzinfo=timezone(timedelta(hours=-5)))
     assert result["ny"] == [expected]
+
+
+def test_at_time_zone_sql() -> None:
+    df = daft.from_pydict({"ts": [datetime(2021, 1, 1, 12, 0, tzinfo=timezone.utc)]})  # noqa: F841
+    result = daft.sql("SELECT ts AT TIME ZONE 'America/New_York' AS ny FROM df").to_pydict()
+    expected = datetime(2021, 1, 1, 7, 0, tzinfo=timezone(timedelta(hours=-5)))
+    assert result["ny"] == [expected]
+
+
+def test_at_time_zone_sql_requires_string_literal() -> None:
+    df = daft.from_pydict({"ts": [datetime(2021, 1, 1, 12, 0, tzinfo=timezone.utc)], "tz": ["UTC"]})  # noqa: F841
+    with pytest.raises(Exception, match="string literal"):
+        daft.sql("SELECT ts AT TIME ZONE tz FROM df").collect()
