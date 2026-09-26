@@ -490,8 +490,8 @@ impl UDFProperties {
             properties.push(format!("on_error = {}", on_error));
         }
 
-        properties.push(format!("async = {}", &self.is_async));
-        properties.push(format!("scalar = {}", &self.is_scalar));
+        properties.push(format!("async = {}", self.is_async));
+        properties.push(format!("scalar = {}", self.is_scalar));
 
         #[cfg(feature = "python")]
         {

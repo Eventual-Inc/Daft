@@ -960,7 +960,7 @@ mod tests {
 
     #[derive(PartialEq, Debug)]
     struct TestTreeNode<T> {
-        children: Vec<TestTreeNode<T>>,
+        children: Vec<Self>,
         data: T,
     }
 

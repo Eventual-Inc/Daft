@@ -364,7 +364,7 @@ pub(crate) trait PipelineNodeImpl: Send + Sync {
 pub(crate) struct DistributedPipelineNode {
     op: Arc<dyn PipelineNodeImpl>,
     runtime_stats: RuntimeStatsRef,
-    children: Vec<DistributedPipelineNode>,
+    children: Vec<Self>,
 }
 
 impl DistributedPipelineNode {

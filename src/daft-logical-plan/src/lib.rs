@@ -1,5 +1,3 @@
-#![feature(if_let_guard)]
-
 pub mod builder;
 pub mod display;
 pub mod logical_plan;

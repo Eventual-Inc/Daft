@@ -304,7 +304,7 @@ mod tests {
             }
         };
         let fut = runtime.spawn(task);
-        assert!(Arc::strong_count(&ptr) == 2);
+        assert_eq!(Arc::strong_count(&ptr), 2);
 
         // Drop the future, which should cancel the task
         drop(fut);
@@ -312,7 +312,7 @@ mod tests {
         // Wait for a while so that the task can be aborted
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
         // The strong count should be 1 now
-        assert!(Arc::strong_count(&ptr) == 1);
+        assert_eq!(Arc::strong_count(&ptr), 1);
     }
 
     #[test]
@@ -321,6 +321,6 @@ mod tests {
 
         set_compute_runtime_num_worker_threads(1).unwrap();
         let runtime = get_compute_runtime();
-        assert!(runtime.runtime.metrics().num_workers() == 1);
+        assert_eq!(runtime.runtime.metrics().num_workers(), 1);
     }
 }

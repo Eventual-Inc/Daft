@@ -39,7 +39,7 @@ impl StructArray {
                     "StructArray::new received {} children arrays but expected {} for specified dtype: {}",
                     children.len(),
                     fields.len(),
-                    &field.as_ref().dtype
+                    field.as_ref().dtype
                 );
                 for (dtype_field, series) in fields.iter().zip(children.iter()) {
                     assert!(
@@ -52,7 +52,7 @@ impl StructArray {
                         *dtype_field.name == *series.name(),
                         "StructArray::new received a series with name: {} but expected name: {}",
                         series.name(),
-                        &dtype_field.name
+                        dtype_field.name
                     );
                 }
 

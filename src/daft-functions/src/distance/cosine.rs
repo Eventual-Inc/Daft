@@ -13,9 +13,9 @@ fn cosine_distance_metric<T: NumericNative>(a: &[T], b: &[T]) -> Option<f64> {
     for (x, y) in a.iter().zip(b) {
         let x = x.to_f64()?;
         let y = y.to_f64()?;
-        xy += x * y;
-        x_sq += x * x;
-        y_sq += y * y;
+        xy = x.mul_add(y, xy);
+        x_sq = x.mul_add(x, x_sq);
+        y_sq = y.mul_add(y, y_sq);
     }
 
     Some(1.0 - xy / (x_sq.sqrt() * y_sq.sqrt()))

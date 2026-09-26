@@ -26,6 +26,8 @@ fn compute_damerau_levenshtein_distance(left: &str, right: &str) -> i64 {
     for (i, row) in matrix.iter_mut().enumerate() {
         row[0] = i as i64;
     }
+
+    #[allow(clippy::needless_range_loop)]
     for j in 0..=m {
         matrix[0][j] = j as i64;
     }

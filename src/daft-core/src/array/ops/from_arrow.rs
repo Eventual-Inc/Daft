@@ -131,7 +131,7 @@ impl FromArrow for StructArray {
                         "Attempting to create Daft StructArray with {} fields from Arrow array with {} fields: {} vs {:?}",
                         fields.len(),
                         arrow_fields.len(),
-                        &field.dtype,
+                        field.dtype,
                         arrow_arr.data_type()
                     )));
                 }
@@ -185,7 +185,7 @@ impl FromArrow for UnionArray {
                         "Attempting to create Daft UnionArray with {} fields from Arrow array with {} fields: {} vs {}",
                         fields.len(),
                         arrow_fields.len(),
-                        &field.dtype,
+                        field.dtype,
                         arrow_arr.data_type(),
                     )));
                 }
@@ -321,13 +321,10 @@ impl FromArrow for PythonArray {
             .as_any()
             .downcast_ref::<arrow::array::LargeBinaryArray>()
             .expect("PythonArray::from_arrow: Failed to downcast to LargeBinaryArray");
-        let v = physical_arrow_array
-            .iter()
-            .map(|x| x.map(|x| x.to_vec()))
-            .collect::<Vec<_>>();
+        let v = physical_arrow_array.iter().map(|x| x.map(|x| x.to_vec()));
         // trustedlen forces materialization here
         // TODO: remove once we dont have arrow2 anymore
-        Self::from_iter_pickled(&field.name, v.into_iter())
+        Self::from_iter_pickled(&field.name, v)
     }
 }
 

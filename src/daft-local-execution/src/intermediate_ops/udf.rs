@@ -589,8 +589,8 @@ impl IntermediateOperator for UdfOperator {
                         ));
                     };
                     LatencyConstrainedBatchingStrategy {
-                        target_batch_latency: Duration::from_millis(5000),
-                        latency_tolerance: Duration::from_millis(1000), // udf's have high variance so we have a high tolerance
+                        target_batch_latency: Duration::from_secs(5),
+                        latency_tolerance: Duration::from_secs(1), // udf's have high variance so we have a high tolerance
                         step_size_alpha: 16, // step size is small as udfs are expensive
                         correction_delta: 4, // similarly the correction delta is small because the step size is small
                         b_min: min_batch_size,

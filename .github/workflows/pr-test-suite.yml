@@ -351,8 +351,7 @@ jobs:
         uv venv --seed .venv
         echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
         source .venv/bin/activate
-        # Pin maturin <1.14: 1.14 rejects `--timings=html` (used in the Build wheels step below).
-        uv pip install -U twine toml 'maturin<1.14'
+        uv pip install -U twine toml maturin
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -378,7 +377,7 @@ jobs:
     - name: Build wheels
       run: |
         source .venv/bin/activate
-        maturin build --release --compatibility linux --out dist --timings=html -Z unstable-options
+        maturin build --release --compatibility linux --out dist --timings -Z unstable-options
     - name: Upload wheels
       uses: actions/upload-artifact@v7
       with:

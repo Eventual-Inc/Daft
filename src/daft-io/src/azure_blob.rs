@@ -596,10 +596,8 @@ impl AzureBlobSource {
             prefix.trim_end_matches(&AZURE_DELIMITER)
         );
         let full_path = format!("{protocol}://{container_name}{prefix}");
-        let full_path_with_trailing_delimiter = format!(
-            "{}://{}{}",
-            protocol, container_name, &prefix_with_delimiter
-        );
+        let full_path_with_trailing_delimiter =
+            format!("{}://{}{}", protocol, container_name, prefix_with_delimiter);
 
         let mut unchecked_results = self
             .list_directory_delimiter_stream(
@@ -725,7 +723,7 @@ impl AzureBlobSource {
                     return;
                 }
             };
-            let request_path = format!("{}://{}{}", &protocol, &container_name, &prefix);
+            let request_path = format!("{}://{}{}", protocol, container_name, prefix);
             if posix {
                 // Setting a delimiter triggers "directory-mode" which is a posix-like ls for the current directory.
                 let options = BlobContainerClientListBlobsHierarchicalOptions {
