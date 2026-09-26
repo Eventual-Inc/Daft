@@ -147,6 +147,7 @@
         * [SELECT](sql/statements/select.md)
         * [DESCRIBE](sql/statements/describe.md)
         * [SHOW](sql/statements/show.md)
+        * [SET](sql/statements/set.md)
         * [USE](sql/statements/use.md)
     * [Data Types](sql/datatypes.md)
     * [Identifiers](sql/identifiers.md)
