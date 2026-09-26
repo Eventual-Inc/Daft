@@ -1,3 +1,4 @@
+mod azure_auth;
 mod azure_blob;
 mod counting_reader;
 mod google_cloud;

@@ -88,12 +88,11 @@ impl IndexedReader {
 
     pub(crate) fn next_action(&mut self) -> DaftResult<IndexedAction> {
         // Load all overlapping chunks before emitting a message, including ties.
-        if self.chunks.front().is_some_and(|chunk| {
+        if let Some(chunk) = self.chunks.pop_front_if(|chunk| {
             self.messages
                 .first_key_value()
                 .is_none_or(|(key, _)| chunk.message_start_time <= key.0)
         }) {
-            let chunk = self.chunks.pop_front().unwrap();
             return Ok(IndexedAction::ReadChunk {
                 offset: chunk.chunk_start_offset,
                 length: usize::try_from(chunk.chunk_length).map_err(mcap_error)?,
