@@ -101,7 +101,7 @@ class _Jev:
 
 # Returns Any because mypy can't see that @daft.cls methods take and return Expressions.
 def _client(api_key: str | None, model: str | None, base_url: str | None, timeout: float) -> Any:
-    if not typesafe_sdk.module_available():  # type: ignore[attr-defined]
+    if not typesafe_sdk.module_available():
         raise ImportError("The jev functions require typesafe-sdk. Please install it with: pip install 'daft[jev]'")
     # Resolved on the driver so every worker uses the same settings, with or without the env vars.
     c = typesafe_sdk.constants
