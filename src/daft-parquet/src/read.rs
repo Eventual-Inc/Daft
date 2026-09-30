@@ -635,11 +635,18 @@ pub fn read_parquet_statistics(
 mod tests {
     use std::{ops::Deref, path::PathBuf, sync::Arc};
 
-    use arrow::datatypes::DataType;
+    use arrow::{
+        array::{Int32Array, Int64Array, RecordBatch as ArrowRecordBatch},
+        datatypes::{DataType, Field as ArrowField, Schema as ArrowSchema},
+    };
     use common_error::DaftResult;
+    use daft_dsl::{lit, null_lit, resolved_col};
     use daft_io::{IOClient, IOConfig};
     use futures::StreamExt;
-    use parquet::schema::types::Type as ParquetSchemaType;
+    use parquet::{
+        arrow::ArrowWriter, file::properties::WriterProperties,
+        schema::types::Type as ParquetSchemaType,
+    };
 
     use super::*;
 
@@ -769,12 +776,6 @@ mod tests {
     /// return all requested rows, not an empty stream.
     #[test]
     fn test_stream_limit_exact_batch_size() {
-        use arrow::{
-            array::Int32Array,
-            datatypes::{DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema},
-        };
-        use parquet::arrow::ArrowWriter;
-
         let dir = std::env::temp_dir().join("daft_test_stream_limit_exact");
         std::fs::create_dir_all(&dir).unwrap();
         let file_path = dir.join("test.parquet");
@@ -782,7 +783,7 @@ mod tests {
         // Write a parquet file with exactly 5 rows.
         let schema = Arc::new(ArrowSchema::new(vec![ArrowField::new(
             "id",
-            ArrowDataType::Int32,
+            DataType::Int32,
             false,
         )]));
         let file = std::fs::File::create(&file_path).unwrap();
@@ -855,14 +856,10 @@ mod tests {
         rg_size: usize,
         a_nulls: bool,
     ) {
-        use arrow::{
-            array::{Int64Array, RecordBatch as ArrowRecordBatch},
-            datatypes::{DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema},
-        };
         let schema = Arc::new(ArrowSchema::new(vec![
-            ArrowField::new("a", ArrowDataType::Int64, true),
-            ArrowField::new("b", ArrowDataType::Int64, false),
-            ArrowField::new("c", ArrowDataType::Int64, false),
+            ArrowField::new("a", DataType::Int64, true),
+            ArrowField::new("b", DataType::Int64, false),
+            ArrowField::new("c", DataType::Int64, false),
         ]));
         let rows = pipelined_test_rows(n, a_nulls);
         let a: Int64Array = rows.iter().map(|(a, _, _)| *a).collect();
@@ -878,8 +875,6 @@ mod tests {
         batch: &arrow::array::RecordBatch,
         rg_size: usize,
     ) {
-        use parquet::{arrow::ArrowWriter, file::properties::WriterProperties};
-
         let props = WriterProperties::builder()
             .set_max_row_group_row_count(Some(rg_size))
             .build();
@@ -939,8 +934,6 @@ mod tests {
 
     #[test]
     fn test_pipelined_compound_disjoint_predicate() {
-        use daft_dsl::{lit, resolved_col};
-
         let dir = std::env::temp_dir().join("daft_test_pipelined_compound");
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("data.parquet");
@@ -990,8 +983,6 @@ mod tests {
 
     #[test]
     fn test_pipelined_matches_monolithic_same_data() {
-        use daft_dsl::{lit, resolved_col};
-
         let dir =
             std::env::temp_dir().join(format!("daft_test_pipelined_vs_mono_{}", fastrand::u64(..)));
         std::fs::create_dir_all(&dir).unwrap();
@@ -1023,12 +1014,6 @@ mod tests {
 
     #[test]
     fn test_monolithic_fallback_column_dependent_is_in() {
-        use arrow::{
-            array::{Int64Array, RecordBatch as ArrowRecordBatch},
-            datatypes::{Field as ArrowField, Schema as ArrowSchema},
-        };
-        use daft_dsl::{lit, resolved_col};
-
         let dir =
             std::env::temp_dir().join(format!("daft_test_pipelined_is_in_{}", fastrand::u64(..)));
         std::fs::create_dir_all(&dir).unwrap();
@@ -1062,8 +1047,6 @@ mod tests {
 
     #[test]
     fn test_monolithic_fallback_constant_conjuncts() {
-        use daft_dsl::{lit, null_lit, resolved_col};
-
         let dir = std::env::temp_dir().join(format!(
             "daft_test_pipelined_constants_{}",
             fastrand::u64(..)
@@ -1110,8 +1093,6 @@ mod tests {
 
     #[test]
     fn test_monolithic_fallback_single_column() {
-        use daft_dsl::{lit, resolved_col};
-
         let dir = std::env::temp_dir().join("daft_test_pipelined_mono_single");
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("data.parquet");
@@ -1120,6 +1101,7 @@ mod tests {
 
         // Single-column predicate → one group → monolithic fallback.
         let pred = resolved_col("a").gt(lit(100));
+        crate::reader::assert_prefilter_strategy(&pred, None, false);
         let batch = read_pipelined(&uri, Some(pred), vec!["a".into(), "c".into()]);
 
         let expected: Vec<(Option<i64>, i64)> = pipelined_test_rows(200, false)
@@ -1142,8 +1124,6 @@ mod tests {
 
     #[test]
     fn test_monolithic_fallback_same_column_conjunction() {
-        use daft_dsl::{lit, resolved_col};
-
         let dir = std::env::temp_dir().join("daft_test_pipelined_mono_samecol");
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("data.parquet");
@@ -1154,6 +1134,7 @@ mod tests {
         let pred = resolved_col("a")
             .gt(lit(100))
             .and(resolved_col("a").lt(lit(150)));
+        crate::reader::assert_prefilter_strategy(&pred, None, false);
         let batch = read_pipelined(&uri, Some(pred), vec!["a".into(), "c".into()]);
 
         let expected: Vec<(Option<i64>, i64)> = pipelined_test_rows(200, false)
@@ -1176,8 +1157,6 @@ mod tests {
 
     #[test]
     fn test_pipelined_null_handling() {
-        use daft_dsl::{lit, resolved_col};
-
         let dir = std::env::temp_dir().join("daft_test_pipelined_nulls");
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("data.parquet");
