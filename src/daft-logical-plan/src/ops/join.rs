@@ -377,7 +377,7 @@ impl Join {
         ));
 
         if let Some(on_expr) = self.on.inner() {
-            res.push(format!("On = {on_expr}",));
+            res.push(format!("On = {on_expr}"));
         }
 
         if let Some(config) = &self.key_filtering_config {
