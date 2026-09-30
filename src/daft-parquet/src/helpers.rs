@@ -68,7 +68,7 @@ pub fn build_offset_row_selection(offset: usize, total_rows: usize) -> RowSelect
 ///
 /// Already-sorted input is borrowed, not copied. The sortedness probe is O(n), so
 /// hoist this out of per-row-group loops.
-pub fn normalize_deletes(delete_rows: &[i64]) -> Cow<'_, [i64]> {
+fn normalize_deletes(delete_rows: &[i64]) -> Cow<'_, [i64]> {
     debug_assert!(
         delete_rows.iter().all(|&r| r >= 0),
         "delete_rows contains negative values"
