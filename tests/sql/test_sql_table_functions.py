@@ -299,7 +299,7 @@ def io_config_sample_parquet(tmp_path):
     "spelling", ["S3Config", "s3config", "S3CONFIG"], ids=["mixed_case", "lower_case", "upper_case"]
 )
 def test_sql_config_constructors_are_case_insensitive(io_config_sample_parquet, spelling):
-    """Config constructors resolve under any casing, like every other SQL function."""
+    """Config constructors resolve under any casing — mixed, lower, or upper."""
     query = (
         f"SELECT * FROM read_parquet('{io_config_sample_parquet}', "
         f"io_config := {spelling}(region_name => 'eu-central-1'))"
