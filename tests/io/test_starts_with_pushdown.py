@@ -11,6 +11,7 @@ whose [min, max] range cannot contain the prefix are skipped.
 from __future__ import annotations
 
 import io
+from collections import Counter
 
 import pyarrow as pa
 import pyarrow.parquet as papq
@@ -67,8 +68,14 @@ def test_starts_with_empty_prefix_and_nulls(tmp_path):
 
     df = daft.read_parquet(path)
     # Empty prefix is not rewritten (no useful upper bound) and matches every
-    # non-null string.
-    assert df.where(col("s").startswith("")).to_pydict() == {"s": ["apple", "avocado", "banana", "blueberry"]}
+    # non-null string. This scans both row groups, and a parallel runner does
+    # not guarantee their relative order, so compare order-independently.
+    assert sorted(df.where(col("s").startswith("")).to_pydict()["s"]) == [
+        "apple",
+        "avocado",
+        "banana",
+        "blueberry",
+    ]
     # starts_with on a null input yields null, so null rows are filtered out.
     assert df.where(col("s").startswith("blueberry")).to_pydict() == {"s": ["blueberry"]}
 
@@ -91,4 +98,6 @@ def test_starts_with_in_projection_not_rewritten(tmp_path):
     # Outside filters the kernel call is a single cheaper operation and no
     # pushdown applies, so it must be left alone.
     assert "starts_with(" in plan
-    assert df.to_pydict() == {"s": [True, True, False, False, None]}
+    # Reads both row groups; a parallel runner may return them in any order, so
+    # compare the produced values order-independently.
+    assert Counter(df.to_pydict()["s"]) == Counter([True, True, False, False, None])
