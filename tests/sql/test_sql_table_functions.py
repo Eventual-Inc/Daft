@@ -324,3 +324,33 @@ def test_sql_reader_uses_default_io_config(default_io_config_sample_files, funct
     assert sql_line is not None
     assert "us-west-2" in sql_line
     assert sql_line == python_line
+
+
+def test_sql_read_deltalake_uses_default_io_config(tmp_path, monkeypatch):
+    """`read_deltalake` with no io_config resolves the context default, like the Python API.
+
+    Delta's plan text does not surface the io_config, so we capture the StorageConfig handed to
+    the data source, the same way the read_iceberg default-io-config test does.
+    """
+    deltalake = pytest.importorskip("deltalake")
+    from daft.io.delta_lake import delta_lake_scan
+
+    path = tmp_path / "some_table"
+    deltalake.write_deltalake(path, pa.table({"x": [1, 2, 3]}))
+
+    captured: dict = {}
+    original_init = delta_lake_scan.DeltaLakeDataSource.__init__
+
+    def capturing_init(self, table_uri, storage_config, *args, **kwargs):
+        captured["storage_config"] = storage_config
+        return original_init(self, table_uri, storage_config, *args, **kwargs)
+
+    monkeypatch.setattr(delta_lake_scan.DeltaLakeDataSource, "__init__", capturing_init)
+
+    default = IOConfig(s3=S3Config(region_name="us-west-2"))
+    with daft.context.planning_config_ctx(default_io_config=default):
+        daft.sql(f"SELECT * FROM read_deltalake('{path.as_posix()}')").collect()
+
+    storage_config = captured["storage_config"]
+    assert storage_config.io_config is not None
+    assert storage_config.io_config.s3.region_name == "us-west-2"
