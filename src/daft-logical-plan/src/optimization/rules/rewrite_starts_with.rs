@@ -208,7 +208,7 @@ mod tests {
             startswith(resolved_col("s"), lit("abc")),
             resolved_col("s")
                 .gt_eq(lit("abc"))
-                .and(resolved_col("s").lt(lit("abd"))),
+                .and(resolved_col("s").lt(lit("abd"))), // codespell:ignore abd
         )
     }
 
@@ -381,8 +381,12 @@ mod tests {
                         "starts_with should have been rewritten, got: {rendered}"
                     );
                     assert!(
-                        rendered.contains("abc") && rendered.contains("abd"),
-                        "expected range bounds in pushdowns, got: {rendered}"
+                        rendered.contains("abc"),
+                        "expected lower bound in pushdowns, got: {rendered}"
+                    );
+                    assert!(
+                        rendered.contains("abd"), // codespell:ignore abd
+                        "expected upper bound in pushdowns, got: {rendered}"
                     );
                     found_pushed_range = true;
                 }
