@@ -438,7 +438,7 @@ pub async fn glob(
             log::debug!(
                 target: "glob",
                 "Visiting '{}' with glob_fragments: {:?}",
-                &state.current_path, &state.glob_fragments
+                state.current_path, state.glob_fragments
             );
             let current_fragment = state.current_glob_fragment();
 

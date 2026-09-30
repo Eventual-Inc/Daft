@@ -18,6 +18,7 @@ from daft.daft import (
     HuggingFaceConfig,
 )
 from daft.lazy_import import LazyImport
+from daft.io._avro import read_avro
 from daft.io._blob import read_blob
 from daft.io._csv import read_csv
 from daft.io._text import read_text
@@ -73,6 +74,7 @@ __all__ = [
     "_range",
     "from_files",
     "from_glob_path",
+    "read_avro",
     "read_blob",
     "read_csv",
     "read_deltalake",
