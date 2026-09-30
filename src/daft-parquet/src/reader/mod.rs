@@ -350,7 +350,6 @@ pub(super) fn assert_prefilter_strategy(
 /// The pipelined path is used only when it can help and is safe for the MVP:
 /// kill-switch on, no `num_rows` limit, and the predicate splits into >= 2
 /// column-disjoint groups. Otherwise it falls back to the monolithic path.
-#[allow(clippy::too_many_arguments)]
 async fn build_rg_inputs(
     chunk_source: &Arc<ChunkSource>,
     metadata: &Arc<ParquetMetaData>,
@@ -412,34 +411,25 @@ async fn build_rg_inputs(
         if selected_rows_remaining == 0 {
             break;
         }
+        let ctx = RgPrefilterCtx {
+            chunk_source,
+            metadata,
+            arrow_schema,
+            pred_col_indices: &plan.pred_col_indices,
+            rg_idx,
+            base_sel: &base_sel,
+            path,
+        };
         let (selection, pred_arrays) = match (&pred_groups, &group_decodes) {
             (Some(groups), Some(decodes)) => {
-                prefilter_rg_pipelined(
-                    chunk_source,
-                    metadata,
-                    arrow_schema,
-                    &plan.read_daft_schema,
-                    &plan.pred_col_indices,
-                    groups,
-                    decodes,
-                    rg_idx,
-                    base_sel,
-                    path,
-                )
-                .await?
+                prefilter_rg_pipelined(&ctx, &plan.read_daft_schema, groups, decodes).await?
             }
             _ => {
                 prefilter_rg_monolithic(
-                    chunk_source,
-                    metadata,
-                    arrow_schema,
+                    &ctx,
                     &pred_arrow_schema,
                     &bound_pred,
-                    &plan.pred_col_indices,
-                    rg_idx,
-                    base_sel,
                     chunk_size,
-                    path,
                     &mut selected_rows_remaining,
                 )
                 .await?
@@ -455,24 +445,39 @@ async fn build_rg_inputs(
     Ok(out)
 }
 
+/// Borrowed inputs shared by both per-RG prefilter strategies. Bundling them
+/// keeps [`prefilter_rg_monolithic`] and [`prefilter_rg_pipelined`] under the
+/// `clippy::too_many_arguments` threshold without a lint suppression.
+struct RgPrefilterCtx<'a> {
+    chunk_source: &'a Arc<ChunkSource>,
+    metadata: &'a Arc<ParquetMetaData>,
+    arrow_schema: &'a Arc<ArrowSchema>,
+    pred_col_indices: &'a [usize],
+    rg_idx: usize,
+    base_sel: &'a Option<RowSelection>,
+    path: &'a Arc<str>,
+}
+
 /// Monolithic per-RG prefilter: decode all predicate columns at `base_sel` and
 /// evaluate the whole conjunction as one mask per chunk. Handles the `num_rows`
 /// limit via chunked streaming + mask truncation + early break (mutating
 /// `selected_rows_remaining` across RGs).
-#[allow(clippy::too_many_arguments)]
 async fn prefilter_rg_monolithic(
-    chunk_source: &Arc<ChunkSource>,
-    metadata: &Arc<ParquetMetaData>,
-    arrow_schema: &Arc<ArrowSchema>,
+    ctx: &RgPrefilterCtx<'_>,
     pred_arrow_schema: &Arc<ArrowSchema>,
     bound_pred: &BoundExpr,
-    pred_col_indices: &[usize],
-    rg_idx: usize,
-    base_sel: Option<RowSelection>,
     chunk_size: usize,
-    path: &Arc<str>,
     selected_rows_remaining: &mut usize,
 ) -> DaftResult<(Option<RowSelection>, Vec<ArrayRef>)> {
+    let RgPrefilterCtx {
+        chunk_source,
+        metadata,
+        arrow_schema,
+        pred_col_indices,
+        rg_idx,
+        base_sel,
+        path,
+    } = *ctx;
     let total_selected = base_sel
         .as_ref()
         .map(|s| s.row_count())
@@ -551,7 +556,7 @@ async fn prefilter_rg_monolithic(
         predicate_selectors.push(RowSelector::skip(unprocessed));
     }
     let pred_sel = RowSelection::from(predicate_selectors);
-    let selection = Some(match &base_sel {
+    let selection = Some(match base_sel {
         Some(base) => refine_selection(base, &pred_sel),
         None => pred_sel,
     });
@@ -610,24 +615,26 @@ fn prepare_group_decodes(
 /// survives a conjunction iff it passes every conjunct, progressive narrowing
 /// yields the same surviving-row set regardless of group order — only the decode
 /// work differs.
-#[allow(clippy::too_many_arguments)]
 async fn prefilter_rg_pipelined(
-    chunk_source: &Arc<ChunkSource>,
-    metadata: &Arc<ParquetMetaData>,
-    arrow_schema: &Arc<ArrowSchema>,
+    ctx: &RgPrefilterCtx<'_>,
     read_daft_schema: &Schema,
-    pred_col_indices: &[usize],
     groups: &[PredGroup],
     decodes: &[GroupDecode],
-    rg_idx: usize,
-    base_sel: Option<RowSelection>,
-    path: &Arc<str>,
 ) -> DaftResult<(Option<RowSelection>, Vec<ArrayRef>)> {
+    let RgPrefilterCtx {
+        chunk_source,
+        metadata,
+        arrow_schema,
+        pred_col_indices,
+        rg_idx,
+        base_sel,
+        path,
+    } = *ctx;
     // Group order is per-RG: min/max selectivity estimates come from this RG's stats.
     let order = order_groups(groups, metadata.row_group(rg_idx), read_daft_schema);
     let rg_rows = metadata.row_group(rg_idx).num_rows() as usize;
 
-    let mut running_sel = base_sel;
+    let mut running_sel = base_sel.clone();
     // Kept predicate-column arrays, keyed by physical column index, all at
     // `running_sel` granularity.
     let mut kept: BTreeMap<usize, ArrayRef> = BTreeMap::new();
