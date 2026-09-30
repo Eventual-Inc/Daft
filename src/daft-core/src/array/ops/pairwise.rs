@@ -29,12 +29,11 @@ where
             for (j, r) in other.iter().enumerate() {
                 match r {
                     None => {}
-                    Some(r) => {
-                        if func(l, r) {
-                            left_idx.push(i as u64);
-                            right_idx.push(j as u64);
-                        }
+                    Some(r) if func(l, r) => {
+                        left_idx.push(i as u64);
+                        right_idx.push(j as u64);
                     }
+                    _ => {}
                 }
             }
         }
@@ -64,12 +63,11 @@ impl Utf8Array {
             for (j, r) in other.iter().enumerate() {
                 match r {
                     None => {}
-                    Some(r) => {
-                        if func(l, r) {
-                            left_idx.push(i as u64);
-                            right_idx.push(j as u64);
-                        }
+                    Some(r) if func(l, r) => {
+                        left_idx.push(i as u64);
+                        right_idx.push(j as u64);
                     }
+                    _ => {}
                 }
             }
         }
@@ -99,12 +97,11 @@ impl BooleanArray {
             for (j, r) in other.iter().enumerate() {
                 match r {
                     None => {}
-                    Some(r) => {
-                        if func(l, r) {
-                            left_idx.push(i as u64);
-                            right_idx.push(j as u64);
-                        }
+                    Some(r) if func(l, r) => {
+                        left_idx.push(i as u64);
+                        right_idx.push(j as u64);
                     }
+                    _ => {}
                 }
             }
         }
