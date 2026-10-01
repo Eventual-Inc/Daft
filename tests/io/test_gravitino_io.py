@@ -160,6 +160,9 @@ class TestGravitinoIOIntegration:
             os.makedirs(os.path.join(tmp_dir, "second"))
             with open(os.path.join(tmp_dir, "second", "another.bin"), "wb") as file:
                 file.write(b"another")
+            os.makedirs(os.path.join(tmp_dir, "dataset.bin"))
+            with open(os.path.join(tmp_dir, "dataset.bin", "part.bin"), "wb") as file:
+                file.write(b"part")
 
             gvfs_source = "gvfs://fileset/catalog/schema/fileset/source.bin"
             assert io_get(gvfs_source, io_config=io_config) == b"abcdef"
@@ -180,6 +183,15 @@ class TestGravitinoIOIntegration:
                 "gvfs://fileset/catalog/schema/fileset/output.bin",
                 "gvfs://fileset/catalog/schema/fileset/nested/other.bin",
                 "gvfs://fileset/catalog/schema/fileset/second/another.bin",
+                "gvfs://fileset/catalog/schema/fileset/dataset.bin/part.bin",
+            }
+
+            directory_files = io_glob(
+                "gvfs://fileset/catalog/schema/fileset/dataset.bin",
+                io_config=io_config,
+            )
+            assert {file["path"] for file in directory_files} == {
+                "gvfs://fileset/catalog/schema/fileset/dataset.bin/part.bin"
             }
 
             mock_gravitino_client.load_fileset.assert_called_once_with("catalog.schema.fileset")

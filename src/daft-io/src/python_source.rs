@@ -274,6 +274,17 @@ impl ObjectSource for PythonSource {
     }
 
     async fn get_size(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<usize> {
+        if matches!(self.source_type, SourceType::Gravitino) {
+            let (resolved_uri, io_config) = self.resolve_url_and_config(uri).await?;
+            let io_client = crate::get_io_client(true, Arc::new(io_config)).map_err(|source| {
+                super::Error::Generic {
+                    store: self.source_type.clone(),
+                    source: Box::new(source),
+                }
+            })?;
+            return io_client.single_url_get_size(resolved_uri, io_stats).await;
+        }
+
         let extension = Python::attach(|py| self.extension.clone_ref(py));
         let uri_owned = uri.to_string();
         let size = common_runtime::python::execute_python_coroutine::<_, usize>(move |py| {
