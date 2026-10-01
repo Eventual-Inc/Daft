@@ -238,6 +238,7 @@ impl PyDaftFile {
         self.read_impl(py, size)
     }
 
+    #[allow(clippy::result_large_err)]
     fn read_impl(&mut self, py: Python<'_>, size: isize) -> PyResult<Vec<u8>> {
         self.check_context()?;
         let mut cursor = self
@@ -316,6 +317,7 @@ impl PyDaftFile {
     }
 
     #[pyo3(signature=(offset, whence=Some(0)))]
+    #[allow(clippy::result_large_err)]
     fn seek(&mut self, py: Python<'_>, offset: i64, whence: Option<usize>) -> PyResult<u64> {
         self.check_context()?;
         let seek_from = match whence.unwrap_or(0) {

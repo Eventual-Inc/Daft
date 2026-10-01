@@ -32,9 +32,9 @@ pub struct ArrowSchema {
     pub metadata: *const c_char,
     pub flags: i64,
     pub n_children: i64,
-    pub children: *mut *mut ArrowSchema,
-    pub dictionary: *mut ArrowSchema,
-    pub release: Option<unsafe extern "C" fn(schema: *mut ArrowSchema)>,
+    pub children: *mut *mut Self,
+    pub dictionary: *mut Self,
+    pub release: Option<unsafe extern "C" fn(schema: *mut Self)>,
     pub private_data: *mut c_void,
 }
 
@@ -178,9 +178,9 @@ pub struct ArrowArray {
     pub n_buffers: i64,
     pub n_children: i64,
     pub buffers: *mut *const c_void,
-    pub children: *mut *mut ArrowArray,
-    pub dictionary: *mut ArrowArray,
-    pub release: Option<unsafe extern "C" fn(array: *mut ArrowArray)>,
+    pub children: *mut *mut Self,
+    pub dictionary: *mut Self,
+    pub release: Option<unsafe extern "C" fn(array: *mut Self)>,
     pub private_data: *mut c_void,
 }
 
@@ -476,28 +476,25 @@ pub struct ArrowArrayStream {
     ///
     /// On success, writes to `*out` and returns 0.
     /// On error, returns non-zero; caller may call `get_last_error`.
-    pub get_schema:
-        Option<unsafe extern "C" fn(stream: *mut ArrowArrayStream, out: *mut ArrowSchema) -> c_int>,
+    pub get_schema: Option<unsafe extern "C" fn(stream: *mut Self, out: *mut ArrowSchema) -> c_int>,
 
     /// Get the next record batch.
     ///
     /// On success, writes to `*out` and returns 0.
     /// End-of-stream is signaled by writing a released array (release == None).
     /// On error, returns non-zero; caller may call `get_last_error`.
-    pub get_next:
-        Option<unsafe extern "C" fn(stream: *mut ArrowArrayStream, out: *mut ArrowArray) -> c_int>,
+    pub get_next: Option<unsafe extern "C" fn(stream: *mut Self, out: *mut ArrowArray) -> c_int>,
 
     /// Get a human-readable error message for the last error.
     ///
     /// Returns a pointer to a null-terminated string, or null if no error.
     /// The pointer is valid until the next call on this stream or until release.
-    pub get_last_error:
-        Option<unsafe extern "C" fn(stream: *mut ArrowArrayStream) -> *const c_char>,
+    pub get_last_error: Option<unsafe extern "C" fn(stream: *mut Self) -> *const c_char>,
 
     /// Release the stream and all associated resources.
     ///
     /// After calling, the stream is in a released state (all pointers None/null).
-    pub release: Option<unsafe extern "C" fn(stream: *mut ArrowArrayStream)>,
+    pub release: Option<unsafe extern "C" fn(stream: *mut Self)>,
 
     /// Opaque producer-specific data.
     pub private_data: *mut c_void,
@@ -537,9 +534,9 @@ mod tests {
         metadata: *const c_char,
         flags: i64,
         n_children: i64,
-        children: *mut *mut FakeSchema,
-        dictionary: *mut FakeSchema,
-        release: Option<unsafe extern "C" fn(schema: *mut FakeSchema)>,
+        children: *mut *mut Self,
+        dictionary: *mut Self,
+        release: Option<unsafe extern "C" fn(schema: *mut Self)>,
         private_data: *mut c_void,
     }
 
@@ -552,9 +549,9 @@ mod tests {
         n_buffers: i64,
         n_children: i64,
         buffers: *mut *const c_void,
-        children: *mut *mut FakeArray,
-        dictionary: *mut FakeArray,
-        release: Option<unsafe extern "C" fn(array: *mut FakeArray)>,
+        children: *mut *mut Self,
+        dictionary: *mut Self,
+        release: Option<unsafe extern "C" fn(array: *mut Self)>,
         private_data: *mut c_void,
     }
 
