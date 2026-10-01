@@ -2,8 +2,6 @@
 mod azure_blob;
 mod counting_reader;
 mod google_cloud;
-#[cfg(feature = "python")]
-pub mod gravitino;
 mod http;
 mod huggingface;
 mod local;
@@ -11,6 +9,8 @@ pub mod multipart;
 mod object_io;
 mod object_store_glob;
 mod opendal_source;
+#[cfg(feature = "python")]
+mod python_source;
 mod range_expansion;
 mod retry;
 pub mod s3_like;
@@ -25,10 +25,10 @@ use azure_blob::AzureBlobSource;
 use common_file_formats::FileFormat;
 pub use counting_reader::CountingReader;
 use google_cloud::GCSSource;
-#[cfg(feature = "python")]
-pub use gravitino::GravitinoSource;
 use huggingface::HFSource;
 use opendal_source::OpenDALSource;
+#[cfg(feature = "python")]
+pub use python_source::PythonSource;
 #[cfg(feature = "python")]
 use unity::UnitySource;
 #[cfg(test)]
@@ -227,7 +227,18 @@ impl IOClient {
         input: &str,
     ) -> Result<(Arc<dyn ObjectSource>, String)> {
         let resolved = resolve_url_alias(input, &self.config);
-        let (source_type, path) = parse_url(&resolved)?;
+        let extension_scheme = resolved
+            .split_once("://")
+            .map(|(scheme, _)| scheme.to_ascii_lowercase())
+            .filter(|scheme| self.config.io_extensions.contains_key(scheme));
+        let (source_type, path) = if let Some(scheme) = extension_scheme {
+            (
+                SourceType::Python { scheme },
+                Cow::Borrowed(resolved.as_ref()),
+            )
+        } else {
+            parse_url(&resolved)?
+        };
 
         {
             if let Some(client) = self.source_type_to_store.read().await.get(&source_type) {
@@ -282,12 +293,35 @@ impl IOClient {
             SourceType::Gravitino => {
                 #[cfg(feature = "python")]
                 {
-                    GravitinoSource::get_client(&self.config.gravitino).await?
-                        as Arc<dyn ObjectSource>
+                    PythonSource::gravitino(&self.config.gravitino)? as Arc<dyn ObjectSource>
                 }
                 #[cfg(not(feature = "python"))]
                 {
                     unimplemented!("Gravitino source currently requires Python");
+                }
+            }
+            SourceType::Python { scheme } => {
+                #[cfg(feature = "python")]
+                {
+                    let serialized = self.config.io_extensions.get(scheme).ok_or_else(|| {
+                        Error::UnableToCreateClient {
+                            store: source_type.clone(),
+                            source: format!(
+                                "No Python IO extension is configured for scheme '{scheme}'"
+                            )
+                            .into(),
+                        }
+                    })?;
+                    PythonSource::from_serialized(serialized, source_type.clone())?
+                        as Arc<dyn ObjectSource>
+                }
+                #[cfg(not(feature = "python"))]
+                {
+                    return Err(Error::NotImplementedSource {
+                        store: format!(
+                            "Python IO extension '{scheme}' requires Daft's Python feature"
+                        ),
+                    });
                 }
             }
             SourceType::OpenDAL { scheme } => {
@@ -522,6 +556,7 @@ pub enum SourceType {
     HF,
     Unity,
     Gravitino,
+    Python { scheme: String },
     OpenDAL { scheme: String },
 }
 
@@ -536,6 +571,7 @@ impl std::fmt::Display for SourceType {
             Self::HF => write!(f, "hf"),
             Self::Unity => write!(f, "UnityCatalog"),
             Self::Gravitino => write!(f, "Gravitino"),
+            Self::Python { scheme } => write!(f, "python({scheme})"),
             Self::OpenDAL { scheme } => write!(f, "opendal({})", scheme),
         }
     }
@@ -547,7 +583,7 @@ impl SourceType {
     pub fn supports_native_writer(&self) -> bool {
         matches!(
             self,
-            Self::File | Self::S3 | Self::Gravitino | Self::OpenDAL { .. }
+            Self::File | Self::S3 | Self::Gravitino | Self::Python { .. } | Self::OpenDAL { .. }
         )
     }
 }

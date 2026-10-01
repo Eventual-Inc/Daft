@@ -3150,6 +3150,7 @@ dependencies = [
  "common-error",
  "common-file-formats",
  "common-io-config",
+ "common-py-serde",
  "common-runtime",
  "futures",
  "globset",
