@@ -1,4 +1,8 @@
-use std::{any::Any, sync::Arc};
+use std::{
+    any::Any,
+    collections::HashMap,
+    sync::{Arc, LazyLock, RwLock},
+};
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -25,6 +29,11 @@ use crate::{
 
 const MAX_BUFFERED_WRITE_BYTES: usize = 1024 * 1024 * 1024;
 
+type ExtensionCacheKey = (SourceType, Vec<u8>);
+
+static EXTENSION_CACHE: LazyLock<RwLock<HashMap<ExtensionCacheKey, Arc<PythonSource>>>> =
+    LazyLock::new(|| RwLock::new(HashMap::new()));
+
 pub struct PythonSource {
     extension: Py<PyAny>,
     source_type: SourceType,
@@ -32,16 +41,23 @@ pub struct PythonSource {
 
 impl PythonSource {
     pub fn from_serialized(serialized: &[u8], source_type: SourceType) -> super::Result<Arc<Self>> {
+        let cache_key = (source_type.clone(), serialized.to_vec());
+        if let Some(source) = EXTENSION_CACHE.read().unwrap().get(&cache_key) {
+            return Ok(source.clone());
+        }
+
         let extension =
             Python::attach(|py| common_py_serde::pickle_loads(py, serialized).map(Bound::unbind))
                 .map_err(|source| super::Error::UnableToCreateClient {
                 store: source_type.clone(),
                 source: Box::new(source),
             })?;
-        Ok(Arc::new(Self {
+        let source = Arc::new(Self {
             extension,
             source_type,
-        }))
+        });
+        let mut cache = EXTENSION_CACHE.write().unwrap();
+        Ok(cache.entry(cache_key).or_insert(source).clone())
     }
 
     pub fn gravitino(config: &common_io_config::GravitinoConfig) -> super::Result<Arc<Self>> {
@@ -194,6 +210,19 @@ impl ObjectSource for PythonSource {
         range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
+        if matches!(self.source_type, SourceType::Gravitino) {
+            let (resolved_uri, io_config) = self.resolve_url_and_config(uri).await?;
+            let io_client = crate::get_io_client(true, Arc::new(io_config)).map_err(|source| {
+                super::Error::Generic {
+                    store: self.source_type.clone(),
+                    source: Box::new(source),
+                }
+            })?;
+            return io_client
+                .single_url_get(resolved_uri, range, io_stats)
+                .await;
+        }
+
         let extension = Python::attach(|py| self.extension.clone_ref(py));
         let uri_owned = uri.to_string();
         let (range_kind, range_start, range_end) = match range {
@@ -269,6 +298,18 @@ impl ObjectSource for PythonSource {
         io_stats: Option<IOStatsRef>,
         _file_format: Option<FileFormat>,
     ) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
+        let fanout_limit =
+            if matches!(self.source_type, SourceType::Gravitino) && fanout_limit.is_some() {
+                let (resolved_path, _) = self.resolve_url_and_config(glob_path).await?;
+                let (backing_source_type, _) = crate::parse_url(&resolved_path)?;
+                if matches!(backing_source_type, SourceType::File) {
+                    None
+                } else {
+                    fanout_limit
+                }
+            } else {
+                fanout_limit
+            };
         object_store_glob::glob(self, glob_path, fanout_limit, page_size, limit, io_stats).await
     }
 

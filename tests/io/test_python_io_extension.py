@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import pickle
+from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -70,6 +72,75 @@ class InMemoryIOExtension(IOExtension):
 
     async def delete(self, path: str) -> None:
         self.files.pop(path, None)
+
+
+class DirectoryIOExtension(IOExtension):
+    def __init__(self, root: Path) -> None:
+        self.root = root
+
+    def _local_path(self, path: str) -> Path:
+        parsed = urlsplit(path)
+        return self.root / parsed.netloc / parsed.path.lstrip("/")
+
+    def _extension_path(self, path: Path, *, is_dir: bool) -> str:
+        relative = path.relative_to(self.root)
+        bucket, *parts = relative.parts
+        suffix = "/".join(parts)
+        result = f"directory-test://{bucket}/{suffix}"
+        return f"{result}/" if is_dir else result
+
+    async def supports_range(self, path: str) -> bool:
+        return True
+
+    async def get(self, path: str, byte_range: IOReadRange | None = None) -> bytes:
+        data = self._local_path(path).read_bytes()
+        if byte_range is None:
+            return data
+        if byte_range.suffix is not None:
+            return data[-byte_range.suffix :]
+        assert byte_range.start is not None
+        return data[byte_range.start : byte_range.end]
+
+    async def put(self, path: str, data: bytes) -> None:
+        local_path = self._local_path(path)
+        local_path.parent.mkdir(parents=True, exist_ok=True)
+        local_path.write_bytes(data)
+
+    async def get_size(self, path: str) -> int:
+        local_path = self._local_path(path)
+        if local_path.is_dir():
+            raise IsADirectoryError(path)
+        return local_path.stat().st_size
+
+    async def ls(
+        self,
+        path: str,
+        *,
+        posix: bool,
+        continuation_token: str | None = None,
+        page_size: int | None = None,
+    ) -> IOListing:
+        if continuation_token is not None:
+            return IOListing([])
+        local_path = self._local_path(path)
+        if local_path.is_file():
+            return IOListing([IOFileInfo(path, IOFileType.FILE, local_path.stat().st_size)])
+        if not local_path.exists():
+            return IOListing([], not_found_if_empty=True)
+
+        candidates = local_path.iterdir() if posix else local_path.rglob("*")
+        files = [
+            IOFileInfo(
+                self._extension_path(candidate, is_dir=candidate.is_dir()),
+                IOFileType.DIRECTORY if candidate.is_dir() else IOFileType.FILE,
+                None if candidate.is_dir() else candidate.stat().st_size,
+            )
+            for candidate in candidates
+        ]
+        return IOListing(files)
+
+    async def delete(self, path: str) -> None:
+        self._local_path(path).unlink(missing_ok=True)
 
 
 def test_required_methods_raise_not_implemented() -> None:
@@ -143,12 +214,27 @@ def test_io_extension_read_write_ranges_and_glob() -> None:
 
     io_put("memory-test://bucket/data/new.txt", b"new", io_config=config)
     assert io_get("memory-test://bucket/data/new.txt", io_config=config) == b"new"
+    io_put(
+        "memory-test://bucket/data/cross-client.txt",
+        b"shared",
+        multithreaded_io=True,
+        io_config=config,
+    )
+    assert (
+        io_get(
+            "memory-test://bucket/data/cross-client.txt",
+            multithreaded_io=False,
+            io_config=config,
+        )
+        == b"shared"
+    )
 
     files = io_glob("memory-test://bucket/data/**/*.txt", io_config=config)
     assert {file["path"] for file in files} == {
         "memory-test://bucket/data/a.txt",
         "memory-test://bucket/data/nested/b.txt",
         "memory-test://bucket/data/new.txt",
+        "memory-test://bucket/data/cross-client.txt",
     }
 
 
@@ -169,9 +255,9 @@ def test_io_extension_integrates_with_daft_readers() -> None:
     }
 
 
-def test_io_extension_integrates_with_daft_writers() -> None:
-    config = IOConfig(io_extensions={"memory-write": InMemoryIOExtension()})
-    output = "memory-write://bucket/output"
+def test_io_extension_integrates_with_daft_writers(tmp_path: Path) -> None:
+    config = IOConfig(io_extensions={"directory-test": DirectoryIOExtension(tmp_path)})
+    output = "directory-test://bucket/output"
 
     daft.from_pydict({"id": [1, 2], "name": ["Ada", "Lin"]}).write_parquet(output, io_config=config)
 

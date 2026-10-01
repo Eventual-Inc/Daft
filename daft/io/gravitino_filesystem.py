@@ -7,7 +7,7 @@ import io
 import logging
 import os
 import threading
-from typing import Any
+from typing import Any, Literal, cast
 from urllib.parse import urlsplit
 
 from daft.daft import io_get, io_get_size, io_ls, io_put
@@ -20,6 +20,9 @@ class GravitinoIOExtension(IOExtension):
     """Gravitino implementation of Daft's async Python IO extension interface."""
 
     def __init__(self, config: GravitinoConfig):
+        self._initialize(config)
+
+    def _initialize(self, config: GravitinoConfig) -> None:
         if config.endpoint is None:
             raise ValueError("GravitinoConfig.endpoint must be provided to create a Gravitino IO extension")
         if config.metalake_name is None:
@@ -28,17 +31,16 @@ class GravitinoIOExtension(IOExtension):
         from daft.catalog.__gravitino._client import GravitinoClient
 
         self._config = config
-        client_options = {"auth_type": config.auth_type or "simple"}
-        if config.username is not None:
-            client_options["username"] = config.username
-        if config.password is not None:
-            client_options["password"] = config.password
-        if config.token is not None:
-            client_options["token"] = config.token
+        auth_type = config.auth_type or "simple"
+        if auth_type not in ("simple", "oauth2"):
+            raise ValueError(f"Unsupported Gravitino auth type: {auth_type}")
         self._client = GravitinoClient(
             config.endpoint,
             config.metalake_name,
-            **client_options,
+            auth_type=cast("Literal['simple', 'oauth2']", auth_type),
+            username=config.username,
+            password=config.password,
+            token=config.token,
         )
         self._filesets: dict[str, tuple[str, IOConfig]] = {}
         self._lock = threading.Lock()
@@ -47,7 +49,7 @@ class GravitinoIOExtension(IOExtension):
         return {"config": self._config}
 
     def __setstate__(self, state: dict[str, GravitinoConfig]) -> None:
-        self.__init__(state["config"])
+        self._initialize(state["config"])
 
     @staticmethod
     def _parse_path(path: str) -> tuple[str, str, str]:

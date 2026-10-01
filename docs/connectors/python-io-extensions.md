@@ -66,4 +66,4 @@ df = daft.read_csv(path, io_config=io_config)
 
 All required methods raise `NotImplementedError` by default. `get` must return `bytes`, and `ls` must return an `IOListing` containing full URI paths. Raise standard Python exceptions such as `FileNotFoundError`, `PermissionError`, and `IsADirectoryError`; Daft translates them into its native IO error types.
 
-Extension objects must be serializable because Daft stores them in `IOConfig` and may send them to distributed workers. Daft implements globbing and pagination on top of `get_size` and `ls`. Writes through Daft's native writers are buffered before `put` and are limited to 1 GiB per file.
+Extension objects must be serializable because Daft stores them in `IOConfig` and may send them to distributed workers. Mutable in-memory state is local to one worker process, so distributed extensions should keep data and shared state in their backing storage rather than on the extension instance. Daft implements globbing and pagination on top of `get_size` and `ls`. Writes through Daft's native writers are buffered before `put` and are limited to 1 GiB per file.
