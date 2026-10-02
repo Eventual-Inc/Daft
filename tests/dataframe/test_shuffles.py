@@ -204,6 +204,36 @@ def test_flight_random_shuffle(flight_shuffle_ctx):
     get_tests_daft_runner_name() != "ray",
     reason="distributed shuffle tests require the ray runner",
 )
+@pytest.mark.parametrize("descending", [False, True])
+def test_flight_sort(flight_shuffle_ctx, descending):
+    """Exercises the range-repartition path of SortNode under the Flight backend.
+
+    The input is spread over several partitions with no range clustering, so the
+    sort must sample, range-repartition through the flight cache, and sort each
+    partition locally.
+    """
+    rows = 500
+    values = list(range(rows))
+    random.Random(0).shuffle(values)
+    with flight_shuffle_ctx():
+        df = daft.from_pydict({"x": values}).repartition(4, "x").sort("x", desc=descending)
+
+        buf = io.StringIO()
+        df.explain(show_all=True, file=buf)
+        plan = buf.getvalue()
+        assert "Sort(Flight)" in plan, f"expected Sort(Flight) in plan:\n{plan}"
+        assert "Sort(Ray)" not in plan, f"unexpected Sort(Ray) in plan:\n{plan}"
+
+        result = df.to_pydict()["x"]
+
+    expected = sorted(values, reverse=descending)
+    assert result == expected
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="distributed shuffle tests require the ray runner",
+)
 def test_ray_random_shuffle():
     """Ensures `df.shuffle(...)` produces a permutation of the input under the Ray backend."""
     df = daft.from_pydict({"id": list(range(32))}).repartition(4, "id")
