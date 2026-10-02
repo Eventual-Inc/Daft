@@ -7,6 +7,7 @@
         * [Prompt](ai-functions/prompt.md)
         * [Embed](ai-functions/embed.md)
         * [Classify](ai-functions/classify.md)
+        * [Jev](ai-functions/jev.md)
         * [Providers](ai-functions/providers.md)
     * Modalities
         * [Overview](modalities/overview.md)
