@@ -109,7 +109,7 @@ class DaftContext:
 
     def _notify_exec_emit_execution_stats(self, query_id: str, stats: PyExecutionStats) -> None:
         """Emit a ``Stats`` event with the final per-node totals of a finished execution."""
-        self._ctx.notify_exec_emit_execution_stats(query_id, stats.encode())
+        self._ctx.notify_exec_emit_execution_stats(query_id, stats)
 
 
 def get_context() -> DaftContext:

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
+use common_metrics::{BYTES_READ_KEY, IO_REQUESTS_KEY};
 use common_partitioning::{Partition, PartitionId, PartitionSet};
 use daft_core::{
     join::JoinSide,
@@ -1153,16 +1154,12 @@ pub fn read_sql_into_py_table(
         .extract()?)
 }
 
-/// Stat keys a Python factory-function iterator may report through its optional `stats()` method.
-///
-/// The values are cumulative counters; [`PyIterStatsPoller`] folds the deltas between polls into
-/// the scan task's [`IOStatsContext`] so that Python-backed sources surface `bytes.read` on their
-/// scan node exactly like the native readers.
-const PY_STATS_BYTES_READ_KEY: &str = "bytes.read";
-const PY_STATS_REQUESTS_KEY: &str = "io.requests";
-
 /// Polls the optional `stats()` method on a Python iterator returned by a factory function and
 /// records the deltas since the previous poll into `io_stats`.
+///
+/// The mapping's values are cumulative counters keyed by the scan node's stat names
+/// (`BYTES_READ_KEY`, `IO_REQUESTS_KEY`), so a Python-backed source surfaces the same
+/// stats as the native readers.
 ///
 /// Iterators without a `stats` attribute are a no-op, which keeps existing factory functions
 /// (e.g. `daft.io._generator`) unaffected.
@@ -1200,14 +1197,14 @@ impl PyIterStatsPoller {
         }
         let stats = stats.cast::<pyo3::types::PyMapping>()?;
 
-        let bytes_read = Self::get_counter(stats, PY_STATS_BYTES_READ_KEY)?;
+        let bytes_read = Self::get_counter(stats, BYTES_READ_KEY)?;
         let delta = bytes_read.saturating_sub(self.last_bytes_read);
         if delta > 0 {
             self.io_stats.mark_bytes_read(delta as usize);
         }
         self.last_bytes_read = self.last_bytes_read.max(bytes_read);
 
-        let requests = Self::get_counter(stats, PY_STATS_REQUESTS_KEY)?;
+        let requests = Self::get_counter(stats, IO_REQUESTS_KEY)?;
         let delta = requests.saturating_sub(self.last_requests);
         if delta > 0 {
             self.io_stats.mark_get_requests(delta as usize);
