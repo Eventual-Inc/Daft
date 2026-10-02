@@ -3,7 +3,8 @@ use std::{collections::BTreeMap, sync::Arc};
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use daft_local_plan::{
-    FlightShuffleReadInput, LocalNodeContext, LocalPhysicalPlan, ShuffleReadBackend,
+    FlightShuffleReadInput, LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef,
+    ShuffleReadBackend,
 };
 use daft_logical_plan::stats::StatsState;
 use daft_partition_refs::FlightPartitionRef;
@@ -121,6 +122,9 @@ pub(crate) async fn emit_read_tasks(
     read_inputs: Vec<FlightShuffleReadInput>,
     node: &dyn PipelineNodeImpl,
     result_tx: Sender<SwordfishTaskBuilder>,
+    wrap_plan: &mut (
+             dyn FnMut(usize, LocalPhysicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> + Send
+         ),
 ) -> DaftResult<()> {
     for read_input in read_inputs {
         // Fresh plan per task: `SwordfishTaskBuilder::build` mutates the plan in
@@ -132,7 +136,9 @@ pub(crate) async fn emit_read_tasks(
             StatsState::NotMaterialized,
             LocalNodeContext::new(Some(node_id as usize)),
         );
-        let task = SwordfishTaskBuilder::new(shuffle_read_plan, node, node_id)
+        let partition_idx = read_input.partition_idx as usize;
+        let plan = wrap_plan(partition_idx, shuffle_read_plan)?;
+        let task = SwordfishTaskBuilder::new(plan, node, node_id)
             .with_flight_shuffle_reads(node_id, vec![read_input]);
 
         let _ = result_tx.send(task).await;
