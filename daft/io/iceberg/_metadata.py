@@ -42,9 +42,8 @@ def resolve_iceberg_schema(metadata: IcebergTableMetadata, snapshot_id: int | No
     """Resolves the IcebergSchema at the given snapshot ID or the current schema if no snapshot ID is provided."""
     if snapshot_id is None:
         return metadata.schema()
-    if snapshot := metadata.snapshot_by_id(snapshot_id):
-        if snapshot.schema_id is not None:
-            return metadata.schema_by_id(snapshot.schema_id) or metadata.schema()
+    if (snapshot := metadata.snapshot_by_id(snapshot_id)) and snapshot.schema_id is not None:
+        return metadata.schema_by_id(snapshot.schema_id) or metadata.schema()
     return metadata.schema()
 
 

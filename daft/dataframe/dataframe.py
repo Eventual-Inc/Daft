@@ -1326,6 +1326,80 @@ class DataFrame:
         return result_df
 
     @DataframePublicAPI
+    def write_avro(
+        self,
+        root_dir: str | pathlib.Path,
+        compression: str = "null",
+        write_mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
+        write_success_file: bool = False,
+        partition_cols: list[ColumnInputType] | None = None,
+        io_config: IOConfig | None = None,
+    ) -> "DataFrame":
+        """Writes the DataFrame as Avro files, returning a new DataFrame with paths to the files that were written.
+
+        Files will be written to ``<root_dir>/*`` with randomly generated UUIDs as the file names.
+
+        Args:
+            root_dir (str): root file path to write Avro files to.
+            compression (str, optional): compression algorithm. "null" (default) or "deflate". Defaults to "null".
+            write_mode (str, optional): Operation mode of the write. ``append`` will add new data, ``overwrite`` will replace the contents of the root directory with new data. ``overwrite-partitions`` will replace only the contents in the partitions that are being written to. Defaults to "append".
+            write_success_file (bool, optional): Whether to write a ``_SUCCESS`` file upon successful completion. Defaults to False.
+            partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
+            io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
+
+        Returns:
+            DataFrame: The filenames that were written out as strings.
+
+        Note:
+            This call is **blocking** and will execute the DataFrame when called
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
+            >>> df.write_avro("output_dir", write_mode="overwrite")  # doctest: +SKIP
+
+        Tip:
+            See also [`df.write_parquet()`][daft.DataFrame.write_parquet] and [`df.write_csv()`][daft.DataFrame.write_csv]
+            Other formats for writing DataFrames
+        """
+        if write_mode not in ["append", "overwrite", "overwrite-partitions"]:
+            raise ValueError(
+                f"Only support `append`, `overwrite`, or `overwrite-partitions` mode. {write_mode} is unsupported"
+            )
+        if write_mode == "overwrite-partitions" and partition_cols is None:
+            raise ValueError("Partition columns must be specified to use `overwrite-partitions` mode.")
+
+        io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+
+        cols: list[Expression] | None = None
+        if partition_cols is not None:
+            cols = column_inputs_to_expressions(tuple(partition_cols))
+
+        builder = self._builder.write_tabular(
+            root_dir=root_dir,
+            partition_cols=cols,
+            write_mode=WriteMode.from_str(write_mode),
+            write_success_file=write_success_file,
+            file_format=FileFormat.Avro,
+            compression=compression,
+            io_config=io_config,
+        )
+        # Block and write, then retrieve data
+        write_df = DataFrame(builder)
+        write_df.collect()
+        assert write_df._result is not None
+
+        # Populate and return a new disconnected DataFrame
+        # Keep the original logical plan so explain() can still show upstream operators
+        # (e.g. filters/projections before the write), instead of collapsing to an
+        # in-memory source after collect() caches the result.
+        result_df = DataFrame(write_df._get_current_builder())
+        result_df._result_cache = write_df._result_cache
+        result_df._preview = write_df._preview
+        result_df._metadata = write_df._metadata
+        return result_df
+
+    @DataframePublicAPI
     def write_iceberg(
         self,
         table: "pyiceberg.table.Table",
@@ -2349,24 +2423,33 @@ class DataFrame:
     @DataframePublicAPI
     def write_lance(
         self,
-        uri: str | pathlib.Path,
-        mode: Literal["create", "append", "overwrite", "merge"] = "create",
+        uri: str | pathlib.Path | None = None,
+        mode: Literal["create", "append", "overwrite", "insert_overwrite", "merge"] = "create",
         io_config: IOConfig | None = None,
         schema: Union[Schema, "pyarrow.Schema"] | None = None,
         left_on: str | None = None,
         right_on: str | None = None,
+        *,
+        overwrite_where: str | None = None,
+        table_id: list[str] | None = None,
+        namespace_impl: str | None = None,
+        namespace_properties: dict[str, str] | None = None,
         **kwargs: Any,
     ) -> "DataFrame":
         """Writes the DataFrame to a Lance table.
 
         Args:
           uri: The URI of the Lance table to write to. Accepts a local path or an
-            object-store URI like "s3://bucket/path".
-          mode: The write mode. One of "create", "append", "overwrite", or "merge".
+            object-store URI like "s3://bucket/path". Mutually exclusive with
+            the namespace parameters.
+          mode: The write mode. One of "create", "append", "overwrite", or
+            "insert_overwrite". ``"merge"`` is deprecated in v0.8.0 and will
+            be removed in v0.9.0.
           - "create" will create the dataset if it does not exist, otherwise raise an error.
           - "append" will append to the existing dataset if it exists, otherwise raise an error.
           - "overwrite" will overwrite the existing dataset if it exists, otherwise raise an error.
-          - "merge" will add new columns to the existing dataset.
+          - "insert_overwrite" atomically removes rows matching ``overwrite_where``
+            and appends this DataFrame's rows. The table must already exist.
           io_config (IOConfig, optional): configurations to use when interacting with remote storage.
           schema (Schema | pyarrow.Schema, optional): Desired schema to enforce during write.
             - If omitted, Daft will use the DataFrame's current schema.
@@ -2375,11 +2458,18 @@ class DataFrame:
               on the pyarrow schema is preserved during create/overwrite.
             - If the target Lance dataset already exists, the data will be cast to the existing table schema
               to ensure compatibility unless ``mode="overwrite"``.
-          left_on/right_on (Optional[str]): Only supported in ``mode="merge"``. Specify the join key for aligning rows when merging new columns.
-              - If omitted, defaults to ``"_rowaddr"``.
-              - If ``right_on`` is omitted, it defaults to the value of ``left_on``.
-              - The DataFrame passed to ``write_lance(mode="merge")`` must contain ``fragment_id`` and the join key column specified by ``right_on`` (or ``_rowaddr`` by default).
-          **kwargs: Additional keyword arguments to pass to the Lance writer.
+          left_on/right_on: Deprecated with ``mode="merge"``. Pass them to
+            ``daft_lance.merge_columns_df`` instead.
+          overwrite_where: SQL predicate selecting rows to replace. Required only
+            for ``mode="insert_overwrite"``.
+          table_id: Table identifier within a Lance Namespace, e.g.
+            ``["catalog", "schema", "table"]``. Namespace targets do not
+            support ``mode="merge"`` through this Daft facade.
+          namespace_impl: Lance Namespace implementation, such as ``"dir"`` or
+            ``"rest"``.
+          namespace_properties: Properties for connecting to the namespace.
+          **kwargs: Additional keyword arguments to pass to the Lance writer. daft-lance
+            validates these against a fixed set; an unrecognized argument raises ``TypeError``.
 
         Returns:
             DataFrame: A DataFrame containing metadata about the written Lance table, such as number of fragments, number of deleted rows, number of small files, and version.
@@ -2418,7 +2508,6 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 4 of 4 rows)
             >>> # Pass additional keyword arguments to the Lance writer
-            >>> # All additional keyword arguments are passed to `lance.write_fragments`
             >>> df.write_lance("/tmp/lance/my_table.lance", mode="overwrite", max_bytes_per_file=1024)  # doctest: +SKIP
             ╭───────────────┬──────────────────┬─────────────────┬─────────╮
             │ num_fragments ┆ num_deleted_rows ┆ num_small_files ┆ version │
@@ -2430,28 +2519,61 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
+        # daft-lance is an optional dependency.
+        from daft_lance import merge_columns_df as _merge_columns_df
+        from daft_lance import write_lance as _write_lance
+
         from daft import context as _context
-        from daft.io.lance.lance_data_sink import LanceDataSink
         from daft.io.object_store_options import io_config_to_storage_options
 
         if schema is None:
             schema = self.schema()
 
-        uri_str = str(uri)
-        if uri_str.startswith("rest://"):
+        uri_str = str(uri) if uri is not None else None
+        if uri_str is not None and uri_str.startswith("rest://"):
             raise ValueError(
                 "rest:// Lance URIs are no longer supported by DataFrame.write_lance. "
-                "The previous REST-namespace integration did not match the real "
-                "lance-namespace API and has been removed."
+                "Use the Lance Namespace parameters instead."
             )
 
-        # Non-merge modes do not support schema evolution or custom join keys
-        if mode != "merge":
-            sanitized_kwargs = {k: v for k, v in kwargs.items() if k not in ("left_on", "right_on")}
-            sink = LanceDataSink(uri, schema, mode, io_config, **sanitized_kwargs)
-            return self.write_sink(sink)
+        if mode == "merge":
+            warnings.warn(
+                'DataFrame.write_lance(mode="merge") is deprecated in v0.8.0 and will be removed '
+                "in v0.9.0. Use write_lance(mode='create') for a new table, "
+                "write_lance(mode='append') when adding rows, or "
+                "daft_lance.merge_columns_df for column merges.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
-        # Merge mode semantics
+        # Non-merge modes are fully handled by daft-lance's write_lance.
+        if mode != "merge":
+            return _write_lance(
+                self,
+                uri,
+                mode=mode,
+                io_config=io_config,
+                schema=schema,
+                overwrite_where=overwrite_where,
+                table_id=table_id,
+                namespace_impl=namespace_impl,
+                namespace_properties=namespace_properties,
+                **kwargs,
+            )
+
+        if table_id is not None or namespace_impl is not None or namespace_properties is not None:
+            raise ValueError(
+                'DataFrame.write_lance(mode="merge") does not support Lance Namespace targets. '
+                "Use daft_lance.merge_columns_df directly for Namespace tables."
+            )
+        if uri is None:
+            raise ValueError('DataFrame.write_lance(mode="merge") requires a URI target.')
+        if overwrite_where is not None:
+            raise ValueError('overwrite_where is only supported with mode="insert_overwrite".')
+        assert uri_str is not None
+
+        # Merge mode is not a native daft-lance write mode, so Daft decides between
+        # create/append/column-merge here and delegates the actual work to daft-lance.
         try:
             import lance
         except ImportError as e:
@@ -2460,19 +2582,18 @@ class DataFrame:
             ) from e
 
         io_config = _context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
-        storage_options = io_config_to_storage_options(io_config, str(uri) if isinstance(uri, pathlib.Path) else uri)
+        storage_options = io_config_to_storage_options(io_config, uri_str)
 
         # Attempt to load dataset; if not exists, behave like create
-        lance_ds = None
         try:
             lance_ds = lance.dataset(uri, storage_options=storage_options)
-        except (ValueError, FileNotFoundError, OSError) as _e:
+        except (ValueError, FileNotFoundError, OSError):
             lance_ds = None
 
+        sanitized_kwargs = {k: v for k, v in kwargs.items() if k not in ("left_on", "right_on")}
+
         if lance_ds is None:
-            sanitized_kwargs = {k: v for k, v in kwargs.items() if k not in ("left_on", "right_on")}
-            sink = LanceDataSink(uri, schema, "create", io_config, **sanitized_kwargs)
-            return self.write_sink(sink)
+            return _write_lance(self, uri, mode="create", io_config=io_config, schema=schema, **sanitized_kwargs)
 
         # Dataset exists: detect schema evolution by checking new columns in incoming DF
         existing_fields: set[str] = set()
@@ -2493,11 +2614,8 @@ class DataFrame:
         new_cols = [c for c in self.column_names if c not in existing_fields and c not in meta_exclusions]
 
         if len(new_cols) == 0:
-            # Pure append: no schema evolution. Ensure merge-specific params are not forwarded.
-            sanitized_kwargs = {k: v for k, v in kwargs.items() if k not in ("left_on", "right_on")}
-
-            sink = LanceDataSink(uri, schema, "append", io_config, **sanitized_kwargs)
-            return self.write_sink(sink)
+            # Pure append: no schema evolution.
+            return _write_lance(self, uri, mode="append", io_config=io_config, schema=schema, **sanitized_kwargs)
 
         # Schema evolution: route to per-fragment merge keyed by provided business key or default '_rowaddr'
         join_left = left_on or "_rowaddr"
@@ -2516,16 +2634,7 @@ class DataFrame:
                 f"DataFrame must contain join key column '{join_right}' for per-fragment merge in mode='merge'." + hint
             )
 
-        from daft.io.lance.lance_merge_column import merge_columns_from_df
-
-        merge_columns_from_df(
-            df=self,
-            lance_ds=lance_ds,
-            uri=uri,
-            left_on=join_left,
-            right_on=join_right,
-            storage_options=storage_options,
-        )
+        _merge_columns_df(self, uri, io_config, left_on=join_left, right_on=join_right)
 
         # Build and return stats DataFrame similar to sink.finalize
         dataset = lance.dataset(uri, storage_options=storage_options)
@@ -4440,7 +4549,7 @@ class DataFrame:
     def unpivot(
         self,
         ids: ManyColumnsInputType,
-        values: ManyColumnsInputType = [],
+        values: ManyColumnsInputType = (),
         variable_name: str = "variable",
         value_name: str = "value",
     ) -> "DataFrame":
@@ -4501,7 +4610,7 @@ class DataFrame:
     def melt(
         self,
         ids: ManyColumnsInputType,
-        values: ManyColumnsInputType = [],
+        values: ManyColumnsInputType = (),
         variable_name: str = "variable",
         value_name: str = "value",
     ) -> "DataFrame":

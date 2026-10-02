@@ -89,7 +89,7 @@ def test_deletion_compaction(tmp_path: Path):
 def test_idempotent_repeated_compaction(tmp_path: Path):
     """Idempotency: repeat compaction on already compacted dataset should return None and have no side effects."""
     dataset_path = tmp_path / "test_idempotent_compaction"
-    df1 = pd.DataFrame({"id": range(0, 5), "v": [f"a{i}" for i in range(5)]})
+    df1 = pd.DataFrame({"id": range(5), "v": [f"a{i}" for i in range(5)]})
     df2 = pd.DataFrame({"id": range(5, 10), "v": [f"b{i}" for i in range(5)]})
 
     dataset = create_dataset_with_fragments(dataset_path, [df1, df2])

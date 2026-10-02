@@ -646,7 +646,7 @@ def udf(
     def _udf(f: UserDefinedPyFuncLike) -> UDF:
         # Grab a name for the UDF. It **should** be unique.
         module_name = getattr(f, "__module__", "")
-        qual_name = getattr(f, "__qualname__")
+        qual_name = f.__qualname__
 
         if module_name:
             name = f"{module_name}.{qual_name}"

@@ -2,14 +2,6 @@
 
 [MCAP](https://mcap.dev/) is an open-source container file format for multimodal log data, commonly used in robotics and autonomous systems. Daft can read MCAP files using [`daft.read_mcap()`][daft.io.read_mcap].
 
-## Installing Dependencies
-
-MCAP support requires the `mcap` package:
-
-```bash
-pip install mcap
-```
-
 ## Basic Usage
 
 === "Local File"
@@ -57,11 +49,28 @@ The `read_mcap` function returns a DataFrame with the following schema:
 
 | Column | Type | Description |
 |--------|------|-------------|
+| `source_path` | `string` | Path of the MCAP file containing the message |
+| `topic` | `string` | The topic name the message was published on |
+| `log_time` | `uint64` | Timestamp when the message was logged (nanoseconds) |
+| `publish_time` | `uint64` | Timestamp when the message was published (nanoseconds) |
+| `sequence` | `uint32` | Sequence number of the message |
+| `data` | `binary` | Raw message payload |
+
+If `use_legacy_types=True`, the DataFrame schema will match the legacy implementation.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `source_path` | `string` | Path of the MCAP file containing the message |
 | `topic` | `string` | The topic name the message was published on |
 | `log_time` | `int64` | Timestamp when the message was logged (nanoseconds) |
 | `publish_time` | `int64` | Timestamp when the message was published (nanoseconds) |
 | `sequence` | `int32` | Sequence number of the message |
-| `data` | `string` | Message data as a string |
+| `data` | `string` | Message payload |
+
+
+!!! warning "Deprecated `use_legacy_types=True` flag"
+
+    `use_legacy_types=True` is deprecated and will be removed in v0.9.0. Update your script to use the currently emitted column types.
 
 ## Filtering Options
 
@@ -77,6 +86,11 @@ df = daft.read_mcap(
 )
 df.show()
 ```
+
+!!! warning "Unsigned timestamp bounds"
+
+    Ensure that `start_time`, `end_time`, and times returned by `topic_start_time_resolver` must be between
+    `0` and `2**64 - 1` to match the internal MCAP timestamp format. Negative time values raise `OverflowError`.
 
 ### Topic Filtering
 

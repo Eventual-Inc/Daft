@@ -10,7 +10,6 @@ if TYPE_CHECKING:
     import fsspec
     import h5py
     import librosa
-    import mcap
     import numpy as np
     import pandas as pd
     import PIL.Image as pil_image
@@ -18,7 +17,6 @@ if TYPE_CHECKING:
     import pyarrow.compute as pc
     import pyarrow.csv as pacsv
     import pyarrow.dataset as pads
-    import pyarrow.flight as flight
     import pyarrow.fs as pafs
     import pyarrow.json as pajson
     import pyarrow.parquet as pq
@@ -27,6 +25,8 @@ if TYPE_CHECKING:
     import tensorflow as tf
     import torch
     import torchvision
+    import typesafe_sdk
+    from pyarrow import flight
 else:
     av = LazyImport("av")
     confluent_kafka = LazyImport("confluent_kafka")
@@ -45,11 +45,11 @@ else:
     pq = LazyImport("pyarrow.parquet")
     sf = LazyImport("soundfile")
     h5py = LazyImport("h5py")
-    mcap = LazyImport("mcap")
     requests = LazyImport("requests")
     tf = LazyImport("tensorflow")
     torch = LazyImport("torch")
     torchvision = LazyImport("torchvision")
+    typesafe_sdk = LazyImport("typesafe_sdk")
 
 unity_catalog = LazyImport("daft.catalog.__unity._client")
 
@@ -60,7 +60,6 @@ __all__ = [
     "fsspec",
     "h5py",
     "librosa",
-    "mcap",
     "np",
     "pa",
     "pacsv",
@@ -76,5 +75,6 @@ __all__ = [
     "tf",
     "torch",
     "torchvision",
+    "typesafe_sdk",
     "unity_catalog",
 ]

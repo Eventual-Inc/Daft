@@ -63,6 +63,7 @@
             * [Files](connectors/files.md)
             * [Text Files](connectors/text.md)
             * [Blob Files](connectors/blob.md)
+            * [WebDataset](connectors/webdataset.md)
             * [Generic File Source Options](connectors/generic-file-source-options.md)
         * Other Sources
             * [Apache Kafka](connectors/kafka.md)

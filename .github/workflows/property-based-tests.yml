@@ -50,7 +50,7 @@ jobs:
     - name: Install dependencies
       run: |
         uv sync --no-install-project --all-extras --all-groups
-    - uses: actions/setup-node@v6
+    - uses: actions/setup-node@v7
       with:
         node-version: "22"
         cache: "npm"
@@ -73,7 +73,7 @@ jobs:
         HYPOTHESIS_MAX_EXAMPLES: 10000
 
     - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v3.0.3
+      uses: slackapi/slack-github-action@v4.0.0
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.ref == 'refs/heads/main') }}
       env:
         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

@@ -65,6 +65,11 @@ _models: dict[EmbeddingModel, _ModelProfile] = {
 }
 
 
+def _embedding_request_options(embed_options: EmbedTextOptions) -> dict[str, Any]:
+    extra_body = embed_options.get("extra_body")
+    return {} if extra_body is None else {"extra_body": extra_body}
+
+
 def get_input_text_token_limit_for_model(model_name: str) -> int:
     """Get the input token limit for a model, with fallback to default.
 
@@ -133,6 +138,7 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
                     input="dimension probe",
                     model=self.model_name,
                     encoding_format="float",
+                    **_embedding_request_options(self.embed_options),
                 )
                 size = len(response.data[0].embedding)
                 return EmbeddingDimensions(size=size, dtype=DataType.float32())
@@ -203,6 +209,7 @@ class OpenAITextEmbedder(TextEmbedder):
         self._provider_name = provider_name
         self._batch_token_limit = batch_token_limit
         self._input_text_token_limit = input_text_token_limit
+        self._request_options = _embedding_request_options(embed_options)
 
         merged_provider_options: dict[str, Any] = merge_provider_and_api_options(
             provider_options=provider_options,
@@ -224,7 +231,7 @@ class OpenAITextEmbedder(TextEmbedder):
             nonlocal curr_batch
             nonlocal curr_batch_token_count
             if len(curr_batch) == 0:
-                return None
+                return
             embeddings_result = await self._embed_text_batch(curr_batch)
             embeddings.extend(embeddings_result)
             curr_batch = []
@@ -268,6 +275,7 @@ class OpenAITextEmbedder(TextEmbedder):
                 model=self._model,
                 encoding_format="float",
                 dimensions=dimensions,
+                **self._request_options,
             )
             self._record_usage_metrics(response)
             return [np.array(embedding.embedding) for embedding in response.data]
@@ -287,6 +295,7 @@ class OpenAITextEmbedder(TextEmbedder):
                 model=self._model,
                 encoding_format="float",
                 dimensions=dimensions,
+                **self._request_options,
             )
             self._record_usage_metrics(response)
             return np.array(response.data[0].embedding)

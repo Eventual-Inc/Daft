@@ -22,10 +22,8 @@ def iceberg_catalog(tmp_path_factory):
     tmpdir = tmp_path_factory.mktemp("test_iceberg")
     catalog = SqlCatalog(
         CATALOG_ALIAS,
-        **{
-            "uri": f"sqlite:///{tmpdir}/iceberg_catalog.db",
-            "warehouse": f"file://{tmpdir}",
-        },
+        uri=f"sqlite:///{tmpdir}/iceberg_catalog.db",
+        warehouse=f"file://{tmpdir}",
     )
     #
     # define a table via iceberg
@@ -86,7 +84,6 @@ def test_name(catalog):
 def test_create_namespace(catalog: Catalog):
     c = catalog
     n = "test_create_namespace"
-    #
     c.create_namespace(f"{n}")
     c.create_namespace(f"{n}.a")
     c.create_namespace(f"{n}.a.b")

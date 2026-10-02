@@ -29,7 +29,7 @@ homepage = "https://www.daft.ai"
 repository = "https://github.com/Eventual-Inc/Daft"
 
 [project.optional-dependencies]
-all = ["daft[audio, aws, azure, clickhouse, deltalake, google, gravitino, hdf5, http, huggingface, iceberg, kafka, lance, mcap, numpy, openai, pandas, postgres, ray, sql, transformers, turbopuffer, unity, video]"]
+all = ["daft[audio, aws, azure, clickhouse, deltalake, google, gravitino, hdf5, http, huggingface, iceberg, jev, kafka, lance, mcap, numpy, openai, pandas, postgres, ray, sql, transformers, turbopuffer, unity, video]"]
 audio = ["soundfile >= 0.13.0,<0.14.0", "librosa >= 0.11.0,<0.12.0"]
 aws = ["boto3<1.44.0", "mypy-boto3-glue"]
 azure = ["fsspec<2026.8.0", "adlfs<2026.5.0"]
@@ -43,9 +43,11 @@ http = ["fsspec[http]<2026.8.0"]
 hudi = []
 huggingface = ["huggingface-hub<1.17.0", "datasets<4.9.0", "fsspec<2026.8.0"]
 iceberg = ["pyiceberg >= 0.7.0, != 0.9.1, != 0.10.0, <= 0.11.1"]
+jev = ["typesafe-sdk >= 0.7.2, < 0.8.0"]
 kafka = ["confluent-kafka"]
-lance = ["daft-lance"]
-mcap = ["mcap>=1.1.0,<2.0.0"]
+lance = ["daft-lance>=0.5.0,<0.6.0"]
+# The reader is native. Retain the extra as a no-op for installation compatibility.
+mcap = []
 numpy = ["numpy<2.4.0"]
 openai = ["openai<2.39.0", "numpy<2.4.0", "pillow==12.2.0"]
 pandas = ["pandas<2.4.0"]
@@ -114,7 +116,7 @@ dev = [
   # Ray
   "ray[data, client]==2.58.0",
   # Lance
-  "daft-lance==0.3.2",
+  "daft-lance==0.5.0",
   # Iceberg
   "pyiceberg==0.11.1",
   "pydantic==2.12.4",
@@ -150,6 +152,7 @@ dev = [
   "vllm==0.21.0; sys_platform == 'linux'",
   "openai==2.38.0",
   "google-genai==2.6.0",
+  "typesafe-sdk==0.7.2",
   # AV
   "av==17.0.1",
   "h5py==3.16.0",
@@ -188,7 +191,7 @@ docs = [
 [tool.codespell]
 check-filenames = true
 check-hidden = true
-ignore-words-list = "crate,arithmetics,ser,acter,MOR,NotIn"
+ignore-words-list = "crate,arithmetics,ser,acter,MOR,NotIn,caf"
 # Feel free to un-skip examples, and experimental, you will just need to
 # work through many typos (--write-changes and --interactive will help)
 skip = "tests/series/*,target,.git,.venv,venv,data,*.csv,*.csv.*,*.html,*.json,*.jsonl,*.pdf,*.txt,*.ipynb,*.tiktoken,*.sql,tests/table/utf8/*,tests/table/binary/*,*.warc,tests/ai/*"

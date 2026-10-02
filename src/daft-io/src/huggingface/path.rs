@@ -132,92 +132,77 @@ pub(super) fn hf_path_parts_from_uri(uri: &str) -> Result<Option<HFPathParts>, E
 
 impl FromStr for HFPathParts {
     type Err = Error;
-    /// Extracts path components from a hugging face path:
-    /// `hf:// [datasets | spaces] / {username} / {reponame} @ {revision} / {path from root}`
+    /// Parses `hf://{repo_type}/{username}/{repository}[@{revision}][/{path}]`.
     fn from_str(uri: &str) -> Result<Self, Self::Err> {
-        // hf:// [datasets] / {username} / {reponame} @ {revision} / {path from root}
-        //       !>
-        if !uri.starts_with("hf://") {
-            return Err(Error::InvalidPath {
-                path: uri.to_string(),
-            });
-        }
-        (|| {
-            let uri = &uri[5..];
+        let invalid_path = || Error::InvalidPath {
+            path: uri.to_string(),
+        };
+        let uri_without_scheme = uri.strip_prefix("hf://").ok_or_else(&invalid_path)?;
+        let mut segments = uri_without_scheme.splitn(4, '/');
+        let repo_type = segments
+            .next()
+            .and_then(|segment| segment.parse().ok())
+            .ok_or_else(&invalid_path)?;
+        let username = segments.next().ok_or_else(&invalid_path)?;
+        let repository_with_revision = segments.next().ok_or_else(&invalid_path)?;
+        let path = segments.next().unwrap_or("");
 
-            // [datasets] / {username} / {reponame} @ {revision} / {path from root}
-            // ^--------^   !>
-            let (repo_type_str, uri) = uri.split_once('/')?;
-            let repo_type = repo_type_str.parse().ok()?;
-            // {username} / {reponame} @ {revision} / {path from root}
-            // ^--------^   !>
-            let (username, uri) = uri.split_once('/')?;
-            // {reponame} @ {revision} / {path from root}
-            // ^--------^   !>
-            let (repository, uri) = if let Some((repo, uri)) = uri.split_once('/') {
-                (repo, uri)
-            } else {
-                return Some(Self {
-                    repo_type,
-                    repository: format!("{username}/{uri}"),
-                    revision: "main".to_string(),
-                    path: String::new(),
-                });
-            };
-
-            // {revision} / {path from root}
-            // ^--------^   !>
-            let (repository, revision) = if let Some((repo, rev)) = repository.split_once('@') {
+        let (repository, revision) =
+            if let Some((repo, rev)) = repository_with_revision.split_once('@') {
                 (repo, rev.to_string())
             } else {
-                (repository, "main".to_string())
+                (repository_with_revision, "main".to_string())
             };
 
-            // {username}/{reponame}
-            let repository = format!("{username}/{repository}");
-            // {path from root}
-            // ^--------------^
-            let mut path = uri.to_string().trim_end_matches('/').to_string();
-            if repo_type == HFRepoType::Buckets {
-                // `tree` is a reserved segment in Hugging Face's bucket routing: the browser
-                // page for an object lives at `.../buckets/{repo}/tree/{path}` (and the bucket
-                // root at `.../buckets/{repo}/tree`), and our own listing API call in
-                // `get_api_uri` hits `.../api/buckets/{repo}/tree/{path}`. It never denotes a
-                // real bucket object path. Users regularly copy the browser URL and swap
-                // `https://huggingface.co` for `hf://`, landing here with a leading `tree`
-                // segment that isn't part of the object key, so strip it. See #7217.
-                if path == "tree" {
-                    path = String::new();
-                } else {
-                    path = path
-                        .strip_prefix("tree/")
-                        .unwrap_or(path.as_str())
-                        .to_string();
-                }
+        let repository = format!("{username}/{repository}");
+        let mut path = path.trim_end_matches('/').to_string();
+        if repo_type == HFRepoType::Buckets {
+            // `tree` is a reserved segment in Hugging Face's bucket routing: the browser
+            // page for an object lives at `.../buckets/{repo}/tree/{path}` (and the bucket
+            // root at `.../buckets/{repo}/tree`), and our own listing API call in
+            // `get_api_uri` hits `.../api/buckets/{repo}/tree/{path}`. It never denotes a
+            // real bucket object path. Users regularly copy the browser URL and swap
+            // `https://huggingface.co` for `hf://`, landing here with a leading `tree`
+            // segment that isn't part of the object key, so strip it. See #7217.
+            if path == "tree" {
+                path = String::new();
+            } else {
+                path = path
+                    .strip_prefix("tree/")
+                    .unwrap_or(path.as_str())
+                    .to_string();
             }
+        }
 
-            Some(Self {
-                repo_type,
-                repository,
-                revision,
-                path,
-            })
-        })()
-        .ok_or_else(|| Error::InvalidPath {
-            path: uri.to_string(),
+        Ok(Self {
+            repo_type,
+            repository,
+            revision,
+            path,
         })
     }
 }
 
 impl std::fmt::Display for HFPathParts {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "hf://{REPO_TYPE}/{REPOSITORY}/{PATH}",
-            REPO_TYPE = self.repo_type,
-            REPOSITORY = self.repository,
-            PATH = self.path
-        )
+        if self.repo_type == HFRepoType::Buckets || self.revision == "main" {
+            write!(
+                f,
+                "hf://{REPO_TYPE}/{REPOSITORY}/{PATH}",
+                REPO_TYPE = self.repo_type,
+                REPOSITORY = self.repository,
+                PATH = self.path
+            )
+        } else {
+            write!(
+                f,
+                "hf://{REPO_TYPE}/{REPOSITORY}@{REVISION}/{PATH}",
+                REPO_TYPE = self.repo_type,
+                REPOSITORY = self.repository,
+                REVISION = self.revision,
+                PATH = self.path
+            )
+        }
     }
 }
 
@@ -239,6 +224,18 @@ impl FromStr for HFPath {
 }
 
 impl HFPath {
+    pub(super) fn canonical_glob_path(&self, original: &str) -> String {
+        let Self::Hf(parts) = self else {
+            return original.to_string();
+        };
+
+        let mut canonical = parts.to_string();
+        if original.ends_with('/') && !canonical.ends_with('/') {
+            canonical.push('/');
+        }
+        canonical
+    }
+
     // There is a bug within huggingface apis that is incorrectly caching files
     // https://github.com/huggingface/datasets/issues/7685
     //
@@ -302,7 +299,7 @@ impl HFPath {
 mod tests {
     use common_error::DaftResult;
 
-    use super::{HFPathParts, HFRepoType};
+    use super::{HFPath, HFPathParts, HFRepoType};
 
     #[test]
     fn test_parse_hf_parts() -> DaftResult<()> {
@@ -332,8 +329,55 @@ mod tests {
         };
 
         assert_eq!(parts, expected);
+        assert_eq!(parts.to_string(), uri);
 
         Ok(())
+    }
+
+    #[test]
+    fn test_parse_hf_repo_root_with_revision_and_aliases() -> DaftResult<()> {
+        for (prefix, repo_type, canonical) in [
+            ("model", HFRepoType::Models, "models"),
+            ("models", HFRepoType::Models, "models"),
+            ("dataset", HFRepoType::Datasets, "datasets"),
+            ("datasets", HFRepoType::Datasets, "datasets"),
+            ("space", HFRepoType::Spaces, "spaces"),
+            ("spaces", HFRepoType::Spaces, "spaces"),
+        ] {
+            let uri = format!("hf://{prefix}/user/repo@dev");
+            let parts = uri.parse::<HFPathParts>().unwrap();
+            assert_eq!(parts.repo_type, repo_type);
+            assert_eq!(parts.repository, "user/repo");
+            assert_eq!(parts.revision, "dev");
+            assert_eq!(parts.path, "");
+            assert_eq!(
+                parts.to_string(),
+                format!("hf://{canonical}/user/repo@dev/")
+            );
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_canonical_glob_path_preserves_trailing_slash() {
+        for (uri, expected) in [
+            (
+                "hf://model/user/repo@dev/directory/",
+                "hf://models/user/repo@dev/directory/",
+            ),
+            (
+                "hf://datasets/user/repo@main/directory/",
+                "hf://datasets/user/repo/directory/",
+            ),
+            (
+                "hf://buckets/user/repo/tree/directory/",
+                "hf://buckets/user/repo/directory/",
+            ),
+        ] {
+            let path = uri.parse::<HFPath>().unwrap();
+            assert_eq!(path.canonical_glob_path(uri), expected);
+        }
     }
 
     #[test]

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from collections.abc import Generator
+from collections.abc import Generator, Sequence
 from typing import Any, Literal, Protocol
 
 import pandas as pd
@@ -32,7 +32,7 @@ def pytest_configure(config):
     )
 
 
-def get_tests_daft_runner_name() -> Literal["ray"] | Literal["native"]:
+def get_tests_daft_runner_name() -> Literal["ray", "native"]:
     """Test utility that checks the environment variable for the runner that is being used for the test."""
     name = os.getenv("DAFT_RUNNER")
     assert name is not None, "Tests must be run with $DAFT_RUNNER env var"
@@ -112,7 +112,7 @@ class MakeDF(Protocol):
         self,
         data: pa.Table | dict | list,
         repartition: int = 1,
-        repartition_columns: list[str] = [],
+        repartition_columns: Sequence[str] = (),
     ) -> daft.DataFrame: ...
 
 
@@ -124,7 +124,7 @@ def make_df(data_source, tmp_path, request) -> Generator[MakeDF, None, None]:
     def _make_df(
         data: pa.Table | dict | list,
         repartition: int = 1,
-        repartition_columns: list[str] = [],
+        repartition_columns: Sequence[str] = (),
     ) -> daft.DataFrame:
         pa_table: pa.Table
         if isinstance(data, pa.Table):

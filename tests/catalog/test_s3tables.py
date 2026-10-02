@@ -96,13 +96,10 @@ def test_drop(catalog: Catalog):
     table_name = f"{ns}.table_to_drop"
     catalog.create_namespace(ns)
     catalog.create_table(table_name, schema({"a": dt.bool()}))
-    #
     assert Identifier(ns) in catalog.list_namespaces()
     assert Identifier.from_str(table_name) in catalog.list_tables(ns)
-    #
     catalog.drop_table(table_name)
     assert Identifier.from_str(table_name) not in catalog.list_tables(ns)
-    #
     catalog.drop_namespace(ns)
     assert Identifier(ns) not in catalog.list_namespaces()
 

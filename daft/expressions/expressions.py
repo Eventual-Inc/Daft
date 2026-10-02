@@ -867,7 +867,7 @@ class Expression:
 
         return log10(self)
 
-    def log(self, base: int | builtins.float = math.e) -> Expression:
+    def log(self, base: builtins.float = math.e) -> Expression:
         """The elementwise log with given base, of a numeric expression.
 
         Tip: See Also
@@ -1256,7 +1256,7 @@ class Expression:
         if name:
             name = name + "."
         if hasattr(func, "__qualname__"):
-            name = name + getattr(func, "__qualname__")
+            name = name + func.__qualname__
         elif hasattr(func, "__class__"):
             name = name + func.__class__.__name__
         else:
@@ -1311,7 +1311,7 @@ class Expression:
 
         return is_in(self, other)
 
-    def between(self, lower: int | builtins.float, upper: int | builtins.float) -> Expression:
+    def between(self, lower: builtins.float, upper: builtins.float) -> Expression:
         """Checks if values in the Expression are between lower and upper, inclusive.
 
         Tip: See Also
