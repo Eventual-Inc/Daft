@@ -180,7 +180,7 @@ def test_series_fixed_size_list_take_out_of_bounds(dtype, empty_source, pyidx, d
     data = pa.array([] if empty_source else [[None] * dimension], type=pa.list_(dtype, dimension))
     s = Series.from_arrow(data)
 
-    with pytest.raises(BaseException, match="out of bounds|out of range|idx < self.bit_len"):
+    with pytest.raises(ValueError, match="out of bounds"):
         s.take(Series.from_arrow(pa.array(pyidx, type=pa.uint64())))
 
 

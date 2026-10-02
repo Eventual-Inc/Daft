@@ -3,7 +3,7 @@ use arrow::{
     buffer::{NullBuffer, OffsetBuffer},
     datatypes::ArrowNativeType,
 };
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 
 use crate::{
     array::{
@@ -51,7 +51,6 @@ impl_logicalarray_take!(MapArray);
 
 impl FixedSizeListArray {
     pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
-        let source_len = self.len();
         let fixed_size = self.fixed_element_len();
         if idx.is_empty() {
             return Ok(Self::new(
@@ -60,6 +59,11 @@ impl FixedSizeListArray {
                 None,
             ));
         }
+        let source_len = self
+            .flat_child
+            .len()
+            .checked_div(fixed_size)
+            .unwrap_or_else(|| self.nulls().map_or(0, NullBuffer::len));
         let out_of_bounds = if idx.null_count() == 0 {
             idx.as_slice()
                 .iter()
@@ -68,10 +72,11 @@ impl FixedSizeListArray {
         } else {
             idx.into_iter().flatten().any(|i| i >= source_len as u64)
         };
-        assert!(
-            !out_of_bounds,
-            "take index out of bounds for FixedSizeListArray of length {source_len}"
-        );
+        if out_of_bounds {
+            return Err(DaftError::ValueError(format!(
+                "take index out of bounds for FixedSizeListArray of length {source_len}"
+            )));
+        }
 
         // Keep short lists and other child types on element take until benchmarks justify expanding this path.
         let use_growable = fixed_size >= 32
@@ -262,6 +267,47 @@ mod tests {
 
     use super::*;
     use crate::series::IntoSeries;
+
+    #[test]
+    fn test_fixed_size_list_take_zero_size() -> DaftResult<()> {
+        let array = FixedSizeListArray::new(
+            Field::new(
+                "vectors",
+                DataType::FixedSizeList(Box::new(DataType::Float32), 0),
+            ),
+            Float32Array::from_values("components", std::iter::empty::<f32>()).into_series(),
+            None,
+        );
+        for indices in [vec![], vec![None, None]] {
+            let null_count = indices.len();
+            let indices = UInt64Array::from_iter(Field::new("", DataType::UInt64), indices);
+            let result = array.take(&indices)?;
+            assert_eq!(result.field(), array.field());
+            assert_eq!(result.fixed_element_len(), 0);
+            assert_eq!(result.flat_child.len(), 0);
+            assert_eq!(result.null_count(), null_count);
+        }
+        assert!(matches!(
+            array.take(&UInt64Array::from_vec("", vec![0])),
+            Err(DaftError::ValueError(_))
+        ));
+        let nullable = FixedSizeListArray::new(
+            array.field.clone(),
+            array.flat_child.clone(),
+            Some(NullBuffer::new_null(3)),
+        );
+        assert_eq!(
+            nullable
+                .take(&UInt64Array::from_vec("", vec![2]))?
+                .null_count(),
+            1
+        );
+        assert!(matches!(
+            nullable.take(&UInt64Array::from_vec("", vec![3])),
+            Err(DaftError::ValueError(_))
+        ));
+        Ok(())
+    }
 
     #[test]
     fn test_fixed_size_list_take_preserves_field_metadata() -> DaftResult<()> {
