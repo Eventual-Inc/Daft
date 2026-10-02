@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
+
 import pytest
 
 import daft
@@ -14,6 +18,87 @@ from daft.session import Session
 
 def test_current_session_exists():
     assert daft.current_session() is not None
+
+
+@pytest.mark.parametrize("raise_error", [False, True])
+def test_session_context_reentry(raise_error):
+    original = daft.current_session()
+    shared = Session()
+    other = Session()
+
+    with shared:
+        assert daft.current_session() is shared
+        try:
+            with other:
+                with shared:
+                    assert daft.current_session() is shared
+                    with shared:
+                        assert daft.current_session() is shared
+                        if raise_error:
+                            raise ValueError("nested failure")
+                    assert daft.current_session() is shared
+                assert daft.current_session() is other
+        except ValueError as exc:
+            assert raise_error and str(exc) == "nested failure"
+        assert daft.current_session() is shared
+
+    assert daft.current_session() is original
+    # Reusing the session after all prior entries have exited must also work.
+    with shared:
+        assert daft.current_session() is shared
+    assert daft.current_session() is original
+
+
+def test_session_context_shared_between_tasks():
+    shared = Session()
+
+    async def run():
+        entered = asyncio.Event()
+        second_entered = asyncio.Event()
+        first_exited = asyncio.Event()
+
+        async def first():
+            original = daft.current_session()
+            with shared:
+                entered.set()
+                await second_entered.wait()
+                assert daft.current_session() is shared
+            assert daft.current_session() is original
+            first_exited.set()
+
+        async def second():
+            await entered.wait()
+            original = daft.current_session()
+            with shared:
+                second_entered.set()
+                await first_exited.wait()
+                assert daft.current_session() is shared
+            assert daft.current_session() is original
+
+        await asyncio.wait_for(asyncio.gather(first(), second()), timeout=10)
+
+    with Session() as outer:
+        asyncio.run(run())
+        assert daft.current_session() is outer
+
+
+def test_session_context_shared_between_threads():
+    shared = Session()
+    entered = Barrier(2, timeout=10)
+    exiting = Barrier(2, timeout=10)
+
+    def run():
+        with Session() as outer:
+            with shared:
+                entered.wait()
+                assert daft.current_session() is shared
+                exiting.wait()
+            assert daft.current_session() is outer
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(run) for _ in range(2)]
+        for future in futures:
+            future.result(timeout=15)
 
 
 ###
