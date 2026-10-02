@@ -6,6 +6,9 @@ import pytest
 import s3fs
 
 import daft
+import daft.filesystem as fs_mod
+from daft.context import planning_config_ctx
+from daft.io import IOConfig
 from tests.conftest import minio_create_public_bucket
 
 
@@ -86,3 +89,35 @@ def test_writing_json(minio_io_config, bucket, protocol):
     )
     results.collect()
     assert len(results) == 3
+
+
+@pytest.mark.integration()
+@pytest.mark.timeout(60)
+@pytest.mark.parametrize("protocol", ["s3://", "s3a://", "s3n://"])
+@pytest.mark.parametrize("file_format", ["json", "csv", "parquet"])
+@pytest.mark.parametrize("write_mode", ["overwrite", "overwrite-partitions"])
+@pytest.mark.parametrize("endpoint_variable", ["AWS_ENDPOINT_URL", "AWS_ENDPOINT_URL_S3"])
+def test_writing_overwrite_endpoint_from_environment(
+    minio_io_config, bucket, protocol, file_format, write_mode, endpoint_variable, monkeypatch
+):
+    monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
+    monkeypatch.delenv("AWS_ENDPOINT_URL_S3", raising=False)
+    monkeypatch.delenv("AWS_IGNORE_CONFIGURED_ENDPOINT_URLS", raising=False)
+    monkeypatch.setenv(endpoint_variable, minio_io_config.s3.endpoint_url)
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", minio_io_config.s3.key_id)
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", minio_io_config.s3.access_key)
+    monkeypatch.delenv("AWS_SESSION_TOKEN", raising=False)
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
+    monkeypatch.setenv("AWS_REGION", "us-east-1")
+    monkeypatch.setattr(fs_mod, "_CACHED_FSES", {})
+    path = f"{protocol}{bucket}/overwrite-env-{uuid.uuid4()}"
+
+    with planning_config_ctx(default_io_config=IOConfig()):
+        initial = daft.from_pydict({"value": [1, 2], "part": ["a", "b"]})
+        getattr(initial, f"write_{file_format}")(path, partition_cols=["part"])
+        replacement = daft.from_pydict({"value": [3], "part": ["a"]})
+        getattr(replacement, f"write_{file_format}")(path, partition_cols=["part"], write_mode=write_mode)
+        actual = getattr(daft, f"read_{file_format}")(f"{path}/**/*.{file_format}").select("value").to_pydict()
+
+    expected = [3] if write_mode == "overwrite" else [2, 3]
+    assert sorted(actual["value"]) == expected

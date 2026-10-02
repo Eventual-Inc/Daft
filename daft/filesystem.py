@@ -22,15 +22,28 @@ class PyArrowFSWithExpiry:
     expiry: datetime | None
 
 
-_CACHED_FSES: dict[tuple[str, str], PyArrowFSWithExpiry] = {}
+_CACHED_FSES: dict[tuple[str, str, str | None], PyArrowFSWithExpiry] = {}
 
 
-def _io_config_cache_key(io_config: IOConfig | None) -> str:
+def _s3_endpoint_url(io_config: IOConfig | None) -> str | None:
+    if io_config is not None:
+        endpoint = io_config.s3.endpoint_url
+        if endpoint is not None:
+            return endpoint
+    if os.environ.get("AWS_IGNORE_CONFIGURED_ENDPOINT_URLS", "").lower() == "true":
+        return None
+    return os.environ.get("AWS_ENDPOINT_URL_S3") or os.environ.get("AWS_ENDPOINT_URL") or None
+
+
+def _filesystem_cache_key(protocol: str, io_config: IOConfig | None) -> tuple[str, str, str | None]:
     # IOConfig.__eq__ is identity-based on the PyO3 wrapper, so two semantically-equal
     # configs constructed at different times miss the dict. Key on the content-repr
     # instead; the cached entry's `expiry` field still drives refresh-credentials
     # invalidation.
-    return "None" if io_config is None else repr(io_config)
+    config_key = "None" if io_config is None else repr(io_config)
+    # Endpoint changes must not reuse a filesystem connected to the old store.
+    endpoint = _s3_endpoint_url(io_config) if protocol == "s3" else None
+    return protocol, config_key, endpoint
 
 
 def _get_fs_from_cache(protocol: str, io_config: IOConfig | None) -> pafs.FileSystem | None:
@@ -40,7 +53,7 @@ def _get_fs_from_cache(protocol: str, io_config: IOConfig | None) -> pafs.FileSy
     """
     global _CACHED_FSES
 
-    key = (protocol, _io_config_cache_key(io_config))
+    key = _filesystem_cache_key(protocol, io_config)
     if key in _CACHED_FSES:
         fs = _CACHED_FSES[key]
 
@@ -54,7 +67,7 @@ def _put_fs_in_cache(protocol: str, fs: pafs.FileSystem, io_config: IOConfig | N
     """Put pyarrow filesystem in cache under provided protocol."""
     global _CACHED_FSES
 
-    _CACHED_FSES[(protocol, _io_config_cache_key(io_config))] = PyArrowFSWithExpiry(fs, expiry)
+    _CACHED_FSES[_filesystem_cache_key(protocol, io_config)] = PyArrowFSWithExpiry(fs, expiry)
 
 
 def get_filesystem(protocol: str, **kwargs: Any) -> fsspec.AbstractFileSystem:
@@ -214,9 +227,10 @@ def _build_filesystem(
     if protocol == "s3":
         translated_kwargs: dict[str, Any] = {}
         expiry: datetime | None = None
+        # PyArrow does not resolve these endpoint environment variables itself.
+        _set_if_not_none(translated_kwargs, "endpoint_override", _s3_endpoint_url(io_config))
         if io_config is not None and io_config.s3 is not None:
             s3_config = io_config.s3
-            _set_if_not_none(translated_kwargs, "endpoint_override", s3_config.endpoint_url)
             _set_if_not_none(translated_kwargs, "access_key", s3_config.key_id)
             _set_if_not_none(translated_kwargs, "secret_key", s3_config.access_key)
             _set_if_not_none(translated_kwargs, "session_token", s3_config.session_token)
