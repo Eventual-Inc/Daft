@@ -291,11 +291,8 @@ mod tests {
             array.take(&UInt64Array::from_vec("", vec![0])),
             Err(DaftError::ValueError(_))
         ));
-        let nullable = FixedSizeListArray::new(
-            array.field.clone(),
-            array.flat_child.clone(),
-            Some(NullBuffer::new_null(3)),
-        );
+        let nullable =
+            FixedSizeListArray::new(array.field, array.flat_child, Some(NullBuffer::new_null(3)));
         assert_eq!(
             nullable
                 .take(&UInt64Array::from_vec("", vec![2]))?
