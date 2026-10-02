@@ -9,7 +9,7 @@ import daft
 import daft.filesystem as fs_mod
 from daft.context import planning_config_ctx
 from daft.io import IOConfig
-from tests.conftest import minio_create_public_bucket
+from tests.conftest import get_tests_daft_runner_name, minio_create_public_bucket
 
 
 @pytest.fixture(scope="function")
@@ -93,6 +93,10 @@ def test_writing_json(minio_io_config, bucket, protocol):
 
 @pytest.mark.integration()
 @pytest.mark.timeout(60)
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native",
+    reason="Endpoint environment changes are local to the native runner process",
+)
 @pytest.mark.parametrize("protocol", ["s3://", "s3a://", "s3n://"])
 @pytest.mark.parametrize("file_format", ["json", "csv", "parquet"])
 @pytest.mark.parametrize("write_mode", ["overwrite", "overwrite-partitions"])
