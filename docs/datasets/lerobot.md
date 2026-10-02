@@ -50,6 +50,29 @@ frames = load_episode_frames(long, repo)
 
 [`read_tasks`](../api/datasets.md#daft.datasets.lerobot.read_tasks) loads task metadata, preferring `meta/tasks.parquet` and falling back to `meta/tasks.jsonl` (the v2 default).
 
+## Write a LeRobot v3 dataset
+
+Use [`DataFrame.write_lerobot`](../api/io.md#daft.dataframe.DataFrame.write_lerobot) to write a frame-level DataFrame as a LeRobot v3 dataset. Each row is one frame. The input must have zero-based, contiguous `episode_index` and `frame_index` columns and a string `task` column. Daft generates `timestamp` when it is absent, as well as the global `index`, `task_index`, episode metadata, task table, and feature statistics.
+
+```python
+import daft
+
+df = daft.from_pydict(
+    {
+        "episode_index": [0, 0, 1],
+        "frame_index": [0, 1, 0],
+        "task": ["pick", "pick", "place"],
+        "action": [0.1, 0.2, 0.3],
+    }
+)
+
+result = df.write_lerobot("/tmp/robot-runs", fps=30)
+```
+
+Scalar Arrow columns are inferred automatically. Vector and tensor columns must use fixed-size-list Arrow types, or provide explicit LeRobot feature descriptors with the `features` argument. The initial writer supports tabular features; image and video encoding are not yet supported.
+
+The writer runs with both Daft's native and Ray runners. For a multi-node Ray cluster, use an object-store URI or a local filesystem mounted at the same path on every worker.
+
 ## Video frames
 
 With `load_video_frames`, [`read`](../api/datasets.md#daft.datasets.lerobot.read) decodes each frame from its MP4 by **timestamp**: Daft combines the episode's `from_timestamp` offset within the file with the frame's episode-local `timestamp`, and matches the closest decoded frame within half a frame period.

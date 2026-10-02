@@ -185,7 +185,7 @@ class Feature(TypedDict):
 class LeRobotInfo(TypedDict, total=False):
     codebase_version: str
     data_path: str
-    video_path: str
+    video_path: str | None
     fps: float
     features: dict[str, Feature]
     chunks_size: int
