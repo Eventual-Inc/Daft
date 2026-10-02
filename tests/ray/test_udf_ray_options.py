@@ -134,43 +134,47 @@ def gen_email(names):
     ),
 )
 def test_udf_with_conda_inject_dependencies(input_df):
-    # missing required modules
-    with pytest.raises(Exception) as exc_info:
+    # Building a fresh conda env + pip-installing daft at actor startup can exceed the
+    # default 120s actor-ready timeout under CI load, surfacing a timeout instead of the
+    # expected import error. Give the env build headroom.
+    with daft.execution_config_ctx(actor_udf_ready_timeout=300):
+        # missing required modules
+        with pytest.raises(Exception) as exc_info:
+            gen_email_udf = gen_email.override_options(
+                ray_options={
+                    "runtime_env": {
+                        "conda": {
+                            "name": "test",
+                            "channels": ["conda-forge", "defaults"],
+                            "dependencies": [
+                                "pip",
+                                {"pip": ["daft"]},
+                            ],
+                        }
+                    }
+                }
+            ).with_concurrency(1)
+            input_df.with_column("email", gen_email_udf(col("name"))).collect()
+
+        value = str(exc_info.value)
+        assert "No module named 'faker'" in value, f"Unexpected UDF Exception: {value}"
+
+        # install required modules at runtime
         gen_email_udf = gen_email.override_options(
             ray_options={
                 "runtime_env": {
                     "conda": {
-                        "name": "test",
                         "channels": ["conda-forge", "defaults"],
                         "dependencies": [
                             "pip",
-                            {"pip": ["daft"]},
+                            {"pip": ["daft", "faker"]},
                         ],
                     }
                 }
             }
         ).with_concurrency(1)
-        input_df.with_column("email", gen_email_udf(col("name"))).collect()
-
-    value = str(exc_info.value)
-    assert "No module named 'faker'" in value, f"Unexpected UDF Exception: {value}"
-
-    # install required modules at runtime
-    gen_email_udf = gen_email.override_options(
-        ray_options={
-            "runtime_env": {
-                "conda": {
-                    "channels": ["conda-forge", "defaults"],
-                    "dependencies": [
-                        "pip",
-                        {"pip": ["daft", "faker"]},
-                    ],
-                }
-            }
-        }
-    ).with_concurrency(1)
-    df = input_df.with_column("email", gen_email_udf(col("name"))).select("email")
-    assert 1024 == df.count_rows()
+        df = input_df.with_column("email", gen_email_udf(col("name"))).select("email")
+        assert 1024 == df.count_rows()
 
 
 @pytest.mark.skipif(
