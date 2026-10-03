@@ -75,6 +75,20 @@ def test_image_decode(with_morsel_size) -> None:
     df.collect()
 
 
+def test_cast_uniform_tensor_to_unknown_mode_image(with_morsel_size) -> None:
+    # Casting a uniform tensor column to Image(None) must keep the type-level
+    # mode unknown: refining it would panic on the plan-time/runtime dtype
+    # equality assertion during expression evaluation.
+    arr = np.arange(12, dtype=np.uint8).reshape((3, 2, 2))
+    df = daft.from_pydict({"img": [arr, arr, arr]})
+
+    target_dtype = DataType.image()
+    df = df.select(df["img"].cast(target_dtype))
+
+    assert df.schema()["img"].dtype == target_dtype
+    assert df.collect().schema()["img"].dtype == target_dtype
+
+
 def test_image_encode(with_morsel_size) -> None:
     file_format = "png"
     mode = "RGB"
