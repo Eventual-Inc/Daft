@@ -1,13 +1,10 @@
 mod runtime_py_object;
-mod udf;
 
 use std::{hash::Hash, num::NonZeroUsize, str::FromStr, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 use common_resource_request::ResourceRequest;
 use common_treenode::{TreeNode, TreeNodeRecursion};
-use daft_core::prelude::*;
-use itertools::Itertools;
 #[cfg(feature = "python")]
 use pyo3::{Bound, Py, PyAny, PyResult, Python, call::PyCallArgs, prelude::*, types::PyDict};
 pub use runtime_py_object::RuntimePyObject;
@@ -56,19 +53,9 @@ impl FromStr for OnError {
     }
 }
 
-use super::FunctionExpr;
 #[cfg(feature = "python")]
 use crate::python::PyExpr;
 use crate::{Expr, ExprRef, functions::scalar::ScalarFn, python_udf::PyScalarFn};
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub enum MaybeInitializedUDF {
-    Initialized(RuntimePyObject),
-    Uninitialized {
-        inner: RuntimePyObject,
-        init_args: RuntimePyObject,
-    },
-}
 
 /// rust wrapper around `daft.udf.py:UDF`
 #[derive(Debug, Clone)]
@@ -108,201 +95,6 @@ impl WrappedUDFClass {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct LegacyPythonUDF {
-    pub name: Arc<String>,
-    pub func: MaybeInitializedUDF,
-    pub bound_args: RuntimePyObject,
-    pub num_expressions: usize,
-    pub return_dtype: DataType,
-    pub resource_request: Option<ResourceRequest>,
-    pub batch_size: Option<usize>,
-    pub concurrency: Option<NonZeroUsize>,
-    pub use_process: Option<bool>,
-    pub ray_options: Option<RuntimePyObject>,
-}
-
-impl LegacyPythonUDF {
-    #[cfg(feature = "test-utils")]
-    pub fn new_testing_udf() -> Self {
-        Self {
-            name: Arc::new("dummy_udf".to_string()),
-            func: MaybeInitializedUDF::Uninitialized {
-                inner: RuntimePyObject::new_none(),
-                init_args: RuntimePyObject::new_none(),
-            },
-            bound_args: RuntimePyObject::new_none(),
-            num_expressions: 1,
-            return_dtype: DataType::Int64,
-            resource_request: None,
-            batch_size: None,
-            concurrency: Some(NonZeroUsize::new(4).unwrap()),
-            use_process: None,
-            ray_options: None,
-        }
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn udf(
-    name: &str,
-    inner: RuntimePyObject,
-    bound_args: RuntimePyObject,
-    expressions: &[ExprRef],
-    return_dtype: DataType,
-    init_args: RuntimePyObject,
-    resource_request: Option<ResourceRequest>,
-    batch_size: Option<usize>,
-    concurrency: Option<NonZeroUsize>,
-    use_process: Option<bool>,
-    ray_options: Option<RuntimePyObject>,
-) -> DaftResult<Expr> {
-    Ok(Expr::Function {
-        func: super::FunctionExpr::Python(LegacyPythonUDF {
-            name: name.to_string().into(),
-            func: MaybeInitializedUDF::Uninitialized { inner, init_args },
-            bound_args,
-            num_expressions: expressions.len(),
-            return_dtype,
-            resource_request,
-            batch_size,
-            concurrency,
-            use_process,
-            ray_options,
-        }),
-        inputs: expressions.into(),
-    })
-}
-
-/// Generates a ResourceRequest by inspecting an iterator of expressions.
-/// Looks for ResourceRequests on UDFs in each expression presented, and merges ResourceRequests across all expressions.
-// TODO: Double-check if this is still needed with projects in Flotilla
-pub fn get_resource_request<'a, E: Into<&'a ExprRef>>(
-    exprs: impl IntoIterator<Item = E>,
-) -> Option<ResourceRequest> {
-    let merged_resource_requests = exprs
-        .into_iter()
-        .filter_map(|expr| {
-            let mut resource_requests = Vec::new();
-            expr.into()
-                .apply(|e| match e.as_ref() {
-                    Expr::Function {
-                        func:
-                            FunctionExpr::Python(LegacyPythonUDF {
-                                resource_request,
-                                ray_options,
-                                ..
-                            }),
-                        ..
-                    } => {
-                        let rr = resource_request.clone().unwrap_or_default();
-                        #[cfg(feature = "python")]
-                        let rr = Python::attach(|py| {
-                            let mut rr = rr;
-                            if let Some(options) = ray_options
-                                .as_ref()
-                                .and_then(|o| o.as_ref().bind(py).cast::<PyDict>().ok())
-                            {
-                                if let Some(cpus) = options
-                                    .get_item("num_cpus")
-                                    .ok()
-                                    .flatten()
-                                    .and_then(|v| v.extract::<f64>().ok())
-                                {
-                                    rr = ResourceRequest::try_new_internal(
-                                        Some(cpus),
-                                        rr.num_gpus(),
-                                        rr.memory_bytes(),
-                                    )
-                                    .unwrap_or(rr);
-                                }
-
-                                if let Some(memory) = options
-                                    .get_item("memory")
-                                    .ok()
-                                    .flatten()
-                                    .and_then(|v| v.extract::<usize>().ok())
-                                {
-                                    rr = ResourceRequest::try_new_internal(
-                                        rr.num_cpus(),
-                                        rr.num_gpus(),
-                                        Some(memory),
-                                    )
-                                    .unwrap_or(rr);
-                                }
-                            }
-                            rr
-                        });
-                        resource_requests.push(rr);
-                        Ok(TreeNodeRecursion::Continue)
-                    }
-                    _ => Ok(TreeNodeRecursion::Continue),
-                })
-                .unwrap();
-            if resource_requests.is_empty() {
-                None
-            } else {
-                Some(ResourceRequest::max_all(resource_requests.as_slice()))
-            }
-        })
-        .collect_vec();
-    if merged_resource_requests.is_empty() {
-        None
-    } else {
-        Some(ResourceRequest::max_all(
-            merged_resource_requests.as_slice(),
-        ))
-    }
-}
-
-#[cfg(feature = "python")]
-fn py_udf_initialize(
-    py: Python<'_>,
-    func: Arc<Py<PyAny>>,
-    init_args: Arc<Py<PyAny>>,
-) -> DaftResult<Py<PyAny>> {
-    Ok(func.call_method1(
-        py,
-        pyo3::intern!(py, "initialize"),
-        (init_args.clone_ref(py),),
-    )?)
-}
-
-/// Initializes all uninitialized UDFs in the expression
-#[cfg(feature = "python")]
-pub fn initialize_udfs(expr: ExprRef) -> DaftResult<ExprRef> {
-    use common_treenode::Transformed;
-
-    expr.transform(|e| match e.as_ref() {
-        Expr::Function {
-            func:
-                FunctionExpr::Python(
-                    python_udf @ LegacyPythonUDF {
-                        func: MaybeInitializedUDF::Uninitialized { inner, init_args },
-                        ..
-                    },
-                ),
-            inputs,
-        } => {
-            let initialized_func = Python::attach(|py| {
-                py_udf_initialize(py, inner.clone().unwrap(), init_args.clone().unwrap())
-            })?;
-
-            let initialized_expr = Expr::Function {
-                func: FunctionExpr::Python(LegacyPythonUDF {
-                    func: MaybeInitializedUDF::Initialized(initialized_func.into()),
-                    ..python_udf.clone()
-                }),
-                inputs: inputs.clone(),
-            };
-
-            Ok(Transformed::yes(initialized_expr.into()))
-        }
-        _ => Ok(Transformed::no(e)),
-    })
-    .map(|transformed| transformed.data)
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct UDFProperties {
     pub name: String,
     pub resource_request: Option<ResourceRequest>,
@@ -324,34 +116,6 @@ impl UDFProperties {
 
         expr.apply(|e| {
             match e.as_ref() {
-                Expr::Function {
-                    func:
-                        FunctionExpr::Python(LegacyPythonUDF {
-                            name,
-                            resource_request,
-                            batch_size,
-                            concurrency,
-                            use_process,
-                            ray_options,
-                            ..
-                        }),
-                    ..
-                } => {
-                    num_udfs += 1;
-                    udf_properties = Some(Self {
-                        name: name.as_ref().clone(),
-                        resource_request: resource_request.clone(),
-                        batch_size: *batch_size,
-                        concurrency: *concurrency,
-                        use_process: *use_process,
-                        max_retries: None,
-                        builtin_name: false,
-                        is_async: false,
-                        on_error: None,
-                        is_scalar: false,
-                        ray_options: ray_options.clone(),
-                    });
-                }
                 Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(row_wise_fn))) => {
                     num_udfs += 1;
                     let rr = ResourceRequest::try_new_internal(

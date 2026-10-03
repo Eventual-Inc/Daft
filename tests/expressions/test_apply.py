@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import dataclasses
 
+import pytest
+
 import daft
 from daft import DataType
 
@@ -21,10 +23,38 @@ def test_apply_module_func():
     assert df.to_pydict() == {"a": [1, 2, 3], "a_plus_1": [2, 3, 4]}
 
 
-def test_apply_lambda():
+@pytest.mark.parametrize(
+    "return_dtype, expected_dtype",
+    [(DataType.int32(), DataType.int32()), (int, DataType.int64()), ("INT", DataType.int32())],
+)
+def test_apply_lambda(return_dtype, expected_dtype):
     df = daft.from_pydict({"a": [1, 2, 3]})
-    df = df.with_column("a_plus_1", df["a"].apply(lambda x: x + 1, return_dtype=DataType.int32()))
+    df = df.with_column("a_plus_1", df["a"].apply(lambda x: x + 1, return_dtype=return_dtype))
     assert df.to_pydict() == {"a": [1, 2, 3], "a_plus_1": [2, 3, 4]}
+    assert df.schema()["a_plus_1"].dtype == expected_dtype
+
+
+@pytest.mark.parametrize("values", [[1, None, 3], [None, None]])
+@pytest.mark.parametrize("null_result", [None, 0])
+def test_apply_nulls(values, null_result):
+    df = daft.from_pydict({"a": values})
+    df = df.with_column(
+        "a_plus_1",
+        df["a"].apply(lambda x: null_result if x is None else x + 1, return_dtype=DataType.int32()),
+    )
+    assert df.to_pydict() == {
+        "a": values,
+        "a_plus_1": [null_result if x is None else x + 1 for x in values],
+    }
+    assert df.schema()["a_plus_1"].dtype == DataType.int32()
+
+
+def test_apply_empty():
+    df = daft.from_pydict({"a": [1]})
+    df = df.where(df["a"] != 1)
+    df = df.with_column("a_plus_1", df["a"].apply(add_1, return_dtype=DataType.int32()))
+    assert df.to_pydict() == {"a": [], "a_plus_1": []}
+    assert df.schema()["a_plus_1"].dtype == DataType.int32()
 
 
 def test_apply_inline_func():
