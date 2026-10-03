@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::{DaftError, DaftResult};
 use common_treenode::{Transformed, TreeNode};
 use daft_core::{count_mode::CountMode, prelude::Schema};
-use daft_dsl::{AggExpr, Expr, ExprRef};
+use daft_dsl::{AggExpr, Column, Expr, ExprRef, ResolvedColumn};
 
 use crate::{
     LogicalPlan, logical_plan::Aggregate, optimization::rules::OptimizerRule,
@@ -37,7 +37,21 @@ impl OptimizerRule for PushDownAggregation {
                     && let Some(count_mode) = is_count_expr(&aggregations[0])
                 {
                     // Only handle global aggregation with no GROUP BY and a single aggregation expression
-                    match input.as_ref() {
+                    //
+                    // A projection that only prunes columns must not block the
+                    // pushdown: once the count is computed inside the scan
+                    // (which also applies any pushed filters), the projection
+                    // becomes redundant and is dropped along with it. This
+                    // covers both user-written `select(...)`s and the
+                    // sub-projections that `PushDownProjection` inserts below
+                    // aggregations (https://github.com/Eventual-Inc/Daft/issues/6757).
+                    let mut candidate = input.as_ref();
+                    if let LogicalPlan::Project(project) = candidate
+                        && is_column_pruning_projection(&project.projection)
+                    {
+                        candidate = project.input.as_ref();
+                    }
+                    match candidate {
                         LogicalPlan::Source(source) => {
                             match source.source_info.as_ref() {
                                 // Determine if aggregation can be pushed down based on data source type
@@ -134,6 +148,19 @@ fn is_count_mode_supported(count_mode: &CountMode) -> bool {
     matches!(count_mode, CountMode::All)
 }
 
+/// Returns true if the projection only selects existing columns, without
+/// renames or computations. Such a projection purely prunes columns, so it
+/// can be safely looked through when rewriting the plan below it.
+fn is_column_pruning_projection(projection: &[ExprRef]) -> bool {
+    !projection.is_empty()
+        && projection.iter().all(|e| {
+            matches!(
+                e.as_ref(),
+                Expr::Column(Column::Resolved(ResolvedColumn::Basic(_)))
+            )
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -145,6 +172,7 @@ mod tests {
 
     use crate::{
         LogicalPlan,
+        builder::LogicalPlanBuilder,
         optimization::{
             optimizer::{RuleBatch, RuleExecutionStrategy},
             rules::PushDownAggregation,
@@ -449,6 +477,76 @@ mod tests {
         let plan = dummy_scan_node(scan_op)
             .aggregate(vec![unresolved_col("a").count(CountMode::All)], vec![])?
             .build();
+        let expected = plan.clone();
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// A projection that only prunes columns must not block count pushdown:
+    /// the scan computes the count (applying any pushed filters itself), so
+    /// the projection becomes redundant and is dropped along with the
+    /// pushdown (https://github.com/Eventual-Inc/Daft/issues/6757).
+    #[test]
+    fn agg_count_looks_through_column_pruning_projection() -> DaftResult<()> {
+        let scan_op = dummy_scan_operator_for_aggregation(
+            vec![
+                Field::new("a", DataType::Int64),
+                Field::new("b", DataType::Int64),
+            ],
+            true,
+        );
+
+        let plan = dummy_scan_node(scan_op.clone())
+            .select(vec![resolved_col("a")])?
+            .aggregate(vec![unresolved_col("a").count(CountMode::All)], vec![])?
+            .build();
+
+        let expected_source = dummy_scan_node_with_pushdowns(
+            scan_op,
+            Pushdowns::default().with_aggregation(Some(Arc::new(Expr::Agg(AggExpr::Count(
+                resolved_col("a"),
+                CountMode::All,
+            ))))),
+        )
+        .build();
+        // `table_scan` keeps the full source schema as the output schema, but
+        // the rule replaces it with the single field produced by the pushed
+        // count, so mirror that here.
+        let expected_source = match expected_source.as_ref() {
+            LogicalPlan::Source(source) => {
+                let mut source = source.clone();
+                source.output_schema =
+                    Arc::new(Schema::new(vec![Field::new("a", DataType::UInt64)]));
+                LogicalPlan::Source(source)
+            }
+            _ => unreachable!(),
+        };
+        let expected = LogicalPlanBuilder::from(Arc::new(expected_source))
+            .aggregate(vec![unresolved_col("a").sum()], vec![])?
+            .build();
+
+        assert_optimized_plan_eq(plan, expected)?;
+        Ok(())
+    }
+
+    /// A projection that renames columns must still block the pushdown: the
+    /// pushed aggregation evaluates on the source's own columns, so a rename
+    /// between the aggregate and the source cannot be dropped.
+    #[test]
+    fn agg_count_blocked_by_renaming_projection() -> DaftResult<()> {
+        let scan_op = dummy_scan_operator_for_aggregation(
+            vec![
+                Field::new("a", DataType::Int64),
+                Field::new("b", DataType::Int64),
+            ],
+            true,
+        );
+
+        let plan = dummy_scan_node(scan_op)
+            .select(vec![resolved_col("a").alias("x")])?
+            .aggregate(vec![unresolved_col("x").count(CountMode::All)], vec![])?
+            .build();
+
         let expected = plan.clone();
         assert_optimized_plan_eq(plan, expected)?;
         Ok(())
