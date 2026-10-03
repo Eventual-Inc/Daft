@@ -244,3 +244,16 @@ def test_date_comparison():
     expected = date_df.filter(daft.col("date") == "2020-01-01").select("date").to_pydict()
     actual = daft.sql("select date from date_df where date == '2020-01-01'").to_pydict()
     assert actual == expected
+
+
+def test_at_time_zone():
+    df = daft.from_pydict(  # noqa: F841
+        {
+            "ts": [
+                datetime.datetime(2021, 1, 1, 12, 0, tzinfo=datetime.timezone.utc),
+            ]
+        }
+    )
+    expected = datetime.datetime(2021, 1, 1, 7, 0, tzinfo=datetime.timezone(datetime.timedelta(hours=-5)))
+    actual = daft.sql("SELECT ts AT TIME ZONE 'America/New_York' AS ny FROM df").to_pydict()
+    assert actual["ny"] == [expected]
