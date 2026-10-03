@@ -146,7 +146,7 @@ fn build_object_path(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{path::PathBuf, sync::Arc};
 
     use arrow_array::create_array;
     use common_error::{DaftError, DaftResult};
@@ -232,8 +232,6 @@ mod tests {
 
     #[test]
     fn test_build_object_path_preserves_port() -> DaftResult<()> {
-        use std::path::PathBuf;
-
         // Regression guard: a port-bearing authority (e.g. an HDFS name node)
         // must keep its port with the bucket and never leak it into the key,
         // which previously produced an invalid path like `localhost/:9000/...`.
@@ -268,8 +266,6 @@ mod tests {
 
     #[test]
     fn test_build_object_path_uses_forward_slashes() -> DaftResult<()> {
-        use std::path::PathBuf;
-
         for (root, prefix) in [
             ("s3://bucket", "bucket/"),
             ("s3://bucket/", "bucket/"),
@@ -295,8 +291,6 @@ mod tests {
 
     #[test]
     fn test_build_object_path_preserves_key_characters() -> DaftResult<()> {
-        use std::path::PathBuf;
-
         let path = build_object_path(
             "s3://bucket/literal\\key/%2F/雪//prefix/",
             PathBuf::from("part=a%2Fb%5Cc").join("null=__HIVE_DEFAULT_PARTITION__"),
