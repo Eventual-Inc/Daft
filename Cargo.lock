@@ -2736,6 +2736,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "daft-device"
+version = "0.3.0-dev0"
+dependencies = [
+ "common-error",
+]
+
+[[package]]
 name = "daft-distributed"
 version = "0.3.0-dev0"
 dependencies = [
