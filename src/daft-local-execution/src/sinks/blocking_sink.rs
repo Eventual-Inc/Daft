@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, VecDeque, hash_map::Entry},
+    pin::Pin,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -15,8 +16,10 @@ use common_runtime::{OrderingAwareJoinSet, get_compute_pool_num_threads, get_com
 use daft_checkpoint::CheckpointStoreRef;
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
+use daft_memory::{MemoryPool, MemoryReleaseRequest, MemoryReleaseTarget};
 use daft_micropartition::MicroPartition;
 use daft_partition_refs::FlightPartitionRef;
+use futures::{Stream, StreamExt};
 use tracing::info_span;
 
 use crate::{
@@ -26,20 +29,29 @@ use crate::{
         BuilderContext, InputId, MorselSizeRequirement, NodeName, PipelineEvent, PipelineMessage,
         PipelineNode, next_event,
     },
-    resource_manager::MemoryManager,
+    resource_manager::PipelineMemoryContext,
     runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
+    spilling::{SpillManager, SpillScopeId},
 };
 
 pub(crate) type BlockingSinkSinkResult<Op> =
     OperatorOutput<DaftResult<<Op as BlockingSink>::State>>;
 pub(crate) enum BlockingSinkOutput {
-    Partitions(Vec<MicroPartition>),
+    Partitions(Pin<Box<dyn Stream<Item = DaftResult<MicroPartition>> + Send>>),
     FlightPartitionRefs(Vec<FlightPartitionRef>),
 }
+impl BlockingSinkOutput {
+    pub fn partitions(partitions: Vec<MicroPartition>) -> Self {
+        Self::Partitions(Box::pin(futures::stream::iter(
+            partitions.into_iter().map(Ok),
+        )))
+    }
+}
 pub(crate) type BlockingSinkFinalizeResult = OperatorOutput<DaftResult<BlockingSinkOutput>>;
+pub(crate) type BlockingSinkReleaseResult<State> = OperatorOutput<DaftResult<(Vec<State>, u64)>>;
 
 pub(crate) trait BlockingSink: Send + Sync {
-    type State: Send + Sync + Unpin;
+    type State: Send + Sync + Unpin + 'static;
     type Stats: RuntimeStats = DefaultRuntimeStats;
 
     fn sink(
@@ -47,6 +59,7 @@ pub(crate) trait BlockingSink: Send + Sync {
         input: MicroPartition,
         state: Self::State,
         runtime_stats: Arc<Self::Stats>,
+        spill_scope: SpillScopeId,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self>
     where
@@ -54,6 +67,7 @@ pub(crate) trait BlockingSink: Send + Sync {
     fn finalize(
         &self,
         states: Vec<Self::State>,
+        spill_scope: SpillScopeId,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult
     where
@@ -62,6 +76,21 @@ pub(crate) trait BlockingSink: Send + Sync {
     fn op_type(&self) -> NodeType;
     fn multiline_display(&self) -> Vec<String>;
     fn make_state(&self, input_id: InputId) -> DaftResult<Self::State>;
+    fn reclaim_bytes(&self, _states: &[Self::State]) -> u64 {
+        0
+    }
+    fn release_memory(
+        &self,
+        states: Vec<Self::State>,
+        _target_bytes: u64,
+        _spill_scope: SpillScopeId,
+        _spawner: &ExecutionTaskSpawner,
+    ) -> BlockingSinkReleaseResult<Self::State>
+    where
+        Self: Sized,
+    {
+        Ok((states, 0)).into()
+    }
     fn max_concurrency(&self) -> usize {
         get_compute_pool_num_threads()
     }
@@ -69,7 +98,28 @@ pub(crate) trait BlockingSink: Send + Sync {
 
 enum TaskResult<Op: BlockingSink> {
     Sink(InputId, Op::State, Duration),
+    MemoryReleased(InputId, Vec<Op::State>, MemoryReleaseRequest, u64),
     Finalized,
+}
+
+enum BlockingSinkEvent<Op: BlockingSink> {
+    Pipeline(PipelineEvent<TaskResult<Op>>),
+    Release(MemoryReleaseRequest),
+}
+
+async fn next_blocking_sink_event<Op: BlockingSink + 'static>(
+    tasks: &mut OrderingAwareJoinSet<DaftResult<TaskResult<Op>>>,
+    max_concurrency: usize,
+    child_rx: &mut Receiver<PipelineMessage>,
+    child_closed: &mut bool,
+    release_target: &mut MemoryReleaseTarget,
+) -> DaftResult<Option<BlockingSinkEvent<Op>>> {
+    tokio::select! {
+        event = next_event(tasks, max_concurrency, child_rx, child_closed) => {
+            Ok(event?.map(BlockingSinkEvent::Pipeline))
+        }
+        request = release_target.recv() => Ok(Some(BlockingSinkEvent::Release(request))),
+    }
 }
 
 struct PerInputState<Op: BlockingSink> {
@@ -78,6 +128,8 @@ struct PerInputState<Op: BlockingSink> {
     max_concurrency: usize,
     flushed: bool,
     runtime_stats: Arc<Op::Stats>,
+    memory_pool: Arc<MemoryPool>,
+    spill_scope: SpillScopeId,
 }
 
 impl<Op: BlockingSink + 'static> PerInputState<Op> {
@@ -86,6 +138,8 @@ impl<Op: BlockingSink + 'static> PerInputState<Op> {
         max_concurrency: usize,
         runtime_stats: Arc<Op::Stats>,
         input_id: InputId,
+        memory_pool: Arc<MemoryPool>,
+        spill_scope: SpillScopeId,
     ) -> DaftResult<Self> {
         let states = (0..max_concurrency)
             .map(|_| op.make_state(input_id))
@@ -96,6 +150,8 @@ impl<Op: BlockingSink + 'static> PerInputState<Op> {
             max_concurrency,
             flushed: false,
             runtime_stats,
+            memory_pool,
+            spill_scope,
         })
     }
 
@@ -111,11 +167,14 @@ impl<Op: BlockingSink + 'static> PerInputState<Op> {
             return;
         };
         let op = op.clone();
-        let spawner = spawner.clone();
+        let spawner = spawner.with_memory_pool(self.memory_pool.clone());
+        let spill_scope = self.spill_scope.clone();
         let runtime_stats = self.runtime_stats.clone();
         tasks.spawn(async move {
             let now = Instant::now();
-            let state = op.sink(partition, state, runtime_stats, &spawner).await??;
+            let state = op
+                .sink(partition, state, runtime_stats, spill_scope, &spawner)
+                .await??;
             Ok(TaskResult::Sink(input_id, state, now.elapsed()))
         });
     }
@@ -142,6 +201,10 @@ impl<Op: BlockingSink + 'static> PerInputState<Op> {
 
     fn ready_to_finalize(&self) -> bool {
         self.flushed && self.all_states_idle()
+    }
+
+    fn reclaim_bytes(&self, op: &Op) -> u64 {
+        op.reclaim_bytes(&self.states)
     }
 }
 
@@ -240,50 +303,65 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
             daft_checkpoint::FileFormat,
         )>,
     ) {
+        let finalize_spawner = finalize_spawner.with_memory_pool(per_input.memory_pool.clone());
         tasks.spawn(async move {
             let checkpoint_id = checkpoint
                 .as_ref()
                 .map(|(_, id_map, _)| id_map.get_or_generate(input_id));
 
-            let output = op.finalize(per_input.states, &finalize_spawner).await??;
+            let output = op
+                .finalize(per_input.states, per_input.spill_scope, &finalize_spawner)
+                .await??;
             per_input.runtime_stats.increment_num_tasks();
             match output {
-                BlockingSinkOutput::Partitions(partitions) => {
-                    // Stage write results as file metadata before sending.
-                    if let Some((ref store, _, file_format)) = checkpoint {
-                        let file_metadata = Self::encode_file_metadata(&partitions, file_format)?;
-                        if !file_metadata.is_empty() {
-                            let num_files = file_metadata.len() as u64;
-                            store
-                                .stage_files(checkpoint_id.as_ref().unwrap(), file_metadata)
-                                .await?;
-                            per_input
-                                .runtime_stats
-                                .add_checkpoint_files_staged(num_files);
+                BlockingSinkOutput::Partitions(mut partitions) => {
+                    while let Some(partition) = partitions.next().await {
+                        let partition = partition?;
+                        // Stage each output before forwarding it, preserving checkpoint ordering
+                        // without collecting the whole output stream in memory.
+                        if let Some((ref store, _, file_format)) = checkpoint {
+                            let file_metadata = Self::encode_file_metadata(
+                                std::slice::from_ref(&partition),
+                                file_format,
+                            )?;
+                            if !file_metadata.is_empty() {
+                                let num_files = file_metadata.len() as u64;
+                                store
+                                    .stage_files(checkpoint_id.as_ref().unwrap(), file_metadata)
+                                    .await?;
+                                per_input
+                                    .runtime_stats
+                                    .add_checkpoint_files_staged(num_files);
+                            }
                         }
-                    }
-
-                    for partition in partitions {
                         per_input.runtime_stats.add_rows_out(partition.len() as u64);
                         per_input
                             .runtime_stats
                             .add_bytes_out(partition.size_bytes() as u64);
-                        let _ = output_tx
+                        if output_tx
                             .send(PipelineMessage::Morsel {
                                 input_id,
                                 partition,
                             })
-                            .await;
+                            .await
+                            .is_err()
+                        {
+                            return Ok(TaskResult::Finalized);
+                        }
                     }
                 }
                 BlockingSinkOutput::FlightPartitionRefs(partition_refs) => {
                     for partition_ref in partition_refs {
-                        let _ = output_tx
+                        if output_tx
                             .send(PipelineMessage::FlightPartitionRef {
                                 input_id,
                                 partition_ref,
                             })
-                            .await;
+                            .await
+                            .is_err()
+                        {
+                            return Ok(TaskResult::Finalized);
+                        }
                     }
                 }
             }
@@ -301,7 +379,9 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
         op: Arc<Op>,
         mut child_rx: Receiver<PipelineMessage>,
         output_tx: Sender<PipelineMessage>,
-        memory_manager: Arc<MemoryManager>,
+        memory_pool: Arc<MemoryPool>,
+        memory_context: Arc<PipelineMemoryContext>,
+        spill_manager: SpillManager,
         stats_manager: RuntimeStatsManagerHandle,
         meter: Meter,
         node_info: Arc<NodeInfo>,
@@ -314,14 +394,18 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
         let node_id = node_info.id;
         let max_concurrency = op.max_concurrency();
         let compute_runtime = get_compute_runtime();
+        let mut release_target = memory_pool
+            .register_release_target(format!("blocking-node-{node_id}-{}", node_info.name));
         let task_spawner = ExecutionTaskSpawner::new(
             compute_runtime.clone(),
-            memory_manager.clone(),
+            memory_pool.clone(),
+            spill_manager.clone(),
             info_span!("BlockingSink::Sink"),
         );
         let finalize_spawner = ExecutionTaskSpawner::new(
             compute_runtime,
-            memory_manager,
+            memory_pool,
+            spill_manager.clone(),
             info_span!("BlockingSink::Finalize"),
         );
         let mut inputs: HashMap<InputId, PerInputState<Op>> = HashMap::new();
@@ -330,16 +414,21 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
         let mut child_closed = false;
         let mut node_initialized = false;
 
-        while let Some(event) = next_event(
+        while let Some(event) = next_blocking_sink_event(
             &mut tasks,
             max_concurrency,
             &mut child_rx,
             &mut child_closed,
+            &mut release_target,
         )
         .await?
         {
             match event {
-                PipelineEvent::TaskCompleted(TaskResult::Sink(input_id, state, elapsed)) => {
+                BlockingSinkEvent::Pipeline(PipelineEvent::TaskCompleted(TaskResult::Sink(
+                    input_id,
+                    state,
+                    elapsed,
+                ))) => {
                     let per_input = inputs.get_mut(&input_id).unwrap();
                     per_input
                         .runtime_stats
@@ -360,11 +449,38 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                         );
                     }
                 }
-                PipelineEvent::TaskCompleted(TaskResult::Finalized) => {}
-                PipelineEvent::Morsel {
+                BlockingSinkEvent::Pipeline(PipelineEvent::TaskCompleted(
+                    TaskResult::MemoryReleased(input_id, states, request, released_bytes),
+                )) => {
+                    let ready_to_finalize = if let Some(per_input) = inputs.get_mut(&input_id) {
+                        // Sink tasks can return other states while this release task is running.
+                        // Preserve those states when returning the reclaimed subset.
+                        per_input.states.extend(states);
+                        per_input.flush_pending(&mut tasks, &op, &task_spawner, input_id)?;
+                        per_input.ready_to_finalize()
+                    } else {
+                        false
+                    };
+                    request.complete(released_bytes);
+                    if ready_to_finalize {
+                        Self::spawn_finalize(
+                            op.clone(),
+                            inputs.remove(&input_id).unwrap(),
+                            input_id,
+                            finalize_spawner.clone(),
+                            output_tx.clone(),
+                            &mut tasks,
+                            checkpoint.clone(),
+                        );
+                    }
+                }
+                BlockingSinkEvent::Pipeline(PipelineEvent::TaskCompleted(
+                    TaskResult::Finalized,
+                )) => {}
+                BlockingSinkEvent::Pipeline(PipelineEvent::Morsel {
                     input_id,
                     partition,
-                } => {
+                }) => {
                     if !node_initialized {
                         stats_manager.activate_node(node_id);
                         node_initialized = true;
@@ -384,6 +500,8 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                                 max_concurrency,
                                 runtime_stats,
                                 input_id,
+                                memory_context.operator_pool(input_id, node_id, &node_info.name),
+                                spill_manager.scope(input_id, node_id),
                             )?)
                         }
                     };
@@ -394,12 +512,12 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                     per_input.pending.push_back(partition);
                     per_input.flush_pending(&mut tasks, &op, &task_spawner, input_id)?;
                 }
-                PipelineEvent::FlightPartitionRef => {
+                BlockingSinkEvent::Pipeline(PipelineEvent::FlightPartitionRef) => {
                     unreachable!(
                         "BlockingSinkNode should not receive flight partition refs from child"
                     )
                 }
-                PipelineEvent::Flush(input_id) => {
+                BlockingSinkEvent::Pipeline(PipelineEvent::Flush(input_id)) => {
                     // A Flush can arrive for an input that received zero morsels (e.g.
                     // an empty source after the checkpoint anti-join). Without a
                     // PerInputState the flush was silently dropped and finalize never
@@ -417,6 +535,8 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                             max_concurrency,
                             runtime_stats,
                             input_id,
+                            memory_context.operator_pool(input_id, node_id, &node_info.name),
+                            spill_manager.scope(input_id, node_id),
                         )?);
                     }
                     inputs.get_mut(&input_id).unwrap().flushed = true;
@@ -432,7 +552,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                         );
                     }
                 }
-                PipelineEvent::InputClosed => {
+                BlockingSinkEvent::Pipeline(PipelineEvent::InputClosed) => {
                     for per_input in inputs.values_mut() {
                         per_input.flushed = true;
                     }
@@ -453,7 +573,43 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                         );
                     }
                 }
+                BlockingSinkEvent::Release(request) => {
+                    let candidate = inputs
+                        .iter()
+                        .filter_map(|(input_id, per_input)| {
+                            let bytes = per_input.reclaim_bytes(op.as_ref());
+                            (bytes > 0).then_some((*input_id, bytes))
+                        })
+                        .max_by_key(|(_, bytes)| *bytes);
+                    if let Some((input_id, _)) = candidate {
+                        let per_input = inputs.get_mut(&input_id).unwrap();
+                        let states = std::mem::take(&mut per_input.states);
+                        let op = op.clone();
+                        let spawner = task_spawner.with_memory_pool(per_input.memory_pool.clone());
+                        let target_bytes = request.target_bytes();
+                        let spill_scope = per_input.spill_scope.clone();
+                        tasks.spawn(async move {
+                            let (states, released_bytes) = op
+                                .release_memory(states, target_bytes, spill_scope, &spawner)
+                                .await??;
+                            Ok(TaskResult::MemoryReleased(
+                                input_id,
+                                states,
+                                request,
+                                released_bytes,
+                            ))
+                        });
+                    } else {
+                        request.complete(0);
+                    }
+                }
             }
+
+            let reclaim_bytes = inputs
+                .values()
+                .map(|per_input| per_input.reclaim_bytes(op.as_ref()))
+                .sum();
+            release_target.set_reclaim_bytes(reclaim_bytes);
         }
 
         stats_manager.finalize_node(node_id);
@@ -551,7 +707,10 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
         let name: Arc<str> = node_info.name.clone();
         let child_rx = child.start(false, runtime_handle)?;
         let (output_tx, output_rx) = create_channel(1);
-        let memory_manager = runtime_handle.memory_manager();
+        let memory_pool = runtime_handle.memory_pool();
+        let memory_context = runtime_handle.memory_context();
+        let spill_manager = runtime_handle.spill_manager();
+        memory_context.node_shared_pool(node_info.id, &node_info.name);
         let stats_manager = runtime_handle.stats_manager();
 
         runtime_handle.spawn(
@@ -560,7 +719,9 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
                     op,
                     child_rx,
                     output_tx,
-                    memory_manager,
+                    memory_pool,
+                    memory_context,
+                    spill_manager,
                     stats_manager,
                     meter,
                     node_info,

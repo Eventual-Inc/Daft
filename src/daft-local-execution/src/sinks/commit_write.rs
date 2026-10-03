@@ -67,6 +67,7 @@ impl BlockingSink for CommitWriteSink {
         input: MicroPartition,
         mut state: Self::State,
         _runtime_stats: Arc<Self::Stats>,
+        _spill_scope: crate::spilling::SpillScopeId,
         _spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         state.append(input.record_batches().iter().cloned());
@@ -77,6 +78,7 @@ impl BlockingSink for CommitWriteSink {
     fn finalize(
         &self,
         states: Vec<Self::State>,
+        _spill_scope: crate::spilling::SpillScopeId,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult {
         let data_schema = self.data_schema.clone();
@@ -186,7 +188,7 @@ impl BlockingSink for CommitWriteSink {
                         }
                     }
 
-                    Ok(BlockingSinkOutput::Partitions(vec![written_file_paths_mp]))
+                    Ok(BlockingSinkOutput::partitions(vec![written_file_paths_mp]))
                 },
                 Span::current(),
             )

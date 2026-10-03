@@ -89,6 +89,7 @@ impl BlockingSink for TopNSink {
         input: MicroPartition,
         mut state: Self::State,
         _runtime_stats: Arc<Self::Stats>,
+        _spill_scope: crate::spilling::SpillScopeId,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let params = self.params.clone();
@@ -119,6 +120,7 @@ impl BlockingSink for TopNSink {
     fn finalize(
         &self,
         states: Vec<Self::State>,
+        _spill_scope: crate::spilling::SpillScopeId,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult {
         let params = self.params.clone();
@@ -137,7 +139,7 @@ impl BlockingSink for TopNSink {
                         params.limit,
                         params.offset,
                     )?;
-                    Ok(BlockingSinkOutput::Partitions(vec![final_output]))
+                    Ok(BlockingSinkOutput::partitions(vec![final_output]))
                 },
                 Span::current(),
             )

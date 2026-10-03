@@ -101,6 +101,7 @@ impl BlockingSink for DedupSink {
         input: MicroPartition,
         mut state: Self::State,
         _runtime_stats: Arc<Self::Stats>,
+        _spill_scope: crate::spilling::SpillScopeId,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let columns = self.columns.clone();
@@ -119,6 +120,7 @@ impl BlockingSink for DedupSink {
     fn finalize(
         &self,
         states: Vec<Self::State>,
+        _spill_scope: crate::spilling::SpillScopeId,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult {
         let columns = self.columns.clone();
@@ -160,7 +162,7 @@ impl BlockingSink for DedupSink {
                         .collect::<DaftResult<Vec<_>>>()?;
 
                     // Concatenate the results and return
-                    Ok(BlockingSinkOutput::Partitions(results))
+                    Ok(BlockingSinkOutput::partitions(results))
                 },
                 Span::current(),
             )
