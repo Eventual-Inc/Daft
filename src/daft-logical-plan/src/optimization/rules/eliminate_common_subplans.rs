@@ -1,0 +1,243 @@
+use std::{
+    collections::HashMap,
+    hash::{DefaultHasher, Hash, Hasher},
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+};
+
+use common_error::DaftResult;
+use common_treenode::{DynTreeNode, Transformed, TreeNode, TreeNodeRecursion};
+
+use super::OptimizerRule;
+use crate::{LogicalPlan, ops::CommonSubplan};
+
+/// Global counter for assigning unique IDs to each common subplan group.
+static NEXT_CSE_ID: AtomicUsize = AtomicUsize::new(0);
+
+fn next_cse_id() -> usize {
+    NEXT_CSE_ID.fetch_add(1, Ordering::Relaxed)
+}
+
+/// Optimization rule that identifies duplicate subplans and wraps them in
+/// explicit [`CommonSubplan`] nodes with the same unique `id`.
+///
+/// This rule runs as the very last optimization pass, after all other rules
+/// have canonicalized the plan. It performs three passes:
+///
+/// 1. **Hash collection**: traverse the tree and hash every subtree.
+/// 2. **Equality grouping**: within each hash bucket, verify structural
+///    equality via `PartialEq` and assign a canonical version + unique id.
+/// 3. **Top-down replacement**: recursively walk the tree; when a node
+///    matches a canonical duplicate (same structure, different Arc), wrap it
+///    in `CommonSubplan { id, subplan: canonical }`.
+///
+/// The top-down approach ensures that deeper duplicates are wrapped first,
+/// so parent nodes whose children change (wrapped → CommonSubplan) won't
+/// be mistakenly treated as duplicates of the original unwrapped parents.
+#[derive(Default, Debug)]
+pub struct EliminateCommonSubplans {}
+
+impl EliminateCommonSubplans {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+impl OptimizerRule for EliminateCommonSubplans {
+    fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
+        // --- Pass 1: collect hashes for every subtree ---
+        let mut subplan_counts: HashMap<u64, Vec<Arc<LogicalPlan>>> = HashMap::new();
+
+        plan.apply(|node| {
+            let hash = hash_plan(node);
+            subplan_counts
+                .entry(hash)
+                .or_default()
+                .push(Arc::clone(node));
+            Ok(TreeNodeRecursion::Continue)
+        })?;
+
+        // --- Pass 2: identify duplicate groups (hash + PartialEq) ---
+        // Key: hash. Value: (canonical plan, globally unique id).
+        let mut duplicates: HashMap<u64, (Arc<LogicalPlan>, usize)> = HashMap::new();
+
+        for (hash, plans) in &subplan_counts {
+            if plans.len() <= 1 {
+                continue;
+            }
+            // Group plans by structural equality (handles hash collisions)
+            let mut groups: Vec<Vec<&Arc<LogicalPlan>>> = Vec::new();
+            for plan in plans {
+                let mut found_group = false;
+                for group in &mut groups {
+                    if **plan == **group[0] {
+                        group.push(plan);
+                        found_group = true;
+                        break;
+                    }
+                }
+                if !found_group {
+                    groups.push(vec![plan]);
+                }
+            }
+
+            // For each group of size ≥ 2, select a canonical and assign an id.
+            // Note: if multiple groups share the same hash (collision), only
+            // the first group is stored. Collided groups are missed (not a
+            // correctness bug, just a missed optimization opportunity).
+            for group in groups {
+                // Heuristic: skip CSE for cheap subplans (chain of scan +
+                // filter/project without expensive ops).  See should_apply_cse().
+                if !should_apply_cse(&group) {
+                    continue;
+                }
+                let id = next_cse_id();
+                duplicates
+                    .entry(*hash)
+                    .or_insert_with(|| (Arc::clone(group[0]), id));
+            }
+        }
+
+        if duplicates.is_empty() {
+            return Ok(Transformed::no(plan));
+        }
+
+        // --- Pass 3: top-down replacement ---
+        // Manual recursion instead of TreeNode::transform_down to avoid
+        // stack overflow on deep plans and to control traversal order.
+        let result = replace_duplicates(plan, &duplicates);
+        Ok(Transformed::yes(result))
+    }
+}
+
+/// Top-down manual recursion to wrap duplicate subplans in CommonSubplan nodes.
+///
+/// For each node:
+/// 1. If it matches a known duplicate (same hash + PartialEq, different Arc),
+///    wrap it in `CommonSubplan { id, subplan: canonical }` and stop recursing
+///    (the subplan is the canonical which was already processed).
+/// 2. If it IS the canonical itself, recurse into its children.
+/// 3. Otherwise, recurse into children normally.
+fn replace_duplicates(
+    plan: Arc<LogicalPlan>,
+    duplicates: &HashMap<u64, (Arc<LogicalPlan>, usize)>,
+) -> Arc<LogicalPlan> {
+    let hash = hash_plan(&plan);
+
+    if let Some((canonical, id)) = duplicates.get(&hash) {
+        if Arc::ptr_eq(&plan, canonical) {
+            // This IS the canonical — recurse into children.
+            return replace_children(plan, duplicates);
+        }
+        if *plan == **canonical {
+            // Duplicate (same structure, different Arc) — wrap in CommonSubplan.
+            return Arc::new(LogicalPlan::CommonSubplan(CommonSubplan::new(
+                Arc::clone(canonical),
+                *id,
+            )));
+        }
+    }
+
+    // Not a duplicate — recurse into children normally.
+    replace_children(plan, duplicates)
+}
+
+/// Compute a hash for a logical plan.
+fn hash_plan(plan: &Arc<LogicalPlan>) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    plan.hash(&mut hasher);
+    hasher.finish()
+}
+
+/// Recurse into children of `plan`, replacing duplicates along the way.
+fn replace_children(
+    plan: Arc<LogicalPlan>,
+    duplicates: &HashMap<u64, (Arc<LogicalPlan>, usize)>,
+) -> Arc<LogicalPlan> {
+    let children = plan.arc_children();
+    if children.is_empty() {
+        return plan;
+    }
+    let new_children: Vec<Arc<LogicalPlan>> = children
+        .into_iter()
+        .map(|child| replace_duplicates(child, duplicates))
+        .collect();
+    plan.with_new_children(&new_children).into()
+}
+
+/// Returns true if the subplan contains any operator that makes CSE
+/// worthwhile.  Join, Aggregate, and Sort are expensive to recompute,
+/// so sharing their results is beneficial even when the output is large.
+/// Without such operators, the subplan is typically a chain of cheap
+/// operations (scan → filter → projection) where clone cost may exceed
+/// recompute cost.
+fn subplan_has_expensive_ops(plan: &LogicalPlan) -> bool {
+    match plan {
+        LogicalPlan::Join(_)
+        | LogicalPlan::AsofJoin(_)
+        | LogicalPlan::Aggregate(_)
+        | LogicalPlan::Sort(_) => true,
+        // Bare scans always benefit from CSE: cloning in-memory
+        // results is cheaper than re-reading from disk / re-iterating
+        // in-memory data.
+        LogicalPlan::Source(_) => false,
+        _ => {
+            for child in plan.children() {
+                if subplan_has_expensive_ops(child) {
+                    return true;
+                }
+            }
+            false
+        }
+    }
+}
+
+/// Returns true if the common subplan is worth CSE'ing.
+///
+/// We apply CSE when the subplan contains expensive ops (Join, Aggregate,
+/// Sort) AND also contains an Aggregate or Sort — which naturally reduces
+/// output size (Aggregate) or has such high cost that cloning the result is
+/// always cheaper than recomputing (Sort).
+///
+/// We skip CSE for:
+///   - Bare scans: small scans may have CSE overhead > re-scan cost
+///     (e.g., TPC-H Q11 nation table with 5 rows).
+///   - Subplans with expensive ops but no reducing operator (e.g., a bare
+///     Join → Filter chain like TPC-H Q11) where the clone cost of the
+///     large intermediate result may exceed the recompute cost.
+///   - Chains of cheap ops (e.g., `Filter → Project → Scan`) where clone
+///     cost may exceed recompute cost.
+fn should_apply_cse(group: &[&Arc<LogicalPlan>]) -> bool {
+    if group.len() <= 1 {
+        return false;
+    }
+    let canonical = group[0];
+    // Has expensive ops AND contains an aggregate or sort that
+    // naturally reduces data size or dominates compute cost:
+    // apply CSE.
+    subplan_has_expensive_ops(canonical) && subplan_contains_aggregate_or_sort(canonical)
+}
+
+/// Returns true if the subplan contains an Aggregate or Sort node.
+///
+/// These operators naturally reduce the data volume (Aggregate groups
+/// rows together) or are so expensive that cloning their output is
+/// always cheaper than recomputing (Sort).  Subplans that contain only
+/// Joins without a downstream Aggregate may produce large intermediate
+/// results whose clone cost exceeds the recompute cost.
+fn subplan_contains_aggregate_or_sort(plan: &LogicalPlan) -> bool {
+    match plan {
+        LogicalPlan::Aggregate(_) | LogicalPlan::Sort(_) => true,
+        LogicalPlan::Source(_) => false,
+        _ => {
+            for child in plan.children() {
+                if subplan_contains_aggregate_or_sort(child) {
+                    return true;
+                }
+            }
+            false
+        }
+    }
+}

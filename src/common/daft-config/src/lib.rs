@@ -59,7 +59,7 @@ fn parse_number_from_env_with_custom_parser<T: std::str::FromStr + std::fmt::Dis
 /// 1. Creation of a Dataframe including any file listing and schema inference that needs to happen. Note
 ///    that this does not include the actual scan, which is taken care of by the DaftExecutionConfig.
 /// 2. Building of logical plan nodes
-#[derive(Clone, Serialize, Deserialize, Default, Eq, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, Eq, PartialEq)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct DaftPlanningConfig {
     pub default_io_config: IOConfig,
@@ -70,6 +70,22 @@ pub struct DaftPlanningConfig {
     /// max relations limit from 7 to 12.
     /// See https://github.com/Eventual-Inc/Daft/issues/6765 for the path to enabling by default.
     pub enable_dp_ccp_join_ordering: bool,
+    /// Enable Common Subplan Elimination.
+    /// When true (default), the optimizer detects duplicate subplans and
+    /// reuses computed results. When false, CSE is skipped entirely.
+    pub enable_cse: bool,
+}
+
+impl Default for DaftPlanningConfig {
+    fn default() -> Self {
+        Self {
+            default_io_config: IOConfig::default(),
+            disable_join_reordering: false,
+            enable_strict_filter_pushdown: false,
+            enable_dp_ccp_join_ordering: false,
+            enable_cse: true,
+        }
+    }
 }
 
 #[cfg(not(debug_assertions))]
@@ -85,6 +101,7 @@ impl DaftPlanningConfig {
         "DAFT_DEV_ENABLE_STRICT_FILTER_PUSHDOWN";
     const ENV_DAFT_DEV_ENABLE_DP_CCP_JOIN_ORDERING: &'static str =
         "DAFT_DEV_ENABLE_DP_CCP_JOIN_ORDERING";
+    const ENV_DAFT_DEV_ENABLE_CSE: &'static str = "DAFT_DEV_ENABLE_CSE";
 
     #[must_use]
     pub fn from_env() -> Self {
@@ -100,6 +117,10 @@ impl DaftPlanningConfig {
 
         if let Some(val) = parse_bool_from_env(Self::ENV_DAFT_DEV_ENABLE_DP_CCP_JOIN_ORDERING) {
             cfg.enable_dp_ccp_join_ordering = val;
+        }
+
+        if let Some(val) = parse_bool_from_env(Self::ENV_DAFT_DEV_ENABLE_CSE) {
+            cfg.enable_cse = val;
         }
 
         cfg
