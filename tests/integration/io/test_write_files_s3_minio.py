@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
+import textwrap
 import uuid
 
 import pytest
 import s3fs
 
 import daft
-import daft.filesystem as fs_mod
-from daft.context import planning_config_ctx
-from daft.io import IOConfig
 from tests.conftest import get_tests_daft_runner_name, minio_create_public_bucket
 
 
@@ -95,33 +96,55 @@ def test_writing_json(minio_io_config, bucket, protocol):
 @pytest.mark.timeout(60)
 @pytest.mark.skipif(
     get_tests_daft_runner_name() != "native",
-    reason="Endpoint environment changes are local to the native runner process",
+    reason="The subprocess regression explicitly exercises the native runner",
 )
 @pytest.mark.parametrize("protocol", ["s3://", "s3a://", "s3n://"])
-@pytest.mark.parametrize("file_format", ["json", "csv", "parquet"])
-@pytest.mark.parametrize("write_mode", ["overwrite", "overwrite-partitions"])
+@pytest.mark.parametrize(
+    "write_mode,partitioned",
+    [("append", False), ("append", True), ("overwrite", False), ("overwrite", True), ("overwrite-partitions", True)],
+)
 @pytest.mark.parametrize("endpoint_variable", ["AWS_ENDPOINT_URL", "AWS_ENDPOINT_URL_S3"])
-def test_writing_overwrite_endpoint_from_environment(
-    minio_io_config, bucket, protocol, file_format, write_mode, endpoint_variable, monkeypatch
+def test_writing_pyarrow_parquet_endpoint_from_environment(
+    minio_io_config, bucket, protocol, write_mode, partitioned, endpoint_variable
 ):
-    monkeypatch.delenv("AWS_ENDPOINT_URL", raising=False)
-    monkeypatch.delenv("AWS_ENDPOINT_URL_S3", raising=False)
-    monkeypatch.delenv("AWS_IGNORE_CONFIGURED_ENDPOINT_URLS", raising=False)
-    monkeypatch.setenv(endpoint_variable, minio_io_config.s3.endpoint_url)
-    monkeypatch.setenv("AWS_ACCESS_KEY_ID", minio_io_config.s3.key_id)
-    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", minio_io_config.s3.access_key)
-    monkeypatch.delenv("AWS_SESSION_TOKEN", raising=False)
-    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
-    monkeypatch.setenv("AWS_REGION", "us-east-1")
-    monkeypatch.setattr(fs_mod, "_CACHED_FSES", {})
-    path = f"{protocol}{bucket}/overwrite-env-{uuid.uuid4()}"
+    # Native IO clients cache environment-derived configuration. A fresh process
+    # both exercises first-use resolution and prevents leaking a MinIO client
+    # into later tests that use the default IOConfig.
+    env = os.environ.copy()
+    for name in ("AWS_ENDPOINT_URL", "AWS_ENDPOINT_URL_S3", "AWS_IGNORE_CONFIGURED_ENDPOINT_URLS", "AWS_SESSION_TOKEN"):
+        env.pop(name, None)
+    env.update(
+        {
+            endpoint_variable: minio_io_config.s3.endpoint_url,
+            "AWS_ACCESS_KEY_ID": minio_io_config.s3.key_id,
+            "AWS_SECRET_ACCESS_KEY": minio_io_config.s3.access_key,
+            "AWS_DEFAULT_REGION": "us-east-1",
+            "AWS_REGION": "us-east-1",
+            "DAFT_RUNNER": "native",
+        }
+    )
+    path = f"{protocol}{bucket}/pyarrow-env-{uuid.uuid4()}"
+    script = textwrap.dedent("""
+        import sys
+        import daft
+        from daft.context import execution_config_ctx
 
-    with planning_config_ctx(default_io_config=IOConfig()):
-        initial = daft.from_pydict({"value": [1, 2], "part": ["a", "b"]})
-        getattr(initial, f"write_{file_format}")(path, partition_cols=["part"])
-        replacement = daft.from_pydict({"value": [3], "part": ["a"]})
-        getattr(replacement, f"write_{file_format}")(path, partition_cols=["part"], write_mode=write_mode)
-        actual = getattr(daft, f"read_{file_format}")(f"{path}/**/*.{file_format}").select("value").to_pydict()
-
-    expected = [3] if write_mode == "overwrite" else [2, 3]
-    assert sorted(actual["value"]) == expected
+        path, write_mode, partitioned = sys.argv[1:]
+        partition_cols = ["part"] if partitioned == "True" else None
+        with execution_config_ctx(native_parquet_writer=False):
+            initial = daft.from_pydict({"value": [1, 2], "part": ["a", "b"]})
+            initial.write_parquet(path, partition_cols=partition_cols)
+            replacement = daft.from_pydict({"value": [3], "part": ["a"]})
+            replacement.write_parquet(path, partition_cols=partition_cols, write_mode=write_mode)
+        actual = daft.read_parquet(f"{path}/**/*.parquet").select("value").to_pydict()
+        expected = {"append": [1, 2, 3], "overwrite": [3], "overwrite-partitions": [2, 3]}[write_mode]
+        assert sorted(actual["value"]) == expected, actual
+    """)
+    result = subprocess.run(
+        [sys.executable, "-c", script, path, write_mode, str(partitioned)],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=50,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
