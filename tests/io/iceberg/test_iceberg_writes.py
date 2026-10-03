@@ -42,10 +42,12 @@ from pyiceberg.types import (
     StringType,
     StructType,
     TimestampType,
+    TimestamptzType,
 )
 from pyiceberg.types import NestedField as _NestedField
 
 import daft
+from daft.io.iceberg.iceberg_write import to_partition_representation
 from daft.io.writer import IcebergWriter
 from daft.recordbatch.micropartition import MicroPartition
 
@@ -1285,3 +1287,64 @@ def test_overwrite_result_reports_partition_values_from_a_replaced_field(local_c
         ("ADD", {"dt_trunc": "new", "dt": None}),
         ("DELETE", {"dt_trunc": None, "dt": "old"}),
     ]
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        # Naive timestamps keep working against the naive epoch.
+        (datetime.datetime(2024, 1, 1, 12, 0, 0), 1704110400000000),
+        # Timezone-aware timestamps have to be measured against an aware epoch.
+        (datetime.datetime(2024, 1, 1, 12, 0, 0, tzinfo=datetime.timezone.utc), 1704110400000000),
+        (
+            datetime.datetime(2024, 1, 1, 12, 0, 0, tzinfo=datetime.timezone(datetime.timedelta(hours=8))),
+            1704081600000000,
+        ),
+        (datetime.date(2024, 1, 1), 19723),
+        (datetime.time(1, 2, 3, 4), 3723000004),
+        (None, None),
+        ("passthrough", "passthrough"),
+    ],
+)
+def test_to_partition_representation(value, expected):
+    """Temporal values convert to their Iceberg metadata representation."""
+    assert to_partition_representation(value) == expected
+
+
+def test_write_iceberg_identity_partitioned_by_timestamptz(local_catalog):
+    """Writing to a table partitioned by identity(timestamptz) round-trips the values."""
+    schema = Schema(
+        NestedField(field_id=1, name="ts", type=TimestamptzType(), required=False),
+        NestedField(field_id=2, name="x", type=LongType(), required=False),
+    )
+    spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="ts_identity"))
+    table = local_catalog.create_table("default.ts_identity", schema, partition_spec=spec)
+
+    tz = datetime.timezone.utc
+    df = daft.from_pydict(
+        {
+            "ts": [
+                datetime.datetime(2024, 1, 1, 12, 0, 0, tzinfo=tz),
+                datetime.datetime(2024, 1, 2, 12, 0, 0, tzinfo=tz),
+            ],
+            "x": [1, 2],
+        }
+    )
+    df.write_iceberg(table)
+    table.refresh()
+
+    expected_ts = [
+        datetime.datetime(2024, 1, 1, 12, 0, 0, tzinfo=tz),
+        datetime.datetime(2024, 1, 2, 12, 0, 0, tzinfo=tz),
+    ]
+
+    read_daft = daft.read_iceberg(table).sort("x").to_pydict()
+    assert read_daft["x"] == [1, 2]
+    assert read_daft["ts"] == expected_ts
+
+    partitions = sorted(task.file.partition[0] for task in table.scan().plan_files())
+    assert partitions == [1704110400000000, 1704196800000000]
+
+    # Read back through pyiceberg too, so a Daft-only writer/reader agreement cannot pass.
+    read_back = table.scan().to_arrow().sort_by("x").to_pydict()
+    assert read_back["ts"] == expected_ts
