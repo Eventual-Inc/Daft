@@ -125,7 +125,12 @@ def test_writing_pyarrow_parquet_endpoint_from_environment(
     )
     path = f"{protocol}{bucket}/pyarrow-env-{uuid.uuid4()}"
     script = textwrap.dedent("""
+        import os
         import sys
+
+        import pyarrow.fs as pafs
+        import pyarrow.parquet as pq
+
         import daft
         from daft.context import execution_config_ctx
 
@@ -136,8 +141,18 @@ def test_writing_pyarrow_parquet_endpoint_from_environment(
             initial.write_parquet(path, partition_cols=partition_cols)
             replacement = daft.from_pydict({"value": [3], "part": ["a"]})
             replacement.write_parquet(path, partition_cols=partition_cols, write_mode=write_mode)
-        actual = daft.read_parquet(f"{path}/**/*.parquet").select("value").to_pydict()
         expected = {"append": [1, 2, 3], "overwrite": [3], "overwrite-partitions": [2, 3]}[write_mode]
+        external_fs = pafs.S3FileSystem(
+            endpoint_override=os.environ.get("AWS_ENDPOINT_URL_S3") or os.environ["AWS_ENDPOINT_URL"],
+            access_key=os.environ["AWS_ACCESS_KEY_ID"],
+            secret_key=os.environ["AWS_SECRET_ACCESS_KEY"],
+            region=os.environ["AWS_DEFAULT_REGION"],
+        )
+        external = pq.read_table(
+            path.split("://", 1)[1], filesystem=external_fs, columns=["value"], partitioning=None
+        ).to_pydict()
+        assert sorted(external["value"]) == expected, external
+        actual = daft.read_parquet(f"{path}/**/*.parquet").select("value").to_pydict()
         assert sorted(actual["value"]) == expected, actual
     """)
     result = subprocess.run(

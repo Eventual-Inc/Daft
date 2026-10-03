@@ -46,14 +46,13 @@ def _filesystem_cache_key(protocol: str, io_config: IOConfig | None) -> tuple[st
     return protocol, config_key, endpoint
 
 
-def _get_fs_from_cache(protocol: str, io_config: IOConfig | None) -> pafs.FileSystem | None:
-    """Get an instantiated pyarrow filesystem from the cache based on the URI protocol.
+def _get_fs_from_cache(key: tuple[str, str, str | None]) -> pafs.FileSystem | None:
+    """Get an instantiated pyarrow filesystem for the captured cache key.
 
     Returns None if no such cache entry exists.
     """
     global _CACHED_FSES
 
-    key = _filesystem_cache_key(protocol, io_config)
     if key in _CACHED_FSES:
         fs = _CACHED_FSES[key]
 
@@ -63,11 +62,11 @@ def _get_fs_from_cache(protocol: str, io_config: IOConfig | None) -> pafs.FileSy
     return None
 
 
-def _put_fs_in_cache(protocol: str, fs: pafs.FileSystem, io_config: IOConfig | None, expiry: datetime | None) -> None:
-    """Put pyarrow filesystem in cache under provided protocol."""
+def _put_fs_in_cache(key: tuple[str, str, str | None], fs: pafs.FileSystem, expiry: datetime | None) -> None:
+    """Cache a pyarrow filesystem under the key captured before construction."""
     global _CACHED_FSES
 
-    _CACHED_FSES[_filesystem_cache_key(protocol, io_config)] = PyArrowFSWithExpiry(fs, expiry)
+    _CACHED_FSES[key] = PyArrowFSWithExpiry(fs, expiry)
 
 
 def get_filesystem(protocol: str, **kwargs: Any) -> fsspec.AbstractFileSystem:
@@ -202,10 +201,13 @@ def _resolve_paths_and_filesystem(
 
     protocol = next(iter(canonicalized_protocols))
 
-    fs = _get_fs_from_cache(protocol, io_config)
+    # Snapshot the endpoint once so environment changes during construction cannot
+    # put a filesystem connected to one store under another store's cache key.
+    cache_key = _filesystem_cache_key(protocol, io_config)
+    fs = _get_fs_from_cache(cache_key)
     if fs is None:
-        fs, expiry = _build_filesystem(protocol, io_config)
-        _put_fs_in_cache(protocol, fs, io_config, expiry)
+        fs, expiry = _build_filesystem(protocol, io_config, s3_endpoint_url=cache_key[2])
+        _put_fs_in_cache(cache_key, fs, expiry)
 
     return [_resolve_path(p, fs) for p in paths], fs
 
@@ -213,6 +215,8 @@ def _resolve_paths_and_filesystem(
 def _build_filesystem(
     protocol: str,
     io_config: IOConfig | None,
+    *,
+    s3_endpoint_url: str | None,
 ) -> tuple[pafs.FileSystem, datetime | None]:
     """Build a PyArrow filesystem for the given canonical protocol."""
 
@@ -228,7 +232,7 @@ def _build_filesystem(
         translated_kwargs: dict[str, Any] = {}
         expiry: datetime | None = None
         # PyArrow does not resolve these endpoint environment variables itself.
-        _set_if_not_none(translated_kwargs, "endpoint_override", _s3_endpoint_url(io_config))
+        _set_if_not_none(translated_kwargs, "endpoint_override", s3_endpoint_url)
         if io_config is not None and io_config.s3 is not None:
             s3_config = io_config.s3
             _set_if_not_none(translated_kwargs, "access_key", s3_config.key_id)
