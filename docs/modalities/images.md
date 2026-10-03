@@ -408,6 +408,8 @@ from daft.functions.ai import embed_image
 )
 ```
 
+`embed_image` also supports vision backbones such as DINOv2, ViT, and Swin through the Transformers provider. For example, `model="facebook/dinov2-small"` produces 384-dimensional embeddings from the backbone's `pooler_output`. Models without `get_image_features` use their forward output; spatial feature maps are not supported.
+
 ## Classify Images
 
 We'll define a function that uses a pre-trained PyTorch model: [ResNet50](https://pytorch.org/vision/main/models/generated/torchvision.models.resnet50.html) to classify the dog pictures. We'll pass the contents of the image `urls` column and send the classification predictions to a new column `classify_breed`.

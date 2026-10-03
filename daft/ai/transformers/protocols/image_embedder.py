@@ -56,6 +56,7 @@ class TransformersImageEmbedderDescriptor(ImageEmbedderDescriptor):
 class TransformersImageEmbedder(ImageEmbedder):
     model: Any
     embed_options: EmbedImageOptions
+    uses_image_features: bool
 
     def __init__(self, model_name_or_path: str, **embed_options: Unpack[EmbedImageOptions]):
         self.device = get_torch_device()
@@ -65,6 +66,7 @@ class TransformersImageEmbedder(ImageEmbedder):
         ).to(self.device)
         self.processor = AutoProcessor.from_pretrained(model_name_or_path, trust_remote_code=True, use_fast=True)
         self.embed_options: EmbedImageOptions = embed_options
+        self.uses_image_features = hasattr(self.model, "get_image_features")
 
     def embed_image(self, images: list[Image]) -> list[Embedding]:
         # TODO(desmond): There's potential for image decoding and processing on the GPU with greater
@@ -74,6 +76,29 @@ class TransformersImageEmbedder(ImageEmbedder):
         pixel_values = processed["pixel_values"].to(self.device)
 
         with torch.inference_mode():
-            output = self.model.get_image_features(pixel_values)
-            embeddings = output if isinstance(output, torch.Tensor) else output.pooler_output
+            if self.uses_image_features:
+                output = self.model.get_image_features(pixel_values)
+            else:
+                output = self.model(pixel_values)
+            embeddings = _get_embeddings_from_output(output)
         return embeddings.cpu().numpy().tolist()
+
+
+def _get_embeddings_from_output(output: Any) -> torch.Tensor:
+    embeddings = output if isinstance(output, torch.Tensor) else getattr(output, "pooler_output", None)
+    if embeddings is None:
+        last_hidden_state = getattr(output, "last_hidden_state", None)
+        if (
+            isinstance(last_hidden_state, torch.Tensor)
+            and last_hidden_state.ndim == 3
+            and last_hidden_state.shape[1] > 0
+        ):
+            embeddings = last_hidden_state[:, 0]
+
+    if isinstance(embeddings, torch.Tensor) and embeddings.ndim == 2:
+        return embeddings
+
+    raise TypeError(
+        f"Unable to derive image embeddings from model output of type {type(output).__name__}. "
+        "Expected a 2-D tensor, a 2-D `pooler_output`, or a 3-D `last_hidden_state` with at least one token."
+    )
