@@ -1,6 +1,12 @@
+use chrono::{
+    LocalResult, TimeZone,
+    format::{Parsed, strftime::StrftimeItems},
+};
 use common_error::{DaftError, DaftResult, ensure};
 use daft_core::{
-    datatypes::{format_string_has_offset, infer_timeunit_from_format_string},
+    datatypes::{
+        format_string_has_offset, format_string_has_time, infer_timeunit_from_format_string,
+    },
     prelude::*,
     series::IntoSeries,
 };
@@ -97,6 +103,84 @@ pub fn to_datetime<S: Into<String>>(input: ExprRef, format: S, timezone: Option<
     ScalarFn::builtin(ToDatetime, inputs).into()
 }
 
+fn timestamp_from_datetime<Tz: TimeZone>(
+    datetime: chrono::DateTime<Tz>,
+    timeunit: TimeUnit,
+    val: &str,
+) -> DaftResult<i64> {
+    match timeunit {
+        TimeUnit::Seconds => Ok(datetime.timestamp()),
+        TimeUnit::Milliseconds => Ok(datetime.timestamp_millis()),
+        TimeUnit::Microseconds => Ok(datetime.timestamp_micros()),
+        TimeUnit::Nanoseconds => datetime.timestamp_nanos_opt().ok_or_else(|| {
+            DaftError::ComputeError(format!(
+                "Error in to_datetime: failed to get nanoseconds for {val}"
+            ))
+        }),
+    }
+}
+
+/// Parses one value into an epoch offset in `timeunit`.
+///
+/// Strict, like `to_date`: input the format does not consume is an error. A format with no
+/// time-of-day field resolves to midnight, matching DuckDB, Polars and Spark; `has_time` comes from
+/// the format alone, so a partial time like `%Y-%m-%d %H` errors rather than dropping the hour.
+/// An offset directive in the format defines the instant, otherwise `timezone` localizes the value.
+fn parse_to_timestamp(
+    val: &str,
+    format: &str,
+    has_time: bool,
+    has_offset: bool,
+    timezone: Option<chrono_tz::Tz>,
+    timeunit: TimeUnit,
+) -> DaftResult<i64> {
+    let fail = |e: chrono::format::ParseError| {
+        DaftError::ComputeError(format!(
+            "Error in to_datetime: failed to parse datetime {val} with format {format} : {e}"
+        ))
+    };
+
+    let mut parsed = Parsed::new();
+    // `chrono::format::parse` errors on trailing input; `parse_and_remainder` drops it.
+    chrono::format::parse(&mut parsed, val, StrftimeItems::new(format)).map_err(fail)?;
+
+    let naive = if has_time {
+        // Mirrors `Parsed::to_datetime`; the offset only matters for `%s`.
+        parsed
+            .to_naive_datetime_with_offset(parsed.offset().unwrap_or(0))
+            .map_err(fail)?
+    } else {
+        parsed
+            .to_naive_date()
+            .map_err(fail)?
+            .and_hms_opt(0, 0, 0)
+            .expect("midnight is always a valid time")
+    };
+
+    if has_offset {
+        // `%Z` skips a zone name without yielding an offset, so it is rejected here.
+        let offset = parsed.to_fixed_offset().map_err(fail)?;
+        let datetime = offset
+            .from_local_datetime(&naive)
+            .single()
+            .expect("a fixed offset maps every local datetime to exactly one instant");
+        timestamp_from_datetime(datetime, timeunit, val)
+    } else if let Some(tz) = timezone.filter(|_| parsed.timestamp().is_none()) {
+        // `%s` names an absolute instant, so it is never re-read as a local time.
+        match tz.from_local_datetime(&naive) {
+            LocalResult::Single(datetime) => timestamp_from_datetime(datetime, timeunit, val),
+            LocalResult::Ambiguous(_, _) => Err(DaftError::ComputeError(format!(
+                "Error in to_datetime: ambiguous local datetime {naive} in timezone {tz} for {val}"
+            ))),
+            LocalResult::None => Err(DaftError::ComputeError(format!(
+                "Error in to_datetime: nonexistent local datetime {naive} in timezone {tz} for {val}"
+            ))),
+        }
+    } else {
+        timestamp_from_datetime(naive.and_utc(), timeunit, val)
+    }
+}
+
 fn to_datetime_impl(
     arr: &Utf8Array,
     format: &str,
@@ -105,68 +189,32 @@ fn to_datetime_impl(
     let len = arr.len();
     let arr_iter = arr.into_iter();
     let timeunit = infer_timeunit_from_format_string(format);
-    let mut timezone = timezone.map(|tz| tz.to_string());
-    let result = arr_iter
-            .map(|val| match val {
-                Some(val) => {
-                    let timestamp = match timezone.as_deref() {
-                        Some(tz) => {
-                            let (datetime, _) = chrono::DateTime::parse_and_remainder(val, format).map_err(|e| {
-                                DaftError::ComputeError(format!(
-                                    "Error in to_datetime: failed to parse datetime {val} with format {format} : {e}"
-                                ))
-                            })?;
-                            let datetime_with_timezone = datetime.with_timezone(&tz.parse::<chrono_tz::Tz>().map_err(|e| {
-                                DaftError::ComputeError(format!(
-                                    "Error in to_datetime: failed to parse timezone {tz} : {e}"
-                                ))
-                            })?);
-                            match timeunit {
-                                TimeUnit::Seconds => datetime_with_timezone.timestamp(),
-                                TimeUnit::Milliseconds => datetime_with_timezone.timestamp_millis(),
-                                TimeUnit::Microseconds => datetime_with_timezone.timestamp_micros(),
-                                TimeUnit::Nanoseconds => datetime_with_timezone.timestamp_nanos_opt().ok_or_else(|| DaftError::ComputeError(format!("Error in to_datetime: failed to get nanoseconds for {val}")))?,
-                            }
-                        }
-                        None => {
-                            if format_string_has_offset(format) {
-                                let datetime = chrono::DateTime::parse_and_remainder(val, format).map_err(|e| {
-                                    DaftError::ComputeError(format!(
-                                        "Error in to_datetime: failed to parse datetime {val} with format {format} : {e}"
-                                    ))
-                                })?.0.to_utc();
-
-                                // if it has an offset, we coerce it to UTC. This is consistent with other engines (duckdb, polars, datafusion)
-                                if timezone.is_none() {
-                                    timezone = Some("UTC".to_string());
-                                }
-
-                                match timeunit {
-                                    TimeUnit::Seconds => datetime.timestamp(),
-                                    TimeUnit::Milliseconds => datetime.timestamp_millis(),
-                                    TimeUnit::Microseconds => datetime.timestamp_micros(),
-                                    TimeUnit::Nanoseconds => datetime.timestamp_nanos_opt().ok_or_else(|| DaftError::ComputeError(format!("Error in to_datetime: failed to get nanoseconds for {val}")))?,
-                                }
-                            } else {
-                                let naive_datetime = chrono::NaiveDateTime::parse_and_remainder(val, format).map_err(|e| {
-                                    DaftError::ComputeError(format!(
-                                        "Error in to_datetime: failed to parse datetime {val} with format {format} : {e}"
-                                    ))
-                                })?.0.and_utc();
-                                match timeunit {
-                                    TimeUnit::Seconds => naive_datetime.timestamp(),
-                                    TimeUnit::Milliseconds => naive_datetime.timestamp_millis(),
-                                    TimeUnit::Microseconds => naive_datetime.timestamp_micros(),
-                                    TimeUnit::Nanoseconds => naive_datetime.timestamp_nanos_opt().ok_or_else(|| DaftError::ComputeError(format!("Error in to_datetime: failed to get nanoseconds for {val}")))?,
-                                }
-                            }
-                        }
-                    };
-                    Ok(Some(timestamp))
-                }
-                _ => Ok(None),
+    let has_time = format_string_has_time(format);
+    let has_offset = format_string_has_offset(format);
+    // An offset is coerced to UTC, consistent with other engines (duckdb, polars, datafusion).
+    // Decided from the format alone so an all-null column still matches `get_return_field`.
+    let timezone = match timezone {
+        Some(tz) => Some(tz.to_string()),
+        None if has_offset => Some("UTC".to_string()),
+        None => None,
+    };
+    let tz = timezone
+        .as_deref()
+        .map(|tz| {
+            tz.parse::<chrono_tz::Tz>().map_err(|e| {
+                DaftError::ComputeError(format!(
+                    "Error in to_datetime: failed to parse timezone {tz} : {e}"
+                ))
             })
-            .collect::<DaftResult<Int64Array>>()?;
+        })
+        .transpose()?;
+
+    let result = arr_iter
+        .map(|val| {
+            val.map(|val| parse_to_timestamp(val, format, has_time, has_offset, tz, timeunit))
+                .transpose()
+        })
+        .collect::<DaftResult<Int64Array>>()?;
 
     let result = TimestampArray::new(
         Field::new(arr.name(), DataType::Timestamp(timeunit, timezone)),
@@ -174,4 +222,153 @@ fn to_datetime_impl(
     );
     assert_eq!(result.len(), len);
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MICROS_PER_DAY: i64 = 86_400_000_000;
+    // Asia/Kolkata is UTC+05:30.
+    const IST_OFFSET_MICROS: i64 = (5 * 3_600 + 30 * 60) * 1_000_000;
+
+    fn utf8(values: Vec<Option<&str>>) -> Utf8Array {
+        Utf8Array::from_iter("s", values)
+    }
+
+    #[test]
+    fn test_date_only_format_resolves_to_midnight() {
+        let arr = utf8(vec![Some("1970-01-02"), None]);
+        let result = to_datetime_impl(&arr, "%Y-%m-%d", None).unwrap();
+        assert_eq!(result.get(0), Some(MICROS_PER_DAY));
+        assert_eq!(result.get(1), None);
+        assert_eq!(
+            result.data_type(),
+            &DataType::Timestamp(TimeUnit::Microseconds, None)
+        );
+    }
+
+    #[test]
+    fn test_date_only_format_with_offset_coerces_to_utc() {
+        // Midnight at +05:30 is 18:30 UTC the previous day.
+        let arr = utf8(vec![Some("1970-01-02 +0530")]);
+        let result = to_datetime_impl(&arr, "%Y-%m-%d %z", None).unwrap();
+        assert_eq!(result.get(0), Some(MICROS_PER_DAY - IST_OFFSET_MICROS));
+        assert_eq!(
+            result.data_type(),
+            &DataType::Timestamp(TimeUnit::Microseconds, Some("UTC".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_date_only_format_localizes_into_timezone() {
+        let arr = utf8(vec![Some("1970-01-02")]);
+        let result = to_datetime_impl(&arr, "%Y-%m-%d", Some("Asia/Kolkata")).unwrap();
+        assert_eq!(result.get(0), Some(MICROS_PER_DAY - IST_OFFSET_MICROS));
+    }
+
+    #[test]
+    fn test_nonexistent_midnight_is_rejected() {
+        // Cuba starts DST at 00:00 -> 01:00, so this midnight never happens.
+        let arr = utf8(vec![Some("2018-03-11")]);
+        let err = to_datetime_impl(&arr, "%Y-%m-%d", Some("America/Havana")).unwrap_err();
+        assert!(
+            err.to_string().contains("nonexistent local datetime"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn test_ambiguous_midnight_is_rejected() {
+        // Cuba ends DST at 01:00 -> 00:00, so this midnight happens twice.
+        let arr = utf8(vec![Some("2018-11-04")]);
+        let err = to_datetime_impl(&arr, "%Y-%m-%d", Some("America/Havana")).unwrap_err();
+        assert!(
+            err.to_string().contains("ambiguous local datetime"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn test_naive_datetime_localizes_into_timezone() {
+        let arr = utf8(vec![Some("1970-01-02 00:00:00")]);
+        let result = to_datetime_impl(&arr, "%Y-%m-%d %H:%M:%S", Some("Asia/Kolkata")).unwrap();
+        assert_eq!(result.get(0), Some(MICROS_PER_DAY - IST_OFFSET_MICROS));
+        assert_eq!(
+            result.data_type(),
+            &DataType::Timestamp(TimeUnit::Microseconds, Some("Asia/Kolkata".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_offset_in_input_wins_over_timezone_argument() {
+        let arr = utf8(vec![Some("1970-01-02 00:00:00 +0000")]);
+        let result = to_datetime_impl(&arr, "%Y-%m-%d %H:%M:%S %z", Some("Asia/Kolkata")).unwrap();
+        assert_eq!(result.get(0), Some(MICROS_PER_DAY));
+    }
+
+    #[test]
+    fn test_unix_timestamp_is_not_localized() {
+        // `%s` is an absolute instant; the timezone must not shift it.
+        let arr = utf8(vec![Some("86400")]);
+        let naive = to_datetime_impl(&arr, "%s", None).unwrap();
+        let localized = to_datetime_impl(&arr, "%s", Some("Asia/Kolkata")).unwrap();
+        assert_eq!(naive.get(0), Some(MICROS_PER_DAY));
+        assert_eq!(localized.get(0), Some(MICROS_PER_DAY));
+    }
+
+    #[test]
+    fn test_all_null_with_offset_format_still_reports_utc() {
+        // The output timezone comes from the format, not from a row carrying an offset.
+        let arr = utf8(vec![None, None]);
+        let result = to_datetime_impl(&arr, "%Y-%m-%d %H:%M:%S %z", None).unwrap();
+        assert_eq!(result.get(0), None);
+        assert_eq!(
+            result.data_type(),
+            &DataType::Timestamp(TimeUnit::Microseconds, Some("UTC".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_trailing_input_is_rejected() {
+        let arr = utf8(vec![Some("2020-01-01T12:34:56.789")]);
+        let err = to_datetime_impl(&arr, "%Y-%m-%dT%H:%M:%S", None).unwrap_err();
+        assert!(err.to_string().contains("trailing input"), "{err}");
+    }
+
+    #[test]
+    fn test_partial_time_is_rejected() {
+        let arr = utf8(vec![Some("2020-01-01 12")]);
+        let err = to_datetime_impl(&arr, "%Y-%m-%d %H", None).unwrap_err();
+        assert!(err.to_string().contains("not enough"), "{err}");
+    }
+
+    #[test]
+    fn test_escaped_percent_is_not_an_offset() {
+        // `%%z` matches a literal "%z", so the result stays naive.
+        let arr = utf8(vec![Some("1970-01-02 %z")]);
+        let result = to_datetime_impl(&arr, "%Y-%m-%d %%z", None).unwrap();
+        assert_eq!(result.get(0), Some(MICROS_PER_DAY));
+        assert_eq!(
+            result.data_type(),
+            &DataType::Timestamp(TimeUnit::Microseconds, None)
+        );
+    }
+
+    #[test]
+    fn test_zone_name_without_offset_is_rejected() {
+        // chrono skips `%Z` without deriving an offset from it.
+        let arr = utf8(vec![Some("2020-01-01 00:00:00 UTC")]);
+        assert!(to_datetime_impl(&arr, "%Y-%m-%d %H:%M:%S %Z", None).is_err());
+    }
+
+    #[test]
+    fn test_bad_timezone_is_rejected_even_when_no_row_parses() {
+        let arr = utf8(vec![None]);
+        let err = to_datetime_impl(&arr, "%Y-%m-%d", Some("not/a/zone")).unwrap_err();
+        assert!(
+            err.to_string().contains("failed to parse timezone"),
+            "{err}"
+        );
+    }
 }
