@@ -22,15 +22,22 @@ from pyiceberg.transforms import (
     YearTransform,
 )
 from pyiceberg.types import (
+    BinaryType,
     BooleanType,
     DateType,
+    DecimalType,
     DoubleType,
+    FixedType,
     FloatType,
     IntegerType,
+    ListType,
     LongType,
+    MapType,
     NestedField,
     StringType,
+    StructType,
     TimestampType,
+    TimeType,
 )
 
 from daft.datatype import DataType
@@ -56,8 +63,34 @@ from daft.io.partitioning import PartitionTransform
         (DoubleType(), DataType.float64()),
         (DateType(), DataType.date()),
         (TimestampType(), DataType.timestamp("us", None)),
+        (DecimalType(9, 2), DataType.decimal128(9, 2)),
+        (TimeType(), DataType.time("us")),
+        (BinaryType(), DataType.binary()),
+        (FixedType(16), DataType.fixed_size_binary(16)),
+        (StructType(NestedField(1, "a", LongType(), required=False)), DataType.struct({"a": DataType.int64()})),
+        (ListType(element_id=1, element=LongType(), element_required=False), DataType.list(DataType.int64())),
+        (
+            MapType(key_id=1, key_type=StringType(), value_id=2, value_type=LongType(), value_required=False),
+            DataType.map(DataType.string(), DataType.int64()),
+        ),
     ],
-    ids=["int", "long", "string", "bool", "float", "double", "date", "timestamp"],
+    ids=[
+        "int",
+        "long",
+        "string",
+        "bool",
+        "float",
+        "double",
+        "date",
+        "timestamp",
+        "decimal",
+        "time",
+        "binary",
+        "fixed",
+        "struct",
+        "list",
+        "map",
+    ],
 )
 def test_convert_iceberg_data_type(iceberg_type, expected):
     assert convert_iceberg_data_type(iceberg_type) == expected
