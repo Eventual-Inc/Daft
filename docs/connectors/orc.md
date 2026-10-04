@@ -15,6 +15,8 @@ df = daft.read_orc(["/path/to/first.orc", "/path/to/second.orc"])
 
 Directories are searched recursively for files matching `*.orc`. An explicit file path can have a different extension. Overlapping paths and glob patterns are deduplicated. Empty inputs, unmatched paths, unreadable files, and corrupt ORC files raise errors.
 
+Paths follow Daft's native glob syntax, including `*`, `?`, `[...]`, and `{...}`. A path containing unescaped glob metacharacters is treated as a pattern even when a file with that name exists. For example, `a[1].orc` matches `a1.orc`; use `a[[]1[]].orc` to match the literal filename `a[1].orc`.
+
 Schema inference occurs when the DataFrame is created. Rows are read when an action such as `collect`, `show`, or `write_parquet` executes. Each file is processed by one task, so multiple files can be read in parallel. Stripes within one file are not scheduled as separate distributed tasks.
 
 ## Remote Storage
@@ -38,6 +40,8 @@ result = df.where(daft.col("score") > 0.5).select("id", "label").limit(100)
 ```
 
 Column projection reduces the fields requested from the reader. Row filters and limits preserve Daft query semantics; ORC-native predicate pruning and footer-based aggregation are not supported.
+
+`limit()` restricts the returned rows but does not guarantee early termination of file reads. The shared Python source bridge can continue reading and buffering batches after the returned-row limit is reached, so even `.limit(1)` can read beyond the first batch and retain multiple batches in memory.
 
 `batch_size` controls the maximum number of rows in each emitted batch and defaults to 131072. It does not set a memory limit: field sizes, decoder buffers, and queued batches also affect memory usage.
 

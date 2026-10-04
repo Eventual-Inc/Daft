@@ -112,6 +112,19 @@ def test_read_orc_exact_file(tmp_path: Path, filename: str) -> None:
     assert daft.read_orc(_native_file_uri(Path(path))).to_pydict() == {"id": [1, 2]}
 
 
+@pytest.mark.parametrize("kind", ["path", "file_uri"])
+def test_read_orc_glob_character_filename(tmp_path: Path, kind: str) -> None:
+    literal_path = tmp_path / "a[1].orc"
+    _write_orc(literal_path, pa.table({"id": [1]}))
+    _write_orc(tmp_path / "a1.orc", pa.table({"id": [2]}))
+    pattern = _native_file_uri(literal_path) if kind == "file_uri" else str(literal_path)
+    assert daft.read_orc(pattern).to_pydict() == {"id": [2]}
+
+    escaped_path = tmp_path / "a[[]1[]].orc"
+    escaped_pattern = _native_file_uri(escaped_path) if kind == "file_uri" else str(escaped_path)
+    assert daft.read_orc(escaped_pattern).to_pydict() == {"id": [1]}
+
+
 def test_read_orc_empty(tmp_path: Path) -> None:
     table = pa.table({"id": pa.array([], pa.int64()), "name": pa.array([], pa.string())})
     path = _write_orc(tmp_path / "empty.orc", table)

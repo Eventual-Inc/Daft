@@ -52,8 +52,8 @@ def _resolve_orc_paths(path: str | list[str], io_config: IOConfig | None) -> lis
         parsed = urlsplit(input_path)
         if not parsed.scheme or os.path.isabs(input_path):
             input_path = os.path.abspath(os.path.expanduser(input_path))
-        # Native glob tries an exact file before listing a directory. This also
-        # supports ORC files without an .orc extension.
+        # For paths without glob characters, native I/O tries an exact file
+        # before listing a directory, including files without an .orc extension.
         files = io_glob(input_path, io_config=io_config)
         is_glob = any(character in input_path for character in "*?[{")
         is_file = len(files) == 1 and _is_same_file(input_path, files[0]["path"])
@@ -130,7 +130,8 @@ def read_orc(
     Args:
         path: Path to an ORC file, directory, glob, or list of paths. Directories
             are searched recursively for ``*.orc`` files. Supports remote URLs
-            to object stores such as ``s3://`` or ``gs://``.
+            to object stores such as ``s3://`` or ``gs://``. Uses native glob
+            syntax; glob metacharacters in literal filenames must be escaped.
         io_config: Configuration for the native file I/O backend. Defaults to
             the planning context's default I/O configuration.
         batch_size: Maximum number of rows yielded per record batch. Defaults
@@ -149,6 +150,9 @@ def read_orc(
         Each file is read by one task; stripes are not split into separate
         distributed tasks. Filters and limits use Daft's existing execution
         operators, without ORC-native predicate pruning.
+        A limit does not guarantee early termination of file reads. The shared
+        Python source bridge can continue reading and buffering batches after
+        the returned-row limit is reached.
 
     Examples:
         Read ORC files from a local path:
