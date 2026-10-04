@@ -1830,7 +1830,7 @@ impl SQLPlanner<'_> {
             } => {
                 if substring_from.is_none() && substring_for.is_none() {
                     invalid_operation_err!("SUBSTRING requires a start position or a length");
-                };
+                }
 
                 let expr = self.plan_expr(expr)?;
                 let start = match substring_from {

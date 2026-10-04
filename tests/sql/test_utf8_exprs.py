@@ -128,7 +128,7 @@ def test_utf8_exprs():
     [
         ("substring(s FROM 2 FOR 3)", ["ell", "aft", "oré", None]),
         ("substring(s FROM 2)", ["ello", "aft", "orém", None]),
-        ("substring(s FOR 3)", ["hel", "daf", "lor", None]),
+        ("substring(s FOR 4)", ["hell", "daft", "loré", None]),
         ("substring(s, 2, 3)", ["ell", "aft", "oré", None]),
         ("substring(s, 2)", ["ello", "aft", "orém", None]),
     ],
