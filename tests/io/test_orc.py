@@ -7,7 +7,6 @@ from decimal import Decimal
 from pathlib import Path
 
 import pyarrow as pa
-import pyarrow.parquet as pq
 import pytest
 from pyarrow import orc
 
@@ -130,42 +129,28 @@ def test_read_orc_relative_path(orc_path: str, monkeypatch) -> None:
 
 
 @pytest.mark.parametrize("authority", ["localhost", "other-host"])
-def test_read_orc_file_url_authority_matches_parquet(tmp_path: Path, authority: str) -> None:
+def test_read_orc_file_uri_with_authority(tmp_path: Path, authority: str) -> None:
     table = pa.table({"id": [1, 2]})
     orc_path = tmp_path / "data.orc"
-    parquet_path = tmp_path / "data.parquet"
     _write_orc(orc_path, table)
-    pq.write_table(table, parquet_path)
     orc_uri = _native_file_uri(orc_path).replace("file://", f"file://{authority}")
-    parquet_uri = _native_file_uri(parquet_path).replace("file://", f"file://{authority}")
-    with pytest.raises(FileNotFoundError):
-        daft.read_parquet(parquet_uri)
     with pytest.raises(FileNotFoundError):
         daft.read_orc(orc_uri)
 
 
 @pytest.mark.parametrize("stem", ["a%2A", "a%5B1%5D", "a%20b"])
-def test_read_orc_encoded_file_uri_matches_parquet(tmp_path: Path, stem: str) -> None:
+def test_read_orc_file_uri_with_percent_characters(tmp_path: Path, stem: str) -> None:
     table = pa.table({"id": [1]})
     orc_path = tmp_path / f"{stem}.orc"
-    parquet_path = tmp_path / f"{stem}.parquet"
     _write_orc(orc_path, table)
-    pq.write_table(table, parquet_path)
     for neighbor in ["ab", "a1", "a b"]:
         _write_orc(tmp_path / f"{neighbor}.orc", pa.table({"id": [2]}))
-        pq.write_table(pa.table({"id": [2]}), tmp_path / f"{neighbor}.parquet")
-    expected = daft.read_parquet(_native_file_uri(parquet_path)).to_pydict()
-    assert expected == {"id": [1]}
-    assert daft.read_orc(_native_file_uri(orc_path)).to_pydict() == expected
+    assert daft.read_orc(_native_file_uri(orc_path)).to_pydict() == table.to_pydict()
 
 
 def test_read_orc_file_uri_does_not_decode_missing_path(tmp_path: Path) -> None:
     orc_path = tmp_path / "a b.orc"
-    parquet_path = tmp_path / "a b.parquet"
     _write_orc(orc_path, pa.table({"id": [1]}))
-    pq.write_table(pa.table({"id": [1]}), parquet_path)
-    with pytest.raises(FileNotFoundError):
-        daft.read_parquet(parquet_path.as_uri())
     with pytest.raises(FileNotFoundError):
         daft.read_orc(orc_path.as_uri())
 
@@ -225,18 +210,10 @@ def test_read_orc_incompatible_schema(tmp_path: Path) -> None:
         daft.read_orc([first, second]).collect()
 
 
-def test_read_orc_casts_match_parquet(tmp_path: Path) -> None:
+def test_read_orc_casts_to_inferred_schema(tmp_path: Path) -> None:
     tables = [pa.table({"id": [1], "seq": [1]}), pa.table({"id": ["2", "not-an-integer"], "seq": [2, 3]})]
-    orc_paths = []
-    parquet_paths = []
-    for index, table in enumerate(tables):
-        orc_paths.append(_write_orc(tmp_path / f"{index}.orc", table))
-        parquet_path = tmp_path / f"{index}.parquet"
-        pq.write_table(table, parquet_path)
-        parquet_paths.append(str(parquet_path))
-    expected = daft.read_parquet(parquet_paths).sort("seq").to_pydict()
-    assert expected == {"id": [1, 2, None], "seq": [1, 2, 3]}
-    assert daft.read_orc(orc_paths).sort("seq").to_pydict() == expected
+    orc_paths = [_write_orc(tmp_path / f"{index}.orc", table) for index, table in enumerate(tables)]
+    assert daft.read_orc(orc_paths).sort("seq").to_pydict() == {"id": [1, 2, None], "seq": [1, 2, 3]}
 
 
 def test_read_orc_projection_and_filter(orc_path: str) -> None:
@@ -267,13 +244,6 @@ def test_read_orc_empty_paths(tmp_path: Path) -> None:
         daft.read_orc(str(tmp_path / "*.orc"))
 
 
-def test_read_parquet_empty_string_does_not_read_cwd(tmp_path: Path, monkeypatch) -> None:
-    pq.write_table(pa.table({"id": [1]}), tmp_path / "data.parquet")
-    monkeypatch.chdir(tmp_path)
-    with pytest.raises(FileNotFoundError):
-        daft.read_parquet("")
-
-
 @pytest.mark.parametrize("kind", ["string", "list", "mixed"])
 def test_read_orc_rejects_empty_string_before_io(orc_path: str, monkeypatch, kind: str) -> None:
     monkeypatch.chdir(Path(orc_path).parent)
@@ -287,13 +257,11 @@ def test_read_orc_rejects_empty_string_before_io(orc_path: str, monkeypatch, kin
         daft.read_orc(paths[kind])
 
 
-def test_read_orc_whitespace_filepath_matches_parquet(tmp_path: Path, monkeypatch) -> None:
+def test_read_orc_whitespace_filepath(tmp_path: Path, monkeypatch) -> None:
     table = pa.table({"id": [1]})
-    pq.write_table(table, tmp_path / "   ")
-    monkeypatch.chdir(tmp_path)
-    expected = daft.read_parquet("   ").to_pydict()
     _write_orc(tmp_path / "   ", table)
-    assert daft.read_orc("   ").to_pydict() == expected
+    monkeypatch.chdir(tmp_path)
+    assert daft.read_orc("   ").to_pydict() == table.to_pydict()
 
 
 def test_read_orc_missing_input(orc_path: str, tmp_path: Path) -> None:
