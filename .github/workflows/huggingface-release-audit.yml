@@ -1,0 +1,56 @@
+name: Hugging Face release audit
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-manual-candidate:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    uses: ./.github/workflows/build-wheel.yml
+    with:
+      os: ubuntu
+      arch: x86_64
+      lts: false
+      build_type: release
+      run_tests: false
+
+  audit:
+    name: Audit 45 public datasets against the candidate wheel
+    needs: build-manual-candidate
+    if: ${{ !cancelled() && (github.event_name != 'workflow_dispatch' || needs.build-manual-candidate.result == 'success') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      DAFT_RUNNER: native
+      DAFT_ANALYTICS_ENABLED: '0'
+      DAFT_PROGRESS_BAR: '0'
+    steps:
+    - uses: actions/checkout@v7
+    - uses: actions/download-artifact@v8
+      with:
+        name: wheels-ubuntu-x86_64-lts=false-lto=true
+        path: dist
+    - uses: actions/setup-python@v7
+      with:
+        python-version: '3.11'
+    - name: Install candidate wheel and HF audit dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install --yes ffmpeg
+        python -m venv .venv-audit
+        .venv-audit/bin/python -m pip install dist/*.whl
+        .venv-audit/bin/python -m pip install torch==2.11.0 torchcodec==0.11.0 --index-url https://download.pytorch.org/whl/cpu
+        .venv-audit/bin/python -m pip install datasets==4.8.5 huggingface-hub==1.16.1 pillow==12.2.0 soundfile==0.13.1 pytest==9.0.3 tenacity==9.1.4
+    - name: Audit the candidate without importing the source checkout
+      run: .venv-audit/bin/python .github/ci-scripts/huggingface_release_audit.py --require-wheel --output hf-audit-results
+    - name: Retain schemas, revisions, timing, and failure logs
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v7
+      with:
+        name: huggingface-release-audit
+        path: hf-audit-results
+        if-no-files-found: warn

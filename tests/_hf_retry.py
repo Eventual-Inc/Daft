@@ -15,7 +15,7 @@ by both ``tests/ai/transformers/*`` (Python ``huggingface_hub`` client) and
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar
 
 import pytest
 from tenacity import (
@@ -118,6 +118,7 @@ def call_with_hf_retry(
     *args: Any,
     retries: int = 3,
     backoff_seconds: float = 5.0,
+    on_exhausted: Literal["skip", "raise"] = "skip",
     **kwargs: Any,
 ) -> T:
     """Invoke ``fn`` with retries on transient HuggingFace Hub failures.
@@ -127,8 +128,11 @@ def call_with_hf_retry(
     with a fixed backoff. If every attempt fails for a transient reason we
     ``pytest.skip`` the current test, since the failure is caused by the
     external service or network rather than the code under test. Any other
-    exception is re-raised immediately.
+    exception is re-raised immediately. Release gates must use
+    ``on_exhausted="raise"`` so unavailable service does not produce a green skip.
     """
+    if on_exhausted not in ("skip", "raise"):
+        raise ValueError("on_exhausted must be 'skip' or 'raise'")
     runner = retry(
         reraise=True,
         stop=stop_after_attempt(retries),
@@ -140,8 +144,12 @@ def call_with_hf_retry(
         return runner(*args, **kwargs)
     except RetryError as retry_err:  # pragma: no cover - defensive
         last = retry_err.last_attempt.exception() if retry_err.last_attempt else retry_err
+        if on_exhausted == "raise":
+            raise last
         pytest.skip(f"HuggingFace Hub transient failure after {retries} attempts: {last}")
     except Exception as exc:
+        if on_exhausted == "raise":
+            raise
         if _is_rate_limit_error(exc):
             pytest.skip(f"HuggingFace Hub transient failure after {retries} attempts: {exc}")
         raise
