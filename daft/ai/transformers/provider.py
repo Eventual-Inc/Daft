@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import warnings
 from typing import TYPE_CHECKING, Any
 
 if sys.version_info < (3, 11):
@@ -130,12 +131,55 @@ class TransformersProvider(Provider):
         system_message: str | None = None,
         **options: Unpack[TransformersPromptOptions],
     ) -> PrompterDescriptor:
+        model_name = model or self.DEFAULT_PROMPTER
+        if self._is_vision_model(model_name):
+            from daft.ai.transformers.protocols.vision_prompter import (
+                TransformersVisionPrompterDescriptor,
+            )
+
+            return TransformersVisionPrompterDescriptor(
+                provider_name=self._name,
+                model_name=model_name,
+                prompt_options=options,
+                system_message=system_message,
+                return_format=return_format,
+            )
+
         from daft.ai.transformers.protocols.prompter import TransformersPrompterDescriptor
 
         return TransformersPrompterDescriptor(
             provider_name=self._name,
-            model_name=(model or self.DEFAULT_PROMPTER),
+            model_name=model_name,
             prompt_options=options,
             system_message=system_message,
             return_format=return_format,
         )
+
+    @staticmethod
+    def _is_vision_model(model_name: str) -> bool:
+        """Warn and return False on any lookup failure so the caller falls back to text.
+
+        Tries the local HF cache first so repeat / offline calls avoid a Hub round-trip;
+        only reaches out to the Hub when the config has never been downloaded.
+        """
+        try:
+            from transformers import AutoConfig
+
+            # The names mapping is not publicly re-exported; use the same internal path as HF's AutoModel dispatch.
+            from transformers.models.auto.modeling_auto import (
+                MODEL_FOR_IMAGE_TEXT_TO_TEXT_MAPPING_NAMES,
+            )
+
+            try:
+                config = AutoConfig.from_pretrained(model_name, local_files_only=True)
+            except OSError:
+                config = AutoConfig.from_pretrained(model_name)
+            return config.model_type in MODEL_FOR_IMAGE_TEXT_TO_TEXT_MAPPING_NAMES
+        except Exception as e:
+            warnings.warn(
+                f"Could not determine vision capability for model '{model_name}' ({e!r}); "
+                "falling back to the text-only prompter. Pass an instruction-tuned VLM name "
+                "if you need image support.",
+                stacklevel=3,
+            )
+            return False
