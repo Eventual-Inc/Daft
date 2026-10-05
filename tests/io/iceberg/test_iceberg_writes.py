@@ -752,3 +752,536 @@ def test_protocol_alias_unknown_scheme_raises_without_alias():
     """Without a matching protocol alias, Daft raises NotImplementedError for an unknown URI scheme."""
     with pytest.raises(NotImplementedError, match="Cannot infer PyArrow filesystem"):
         _resolve_paths_and_filesystem("unknownscheme://bucket/path")
+
+
+@pytest.fixture(scope="function")
+def dt_partitioned_table(local_catalog):
+    """A table partitioned by identity(dt), pre-loaded with two partitions."""
+    schema = Schema(
+        NestedField(field_id=1, name="dt", type=StringType(), required=False),
+        NestedField(field_id=2, name="x", type=LongType(), required=False),
+    )
+    partition_spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="dt"))
+    table = local_catalog.create_table("default.overwrite_filter", schema, partition_spec=partition_spec)
+
+    daft.from_pydict({"dt": ["2024-01-01", "2024-01-01", "2024-01-02"], "x": [1, 2, 3]}).write_iceberg(table)
+    table.refresh()
+    return table
+
+
+def _rows(table):
+    table.refresh()
+    as_dict = daft.read_iceberg(table).to_pydict()
+    return sorted(zip(as_dict["dt"], as_dict["x"]))
+
+
+@pytest.mark.parametrize("filter_kind", ["string", "daft_expression"])
+def test_overwrite_filter_replaces_only_matching_partition(dt_partitioned_table, filter_kind):
+    table = dt_partitioned_table
+    overwrite_filter = {
+        "string": "dt = '2024-01-01'",
+        "daft_expression": daft.col("dt") == "2024-01-01",
+    }[filter_kind]
+
+    daft.from_pydict({"dt": ["2024-01-01"], "x": [99]}).write_iceberg(
+        table, mode="overwrite", overwrite_filter=overwrite_filter
+    )
+
+    # Only the 2024-01-01 partition is replaced; 2024-01-02 survives untouched.
+    assert _rows(table) == [("2024-01-01", 99), ("2024-01-02", 3)]
+
+
+def test_overwrite_filter_reports_only_matching_deletes(dt_partitioned_table):
+    table = dt_partitioned_table
+
+    result = daft.from_pydict({"dt": ["2024-01-01"], "x": [99]}).write_iceberg(
+        table, mode="overwrite", overwrite_filter="dt = '2024-01-01'"
+    )
+    as_dict = result.to_pydict()
+
+    # One ADD for the new file, one DELETE for the single file in the matched partition.
+    # The 2024-01-02 data file must not be reported as deleted.
+    assert as_dict["operation"] == ["ADD", "DELETE"]
+    assert as_dict["rows"] == [1, 2]
+    assert all("dt=2024-01-01" in file_name for file_name in as_dict["file_name"]), as_dict["file_name"]
+
+
+def test_overwrite_without_filter_still_replaces_whole_table(dt_partitioned_table):
+    table = dt_partitioned_table
+
+    daft.from_pydict({"dt": ["2024-01-03"], "x": [7]}).write_iceberg(table, mode="overwrite")
+
+    assert _rows(table) == [("2024-01-03", 7)]
+
+
+def test_overwrite_filter_matching_nothing_only_appends(dt_partitioned_table):
+    table = dt_partitioned_table
+
+    daft.from_pydict({"dt": ["2024-01-03"], "x": [7]}).write_iceberg(
+        table, mode="overwrite", overwrite_filter="dt = '2024-01-03'"
+    )
+
+    assert _rows(table) == [("2024-01-01", 1), ("2024-01-01", 2), ("2024-01-02", 3), ("2024-01-03", 7)]
+
+
+def test_overwrite_filter_below_partition_granularity_rewrites_survivors(dt_partitioned_table):
+    """A filter finer than the partition boundary falls back to copy-on-write."""
+    table = dt_partitioned_table
+
+    # x = 99 falls outside the `x = 1` filter, so the write needs the check disabled.
+    daft.from_pydict({"dt": ["2024-01-01"], "x": [99]}).write_iceberg(
+        table, mode="overwrite", overwrite_filter="x = 1", validate_overwrite_filter=False
+    )
+
+    # Only the x = 1 row is dropped; x = 2 is rewritten into a new file and kept.
+    assert _rows(table) == [("2024-01-01", 2), ("2024-01-01", 99), ("2024-01-02", 3)]
+
+
+def test_overwrite_filter_rejected_in_append_mode(dt_partitioned_table):
+    table = dt_partitioned_table
+    snapshots_before = len(table.metadata.snapshots)
+
+    with pytest.raises(ValueError, match="only supported with mode='overwrite'"):
+        daft.from_pydict({"dt": ["2024-01-01"], "x": [99]}).write_iceberg(
+            table, mode="append", overwrite_filter="dt = '2024-01-01'"
+        )
+
+    table.refresh()
+    assert len(table.metadata.snapshots) == snapshots_before
+
+
+def test_overwrite_filter_unknown_column_fails_before_writing(dt_partitioned_table):
+    table = dt_partitioned_table
+    snapshots_before = len(table.metadata.snapshots)
+
+    with pytest.raises(ValueError, match="Could not find field with name nope"):
+        daft.from_pydict({"dt": ["2024-01-01"], "x": [99]}).write_iceberg(
+            table, mode="overwrite", overwrite_filter="nope = 1"
+        )
+
+    # The predicate is validated before the write executes, so the table is unchanged.
+    table.refresh()
+    assert len(table.metadata.snapshots) == snapshots_before
+    assert _rows(table) == [("2024-01-01", 1), ("2024-01-01", 2), ("2024-01-02", 3)]
+
+
+def test_overwrite_filter_unconvertible_expression_raises(dt_partitioned_table):
+    """An expression Iceberg cannot represent raises instead of widening to a full overwrite."""
+    table = dt_partitioned_table
+
+    with pytest.raises(ValueError, match="Iceberg does not support function"):
+        daft.from_pydict({"dt": ["2024-01-01"], "x": [99]}).write_iceberg(
+            table, mode="overwrite", overwrite_filter=(daft.col("x") + 1) > 3
+        )
+
+    assert _rows(table) == [("2024-01-01", 1), ("2024-01-01", 2), ("2024-01-02", 3)]
+
+
+def test_overwrite_filter_bad_type_raises(dt_partitioned_table):
+    table = dt_partitioned_table
+
+    with pytest.raises(TypeError, match="overwrite_filter must be"):
+        daft.from_pydict({"dt": ["2024-01-01"], "x": [99]}).write_iceberg(table, mode="overwrite", overwrite_filter=123)
+
+
+def test_overwrite_filter_rejects_pyiceberg_expressions(dt_partitioned_table):
+    """The filter is a Daft-level API: predicates come in as Daft expressions or strings."""
+    from pyiceberg.expressions import EqualTo
+
+    table = dt_partitioned_table
+
+    with pytest.raises(TypeError, match="overwrite_filter must be"):
+        daft.from_pydict({"dt": ["2024-01-01"], "x": [99]}).write_iceberg(
+            table, mode="overwrite", overwrite_filter=EqualTo("dt", "2024-01-01")
+        )
+
+
+def test_catalog_table_overwrite_accepts_overwrite_filter(dt_partitioned_table):
+    from daft.catalog import Table
+
+    table = dt_partitioned_table
+    catalog_table = Table.from_iceberg(table)
+
+    catalog_table.overwrite(daft.from_pydict({"dt": ["2024-01-01"], "x": [99]}), overwrite_filter="dt = '2024-01-01'")
+
+    assert _rows(table) == [("2024-01-01", 99), ("2024-01-02", 3)]
+
+
+def test_catalog_table_write_dispatches_overwrite_filter(dt_partitioned_table):
+    """`Table.write` is what `Catalog.write_table` forwards to, so options must survive the dispatch."""
+    from daft.catalog import Table
+
+    table = dt_partitioned_table
+    catalog_table = Table.from_iceberg(table)
+
+    catalog_table.write(
+        daft.from_pydict({"dt": ["2024-01-01"], "x": [99]}),
+        mode="overwrite",
+        overwrite_filter="dt = '2024-01-01'",
+    )
+
+    assert _rows(table) == [("2024-01-01", 99), ("2024-01-02", 3)]
+
+
+def test_catalog_table_append_rejects_overwrite_filter(dt_partitioned_table):
+    from daft.catalog import Table
+
+    catalog_table = Table.from_iceberg(dt_partitioned_table)
+
+    with pytest.raises(ValueError, match="Unsupported option"):
+        catalog_table.append(daft.from_pydict({"dt": ["2024-01-01"], "x": [99]}), overwrite_filter="dt = '2024-01-01'")
+
+
+def test_overwrite_filter_rejects_rows_outside_filter(dt_partitioned_table):
+    table = dt_partitioned_table
+    snapshots_before = len(table.metadata.snapshots)
+
+    # The 2024-01-02 row falls outside the filter, so the delete would not cover it.
+    with pytest.raises(ValueError, match="Cannot write rows that do not match overwrite_filter"):
+        daft.from_pydict({"dt": ["2024-01-01", "2024-01-02"], "x": [99, 100]}).write_iceberg(
+            table, mode="overwrite", overwrite_filter="dt = '2024-01-01'"
+        )
+
+    # Nothing was committed, since validation runs before the transaction opens.
+    table.refresh()
+    assert len(table.metadata.snapshots) == snapshots_before
+    assert _rows(table) == [("2024-01-01", 1), ("2024-01-01", 2), ("2024-01-02", 3)]
+
+
+def test_overwrite_filter_validation_can_be_disabled(dt_partitioned_table):
+    table = dt_partitioned_table
+
+    daft.from_pydict({"dt": ["2024-01-01", "2024-01-02"], "x": [99, 100]}).write_iceberg(
+        table, mode="overwrite", overwrite_filter="dt = '2024-01-01'", validate_overwrite_filter=False
+    )
+
+    # The straddling row lands in a partition the delete never touched.
+    assert _rows(table) == [("2024-01-01", 99), ("2024-01-02", 3), ("2024-01-02", 100)]
+
+
+def test_overwrite_filter_validation_accepts_non_partition_predicate(dt_partitioned_table):
+    """A predicate over a non-partition column is proven from the file's column statistics."""
+    table = dt_partitioned_table
+
+    daft.from_pydict({"dt": ["2024-01-01", "2024-01-02"], "x": [1, 1]}).write_iceberg(
+        table, mode="overwrite", overwrite_filter="x = 1"
+    )
+
+    assert _rows(table) == [("2024-01-01", 1), ("2024-01-01", 2), ("2024-01-02", 1), ("2024-01-02", 3)]
+
+
+def test_overwrite_filter_validation_rejects_non_partition_violation(dt_partitioned_table):
+    table = dt_partitioned_table
+
+    with pytest.raises(ValueError, match="Cannot write rows that do not match overwrite_filter"):
+        daft.from_pydict({"dt": ["2024-01-01", "2024-01-01"], "x": [1, 5]}).write_iceberg(
+            table, mode="overwrite", overwrite_filter="x = 1"
+        )
+
+
+def test_overwrite_filter_validation_accepts_range_over_partitions(dt_partitioned_table):
+    """A range predicate spanning several partitions accepts files in every one of them."""
+    table = dt_partitioned_table
+
+    daft.from_pydict({"dt": ["2024-01-01", "2024-01-02"], "x": [99, 100]}).write_iceberg(
+        table, mode="overwrite", overwrite_filter="dt >= '2024-01-01' and dt <= '2024-01-02'"
+    )
+
+    assert _rows(table) == [("2024-01-01", 99), ("2024-01-02", 100)]
+
+
+def test_overwrite_filter_validation_with_hidden_day_partitioning(local_catalog):
+    """Hidden partitioning: the predicate is over `ts`, but the table is partitioned by day(ts)."""
+    schema = Schema(
+        NestedField(field_id=1, name="ts", type=TimestampType(), required=False),
+        NestedField(field_id=2, name="x", type=LongType(), required=False),
+    )
+    partition_spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=DayTransform(), name="ts_day"))
+    table = local_catalog.create_table("default.hidden_day", schema, partition_spec=partition_spec)
+
+    day_one = datetime.datetime(2024, 1, 1, 6, 0, 0)
+    day_two = datetime.datetime(2024, 1, 2, 6, 0, 0)
+    daft.from_pydict({"ts": [day_one, day_two], "x": [1, 2]}).write_iceberg(table)
+
+    daft.from_pydict({"ts": [day_one], "x": [99]}).write_iceberg(
+        table,
+        mode="overwrite",
+        overwrite_filter="ts >= '2024-01-01T00:00:00' and ts < '2024-01-02T00:00:00'",
+    )
+
+    table.refresh()
+    as_dict = daft.read_iceberg(table).to_pydict()
+    assert sorted(zip(as_dict["ts"], as_dict["x"])) == [(day_one, 99), (day_two, 2)]
+
+
+def test_overwrite_filter_validation_on_unpartitioned_table(local_catalog):
+    """With no partition spec to project onto, the check falls back to column statistics."""
+    schema = Schema(
+        NestedField(field_id=1, name="dt", type=StringType(), required=False),
+        NestedField(field_id=2, name="x", type=LongType(), required=False),
+    )
+    table = local_catalog.create_table("default.unpartitioned", schema, partition_spec=UNPARTITIONED_PARTITION_SPEC)
+    daft.from_pydict({"dt": ["2024-01-01", "2024-01-02"], "x": [1, 2]}).write_iceberg(table)
+
+    with pytest.raises(ValueError, match="Cannot write rows that do not match overwrite_filter"):
+        daft.from_pydict({"dt": ["2024-01-02"], "x": [99]}).write_iceberg(
+            table, mode="overwrite", overwrite_filter="dt = '2024-01-01'"
+        )
+
+    daft.from_pydict({"dt": ["2024-01-01"], "x": [99]}).write_iceberg(
+        table, mode="overwrite", overwrite_filter="dt = '2024-01-01'"
+    )
+    assert _rows(table) == [("2024-01-01", 99), ("2024-01-02", 2)]
+
+
+def test_catalog_table_overwrite_forwards_validate_flag(dt_partitioned_table):
+    from daft.catalog import Table
+
+    table = dt_partitioned_table
+    catalog_table = Table.from_iceberg(table)
+    straddling = daft.from_pydict({"dt": ["2024-01-01", "2024-01-02"], "x": [99, 100]})
+
+    with pytest.raises(ValueError, match="Cannot write rows that do not match overwrite_filter"):
+        catalog_table.overwrite(straddling, overwrite_filter="dt = '2024-01-01'")
+
+    catalog_table.overwrite(straddling, overwrite_filter="dt = '2024-01-01'", validate_overwrite_filter=False)
+
+    assert _rows(table) == [("2024-01-01", 99), ("2024-01-02", 3), ("2024-01-02", 100)]
+
+
+def test_overwrite_filter_validation_rejects_null_partition_values(dt_partitioned_table):
+    """A null partition value does not satisfy `dt = ...` and must be rejected."""
+    table = dt_partitioned_table
+
+    with pytest.raises(ValueError, match="Cannot write rows that do not match overwrite_filter"):
+        daft.from_pydict({"dt": [None], "x": [99]}).write_iceberg(
+            table, mode="overwrite", overwrite_filter="dt = '2024-01-01'"
+        )
+
+
+def test_overwrite_filter_with_empty_dataframe_deletes_the_partition(dt_partitioned_table):
+    """An empty DataFrame plus a filter drops a partition without writing anything."""
+    table = dt_partitioned_table
+    empty = daft.from_pydict({"dt": ["2024-01-01"], "x": [1]}).limit(0)
+
+    result = empty.write_iceberg(table, mode="overwrite", overwrite_filter="dt = '2024-01-01'")
+
+    assert result.to_pydict()["operation"] == ["DELETE"]
+    assert _rows(table) == [("2024-01-02", 3)]
+
+
+def test_write_result_reports_partition_values(local_catalog):
+    """Regression: reported partition values used to be all-null.
+
+    `data_file.partition` is a positional `Record`. pyiceberg 0.9 dropped the attribute
+    access this code relied on, so every reported value became None.
+    """
+    schema = Schema(
+        NestedField(field_id=1, name="dt", type=StringType(), required=False),
+        NestedField(field_id=2, name="x", type=LongType(), required=False),
+    )
+    partition_spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="dt"))
+    table = local_catalog.create_table("default.reported_partitions", schema, partition_spec=partition_spec)
+
+    result = daft.from_pydict({"dt": ["2024-01-01", "2024-01-01", "2024-01-02"], "x": [1, 2, 3]}).write_iceberg(table)
+    as_dict = result.to_pydict()
+
+    assert sorted(row["dt"] for row in as_dict["partitioning"]) == ["2024-01-01", "2024-01-02"]
+
+
+def test_overwrite_result_reports_partition_values_for_deleted_files(dt_partitioned_table):
+    """DELETE rows describe files read back from a manifest rather than files just written."""
+    table = dt_partitioned_table
+
+    result = daft.from_pydict({"dt": ["2024-01-03"], "x": [9]}).write_iceberg(table, mode="overwrite")
+    as_dict = result.to_pydict()
+
+    reported = sorted(zip(as_dict["operation"], (row["dt"] for row in as_dict["partitioning"])))
+    assert reported == [
+        ("ADD", "2024-01-03"),
+        ("DELETE", "2024-01-01"),
+        ("DELETE", "2024-01-02"),
+    ]
+
+
+def test_write_result_keys_partitions_by_partition_field_name(local_catalog):
+    """Non-identity transforms: the key is the partition field, not the source column."""
+    schema = Schema(
+        NestedField(field_id=1, name="dt", type=StringType(), required=False),
+        NestedField(field_id=2, name="x", type=LongType(), required=False),
+    )
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=2, field_id=1000, transform=BucketTransform(4), name="x_bucket_4")
+    )
+    table = local_catalog.create_table("default.bucketed_partitions", schema, partition_spec=partition_spec)
+
+    values = [1, 2, 3, 4]
+    result = daft.from_pydict({"dt": ["a"] * len(values), "x": values}).write_iceberg(table)
+    reported = result.to_pydict()["partitioning"]
+
+    # Keyed by the Iceberg partition field, matching the read side and the directory layout.
+    assert all(set(row.keys()) == {"x_bucket_4"} for row in reported), reported
+
+    bucket_of = BucketTransform(4).transform(LongType())
+    assert sorted(row["x_bucket_4"] for row in reported) == sorted({bucket_of(v) for v in values})
+
+
+def test_write_result_reports_every_field_of_a_multi_field_spec(local_catalog):
+    """Two partition fields over one source column must not collapse into a single key."""
+    schema = Schema(
+        NestedField(field_id=1, name="dt", type=StringType(), required=False),
+        NestedField(field_id=2, name="x", type=LongType(), required=False),
+    )
+    partition_spec = PartitionSpec(
+        PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="dt"),
+        PartitionField(source_id=1, field_id=1001, transform=TruncateTransform(4), name="dt_year"),
+    )
+    table = local_catalog.create_table("default.multi_field_partitions", schema, partition_spec=partition_spec)
+
+    result = daft.from_pydict({"dt": ["2024-01-01", "2025-02-02"], "x": [1, 2]}).write_iceberg(table)
+    reported = sorted(result.to_pydict()["partitioning"], key=lambda row: row["dt"])
+
+    assert reported == [
+        {"dt": "2024-01-01", "dt_year": "2024"},
+        {"dt": "2025-02-02", "dt_year": "2025"},
+    ]
+
+
+def test_write_result_has_no_partitioning_column_when_unpartitioned(local_catalog):
+    schema = Schema(NestedField(field_id=1, name="x", type=LongType(), required=False))
+    table = local_catalog.create_table("default.no_partitions", schema, partition_spec=UNPARTITIONED_PARTITION_SPEC)
+
+    result = daft.from_pydict({"x": [1, 2, 3]}).write_iceberg(table)
+
+    assert "partitioning" not in result.schema().column_names()
+
+
+@pytest.fixture(scope="function")
+def bounds_table_factory(local_catalog):
+    """Builds identity(dt)-partitioned tables carrying a non-partition string column."""
+
+    def _make(name, properties=None):
+        schema = Schema(
+            NestedField(field_id=1, name="dt", type=StringType(), required=False),
+            NestedField(field_id=2, name="s", type=StringType(), required=False),
+        )
+        partition_spec = PartitionSpec(
+            PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="dt")
+        )
+        table = local_catalog.create_table(
+            f"default.{name}", schema, partition_spec=partition_spec, properties=properties or {}
+        )
+        daft.from_pydict({"dt": ["seed"], "s": ["seed"]}).write_iceberg(table)
+        return table
+
+    return _make
+
+
+# Longer than Iceberg's default 16-byte bound truncation, and sharing a prefix so that
+# truncated bounds cannot tell these two apart.
+LONG_VALUE = "L" * 30 + "tail"
+LONG_SIBLING = "L" * 30 + "other"
+
+
+def test_validation_accepts_long_partition_values(bounds_table_factory):
+    """Partition values are stored whole, so length does not defeat the partition-level check.
+
+    Column bounds are truncated and partition values are not, which is why
+    `validate_data_files_match_filter` needs both tests.
+    """
+    table = bounds_table_factory("long_partition_value")
+
+    daft.from_pydict({"dt": [LONG_VALUE], "s": ["x"]}).write_iceberg(
+        table, mode="overwrite", overwrite_filter=f"dt = '{LONG_VALUE}'"
+    )
+
+    assert sorted(daft.read_iceberg(table).to_pydict()["dt"]) == sorted(["seed", LONG_VALUE])
+
+
+def test_validation_never_accepts_a_violating_write_despite_truncated_bounds(bounds_table_factory):
+    """Truncation widens bounds, which can only make the proof harder, never easier.
+
+    The written value shares its first 16 bytes with the one in the filter, so truncated
+    bounds cannot distinguish them. The write must still be refused.
+    """
+    table = bounds_table_factory("truncation_safety")
+
+    with pytest.raises(ValueError, match="Cannot write rows that do not match overwrite_filter"):
+        daft.from_pydict({"dt": ["seed"], "s": [LONG_SIBLING]}).write_iceberg(
+            table, mode="overwrite", overwrite_filter=f"s = '{LONG_VALUE}'"
+        )
+
+
+def test_validation_conservatively_rejects_equality_beyond_truncated_bounds(bounds_table_factory):
+    """Known limitation: equality on a long non-partition value cannot be proven.
+
+    The rows do satisfy the filter, but truncated bounds cannot show it, so the check
+    refuses. Iceberg's own `StrictMetricsEvaluator` behaves the same way. If this becomes
+    provable, update this test rather than widening the check.
+    """
+    table = bounds_table_factory("truncated_bounds")
+    matching = daft.from_pydict({"dt": ["seed"], "s": [LONG_VALUE]})
+
+    with pytest.raises(ValueError, match="Cannot write rows that do not match overwrite_filter"):
+        matching.write_iceberg(table, mode="overwrite", overwrite_filter=f"s = '{LONG_VALUE}'")
+
+    # A range predicate over the same rows stays provable: the bounds sit inside it.
+    matching.write_iceberg(table, mode="overwrite", overwrite_filter="s >= 'L' and s < 'M'")
+    assert sorted(daft.read_iceberg(table).to_pydict()["s"]) == sorted(["seed", LONG_VALUE])
+
+
+def test_validation_rejects_when_column_metrics_are_disabled(bounds_table_factory):
+    """Same conservative path when a table turns off statistics for the filtered column."""
+    table = bounds_table_factory("metrics_off", {"write.metadata.metrics.column.s": "none"})
+
+    with pytest.raises(ValueError, match="Cannot write rows that do not match overwrite_filter"):
+        daft.from_pydict({"dt": ["seed"], "s": ["short"]}).write_iceberg(
+            table, mode="overwrite", overwrite_filter="s = 'short'"
+        )
+
+    # Opting out of the check is the documented way through.
+    daft.from_pydict({"dt": ["seed"], "s": ["short"]}).write_iceberg(
+        table, mode="overwrite", overwrite_filter="s = 'short'", validate_overwrite_filter=False
+    )
+
+
+def _spec_evolution_table(local_catalog, name):
+    schema = Schema(
+        NestedField(field_id=1, name="dt", type=StringType(), required=False),
+        NestedField(field_id=2, name="x", type=LongType(), required=False),
+    )
+    partition_spec = PartitionSpec(PartitionField(source_id=1, field_id=1000, transform=IdentityTransform(), name="dt"))
+    table = local_catalog.create_table(f"default.{name}", schema, partition_spec=partition_spec)
+    daft.from_pydict({"dt": ["old"], "x": [1]}).write_iceberg(table)
+    return table
+
+
+def test_overwrite_result_reports_partition_values_after_adding_a_field(local_catalog):
+    """A file written before the new field has no value for it."""
+    table = _spec_evolution_table(local_catalog, "spec_add_field")
+    with table.update_spec() as update:
+        update.add_field("x", BucketTransform(4), "x_bucket_4")
+
+    result = daft.from_pydict({"dt": ["new"], "x": [2]}).write_iceberg(table, mode="overwrite")
+    as_dict = result.to_pydict()
+
+    assert list(zip(as_dict["operation"], as_dict["partitioning"])) == [
+        ("ADD", {"dt": "new", "x_bucket_4": BucketTransform(4).transform(LongType())(2)}),
+        ("DELETE", {"dt": "old", "x_bucket_4": None}),
+    ]
+
+
+def test_overwrite_result_reports_partition_values_from_a_replaced_field(local_catalog):
+    """A deleted file keeps the fields its own spec had, even once the table dropped them."""
+    table = _spec_evolution_table(local_catalog, "spec_replace_field")
+    with table.update_spec() as update:
+        update.remove_field("dt")
+        update.add_field("dt", TruncateTransform(4), "dt_trunc")
+
+    result = daft.from_pydict({"dt": ["new"], "x": [2]}).write_iceberg(table, mode="overwrite")
+    as_dict = result.to_pydict()
+
+    assert list(zip(as_dict["operation"], as_dict["partitioning"])) == [
+        ("ADD", {"dt_trunc": "new", "dt": None}),
+        ("DELETE", {"dt_trunc": None, "dt": "old"}),
+    ]

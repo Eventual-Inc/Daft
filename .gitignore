@@ -11,6 +11,7 @@ requirements.txt
 build
 .cython_build
 .hypothesis
+mise.toml
 
 **/.ipynb_checkpoints/
 

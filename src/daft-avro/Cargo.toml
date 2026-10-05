@@ -1,0 +1,37 @@
+[dependencies]
+arrow = {workspace = true}
+arrow-array = {workspace = true}
+arrow-avro = {version = "59", default-features = false, features = ["async", "snappy", "deflate", "zstd", "bzip2"]}
+arrow-schema = {workspace = true}
+bytes = {workspace = true}
+common-error = {path = "../common/error", default-features = false}
+common-py-serde = {path = "../common/py-serde", default-features = false}
+common-runtime = {path = "../common/runtime", default-features = false}
+daft-core = {path = "../daft-core", default-features = false}
+daft-io = {path = "../daft-io", default-features = false}
+daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
+daft-schema = {path = "../daft-schema", default-features = false}
+futures = {workspace = true}
+pyo3 = {workspace = true, optional = true}
+serde = {workspace = true}
+snafu = {workspace = true}
+tokio = {workspace = true}
+
+[features]
+python = [
+  "dep:pyo3",
+  "common-error/python",
+  "common-py-serde/python",
+  "daft-core/python",
+  "daft-io/python",
+  "daft-recordbatch/python",
+  "daft-schema/python"
+]
+
+[lints]
+workspace = true
+
+[package]
+edition = {workspace = true}
+name = "daft-avro"
+version = {workspace = true}

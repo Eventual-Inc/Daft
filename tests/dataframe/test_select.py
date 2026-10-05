@@ -66,14 +66,14 @@ def test_select_with_variadic_expressions_and_kwargs(make_df, valid_data: list[d
 def test_select_with_dict_single_arg(make_df, valid_data: list[dict[str, float]]):
     """Test that select works with a dictionary as the only argument."""
     df = make_df(valid_data)
-    df = df.select(**{"new_col": col("sepal_length"), "another_col": col("sepal_width")})
+    df = df.select(new_col=col("sepal_length"), another_col=col("sepal_width"))
     assert df.column_names == ["new_col", "another_col"]
 
 
 def test_select_with_dict_and_other_args(make_df, valid_data: list[dict[str, float]]):
     """Test that select works when a dictionary is mixed with other arguments."""
     df = make_df(valid_data)
-    df = df.select("sepal_length", **{"new_col": col("sepal_width"), "another_col": col("petal_length")})
+    df = df.select("sepal_length", new_col=col("sepal_width"), another_col=col("petal_length"))
     # Variadic arguments come first, then dictionary kwargs
     assert df.column_names == ["sepal_length", "new_col", "another_col"]
 
@@ -82,11 +82,9 @@ def test_select_with_dict_complex_expressions(make_df, valid_data: list[dict[str
     """Test that select works with complex expressions in the dictionary."""
     df = make_df(valid_data)
     df = df.select(
-        **{
-            "length_sum": col("sepal_length") + col("petal_length"),
-            "width_ratio": col("sepal_width") / col("petal_width"),
-            "original_col": col("variety"),
-        }
+        length_sum=col("sepal_length") + col("petal_length"),
+        width_ratio=col("sepal_width") / col("petal_width"),
+        original_col=col("variety"),
     )
     assert df.column_names == ["length_sum", "width_ratio", "original_col"]
 
@@ -94,11 +92,6 @@ def test_select_with_dict_complex_expressions(make_df, valid_data: list[dict[str
 def test_select_with_dict_alias_behavior(make_df, valid_data: list[dict[str, float]]):
     """Test that select with dictionary properly handles aliases."""
     df = make_df(valid_data)
-    df = df.select(
-        **{
-            "renamed_length": col("sepal_length").alias("should_be_ignored"),
-            "renamed_width": col("sepal_width"),
-        }
-    )
+    df = df.select(renamed_length=col("sepal_length").alias("should_be_ignored"), renamed_width=col("sepal_width"))
     # The dictionary key should override any alias in the expression
     assert df.column_names == ["renamed_length", "renamed_width"]

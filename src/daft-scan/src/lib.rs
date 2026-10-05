@@ -1,5 +1,3 @@
-#![feature(if_let_guard)]
-
 use std::{
     borrow::Cow,
     collections::HashMap,
@@ -22,11 +20,12 @@ pub use anonymous::AnonymousScanOperator;
 mod expr_rewriter;
 mod file_format_config;
 pub mod source;
+pub use daft_avro::AvroSourceConfig;
 #[cfg(feature = "python")]
 pub use file_format_config::DatabaseSourceConfig;
 pub use file_format_config::{
-    CsvSourceConfig, FileFormatConfig, JsonSourceConfig, ParquetSourceConfig, TextSourceConfig,
-    WarcSourceConfig,
+    CsvSourceConfig, FileFormatConfig, JsonSourceConfig, McapSourceConfig, ParquetSourceConfig,
+    TextSourceConfig, WarcSourceConfig,
 };
 pub mod clustering;
 pub mod glob;
@@ -648,6 +647,8 @@ impl ScanTask {
                                     1.0
                                 }
                             }
+                            FileFormatConfig::Avro(_) => 1.5,
+                            FileFormatConfig::Mcap(_) => 1.0,
                         },
                         #[cfg(feature = "python")]
                         SourceConfig::Database(_) | SourceConfig::PythonFunction { .. } => 1.0,
@@ -907,7 +908,7 @@ impl DisplayAs for ScanTask {
 
         match level {
             common_display::DisplayLevel::Compact => {
-                format!("{{{condensed_sources}}}",).trim_start().to_string()
+                format!("{{{condensed_sources}}}").trim_start().to_string()
             }
             common_display::DisplayLevel::Default => {
                 format!(

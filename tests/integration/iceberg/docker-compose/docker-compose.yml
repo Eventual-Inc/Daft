@@ -24,7 +24,7 @@ services:
     depends_on:
       rest:
         condition: service_healthy
-      minio:
+      seaweedfs:
         condition: service_healthy
     volumes:
     - ./warehouse:/home/iceberg/warehouse
@@ -38,10 +38,11 @@ services:
     - 8080:8080
     links:
     - rest:rest
-    - minio:minio
+    - seaweedfs:seaweedfs
   rest:
     depends_on:
-    - mc
+      seaweedfs:
+        condition: service_healthy
     image: tabulario/iceberg-rest
     container_name: pyiceberg-rest
     networks:
@@ -54,7 +55,7 @@ services:
     - AWS_REGION=us-east-1
     - CATALOG_WAREHOUSE=s3://warehouse/
     - CATALOG_IO__IMPL=org.apache.iceberg.aws.s3.S3FileIO
-    - CATALOG_S3_ENDPOINT=http://minio:9000
+    - CATALOG_S3_ENDPOINT=http://seaweedfs:9000
     volumes:
     - ./healthcheck.sh:/healthcheck.sh
     healthcheck:
@@ -63,44 +64,25 @@ services:
       timeout: 10s
       retries: 20
       start_period: 10s
-  minio:
-    image: minio/minio
-    container_name: pyiceberg-minio
-    environment:
-    - MINIO_ROOT_USER=admin
-    - MINIO_ROOT_PASSWORD=password
-    - MINIO_DOMAIN=minio
-    networks:
-      iceberg_net:
-        aliases:
-        - warehouse.minio
-    ports:
-    - 9000:9000
-    command: [server, /data]
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 1s
-      timeout: 2s
-      retries: 10
-      start_period: 5s
-  mc:
-    depends_on:
-      minio:
-        condition: service_healthy
-    image: minio/mc
-    container_name: pyiceberg-mc
-    networks:
-      iceberg_net:
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.47@sha256:ce9e796f1fe6f06968f4c04bdaf8f678dad9c8acdfef3d244133d71bfa6bf882
+    container_name: pyiceberg-seaweedfs
     environment:
     - AWS_ACCESS_KEY_ID=admin
     - AWS_SECRET_ACCESS_KEY=password
-    - AWS_REGION=us-east-1
-    entrypoint: >
-      /bin/sh -c "
-      until (/usr/bin/mc alias set minio http://minio:9000 admin password) do echo '...waiting...' && sleep 1; done;
-      /usr/bin/mc mb minio/warehouse;
-      /usr/bin/mc policy set public minio/warehouse;
-      tail -f /dev/null
-      "
+    - S3_BUCKET=warehouse
+    networks:
+      iceberg_net:
+        aliases:
+        - warehouse.seaweedfs
+    ports:
+    - "127.0.0.1:9000:9000"
+    command: [mini, -dir=/data, -s3.port=9000, -s3.domainName=seaweedfs]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:9000/ | grep -qx 403"]
+      interval: 1s
+      timeout: 2s
+      retries: 20
+      start_period: 5s
 networks:
   iceberg_net:

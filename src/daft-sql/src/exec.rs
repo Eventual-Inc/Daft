@@ -1,11 +1,17 @@
 use std::{collections::HashMap, sync::Arc};
 
+use daft_catalog::error::CatalogError;
 use daft_context::partition_cache::logical_plan_from_micropartitions;
 use daft_core::{prelude::Utf8Array, series::IntoSeries};
 use daft_logical_plan::{LogicalPlan, LogicalPlanBuilder};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use daft_session::Session;
+#[cfg(feature = "python")]
+use pyo3::Python;
+
+#[cfg(feature = "python")]
+pyo3::import_exception!(daft.catalog, TableAlreadyExistsError);
 
 use crate::{
     SQLPlanner,
@@ -99,15 +105,36 @@ fn execute_create_table(
         (catalog, ident)
     };
 
-    // Handle IF NOT EXISTS.
-    if create_table.if_not_exists && catalog.has_table(&ident)? {
-        return Ok(None);
+    // Try to create the table. If IF NOT EXISTS is specified and the table
+    // already exists (either pre-existing or created concurrently by another
+    // caller), treat it as success – the existing table satisfies the
+    // IF NOT EXISTS contract.
+    match catalog.create_table(&ident, Arc::new(schema)) {
+        Ok(_) => Ok(None),
+        Err(e) => {
+            if create_table.if_not_exists && is_table_already_exists_error(&e) {
+                Ok(None)
+            } else {
+                Err(e.into())
+            }
+        }
     }
+}
 
-    // Create the table.
-    catalog.create_table(&ident, Arc::new(schema))?;
-
-    Ok(None)
+/// Returns true if the error indicates the table already exists.
+///
+/// Daft-native catalogs surface this as CatalogError::ObjectAlreadyExists
+/// (PyCatalogWrapper translates the typed TableAlreadyExistsError back into
+/// this variant).
+fn is_table_already_exists_error(e: &CatalogError) -> bool {
+    match e {
+        CatalogError::ObjectAlreadyExists { .. } => true,
+        #[cfg(feature = "python")]
+        CatalogError::PythonError { source } => {
+            Python::attach(|py| source.is_instance_of::<TableAlreadyExistsError>(py))
+        }
+        _ => false,
+    }
 }
 
 fn execute_show_tables(

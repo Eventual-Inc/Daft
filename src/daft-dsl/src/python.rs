@@ -802,7 +802,7 @@ impl PyExpr {
         } else {
             Err(PyValueError::new_err(format!(
                 "The method .py_any() was called on a non literal value! Got: {}",
-                &self.expr
+                self.expr
             )))
         }
     }

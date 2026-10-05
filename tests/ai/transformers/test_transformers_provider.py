@@ -24,12 +24,14 @@ def test_transformers_provider_get_image_embedder_raises_without_torchvision():
     # We need torch available for init
     with patch("daft.dependencies.torch.module_available", return_value=True):
         provider = TransformersProvider()
-        with patch("daft.dependencies.torchvision.module_available", return_value=False):
-            with pytest.raises(
+        with (
+            patch("daft.dependencies.torchvision.module_available", return_value=False),
+            pytest.raises(
                 ImportError,
                 match=r"Please `pip install 'daft\[transformers\]'` to use the embed_image function with this provider",
-            ):
-                provider.get_image_embedder()
+            ),
+        ):
+            provider.get_image_embedder()
 
 
 def test_transformers_provider_get_image_embedder_raises_without_pillow():
@@ -48,12 +50,14 @@ def test_transformers_provider_get_image_embedder_raises_without_pillow():
 def test_transformers_provider_get_image_classifier_raises_without_torchvision():
     with patch("daft.dependencies.torch.module_available", return_value=True):
         provider = TransformersProvider()
-        with patch("daft.dependencies.torchvision.module_available", return_value=False):
-            with pytest.raises(
+        with (
+            patch("daft.dependencies.torchvision.module_available", return_value=False),
+            pytest.raises(
                 ImportError,
                 match=r"Please `pip install 'daft\[transformers\]'` to use the classify_image function with this provider",
-            ):
-                provider.get_image_classifier()
+            ),
+        ):
+            provider.get_image_classifier()
 
 
 def test_transformers_provider_get_image_classifier_raises_without_pillow():

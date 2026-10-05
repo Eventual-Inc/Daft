@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import warnings
 from typing import TYPE_CHECKING, Any
 
 from daft.api_annotations import PublicAPI
@@ -13,17 +12,13 @@ if TYPE_CHECKING:
 _daft_lance = LazyImport("daft_lance._lance")
 
 __all__ = [
-    "compact_files",
-    "create_scalar_index",
-    "merge_columns",
-    "merge_columns_df",
     "read_lance",
 ]
 
 
 @PublicAPI
 def read_lance(
-    uri: str | os.PathLike[str],
+    uri: str | os.PathLike[str] | None = None,
     io_config: Any = None,
     version: Any = None,
     asof: Any = None,
@@ -35,12 +30,22 @@ def read_lance(
     fragment_group_size: Any = None,
     include_fragment_id: Any = None,
     checkpoint: Any = None,
+    *,
+    table_id: list[str] | None = None,
+    namespace_impl: str | None = None,
+    namespace_properties: dict[str, str] | None = None,
 ) -> Any:
     """Create a DataFrame from a LanceDB table.
 
     Args:
         uri: The URI of the Lance table to read from. Accepts a local path or an
-            object-store URI like "s3://bucket/path".
+            object-store URI like "s3://bucket/path". Mutually exclusive with
+            the namespace parameters.
+        table_id: Table identifier within a Lance Namespace, e.g.
+            ``["catalog", "schema", "table"]``.
+        namespace_impl: Lance Namespace implementation, such as ``"dir"`` or
+            ``"rest"``.
+        namespace_properties: Properties for connecting to the namespace.
         io_config: A custom IOConfig to use when accessing LanceDB data. Defaults to None.
         version : optional, int | str
             If specified, load a specific version of the Lance dataset. Else, loads the
@@ -129,60 +134,7 @@ def read_lance(
         fragment_group_size=fragment_group_size,
         include_fragment_id=include_fragment_id,
         checkpoint=checkpoint,
+        table_id=table_id,
+        namespace_impl=namespace_impl,
+        namespace_properties=namespace_properties,
     )
-
-
-def merge_columns(*args: Any, **kwargs: Any) -> Any:
-    """This method is deprecated and will be removed in a future release.
-
-    Please use ``daft_lance.merge_columns`` from the [`daft-lance`](https://github.com/daft-engine/daft-lance) package instead: `pip install daft-lance`.
-    """
-    warnings.warn(
-        "daft.io.lance.merge_columns is deprecated and will be removed in a future release. "
-        "Please use daft_lance.merge_columns from the daft-lance package instead: pip install daft-lance",
-        category=DeprecationWarning,
-        stacklevel=2,
-    )
-    return _daft_lance.merge_columns(*args, **kwargs)
-
-
-def merge_columns_df(*args: Any, **kwargs: Any) -> Any:
-    """This method is deprecated and will be removed in a future release.
-
-    Please use ``daft_lance.merge_columns_df`` from the [`daft-lance`](https://github.com/daft-engine/daft-lance) package instead: `pip install daft-lance`.
-    """
-    warnings.warn(
-        "daft.io.lance.merge_columns_df is deprecated and will be removed in a future release. "
-        "Please use daft_lance.merge_columns_df from the daft-lance package instead: pip install daft-lance",
-        category=DeprecationWarning,
-        stacklevel=2,
-    )
-    return _daft_lance.merge_columns_df(*args, **kwargs)
-
-
-def create_scalar_index(*args: Any, **kwargs: Any) -> Any:
-    """This method is deprecated and will be removed in a future release.
-
-    Please use ``daft_lance.create_scalar_index`` from the [`daft-lance`](https://github.com/daft-engine/daft-lance) package instead: `pip install daft-lance`.
-    """
-    warnings.warn(
-        "daft.io.lance.create_scalar_index is deprecated and will be removed in a future release. "
-        "Please use daft_lance.create_scalar_index from the daft-lance package instead: pip install daft-lance",
-        category=DeprecationWarning,
-        stacklevel=2,
-    )
-    return _daft_lance.create_scalar_index(*args, **kwargs)
-
-
-def compact_files(*args: Any, **kwargs: Any) -> Any:
-    """This method is deprecated and will be removed in a future release.
-
-    Please use ``daft_lance.compact_files`` from the [`daft-lance`](https://github.com/daft-engine/daft-lance) package instead: `pip install daft-lance`.
-    """
-    warnings.warn(
-        "daft.io.lance.compact_files is deprecated and will be removed in a future release. "
-        "Please use daft_lance.compact_files from the daft-lance package instead: pip install daft-lance",
-        category=DeprecationWarning,
-        stacklevel=2,
-    )
-    return _daft_lance.compact_files(*args, **kwargs)
