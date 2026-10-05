@@ -71,6 +71,19 @@ def test_image_storage_field_order_is_not_significant(png_bytes):
     assert df.select(col("image").image_width().alias("width")).to_pydict() == {"width": [3]}
 
 
+def test_column_named_type_is_not_a_feature_discriminator(png_bytes):
+    table = _table(
+        {"image": [{"bytes": png_bytes, "path": None}], "_type": ["ordinary"]},
+        schema=pa.schema([pa.field("image", _STORAGE), pa.field("_type", pa.string())]),
+    )
+    features = {"image": {"_type": "Image"}, "_type": {"_type": "Value", "dtype": "string"}}
+    df = decode_huggingface_images(daft.from_arrow(table), features, "hf://datasets/org/repo", IOConfig())
+    assert df.select(col("image").image_width().alias("width"), "_type").to_pydict() == {
+        "width": [3],
+        "_type": ["ordinary"],
+    }
+
+
 def test_multiple_and_nested_images_preserve_other_fields_and_null_parent(png_bytes):
     table = _table(
         {
