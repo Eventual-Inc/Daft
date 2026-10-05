@@ -25,23 +25,41 @@ const TAB_TRIGGER_CLS = "rounded-none bg-transparent px-4 py-2.5 text-sm font-me
 const MetaField = ({
   label,
   value,
+  rows,
   href,
   mono,
   title,
   align = "left",
+  wrap = false,
 }: {
   label: string;
-  value: string;
+  value?: string;
+  /** Stacked label→value lines; takes precedence over `value`. */
+  rows?: { label: string; value: string }[];
   href?: string;
   mono?: boolean;
   title?: string;
   align?: "left" | "right";
+  wrap?: boolean;
 }) => (
   <div className={`min-w-0 ${align === "right" ? "text-right" : ""}`}>
     <p className={`${main.className} text-[10px] uppercase tracking-wider text-zinc-500 leading-none mb-1`}>
       {label}
     </p>
-    {href ? (
+    {rows ? (
+      <div className="space-y-0.5">
+        {rows.map((r) => (
+          <p
+            key={r.label}
+            className={`${main.className} text-sm ${mono ? "font-mono" : ""} text-zinc-100 truncate`}
+            title={`${r.label} ${r.value}`}
+          >
+            <span className="text-zinc-500">{r.label} </span>
+            {r.value}
+          </p>
+        ))}
+      </div>
+    ) : href ? (
       <a
         href={href}
         target="_blank"
@@ -52,7 +70,7 @@ const MetaField = ({
       </a>
     ) : (
       <p
-        className={`${main.className} text-base ${mono ? "font-mono" : ""} text-zinc-100 truncate`}
+        className={`${main.className} text-base ${mono ? "font-mono" : ""} text-zinc-100 ${wrap ? "break-all" : "truncate"}`}
         title={title ?? value}
       >
         {value}
@@ -69,8 +87,7 @@ function QueryPageInner() {
   const debug = useMemo(() => searchParams.has("debug"), [searchParams]);
   const [query, setQuery] = useState<QueryInfo | null>(null);
 
-  const engine = query ? getEngineName(query.runner) : null;
-  const isFlotilla = engine === "Flotilla";
+  const canShowTasksPanel = query?.runner.distributed === true;
 
   // Tab + tasks-sidebar state is URL-driven so deep links survive reload.
   // - `tab`: active tab id
@@ -244,28 +261,35 @@ function QueryPageInner() {
           <div className="flex-1 px-6 py-3 grid grid-cols-4 gap-x-8 gap-y-3 content-center overflow-hidden">
             {/* Row 1 */}
             <MetaField label="Query ID" value={query.id} mono />
-            <MetaField label="Engine" value={getEngineName(query.runner)} mono />
+            <MetaField label="Engine" value={getEngineName(query.runner.name)} mono />
             <MetaField label="Start Time" value={toHumanReadableDate(query.start_sec)} mono />
             <MetaField label="End Time" value={end_sec ? toHumanReadableDate(end_sec) : "—"} mono align="right" />
 
             {/* Row 2 */}
-            <MetaField label="Entrypoint" value={query.entrypoint || "—"} mono title={query.entrypoint} />
+            <MetaField label="Entrypoint" value={query.entrypoint || "—"} mono title={query.entrypoint} wrap />
             <MetaField label="Daft Version" value={query.daft_version || "—"} mono />
-            {query.ray_dashboard_url ? (
+            {query.runner.dashboard_url ? (
               <MetaField
-                label="Ray Dashboard"
-                href={query.ray_dashboard_url.startsWith("http") ? query.ray_dashboard_url : `http://${query.ray_dashboard_url}`}
-                value="Open in Ray"
+                label="Dashboard"
+                href={query.runner.dashboard_url.startsWith("http") ? query.runner.dashboard_url : `http://${query.runner.dashboard_url}`}
+                value="Open Dashboard"
               />
             ) : (
               <div />
             )}
-            {(query.python_version || query.ray_version) ? (
+            {(query.python_version || query.runner.version) ? (
               <MetaField
                 label="Versions"
-                value={[query.python_version && `Python ${query.python_version}`, query.ray_version && `Ray ${query.ray_version}`].filter(Boolean).join(" | ")}
-                mono
                 align="right"
+                mono
+                rows={[
+                  query.python_version && { label: "Python", value: query.python_version },
+                  query.runner.version && {
+                    // "Ray (Flotilla)" -> "Ray"; the Engine cell already shows "Flotilla".
+                    label: query.runner.name.split(" (")[0],
+                    value: query.runner.version,
+                  },
+                ].filter(Boolean) as { label: string; value: string }[]}
               />
             ) : (
               <div />
@@ -320,16 +344,17 @@ function QueryPageInner() {
                       exec_state={query.state as ExecutingState}
                       highlightedNodeId={nodeFilter}
                       hoveredNodeIds={hoveredNodeIds}
-                      onViewTasks={isFlotilla ? handleViewTasksForNode : undefined}
-                      tasksOpen={isFlotilla && tasksOpen}
-                      onOpenTasks={isFlotilla ? handleOpenTasks : undefined}
+                      onViewTasks={canShowTasksPanel ? handleViewTasksForNode : undefined}
+                      tasksOpen={canShowTasksPanel && tasksOpen}
+                      onOpenTasks={canShowTasksPanel ? handleOpenTasks : undefined}
                       queryStatus={query.state.status}
                     />
                   </div>
-                  {isFlotilla && tasksOpen && queryId && (
+                  {canShowTasksPanel && tasksOpen && queryId && (
                     <div className="w-1/2 min-w-[940px] max-w-[1200px] flex-shrink-0 border-l border-zinc-800 h-full">
                       <TasksSidebar
                         exec_state={query.state as ExecutingState}
+                        runner={query.runner}
                         nodeFilter={nodeFilter}
                         onClearFilter={handleClearNodeFilter}
                         onSelectNode={handleSelectNode}

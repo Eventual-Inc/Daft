@@ -23,7 +23,7 @@ impl DebugSubscriber {
         eprintln!(
             "query_start query_id={} runner={} unoptimized_plan=\n{}",
             event.header.query_id,
-            event.metadata.runner,
+            event.metadata.runner.name,
             event.metadata.unoptimized_plan.as_ref()
         );
         Ok(())

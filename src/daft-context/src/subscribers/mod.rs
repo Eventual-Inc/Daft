@@ -17,16 +17,23 @@ pub use events::Event;
 
 use crate::subscribers::events::EventHeader;
 
+#[derive(Debug, Clone)]
+pub struct RunnerInfo {
+    pub name: String,
+    pub version: Option<String>,
+    pub distributed: bool,
+    pub dashboard_url: Option<String>,
+    pub task_events_enabled: Option<bool>,
+}
+
 #[derive(Debug)]
 pub struct QueryMetadata {
     pub output_schema: SchemaRef,
     pub unoptimized_plan: QueryPlan,
-    pub runner: String,
-    pub ray_dashboard_url: Option<String>,
+    pub runner: RunnerInfo,
     pub entrypoint: Option<String>,
     pub python_version: Option<String>,
     pub daft_version: Option<String>,
-    pub ray_version: Option<String>,
 }
 
 #[derive(Debug, Clone)]
