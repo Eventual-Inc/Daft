@@ -28,7 +28,7 @@ def _image_paths(features: Any, prefix: tuple[str, ...] = ()) -> set[tuple[str, 
         return set()
     if features.get("_type") == "Image":
         return {prefix}
-    if "_type" in features:
+    if isinstance(features.get("_type"), str):
         if _contains_image(features):
             raise NotImplementedError(
                 "decode_images does not yet support wrapped/sequence HF images; retain raw structs"
