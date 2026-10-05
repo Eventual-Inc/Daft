@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import io
+import json
+import os
+import subprocess
+import sys
 import tarfile
 import threading
 from functools import partial
@@ -144,6 +148,53 @@ def test_read_webdataset_directory_and_multiple_shards(tmp_path: Path) -> None:
 
     assert result["__key__"] == ["a", "b"]
     assert result["txt"] == ["first", "second"]
+
+
+@pytest.mark.parametrize(("max_parallel", "limit"), [(8, None), (16, None), (16, 5)])
+def test_read_webdataset_parallel_scans_do_not_deadlock(tmp_path: Path, max_parallel: int, limit: int | None) -> None:
+    # A child process lets a regression fail with a timeout instead of blocking
+    # the test suite's I/O runtime permanently.
+    expected = []
+    for shard in range(max_parallel):
+        values = [f"shard-{shard}-sample-{sample}" for sample in range(8)]
+        expected.extend(values)
+        _write_tar(
+            tmp_path / f"{shard:03d}.tar",
+            [(f"{sample:06d}.txt", value.encode()) for sample, value in enumerate(values)],
+        )
+
+    script = """
+import json
+import sys
+import daft
+
+daft.set_runner_native()
+daft.set_execution_config(scantask_max_parallel=int(sys.argv[2]))
+df = daft.read_webdataset(sys.argv[1], batch_size=1)
+if sys.argv[3] != "None":
+    df = df.limit(int(sys.argv[3]))
+print(json.dumps(df.collect().to_pydict()["txt"]))
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script, str(tmp_path), str(max_parallel), str(limit)],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=True,
+        env={**os.environ, "DAFT_RUNNER": "native"},
+    )
+    actual = json.loads(result.stdout)
+    if limit is None:
+        assert sorted(actual) == sorted(expected)
+        # Shards can arrive in any order, but each iterator must stay sequential.
+        for shard in range(max_parallel):
+            assert [value for value in actual if value.startswith(f"shard-{shard}-")] == [
+                value for value in expected if value.startswith(f"shard-{shard}-")
+            ]
+    else:
+        assert len(actual) == limit
+        assert len(set(actual)) == limit
+        assert set(actual).issubset(expected)
 
 
 def test_read_webdataset_preserves_multipart_suffixes(tmp_path: Path) -> None:
