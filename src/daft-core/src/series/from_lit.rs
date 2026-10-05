@@ -345,14 +345,18 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 })
                 .collect::<(Vec<_>, Vec<_>)>();
 
-            let data_array = ListArray::from_series("data", data)?.into_series();
-            let shape_array = ListArray::from_vec("shape", shapes).into_series();
+            if data.iter().all(Option::is_none) {
+                Series::full_null("literal", &downcasted, len)
+            } else {
+                let data_array = ListArray::from_series("data", data)?.into_series();
+                let shape_array = ListArray::from_vec("shape", shapes).into_series();
 
-            let nulls = data_array.nulls().cloned();
-            let physical =
-                StructArray::new(field.to_physical(), vec![data_array, shape_array], nulls);
+                let nulls = data_array.nulls().cloned();
+                let physical =
+                    StructArray::new(field.to_physical(), vec![data_array, shape_array], nulls);
 
-            TensorArray::new(field, physical).into_series()
+                TensorArray::new(field, physical).into_series()
+            }
         }
         DataType::SparseTensor(..) => {
             let (values, indices, shapes) = values
@@ -365,18 +369,22 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 })
                 .collect::<(Vec<_>, Vec<_>, Vec<_>)>();
 
-            let values_array = ListArray::from_series("values", values)?.into_series();
-            let indices_array = ListArray::from_series("indices", indices)?.into_series();
-            let shape_array = ListArray::from_vec("shape", shapes).into_series();
+            if values.iter().all(Option::is_none) {
+                Series::full_null("literal", &downcasted, len)
+            } else {
+                let values_array = ListArray::from_series("values", values)?.into_series();
+                let indices_array = ListArray::from_series("indices", indices)?.into_series();
+                let shape_array = ListArray::from_vec("shape", shapes).into_series();
 
-            let nulls = values_array.nulls().cloned();
-            let physical = StructArray::new(
-                field.to_physical(),
-                vec![values_array, indices_array, shape_array],
-                nulls,
-            );
+                let nulls = values_array.nulls().cloned();
+                let physical = StructArray::new(
+                    field.to_physical(),
+                    vec![values_array, indices_array, shape_array],
+                    nulls,
+                );
 
-            SparseTensorArray::new(field, physical).into_series()
+                SparseTensorArray::new(field, physical).into_series()
+            }
         }
         DataType::Embedding(ref inner_dtype, ref size) => {
             let (nulls, data): (Vec<_>, Vec<_>) = values
@@ -422,9 +430,13 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 })
                 .collect::<DaftResult<Vec<_>>>()?;
 
-            let physical = ListArray::from_series("literal", data)?;
+            if data.iter().all(Option::is_none) {
+                Series::full_null("literal", &downcasted, len)
+            } else {
+                let physical = ListArray::from_series("literal", data)?;
 
-            MapArray::new(field, physical).into_series()
+                MapArray::new(field, physical).into_series()
+            }
         }
         DataType::Image(image_mode) => {
             let data =
@@ -503,6 +515,7 @@ impl From<Literal> for Series {
 
 #[cfg(test)]
 mod test {
+    use common_error::DaftResult;
     use common_image::Image;
     use image::{GrayImage, RgbaImage};
     use indexmap::indexmap;
@@ -634,5 +647,25 @@ mod test {
         let values = vec![Literal::UInt64(1), Literal::Utf8("test".to_string())];
         let actual = Series::from_literals(values);
         assert!(actual.is_err());
+    }
+
+    #[rstest]
+    #[case::tensor(DataType::Tensor(Box::new(DataType::Float32)))]
+    #[case::sparse_tensor(DataType::SparseTensor(Box::new(DataType::Float32), false))]
+    #[case::map(DataType::Map { key: Box::new(DataType::Utf8), value: Box::new(DataType::Int64) })]
+    fn test_all_null_nested_literals(#[case] dtype: DataType) {
+        let values = vec![Literal::Null, Literal::Null];
+        let series = super::series_from_literals_iter(
+            values.into_iter().map(DaftResult::Ok),
+            Some(dtype.clone()),
+        )
+        .unwrap();
+
+        assert_eq!(series.data_type(), &dtype);
+        assert_eq!(series.len(), 2);
+        assert_eq!(
+            series.to_literals().collect::<Vec<_>>(),
+            vec![Literal::Null, Literal::Null]
+        );
     }
 }
