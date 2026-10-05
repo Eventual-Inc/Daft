@@ -668,4 +668,27 @@ mod test {
             vec![Literal::Null, Literal::Null]
         );
     }
+
+    #[rstest]
+    #[case::tensor(DataType::Tensor(Box::new(DataType::Float32)))]
+    #[case::sparse_tensor(DataType::SparseTensor(Box::new(DataType::Float32), false))]
+    #[case::map(DataType::Map { key: Box::new(DataType::Utf8), value: Box::new(DataType::Int64) })]
+    fn test_all_failed_nested_literals_surface_row_errors(#[case] dtype: DataType) {
+        let values: Vec<DaftResult<Literal>> = vec![
+            Err(common_error::DaftError::ValueError(
+                "udf failed on row 0".to_string(),
+            )),
+            Err(common_error::DaftError::ValueError(
+                "udf failed on row 1".to_string(),
+            )),
+        ];
+        let err = super::series_from_literals_iter(values.into_iter(), Some(dtype))
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("Error processing some rows"), "{err}");
+        assert!(err.contains("udf failed on row 0"), "{err}");
+        assert!(err.contains("udf failed on row 1"), "{err}");
+        assert!(!err.contains("concat"), "{err}");
+    }
 }
