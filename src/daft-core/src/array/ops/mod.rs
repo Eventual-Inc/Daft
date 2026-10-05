@@ -70,7 +70,7 @@ mod variance;
 use std::hash::BuildHasher;
 
 pub use hll_sketch::HLL_SKETCH_DTYPE;
-pub use sort::{build_multi_array_bicompare, build_multi_array_compare};
+pub use sort::{DynComparator, build_multi_array_bicompare, build_multi_array_compare};
 
 use crate::count_mode::CountMode;
 
