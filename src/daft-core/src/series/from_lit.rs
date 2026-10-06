@@ -339,13 +339,17 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
             }
         }
         DataType::Tensor(_) => {
+            let mut any_valid = false;
             let (data, shapes) = values
                 .map(|(i, v)| {
-                    unwrap_inner!(v, i, Literal::Tensor { data, shape } => (data, shape)).unzip()
+                    let row =
+                        unwrap_inner!(v, i, Literal::Tensor { data, shape } => (data, shape));
+                    any_valid |= row.is_some();
+                    row.unzip()
                 })
                 .collect::<(Vec<_>, Vec<_>)>();
 
-            if data.iter().all(Option::is_none) {
+            if !any_valid {
                 Series::full_null("literal", &downcasted, len)
             } else {
                 let data_array = ListArray::from_series("data", data)?.into_series();
@@ -359,17 +363,20 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
             }
         }
         DataType::SparseTensor(..) => {
+            let mut any_valid = false;
             let (values, indices, shapes) = values
-
                 .map(|(i, v)| {
                     match unwrap_inner!(v, i, Literal::SparseTensor { values, indices, shape, .. } => (values, indices, shape)) {
-                        Some((v, i, s)) => (Some(v), Some(i), Some(s)),
+                        Some((v, i, s)) => {
+                            any_valid = true;
+                            (Some(v), Some(i), Some(s))
+                        }
                         None => (None, None, None)
                     }
                 })
                 .collect::<(Vec<_>, Vec<_>, Vec<_>)>();
 
-            if values.iter().all(Option::is_none) {
+            if !any_valid {
                 Series::full_null("literal", &downcasted, len)
             } else {
                 let values_array = ListArray::from_series("values", values)?.into_series();
@@ -409,10 +416,12 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
             key: ref key_dtype,
             value: ref value_dtype,
         } => {
+            let mut any_valid = false;
             let data = values
                 .map(|(i, v)| {
-                    unwrap_inner!(v, i, Literal::Map { keys, values } => (keys, values))
-                        .map(|(k, v)| {
+                    let row = unwrap_inner!(v, i, Literal::Map { keys, values } => (keys, values));
+                    any_valid |= row.is_some();
+                    row.map(|(k, v)| {
                             Ok(StructArray::new(
                                 field
                                     .to_physical()
@@ -430,7 +439,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 })
                 .collect::<DaftResult<Vec<_>>>()?;
 
-            if data.iter().all(Option::is_none) {
+            if !any_valid {
                 Series::full_null("literal", &downcasted, len)
             } else {
                 let physical = ListArray::from_series("literal", data)?;
