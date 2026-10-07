@@ -55,6 +55,7 @@ Daft exports the following metrics.
 | Metric | Type | Labels | Description |
 | --- | --- | --- | --- |
 | `daft.bytes.read` | Counter | `node.id`, `node.type` | Total bytes read by source/scan operators. |
+| `daft.io.requests` | Counter | `node.id`, `node.type` | Total I/O requests (GET + HEAD + LIST) issued by source/scan operators. |
 | `daft.bytes.written` | Counter | `node.id`, `node.type` | Total bytes written by write sinks. |
 | `daft.duration` | Counter | `node.id`, `node.type` | Accumulated operator CPU time in microseconds. |
 | `daft.rows.in` | Counter | `node.id`, `node.type` | Total rows consumed by an operator. |
@@ -66,4 +67,4 @@ Daft exports the following metrics.
 | `daft.task.failed` | Counter | `node.id`, `node.type` | Total failed tasks. |
 
 !!! info
-    The following metrics are emitted only in distributed (Ray) execution: `daft.bytes.read`, `daft.task.active`, `daft.task.cancelled`, `daft.task.completed`, `daft.task.failed`.
+    The following metrics are emitted only in distributed (Ray) execution: `daft.bytes.read`, `daft.io.requests`, `daft.task.active`, `daft.task.cancelled`, `daft.task.completed`, `daft.task.failed`.

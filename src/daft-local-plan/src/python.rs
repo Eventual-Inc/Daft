@@ -144,6 +144,12 @@ impl PyExecutionStats {
     }
 }
 
+impl PyExecutionStats {
+    pub fn inner(&self) -> &ExecutionStats {
+        &self.inner
+    }
+}
+
 impl From<ExecutionStats> for PyExecutionStats {
     fn from(inner: ExecutionStats) -> Self {
         Self {
