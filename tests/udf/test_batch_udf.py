@@ -379,6 +379,24 @@ def test_async_batch_udf_max_concurrency(max_concurrency):
     assert actual == {"x": [1, 2, 3]}
 
 
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray", reason="Tests shared worker pipelines with empty shuffle partitions"
+)
+def test_async_batch_udf_empty_partitions_keep_pipeline_alive():
+    @daft.func.batch(return_dtype=DataType.int64(), batch_size=8, use_process=False, max_concurrency=1)
+    async def delayed_identity(x: Series) -> list[int]:
+        await asyncio.sleep(0.01)
+        return x.to_pylist()
+
+    # Most shuffle partitions are empty. Their Flush must not terminate the
+    # filter pipeline reused by subsequent partitions on the same worker.
+    df = daft.from_pydict({"x": list(range(8)), "key": [i % 7 for i in range(8)]})
+    df = df.repartition(40, "key").with_column("y", delayed_identity(col("x")))
+    df = df.where(col("y") % 2 == 0).repartition(20, "key")
+    actual = df.to_pydict()
+    assert sorted(actual["y"]) == [0, 2, 4, 6]
+
+
 def test_sync_batch_func_max_concurrency_raises():
     with pytest.raises(ValueError, match="max_concurrency.*synchronous"):
 
