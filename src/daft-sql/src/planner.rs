@@ -1825,24 +1825,25 @@ impl SQLPlanner<'_> {
                 expr,
                 substring_from,
                 substring_for,
-                special: true, // We only support SUBSTRING(expr, start, length) syntax
                 shorthand,
+                ..
             } => {
-                let (Some(substring_from), Some(substring_for)) = (substring_from, substring_for)
-                else {
-                    unsupported_sql_err!("SUBSTRING")
-                };
+                if substring_from.is_none() && substring_for.is_none() {
+                    invalid_operation_err!("SUBSTRING requires a start position or a length");
+                }
 
                 let expr = self.plan_expr(expr)?;
-                let start = self.plan_expr(substring_from)?;
-                let length = self.plan_expr(substring_for)?;
-
-                let start = if *shorthand { start } else { start.sub(lit(1)) };
+                let start = match substring_from {
+                    Some(from) if *shorthand => self.plan_expr(from)?,
+                    Some(from) => self.plan_expr(from)?.sub(lit(1)),
+                    None => lit(0),
+                };
+                let length = match substring_for {
+                    Some(for_expr) => self.plan_expr(for_expr)?,
+                    None => null_lit(),
+                };
 
                 Ok(daft_functions_utf8::substr(expr, start, length))
-            }
-            SQLExpr::Substring { special: false, .. } => {
-                unsupported_sql_err!("`SUBSTRING(expr [FROM start] [FOR len])` syntax")
             }
             SQLExpr::Trim { .. } => unsupported_sql_err!("TRIM"),
             SQLExpr::Overlay { .. } => unsupported_sql_err!("OVERLAY"),
