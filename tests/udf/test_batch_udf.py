@@ -412,6 +412,27 @@ def test_async_batch_udf_respects_concurrency_limit(max_concurrency, batch_size)
     assert 1 <= max(actual["peak"]) <= max_concurrency
 
 
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Tests per-partition async task overlap")
+def test_async_batch_udf_allows_concurrent_calls():
+    @daft.cls(use_process=False)
+    class Overlap:
+        def __init__(self):
+            self.started = 0
+            self.both_started = asyncio.Event()
+
+        @daft.method.batch(return_dtype=DataType.int64(), batch_size=1)
+        async def run(self, x: Series) -> Series:
+            self.started += 1
+            if self.started == 2:
+                self.both_started.set()
+            await asyncio.wait_for(self.both_started.wait(), timeout=5)
+            return x
+
+    df = daft.from_pydict({"x": [1, 2]})
+    actual = df.with_column("value", Overlap().run.with_concurrency(2)(df["x"])).to_pydict()
+    assert sorted(zip(actual["x"], actual["value"])) == [(1, 1), (2, 2)]
+
+
 def test_sync_batch_func_max_concurrency_raises():
     with pytest.raises(ValueError, match="max_concurrency.*synchronous"):
 
