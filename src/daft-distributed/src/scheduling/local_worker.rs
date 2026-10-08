@@ -31,7 +31,7 @@ use super::{
         SwordfishTask, Task, TaskContext, TaskDetails, TaskResourceRequest, TaskResultHandle,
         TaskStatus,
     },
-    worker::{Worker, WorkerId, WorkerManager},
+    worker::{AutoscaleDemandId, Worker, WorkerId, WorkerManager},
 };
 use crate::pipeline_node::MaterializedOutput;
 
@@ -330,7 +330,11 @@ impl WorkerManager for LocalSwordfishWorkerManager {
             .collect())
     }
 
-    fn try_autoscale(&self, _resource_requests: Vec<TaskResourceRequest>) -> DaftResult<()> {
+    fn try_autoscale(
+        &self,
+        _demand_id: AutoscaleDemandId,
+        _resource_requests: Vec<TaskResourceRequest>,
+    ) -> DaftResult<()> {
         Ok(())
     }
 

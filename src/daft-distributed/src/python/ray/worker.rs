@@ -130,13 +130,19 @@ impl RaySwordfishWorker {
     }
 
     #[allow(dead_code)]
-    pub fn shutdown(&self, py: Python<'_>) {
+    pub fn shutdown(&self, py: Python<'_>) -> DaftResult<()> {
         self.ray_worker_handle
-            .call_method0(py, pyo3::intern!(py, "shutdown"))
-            .expect("Failed to shutdown RaySwordfishWorker");
+            .call_method0(py, pyo3::intern!(py, "shutdown"))?;
+        Ok(())
     }
 
-    pub fn release(&mut self, py: Python<'_>) {
+    /// Attempt to shut this worker's actor down.
+    ///
+    /// Returns `Ok(false)` when the worker picked up work after being selected
+    /// for retirement, and `Err` when the actor shutdown itself failed. In both
+    /// cases the worker is still alive and usable, so the caller must put it
+    /// back into the manager's state rather than dropping it.
+    pub fn release(&mut self, py: Python<'_>) -> DaftResult<bool> {
         let inflight = self.active_task_details.len();
         if inflight > 0 {
             tracing::warn!(
@@ -145,12 +151,17 @@ impl RaySwordfishWorker {
                 inflight_tasks = inflight,
                 "Cannot release worker because it has active tasks."
             );
-            return;
+            return Ok(false);
         }
 
         self.set_state(ActorState::Releasing);
-        self.shutdown(py);
+        if let Err(e) = self.shutdown(py) {
+            // The actor is still out there; hand it back in a usable state.
+            self.set_state(ActorState::Idle);
+            return Err(e);
+        }
         self.set_state(ActorState::Released);
+        Ok(true)
     }
 }
 

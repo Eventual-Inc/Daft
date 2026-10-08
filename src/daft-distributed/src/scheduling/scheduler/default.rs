@@ -48,7 +48,7 @@ impl<T: Task> DefaultScheduler<T> {
     fn try_schedule_spread_task(&self, task: &T) -> Option<WorkerId> {
         self.worker_snapshots
             .iter()
-            .filter(|(_, worker)| worker.can_schedule_task(task))
+            .filter(|(_, worker)| worker.accepts_new_work() && worker.can_schedule_task(task))
             .max_by_key(|(_, worker)| {
                 (worker.available_num_cpus() + worker.available_num_gpus()) as usize
             })
@@ -65,6 +65,11 @@ impl<T: Task> DefaultScheduler<T> {
     ) -> Option<WorkerId> {
         if let Some(worker) = self.worker_snapshots.get(worker_id)
             && worker.can_schedule_task(task)
+            // A draining worker is on its way out, so prefer somewhere else whenever
+            // we have that choice. Hard affinity has no alternative: refusing to place
+            // here would strand the task forever, and the worker is still alive and
+            // gets taken out of draining as soon as it picks the task up.
+            && (!soft || worker.accepts_new_work())
         {
             return Some(worker.worker_id.clone());
         }
@@ -91,18 +96,23 @@ impl<T: Task> DefaultScheduler<T> {
             return false;
         }
 
-        // If there are no workers, we need to autoscale
-        if self.worker_snapshots.is_empty() {
+        // Draining workers are on their way out, so their capacity must not be counted
+        // as usable here: otherwise a fully-draining pool looks fully provisioned and we
+        // never ask for replacements. Requesting a scale-up also makes the backend
+        // cancel the in-flight drains, which resolves this in our favor.
+        let total_capacity: usize = self
+            .worker_snapshots
+            .values()
+            .filter(|worker| worker.accepts_new_work())
+            .map(|worker| worker.total_num_cpus() as usize)
+            .sum();
+
+        // If there is no usable capacity, we need to autoscale
+        if total_capacity == 0 {
             return true;
         }
 
         // If the ratio of pending tasks to total capacity is greater than the autoscaling threshold, we need to autoscale
-        let total_capacity: usize = self
-            .worker_snapshots
-            .values()
-            .map(|worker| worker.total_num_cpus() as usize)
-            .sum();
-
         let ratio = self.pending_tasks.len() as f64 / total_capacity as f64;
 
         ratio > self.autoscaling_threshold
@@ -175,7 +185,7 @@ mod tests {
     use crate::scheduling::{
         scheduler::test_utils::{
             create_schedulable_task, create_spread_task, create_worker_affinity_task,
-            setup_scheduler, setup_workers,
+            setup_scheduler, setup_scheduler_with_draining, setup_workers,
         },
         tests::{MockTask, MockTaskBuilder},
         worker::tests::MockWorker,
@@ -735,5 +745,75 @@ mod tests {
 
         // Should not request autoscaling
         assert!(scheduler.get_autoscaling_request().is_none());
+    }
+
+    #[test]
+    fn test_default_scheduler_spread_avoids_draining_worker() {
+        let worker_1: WorkerId = Arc::from("worker1");
+        let worker_2: WorkerId = Arc::from("worker2");
+
+        // worker1 has the most capacity, but is being retired.
+        let workers = setup_workers(&[(worker_1.clone(), 10), (worker_2.clone(), 1)]);
+        let mut scheduler: DefaultScheduler<MockTask> =
+            setup_scheduler_with_draining(&workers, std::slice::from_ref(&worker_1));
+
+        scheduler.enqueue_tasks(vec![create_spread_task(Some(1))]);
+        let (result, _) = scheduler.schedule_tasks();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].worker_id, worker_2);
+    }
+
+    #[test]
+    fn test_default_scheduler_soft_affinity_falls_back_off_draining_worker() {
+        let worker_1: WorkerId = Arc::from("worker1");
+        let worker_2: WorkerId = Arc::from("worker2");
+
+        let workers = setup_workers(&[(worker_1.clone(), 2), (worker_2.clone(), 2)]);
+        let mut scheduler: DefaultScheduler<MockTask> =
+            setup_scheduler_with_draining(&workers, std::slice::from_ref(&worker_1));
+
+        // Soft affinity has an alternative, so it must not pin work onto a worker
+        // that is on its way out.
+        scheduler.enqueue_tasks(vec![create_worker_affinity_task(&worker_1, true, Some(1))]);
+        let (result, _) = scheduler.schedule_tasks();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].worker_id, worker_2);
+    }
+
+    #[test]
+    fn test_default_scheduler_hard_affinity_still_schedules_on_draining_worker() {
+        let worker_1: WorkerId = Arc::from("worker1");
+        let worker_2: WorkerId = Arc::from("worker2");
+
+        let workers = setup_workers(&[(worker_1.clone(), 2), (worker_2, 2)]);
+        let mut scheduler: DefaultScheduler<MockTask> =
+            setup_scheduler_with_draining(&workers, std::slice::from_ref(&worker_1));
+
+        // Hard affinity has no fallback worker: skipping the draining target would
+        // leave the task permanently unschedulable.
+        scheduler.enqueue_tasks(vec![create_worker_affinity_task(&worker_1, false, Some(1))]);
+        let (result, _) = scheduler.schedule_tasks();
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].worker_id, worker_1);
+        assert_eq!(scheduler.num_pending_tasks(), 0);
+    }
+
+    #[test]
+    fn test_default_scheduler_fully_draining_pool_requests_autoscale() {
+        let worker_1: WorkerId = Arc::from("worker1");
+
+        let workers = setup_workers(&[(worker_1.clone(), 10)]);
+        let mut scheduler: DefaultScheduler<MockTask> =
+            setup_scheduler_with_draining(&workers, std::slice::from_ref(&worker_1));
+
+        // Capacity that is being retired must not count as provisioned capacity.
+        scheduler.enqueue_tasks(vec![create_spread_task(Some(1))]);
+        let (result, _) = scheduler.schedule_tasks();
+
+        assert!(result.is_empty());
+        assert!(scheduler.get_autoscaling_request().is_some());
     }
 }
