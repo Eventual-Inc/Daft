@@ -498,7 +498,7 @@ fn str_to_unit(s: &str) -> f64 {
     let mut acc = 0.0f64;
     let mut scale = 1.0f64 / 256.0;
     for &b in s.as_bytes().iter().take(8) {
-        acc += f64::from(b) * scale;
+        acc = f64::from(b).mul_add(scale, acc);
         scale /= 256.0;
     }
     acc
