@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 import pandas as pd
 import pytest
@@ -41,7 +41,7 @@ def test_read_huggingface(path, sort_key):
     # Both load_dataset and daft.read_huggingface go through the HF Hub and can
     # be rate-limited (HTTP 429) on shared CI runners.
     ds = call_with_hf_retry(load_dataset, path)
-    expected = pd.concat([ds[s].with_format("arrow").to_pandas() for s in ds.keys()], ignore_index=True)
+    expected = pd.concat([ds[s].with_format("arrow").to_pandas() for s in ds], ignore_index=True)
 
     df = call_with_hf_retry(daft.read_huggingface, path)
     actual = df.to_pandas()
@@ -54,9 +54,12 @@ def test_read_huggingface_fallback_on_400_error():
     """Test that read_huggingface falls back to datasets library when parquet files return 400 error."""
     repo = "Eventual-Inc/sample-parquet"
 
-    # Mock read_parquet to raise a DaftCoreException with Status(400
+    # Mock conversion discovery to raise a DaftCoreException with Status(400
     # This matches the actual error format from HuggingFace when parquet files aren't ready
-    with patch("daft.io.huggingface.read_parquet") as mock_read_parquet:
+    with (
+        patch("daft.io.huggingface.parquet_files") as mock_read_parquet,
+        patch("daft.io.huggingface.source_files", side_effect=FileNotFoundError),
+    ):
         mock_read_parquet.side_effect = DaftCoreException(
             f"DaftError::External Unable to open file https://huggingface.co/api/datasets/{repo}/parquet: "
             f'reqwest::Error {{ kind: Status(400, None), url: "https://huggingface.co/api/datasets/{repo}/parquet" }}'
@@ -67,12 +70,11 @@ def test_read_huggingface_fallback_on_400_error():
         # (TLS handshake / connect timeouts) on shared CI runners.
         df = call_with_hf_retry(daft.read_huggingface, repo)
 
-        # Verify read_parquet was called with the correct HF path
-        mock_read_parquet.assert_called_once_with(f"hf://datasets/{repo}", io_config=None)
+        mock_read_parquet.assert_called_once_with(repo, None, None, False, ANY)
 
         # Load expected data using datasets library (all splits)
         ds = call_with_hf_retry(load_dataset, repo)
-        expected = pd.concat([ds[s].with_format("arrow").to_pandas() for s in ds.keys()], ignore_index=True)
+        expected = pd.concat([ds[s].with_format("arrow").to_pandas() for s in ds], ignore_index=True)
 
         # Compare the results
         actual = df.to_pandas()
@@ -89,7 +91,7 @@ def test_read_huggingface_webdataset_routes_to_webdataset_reader():
     assert result is sentinel
     mock_read_webdataset.assert_called_once_with(
         f"hf://datasets/{repo}/**/*.tar",
-        io_config=None,
+        io_config=ANY,
     )
 
 
@@ -98,11 +100,14 @@ def test_read_huggingface_parquet_format(format):
     repo = "Eventual-Inc/sample-parquet"
     sentinel = object()
 
-    with patch("daft.io.huggingface.read_parquet", return_value=sentinel) as mock_read_parquet:
+    with (
+        patch("daft.io.huggingface.parquet_files", return_value=["example.parquet"]),
+        patch("daft.io.huggingface.read_parquet", return_value=sentinel) as mock_read_parquet,
+    ):
         result = daft.read_huggingface(repo, format=format)
 
     assert result is sentinel
-    mock_read_parquet.assert_called_once_with(f"hf://datasets/{repo}", io_config=None)
+    mock_read_parquet.assert_called_once_with(["example.parquet"], io_config=ANY)
 
 
 @pytest.mark.integration()
@@ -119,8 +124,11 @@ def test_read_huggingface_multi_split_dataset():
     df_main = call_with_hf_retry(daft.read_huggingface, repo)
     main_result = df_main.to_pandas()
 
-    # Fallback path: mock read_parquet to force fallback to datasets library
-    with patch("daft.io.huggingface.read_parquet") as mock_read_parquet:
+    # Fallback path: mock conversion discovery to force the datasets library.
+    with (
+        patch("daft.io.huggingface.parquet_files") as mock_read_parquet,
+        patch("daft.io.huggingface.source_files", side_effect=FileNotFoundError),
+    ):
         mock_read_parquet.side_effect = DaftCoreException(
             f"DaftError::External Unable to open file https://huggingface.co/api/datasets/{repo}/parquet: "
             f'reqwest::Error {{ kind: Status(400, None), url: "https://huggingface.co/api/datasets/{repo}/parquet" }}'
