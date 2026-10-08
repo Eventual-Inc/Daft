@@ -9,10 +9,10 @@ from urllib.parse import urlsplit
 
 from daft.api_annotations import PublicAPI
 from daft.context import get_context
-from daft.daft import io_glob
 from daft.dependencies import pa, pads
 from daft.expressions import ExpressionsProjection, col, lit
 from daft.file import open_file
+from daft.filesystem import glob_path_with_stats
 from daft.io.source import DataSource, DataSourceTask
 from daft.recordbatch import RecordBatch
 from daft.schema import Schema
@@ -54,16 +54,17 @@ def _resolve_orc_paths(path: str | list[str], io_config: IOConfig | None) -> lis
             input_path = os.path.abspath(os.path.expanduser(input_path))
         # For paths without glob characters, native I/O tries an exact file
         # before listing a directory, including files without an .orc extension.
-        files = io_glob(input_path, io_config=io_config)
+        file_paths = glob_path_with_stats(input_path, file_format=None, io_config=io_config).file_paths
         is_glob = any(character in input_path for character in "*?[{")
-        is_file = len(files) == 1 and _is_same_file(input_path, files[0]["path"])
+        is_file = len(file_paths) == 1 and _is_same_file(input_path, file_paths[0])
         if not is_glob and not is_file:
-            files = io_glob(f"{input_path.rstrip('/')}/**/*.orc", io_config=io_config)
-        if not files:
+            file_paths = glob_path_with_stats(
+                f"{input_path.rstrip('/')}/**/*.orc", file_format=None, io_config=io_config
+            ).file_paths
+        if not file_paths:
             raise FileNotFoundError(f"No ORC files found for {input_path!r}")
-        for file_info in files:
-            file_path = file_info["path"]
-            if file_info["type"] == "File" and file_path not in seen:
+        for file_path in file_paths:
+            if file_path not in seen:
                 seen.add(file_path)
                 resolved_paths.append(file_path)
     return resolved_paths

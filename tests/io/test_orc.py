@@ -265,7 +265,7 @@ def test_read_orc_rejects_empty_string_before_io(orc_path: str, monkeypatch, kin
     def unexpected_glob(*args, **kwargs):
         pytest.fail("Empty filepaths must be rejected before filesystem access")
 
-    monkeypatch.setattr(_orc, "io_glob", unexpected_glob)
+    monkeypatch.setattr(_orc, "glob_path_with_stats", unexpected_glob)
     with pytest.raises(ValueError, match="empty ORC filepath"):
         daft.read_orc(paths[kind])
 
