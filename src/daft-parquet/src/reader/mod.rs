@@ -12,7 +12,7 @@ use arrow::{array::ArrayRef, datatypes::Schema as ArrowSchema};
 use chunk_source::{
     ChunkSource, ChunkSourceBuilder, LocalChunkSource, open_local_file, prepare_remote_chunk_source,
 };
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_runtime::{JoinSet, get_compute_runtime};
 use daft_core::prelude::*;
 use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr, optimization::get_required_columns};
@@ -314,6 +314,52 @@ struct RgInputs {
     pred_arrays: Vec<ArrayRef>,
 }
 
+/// How the prefilter recv loop exited (its `?` error paths return instead,
+/// relying on abort-on-drop to cancel the decoders).
+enum PrefilterExit {
+    /// Every decoder channel closed — must harvest before reporting success.
+    DecoderEof,
+    /// The row limit was hit mid-stream — remaining decoder output is unused.
+    LimitReached,
+}
+
+/// Finish the per-RG predicate-column decoders after the prefilter recv loop.
+///
+/// EOF is the only loop exit that reports success without having seen every
+/// decoder finish: a panicked decoder drops its channel sender, which
+/// `recv_one_chunk` cannot distinguish from a normal stream end. Reporting
+/// success there without harvesting would let the skip-padding in
+/// `build_rg_inputs` silently drop the unprocessed rows. So on EOF, join every
+/// decoder (panics surface as `Err`) and require that every selected row was
+/// processed. Early exits (limit reached, error) keep abort-on-drop instead:
+/// decoders may still be blocked in column I/O, their remaining output cannot
+/// affect the query, and waiting on them would only delay cancellation.
+///
+/// Callers must drop the column receivers first: decoders block on `tx.send`
+/// (capacity-1 channels), so joining with receivers alive deadlocks.
+async fn harvest_prefilter_decoders(
+    exit: PrefilterExit,
+    mut col_handles: JoinSet<DaftResult<()>>,
+    processed_rows: usize,
+    total_selected: usize,
+    path: &str,
+) -> DaftResult<()> {
+    match exit {
+        // Dropping the JoinSet aborts the remaining decoders.
+        PrefilterExit::LimitReached => return Ok(()),
+        // A new exit reason must explicitly choose: cancel or harvest.
+        PrefilterExit::DecoderEof => {}
+    }
+    col_handles.join_all().await?;
+    if processed_rows != total_selected {
+        return Err(DaftError::InternalError(format!(
+            "Parquet predicate prefilter on {path} ended early: processed {processed_rows} of \
+             {total_selected} selected rows"
+        )));
+    }
+    Ok(())
+}
+
 /// Build the per-RG input bundles for the streaming decoder.
 ///
 /// Without a pushed predicate prefilter, this just forwards offset/delete/limit
@@ -374,7 +420,7 @@ async fn build_rg_inputs(
             .map(|s| s.row_count())
             .unwrap_or_else(|| metadata.row_group(rg_idx).num_rows() as usize);
 
-        let (mut col_receivers, _col_handles) = spawn_col_decoders(
+        let (mut col_receivers, col_handles) = spawn_col_decoders(
             &plan.pred_col_indices,
             chunk_source,
             metadata,
@@ -392,9 +438,9 @@ async fn build_rg_inputs(
             .collect();
         let mut processed_rows = 0usize;
 
-        loop {
+        let exit = loop {
             let Some(chunks) = recv_one_chunk(&mut col_receivers).await? else {
-                break;
+                break PrefilterExit::DecoderEof;
             };
             let chunk_rows = chunks[0].len();
             let daft_pred =
@@ -419,11 +465,13 @@ async fn build_rg_inputs(
             processed_rows += chunk_rows;
             selected_rows_remaining -= selected_rows;
             if selected_rows_remaining == 0 {
-                break;
+                break PrefilterExit::LimitReached;
             }
-        }
-        // Dropping receivers closes the channels → spawned decoders abort.
+        };
+        // Receivers must close before harvesting: decoders block on `tx.send`
+        // (capacity-1 channels), so joining with receivers alive deadlocks.
         drop(col_receivers);
+        harvest_prefilter_decoders(exit, col_handles, processed_rows, total_selected, path).await?;
 
         // Concat per-col filtered chunks into one ArrayRef per col. Zero rows
         // processed (e.g. base_sel selected 0 rows) → empty array of the col's
@@ -645,4 +693,83 @@ pub async fn stream_parquet(
     let stream = build_rg_stream(ctx, rg_indices, rg_inputs);
 
     Ok((return_schema, apply_cross_rg_limit(stream, opts.num_rows)))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use common_error::{DaftError, DaftResult};
+    use common_runtime::JoinSet;
+    use tokio::time::timeout;
+
+    use super::{PrefilterExit, harvest_prefilter_decoders};
+
+    #[tokio::test]
+    async fn harvest_surfaces_decoder_panic_on_eof() {
+        let mut handles: JoinSet<DaftResult<()>> = JoinSet::new();
+        handles.spawn(async { panic!("injected decoder panic") });
+        let res =
+            harvest_prefilter_decoders(PrefilterExit::DecoderEof, handles, 10, 10, "test.parquet")
+                .await;
+        assert!(res.is_err(), "decoder panic must fail the prefilter");
+    }
+
+    #[tokio::test]
+    async fn harvest_rejects_missing_rows_on_eof() {
+        let mut handles: JoinSet<DaftResult<()>> = JoinSet::new();
+        handles.spawn(async { Ok(()) });
+        let res =
+            harvest_prefilter_decoders(PrefilterExit::DecoderEof, handles, 7, 10, "test.parquet")
+                .await;
+        assert!(matches!(res, Err(DaftError::InternalError(_))));
+    }
+
+    #[tokio::test]
+    async fn harvest_accepts_clean_eof() {
+        let mut handles: JoinSet<DaftResult<()>> = JoinSet::new();
+        handles.spawn(async { Ok(()) });
+        harvest_prefilter_decoders(PrefilterExit::DecoderEof, handles, 10, 10, "test.parquet")
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn harvest_joins_decoders_that_exit_on_closed_channel() {
+        // Guards the helper's contract for any caller: a decoder blocked on
+        // `tx.send` must exit Ok once the receiver drops, so harvesting after
+        // `drop(col_receivers)` cannot hang. (At the current EOF call site all
+        // senders are provably closed already; this is defense-in-depth.)
+        let (tx, rx) = tokio::sync::mpsc::channel::<DaftResult<()>>(1);
+        let mut handles: JoinSet<DaftResult<()>> = JoinSet::new();
+        handles.spawn(async move {
+            let _ = tx.send(Ok(())).await;
+            let _ = tx.send(Ok(())).await;
+            Ok(())
+        });
+        drop(rx);
+        timeout(
+            Duration::from_secs(5),
+            harvest_prefilter_decoders(PrefilterExit::DecoderEof, handles, 5, 5, "test.parquet"),
+        )
+        .await
+        .expect("harvest must not hang once receivers are dropped")
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn harvest_aborts_decoders_after_limit_early_stop() {
+        let mut handles: JoinSet<DaftResult<()>> = JoinSet::new();
+        handles.spawn(async {
+            futures::future::pending::<()>().await;
+            Ok(())
+        });
+        timeout(
+            Duration::from_secs(5),
+            harvest_prefilter_decoders(PrefilterExit::LimitReached, handles, 3, 10, "test.parquet"),
+        )
+        .await
+        .expect("limit early-stop must not wait for decoders")
+        .unwrap();
+    }
 }
