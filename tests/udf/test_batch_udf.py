@@ -8,6 +8,7 @@ import pytest
 import daft
 from daft import DataType, Series, col
 from daft.ai.utils import RetryAfterError
+from daft.recordbatch import MicroPartition, RecordBatch
 from tests.conftest import get_tests_daft_runner_name
 
 
@@ -377,6 +378,59 @@ def test_async_batch_udf_max_concurrency(max_concurrency):
     df = daft.from_pydict({"x": [1, 2, 3]})
     actual = df.select(async_batch_func(col("x"))).to_pydict()
     assert actual == {"x": [1, 2, 3]}
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Tests per-partition async task admission")
+@pytest.mark.parametrize("max_concurrency", [1, 2])
+@pytest.mark.parametrize("batch_size", [None, 1, 8])
+def test_async_batch_udf_respects_concurrency_limit(max_concurrency, batch_size):
+    @daft.cls(use_process=False)
+    class Counter:
+        def __init__(self):
+            self.active = 0
+            self.peak = 0
+
+        @daft.method.batch(return_dtype=DataType.int64(), batch_size=batch_size)
+        async def run(self, x: Series) -> list[int]:
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+            try:
+                await asyncio.sleep(0.01)
+                return [self.peak] * len(x)
+            finally:
+                self.active -= 1
+
+    partitions = [
+        MicroPartition._from_record_batches(
+            [RecordBatch.from_pydict({"x": [start, start + 1]}) for start in range(offset, offset + 10, 2)]
+        )
+        for offset in range(0, 40, 10)
+    ]
+    df = daft.DataFrame._from_micropartitions(*partitions)
+    actual = df.with_column("peak", Counter().run.with_concurrency(max_concurrency)(df["x"])).to_pydict()
+    assert sorted(actual["x"]) == list(range(40))
+    assert 1 <= max(actual["peak"]) <= max_concurrency
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Tests per-partition async task overlap")
+def test_async_batch_udf_allows_concurrent_calls():
+    @daft.cls(use_process=False)
+    class Overlap:
+        def __init__(self):
+            self.started = 0
+            self.both_started = asyncio.Event()
+
+        @daft.method.batch(return_dtype=DataType.int64(), batch_size=1)
+        async def run(self, x: Series) -> Series:
+            self.started += 1
+            if self.started == 2:
+                self.both_started.set()
+            await asyncio.wait_for(self.both_started.wait(), timeout=5)
+            return x
+
+    df = daft.from_pydict({"x": [1, 2]})
+    actual = df.with_column("value", Overlap().run.with_concurrency(2)(df["x"])).to_pydict()
+    assert sorted(zip(actual["x"], actual["value"])) == [(1, 1), (2, 2)]
 
 
 def test_sync_batch_func_max_concurrency_raises():
