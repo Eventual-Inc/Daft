@@ -7,6 +7,7 @@ from daft.api_annotations import PublicAPI
 from daft.context import get_context
 from daft.exceptions import DaftCoreException
 from daft.io._parquet import read_parquet
+from daft.io.huggingface._lerobot import warn_if_lerobot
 from daft.io.huggingface._metadata import parquet_files, repo_root, source_files
 from daft.io.webdataset import read_webdataset
 
@@ -112,6 +113,7 @@ def read_huggingface(
     if data_dir is not None and (data_dir.startswith("/") or ".." in data_dir.split("/")):
         raise ValueError("data_dir must be a relative repository directory without '..'")
     io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+    warn_if_lerobot(repo, revision, io_config)
 
     if format == "webdataset":
         if config_name is None and split is None and data_dir is None:
