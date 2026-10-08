@@ -569,14 +569,14 @@ impl GCSSource {
                 .jitter(Jitter::Bounded)
                 .retry_bounds(
                     Duration::from_millis(config.retry_initial_backoff_ms),
-                    Duration::from_secs(60),
+                    Duration::from_mins(1),
                 )
                 .build_with_max_retries(config.num_tries);
 
             let base_client = reqwest_middleware::reqwest::ClientBuilder::default()
                 .connect_timeout(Duration::from_millis(config.connect_timeout_ms))
                 .read_timeout(Duration::from_millis(config.read_timeout_ms))
-                .pool_idle_timeout(Duration::from_secs(60))
+                .pool_idle_timeout(Duration::from_mins(1))
                 .pool_max_idle_per_host(70)
                 .build()
                 .context(UnableToCreateClientSnafu)?;

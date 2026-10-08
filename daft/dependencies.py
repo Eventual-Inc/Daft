@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     import tensorflow as tf
     import torch
     import torchvision
+    import typesafe_sdk
     from pyarrow import flight
 else:
     av = LazyImport("av")
@@ -48,6 +49,7 @@ else:
     tf = LazyImport("tensorflow")
     torch = LazyImport("torch")
     torchvision = LazyImport("torchvision")
+    typesafe_sdk = LazyImport("typesafe_sdk")
 
 unity_catalog = LazyImport("daft.catalog.__unity._client")
 
@@ -73,5 +75,6 @@ __all__ = [
     "tf",
     "torch",
     "torchvision",
+    "typesafe_sdk",
     "unity_catalog",
 ]

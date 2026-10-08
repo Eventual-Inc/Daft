@@ -29,7 +29,7 @@ homepage = "https://www.daft.ai"
 repository = "https://github.com/Eventual-Inc/Daft"
 
 [project.optional-dependencies]
-all = ["daft[audio, aws, azure, clickhouse, deltalake, google, gravitino, hdf5, http, huggingface, iceberg, kafka, lance, mcap, numpy, openai, pandas, postgres, ray, sql, transformers, turbopuffer, unity, video]"]
+all = ["daft[audio, aws, azure, clickhouse, deltalake, google, gravitino, hdf5, http, huggingface, iceberg, jev, kafka, lance, mcap, numpy, openai, pandas, postgres, ray, sql, transformers, turbopuffer, unity, video]"]
 audio = ["soundfile >= 0.13.0,<0.14.0", "librosa >= 0.11.0,<0.12.0"]
 aws = ["boto3<1.44.0", "mypy-boto3-glue"]
 azure = ["fsspec<2026.8.0", "adlfs<2026.5.0"]
@@ -43,6 +43,7 @@ http = ["fsspec[http]<2026.8.0"]
 hudi = []
 huggingface = ["huggingface-hub<1.17.0", "datasets<4.9.0", "fsspec<2026.8.0"]
 iceberg = ["pyiceberg >= 0.7.0, != 0.9.1, != 0.10.0, <= 0.11.1"]
+jev = ["typesafe-sdk >= 0.7.2, < 0.8.0"]
 kafka = ["confluent-kafka"]
 lance = ["daft-lance>=0.5.0,<0.6.0"]
 # The reader is native. Retain the extra as a no-op for installation compatibility.
@@ -54,7 +55,7 @@ postgres = ["psycopg[binary]<3.4.0", "pgvector<0.5.0", "sqlglot<30.9.0", "connec
 ray = [
   # floor is 2.11: flotilla uses ray.exceptions.ActorUnavailableError, added in ray 2.11
   # Inherit existing Ray version. Get the "default" extra for the Ray dashboard.
-  'ray[data, client]>=2.11.0,<2.59.0'
+  'ray[data, client]>=2.11.0,<2.60.0'
 ]
 transformers = ["transformers<5.10.0", "sentence-transformers<5.6.0", "torch<2.13.0", "torchvision<0.28.0", "pillow==12.2.0"]
 # connectorx 0.4.4 is needed for pgvector support.
@@ -113,7 +114,7 @@ dev = [
   "pyarrow >= 16.0.0,<26.0.0",
   "pyarrow-stubs==20.0.0.20251215",
   # Ray
-  "ray[data, client]==2.58.0",
+  "ray[data, client]==2.59.0",
   # Lance
   "daft-lance==0.5.0",
   # Iceberg
@@ -151,6 +152,7 @@ dev = [
   "vllm==0.21.0; sys_platform == 'linux'",
   "openai==2.38.0",
   "google-genai==2.6.0",
+  "typesafe-sdk==0.7.2",
   # AV
   "av==17.0.1",
   "h5py==3.16.0",
