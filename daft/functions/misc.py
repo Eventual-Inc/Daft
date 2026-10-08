@@ -52,7 +52,7 @@ def monotonically_increasing_id() -> Expression:
 
 
 def uuid(version: Literal["v4", "v7"] = "v4") -> Expression:
-    """Generates a column of UUID strings.
+    """Generates a column of UUID values.
 
     Each call to `uuid()` generates a fresh UUID per row. Multiple calls in the same query
     (e.g. two separate columns) are independent and will produce different values.
@@ -85,10 +85,8 @@ def uuid(version: Literal["v4", "v7"] = "v4") -> Expression:
         <BLANKLINE>
         (Showing first 2 of 2 rows)
     """
-    if version == "v4":
-        return Expression._call_builtin_scalar_fn("uuid")
-    if version == "v7":
-        return Expression._call_builtin_scalar_fn("uuidv7")
+    if version in ("v4", "v7"):
+        return Expression._call_builtin_scalar_fn("uuid", version)
     raise ValueError("`version` must be 'v4' or 'v7'")
 
 
