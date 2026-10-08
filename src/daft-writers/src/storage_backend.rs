@@ -183,7 +183,12 @@ impl GravitinoStorageBackend {
         let source = io_client.get_source(root_dir).await?;
         let any = source.as_any_arc();
 
-        if let Ok(gravitino_source) = any.downcast::<daft_io::gravitino::GravitinoSource>() {
+        if let Ok(gravitino_source) = any.downcast::<daft_io::PythonSource>()
+            && matches!(
+                gravitino_source.source_type(),
+                daft_io::SourceType::Gravitino
+            )
+        {
             let (source_path, io_config) =
                 gravitino_source.resolve_url_and_config(root_dir).await?;
             let (_, target_root_dir) = daft_io::parse_url(&source_path)?;

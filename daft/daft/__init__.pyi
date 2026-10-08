@@ -2856,6 +2856,27 @@ def io_put(
     multithreaded_io: bool | None = None,
     io_config: IOConfig | None = None,
 ) -> None: ...
+def io_get(
+    path: str,
+    multithreaded_io: bool | None = None,
+    io_config: IOConfig | None = None,
+    range_start: int | None = None,
+    range_end: int | None = None,
+    suffix: int | None = None,
+) -> bytes: ...
+def io_get_size(
+    path: str,
+    multithreaded_io: bool | None = None,
+    io_config: IOConfig | None = None,
+) -> int: ...
+def io_ls(
+    path: str,
+    posix: bool,
+    continuation_token: str | None = None,
+    page_size: int | None = None,
+    multithreaded_io: bool | None = None,
+    io_config: IOConfig | None = None,
+) -> tuple[list[dict[str, Any]], str | None, bool]: ...
 
 class SystemInfo:
     """Accessor for system information."""

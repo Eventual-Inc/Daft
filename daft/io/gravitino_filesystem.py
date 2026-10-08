@@ -2,14 +2,161 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
 import logging
 import os
-from typing import Any
+import threading
+from typing import Any, Literal, cast
+from urllib.parse import urlsplit
 
-from daft.daft import io_put
+from daft.daft import io_get, io_get_size, io_ls, io_put
 from daft.dependencies import pa, pafs
-from daft.io import IOConfig
+from daft.io import GravitinoConfig, IOConfig
+from daft.io.extensions import IOExtension, IOFileInfo, IOFileType, IOListing, IOReadRange
+
+
+class GravitinoIOExtension(IOExtension):
+    """Gravitino implementation of Daft's async Python IO extension interface."""
+
+    def __init__(self, config: GravitinoConfig):
+        self._initialize(config)
+
+    def _initialize(self, config: GravitinoConfig) -> None:
+        if config.endpoint is None:
+            raise ValueError("GravitinoConfig.endpoint must be provided to create a Gravitino IO extension")
+        if config.metalake_name is None:
+            raise ValueError("GravitinoConfig.metalake_name must be provided to create a Gravitino IO extension")
+
+        from daft.catalog.__gravitino._client import GravitinoClient
+
+        self._config = config
+        auth_type = config.auth_type or "simple"
+        if auth_type not in ("simple", "oauth2"):
+            raise ValueError(f"Unsupported Gravitino auth type: {auth_type}")
+        self._client = GravitinoClient(
+            config.endpoint,
+            config.metalake_name,
+            auth_type=cast("Literal['simple', 'oauth2']", auth_type),
+            username=config.username,
+            password=config.password,
+            token=config.token,
+        )
+        self._filesets: dict[str, tuple[str, IOConfig]] = {}
+        self._lock = threading.Lock()
+
+    def __getstate__(self) -> dict[str, GravitinoConfig]:
+        return {"config": self._config}
+
+    def __setstate__(self, state: dict[str, GravitinoConfig]) -> None:
+        self._initialize(state["config"])
+
+    @staticmethod
+    def _parse_path(path: str) -> tuple[str, str, str]:
+        parsed = urlsplit(path)
+        parts = parsed.path.strip("/").split("/")
+        if parsed.scheme != "gvfs" or parsed.netloc != "fileset" or len(parts) < 3 or not all(parts[:3]):
+            raise FileNotFoundError(
+                "Expected Gravitino fileset path to be in the form "
+                f"`gvfs://fileset/catalog/schema/fileset/path`, instead found: {path}"
+            )
+        fileset_name = ".".join(parts[:3])
+        fileset_root = f"gvfs://fileset/{'/'.join(parts[:3])}"
+        relative_path = "/".join(parts[3:])
+        return fileset_name, fileset_root, relative_path
+
+    def _resolve_sync(self, path: str) -> tuple[str, IOConfig, str, str]:
+        fileset_name, fileset_root, relative_path = self._parse_path(path)
+        with self._lock:
+            resolved = self._filesets.get(fileset_name)
+            if resolved is None:
+                fileset = self._client.load_fileset(fileset_name)
+                io_config = fileset.io_config or IOConfig()
+                storage_root = fileset.fileset_info.storage_location.rstrip("/")
+                resolved = (storage_root, io_config)
+                self._filesets[fileset_name] = resolved
+
+        storage_root, io_config = resolved
+        source_path = storage_root if not relative_path else f"{storage_root}/{relative_path}"
+        return source_path, io_config, fileset_root, storage_root
+
+    async def resolve_url(self, path: str) -> tuple[str, IOConfig]:
+        source_path, io_config, _, _ = await asyncio.to_thread(self._resolve_sync, path)
+        return source_path, io_config
+
+    async def supports_range(self, path: str) -> bool:
+        return True
+
+    async def get(self, path: str, byte_range: IOReadRange | None = None) -> bytes:
+        source_path, io_config, _, _ = await asyncio.to_thread(self._resolve_sync, path)
+        kwargs: dict[str, int] = {}
+        if byte_range is not None:
+            if byte_range.suffix is not None:
+                kwargs["suffix"] = byte_range.suffix
+            else:
+                assert byte_range.start is not None
+                kwargs["range_start"] = byte_range.start
+                if byte_range.end is not None:
+                    kwargs["range_end"] = byte_range.end
+        return await asyncio.to_thread(
+            io_get,
+            path=source_path,
+            multithreaded_io=True,
+            io_config=io_config,
+            **kwargs,
+        )
+
+    async def put(self, path: str, data: bytes) -> None:
+        source_path, io_config, _, _ = await asyncio.to_thread(self._resolve_sync, path)
+        await asyncio.to_thread(
+            io_put,
+            path=source_path,
+            data=data,
+            multithreaded_io=True,
+            io_config=io_config,
+        )
+
+    async def get_size(self, path: str) -> int:
+        source_path, io_config, _, _ = await asyncio.to_thread(self._resolve_sync, path)
+        return await asyncio.to_thread(
+            io_get_size,
+            path=source_path,
+            multithreaded_io=True,
+            io_config=io_config,
+        )
+
+    async def ls(
+        self,
+        path: str,
+        *,
+        posix: bool,
+        continuation_token: str | None = None,
+        page_size: int | None = None,
+    ) -> IOListing:
+        source_path, io_config, fileset_root, storage_root = await asyncio.to_thread(self._resolve_sync, path)
+        files, next_token, not_found_if_empty = await asyncio.to_thread(
+            io_ls,
+            path=source_path,
+            posix=posix,
+            continuation_token=continuation_token,
+            page_size=page_size,
+            multithreaded_io=True,
+            io_config=io_config,
+        )
+        rewritten = []
+        for file in files:
+            file_path = file["path"]
+            if file_path == storage_root:
+                file_path = fileset_root
+            elif file_path.startswith(f"{storage_root}/"):
+                file_path = f"{fileset_root}{file_path[len(storage_root) :]}"
+            file_type = IOFileType.FILE if file["type"] == "File" else IOFileType.DIRECTORY
+            rewritten.append(IOFileInfo(path=file_path, size=file["size"], file_type=file_type))
+        return IOListing(
+            files=rewritten,
+            continuation_token=next_token,
+            not_found_if_empty=not_found_if_empty,
+        )
 
 
 class GravitinoFileSystemHandler:
