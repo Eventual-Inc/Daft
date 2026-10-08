@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import os
 from collections.abc import Iterator
 
 import pytest
@@ -52,19 +51,16 @@ def aws_server(aws_server_ip: str, aws_server_port: int, aws_log_file: io.IOBase
     # NOTE(Clark): The background-threaded moto server tends to lock up under concurrent access, so we run a background
     # moto_server process.
     aws_server_url = f"http://{aws_server_ip}:{aws_server_port}"
-    old_env = os.environ.copy()
-    # Set required AWS environment variables before starting server.
-    # Required to opt out of concurrent writing, since we don't provide a LockClient.
-    os.environ["AWS_S3_ALLOW_UNSAFE_RENAME"] = "true"
-    try:
+    with pytest.MonkeyPatch.context() as patch:
+        # Required to opt out of concurrent writing, since we don't provide a LockClient.
+        patch.setenv("AWS_S3_ALLOW_UNSAFE_RENAME", "true")
         # Start moto server.
         process = start_service(aws_server_ip, aws_server_port, aws_log_file)
-        yield aws_server_url
-    finally:
-        # Shutdown moto server.
-        stop_process(process)
-        # Restore old set of environment variables.
-        os.environ = old_env
+        try:
+            yield aws_server_url
+        finally:
+            # Shutdown moto server.
+            stop_process(process)
 
 
 @pytest.fixture(scope="function")
