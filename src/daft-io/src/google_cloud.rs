@@ -385,6 +385,7 @@ impl GCSClientWrapper {
         Ok(LSResult {
             files: files.chain(dirs).collect(),
             continuation_token: ls_response.next_page_token,
+            not_found_if_empty: false,
         })
     }
 
@@ -413,7 +414,7 @@ impl GCSClientWrapper {
             } else {
                 format!("{}{GCS_DELIMITER}", key.trim_end_matches(GCS_DELIMITER))
             };
-            let forced_directory_ls_result = self
+            let mut forced_directory_ls_result = self
                 .ls_impl(
                     client,
                     bucket,
@@ -424,35 +425,31 @@ impl GCSClientWrapper {
                     io_stats.as_ref(),
                 )
                 .await?;
+            forced_directory_ls_result.not_found_if_empty = !key.is_empty();
 
-            // If no items were obtained, then this is actually a file and we perform a second ls to obtain just the file's
-            // details as the one-and-only-one entry
-            if forced_directory_ls_result.files.is_empty() {
-                let mut file_result = self
-                    .ls_impl(
-                        client,
-                        bucket,
-                        key,
-                        Some(GCS_DELIMITER),
-                        continuation_token,
-                        page_size,
-                        io_stats.as_ref(),
-                    )
-                    .await?;
+            if forced_directory_ls_result.files.is_empty()
+                && continuation_token.is_none()
+                && !key.is_empty()
+            {
+                // get_size() acquires its own connection permit.
+                drop(_permit);
 
-                // Only retain exact matches (since the API does prefix lists by default)
                 let target_path = format!("{GCS_SCHEME}://{bucket}/{key}");
-                file_result.files.retain(|fm| fm.filepath == target_path);
-
-                // Not dir and not file, so it is missing
-                if file_result.files.is_empty() {
-                    return Err(Error::NotFound {
-                        path: path.to_string(),
-                    }
-                    .into());
+                match self.get_size(&target_path, io_stats.clone()).await {
+                    Ok(size) => Ok(LSResult {
+                        files: vec![FileMetadata {
+                            filepath: target_path,
+                            size: Some(size as u64),
+                            filetype: FileType::File,
+                        }],
+                        continuation_token: forced_directory_ls_result.continuation_token,
+                        not_found_if_empty: forced_directory_ls_result.not_found_if_empty,
+                    }),
+                    // Keep the empty directory result. iter_dir will follow
+                    // its token before deciding whether the path is missing.
+                    Err(super::Error::NotFound { .. }) => Ok(forced_directory_ls_result),
+                    Err(error) => Err(error),
                 }
-
-                Ok(file_result)
             } else {
                 Ok(forced_directory_ls_result)
             }
@@ -572,14 +569,14 @@ impl GCSSource {
                 .jitter(Jitter::Bounded)
                 .retry_bounds(
                     Duration::from_millis(config.retry_initial_backoff_ms),
-                    Duration::from_secs(60),
+                    Duration::from_mins(1),
                 )
                 .build_with_max_retries(config.num_tries);
 
             let base_client = reqwest_middleware::reqwest::ClientBuilder::default()
                 .connect_timeout(Duration::from_millis(config.connect_timeout_ms))
                 .read_timeout(Duration::from_millis(config.read_timeout_ms))
-                .pool_idle_timeout(Duration::from_secs(60))
+                .pool_idle_timeout(Duration::from_mins(1))
                 .pool_max_idle_per_host(70)
                 .build()
                 .context(UnableToCreateClientSnafu)?;

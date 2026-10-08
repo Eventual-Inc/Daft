@@ -3,20 +3,30 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
 import psycopg
 from pgvector.psycopg import register_vector
 
-from daft.catalog import Catalog, Function, Identifier, NotFoundError, Properties, Schema, Table
+from daft.catalog import (
+    Catalog,
+    Function,
+    Identifier,
+    NotFoundError,
+    Properties,
+    Schema,
+    Table,
+    TableAlreadyExistsError,
+)
 from daft.datatype import DataType
 from daft.io._sql import read_sql
 from daft.logical.schema import Field
 
 
 @contextmanager
-def postgres_connection(connection_string: str, extensions: list[str] | None) -> psycopg.Connection.connect:
+def postgres_connection(connection_string: str, extensions: Sequence[str] | None) -> psycopg.Connection.connect:
     """Context manager that provides a PostgreSQL connection with specified extensions setup.
 
     Args:
@@ -129,9 +139,7 @@ def _daft_dtype_to_postgres_type(dtype: DataType, set_dimensions: bool = True) -
         # TODO(desmond): PostgreSQL doesn't support ROW syntax in column definitions, we'd need to define new composite types.
         # Use JSONB for now.
         return "jsonb"
-    elif dtype.is_map():
-        return "jsonb"
-    elif dtype.is_extension():
+    elif dtype.is_map() or dtype.is_extension():
         return "jsonb"
     elif dtype.is_image() or dtype.is_fixed_shape_image():
         # TODO(desmond): Under the hood Daft uses structs for images. We should update this as we update the struct story.
@@ -177,7 +185,7 @@ class PostgresCatalog(Catalog):
     # TODO(desmond): For now we can create connections as needed, but in the future we can create lazy connections
     # and connection pools as an optimization.
     _inner: str  # connection string
-    _extensions: list[str] | None  # extensions to create
+    _extensions: Sequence[str] | None  # extensions to create
     _create_table_options = {
         "enable_rls",
     }
@@ -186,7 +194,7 @@ class PostgresCatalog(Catalog):
         raise RuntimeError("PostgresCatalog.__init__ is not supported, please use `Catalog.from_postgres` instead.")
 
     @staticmethod
-    def from_uri(uri: str, extensions: list[str] | None, **options: str | None) -> PostgresCatalog:
+    def from_uri(uri: str, extensions: Sequence[str] | None, **options: str | None) -> PostgresCatalog:
         """Create a PostgresCatalog from a connection string."""
         validate_connection_string(uri)
         c = PostgresCatalog.__new__(PostgresCatalog)
@@ -216,15 +224,14 @@ class PostgresCatalog(Catalog):
 
         quoted_schema = psycopg.sql.Identifier(identifier[0])
 
-        with postgres_connection(self._inner, self._extensions) as conn:
-            with conn.cursor() as cur:
-                try:
-                    cur.execute(psycopg.sql.SQL("CREATE SCHEMA {}").format(quoted_schema))
-                    conn.commit()
-                except psycopg.errors.DuplicateSchema:
-                    raise ValueError(f"Schema {identifier} already exists")
-                except psycopg.Error as e:
-                    raise ValueError(f"Failed to create schema {identifier}: {e}") from e
+        with postgres_connection(self._inner, self._extensions) as conn, conn.cursor() as cur:
+            try:
+                cur.execute(psycopg.sql.SQL("CREATE SCHEMA {}").format(quoted_schema))
+                conn.commit()
+            except psycopg.errors.DuplicateSchema:
+                raise ValueError(f"Schema {identifier} already exists")
+            except psycopg.Error as e:
+                raise ValueError(f"Failed to create schema {identifier}: {e}") from e
 
     def _create_table(
         self,
@@ -270,28 +277,25 @@ class PostgresCatalog(Catalog):
         quoted_table = psycopg.sql.Identifier(table_name)
         quoted_full_table = psycopg.sql.SQL(".").join([quoted_schema, quoted_table]) if schema_name else quoted_table
 
-        with postgres_connection(self._inner, self._extensions) as conn:
-            with conn.cursor() as cur:
-                try:
-                    if quoted_schema:
-                        cur.execute(psycopg.sql.SQL("CREATE SCHEMA IF NOT EXISTS {}").format(quoted_schema))
+        with postgres_connection(self._inner, self._extensions) as conn, conn.cursor() as cur:
+            try:
+                if quoted_schema:
+                    cur.execute(psycopg.sql.SQL("CREATE SCHEMA IF NOT EXISTS {}").format(quoted_schema))
 
-                    cur.execute(
-                        psycopg.sql.SQL("CREATE TABLE {} ({})").format(
-                            quoted_full_table, psycopg.sql.SQL(", ").join(column_defs)
-                        )
+                cur.execute(
+                    psycopg.sql.SQL("CREATE TABLE {} ({})").format(
+                        quoted_full_table, psycopg.sql.SQL(", ").join(column_defs)
                     )
+                )
 
-                    if properties is None or properties.get("enable_rls", True):
-                        cur.execute(
-                            psycopg.sql.SQL("ALTER TABLE {} ENABLE ROW LEVEL SECURITY").format(quoted_full_table)
-                        )
+                if properties is None or properties.get("enable_rls", True):
+                    cur.execute(psycopg.sql.SQL("ALTER TABLE {} ENABLE ROW LEVEL SECURITY").format(quoted_full_table))
 
-                    conn.commit()
-                except psycopg.errors.DuplicateTable:
-                    raise ValueError(f"Table {identifier} already exists")
-                except psycopg.Error as e:
-                    raise ValueError(f"Failed to create table {identifier}: {e}") from e
+                conn.commit()
+            except psycopg.errors.DuplicateTable:
+                raise TableAlreadyExistsError(f"Table {identifier} already exists")
+            except psycopg.Error as e:
+                raise ValueError(f"Failed to create table {identifier}: {e}") from e
 
         return PostgresTable._from_catalog(self._inner, identifier, self._extensions)
 
@@ -309,13 +313,12 @@ class PostgresCatalog(Catalog):
 
         quoted_schema = psycopg.sql.Identifier(identifier[0])
 
-        with postgres_connection(self._inner, self._extensions) as conn:
-            with conn.cursor() as cur:
-                try:
-                    cur.execute(psycopg.sql.SQL("DROP SCHEMA {}").format(quoted_schema))
-                    conn.commit()
-                except psycopg.Error as e:
-                    raise ValueError(f"Failed to drop namespace {identifier}: {e}") from e
+        with postgres_connection(self._inner, self._extensions) as conn, conn.cursor() as cur:
+            try:
+                cur.execute(psycopg.sql.SQL("DROP SCHEMA {}").format(quoted_schema))
+                conn.commit()
+            except psycopg.Error as e:
+                raise ValueError(f"Failed to drop namespace {identifier}: {e}") from e
 
     def _drop_table(self, identifier: Identifier) -> None:
         """Drop a table from PostgreSQL."""
@@ -335,15 +338,14 @@ class PostgresCatalog(Catalog):
         else:
             raise ValueError(f"PostgreSQL table identifier must be 'schema.table' or 'table', got {identifier}")
 
-        with postgres_connection(self._inner, self._extensions) as conn:
-            with conn.cursor() as cur:
-                try:
-                    cur.execute(psycopg.sql.SQL("DROP TABLE {}").format(quoted_full_table))
-                    conn.commit()
-                except psycopg.errors.UndefinedTable:
-                    raise NotFoundError(f"Table {identifier} not found")
-                except psycopg.Error as e:
-                    raise ValueError(f"Failed to drop table {identifier}: {e}") from e
+        with postgres_connection(self._inner, self._extensions) as conn, conn.cursor() as cur:
+            try:
+                cur.execute(psycopg.sql.SQL("DROP TABLE {}").format(quoted_full_table))
+                conn.commit()
+            except psycopg.errors.UndefinedTable:
+                raise NotFoundError(f"Table {identifier} not found")
+            except psycopg.Error as e:
+                raise ValueError(f"Failed to drop table {identifier}: {e}") from e
 
     ###
     # get_*
@@ -367,15 +369,14 @@ class PostgresCatalog(Catalog):
 
         quoted_schema = psycopg.sql.Literal(identifier[0])
 
-        with postgres_connection(self._inner, self._extensions) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    psycopg.sql.SQL(
-                        "select exists(SELECT 1 FROM information_schema.schemata WHERE schema_name = {})"
-                    ).format(quoted_schema)
-                )
-                result = cur.fetchone()
-                return result[0] if result else False
+        with postgres_connection(self._inner, self._extensions) as conn, conn.cursor() as cur:
+            cur.execute(
+                psycopg.sql.SQL(
+                    "select exists(SELECT 1 FROM information_schema.schemata WHERE schema_name = {})"
+                ).format(quoted_schema)
+            )
+            result = cur.fetchone()
+            return result[0] if result else False
 
     def _has_table(self, identifier: Identifier) -> bool:
         """Check if a table exists in PostgreSQL."""
@@ -445,7 +446,7 @@ class PostgresCatalog(Catalog):
 
 class PostgresTable(Table):
     _inner: tuple[str, Identifier]  # (connection_string, identifier)
-    _extensions: list[str] | None
+    _extensions: Sequence[str] | None
     _read_options = {
         "partition_col",
         "num_partitions",
@@ -461,7 +462,7 @@ class PostgresTable(Table):
 
     @classmethod
     def _from_catalog(
-        cls, connection_string: str, identifier: Identifier, extensions: list[str] | None
+        cls, connection_string: str, identifier: Identifier, extensions: Sequence[str] | None
     ) -> PostgresTable:
         """Create a PostgresTable from catalog connection details."""
         t = cls.__new__(cls)
@@ -500,11 +501,10 @@ class PostgresTable(Table):
             raise ValueError(f"Invalid table identifier: {identifier}")
 
         # Query the database schema to get column information
-        with postgres_connection(connection_string, self._extensions) as conn:
-            with conn.cursor() as cur:
-                if schema_name:
-                    cur.execute(
-                        psycopg.sql.SQL("""
+        with postgres_connection(connection_string, self._extensions) as conn, conn.cursor() as cur:
+            if schema_name:
+                cur.execute(
+                    psycopg.sql.SQL("""
                         SELECT
                             c.column_name,
                             c.data_type,
@@ -521,10 +521,10 @@ class PostgresTable(Table):
                         WHERE c.table_schema = {} AND c.table_name = {}
                         ORDER BY c.ordinal_position
                         """).format(psycopg.sql.Literal(schema_name), psycopg.sql.Literal(table_name)),
-                    )
-                else:
-                    cur.execute(
-                        psycopg.sql.SQL("""
+                )
+            else:
+                cur.execute(
+                    psycopg.sql.SQL("""
                         SELECT
                             c.column_name,
                             c.data_type,
@@ -540,9 +540,9 @@ class PostgresTable(Table):
                         WHERE c.table_name = {}
                         ORDER BY c.ordinal_position
                         """).format(psycopg.sql.Literal(table_name)),
-                    )
+                )
 
-                columns = cur.fetchall()
+            columns = cur.fetchall()
 
         # If no columns found, fall back to data-based inference
         if not columns:
@@ -664,24 +664,23 @@ class PostgresTable(Table):
         # Additionally, although ADBC currently has limited type support, it might be worth
         # exploring for bulk loading.
         with postgres_connection(connection_string, self._extensions) as conn:
-            with conn.cursor() as cur:
-                with cur.copy(copy_sql) as copy:
-                    copy.set_types(types_to_set)
+            with conn.cursor() as cur, cur.copy(copy_sql) as copy:
+                copy.set_types(types_to_set)
 
-                    for batch in df.to_arrow_iter():
-                        for row in batch.to_pylist():
-                            values = list(row.values())
-                            # Serialize complex types that are mapped to 'text' to JSON strings for binary COPY
-                            serialized_values = []
-                            for value, postgres_type in zip(values, types_to_set):
-                                if postgres_type in ("text", "jsonb") and not isinstance(
-                                    value, (str, int, float, bool, type(None))
-                                ):
-                                    # Complex types (lists, dicts, etc.) need to be JSON serialized.
-                                    serialized_values.append(json.dumps(value))
-                                else:
-                                    serialized_values.append(value)
-                            copy.write_row(serialized_values)
+                for batch in df.to_arrow_iter():
+                    for row in batch.to_pylist():
+                        values = list(row.values())
+                        # Serialize complex types that are mapped to 'text' to JSON strings for binary COPY
+                        serialized_values = []
+                        for value, postgres_type in zip(values, types_to_set):
+                            if postgres_type in ("text", "jsonb") and not isinstance(
+                                value, (str, int, float, bool, type(None))
+                            ):
+                                # Complex types (lists, dicts, etc.) need to be JSON serialized.
+                                serialized_values.append(json.dumps(value))
+                            else:
+                                serialized_values.append(value)
+                        copy.write_row(serialized_values)
             conn.commit()
 
     def overwrite(self, df: DataFrame, **options: Any) -> None:
@@ -703,4 +702,3 @@ class PostgresTable(Table):
         temp_catalog._create_table(identifier, df.schema(), properties=properties)
         # Now append the data (since table is empty, this effectively overwrites).
         self.append(df, **options)
-        return

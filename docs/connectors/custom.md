@@ -450,8 +450,8 @@ local_file_data_sink = LocalFileDataSink(
 For further reference, feel free to check out some of our notable data connectors that are implemented using the `DataSource` and `DataSink` interfaces:
 
 - [Reads from Video Frames](https://github.com/Eventual-Inc/Daft/blob/main/daft/io/av/_read_video_frames.py)
-- [Reads from LanceDB](https://github.com/Eventual-Inc/Daft/blob/main/daft/io/lance/lance_scan.py)
+- [Reads from LanceDB](https://github.com/daft-engine/daft-lance/blob/main/daft_lance/lance_scan.py)
 - [Writes to Hugging Face 🤗](https://github.com/Eventual-Inc/Daft/blob/main/daft/io/huggingface/sink.py)
 - [Writes to ClickHouse](https://github.com/Eventual-Inc/Daft/blob/main/daft/io/clickhouse/clickhouse_data_sink.py)
 - [Writes to Turbopuffer](https://github.com/Eventual-Inc/Daft/blob/main/daft/io/turbopuffer/turbopuffer_data_sink.py)
-- [Writes to LanceDB](https://github.com/Eventual-Inc/Daft/blob/main/daft/io/lance/lance_data_sink.py)
+- [Writes to LanceDB](https://github.com/daft-engine/daft-lance/blob/main/daft_lance/lance_data_sink.py)

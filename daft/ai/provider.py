@@ -94,7 +94,7 @@ PROVIDERS: dict[ProviderType, Callable[..., Provider]] = {
 def load_provider(provider: str, name: str | None = None, **options: Any) -> Provider:
     if provider not in PROVIDERS:
         raise ValueError(f"Provider '{provider}' is not yet supported.")
-    return PROVIDERS[provider](name, **options)  # type: ignore
+    return PROVIDERS[provider](name, **options)  # type: ignore[index]
 
 
 def not_implemented_err(provider: Provider, method: str) -> NotImplementedError:

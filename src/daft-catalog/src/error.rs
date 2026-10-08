@@ -110,8 +110,21 @@ impl From<DaftError> for CatalogError {
 use pyo3::PyErr;
 
 #[cfg(feature = "python")]
+pyo3::import_exception!(daft.catalog, TableAlreadyExistsError);
+
+#[cfg(feature = "python")]
 impl From<CatalogError> for PyErr {
     fn from(value: CatalogError) -> Self {
+        // Surface table-already-exists errors as the typed
+        // TableAlreadyExistsError so Python callers can catch it precisely
+        // (e.g. create_table_if_not_exists) without matching on messages.
+        if matches!(
+            &value,
+            CatalogError::ObjectAlreadyExists { type_, .. } if type_ == "table"
+        ) {
+            return TableAlreadyExistsError::new_err(value.to_string());
+        }
+
         let daft_error: common_error::DaftError = value.into();
         daft_error.into()
     }

@@ -316,19 +316,28 @@ See also [Files](files.md) for detailed usage.
 | [`read_parquet`][daft.io.read_parquet]                    | Read a Parquet file or multiple Parquet files into a DataFrame |
 | [`write_parquet`][daft.dataframe.DataFrame.write_parquet] | Write a DataFrame to Parquet files                             |
 
-### Text
+### Text and Blob
 
-| Function                           | Description                                    |
-|------------------------------------|------------------------------------------------|
-| [`read_text`][daft.io.read_text]   | Read text files into a DataFrame               |
+| Function                         | Description                                                        |
+|----------------------------------|--------------------------------------------------------------------|
+| [`read_text`][daft.io.read_text] | Read text files into a DataFrame as strings, with one row per line |
+| [`read_blob`][daft.io.read_blob] | Read files into a DataFrame as raw bytes, with one row per file    |
 
-See also [Text Files](text.md) for detailed usage.
+See also [Text Files](text.md) and [Blob Files](blob.md) for detailed usage.
 
 ### WARC
 
 | Function                         | Description                                              |
 |----------------------------------|----------------------------------------------------------|
 | [`read_warc`][daft.io.read_warc] | Read a WARC file or multiple WARC files into a DataFrame |
+
+### WebDataset
+
+| Function                                       | Description                                                    |
+|------------------------------------------------|----------------------------------------------------------------|
+| [`read_webdataset`][daft.io.read_webdataset]   | Read multimodal WebDataset TAR shards into a DataFrame          |
+
+See also [WebDataset](webdataset.md) for format details and lazy media reads.
 
 ### Video
 

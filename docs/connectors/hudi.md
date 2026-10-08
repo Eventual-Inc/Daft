@@ -13,14 +13,6 @@ Daft currently supports:
 
 A detailed Apache Hudi roadmap for Daft can be found on [our GitHub Issues page](https://github.com/Eventual-Inc/Daft/issues/4389). For the overall Daft development plan, see [Daft Roadmap](../roadmap.md).
 
-## Installing Daft with Apache Hudi Support
-
-Daft supports installing Hudi through optional dependency.
-
-```bash
-pip install -U "daft[hudi]"
-```
-
 ## Reading a Table
 
 To read from an Apache Hudi table, use the [`daft.read_hudi()`][daft.read_hudi] function. The following is an example snippet of loading an example table into Daft:

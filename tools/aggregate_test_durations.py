@@ -89,9 +89,10 @@ class TestDurationAggregator:
         phase_times = {"setup": 0.0, "call": 0.0, "teardown": 0.0}
 
         for test in self.test_times:
-            if test["file"] == key:  # For modules
-                phase_times[test["phase"]] += test["time"]
-            elif str(Path(test["file"]).parent) == key:  # For directories
+            if (
+                test["file"] == key  # For modules
+                or str(Path(test["file"]).parent) == key  # For directories
+            ):
                 phase_times[test["phase"]] += test["time"]
 
         return phase_times

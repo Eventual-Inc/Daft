@@ -347,4 +347,54 @@ mod test {
 
         Ok(())
     }
+
+    #[test]
+    fn test_range_stats_false_when_predicate_outside_range() -> crate::Result<()> {
+        // Stats: min=10, max=20. Predicate: col < 5 → must be False.
+        // This verifies that injected stats can trigger the MicroPartition.filter
+        // short-circuit (TruthValue::False → return empty without scanning data).
+        let table = RecordBatch::from_nonempty_columns(vec![
+            Int64Array::from_slice("a", &[10, 20]).into_series(),
+        ])
+        .unwrap();
+        let table_stats = TableStatistics::from_table(&table);
+
+        // col < 5 → False (5 < min=10)
+        let expr = BoundExpr::try_new(resolved_col("a").lt(lit(5i64)), &table.schema)
+            .context(DaftCoreComputeSnafu)?;
+        let result = table_stats.eval_expression(&expr)?;
+        assert_eq!(result.to_truth_value(), TruthValue::False);
+
+        // col > 25 → False (25 > max=20)
+        let expr = BoundExpr::try_new(resolved_col("a").gt(lit(25i64)), &table.schema)
+            .context(DaftCoreComputeSnafu)?;
+        let result = table_stats.eval_expression(&expr)?;
+        assert_eq!(result.to_truth_value(), TruthValue::False);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_range_stats_maybe_when_predicate_overlaps_range() -> crate::Result<()> {
+        // Stats: min=10, max=20. Predicate: col < 15 → must be Maybe.
+        let table = RecordBatch::from_nonempty_columns(vec![
+            Int64Array::from_slice("a", &[10, 20]).into_series(),
+        ])
+        .unwrap();
+        let table_stats = TableStatistics::from_table(&table);
+
+        // col < 15 → Maybe (15 is within [10, 20], some values satisfy, some don't)
+        let expr = BoundExpr::try_new(resolved_col("a").lt(lit(15i64)), &table.schema)
+            .context(DaftCoreComputeSnafu)?;
+        let result = table_stats.eval_expression(&expr)?;
+        assert_eq!(result.to_truth_value(), TruthValue::Maybe);
+
+        // col > 12 → Maybe (12 is within [10, 20], some values satisfy, some don't)
+        let expr = BoundExpr::try_new(resolved_col("a").gt(lit(12i64)), &table.schema)
+            .context(DaftCoreComputeSnafu)?;
+        let result = table_stats.eval_expression(&expr)?;
+        assert_eq!(result.to_truth_value(), TruthValue::Maybe);
+
+        Ok(())
+    }
 }

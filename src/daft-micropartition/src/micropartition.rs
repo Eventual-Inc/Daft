@@ -737,7 +737,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
         ));
     }
 
-    // If no TableStatistics are available, we perform an eager read
+    // No count pushdown to serve from metadata, so read the data eagerly.
     read_parquet_into_loaded_micropartition(
         io_client,
         multithreaded_io,

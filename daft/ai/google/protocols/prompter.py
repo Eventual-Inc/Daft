@@ -61,8 +61,10 @@ class GooglePrompter(Prompter):
         model: str,
         system_message: str | None = None,
         return_format: BaseModel | None = None,
-        prompt_options: PromptOptions = {},
+        prompt_options: PromptOptions | None = None,
     ) -> None:
+        prompt_options = prompt_options or {}
+
         self.provider_name = provider_name
         self.model = model
         self.return_format = return_format

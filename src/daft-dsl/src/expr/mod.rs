@@ -2393,12 +2393,21 @@ impl Expr {
         }
     }
 
-    /// Returns the expression as SQL using PostgreSQL's dialect.
+    /// Returns the expression as a SQL string using PostgreSQL's dialect.
+    ///
+    /// The caller (`sql_connection.py`) passes this through `sqlglot` which
+    /// re-renders it in the target dialect (MySQL, Trino, etc.).
     pub fn to_sql(&self) -> Option<String> {
         fn to_sql_inner<W: Write>(expr: &Expr, buffer: &mut W) -> io::Result<()> {
             match expr {
-                Expr::Column(Column::Resolved(ResolvedColumn::Basic(name))) => {
-                    write!(buffer, "{}", name)
+                Expr::Column(Column::Resolved(ResolvedColumn::Basic(name)))
+                | Expr::Column(Column::Unresolved(UnresolvedColumn { name, .. })) => {
+                    // Always quote identifiers with SQL-standard double quotes.
+                    // This handles spaces, reserved words, and special characters
+                    // uniformly.  sqlglot re-renders in the target dialect's quoting
+                    // style (backticks for MySQL, etc.) during the parse->render
+                    // round-trip.
+                    write!(buffer, "\"{}\"", name.replace('"', "\"\""))
                 }
                 Expr::Literal(lit) => lit.display_sql(buffer),
                 Expr::Alias(expr, ..) => to_sql_inner(expr, buffer),
@@ -2440,11 +2449,27 @@ impl Expr {
                     to_sql_inner(inner, buffer)?;
                     write!(buffer, ") IS NOT NULL")
                 }
+                Expr::IsIn(expr, items) => {
+                    if items.is_empty() {
+                        // Empty IN () is a syntax error in most SQL engines;
+                        // emit a constant-false predicate instead.
+                        return write!(buffer, "(1 = 0)");
+                    }
+                    write!(buffer, "(")?;
+                    to_sql_inner(expr, buffer)?;
+                    write!(buffer, ") IN (")?;
+                    for (i, item) in items.iter().enumerate() {
+                        if i > 0 {
+                            write!(buffer, ", ")?;
+                        }
+                        to_sql_inner(item, buffer)?;
+                    }
+                    write!(buffer, ")")
+                }
                 // TODO: Implement SQL translations for these expressions if possible
                 Expr::IfElse { .. }
                 | Expr::Agg(..)
                 | Expr::Cast(..)
-                | Expr::IsIn(..)
                 | Expr::List(..)
                 | Expr::Between(..)
                 | Expr::Function { .. }

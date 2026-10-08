@@ -141,6 +141,20 @@ pub(crate) fn apply_field_ids_to_arrowrs_parquet_metadata(
     let old_schema = metadata.file_metadata().schema_descr();
     let old_root = old_schema.root_schema();
 
+    // A file with no field IDs at all cannot be matched against the mapping, so every
+    // mapped column would silently read as null. Fail instead — a partially-annotated
+    // file is still handled below, where unmapped children are dropped on purpose.
+    if !old_root.get_fields().is_empty()
+        && !old_root
+            .get_fields()
+            .iter()
+            .any(|field| get_field_id(field.get_basic_info()).is_some())
+    {
+        return Err(Error::MissingParquetFieldIds {
+            path: path.to_string(),
+        });
+    }
+
     // 1. Rewrite the schema type tree: rename + filter by field_id_mapping
     let new_fields: Vec<_> = old_root
         .get_fields()
@@ -367,7 +381,7 @@ fn strip_string_type(tp: &parquet::schema::types::Type) -> parquet::schema::type
 }
 
 fn validate_footer_magic(uri: &str, buffer: &[u8]) -> super::Result<()> {
-    const PARQUET_MAGIC: [u8; 4] = [b'P', b'A', b'R', b'1'];
+    const PARQUET_MAGIC: [u8; 4] = *b"PAR1";
 
     if buffer.len() < FOOTER_SIZE {
         return Err(Error::FileTooSmall {
