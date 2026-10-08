@@ -331,6 +331,14 @@ See also [Text Files](text.md) and [Blob Files](blob.md) for detailed usage.
 |----------------------------------|----------------------------------------------------------|
 | [`read_warc`][daft.io.read_warc] | Read a WARC file or multiple WARC files into a DataFrame |
 
+### ORC
+
+| Function | Description |
+| --- | --- |
+| [`read_orc`][daft.io.read_orc] | Read raw ORC files into a DataFrame |
+
+See also [ORC Files](orc.md) for schema and file-reading behavior.
+
 ### WebDataset
 
 | Function                                       | Description                                                    |
