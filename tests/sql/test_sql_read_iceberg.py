@@ -32,6 +32,52 @@ def _iceberg_data_file_local_paths(table) -> list[str]:
     return sorted(_local_path(task.file.file_path) for task in table.scan().plan_files())
 
 
+@pytest.fixture(params=[2**32 + 1, 2**63 - 1])
+def wide_snapshot_metadata(tmp_path, monkeypatch, request):
+    catalog = SqlCatalog(
+        "default",
+        uri=f"sqlite:///{tmp_path}/pyiceberg_catalog.db",
+        warehouse=f"file://{tmp_path}",
+    )
+    try:
+        catalog.create_namespace("default")
+        table = catalog.create_table("default.t", Schema(NestedField(1, "x", LongType())))
+        snapshot_id = request.param
+        # Cover the unsigned 32-bit boundary and the maximum signed 64-bit ID.
+        with monkeypatch.context() as patch:
+            patch.setattr("pyiceberg.table.metadata._generate_snapshot_id", lambda: snapshot_id)
+            table.append(pa.table({"x": pa.array([1, 2], type=pa.int64())}))
+        assert table.current_snapshot().snapshot_id == snapshot_id
+        yield _metadata_path(table.metadata_location), snapshot_id
+    finally:
+        catalog.engine.dispose()
+
+
+def test_sql_read_iceberg_wide_snapshot_id_matches_python(wide_snapshot_metadata):
+    metadata_location, snapshot_id = wide_snapshot_metadata
+    sql_df = daft.sql(f"SELECT * FROM read_iceberg('{metadata_location}', snapshot_id => {snapshot_id})")
+    python_df = daft.read_iceberg(metadata_location, snapshot_id=snapshot_id)
+    assert sql_df.sort("x").to_pydict() == python_df.sort("x").to_pydict() == {"x": [1, 2]}
+
+
+@pytest.mark.parametrize("snapshot_id", [-1, -(2**63 - 1)])
+def test_sql_read_iceberg_negative_snapshot_id_matches_python(wide_snapshot_metadata, snapshot_id):
+    metadata_location, _ = wide_snapshot_metadata
+    message = f"Snapshot not found: {snapshot_id}"
+    with pytest.raises(ValueError, match=message):
+        daft.read_iceberg(metadata_location, snapshot_id=snapshot_id)
+    with pytest.raises(Exception, match=message) as exc_info:
+        daft.sql(f"SELECT * FROM read_iceberg('{metadata_location}', snapshot_id => {snapshot_id})")
+    assert exc_info.type.__name__ == "InvalidSQLException"
+
+
+@pytest.mark.parametrize("snapshot_id", ["'1'", "1.5", "true", str(2**63), str(-(2**63) - 1)])
+def test_sql_read_iceberg_invalid_snapshot_id_rejected(snapshot_id):
+    with pytest.raises(Exception, match="Expected an integer literal") as exc_info:
+        daft.sql(f"SELECT * FROM read_iceberg('does_not_exist.metadata.json', snapshot_id => {snapshot_id})")
+    assert exc_info.type.__name__ == "InvalidSQLException"
+
+
 def test_sql_read_iceberg_branch_and_tag_with_schema_evolution(tmp_path):
     catalog = SqlCatalog(
         "default",

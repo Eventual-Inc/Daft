@@ -136,7 +136,8 @@ A `schema` is given as a struct literal mapping column names to type names:
     ```
 
 For Iceberg, `snapshot_id`, `branch`, and `tag` select which version to read and are
-mutually exclusive:
+mutually exclusive. `snapshot_id` uses a signed 64-bit integer, matching Iceberg's
+snapshot identifier type; Iceberg validates whether the snapshot exists:
 
 === "🐍 Python"
     ```python
