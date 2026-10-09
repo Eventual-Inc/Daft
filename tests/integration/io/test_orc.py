@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import io
 import threading
 from collections.abc import Iterator
@@ -12,6 +13,9 @@ import pytest
 from pyarrow import orc
 
 import daft
+from daft.io import _orc
+from daft.io._orc import OrcSource
+from daft.io.pushdowns import Pushdowns
 from tests.integration.io.conftest import minio_create_bucket
 
 
@@ -39,6 +43,75 @@ def orc_http_url(tmp_path: Path) -> Iterator[str]:
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+@pytest.fixture
+def orc_hive_http_urls(tmp_path: Path) -> Iterator[list[str]]:
+    for p in [1, 2]:
+        directory = tmp_path / f"p={p}"
+        directory.mkdir()
+        (directory / "data.orc").write_bytes(_orc_bytes(pa.table({"id": [p * 10, p * 10 + 1]})))
+    server = ThreadingHTTPServer(("127.0.0.1", 0), partial(_QuietHTTPRequestHandler, directory=str(tmp_path)))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield [f"http://127.0.0.1:{server.server_port}/p={p}/data.orc" for p in [1, 2]]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def _assert_hive_file_pruning(source: OrcSource, selected: str, monkeypatch) -> None:
+    original = _orc._iter_orc_batches
+    scanned: list[str] = []
+
+    def tracking_batches(path, *args, **kwargs):
+        scanned.append(path)
+        yield from original(path, *args, **kwargs)
+
+    async def read_selected() -> list[dict]:
+        tasks = [task async for task in source.get_tasks(Pushdowns(partition_filters=daft.col("p") == 2))]
+        assert [task._path for task in tasks] == [selected]
+        return [batch.to_pydict() async for batch in tasks[0].read()]
+
+    with monkeypatch.context() as patch:
+        patch.setattr(_orc, "_iter_orc_batches", tracking_batches)
+        assert asyncio.run(read_selected()) == [{"id": [20, 21], "p": [2, 2]}]
+    assert scanned == [selected]
+
+
+@pytest.mark.integration()
+def test_read_orc_hive_http(orc_hive_http_urls: list[str], monkeypatch) -> None:
+    source = OrcSource(orc_hive_http_urls, None, 2, hive_partitioning=True)
+    _assert_hive_file_pruning(source, orc_hive_http_urls[1], monkeypatch)
+    result = source.read().where((daft.col("p") == 2) & (daft.col("id") > 20)).select("id").to_pydict()
+    assert result == {"id": [21]}
+
+
+@pytest.mark.integration()
+@pytest.mark.parametrize("kind", ["directory", "glob", "list"])
+def test_read_orc_hive_s3(minio_io_config: daft.io.IOConfig, kind: str, monkeypatch) -> None:
+    with minio_create_bucket(minio_io_config=minio_io_config) as (fs, bucket):
+        root = f"s3://{bucket}/orc-hive"
+        paths = [f"{root}/p={p}/data.orc" for p in [1, 2]]
+        for p, path in zip([1, 2], paths):
+            fs.write_bytes(path, _orc_bytes(pa.table({"id": [p * 10, p * 10 + 1]})))
+        source_path = {"directory": root, "glob": f"{root}/**/*.orc", "list": paths}[kind]
+        source = OrcSource(source_path, minio_io_config, 2, hive_partitioning=True)
+        _assert_hive_file_pruning(source, paths[1], monkeypatch)
+        assert source.read().where(daft.col("p") == 2).select("id").sort("id").to_pydict() == {"id": [20, 21]}
+
+
+@pytest.mark.integration()
+def test_read_orc_hive_s3_null_and_conflict(minio_io_config: daft.io.IOConfig) -> None:
+    with minio_create_bucket(minio_io_config=minio_io_config) as (fs, bucket):
+        paths = [f"s3://{bucket}/p=3/data.orc", f"s3://{bucket}/plain/data.orc"]
+        fs.write_bytes(paths[0], _orc_bytes(pa.table({"id": [1], "p": [99]})))
+        fs.write_bytes(paths[1], _orc_bytes(pa.table({"id": [2], "p": [88]})))
+        df = daft.read_orc(paths, io_config=minio_io_config, hive_partitioning=True)
+        assert df.sort("id").to_pydict() == {"id": [1, 2], "p": [3, None]}
+        assert df.where(daft.col("p").is_null()).select("id").to_pydict() == {"id": [2]}
 
 
 @pytest.mark.integration()
