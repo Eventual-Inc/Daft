@@ -7,6 +7,7 @@ from collections.abc import Iterator
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import quote
 
 import pyarrow as pa
 import pytest
@@ -60,6 +61,66 @@ def orc_hive_http_urls(tmp_path: Path) -> Iterator[list[str]]:
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+@pytest.fixture
+def orc_hive_timestamp_http_urls(tmp_path: Path) -> Iterator[list[str]]:
+    values = ["2024-01-01T08:00:00.123456789+08:00", "2024-01-01T00:00:00.123456790Z"]
+    for idx, value in enumerate(values):
+        directory = tmp_path / f"p={value}"
+        directory.mkdir()
+        (directory / "data.orc").write_bytes(_orc_bytes(pa.table({"id": [idx], "p": ["physical"]})))
+    server = ThreadingHTTPServer(("127.0.0.1", 0), partial(_QuietHTTPRequestHandler, directory=str(tmp_path)))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield [f"http://127.0.0.1:{server.server_port}/p={quote(value, safe='')}/data.orc" for value in values]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def _assert_hive_timestamp_pruning(source: OrcSource, selected: str, monkeypatch) -> None:
+    dtype = daft.DataType.timestamp("ns", "+08:00")
+    ticks = 1704067200123456790
+    predicate = daft.col("p") == daft.lit(ticks).cast(dtype)
+    original = _orc._iter_orc_batches
+    scanned: list[str] = []
+
+    def tracking_batches(path, *args, **kwargs):
+        scanned.append(path)
+        yield from original(path, *args, **kwargs)
+
+    async def read_selected() -> list:
+        tasks = [task async for task in source.get_tasks(Pushdowns(columns=["p"], partition_filters=predicate))]
+        assert [task._path for task in tasks] == [selected]
+        return [batch.to_arrow_table() async for batch in tasks[0].read()]
+
+    with monkeypatch.context() as patch:
+        patch.setattr(_orc, "_iter_orc_batches", tracking_batches)
+        result = pa.concat_tables(asyncio.run(read_selected())).column("p")
+    assert scanned == [selected]
+    assert result.type == pa.timestamp("ns", "+08:00")
+    assert result.cast(pa.int64()).to_pylist() == [ticks]
+    assert source.read().where(predicate).select("id").to_pydict() == {"id": [1]}
+
+
+@pytest.mark.integration()
+def test_read_orc_hive_timestamp_http(orc_hive_timestamp_http_urls: list[str], monkeypatch) -> None:
+    source = OrcSource(orc_hive_timestamp_http_urls, None, 1, hive_partitioning=True)
+    _assert_hive_timestamp_pruning(source, orc_hive_timestamp_http_urls[1], monkeypatch)
+
+
+@pytest.mark.integration()
+def test_read_orc_hive_timestamp_s3(minio_io_config: daft.io.IOConfig, monkeypatch) -> None:
+    with minio_create_bucket(minio_io_config=minio_io_config) as (fs, bucket):
+        values = ["2024-01-01T08:00:00.123456789+08:00", "2024-01-01T00:00:00.123456790Z"]
+        paths = [f"s3://{bucket}/p={quote(value, safe='')}/data.orc" for value in values]
+        for idx, path in enumerate(paths):
+            fs.write_bytes(path, _orc_bytes(pa.table({"id": [idx], "p": ["physical"]})))
+        source = OrcSource(paths, minio_io_config, 1, hive_partitioning=True)
+        _assert_hive_timestamp_pruning(source, paths[1], monkeypatch)
 
 
 def _assert_hive_file_pruning(source: OrcSource, selected: str, monkeypatch) -> None:

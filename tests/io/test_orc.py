@@ -13,17 +13,27 @@ import pytest
 from pyarrow import orc
 
 import daft
+from daft.daft import _infer_hive_partition_schema, _parse_hive_partition_values
+from daft.exceptions import DaftCoreException
 from daft.io import _orc
 from daft.io._orc import OrcSource, OrcSourceTask
 from daft.io.pushdowns import Pushdowns
 from daft.pickle import cloudpickle
 from daft.recordbatch import RecordBatch
+from daft.schema import Schema
+from daft.series import Series
 
 
 def _write_hive_orc(root: Path, directory: str, ids: list[int] | pa.Array, **columns) -> str:
     path = root / directory / "data.orc"
     path.parent.mkdir(parents=True, exist_ok=True)
     return _write_orc(path, pa.table({"id": ids, **columns}))
+
+
+def _hive_value(value: str, dtype: pa.DataType) -> Series:
+    schema = Schema.from_pyarrow_schema(pa.schema([pa.field("p", dtype)]))
+    values = _parse_hive_partition_values(f"/p={quote(value, safe='')}/data.orc", schema._schema)
+    return Series._from_pyseries(values[0])
 
 
 @pytest.mark.parametrize(
@@ -44,12 +54,19 @@ def _write_hive_orc(root: Path, directory: str, ids: list[int] | pa.Array, **col
     ],
 )
 def test_orc_hive_directory_parser(path: str, expected: dict[str, str | None]) -> None:
-    assert _orc._parse_orc_hive_partitions(path) == expected
+    schema = Schema._from_pyschema(_infer_hive_partition_schema(path))
+    assert schema.column_names() == list(expected)
+    string_schema = Schema.from_field_name_and_types([(key, daft.DataType.string()) for key in expected])
+    values = [Series._from_pyseries(value) for value in _parse_hive_partition_values(path, string_schema._schema)]
+    assert {value.name(): value.to_pylist()[0] for value in values} == expected
 
 
 def test_orc_hive_invalid_utf8() -> None:
-    with pytest.raises(UnicodeDecodeError):
-        _orc._parse_orc_hive_partitions("/p=%FF/data.orc")
+    with pytest.raises(DaftCoreException, match="(?i)utf-8"):
+        _infer_hive_partition_schema("/p=%FF/data.orc")
+    schema = Schema.from_field_name_and_types([("p", daft.DataType.string())])
+    with pytest.raises(DaftCoreException, match="(?i)utf-8"):
+        _parse_hive_partition_values("/p=%FF/data.orc", schema._schema)
 
 
 @pytest.mark.parametrize(
@@ -122,9 +139,9 @@ def test_orc_hive_nan_and_conversion_errors(tmp_path: Path) -> None:
     df = daft.read_orc(path, hive_partitioning=True)
     assert df.schema()["p"].dtype == daft.DataType.float64()
     assert math.isnan(df.to_pydict()["p"][0])
-    with pytest.raises(ValueError, match="Unsupported ORC Hive partition type"):
-        _orc._convert_hive_value("value", pa.binary())
-    assert _orc._convert_hive_value("0" * 5000 + "3", pa.int64()) == 3
+    with pytest.raises(DaftCoreException, match="Deserializing type"):
+        _hive_value("value", pa.list_(pa.int64()))
+    assert _hive_value("0" * 5000 + "3", pa.int64()).to_pylist() == [3]
 
 
 def test_orc_hive_temporal_fixed_precision_and_failures(tmp_path: Path) -> None:
@@ -136,8 +153,8 @@ def test_orc_hive_temporal_fixed_precision_and_failures(tmp_path: Path) -> None:
     result = daft.read_orc(paths, hive_partitioning=True).sort("id").to_arrow().column("p")
     assert result.type == pa.timestamp("ms")
     assert result.cast(pa.int64()).to_pylist() == [1704067200123, 1704067200123, None]
-    assert _orc._convert_hive_value("12:00:00", pa.timestamp("s")) is None
-    assert _orc._convert_hive_value("2024-01-01T00:00:00Z", pa.timestamp("s")) is None
+    assert _hive_value("12:00:00", pa.timestamp("s")).to_pylist() == [None]
+    assert _hive_value("2024-01-01T00:00:00Z", pa.timestamp("s")).to_pylist() == [None]
 
 
 def test_orc_hive_duplicate_keys_and_field_order(tmp_path: Path) -> None:
@@ -176,8 +193,10 @@ def test_read_orc_hive_temporal_formats(tmp_path: Path, value: str, dtype: pa.Da
 
 
 def test_orc_hive_leap_second_conversion() -> None:
-    assert _orc._convert_hive_value("2024-01-01T23:59:60.123Z", pa.timestamp("s", "+00:00")) == 1704153599
-    assert _orc._convert_hive_value("2024-01-01T23:59:60Z", pa.timestamp("ms", "+00:00")) == 1704153600000
+    seconds = _hive_value("2024-01-01T23:59:60.123Z", pa.timestamp("s", "+00:00"))
+    milliseconds = _hive_value("2024-01-01T23:59:60Z", pa.timestamp("ms", "+00:00"))
+    assert seconds.cast(daft.DataType.int64()).to_pylist() == [1704153599]
+    assert milliseconds.cast(daft.DataType.int64()).to_pylist() == [1704153600000]
 
 
 @pytest.mark.parametrize(
@@ -233,10 +252,11 @@ def test_orc_hive_timezone_token_pruning(tmp_path: Path, monkeypatch, value: str
     assert df.where(predicate).select("id").to_pydict() == {"id": [2]}
 
 
-def test_orc_hive_invalid_timezone_metadata(tmp_path: Path) -> None:
+@pytest.mark.parametrize("offset", ["-05:30", "-00:30"])
+def test_orc_hive_invalid_timezone_metadata(tmp_path: Path, offset: str) -> None:
     # Preserve the current Hive inference's negative-minute offset metadata,
     # and expose its conversion error rather than silently producing a null.
-    path = _write_hive_orc(tmp_path, "p=2024-01-01T00%3A00%3A00-05%3A30", [1])
+    path = _write_hive_orc(tmp_path, f"p={quote(f'2024-01-01T00:00:00{offset}', safe='')}", [1])
     with pytest.raises(ValueError, match="(?i)timezone"):
         _tasks(OrcSource(path, None, 1, hive_partitioning=True))
 
@@ -330,6 +350,52 @@ def test_orc_hive_empty_file_and_serialization(tmp_path: Path) -> None:
     task = cloudpickle.loads(cloudpickle.dumps(tasks[1]))
     assert [batch.to_pydict() for batch in _batches(task)] == [{"id": [1], "p": [2]}, {"id": [2], "p": [2]}]
     assert source.read().to_pydict() == {"id": [1, 2], "p": [2, 2]}
+
+
+def test_hive_binding_declared_and_missing_fields() -> None:
+    schema = Schema.from_field_name_and_types([("p", daft.DataType.int64()), ("q", daft.DataType.bool())])
+    values = [
+        Series._from_pyseries(value)
+        for value in _parse_hive_partition_values("/extra=x/q=TRUE/p=bad/data.orc", schema._schema)
+    ]
+    assert [value.name() for value in values] == ["q", "p"]
+    assert [value.datatype() for value in values] == [daft.DataType.bool(), daft.DataType.int64()]
+    assert [value.to_pylist() for value in values] == [[True], [None]]
+    assert _parse_hive_partition_values("/plain/data.orc", schema._schema) == []
+    empty = Schema.from_field_name_and_types([])
+    assert _parse_hive_partition_values("/p=3/data.orc", empty._schema) == []
+
+
+@pytest.mark.parametrize(
+    "value,dtype,physical",
+    [
+        ("3", pa.int64(), 3),
+        ("TRUE", pa.bool_(), True),
+        ("1.5", pa.float64(), 1.5),
+        ("hello", pa.large_string(), "hello"),
+        ("__HIVE_DEFAULT_PARTITION__", pa.large_string(), None),
+        ("2024-01-01", pa.date32(), 19723),
+        ("12:30:00.123456789", pa.time64("ns"), 45000123456789),
+        ("1969-12-31T23:59:59.123456789", pa.timestamp("ns"), -876543211),
+        ("2024-01-01T08:00:00.123456789+08:00", pa.timestamp("ns", "+08:00"), 1704067200123456789),
+    ],
+)
+def test_orc_hive_typed_constant_serialization(tmp_path: Path, value: str, dtype: pa.DataType, physical) -> None:
+    paths = [
+        _write_hive_orc(tmp_path, f"p={quote(value, safe='')}", [1, 2], p=["physical", "physical"]),
+        _write_hive_orc(tmp_path, "plain", [3], p=["physical"]),
+    ]
+    source = cloudpickle.loads(cloudpickle.dumps(OrcSource(paths, None, 1, hive_partitioning=True)))
+    tasks = [cloudpickle.loads(cloudpickle.dumps(task)) for task in _tasks(source, Pushdowns(columns=["p"]))]
+    assert [task._partition_values["p"].datatype() for task in tasks] == [daft.DataType.from_arrow_type(dtype)] * 2
+    batches = [batch for task in tasks for batch in _batches(task)]
+    assert sum(len(batch) for batch in batches) == 3
+    result = pa.concat_tables([batch.to_arrow_table() for batch in batches]).column("p")
+    assert result.type == dtype
+    if pa.types.is_temporal(dtype):
+        result = result.cast(pa.int32() if pa.types.is_date32(dtype) else pa.int64())
+    assert result.to_pylist() == [physical, physical, None]
+    assert source.read().select("p").to_arrow().column("p").type == dtype
 
 
 def test_orc_hive_real_file_pruning(tmp_path: Path, monkeypatch) -> None:

@@ -2,17 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import os
-import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal
-from urllib.parse import unquote, urlsplit
+from typing import TYPE_CHECKING
+from urllib.parse import urlsplit
 
 from daft.api_annotations import PublicAPI
 from daft.context import get_context
-from daft.datatype import DataType
+from daft.daft import _infer_hive_partition_schema, _parse_hive_partition_values
 from daft.dependencies import pa, pads
-from daft.exceptions import DaftCoreException
 from daft.expressions import ExpressionsProjection, col, lit
 from daft.file import open_file
 from daft.filesystem import glob_path_with_stats
@@ -28,185 +26,6 @@ if TYPE_CHECKING:
     from daft import DataFrame
     from daft.daft import IOConfig
     from daft.io.pushdowns import Pushdowns
-
-
-_HIVE_INTEGER = re.compile(r"[+-]?[0-9]+")
-_HIVE_FLOAT = re.compile(
-    r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?|[+-]?(?:inf(?:inity)?|nan)", re.IGNORECASE | re.ASCII
-)
-_HIVE_TIME = re.compile(
-    r"\s*(?P<hour>[0-9]{1,2})\s*:\s*(?P<minute>[0-9]{1,2})"
-    r"(?:\s*:\s*(?P<second>[0-9]{1,2})(?:\.(?P<fraction>[0-9]+))?)?\s*"
-)
-_HIVE_TIMESTAMP = re.compile(
-    r"\s*[+-]?[0-9]+\s*-\s*[0-9]{1,2}\s*-\s*[0-9]{1,2}(?P<separator>[Tt]|\s*)"
-    r"\s*[0-9]{1,2}\s*:\s*[0-9]{1,2}\s*:\s*(?P<second>[0-9]{1,2})(?:\.(?P<fraction>[0-9]+))?"
-    r"(?:\s*(?P<offset>[Zz]|[Uu][Tt][Cc]|[+\-\u2212][0-9]{2}[:\s]*[0-9]{2}))?"
-)
-_HIVE_TIME_FACTORS = {"s": 1, "ms": 1000, "us": 1000000, "ns": 1000000000}
-
-
-def _parse_orc_hive_partitions(path: str) -> dict[str, str | None]:
-    # Split before decoding so escaped separators stay inside their key/value.
-    directory = re.split(r"[?\n]", path, maxsplit=1)[0]
-    partitions: dict[str, str | None] = {}
-    for component in re.split(r"[/\\]", directory)[:-1]:
-        if component.count("=") != 1:
-            continue
-        key, value = component.split("=", 1)
-        if not key:
-            continue
-        key = unquote(key, errors="strict")
-        value = unquote(value, errors="strict")
-        partitions[key] = None if value in {"", "__HIVE_DEFAULT_PARTITION__"} else value
-    return partitions
-
-
-def _hive_time_unit(fraction: str | None) -> Literal["s", "ms", "us", "ns"]:
-    nanos = int(((fraction or "") + "000000000")[:9])
-    if nanos == 0:
-        return "s"
-    if nanos % 1000000 == 0:
-        return "ms"
-    return "us" if nanos % 1000 == 0 else "ns"
-
-
-def _parse_hive_temporal(value: str) -> tuple[pa.DataType, int] | None:
-    source = Series.from_pylist([value])
-    for date_format in ("%Y-%m-%d", "%Y/%m/%d"):
-        try:
-            days = source.str.to_date(date_format).cast(DataType.int32()).to_pylist()[0]
-        except DaftCoreException as error:
-            if "Error in to_date: failed to parse date" not in str(error):
-                raise
-        else:
-            return pa.date32(), days
-
-    time_match = _HIVE_TIME.fullmatch(value)
-    timestamp_match = _HIVE_TIMESTAMP.fullmatch(value)
-    if time_match is None and timestamp_match is None:
-        return None
-    if time_match is not None:
-        fraction = time_match["fraction"]
-        time_unit: Literal["us", "ns"] = "ns" if _hive_time_unit(fraction) == "ns" else "us"
-        unit: Literal["s", "ms", "us", "ns"] = time_unit
-        source = Series.from_pylist([f"1970-01-01T{value}"])
-        formats: tuple[str, ...] = (
-            "%Y-%m-%dT%H :%M :%S%.f " if time_match["second"] is not None else "%Y-%m-%dT%H :%M ",
-        )
-        dtype: pa.DataType = pa.time64(time_unit)
-    else:
-        assert timestamp_match is not None
-        separator = timestamp_match["separator"]
-        fraction = timestamp_match["fraction"]
-        offset = timestamp_match["offset"]
-        unit = _hive_time_unit(fraction)
-        # Parse in microseconds so calendar validation also works outside the
-        # nanosecond range. Restore sub-microsecond digits before conversion.
-        timezone = None
-        if offset is not None:
-            formats = ("%+", "%Y-%m-%d %H:%M:%S%.f%:z")
-            if offset.lower() in {"z", "utc"}:
-                timezone = "+00:00"
-            else:
-                # Match inference.rs's signed integer offset calculation.
-                offset = re.sub(r"[\s:]", "", offset).replace("\u2212", "-")
-                minutes = (int(offset[1:3]) * 60 + int(offset[3:5])) * (-1 if offset[0] == "-" else 1)
-                hours = int(minutes / 60)
-                timezone = f"{hours:+03}:{minutes - hours * 60:02}"
-        else:
-            # Lowercase 't' is accepted by RFC3339, but not by the naive
-            # formats in ALL_NAIVE_TIMESTAMP_FMTS.
-            if separator == "t":
-                return None
-            formats = ("%Y-%m-%dT%H:%M:%S%.f",) if separator == "T" else ("%Y-%m-%d %H:%M:%S%.f",)
-        dtype = pa.timestamp(unit, timezone)
-    parsed = None
-    for format_string in formats:
-        try:
-            parsed = source.str.to_datetime(format_string)
-        except DaftCoreException as error:
-            if "Error in to_datetime: failed to parse datetime" not in str(error):
-                raise
-        else:
-            break
-    if parsed is None:
-        return None
-    ticks = parsed.cast(DataType.int64()).to_pylist()[0]
-    nanos = ticks * 1000 + int(((fraction or "") + "000000000")[:9]) % 1000
-    ticks = nanos // (1000000000 // _HIVE_TIME_FACTORS[unit])
-    if timestamp_match is not None and timestamp_match["second"] == "60" and unit == "s":
-        # Chrono timestamp() excludes the leap-second nanoseconds, whereas
-        # timestamp_millis()/micros()/nanos() include them.
-        ticks -= 1
-    return dtype, ticks
-
-
-def _parse_hive_integer(value: str) -> int | None:
-    if _HIVE_INTEGER.fullmatch(value) is None:
-        return None
-    digits = value.lstrip("+-").lstrip("0") or "0"
-    if len(digits) > 19:
-        return None
-    integer = int(digits) * (-1 if value.startswith("-") else 1)
-    return integer if -(2**63) <= integer < 2**63 else None
-
-
-def _infer_hive_type(value: str | None) -> pa.DataType:
-    if value is None:
-        return pa.string()
-    if value.lower() in {"true", "false"}:
-        return pa.bool_()
-    if _parse_hive_integer(value) is not None:
-        return pa.int64()
-    if _HIVE_FLOAT.fullmatch(value):
-        return pa.float64()
-    temporal = _parse_hive_temporal(value)
-    return temporal[0] if temporal is not None else pa.string()
-
-
-def _convert_hive_value(value: str | None, dtype: pa.DataType) -> bool | int | float | str | None:
-    if value is None:
-        return None
-    if pa.types.is_string(dtype):
-        return value
-    if pa.types.is_boolean(dtype):
-        return value.lower() == "true" if value.lower() in {"true", "false"} else None
-    if pa.types.is_int64(dtype):
-        return _parse_hive_integer(value)
-    if pa.types.is_float64(dtype):
-        return float(value) if _HIVE_FLOAT.fullmatch(value) else None
-    if pa.types.is_date32(dtype) or pa.types.is_time64(dtype) or pa.types.is_timestamp(dtype):
-        if (
-            pa.types.is_timestamp(dtype)
-            and dtype.tz is not None
-            and dtype.tz.startswith(("+", "-"))
-            and re.fullmatch(r"[+-](?:[01][0-9]|2[0-3]):[0-5][0-9]", dtype.tz) is None
-        ):
-            raise ValueError(f"Invalid ORC Hive partition timezone: {dtype.tz}")
-        temporal = _parse_hive_temporal(value)
-        if temporal is None:
-            return None
-        parsed_dtype, ticks = temporal
-        if pa.types.is_date32(dtype):
-            return ticks if pa.types.is_date32(parsed_dtype) else None
-        if pa.types.is_time64(dtype) != pa.types.is_time64(parsed_dtype):
-            return None
-        if pa.types.is_timestamp(dtype) and (
-            not pa.types.is_timestamp(parsed_dtype) or (dtype.tz is None) != (parsed_dtype.tz is None)
-        ):
-            return None
-        if not isinstance(parsed_dtype, (pa.Time64Type, pa.TimestampType)):
-            return None
-        ticks = ticks * _HIVE_TIME_FACTORS[dtype.unit] // _HIVE_TIME_FACTORS[parsed_dtype.unit]
-        timestamp_match = _HIVE_TIMESTAMP.fullmatch(value)
-        if pa.types.is_timestamp(dtype) and timestamp_match is not None and timestamp_match["second"] == "60":
-            if parsed_dtype.unit == "s" and dtype.unit != "s":
-                ticks += _HIVE_TIME_FACTORS[dtype.unit]
-            elif parsed_dtype.unit != "s" and dtype.unit == "s":
-                ticks -= 1
-        return ticks if -(2**63) <= ticks < 2**63 else None
-    raise ValueError(f"Unsupported ORC Hive partition type: {dtype}")
 
 
 def _is_same_file(path: str, file_path: str) -> bool:
@@ -268,7 +87,7 @@ def _iter_orc_batches(
     schema: pa.Schema,
     io_config: IOConfig | None,
     batch_size: int,
-    partition_values: dict[str, bool | int | float | str | None] | None = None,
+    partition_values: dict[str, Series] | None = None,
 ) -> Generator[RecordBatch, None, None]:
     with open_file(path, "rb", io_config=io_config) as file:
         try:
@@ -280,7 +99,7 @@ def _iter_orc_batches(
             projection = ExpressionsProjection(
                 [
                     (
-                        lit(partition_values[field.name])
+                        lit(partition_values[field.name]).get(0)
                         if field.name in partition_values
                         else col(field.name)
                         if field.name in columns
@@ -376,21 +195,23 @@ class OrcSource(DataSource):
         self._io_config = io_config
         self._batch_size = batch_size
         self._arrow_schema = _infer_orc_schema(self._paths[0], io_config)
-        partitions = _parse_orc_hive_partitions(self._paths[0]) if hive_partitioning else {}
-        self._partition_schema = pa.schema(
-            [pa.field(key, _infer_hive_type(value)) for key, value in partitions.items()]
+        self._partition_schema = (
+            Schema._from_pyschema(_infer_hive_partition_schema(self._paths[0]))
+            if hive_partitioning
+            else Schema.from_field_name_and_types([])
         )
-        partition_fields = {field.name: field for field in self._partition_schema}
+        arrow_partition_schema = self._partition_schema.to_pyarrow_schema()
+        partition_fields = {field.name: field for field in arrow_partition_schema}
         if partition_fields:
             self._arrow_schema = pa.schema(
                 [partition_fields.get(field.name, field) for field in self._arrow_schema]
-                + [field for field in self._partition_schema if field.name not in self._arrow_schema.names],
+                + [field for field in arrow_partition_schema if field.name not in self._arrow_schema.names],
                 metadata={key: value for key, value in (self._arrow_schema.metadata or {}).items()} or None,
             )
         self._schema = Schema.from_pyarrow_schema(self._arrow_schema)
 
     def get_partition_fields(self) -> list[PartitionField]:
-        return [PartitionField.create(field) for field in Schema.from_pyarrow_schema(self._partition_schema)]
+        return [PartitionField.create(field) for field in self._partition_schema]
 
     @property
     def name(self) -> str:
@@ -401,28 +222,37 @@ class OrcSource(DataSource):
         return self._schema
 
     async def get_tasks(self, pushdowns: Pushdowns) -> AsyncIterator[OrcSourceTask]:
+        # Hive inference can produce signed minutes (e.g. -05:-30). Preserve
+        # ORC's error for this invalid Arrow timezone metadata.
+        for partition_field in self._partition_schema:
+            if partition_field.dtype.is_timestamp():
+                timezone = partition_field.dtype.timezone
+                if timezone is not None and ":-" in timezone:
+                    raise ValueError(f"Invalid ORC Hive partition timezone: {timezone}")
         if pushdowns.columns is None:
             schema = self._arrow_schema
         else:
             required = set(pushdowns.columns) | pushdowns.filter_required_column_names()
             schema = pa.schema([field for field in self._arrow_schema if field.name in required])
         for path in self._paths:
-            values: dict[str, bool | int | float | str | None] = {}
+            values: dict[str, Series] = {}
             if len(self._partition_schema) > 0:
-                partitions = _parse_orc_hive_partitions(path)
                 values = {
-                    field.name: _convert_hive_value(partitions.get(field.name), field.type)
+                    series.name(): series
+                    for series in (
+                        Series._from_pyseries(value)
+                        for value in _parse_hive_partition_values(path, self._partition_schema._schema)
+                    )
+                }
+                values = {
+                    field.name: (
+                        values[field.name]
+                        if field.name in values
+                        else Series.from_pylist([None], name=field.name, dtype=field.dtype)
+                    )
                     for field in self._partition_schema
                 }
-                constants = RecordBatch.from_pydict({key: [value] for key, value in values.items()})
-                constants = constants.eval_expression_list(
-                    ExpressionsProjection(
-                        [
-                            col(field.name).cast(field.dtype).alias(field.name)
-                            for field in Schema.from_pyarrow_schema(self._partition_schema)
-                        ]
-                    )
-                )
+                constants = RecordBatch._from_series(list(values.values()))
                 if (
                     pushdowns.partition_filters is not None
                     and len(constants.filter(ExpressionsProjection([pushdowns.partition_filters]))) == 0
@@ -437,7 +267,7 @@ class OrcSourceTask(DataSourceTask):
     _arrow_schema: pa.Schema
     _io_config: IOConfig | None
     _batch_size: int
-    _partition_values: dict[str, bool | int | float | str | None] = field(default_factory=dict)
+    _partition_values: dict[str, Series] = field(default_factory=dict)
 
     @property
     def schema(self) -> Schema:

@@ -60,7 +60,7 @@ df = daft.read_orc("/path/to/data", hive_partitioning=True)
 result = df.where(daft.col("year") == 2025).select("region")
 ```
 
-The first matched file determines the partition keys and their types. Later files use those types, and new directory keys are ignored. Values are inferred as booleans, signed 64-bit integers, floating-point numbers, dates, times, timestamps, or strings. Time and timestamp precision is preserved, including nanoseconds and fixed timestamp offsets. Values that cannot be parsed as the inferred type become null. No partition schema merging or explicit partition type override is provided.
+The first matched file determines the partition keys and their types. Later files use those types, and new directory keys are ignored. Directory parsing, type inference, and value conversion use the same Rust Hive helpers as native file scans. Values are inferred as booleans, signed 64-bit integers, floating-point numbers, dates, times, timestamps, or strings. Time and timestamp precision is preserved, including nanoseconds and fixed timestamp offsets. Values that cannot be parsed as the inferred type become null. No partition schema merging or explicit partition type override is provided.
 
 Invalid UTF-8 directory text or invalid timezone metadata raises an error. The current Hive inference produces invalid timezone metadata when a partition's first timestamp value has a negative offset with nonzero minutes; these reads raise an error.
 
