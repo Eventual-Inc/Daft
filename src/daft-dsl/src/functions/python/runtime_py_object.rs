@@ -1,7 +1,5 @@
 #![allow(clippy::all, reason = "todo: remove; getting a rustc error")]
 
-use std::sync::Arc;
-
 #[cfg(feature = "python")]
 use common_py_serde::PyObjectWrapper;
 use serde::{Deserialize, Serialize};
@@ -16,8 +14,6 @@ pub struct RuntimePyObject {
 impl RuntimePyObject {
     /// Creates a new 'None' python value as 'None' is used where a non-optional RuntimePyObject is expected.
     pub fn new_none() -> Self {
-        use std::sync::Arc;
-
         #[cfg(feature = "python")]
         {
             let none_value = Arc::new(pyo3::Python::attach(|py| py.None()));

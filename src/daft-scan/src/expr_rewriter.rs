@@ -6,7 +6,7 @@ use daft_core::prelude::Operator;
 use daft_dsl::{
     Column, Expr, ExprRef, ResolvedColumn,
     common_treenode::{Transformed, TreeNode, TreeNodeRecursion},
-    functions::{FunctionExpr, partitioning},
+    functions::partitioning,
     null_lit, resolved_col,
 };
 

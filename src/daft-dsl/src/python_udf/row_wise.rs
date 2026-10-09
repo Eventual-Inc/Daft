@@ -1,14 +1,10 @@
-use std::{collections::HashMap, fmt::Display, num::NonZeroUsize, sync::Arc};
+use std::{fmt::Display, num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftResult;
 use common_hashable_float_wrapper::FloatWrapper as HashableF64;
 use common_metrics::MetricsCollector;
 use daft_core::{prelude::*, series::Series};
 use itertools::Itertools;
-use opentelemetry::{
-    Key,
-    logs::{AnyValue, LogRecord, Logger, LoggerProvider},
-};
 #[cfg(feature = "python")]
 use pyo3::{PyErr, Python, prelude::*};
 use serde::{Deserialize, Serialize};

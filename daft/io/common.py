@@ -24,7 +24,7 @@ def get_tabular_files_scan(
     file_format_config: FileFormatConfig,
     storage_config: StorageConfig,
     file_path_column: str | None = None,
-    hive_partitioning: bool = False,
+    hive_partitioning: bool | None = None,
     skip_glob: bool = False,
 ) -> LogicalPlanBuilder:
     """Returns a TabularFilesScan LogicalPlan for a given glob filepath."""
