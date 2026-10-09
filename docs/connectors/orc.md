@@ -19,6 +19,24 @@ Paths follow Daft's native glob syntax, including `*`, `?`, `[...]`, and `{...}`
 
 Schema inference occurs when the DataFrame is created. Rows are read when an action such as `collect`, `show`, or `write_parquet` executes. Each file is processed by one task, so multiple files can be read in parallel. Stripes within one file are not scheduled as separate distributed tasks.
 
+## Source File Paths
+
+Set `file_path_column` to include each row's source file path:
+
+```python
+df = daft.read_orc("/path/to/files-*.orc", file_path_column="source_path")
+paths = df.select("source_path")
+result = df.where(
+    (daft.col("source_path") == "/path/to/files-1.orc") & (daft.col("score") > 0.5)
+).select("id", "source_path")
+```
+
+The option defaults to `None`. When enabled, the string column is appended after the inferred file fields. A name already present in the inferred schema raises `ValueError`, as with Parquet reads. Later files remain aligned to the first file's schema; a same-named physical field in a later file does not replace the source path.
+
+Local paths are absolute and omit the `file://` prefix. Remote paths retain their URI scheme, such as `s3://` or `https://`. Paths come from the files matched during discovery, rather than the directory or glob supplied by the caller. URI characters are not decoded separately by the ORC reader.
+
+Selecting only the path column preserves the number of rows, and filters can combine the path column with data fields. Files with zero rows contribute no path values. The path column is generated during reading and is not requested from the ORC scanner; path filters do not add file pruning.
+
 ## Remote Storage
 
 Use the same [`IOConfig`][daft.io.IOConfig] as other Daft file readers. If `io_config` is omitted, the reader uses the planning context's default configuration.

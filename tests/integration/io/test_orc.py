@@ -51,6 +51,18 @@ def test_read_orc_http(orc_http_url: str) -> None:
 
 
 @pytest.mark.integration()
+def test_read_orc_http_file_path_column(orc_http_url: str) -> None:
+    df = daft.read_orc(orc_http_url, batch_size=2, file_path_column="source_path")
+    assert df.column_names == ["id", "name", "source_path"]
+    assert df.select("source_path").to_pydict() == {"source_path": [orc_http_url] * 9}
+    assert df.where((daft.col("source_path") == orc_http_url) & (daft.col("id") >= 6)).select("name").sort(
+        "name"
+    ).to_pydict() == {"name": ["row-6", "row-7", "row-8"]}
+    assert df.where(daft.col("id") >= 6).select("source_path").to_pydict() == {"source_path": [orc_http_url] * 3}
+    assert df.where((daft.col("source_path") == orc_http_url) & (daft.col("id") >= 6)).count_rows() == 3
+
+
+@pytest.mark.integration()
 @pytest.mark.parametrize("kind", ["file", "directory", "glob", "list"])
 def test_read_orc_s3(minio_io_config: daft.io.IOConfig, kind: str) -> None:
     with minio_create_bucket(minio_io_config=minio_io_config) as (fs, bucket):
@@ -66,6 +78,32 @@ def test_read_orc_s3(minio_io_config: daft.io.IOConfig, kind: str) -> None:
             {"id": [1, 2], "name": ["a", "b"]} if kind == "file" else {"id": [1, 2, 3, 4], "name": ["a", "b", "c", "d"]}
         )
         assert df.sort("id").to_pydict() == expected
+
+
+@pytest.mark.integration()
+@pytest.mark.parametrize("kind", ["file", "directory", "glob", "list"])
+def test_read_orc_s3_file_path_column(minio_io_config: daft.io.IOConfig, kind: str) -> None:
+    with minio_create_bucket(minio_io_config=minio_io_config) as (fs, bucket):
+        root = f"s3://{bucket}/orc"
+        first = f"{root}/first.orc"
+        second = f"{root}/nested/second.orc"
+        fs.write_bytes(first, _orc_bytes(pa.table({"id": [1, 2]})))
+        fs.write_bytes(second, _orc_bytes(pa.table({"id": [3, 4]})))
+        paths = {"file": first, "directory": root, "glob": f"{root}/**/*.orc", "list": [first, second]}
+        df = daft.read_orc(paths[kind], io_config=minio_io_config, batch_size=1, file_path_column="source_path")
+        expected = {"id": [1, 2], "source_path": [first] * 2}
+        if kind != "file":
+            expected["id"].extend([3, 4])
+            expected["source_path"].extend([second] * 2)
+        assert df.sort("id").to_pydict() == expected
+        assert df.select("source_path").sort("source_path").to_pydict() == {
+            "source_path": sorted(expected["source_path"])
+        }
+        assert df.where((daft.col("source_path") == first) & (daft.col("id") == 2)).select("id").to_pydict() == {
+            "id": [2]
+        }
+        assert df.where(daft.col("id") == 2).select("source_path").to_pydict() == {"source_path": [first]}
+        assert df.where((daft.col("source_path") == first) & (daft.col("id") == 2)).count_rows() == 1
 
 
 @pytest.mark.integration()
