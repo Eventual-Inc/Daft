@@ -265,6 +265,7 @@ pub fn row_wise_udf(
     cpus: Option<f64>,
     gpus: f64,
     use_process: Option<bool>,
+    min_concurrency: Option<usize>,
     max_concurrency: Option<usize>,
     max_retries: Option<usize>,
     on_error: Option<String>,
@@ -291,6 +292,19 @@ pub fn row_wise_udf(
                 .ok_or_else(|| PyValueError::new_err("max_concurrency for udf must be non-zero"))
         })
         .transpose()?;
+    let min_concurrency = min_concurrency
+        .map(|c| {
+            NonZeroUsize::new(c)
+                .ok_or_else(|| PyValueError::new_err("min_concurrency for udf must be non-zero"))
+        })
+        .transpose()?;
+    if let (Some(min), Some(max)) = (min_concurrency, max_concurrency)
+        && min > max
+    {
+        return Err(PyValueError::new_err(
+            "min_concurrency for udf must be less than or equal to max_concurrency",
+        ));
+    }
 
     Ok(PyExpr {
         expr: crate::python_udf::row_wise_udf(
@@ -304,6 +318,7 @@ pub fn row_wise_udf(
             cpus.map(FloatWrapper),
             FloatWrapper(gpus),
             use_process,
+            min_concurrency,
             max_concurrency,
             max_retries,
             on_error_enum.unwrap_or_default(),
@@ -328,6 +343,7 @@ pub fn batch_udf(
     cpus: Option<f64>,
     gpus: f64,
     use_process: Option<bool>,
+    min_concurrency: Option<usize>,
     max_concurrency: Option<usize>,
     batch_size: Option<usize>,
     max_retries: Option<usize>,
@@ -355,6 +371,19 @@ pub fn batch_udf(
                 .ok_or_else(|| PyValueError::new_err("max_concurrency for udf must be non-zero"))
         })
         .transpose()?;
+    let min_concurrency = min_concurrency
+        .map(|c| {
+            NonZeroUsize::new(c)
+                .ok_or_else(|| PyValueError::new_err("min_concurrency for udf must be non-zero"))
+        })
+        .transpose()?;
+    if let (Some(min), Some(max)) = (min_concurrency, max_concurrency)
+        && min > max
+    {
+        return Err(PyValueError::new_err(
+            "min_concurrency for udf must be less than or equal to max_concurrency",
+        ));
+    }
 
     Ok(PyExpr {
         expr: crate::python_udf::batch_udf(
@@ -368,6 +397,7 @@ pub fn batch_udf(
             cpus.map(FloatWrapper),
             FloatWrapper(gpus),
             use_process,
+            min_concurrency,
             max_concurrency,
             batch_size,
             original_args.into(),
