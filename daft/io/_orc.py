@@ -84,16 +84,29 @@ def _iter_orc_batches(
     schema: pa.Schema,
     io_config: IOConfig | None,
     batch_size: int,
+    file_path_column: str | None = None,
 ) -> Generator[RecordBatch, None, None]:
     with open_file(path, "rb", io_config=io_config) as file:
         try:
             fragment = pads.OrcFileFormat().make_fragment(file)
             physical_schema = fragment.physical_schema
-            columns = [name for name in schema.names if name in physical_schema.names]
+            # A later file's same-named physical field must not replace the generated path.
+            columns = [name for name in schema.names if name != file_path_column and name in physical_schema.names]
             target_schema = Schema.from_pyarrow_schema(schema)
+            file_path = path.removeprefix("file://")
+            if os.name == "nt" and file_path.startswith("/") and file_path[2:3] == ":":
+                file_path = file_path[1:]
             projection = ExpressionsProjection(
                 [
-                    (col(field.name) if field.name in columns else lit(None)).cast(field.dtype).alias(field.name)
+                    (
+                        lit(file_path)
+                        if field.name == file_path_column
+                        else col(field.name)
+                        if field.name in columns
+                        else lit(None)
+                    )
+                    .cast(field.dtype)
+                    .alias(field.name)
                     for field in target_schema
                 ]
             )
@@ -125,6 +138,7 @@ def read_orc(
     path: str | list[str],
     io_config: IOConfig | None = None,
     batch_size: int = 128 * 1024,
+    file_path_column: str | None = None,
 ) -> DataFrame:
     """Creates a DataFrame from ORC file(s).
 
@@ -137,6 +151,11 @@ def read_orc(
             the planning context's default I/O configuration.
         batch_size: Maximum number of rows yielded per record batch. Defaults
             to 131072. This does not impose a fixed memory limit.
+        file_path_column: Include each row's source path as a string column
+            with this name. Defaults to None. The column is appended after
+            the file's fields; a name already in the inferred schema raises
+            ValueError. Local paths omit ``file://``; remote paths retain
+            their URI scheme, as with Parquet reads.
 
     Returns:
         DataFrame: parsed DataFrame.
@@ -165,15 +184,28 @@ def read_orc(
         raise ValueError(f"batch_size must be a positive integer, received {batch_size!r}")
 
     io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
-    return OrcSource(path, io_config=io_config, batch_size=batch_size).read()
+    return OrcSource(path, io_config=io_config, batch_size=batch_size, file_path_column=file_path_column).read()
 
 
 class OrcSource(DataSource):
-    def __init__(self, path: str | list[str], io_config: IOConfig | None, batch_size: int) -> None:
+    def __init__(
+        self,
+        path: str | list[str],
+        io_config: IOConfig | None,
+        batch_size: int,
+        file_path_column: str | None = None,
+    ) -> None:
         self._paths = _resolve_orc_paths(path, io_config)
         self._io_config = io_config
         self._batch_size = batch_size
+        self._file_path_column = file_path_column
         self._arrow_schema = _infer_orc_schema(self._paths[0], io_config)
+        if file_path_column is not None:
+            if file_path_column in self._arrow_schema.names:
+                raise ValueError(
+                    f"Attempting to make a Schema with a file path column name that already exists: {file_path_column}"
+                )
+            self._arrow_schema = self._arrow_schema.append(pa.field(file_path_column, pa.string()))
         self._schema = Schema.from_pyarrow_schema(self._arrow_schema)
 
     @property
@@ -191,7 +223,7 @@ class OrcSource(DataSource):
             required = set(pushdowns.columns) | pushdowns.filter_required_column_names()
             schema = pa.schema([field for field in self._arrow_schema if field.name in required])
         for path in self._paths:
-            yield OrcSourceTask(path, schema, self._io_config, self._batch_size)
+            yield OrcSourceTask(path, schema, self._io_config, self._batch_size, self._file_path_column)
 
 
 @dataclass
@@ -200,13 +232,16 @@ class OrcSourceTask(DataSourceTask):
     _arrow_schema: pa.Schema
     _io_config: IOConfig | None
     _batch_size: int
+    _file_path_column: str | None = None
 
     @property
     def schema(self) -> Schema:
         return Schema.from_pyarrow_schema(self._arrow_schema)
 
     async def read(self) -> AsyncIterator[RecordBatch]:
-        batches = _iter_orc_batches(self._path, self._arrow_schema, self._io_config, self._batch_size)
+        batches = _iter_orc_batches(
+            self._path, self._arrow_schema, self._io_config, self._batch_size, self._file_path_column
+        )
         try:
             while True:
                 pending = asyncio.create_task(asyncio.to_thread(next, batches, None))
