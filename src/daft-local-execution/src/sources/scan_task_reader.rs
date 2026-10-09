@@ -87,7 +87,14 @@ pub(crate) async fn read_scan_task(
         #[cfg(feature = "python")]
         SourceConfig::Database(cfg) => read_database(scan_task, cfg).await,
         #[cfg(feature = "python")]
-        SourceConfig::PythonFunction { .. } => read_python_function(scan_task).await,
+        SourceConfig::PythonFunction { .. } => {
+            let orc = OrcReadContext::from_scan_task(scan_task)?;
+            let stream = read_python_function(scan_task).await?;
+            match orc {
+                Some(orc) => Ok(orc.filter_stream(stream, skipped_corrupt_files)),
+                None => Ok(stream),
+            }
+        }
     }
 }
 
@@ -429,6 +436,129 @@ async fn read_database(
 }
 
 #[cfg(feature = "python")]
+struct OrcReadContext {
+    path: String,
+    classify_error: pyo3::Py<pyo3::PyAny>,
+}
+
+#[cfg(feature = "python")]
+impl OrcReadContext {
+    fn from_scan_task(scan_task: &ScanTask) -> DaftResult<Option<Self>> {
+        use daft_scan::ScanSourceKind;
+        use pyo3::prelude::*;
+
+        let Some(source) = scan_task.sources.first() else {
+            return Ok(None);
+        };
+        let ScanSourceKind::PythonFactoryFunction {
+            module,
+            func_name,
+            func_args,
+        } = &source.kind
+        else {
+            return Ok(None);
+        };
+        if module != "daft.io.__internal" || func_name != "_get_record_batches" {
+            return Ok(None);
+        }
+        Python::attach(|py| -> PyResult<Option<Self>> {
+            let args = func_args.to_pytuple(py)?;
+            if args.len() != 1 {
+                return Ok(None);
+            }
+            let task = args.get_item(0)?;
+            let orc = py.import("daft.io._orc")?;
+            if !task.get_type().as_any().is(&orc.getattr("OrcSourceTask")?) {
+                return Ok(None);
+            }
+            if !task.getattr("_ignore_corrupt_files")?.extract::<bool>()? {
+                return Ok(None);
+            }
+            Ok(Some(Self {
+                path: task.getattr("_path")?.extract()?,
+                classify_error: orc.getattr("_is_ignorable_orc_error")?.unbind(),
+            }))
+        })
+        .map_err(Into::into)
+    }
+
+    fn is_ignorable(&self, error: &common_error::DaftError) -> DaftResult<bool> {
+        use common_error::DaftError;
+        use pyo3::prelude::*;
+
+        let DaftError::External(error) = error else {
+            return Ok(false);
+        };
+        let Some(daft_micropartition::Error::PyIO { source }) =
+            error.downcast_ref::<daft_micropartition::Error>()
+        else {
+            return Ok(false);
+        };
+        Python::attach(|py| {
+            self.classify_error
+                .call1(py, (source.value(py),))?
+                .extract::<bool>(py)
+        })
+        .map_err(Into::into)
+    }
+
+    fn filter_stream(
+        self,
+        stream: BoxStream<'static, DaftResult<RecordBatch>>,
+        skipped_corrupt_files: SkippedCorruptFilesCollector,
+    ) -> BoxStream<'static, DaftResult<RecordBatch>> {
+        use futures::StreamExt;
+
+        let mut saw_ok = false;
+        Box::pin(stream.filter_map(move |result| {
+            let filtered = match result {
+                Ok(batch) => {
+                    saw_ok = true;
+                    Some(Ok(batch))
+                }
+                Err(error) => match self.is_ignorable(&error) {
+                    Ok(true) => {
+                        match record_orc_skip(
+                            &skipped_corrupt_files,
+                            &self.path,
+                            &error.to_string(),
+                            saw_ok,
+                        ) {
+                            Ok(()) => None,
+                            Err(error) => Some(Err(error)),
+                        }
+                    }
+                    Ok(false) => Some(Err(error)),
+                    Err(classification_error) => Some(Err(classification_error)),
+                },
+            };
+            futures::future::ready(filtered)
+        }))
+    }
+}
+
+#[cfg(any(feature = "python", test))]
+fn record_orc_skip(
+    collector: &SkippedCorruptFilesCollector,
+    path: &str,
+    reason: &str,
+    partial: bool,
+) -> DaftResult<()> {
+    if let Some(collector) = collector {
+        collector
+            .lock()
+            .map_err(|_| {
+                common_error::DaftError::InternalError(
+                    "Unable to record skipped ORC file".to_string(),
+                )
+            })?
+            .push((path.to_string(), reason.to_string(), partial));
+    }
+    tracing::warn!("Skipping corrupt ORC file {path} (partial={partial}): {reason}");
+    Ok(())
+}
+
+#[cfg(feature = "python")]
 async fn read_python_function(
     scan_task: &Arc<ScanTask>,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
@@ -443,6 +573,48 @@ mod tests {
     use daft_scan::Pushdowns;
 
     use super::parquet_count_pushdown_unsupported_reason;
+
+    #[test]
+    fn orc_skip_preserves_shared_entries_and_partial() {
+        let collector = std::sync::Arc::new(std::sync::Mutex::new(vec![(
+            "existing.parquet".to_string(),
+            "existing failure".to_string(),
+            false,
+        )]));
+        super::record_orc_skip(
+            &Some(collector.clone()),
+            "partial.orc",
+            "decode failure",
+            true,
+        )
+        .unwrap();
+        let entries = collector.lock().unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].0, "existing.parquet");
+        assert_eq!(
+            entries[1],
+            (
+                "partial.orc".to_string(),
+                "decode failure".to_string(),
+                true
+            )
+        );
+    }
+
+    #[test]
+    fn orc_skip_collector_failure_is_visible() {
+        let collector = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
+        let poisoned = std::panic::catch_unwind(|| {
+            let _guard = collector.lock().unwrap();
+            std::panic::resume_unwind(Box::new(()));
+        });
+        assert!(poisoned.is_err());
+        let result = super::record_orc_skip(&Some(collector), "bad.orc", "decode failure", false);
+        assert!(matches!(
+            result,
+            Err(common_error::DaftError::InternalError(_))
+        ));
+    }
 
     #[test]
     fn count_all_no_pushdowns_is_supported() {

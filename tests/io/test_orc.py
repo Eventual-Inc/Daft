@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import io
 import threading
+from collections.abc import AsyncIterator, Iterator
 from decimal import Decimal
 from pathlib import Path
 
@@ -14,13 +16,67 @@ import daft
 from daft.io import _orc
 from daft.io._orc import OrcSource, OrcSourceTask
 from daft.io.pushdowns import Pushdowns
+from daft.io.source import DataSource, DataSourceTask
 from daft.pickle import cloudpickle
 from daft.recordbatch import RecordBatch
+from daft.schema import Schema
 
 
 def _write_orc(path: Path, table: pa.Table, **kwargs) -> str:
     orc.write_table(table, path, **kwargs)
     return str(path)
+
+
+def _orc_proto_fields(data: bytes) -> Iterator[tuple[int, int | bytes]]:
+    """Read the varint and length-delimited fields in a generated ORC footer."""
+    position = 0
+
+    def varint() -> int:
+        nonlocal position
+        value = shift = 0
+        while True:
+            byte = data[position]
+            position += 1
+            value |= (byte & 127) << shift
+            if byte < 128:
+                return value
+            shift += 7
+
+    while position < len(data):
+        key = varint()
+        if key & 7 == 0:
+            yield key >> 3, varint()
+        else:
+            assert key & 7 == 2
+            size = varint()
+            value = data[position : position + size]
+            position += size
+            yield key >> 3, value
+
+
+def _corrupt_orc_stripe(data: bytes, stripe_index: int = 1, *, footer: bool = False) -> bytes:
+    """Damage a stripe's data or footer while retaining the file schema.
+
+    Field numbers follow https://orc.apache.org/specification/ORCv1/.
+    Generated files must use uncompressed ORC metadata.
+    """
+    reader = orc.ORCFile(io.BytesIO(data))
+    assert reader.compression == "UNCOMPRESSED"
+    footer_end = len(data) - 1 - data[-1]
+    file_footer = data[footer_end - reader.file_footer_length : footer_end]
+    stripes = [dict(_orc_proto_fields(value)) for field, value in _orc_proto_fields(file_footer) if field == 3]
+    stripe = stripes[stripe_index]
+    offset, index_length, data_length = stripe[1], stripe[2], stripe[3]
+    assert isinstance(offset, int) and isinstance(index_length, int) and isinstance(data_length, int)
+    if footer:
+        start = offset + index_length + data_length
+        data_length = stripe[4]
+        assert isinstance(data_length, int)
+    else:
+        start = offset + index_length
+    damaged = bytearray(data)
+    damaged[start : start + data_length] = b"\xff" * data_length
+    return bytes(damaged)
 
 
 def _native_file_uri(path: Path) -> str:
@@ -393,3 +449,117 @@ def test_orc_task_cancellation_waits_for_reader(orc_path: str, monkeypatch) -> N
         assert closed.is_set()
     finally:
         release.set()
+
+
+@pytest.mark.parametrize("value", [None, 0, 1, "true"])
+def test_orc_ignore_corrupt_validates_boolean(orc_path: str, value) -> None:
+    with pytest.raises(TypeError, match="ignore_corrupt_files must be a boolean"):
+        daft.read_orc(orc_path, ignore_corrupt_files=value)
+
+
+@pytest.mark.parametrize("ignore", [False, True])
+def test_orc_ignore_corrupt_unmatched_paths(tmp_path: Path, ignore: bool) -> None:
+    with pytest.raises(FileNotFoundError):
+        daft.read_orc(str(tmp_path / "missing*.orc"), ignore_corrupt_files=ignore)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        PermissionError("denied"),
+        OSError("network reset"),
+        OSError("Not an ORC file"),
+        ValueError("schema conversion"),
+        OSError("bad read in RleDecoderV2::readByte"),
+    ],
+)
+def test_orc_unrelated_errors_are_not_corruption(error: Exception) -> None:
+    assert not _orc._is_ignorable_orc_error(error)
+    wrapped = OSError("Unable to read ORC file 'input': failure")
+    wrapped.__cause__ = error
+    if str(error) != "bad read in RleDecoderV2::readByte":
+        assert not _orc._is_ignorable_orc_error(wrapped)
+
+
+@pytest.mark.parametrize("ignore", [False, True])
+@pytest.mark.parametrize("error", [PermissionError("denied"), OSError("network reset")])
+def test_orc_inference_preserves_io_errors(orc_path: str, monkeypatch, ignore: bool, error: Exception) -> None:
+    def fail(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(_orc, "open_file", fail)
+    with pytest.raises(type(error), match=str(error)):
+        daft.read_orc(orc_path, ignore_corrupt_files=ignore)
+
+
+def test_orc_inference_missing_fallback_retains_candidates(tmp_path: Path, monkeypatch) -> None:
+    first = _write_orc(tmp_path / "first.orc", pa.table({"id": [1]}))
+    second = _write_orc(tmp_path / "second.orc", pa.table({"id": [2]}))
+    original = _orc._infer_orc_schema
+
+    def infer(path, io_config):
+        if path == _native_file_uri(Path(first)):
+            raise FileNotFoundError("file disappeared after listing")
+        return original(path, io_config)
+
+    monkeypatch.setattr(_orc, "_infer_orc_schema", infer)
+    source = OrcSource([first, second], None, 1, True)
+    tasks = _tasks(source)
+    assert [task._path for task in tasks] == [_native_file_uri(Path(first)), _native_file_uri(Path(second))]
+    assert all(task._ignore_corrupt_files for task in tasks)
+    assert cloudpickle.loads(cloudpickle.dumps(tasks[0]))._ignore_corrupt_files
+    with pytest.raises(FileNotFoundError):
+        OrcSource([first, second], None, 1, False)
+
+
+@pytest.mark.parametrize("ignore", [False, True])
+def test_orc_ignore_corrupt_preserves_conversion_errors(tmp_path: Path, ignore: bool) -> None:
+    first = _write_orc(tmp_path / "first.orc", pa.table({"id": [1]}))
+    second = _write_orc(tmp_path / "second.orc", pa.table({"id": [[2, 3]]}))
+    with pytest.raises(Exception, match="(?i)(cast|convert|schema)"):
+        daft.read_orc([first, second], ignore_corrupt_files=ignore).collect()
+
+
+def test_orc_conversion_oserror_is_not_swallowed(tmp_path: Path, monkeypatch) -> None:
+    first = _write_orc(tmp_path / "first.orc", pa.table({"id": [1]}))
+    second = _write_orc(tmp_path / "second.orc", pa.table({"id": ["2"]}))
+
+    def fail(*args, **kwargs):
+        raise OSError("bad read in RleDecoderV2::readByte")
+
+    monkeypatch.setattr(RecordBatch, "eval_expression_list", fail)
+    task = _tasks(OrcSource([first, second], None, 1, True))[1]
+    with pytest.raises(OSError) as failure:
+        _batches(task)
+    assert not _orc._is_ignorable_orc_error(failure.value)
+
+
+class _OtherCorruptTask(DataSourceTask):
+    _path = "other-source"
+    _ignore_corrupt_files = True
+
+    @property
+    def schema(self) -> Schema:
+        return Schema.from_pyarrow_schema(pa.schema([("id", pa.int64())]))
+
+    async def read(self) -> AsyncIterator[RecordBatch]:
+        yield RecordBatch.from_arrow_record_batches([pa.record_batch({"id": [1]})], self.schema.to_pyarrow_schema())
+        raise OSError("Could not open ORC input source 'other-source': Not an ORC file")
+
+
+class _OtherCorruptSource(DataSource):
+    @property
+    def name(self) -> str:
+        return "OrcSource"
+
+    @property
+    def schema(self) -> Schema:
+        return _OtherCorruptTask().schema
+
+    async def get_tasks(self, pushdowns: Pushdowns) -> AsyncIterator[DataSourceTask]:
+        yield _OtherCorruptTask()
+
+
+def test_orc_ignore_corrupt_does_not_change_other_python_sources() -> None:
+    with pytest.raises(Exception, match="Not an ORC file"):
+        _OtherCorruptSource().read().collect()
