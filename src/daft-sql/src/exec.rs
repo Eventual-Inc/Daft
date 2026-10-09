@@ -43,8 +43,31 @@ fn execute_select(_: &Session, select: DataFrame) -> SQLPlannerResult<Option<Dat
     Ok(Some(select))
 }
 
-fn execute_set(_: &Session, _: statement::Set) -> SQLPlannerResult<Option<DataFrame>> {
-    unsupported_sql_err!("SET statement")
+fn execute_set(sess: &Session, set: statement::Set) -> SQLPlannerResult<Option<DataFrame>> {
+    match session_option_name(&set.option) {
+        [name] if name == "identifier_mode" => {
+            let value = set.value.as_deref().ok_or_else(|| {
+                CatalogError::invalid_identifier(
+                    "identifier_mode requires a string value, got NULL",
+                )
+            })?;
+            sess.set_identifier_mode(value)?;
+            Ok(None)
+        }
+        [name] if name == "catalog" => {
+            sess.set_catalog(set.value.as_deref())?;
+            Ok(None)
+        }
+        _ => unsupported_sql_err!("SET {}", set.option.join(".")),
+    }
+}
+
+/// Strips an optional `daft.` namespace from SET option names.
+fn session_option_name(parts: &[String]) -> &[String] {
+    match parts {
+        [namespace, rest @ ..] if namespace == "daft" && !rest.is_empty() => rest,
+        other => other,
+    }
 }
 
 fn execute_use(sess: &Session, use_: statement::Use) -> SQLPlannerResult<Option<DataFrame>> {
@@ -194,4 +217,85 @@ fn execute_show_tables(
     let scan = logical_plan_from_micropartitions(vec![part])?;
 
     Ok(Some(scan.build()))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use daft_session::{IdentifierMode, Session};
+
+    use super::execute_statement;
+
+    #[test]
+    fn test_set_quoted_identifier_mode() {
+        let sess = Session::empty();
+        assert_eq!(sess.identifier_mode(), IdentifierMode::Sensitive);
+        execute_statement(
+            &sess,
+            r#"SET "identifier_mode" = 'insensitive'"#,
+            HashMap::new(),
+        )
+        .unwrap();
+        assert_eq!(sess.identifier_mode(), IdentifierMode::Insensitive);
+    }
+
+    #[test]
+    fn test_set_qualified_quoted_identifier_mode() {
+        let sess = Session::empty();
+        execute_statement(
+            &sess,
+            r#"SET "daft"."identifier_mode" = 'normalize'"#,
+            HashMap::new(),
+        )
+        .unwrap();
+        assert_eq!(sess.identifier_mode(), IdentifierMode::Normalize);
+    }
+
+    #[test]
+    fn test_set_normalized_alias() {
+        let sess = Session::empty();
+        execute_statement(&sess, "SET identifier_mode = 'normalized'", HashMap::new()).unwrap();
+        assert_eq!(sess.identifier_mode(), IdentifierMode::Normalize);
+    }
+
+    #[test]
+    fn test_set_quoted_option_with_internal_space_is_unknown() {
+        let sess = Session::empty();
+        let err = execute_statement(
+            &sess,
+            r#"SET "identifier _mode" = 'insensitive'"#,
+            HashMap::new(),
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string().contains("SET identifier _mode"),
+            "unexpected error: {err}"
+        );
+        assert_eq!(sess.identifier_mode(), IdentifierMode::Sensitive);
+    }
+
+    #[test]
+    fn test_set_invalid_identifier_mode_is_invalid_identifier() {
+        let sess = Session::empty();
+        let err =
+            execute_statement(&sess, "SET identifier_mode = 'x'", HashMap::new()).unwrap_err();
+        let message = err.to_string();
+        assert!(
+            message.contains("Invalid identifier") && message.contains("identifier_mode 'x'"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_set_identifier_mode_null_is_invalid() {
+        let sess = Session::empty();
+        let err =
+            execute_statement(&sess, "SET identifier_mode = NULL", HashMap::new()).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("identifier_mode requires a string value"),
+            "unexpected error: {err}"
+        );
+    }
 }

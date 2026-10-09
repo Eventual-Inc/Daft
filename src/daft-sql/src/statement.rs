@@ -30,8 +30,10 @@ pub type Select = LogicalPlanRef;
 #[derive(Clone)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Set {
-    pub option: String,
-    pub value: String,
+    /// Identifier parts of the option name, each lowercased.
+    pub option: Vec<String>,
+    /// Session variable value; `None` represents SQL NULL.
+    pub value: Option<String>,
 }
 
 /// SHOW TABLES [ {FROM|IN} <catalog>[.<namespace>] ] [ LIKE <pattern> ]
@@ -89,9 +91,7 @@ impl SQLPlanner<'_> {
                 *has_table_keyword,
                 table_name,
             ),
-            ast::Statement::Set(_) => {
-                todo!("set_variable")
-            }
+            ast::Statement::Set(set) => self.plan_set(set),
             ast::Statement::ShowTables {
                 extended,
                 full,
@@ -170,9 +170,50 @@ impl SQLPlanner<'_> {
         Ok(Statement::Select(describe.build()))
     }
 
-    #[allow(dead_code)]
-    fn plan_set(&self, _: &ast::SetConfigValue) -> SQLPlannerResult<Statement> {
-        unsupported_sql_err!("SET statement is not yet supported.")
+    fn plan_set(&self, set: &ast::Set) -> SQLPlannerResult<Statement> {
+        match set {
+            ast::Set::SingleAssignment {
+                hivevar,
+                variable,
+                values,
+                ..
+            } => {
+                if *hivevar {
+                    unsupported_sql_err!("SET hivevar")
+                }
+                if values.len() != 1 {
+                    unsupported_sql_err!("SET with multiple values")
+                }
+                let option = variable
+                    .0
+                    .iter()
+                    .map(|part| {
+                        Self::object_name_part_to_string(part).map(|s| s.to_ascii_lowercase())
+                    })
+                    .collect::<SQLPlannerResult<Vec<_>>>()?;
+                Ok(Statement::Set(Set {
+                    option,
+                    value: Self::set_value_to_option(&values[0])?,
+                }))
+            }
+            other => unsupported_sql_err!("SET statement: {other}"),
+        }
+    }
+
+    fn set_value_to_option(expr: &ast::Expr) -> SQLPlannerResult<Option<String>> {
+        match expr {
+            ast::Expr::Value(v) => match &v.value {
+                ast::Value::SingleQuotedString(s)
+                | ast::Value::DoubleQuotedString(s)
+                | ast::Value::DollarQuotedString(ast::DollarQuotedString { value: s, .. }) => {
+                    Ok(Some(s.clone()))
+                }
+                ast::Value::Null => Ok(None),
+                other => unsupported_sql_err!("SET value {other}"),
+            },
+            ast::Expr::Identifier(ident) => Ok(Some(ident.value.clone())),
+            other => unsupported_sql_err!("SET value {other}"),
+        }
     }
 
     fn plan_show_tables(
@@ -608,6 +649,92 @@ mod test {
                 .unwrap_err()
                 .to_string()
                 .contains("Duplicate column name: a")
+        );
+    }
+
+    fn plan_set(sql: &str) -> Statement {
+        let statement = parse_sql(sql);
+        let session = Session::default();
+        let mut planner = SQLPlanner::new(&session);
+        planner.plan_statement(&statement).unwrap()
+    }
+
+    #[test]
+    fn test_set_identifier_mode() {
+        let Statement::Set(set) = plan_set("SET identifier_mode = 'insensitive'") else {
+            panic!("Expected Set statement");
+        };
+        assert_eq!(set.option, ["identifier_mode"]);
+        assert_eq!(set.value.as_deref(), Some("insensitive"));
+    }
+
+    #[test]
+    fn test_set_quoted_and_qualified_option_names() {
+        let Statement::Set(set) = plan_set(r#"SET "identifier_mode" = 'insensitive'"#) else {
+            panic!("Expected Set statement");
+        };
+        assert_eq!(set.option, ["identifier_mode"]);
+
+        let Statement::Set(set) = plan_set(r#"SET "daft"."identifier_mode" = 'insensitive'"#)
+        else {
+            panic!("Expected Set statement");
+        };
+        assert_eq!(set.option, ["daft", "identifier_mode"]);
+
+        let Statement::Set(set) = plan_set(r#"SET "identifier _mode" = 'insensitive'"#) else {
+            panic!("Expected Set statement");
+        };
+        assert_eq!(set.option, ["identifier _mode"]);
+    }
+
+    #[test]
+    fn test_set_catalog_unquoted() {
+        let Statement::Set(set) = plan_set("SET catalog = my_cat") else {
+            panic!("Expected Set statement");
+        };
+        assert_eq!(set.option, ["catalog"]);
+        assert_eq!(set.value.as_deref(), Some("my_cat"));
+    }
+
+    #[test]
+    fn test_set_catalog_null() {
+        let Statement::Set(set) = plan_set("SET catalog = NULL") else {
+            panic!("Expected Set statement");
+        };
+        assert_eq!(set.option, ["catalog"]);
+        assert_eq!(set.value, None);
+    }
+
+    #[test]
+    fn test_set_boolean_value_is_unsupported() {
+        let statement = parse_sql("SET identifier_mode = TRUE");
+        let session = Session::default();
+        let mut planner = SQLPlanner::new(&session);
+        let err = planner.plan_statement(&statement).unwrap_err();
+        assert!(
+            err.to_string().contains("SET value true"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_set_unknown_plans_without_panic() {
+        assert!(matches!(
+            plan_set("SET not_a_real_option = 'x'"),
+            Statement::Set(_)
+        ));
+    }
+
+    #[test]
+    fn test_set_time_zone_is_unsupported_not_panic() {
+        let statement = parse_sql("SET TIME ZONE 'UTC'");
+        let session = Session::default();
+        let mut planner = SQLPlanner::new(&session);
+        let err = planner.plan_statement(&statement).unwrap_err();
+        let message = err.to_string();
+        assert!(
+            message.contains("SET statement") && message.contains("TIME ZONE"),
+            "unexpected error: {err}"
         );
     }
 }
