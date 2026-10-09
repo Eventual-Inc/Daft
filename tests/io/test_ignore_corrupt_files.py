@@ -1,16 +1,20 @@
-"""Tests for ignore_corrupt_files in read_parquet, read_csv, and read_iceberg."""
+"""Tests for ignore_corrupt_files in file readers and Iceberg."""
 
 from __future__ import annotations
 
+import io
 import os
 import urllib.parse
+from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.parquet as papq
 import pytest
+from pyarrow import orc
 
 import daft
 from daft.catalog import Table
+from tests.io.test_orc import _corrupt_orc_stripe
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -243,6 +247,140 @@ def test_parquet_ignore_corrupt_multiple_corrupt_files(tmp_path):
     assert sorted(df.to_pydict()["a"]) == [1, 2, 3]
     skipped_names = {_basename(p) for p, _, _ in df.skipped_corrupt_files}
     assert skipped_names == {"bad1.parquet", "bad2.parquet"}
+
+
+# ── ORC ───────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("first_bad", [False, True])
+def test_orc_ignore_corrupt_fallback_and_complete_report(tmp_path: Path, first_bad: bool) -> None:
+    good = tmp_path / "good.orc"
+    orc.write_table(pa.table({"id": [1, 2, 3]}), good)
+    bad = [tmp_path / "bad1.orc", tmp_path / "bad2.orc"]
+    for path in bad:
+        path.write_bytes(b"not ORC")
+    paths = [*bad, good] if first_bad else [good, *bad]
+    df = daft.read_orc([str(path) for path in paths], batch_size=1, ignore_corrupt_files=True)
+    with pytest.raises(ValueError, match="until.*collected"):
+        _ = df.skipped_corrupt_files
+    df.collect()
+    assert sorted(df.to_pydict()["id"]) == [1, 2, 3]
+    assert {_basename(path) for path, _, _ in df.skipped_corrupt_files} == {path.name for path in bad}
+    assert len(df.skipped_corrupt_files) == 2
+    assert all(reason and not partial for _, reason, partial in df.skipped_corrupt_files)
+    report = list(df.skipped_corrupt_files)
+    df.collect()
+    assert df.skipped_corrupt_files == report
+
+
+def test_orc_ignore_corrupt_default_and_all_bad(tmp_path: Path) -> None:
+    bad = tmp_path / "bad.orc"
+    bad.write_bytes(b"not ORC")
+    with pytest.raises(OSError, match="Not an ORC file"):
+        daft.read_orc(str(bad))
+    with pytest.raises(ValueError, match="All ORC files.*cannot infer"):
+        daft.read_orc(str(bad), ignore_corrupt_files=True)
+
+
+def test_orc_ignore_corrupt_good_files_have_no_report(tmp_path: Path) -> None:
+    path = tmp_path / "good.orc"
+    orc.write_table(pa.table({"id": [1, 2]}), path)
+    df = daft.read_orc(str(path), ignore_corrupt_files=True).collect()
+    assert df.to_pydict() == {"id": [1, 2]}
+    assert df.skipped_corrupt_files == []
+
+
+@pytest.mark.parametrize("kind", ["short", "postscript", "footer", "stripe_footer"])
+@pytest.mark.parametrize("ignore", [False, True])
+def test_orc_ignore_corrupt_metadata_errors(tmp_path: Path, kind: str, ignore: bool) -> None:
+    good, bad = tmp_path / "good.orc", tmp_path / "bad.orc"
+    orc.write_table(pa.table({"id": [1, 2]}), good)
+    buffer = io.BytesIO()
+    orc.write_table(pa.table({"id": [3, 4]}), buffer, compression="uncompressed")
+    data = buffer.getvalue()
+    if kind == "short":
+        damaged = b"ORC"
+    elif kind == "postscript":
+        damaged = data[:-10]
+    elif kind == "footer":
+        reader = orc.ORCFile(io.BytesIO(data))
+        footer_end = len(data) - 1 - data[-1]
+        damaged = (
+            data[: footer_end - reader.file_footer_length] + b"\xff" * reader.file_footer_length + data[footer_end:]
+        )
+    else:
+        damaged = _corrupt_orc_stripe(data, 0, footer=True)
+    bad.write_bytes(damaged)
+    if not ignore:
+        with pytest.raises(Exception, match="(?i)(postscript|footer|ORC)"):
+            daft.read_orc([str(bad), str(good)], ignore_corrupt_files=ignore).collect()
+    else:
+        df = daft.read_orc([str(bad), str(good)], ignore_corrupt_files=ignore).collect()
+        assert df.to_pydict() == {"id": [1, 2]}
+        assert len(df.skipped_corrupt_files) == 1
+        path, reason, partial = df.skipped_corrupt_files[0]
+        assert _basename(path) == bad.name and reason and not partial
+
+
+@pytest.mark.parametrize("ignore", [False, True])
+@pytest.mark.parametrize("missing", [False, True])
+def test_orc_ignore_corrupt_execution_failure(tmp_path: Path, ignore: bool, missing: bool) -> None:
+    good, bad = tmp_path / "good.orc", tmp_path / "bad.orc"
+    orc.write_table(pa.table({"id": [1]}), good)
+    orc.write_table(pa.table({"id": [2]}), bad)
+    df = daft.read_orc([str(good), str(bad)], ignore_corrupt_files=ignore)
+    if missing:
+        bad.rename(tmp_path / "saved-input")
+    else:
+        bad.write_bytes(b"not ORC")
+    if not ignore:
+        with pytest.raises(Exception, match="(?i)(FileNotFoundError|does not exist|not an ORC file)"):
+            df.collect()
+    else:
+        df.collect()
+        assert df.to_pydict() == {"id": [1]}
+        assert len(df.skipped_corrupt_files) == 1
+        path, reason, partial = df.skipped_corrupt_files[0]
+        assert _basename(path) == bad.name and reason and not partial
+
+
+def test_orc_ignore_corrupt_all_bad_after_inference(tmp_path: Path) -> None:
+    paths = [tmp_path / "first.orc", tmp_path / "second.orc"]
+    for path in paths:
+        orc.write_table(pa.table({"id": [1]}), path)
+    df = daft.read_orc([str(path) for path in paths], ignore_corrupt_files=True)
+    for path in paths:
+        path.write_bytes(b"not ORC")
+    df.collect()
+    assert df.to_pydict() == {"id": []}
+    assert {_basename(path) for path, _, _ in df.skipped_corrupt_files} == {path.name for path in paths}
+
+
+@pytest.mark.parametrize("ignore", [False, True])
+def test_orc_ignore_corrupt_partial_read(tmp_path: Path, ignore: bool) -> None:
+    buffer = io.BytesIO()
+    orc.write_table(
+        pa.table({"id": range(12000), "name": [f"row-{i:08d}-" + "x" * 80 for i in range(12000)]}),
+        buffer,
+        stripe_size=65536,
+        batch_size=1024,
+        compression="uncompressed",
+    )
+    path = tmp_path / "partial.orc"
+    path.write_bytes(_corrupt_orc_stripe(buffer.getvalue()))
+    df = daft.read_orc(str(path), batch_size=257, ignore_corrupt_files=ignore)
+    if not ignore:
+        with pytest.raises(Exception, match="bad read in RleDecoderV2"):
+            df.collect()
+    else:
+        df.collect()
+        result = df.to_pydict()
+        assert 0 < len(result["id"]) < 12000
+        assert result["id"] == list(range(len(result["id"])))
+        assert result["name"] == [f"row-{i:08d}-" + "x" * 80 for i in result["id"]]
+        assert len(df.skipped_corrupt_files) == 1
+        skipped_path, reason, partial = df.skipped_corrupt_files[0]
+        assert _basename(skipped_path) == path.name and "bad read in RleDecoderV2" in reason and partial
 
 
 # ── CSV ───────────────────────────────────────────────────────────────────────
