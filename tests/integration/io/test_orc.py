@@ -58,6 +58,8 @@ def test_read_orc_http_file_path_column(orc_http_url: str) -> None:
     assert df.where((daft.col("source_path") == orc_http_url) & (daft.col("id") >= 6)).select("name").sort(
         "name"
     ).to_pydict() == {"name": ["row-6", "row-7", "row-8"]}
+    assert df.where(daft.col("id") >= 6).select("source_path").to_pydict() == {"source_path": [orc_http_url] * 3}
+    assert df.where((daft.col("source_path") == orc_http_url) & (daft.col("id") >= 6)).count_rows() == 3
 
 
 @pytest.mark.integration()
@@ -100,6 +102,8 @@ def test_read_orc_s3_file_path_column(minio_io_config: daft.io.IOConfig, kind: s
         assert df.where((daft.col("source_path") == first) & (daft.col("id") == 2)).select("id").to_pydict() == {
             "id": [2]
         }
+        assert df.where(daft.col("id") == 2).select("source_path").to_pydict() == {"source_path": [first]}
+        assert df.where((daft.col("source_path") == first) & (daft.col("id") == 2)).count_rows() == 1
 
 
 @pytest.mark.integration()

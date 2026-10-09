@@ -115,9 +115,10 @@ def test_read_orc_file_path_column_conflict(tmp_path: Path, position: str, dtype
         daft.read_orc(path, file_path_column="source_path")
 
 
-def test_read_orc_file_path_column_in_later_file(tmp_path: Path) -> None:
+@pytest.mark.parametrize("values", [[100, 200], ["physical-first", "physical-second"]])
+def test_read_orc_file_path_column_in_later_file(tmp_path: Path, values: list) -> None:
     first = _write_orc(tmp_path / "first.orc", pa.table({"id": [1]}))
-    second = _write_orc(tmp_path / "second.orc", pa.table({"id": [2, 3], "source_path": [100, 200]}))
+    second = _write_orc(tmp_path / "second.orc", pa.table({"id": [2, 3], "source_path": values}))
     df = daft.read_orc([first, second], batch_size=1, file_path_column="source_path")
     paths = [Path(first).as_posix(), Path(second).as_posix(), Path(second).as_posix()]
     assert df.sort("id").to_pydict() == {"id": [1, 2, 3], "source_path": paths}
@@ -450,10 +451,12 @@ def test_orc_serialization(orc_path: str) -> None:
 @pytest.mark.parametrize(
     "columns,filters,expected_columns",
     [
+        (None, None, ["id", "name", "source_path"]),
         (["source_path"], None, ["source_path"]),
         (["name"], daft.col("source_path") != "missing", ["name", "source_path"]),
         (["source_path"], daft.col("id") >= 6, ["id", "source_path"]),
         ([], None, []),
+        ([], (daft.col("source_path") != "missing") & (daft.col("id") >= 6), ["id", "source_path"]),
     ],
 )
 def test_orc_file_path_task_schema_and_serialization(orc_path: str, columns, filters, expected_columns) -> None:
@@ -495,7 +498,7 @@ def test_orc_windows_file_path_column(orc_path: str, monkeypatch) -> None:
 
     monkeypatch.setattr(_orc, "os", SimpleNamespace(name="nt"))
     monkeypatch.setattr(_orc, "open_file", open_local_fixture)
-    schema = pa.schema([("source_path", pa.string())])
+    schema = daft.Schema.from_pydict({"source_path": daft.DataType.string()})
     task = OrcSourceTask("file:///C:/data.orc", schema, None, 2, "source_path")
     assert [path for batch in _batches(task) for path in batch.to_pydict()["source_path"]] == ["C:/data.orc"] * 9
 
