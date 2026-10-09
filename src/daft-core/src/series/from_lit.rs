@@ -345,14 +345,21 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 })
                 .collect::<(Vec<_>, Vec<_>)>();
 
-            let data_array = ListArray::from_series("data", data)?.into_series();
-            let shape_array = ListArray::from_vec("shape", shapes).into_series();
+            // When every row is null, `ListArray::from_series` concatenates zero child
+            // series and errors before the `errs` check below runs, masking the real
+            // error. Emit an all-null array of the target dtype instead.
+            if data.iter().all(Option::is_none) {
+                Series::full_null("literal", &downcasted, len)
+            } else {
+                let data_array = ListArray::from_series("data", data)?.into_series();
+                let shape_array = ListArray::from_vec("shape", shapes).into_series();
 
-            let nulls = data_array.nulls().cloned();
-            let physical =
-                StructArray::new(field.to_physical(), vec![data_array, shape_array], nulls);
+                let nulls = data_array.nulls().cloned();
+                let physical =
+                    StructArray::new(field.to_physical(), vec![data_array, shape_array], nulls);
 
-            TensorArray::new(field, physical).into_series()
+                TensorArray::new(field, physical).into_series()
+            }
         }
         DataType::SparseTensor(..) => {
             let (values, indices, shapes) = values
@@ -365,18 +372,25 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 })
                 .collect::<(Vec<_>, Vec<_>, Vec<_>)>();
 
-            let values_array = ListArray::from_series("values", values)?.into_series();
-            let indices_array = ListArray::from_series("indices", indices)?.into_series();
-            let shape_array = ListArray::from_vec("shape", shapes).into_series();
+            // When every row is null, `ListArray::from_series` concatenates zero child
+            // series and errors before the `errs` check below runs, masking the real
+            // error. Emit an all-null array of the target dtype instead.
+            if values.iter().all(Option::is_none) {
+                Series::full_null("literal", &downcasted, len)
+            } else {
+                let values_array = ListArray::from_series("values", values)?.into_series();
+                let indices_array = ListArray::from_series("indices", indices)?.into_series();
+                let shape_array = ListArray::from_vec("shape", shapes).into_series();
 
-            let nulls = values_array.nulls().cloned();
-            let physical = StructArray::new(
-                field.to_physical(),
-                vec![values_array, indices_array, shape_array],
-                nulls,
-            );
+                let nulls = values_array.nulls().cloned();
+                let physical = StructArray::new(
+                    field.to_physical(),
+                    vec![values_array, indices_array, shape_array],
+                    nulls,
+                );
 
-            SparseTensorArray::new(field, physical).into_series()
+                SparseTensorArray::new(field, physical).into_series()
+            }
         }
         DataType::Embedding(ref inner_dtype, ref size) => {
             let (nulls, data): (Vec<_>, Vec<_>) = values
@@ -422,9 +436,16 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 })
                 .collect::<DaftResult<Vec<_>>>()?;
 
-            let physical = ListArray::from_series("literal", data)?;
+            // When every row is null, `ListArray::from_series` concatenates zero child
+            // series and errors before the `errs` check below runs, masking the real
+            // error. Emit an all-null array of the target dtype instead.
+            if data.iter().all(Option::is_none) {
+                Series::full_null("literal", &downcasted, len)
+            } else {
+                let physical = ListArray::from_series("literal", data)?;
 
-            MapArray::new(field, physical).into_series()
+                MapArray::new(field, physical).into_series()
+            }
         }
         DataType::Image(image_mode) => {
             let data =
@@ -634,5 +655,66 @@ mod test {
         let values = vec![Literal::UInt64(1), Literal::Utf8("test".to_string())];
         let actual = Series::from_literals(values);
         assert!(actual.is_err());
+    }
+
+    #[test]
+    fn test_all_null_complex_dtypes_do_not_error() {
+        // An all-null batch (e.g. a UDF returning None on every row) must build an
+        // all-null series, not fail with "Need at least 1 series to perform concat".
+        for dtype in [
+            DataType::Tensor(Box::new(DataType::Float32)),
+            DataType::SparseTensor(Box::new(DataType::Float32), false),
+            DataType::Map {
+                key: Box::new(DataType::Utf8),
+                value: Box::new(DataType::Int64),
+            },
+            DataType::List(Box::new(DataType::Int64)),
+        ] {
+            let literals = vec![Literal::Null, Literal::Null];
+            let s = super::series_from_literals_iter(
+                literals.into_iter().map(common_error::DaftResult::Ok),
+                Some(dtype.clone()),
+            )
+            .unwrap_or_else(|e| panic!("all-null {dtype} should not error: {e}"));
+
+            assert_eq!(s.data_type(), &dtype);
+            assert_eq!(s.len(), 2);
+            assert_eq!(s.null_count(), 2);
+        }
+    }
+
+    #[test]
+    fn test_all_errored_complex_dtypes_surface_error() {
+        // When every row errors (UDF on_error="raise"), the real error must surface
+        // instead of being masked by the concat failure.
+        for dtype in [
+            DataType::Tensor(Box::new(DataType::Float32)),
+            DataType::SparseTensor(Box::new(DataType::Float32), false),
+            DataType::Map {
+                key: Box::new(DataType::Utf8),
+                value: Box::new(DataType::Int64),
+            },
+        ] {
+            let literals: Vec<common_error::DaftResult<Literal>> = vec![
+                Err(common_error::DaftError::ValueError(
+                    "bad input: 1".to_string(),
+                )),
+                Err(common_error::DaftError::ValueError(
+                    "bad input: 2".to_string(),
+                )),
+            ];
+            let err = super::series_from_literals_iter(literals.into_iter(), Some(dtype.clone()))
+                .expect_err("all-errored input should return an error");
+            let msg = err.to_string();
+
+            assert!(
+                msg.contains("bad input"),
+                "real error should surface for {dtype}, got: {msg}"
+            );
+            assert!(
+                !msg.contains("Need at least 1 series"),
+                "concat error should not mask the real error for {dtype}: {msg}"
+            );
+        }
     }
 }
