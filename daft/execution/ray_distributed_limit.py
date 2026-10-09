@@ -74,10 +74,26 @@ class LimitCounterHandle:
         self.actor = actor_ref
 
     async def start_task(self, input_id: str) -> None:
-        await self.actor.start_task.remote(input_id)
+        try:
+            await self.actor.start_task.remote(input_id)
+        except ray.exceptions.ActorDiedError:
+            # Safety net for the residual race between `LimitNode`'s
+            # `ray.kill` and an in-flight worker call. `LimitNode` drains
+            # task cancellations before tearing the actor down, so by the
+            # time this fires the corresponding worker task is on its way
+            # out and the refund this would have done is moot.
+            pass
 
     async def claim(self, input_id: str, num_rows: int) -> tuple[int, int, bool]:
-        return await self.actor.claim.remote(input_id, num_rows)
+        try:
+            return await self.actor.claim.remote(input_id, num_rows)
+        except ray.exceptions.ActorDiedError:
+            # Same residual-race rationale as `start_task`. Returning done
+            # makes the sink emit an empty slice instead of letting
+            # `ActorDiedError` propagate up, kill the worker's pipeline,
+            # and surface as "Plan execution task has died" on concurrent
+            # inputs sharing the same plan.
+            return (0, 0, True)
 
     async def await_limit_completion(self) -> list[str]:
         return await self.actor.await_limit_completion.remote()

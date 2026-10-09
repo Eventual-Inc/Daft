@@ -188,8 +188,9 @@ impl TaskResultHandle for LocalSwordfishTaskResultHandle {
         }
     }
 
-    fn cancel_callback(&mut self) {
+    fn cancel_callback(&mut self) -> impl Future<Output = ()> + Send + 'static {
         // No-op for local execution
+        std::future::ready(())
     }
 }
 
