@@ -142,7 +142,7 @@ def test_coalesce_with_nulls():
 def test_fallback_early_exit():
     triggered = 0
 
-    @daft.udf(return_dtype=daft.DataType.int64())
+    @daft.func.batch(return_dtype=daft.DataType.int64())
     def fallback(column):
         nonlocal triggered
         triggered += len(column)
@@ -152,27 +152,6 @@ def test_fallback_early_exit():
     df = daft.from_pydict({"v": [1, 2, None]})
     df.select(coalesce(col("v"), fallback(col("v")))).collect()
     assert triggered == 1, f"Expected fallback to process 1 row, got {triggered}"
-
-
-@pytest.mark.skipif(
-    get_tests_daft_runner_name() == "ray",
-    reason="Short-circuit UDF tests rely on checking triggered counters in the main process, which doesn't work with Ray's distributed execution",
-)
-def test_coalesce_short_circuit_udf():
-    """Test that coalesce short-circuits and doesn't evaluate unnecessary arguments with @daft.udf."""
-    triggered = 0
-
-    def fallback(column):
-        nonlocal triggered
-        triggered += 1
-        return column
-
-    fallback_udf = daft.udf(return_dtype=daft.DataType.int64())(fallback)
-
-    # Test with coalesce - should only trigger fallback for null rows
-    df = daft.from_pydict({"v": [1, 2, None]})
-    df.select(coalesce(col("v"), fallback_udf(col("v")))).collect()
-    assert triggered == 1, f"Expected fallback to be called once, got {triggered} times"
 
 
 @pytest.mark.skipif(

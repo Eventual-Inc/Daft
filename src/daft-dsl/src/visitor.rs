@@ -156,7 +156,6 @@ impl<'py> PyVisitor<'py> {
             .collect::<PyResult<_>>()?;
 
         let name = match function {
-            FunctionExpr::Python(python_udf) => &python_udf.name,
             FunctionExpr::Partitioning(partitioning_expr) => match partitioning_expr {
                 PartitioningExpr::Years => "years",
                 PartitioningExpr::Months => "month",
