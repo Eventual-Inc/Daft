@@ -288,6 +288,8 @@ def test_orc_multiple_worker_complete_report(tmp_path: Path) -> None:
             cluster.shutdown()
         """
     )
-    result = subprocess.run([sys.executable, "-c", code, str(tmp_path)], capture_output=True, text=True, timeout=180)
+    result = subprocess.run(
+        [sys.executable, "-c", code, str(tmp_path)], check=False, capture_output=True, text=True, timeout=180
+    )
     assert result.returncode == 0, result.stdout + result.stderr
     assert "two Ray workers; all 16 corrupt files reported" in result.stdout
