@@ -3,19 +3,22 @@ from __future__ import annotations
 import asyncio
 import os
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 from daft.api_annotations import PublicAPI
 from daft.context import get_context
+from daft.daft import _infer_hive_partition_schema, _parse_hive_partition_values
 from daft.dependencies import pa, pads
 from daft.expressions import ExpressionsProjection, col, lit
 from daft.file import open_file
 from daft.filesystem import glob_path_with_stats
+from daft.io.partitioning import PartitionField
 from daft.io.source import DataSource, DataSourceTask
 from daft.recordbatch import RecordBatch
 from daft.schema import Schema
+from daft.series import Series
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -84,16 +87,26 @@ def _iter_orc_batches(
     schema: pa.Schema,
     io_config: IOConfig | None,
     batch_size: int,
+    partition_values: dict[str, Series] | None = None,
 ) -> Generator[RecordBatch, None, None]:
     with open_file(path, "rb", io_config=io_config) as file:
         try:
             fragment = pads.OrcFileFormat().make_fragment(file)
             physical_schema = fragment.physical_schema
-            columns = [name for name in schema.names if name in physical_schema.names]
+            partition_values = {} if partition_values is None else partition_values
+            columns = [name for name in schema.names if name in physical_schema.names and name not in partition_values]
             target_schema = Schema.from_pyarrow_schema(schema)
             projection = ExpressionsProjection(
                 [
-                    (col(field.name) if field.name in columns else lit(None)).cast(field.dtype).alias(field.name)
+                    (
+                        lit(partition_values[field.name]).get(0)
+                        if field.name in partition_values
+                        else col(field.name)
+                        if field.name in columns
+                        else lit(None)
+                    )
+                    .cast(field.dtype)
+                    .alias(field.name)
                     for field in target_schema
                 ]
             )
@@ -113,7 +126,7 @@ def _iter_orc_batches(
                     record_batch = RecordBatch.from_arrow_record_batches([batch], batch.schema)
                 # Match native file scans: cast and fill through Daft rather
                 # than Arrow, whose nested schema evolution varies by version.
-                if record_batch.schema() != target_schema:
+                if partition_values or record_batch.schema() != target_schema:
                     record_batch = record_batch.eval_expression_list(projection)
                 yield record_batch
         except OSError as error:
@@ -125,6 +138,8 @@ def read_orc(
     path: str | list[str],
     io_config: IOConfig | None = None,
     batch_size: int = 128 * 1024,
+    *,
+    hive_partitioning: bool = False,
 ) -> DataFrame:
     """Creates a DataFrame from ORC file(s).
 
@@ -137,6 +152,10 @@ def read_orc(
             the planning context's default I/O configuration.
         batch_size: Maximum number of rows yielded per record batch. Defaults
             to 131072. This does not impose a fixed memory limit.
+        hive_partitioning: Read partition columns from Hive-style ``key=value``
+            directories and prune files using partition filters. Defaults to False.
+            Keys and types are inferred from the first matched file. Missing keys
+            become null, and directory values override same-named physical columns.
 
     Returns:
         DataFrame: parsed DataFrame.
@@ -165,16 +184,34 @@ def read_orc(
         raise ValueError(f"batch_size must be a positive integer, received {batch_size!r}")
 
     io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
-    return OrcSource(path, io_config=io_config, batch_size=batch_size).read()
+    return OrcSource(path, io_config=io_config, batch_size=batch_size, hive_partitioning=hive_partitioning).read()
 
 
 class OrcSource(DataSource):
-    def __init__(self, path: str | list[str], io_config: IOConfig | None, batch_size: int) -> None:
+    def __init__(
+        self, path: str | list[str], io_config: IOConfig | None, batch_size: int, hive_partitioning: bool = False
+    ) -> None:
         self._paths = _resolve_orc_paths(path, io_config)
         self._io_config = io_config
         self._batch_size = batch_size
         self._arrow_schema = _infer_orc_schema(self._paths[0], io_config)
+        self._partition_schema = (
+            Schema._from_pyschema(_infer_hive_partition_schema(self._paths[0]))
+            if hive_partitioning
+            else Schema.from_field_name_and_types([])
+        )
+        arrow_partition_schema = self._partition_schema.to_pyarrow_schema()
+        partition_fields = {field.name: field for field in arrow_partition_schema}
+        if partition_fields:
+            self._arrow_schema = pa.schema(
+                [partition_fields.get(field.name, field) for field in self._arrow_schema]
+                + [field for field in arrow_partition_schema if field.name not in self._arrow_schema.names],
+                metadata={key: value for key, value in (self._arrow_schema.metadata or {}).items()} or None,
+            )
         self._schema = Schema.from_pyarrow_schema(self._arrow_schema)
+
+    def get_partition_fields(self) -> list[PartitionField]:
+        return [PartitionField.create(field) for field in self._partition_schema]
 
     @property
     def name(self) -> str:
@@ -185,13 +222,43 @@ class OrcSource(DataSource):
         return self._schema
 
     async def get_tasks(self, pushdowns: Pushdowns) -> AsyncIterator[OrcSourceTask]:
+        # Hive inference can produce signed minutes (e.g. -05:-30). Preserve
+        # ORC's error for this invalid Arrow timezone metadata.
+        for partition_field in self._partition_schema:
+            if partition_field.dtype.is_timestamp():
+                timezone = partition_field.dtype.timezone
+                if timezone is not None and ":-" in timezone:
+                    raise ValueError(f"Invalid ORC Hive partition timezone: {timezone}")
         if pushdowns.columns is None:
             schema = self._arrow_schema
         else:
             required = set(pushdowns.columns) | pushdowns.filter_required_column_names()
             schema = pa.schema([field for field in self._arrow_schema if field.name in required])
         for path in self._paths:
-            yield OrcSourceTask(path, schema, self._io_config, self._batch_size)
+            values: dict[str, Series] = {}
+            if len(self._partition_schema) > 0:
+                values = {
+                    series.name(): series
+                    for series in (
+                        Series._from_pyseries(value)
+                        for value in _parse_hive_partition_values(path, self._partition_schema._schema)
+                    )
+                }
+                values = {
+                    field.name: (
+                        values[field.name]
+                        if field.name in values
+                        else Series.from_pylist([None], name=field.name, dtype=field.dtype)
+                    )
+                    for field in self._partition_schema
+                }
+                constants = RecordBatch._from_series(list(values.values()))
+                if (
+                    pushdowns.partition_filters is not None
+                    and len(constants.filter(ExpressionsProjection([pushdowns.partition_filters]))) == 0
+                ):
+                    continue
+            yield OrcSourceTask(path, schema, self._io_config, self._batch_size, values)
 
 
 @dataclass
@@ -200,13 +267,16 @@ class OrcSourceTask(DataSourceTask):
     _arrow_schema: pa.Schema
     _io_config: IOConfig | None
     _batch_size: int
+    _partition_values: dict[str, Series] = field(default_factory=dict)
 
     @property
     def schema(self) -> Schema:
         return Schema.from_pyarrow_schema(self._arrow_schema)
 
     async def read(self) -> AsyncIterator[RecordBatch]:
-        batches = _iter_orc_batches(self._path, self._arrow_schema, self._io_config, self._batch_size)
+        batches = _iter_orc_batches(
+            self._path, self._arrow_schema, self._io_config, self._batch_size, self._partition_values
+        )
         try:
             while True:
                 pending = asyncio.create_task(asyncio.to_thread(next, batches, None))
