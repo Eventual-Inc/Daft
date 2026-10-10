@@ -115,7 +115,7 @@ def gravitino_sample_dir() -> str:
 
 @pytest.fixture(scope="session")
 def gravitino_minio_io_config():
-    """IOConfig for MinIO S3-compatible storage used in Gravitino tests."""
+    """IOConfig for the SeaweedFS S3-compatible storage used in Gravitino tests."""
     import daft
 
     return daft.io.IOConfig(

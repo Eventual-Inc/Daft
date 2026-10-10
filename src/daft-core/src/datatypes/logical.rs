@@ -40,7 +40,7 @@ impl<L: DaftLogicalType, P: DaftArrayType> LogicalArrayImpl<L, P> {
             physical.data_type().to_physical(),
             field.dtype.to_physical(),
             "Logical field {} expected {} for Physical Array, got {}",
-            &field,
+            field,
             field.dtype.to_physical(),
             physical.data_type().to_physical()
         );

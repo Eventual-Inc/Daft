@@ -166,7 +166,7 @@ pub struct SQLPlanner<'sess> {
     /// Shared context for all planners
     pub(crate) context: Rc<RefCell<PlannerContext>>,
     /// Planner for the outer scope
-    parent: Option<&'sess SQLPlanner<'sess>>,
+    parent: Option<&'sess Self>,
     /// In-scope bindings introduced by the current relation's schema
     pub(crate) current_plan: Option<LogicalPlanBuilder>,
     /// Plan that will be used as the right side of the join, used for planning join predicates
@@ -1401,10 +1401,9 @@ impl SQLPlanner<'_> {
                     plan_ref,
                     plan_schema: Some(schema),
                 })))
-            } else if let Some(expr) = bound_columns.get(&first.value) {
-                expr.clone()
             } else {
-                return None;
+                let expr = bound_columns.get(&first.value)?;
+                expr.clone()
             };
 
             let expr_with_struct_gets = rest.iter().fold(root_expr, |acc, i| {
@@ -1826,24 +1825,25 @@ impl SQLPlanner<'_> {
                 expr,
                 substring_from,
                 substring_for,
-                special: true, // We only support SUBSTRING(expr, start, length) syntax
                 shorthand,
+                ..
             } => {
-                let (Some(substring_from), Some(substring_for)) = (substring_from, substring_for)
-                else {
-                    unsupported_sql_err!("SUBSTRING")
-                };
+                if substring_from.is_none() && substring_for.is_none() {
+                    invalid_operation_err!("SUBSTRING requires a start position or a length");
+                }
 
                 let expr = self.plan_expr(expr)?;
-                let start = self.plan_expr(substring_from)?;
-                let length = self.plan_expr(substring_for)?;
-
-                let start = if *shorthand { start } else { start.sub(lit(1)) };
+                let start = match substring_from {
+                    Some(from) if *shorthand => self.plan_expr(from)?,
+                    Some(from) => self.plan_expr(from)?.sub(lit(1)),
+                    None => lit(0),
+                };
+                let length = match substring_for {
+                    Some(for_expr) => self.plan_expr(for_expr)?,
+                    None => null_lit(),
+                };
 
                 Ok(daft_functions_utf8::substr(expr, start, length))
-            }
-            SQLExpr::Substring { special: false, .. } => {
-                unsupported_sql_err!("`SUBSTRING(expr [FROM start] [FOR len])` syntax")
             }
             SQLExpr::Trim { .. } => unsupported_sql_err!("TRIM"),
             SQLExpr::Overlay { .. } => unsupported_sql_err!("OVERLAY"),
