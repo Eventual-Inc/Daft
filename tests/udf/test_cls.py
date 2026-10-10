@@ -195,6 +195,31 @@ def test_cls_unnest_struct(concurrency):
     }
 
 
+def test_cls_unnest_struct_with_column_preserves_field_names():
+    df = daft.from_pydict({"input": ["daft is cool"]})
+
+    @daft.cls()
+    class Processor:
+        def __init__(self, suffix: str):
+            self.suffix = suffix
+
+        @daft.method(
+            return_dtype=DataType.struct({"bar": DataType.string(), "some_int": DataType.int64()}),
+            unnest=True,
+        )
+        def process(self, value: str):
+            return {"bar": value + self.suffix, "some_int": 3}
+
+    result = df.with_column("result", Processor("bar").process(df["input"])).collect()
+
+    assert result.column_names == ["input", "bar", "some_int"]
+    assert result.to_pydict() == {
+        "input": ["daft is cool"],
+        "bar": ["daft is coolbar"],
+        "some_int": [3],
+    }
+
+
 def test_cls_multiple_methods():
     df = daft.from_pydict({"text": ["hello", "world", "daft"]})
 
