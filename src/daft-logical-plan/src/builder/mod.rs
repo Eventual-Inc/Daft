@@ -1026,6 +1026,7 @@ impl LogicalPlanBuilder {
         execution_config: Arc<DaftExecutionConfig>,
     ) -> impl Future<Output = DaftResult<Self>> {
         let cfg = self.config.clone();
+        let enable_cse = cfg.as_ref().map(|c| c.enable_cse).unwrap_or(true);
 
         // Run LogicalPlan optimizations
         let unoptimized_plan = self.build();
@@ -1044,6 +1045,7 @@ impl LogicalPlanBuilder {
                         })
                     },
                 )
+                .when(!enable_cse, |b| b.with_cse_enabled(false))
                 .with_default_optimizations()
                 .when(
                     !cfg.as_ref()
@@ -1103,6 +1105,7 @@ impl LogicalPlanBuilder {
         // TODO: remove the `block_on` to make this method safe to call from the main thread
 
         let cfg = self.config.clone();
+        let enable_cse = cfg.as_ref().map(|c| c.enable_cse).unwrap_or(true);
 
         let unoptimized_plan = self.build();
 
@@ -1118,6 +1121,7 @@ impl LogicalPlanBuilder {
                     })
                 },
             )
+            .when(!enable_cse, |b| b.with_cse_enabled(false))
             .with_default_optimizations()
             .enrich_with_stats(Some(execution_config.clone()))
             .when(

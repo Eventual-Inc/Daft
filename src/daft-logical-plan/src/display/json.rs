@@ -137,6 +137,9 @@ pub(crate) fn to_json_value(node: &LogicalPlan) -> serde_json::Value {
         LogicalPlan::VLLMProject(vllm_project) => json!({
             "expr": vllm_project.expr.to_string(),
         }),
+        LogicalPlan::CommonSubplan(cs) => json!({
+            "id": cs.id,
+        }),
     }
 }
 
