@@ -40,14 +40,6 @@ Count the number of rows in each group `b`.
 SELECT COUNT(*), b FROM T GROUP BY b;
 ```
 
-Combine every row from table `T` with every row from table `U` using `CROSS JOIN`.
-This produces the Cartesian product, equivalent to `SELECT * FROM T, U`.
-`CROSS JOIN` does not take an `ON` or `USING` clause; use `WHERE` to filter the result.
-
-```sql
-SELECT * FROM T CROSS JOIN U;
-```
-
 !!! warning "Work in Progress"
 
     The SQL Reference documents are a work in progress.
