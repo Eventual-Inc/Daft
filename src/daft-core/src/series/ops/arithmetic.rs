@@ -543,13 +543,16 @@ impl_arithmetic_ref_for_series!(Rem, rem);
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use arrow::datatypes::IntervalMonthDayNano;
     use common_error::DaftResult;
 
     use crate::{
         array::ops::full::FullNull,
         datatypes::{
-            DataType, Float32Array, Float64Array, Int32Array, Int64Array, IntervalArray, Utf8Array,
+            DataType, Decimal128Array, Field, Float32Array, Float64Array, Int32Array, Int64Array,
+            IntervalArray, Utf8Array,
         },
         series::IntoSeries,
     };
@@ -695,6 +698,31 @@ mod tests {
             c.unwrap_err().to_string(),
             "DaftError::TypeError Cannot multiply types: Interval, Float64"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn mul_decimal_precision_overflow_is_bounded_and_computes() -> DaftResult<()> {
+        // Two Decimal(20, 2) operands give an ideal product precision of 40 (> 38), so the
+        // result type must be bounded to Decimal(38, 4) and still compute correct values
+        // end-to-end through the cast + kernel path (regression test for #7601).
+        let a = Decimal128Array::from_field_and_values(
+            Arc::new(Field::new("a", DataType::Decimal128(20, 2))),
+            vec![10_000, 20_000], // 100.00, 200.00
+        );
+        let b = Decimal128Array::from_field_and_values(
+            Arc::new(Field::new("b", DataType::Decimal128(20, 2))),
+            vec![300, 150], // 3.00, 1.50
+        );
+
+        let c = (a.into_series() * b.into_series())?;
+        assert_eq!(*c.data_type(), DataType::Decimal128(38, 4));
+
+        let expected = Decimal128Array::from_field_and_values(
+            Arc::new(Field::new("a", DataType::Decimal128(38, 4))),
+            vec![3_000_000, 3_000_000], // 300.0000, 300.0000
+        );
+        assert_eq!(c, expected.into_series());
         Ok(())
     }
 }
