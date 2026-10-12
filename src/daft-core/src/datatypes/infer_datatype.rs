@@ -354,13 +354,21 @@ impl Div for InferDataType<'_> {
     fn div(self, other: Self) -> Self::Output {
         try_fixed_shape_numeric_datatype(self.0, other.0, |l, r| {
             InferDataType::from(l) / InferDataType::from(r)
-        }).or_else(|_| {
+        })
+        .or_else(|_| {
             match (&self.0, &other.0) {
                 #[cfg(feature = "python")]
                 (DataType::Python, _) | (_, DataType::Python) => Ok(DataType::Python),
-                (DataType::Decimal128(..), right) if right.is_integer() => self.div(InferDataType::from(&integer_to_decimal128(right)?)),
-                (left, DataType::Decimal128(..)) if left.is_integer() => InferDataType::from(&integer_to_decimal128(left)?).div(other),
-                (DataType::Decimal128(..), DataType::Float32 | DataType::Float64 ) | (DataType::Float32 | DataType::Float64, DataType::Decimal128(..)) => Ok(DataType::Float64),
+                (DataType::Decimal128(..), right) if right.is_integer() => {
+                    self.div(InferDataType::from(&integer_to_decimal128(right)?))
+                }
+                (left, DataType::Decimal128(..)) if left.is_integer() => {
+                    InferDataType::from(&integer_to_decimal128(left)?).div(other)
+                }
+                (DataType::Decimal128(..), DataType::Float32 | DataType::Float64)
+                | (DataType::Float32 | DataType::Float64, DataType::Decimal128(..)) => {
+                    Ok(DataType::Float64)
+                }
                 (DataType::Decimal128(p1, s1), DataType::Decimal128(_, s2)) => {
                     let s1 = *s1 as i64;
                     let s2 = *s2 as i64;
@@ -383,7 +391,6 @@ impl Div for InferDataType<'_> {
                     l, r
                 ))),
             }
-
         })
     }
 }
@@ -401,10 +408,16 @@ impl Mul for InferDataType<'_> {
             .or(match (self.0, other.0) {
                 #[cfg(feature = "python")]
                 (DataType::Python, _) | (_, DataType::Python) => Ok(DataType::Python),
-                (DataType::Decimal128(..), other) if other.is_integer() => self.mul(InferDataType::from(&integer_to_decimal128(other)?)),
-                (left, DataType::Decimal128(..)) if left.is_integer() => InferDataType::from(&integer_to_decimal128(left)?).mul(other),
-                (DataType::Decimal128(..), DataType::Float32) | (DataType::Float32, DataType::Decimal128(..)) => Ok(DataType::Float32),
-                (DataType::Decimal128(..), DataType::Float64) | (DataType::Float64, DataType::Decimal128(..)) => Ok(DataType::Float64),
+                (DataType::Decimal128(..), other) if other.is_integer() => {
+                    self.mul(InferDataType::from(&integer_to_decimal128(other)?))
+                }
+                (left, DataType::Decimal128(..)) if left.is_integer() => {
+                    InferDataType::from(&integer_to_decimal128(left)?).mul(other)
+                }
+                (DataType::Decimal128(..), DataType::Float32)
+                | (DataType::Float32, DataType::Decimal128(..)) => Ok(DataType::Float32),
+                (DataType::Decimal128(..), DataType::Float64)
+                | (DataType::Float64, DataType::Decimal128(..)) => Ok(DataType::Float64),
                 (DataType::Decimal128(p1, s1), DataType::Decimal128(p2, s2)) => {
                     let s_prime = s1 + s2;
                     let p_prime = p1 + p2;
