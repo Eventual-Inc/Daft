@@ -226,6 +226,18 @@ pub trait DaftVarianceAggable {
     fn grouped_var(&self, groups: &GroupIndices, ddof: usize) -> Self::Output;
 }
 
+pub trait DaftVarPartialAggable {
+    type Output;
+    fn var_partial(&self) -> Self::Output;
+    fn grouped_var_partial(&self, groups: &GroupIndices) -> Self::Output;
+}
+
+pub trait DaftMergeVarPartialAggable {
+    type Output;
+    fn merge_var_partial(&self) -> Self::Output;
+    fn grouped_merge_var_partial(&self, groups: &GroupIndices) -> Self::Output;
+}
+
 pub trait DaftCompareAggable {
     type Output;
     fn min(&self) -> Self::Output;
