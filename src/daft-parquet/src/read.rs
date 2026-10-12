@@ -852,9 +852,7 @@ mod tests {
         let mut writer = ArrowWriter::try_new(file, schema.clone(), Some(props)).unwrap();
         let batch = arrow::array::RecordBatch::try_new(
             schema,
-            vec![Arc::new(Int32Array::from(
-                (0..200).collect::<Vec<i32>>(),
-            ))],
+            vec![Arc::new(Int32Array::from((0..200).collect::<Vec<i32>>()))],
         )
         .unwrap();
         writer.write(&batch).unwrap();
@@ -871,7 +869,9 @@ mod tests {
                     columns: Some(vec![]),
                     ..Default::default()
                 };
-                let mut stream = read_parquet(&uri, io_client.clone(), None, opts).await.unwrap();
+                let mut stream = read_parquet(&uri, io_client.clone(), None, opts)
+                    .await
+                    .unwrap();
                 let mut base = 0;
                 while let Some(batch) = stream.next().await {
                     base += batch.unwrap().len();
@@ -884,7 +884,9 @@ mod tests {
                     delete_rows: Some((0..40i64).collect()),
                     ..Default::default()
                 };
-                let mut stream = read_parquet(&uri, io_client.clone(), None, opts).await.unwrap();
+                let mut stream = read_parquet(&uri, io_client.clone(), None, opts)
+                    .await
+                    .unwrap();
                 let mut del = 0;
                 while let Some(batch) = stream.next().await {
                     del += batch.unwrap().len();
