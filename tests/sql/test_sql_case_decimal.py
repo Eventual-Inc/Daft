@@ -140,6 +140,39 @@ def test_sql_case_without_decimal_keeps_integer_result() -> None:
     assert result.to_pydict()["amount"] == [1, 0]
 
 
+def test_sql_case_decimal38_keeps_literal_with_trailing_zero() -> None:
+    nines = "9" * 38
+    df = daft.from_pydict({"shipmode": ["AIR", "RAIL"], "amount_in": [nines, "0"]})
+    df = df.with_column("amount_in", daft.col("amount_in").cast(daft.DataType.decimal128(38, 0)))
+    result = daft.sql(
+        f"""
+        SELECT CASE WHEN shipmode = 'AIR' THEN amount_in ELSE {nines}.0 END AS amount
+        FROM lineitem
+        """,
+        lineitem=df,
+    ).collect()
+
+    assert result.schema()["amount"].dtype == daft.DataType.decimal128(38, 0)
+    assert result.to_pydict()["amount"] == [decimal.Decimal(nines), decimal.Decimal(nines)]
+
+
+def test_sql_case_decimal38_rejects_too_many_significant_digits() -> None:
+    digits = "9" * 39
+    df = daft.from_pydict({"shipmode": ["AIR", "RAIL"], "amount_in": ["0", "0"]})
+    df = df.with_column("amount_in", daft.col("amount_in").cast(daft.DataType.decimal128(38, 0)))
+    with pytest.raises(Exception, match="castable to the same supertype") as exc_info:
+        daft.sql(
+            f"""
+            SELECT CASE WHEN shipmode = 'AIR' THEN amount_in ELSE {digits}.0 END AS amount
+            FROM lineitem
+            """,
+            lineitem=df,
+        ).collect()
+
+    assert exc_info.type.__name__ == "InvalidSQLException"
+    assert "Float64" in str(exc_info.value)
+
+
 def test_sql_case_mixed_decimal_scales() -> None:
     df = daft.from_pydict(
         {

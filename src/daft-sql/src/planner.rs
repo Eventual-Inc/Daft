@@ -2801,34 +2801,62 @@ fn parse_exponent(text: &str) -> Option<i32> {
     Some(exponent)
 }
 
-/// Integer digits of a mantissa and how many of them sit after the decimal point.
+/// Significant digits of a mantissa, and the power of ten to divide them by.
+///
+/// Trailing zeros are removed before the coefficient is accumulated, so a value such as
+/// 38 nines followed by `.0` stays within `i128`. The second number can be negative when
+/// those zeros were left of the decimal point; the value is `magnitude * 10^(-second)`.
 fn parse_mantissa(text: &str) -> Option<(i128, i32)> {
-    if text.is_empty() {
+    let bytes = text.as_bytes();
+    if bytes.is_empty() {
         return None;
     }
-    let mut magnitude: i128 = 0;
     let mut seen_digit = false;
     let mut seen_dot = false;
-    let mut fractional_digits: i32 = 0;
-    for byte in text.bytes() {
+    let mut last_nonzero = None;
+    let mut dot_at = None;
+    for (index, byte) in bytes.iter().copied().enumerate() {
         match byte {
             b'0'..=b'9' => {
                 seen_digit = true;
-                magnitude = magnitude
-                    .checked_mul(10)?
-                    .checked_add(i128::from(byte - b'0'))?;
-                if seen_dot {
-                    fractional_digits = fractional_digits.checked_add(1)?;
+                if byte != b'0' {
+                    last_nonzero = Some(index);
                 }
             }
-            b'.' if !seen_dot => seen_dot = true,
+            b'.' if !seen_dot => {
+                seen_dot = true;
+                dot_at = Some(index);
+            }
             _ => return None,
         }
     }
     if !seen_digit {
         return None;
     }
-    Some((magnitude, fractional_digits))
+    // "0", "0.00", and "000" are exact zeros. Nothing remains to accumulate.
+    let Some(last) = last_nonzero else {
+        return Some((0, 0));
+    };
+
+    let mut magnitude: i128 = 0;
+    for byte in bytes.iter().copied().take(last + 1) {
+        if byte == b'.' {
+            continue;
+        }
+        magnitude = magnitude
+            .checked_mul(10)?
+            .checked_add(i128::from(byte - b'0'))?;
+    }
+
+    let dot = dot_at.unwrap_or(bytes.len());
+    // Digits after the last nonzero are exact powers of ten. Counting them avoids
+    // multiplying those zeros into `magnitude`.
+    let scale_digits = if last > dot {
+        i32::try_from(last - dot).ok()?
+    } else {
+        -i32::try_from(dot - last - 1).ok()?
+    };
+    Some((magnitude, scale_digits))
 }
 
 /// `coefficient * 10^shift`. A negative shift must divide exactly, which is what rejects
@@ -3055,6 +3083,84 @@ mod tests {
         );
         assert_eq!(decimal_from_sql_number("1e40", false, 15, 2), None);
         assert_eq!(decimal_from_sql_number("1.2.3", false, 15, 2), None);
+    }
+
+    #[test]
+    fn trailing_zeros_do_not_overflow_an_exact_decimal38() {
+        // 38 nines followed by `.0` is 10^38 - 1. That fits Decimal128(38, 0), but the
+        // extra zero makes 39 digits, which overflow i128 if they are accumulated first.
+        let nines = "9".repeat(38);
+        let coefficient = 10_i128.pow(38) - 1;
+        assert_eq!(
+            decimal_from_sql_number(&format!("{nines}.0"), false, 38, 0),
+            Some(Literal::Decimal(coefficient, 38, 0))
+        );
+        assert_eq!(
+            decimal_from_sql_number(&format!("{nines}.000"), false, 38, 0),
+            Some(Literal::Decimal(coefficient, 38, 0))
+        );
+        assert_eq!(
+            decimal_from_sql_number(&format!("000{nines}.0"), false, 38, 0),
+            Some(Literal::Decimal(coefficient, 38, 0))
+        );
+        assert_eq!(
+            decimal_from_sql_number(&format!("{nines}.0e0"), false, 38, 0),
+            Some(Literal::Decimal(coefficient, 38, 0))
+        );
+        assert_eq!(
+            decimal_from_sql_number(&format!("{nines}0e-1"), false, 38, 0),
+            Some(Literal::Decimal(coefficient, 38, 0))
+        );
+        assert_eq!(
+            decimal_from_sql_number(&format!("{nines}.0"), true, 38, 0),
+            Some(Literal::Decimal(-coefficient, 38, 0))
+        );
+        assert_eq!(
+            decimal_from_sql_number(&format!("-{nines}.0"), false, 38, 0),
+            Some(Literal::Decimal(-coefficient, 38, 0))
+        );
+        assert_eq!(
+            decimal_from_sql_number("100.0", false, 15, 2),
+            Some(Literal::Decimal(10_000, 15, 2))
+        );
+        assert_eq!(
+            decimal_from_sql_number("1.2300", false, 15, 2),
+            Some(Literal::Decimal(123, 15, 2))
+        );
+        assert_eq!(
+            decimal_from_sql_number("1.2300", false, 15, 4),
+            Some(Literal::Decimal(12_300, 15, 4))
+        );
+        assert_eq!(decimal_from_sql_number("1.2300", false, 15, 1), None);
+        assert_eq!(
+            decimal_from_sql_number(&format!("0.{}", "0".repeat(80)), false, 38, 0),
+            Some(Literal::Decimal(0, 38, 0))
+        );
+        assert_eq!(
+            decimal_from_sql_number(&format!("1{}.0", "0".repeat(37)), false, 38, 0),
+            Some(Literal::Decimal(10_i128.pow(37), 38, 0))
+        );
+
+        // 39 significant digits, and 10^38 itself, do not fit precision 38.
+        let too_many_nines = "9".repeat(39);
+        assert_eq!(decimal_from_sql_number(&too_many_nines, false, 38, 0), None);
+        assert_eq!(
+            decimal_from_sql_number(&format!("{too_many_nines}.0"), false, 38, 0),
+            None
+        );
+        assert_eq!(
+            decimal_from_sql_number(&format!("1{}.0", "0".repeat(38)), false, 38, 0),
+            None
+        );
+        // The integer fits at scale 0, but scale 1 needs another coefficient digit.
+        assert_eq!(
+            decimal_from_sql_number(&format!("{nines}.0"), false, 38, 1),
+            None
+        );
+        assert_eq!(
+            decimal_from_sql_number(&format!("{}9", "9".repeat(80)), false, 38, 0),
+            None
+        );
     }
 
     #[test]
