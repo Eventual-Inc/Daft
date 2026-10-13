@@ -48,6 +48,16 @@ _METRICS_SCHEMA = Schema._from_field_name_and_types(
 )
 
 
+def _child_partition_name(table_name: str, value: Any) -> str:
+    """Deterministic child partition name for a partition value."""
+    import hashlib
+    import re
+
+    sanitized = re.sub(r"[^a-zA-Z0-9_]", "_", str(value).lower())[:40]
+    digest = hashlib.md5(str(value).encode()).hexdigest()[:8]
+    return f"{table_name}_p_{sanitized}_{digest}"[:63]
+
+
 class HologresDataSink(DataSink[dict[str, Any] | None]):
     """Writes micropartitions to a Hologres table via COPY.
 
@@ -119,6 +129,50 @@ class HologresDataSink(DataSink[dict[str, Any] | None]):
                     cur.execute(build_truncate_table_sql(self._schema_name, self._table_name))
                 logger.info("Truncated table %s.%s for overwrite", self._schema_name, self._table_name)
 
+    def _ensure_partitions(self, table) -> None:
+        """Create child partitions for the partition values in ``table``.
+
+        Logical partition tables reject rows whose partition value has no
+        child partition, so values are created up front. DDL is idempotent
+        (``IF NOT EXISTS``) and duplicate-creation races are ignored.
+        """
+        import psycopg
+
+        partition_col = self._holo_schema.partition_column
+        if partition_col not in table.column_names:
+            raise ValueError(
+                f"Partition column {partition_col!r} missing from the DataFrame written to "
+                f"{self._schema_name}.{self._table_name}"
+            )
+
+        values = table.column(partition_col).to_pylist()
+        distinct = sorted({v for v in values if v is not None})
+        if not distinct:
+            return
+
+        from psycopg import sql
+
+        conn = psycopg.connect(self._connection_uri, autocommit=True)
+        try:
+            with conn.cursor() as cur:
+                for value in distinct:
+                    child = _child_partition_name(self._table_name, value)
+                    # DDL does not accept bind parameters; the value goes in as
+                    # a safely-quoted literal.
+                    cur.execute(
+                        sql.SQL("CREATE TABLE IF NOT EXISTS {}.{} PARTITION OF {}.{} FOR VALUES IN ({})").format(
+                            sql.Identifier(self._schema_name),
+                            sql.Identifier(child),
+                            sql.Identifier(self._schema_name),
+                            sql.Identifier(self._table_name),
+                            sql.Literal(value),
+                        )
+                    )
+        except psycopg.errors.DuplicateTable:
+            logger.debug("Partition already created by a concurrent writer")
+        finally:
+            conn.close()
+
     def write(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteResult[dict[str, Any] | None]]:
         import psycopg
 
@@ -126,6 +180,9 @@ class HologresDataSink(DataSink[dict[str, Any] | None]):
             table = micropartition.to_arrow()
             if table.num_rows == 0:
                 continue
+
+            if self._holo_schema.is_partition_parent:
+                self._ensure_partitions(table)
 
             columns = list(table.column_names)
             plan, has_float_array = _CopyPlan.build(self._holo_schema, columns)

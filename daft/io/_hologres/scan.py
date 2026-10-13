@@ -369,6 +369,22 @@ class HologresScanOperator(ScanOperator):
                 "and cannot be used for partitioning."
             )
 
+        if dtype.is_string():
+            # Hologres' percentile aggregates reject strings; split the sorted
+            # distinct values instead, which is exact for partition columns.
+            distinct_sql = f"SELECT DISTINCT {self._partition_col} FROM {self._base_query()} ORDER BY 1"
+            table = self._sql_conn.execute_sql_query(distinct_sql)
+            values = [r[0] for r in zip(*table.to_pydict().values())] if table.num_rows else []
+            if not values:
+                return None
+            chunk = max(1, -(-len(values) // num_scan_tasks))
+            bounds = [values[0]]
+            for i in range(chunk - 1, len(values) - 1, chunk):
+                bounds.append(values[i])
+            if bounds[-1] != values[-1]:
+                bounds.append(values[-1])
+            return bounds
+
         if self._partition_bound_strategy == PartitionBoundStrategy.PERCENTILE:
             try:
                 percentiles = [i / num_scan_tasks for i in range(num_scan_tasks + 1)]
@@ -401,8 +417,6 @@ class HologresScanOperator(ScanOperator):
             return None
         if num_scan_tasks == 1:
             return [min_val, max_val]
-        if isinstance(min_val, str):
-            raise ValueError("String partition columns require the percentile bound strategy.")
         range_size = (max_val - min_val) / num_scan_tasks
         return [min_val + range_size * i for i in range(num_scan_tasks)] + [max_val]
 
