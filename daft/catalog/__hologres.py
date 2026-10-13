@@ -1,0 +1,422 @@
+"""WARNING! These APIs are internal; please use Catalog.from_hologres()."""
+
+from __future__ import annotations
+
+from contextlib import contextmanager
+from typing import TYPE_CHECKING, Any
+
+import psycopg
+
+from daft.catalog import (
+    Catalog,
+    Function,
+    Identifier,
+    NotFoundError,
+    Properties,
+    Schema,
+    Table,
+    TableAlreadyExistsError,
+)
+from daft.io._hologres._ddl import (
+    build_column_defs,
+    build_create_schema_sql,
+    build_create_table_sql,
+    build_drop_schema_sql,
+    build_drop_table_sql,
+    build_table_property_statements,
+)
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Generator
+
+    from daft.dataframe import DataFrame
+    from daft.io.partitioning import PartitionField
+
+# Schemas that belong to Hologres/PostgreSQL internals; hidden from listings.
+_SYSTEM_SCHEMAS = ("information_schema", "pg_catalog", "pg_toast", "hologres", "hologres_sample", "hologres_stage")
+
+
+def validate_connection_string(conn_string: str) -> None:
+    """Validate a PostgreSQL connection string (Hologres uses the PG protocol)."""
+    try:
+        psycopg.conninfo.make_conninfo(conn_string)
+        return
+    except psycopg.ProgrammingError as e:
+        raise ValueError(f"Invalid connection string: {e}")
+    except Exception as e:
+        raise ValueError(f"Unexpected error: {e}")
+
+
+@contextmanager
+def hologres_connection(connection_string: str) -> Generator[psycopg.Connection, None, None]:
+    """Context manager yielding an autocommit Hologres connection.
+
+    Hologres supports neither multi-statement DML transactions nor mixing DDL
+    and DML in one transaction, so every connection runs in autocommit mode
+    and statements commit immediately. The session timezone is pinned to UTC
+    for deterministic timestamp handling.
+    """
+    conn = psycopg.connect(connection_string, autocommit=True)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SET timezone TO 'UTC'")
+        yield conn
+    finally:
+        conn.close()
+
+
+def _resolve_identifier(identifier: Identifier, what: str) -> tuple[str | None, str]:
+    """Split a 1- or 2-part identifier into (schema_name, table_name)."""
+    if len(identifier) == 1:
+        # No schema given: let the connection's search path resolve it.
+        return None, identifier[0]
+    elif len(identifier) == 2:
+        return identifier[0], identifier[1]
+    else:
+        raise ValueError(f"Hologres {what} identifier must be 'schema.table' or 'table', got {identifier}")
+
+
+class HologresCatalog(Catalog):
+    """A Hologres catalog backed by a PostgreSQL connection string."""
+
+    _inner: str  # connection string
+
+    _create_table_options = {
+        "primary_key",
+        "partition_by",
+        "distribution_key",
+        "clustering_key",
+        "orientation",
+        "time_to_live_in_days",
+        "time_to_live_in_seconds",
+        "shard_count",
+        "bitmap_columns",
+        "dictionary_encoding",
+        "index",
+        "proxima_vectors",
+        "table_properties",
+    }
+
+    def __init__(self) -> None:
+        raise RuntimeError("HologresCatalog.__init__ is not supported, please use `Catalog.from_hologres` instead.")
+
+    @staticmethod
+    def from_uri(uri: str, **options: str | None) -> HologresCatalog:
+        """Create a HologresCatalog from a PostgreSQL connection string."""
+        validate_connection_string(uri)
+        c = HologresCatalog.__new__(HologresCatalog)
+        c._inner = uri
+        return c
+
+    @property
+    def name(self) -> str:
+        try:
+            return psycopg.conninfo.conninfo_to_dict(self._inner)["dbname"]
+        except Exception as e:
+            raise ValueError(f"Error getting database name from connection string: {e}")
+
+    ###
+    # create_*
+    ###
+
+    def _create_function(self, ident: Identifier, function: Function | Callable[..., Any]) -> None:
+        raise NotImplementedError("Hologres does not support function registration.")
+
+    def _create_namespace(self, identifier: Identifier) -> None:
+        """Create a schema in Hologres."""
+        if len(identifier) != 1:
+            raise ValueError(f"Hologres schema identifier must be a single schema name, got {identifier}")
+
+        with hologres_connection(self._inner) as conn, conn.cursor() as cur:
+            try:
+                cur.execute(build_create_schema_sql(identifier[0]))
+            except psycopg.errors.DuplicateSchema:
+                raise ValueError(f"Schema {identifier} already exists")
+            except psycopg.Error as e:
+                raise ValueError(f"Failed to create schema {identifier}: {e}") from e
+
+    def _create_table(
+        self,
+        identifier: Identifier,
+        schema: Schema,
+        properties: Properties | None = None,
+        partition_fields: list[PartitionField] | None = None,
+    ) -> Table:
+        """Create a table in Hologres.
+
+        Args:
+            identifier (Identifier): The identifier of the table to create.
+            schema (Schema): The schema of the table to create.
+            properties (Properties): Table options, see
+                ``HologresCatalog._create_table_options``.
+            partition_fields (list[PartitionField]): Identity partition fields
+                are translated to a logical partition table (``PARTITION BY
+                LIST``). An explicit ``partition_by`` option takes precedence.
+
+        Returns:
+            The table that was created.
+        """
+        if properties:
+            self._validate_options("Hologres create_table", properties, HologresCatalog._create_table_options)
+        schema_name, table_name = _resolve_identifier(identifier, "table")
+
+        options: dict[str, Any] = dict(properties) if properties else {}
+
+        # Logical partitioning: explicit option wins over identity partition fields.
+        partition_by = options.get("partition_by")
+        if partition_by is None and partition_fields:
+            identity = [f for f in partition_fields if f.transform is None or f.transform.is_identity()]
+            if len(identity) == 1:
+                partition_by = identity[0].name
+            elif len(identity) > 1:
+                raise ValueError(
+                    "Hologres logical partition tables support a single partition column, "
+                    f"got {len(identity)}: {[f.name for f in identity]}"
+                )
+        if partition_by is not None:
+            options["partition_by"] = partition_by
+
+        # Primary key: option or fall back to the partition column.
+        primary_keys = _normalize_keys(options.get("primary_key"))
+        if not primary_keys and partition_by:
+            # Hologres requires the partition column in the primary key.
+            primary_keys = [partition_by]
+        column_defs = build_column_defs(schema)
+        column_names = [c.name for c in column_defs]
+        for pk in primary_keys:
+            if pk not in column_names:
+                raise ValueError(f"Primary key column {pk!r} not found in schema columns {column_names}")
+
+        with hologres_connection(self._inner) as conn, conn.cursor() as cur:
+            try:
+                if schema_name:
+                    cur.execute(build_create_schema_sql(schema_name, if_not_exists=True))
+
+                cur.execute(
+                    build_create_table_sql(
+                        schema_name,
+                        table_name,
+                        column_defs,
+                        primary_keys=primary_keys,
+                        partition_by=partition_by,
+                    )
+                )
+                for stmt in build_table_property_statements(schema_name or "public", table_name, options):
+                    cur.execute(stmt)
+            except psycopg.errors.DuplicateTable:
+                raise TableAlreadyExistsError(f"Table {identifier} already exists")
+            except psycopg.Error as e:
+                raise ValueError(f"Failed to create table {identifier}: {e}") from e
+
+        return HologresTable._from_catalog(self._inner, identifier)
+
+    ###
+    # drop_*
+    ###
+
+    def _drop_function(self, ident: Identifier) -> None:
+        raise NotFoundError(f"Function '{ident}' not found in catalog '{self.name}'")
+
+    def _drop_namespace(self, identifier: Identifier) -> None:
+        """Drop a schema from Hologres."""
+        if len(identifier) != 1:
+            raise ValueError(f"Hologres namespace identifier must be a single schema name, got {identifier}")
+
+        with hologres_connection(self._inner) as conn, conn.cursor() as cur:
+            try:
+                cur.execute(build_drop_schema_sql(identifier[0]))
+            except psycopg.Error as e:
+                raise ValueError(f"Failed to drop namespace {identifier}: {e}") from e
+
+    def _drop_table(self, identifier: Identifier) -> None:
+        """Drop a table from Hologres."""
+        schema_name, table_name = _resolve_identifier(identifier, "table")
+
+        with hologres_connection(self._inner) as conn, conn.cursor() as cur:
+            try:
+                cur.execute(build_drop_table_sql(schema_name, table_name))
+            except psycopg.errors.UndefinedTable:
+                raise NotFoundError(f"Table {identifier} not found")
+            except psycopg.Error as e:
+                raise ValueError(f"Failed to drop table {identifier}: {e}") from e
+
+    ###
+    # get_*
+    ###
+
+    def _get_function(self, ident: Identifier) -> Function:
+        raise NotFoundError(f"Function '{ident}' not found in catalog '{self.name}'")
+
+    def _get_table(self, identifier: Identifier) -> Table:
+        """Get a table from Hologres."""
+        if not self._has_table(identifier):
+            raise NotFoundError(f"Table {identifier} not found")
+        return HologresTable._from_catalog(self._inner, identifier)
+
+    ###
+    # has_*
+    ###
+
+    def _has_namespace(self, identifier: Identifier) -> bool:
+        """Check if a schema exists in Hologres."""
+        if len(identifier) != 1:
+            raise ValueError(f"Hologres schema identifier must be a single schema name, got {identifier}")
+
+        with hologres_connection(self._inner) as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT EXISTS(SELECT 1 FROM information_schema.schemata WHERE schema_name = %s)",
+                (identifier[0],),
+            )
+            result = cur.fetchone()
+            return result[0] if result else False
+
+    def _has_table(self, identifier: Identifier) -> bool:
+        """Check if a table exists in Hologres."""
+        if len(identifier) == 1:
+            schema_name = None
+            table_name = identifier[0]
+        elif len(identifier) == 2:
+            schema_name, table_name = identifier[0], identifier[1]
+        else:
+            return False
+
+        with hologres_connection(self._inner) as conn, conn.cursor() as cur:
+            if schema_name:
+                cur.execute(
+                    "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema = %s AND table_name = %s)",
+                    (schema_name, table_name),
+                )
+            else:
+                cur.execute(
+                    "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = %s)",
+                    (table_name,),
+                )
+            result = cur.fetchone()
+            return result[0] if result else False
+
+    ###
+    # list_*
+    ###
+
+    def _list_namespaces(self, pattern: str | None = None) -> list[Identifier]:
+        """List schemas in Hologres (system schemas hidden)."""
+        with hologres_connection(self._inner) as conn, conn.cursor() as cur:
+            if pattern:
+                cur.execute(
+                    "SELECT schema_name FROM information_schema.schemata "
+                    "WHERE schema_name LIKE %s ORDER BY schema_name",
+                    (pattern + "%",),
+                )
+            else:
+                cur.execute("SELECT schema_name FROM information_schema.schemata ORDER BY schema_name")
+            return [Identifier(row[0]) for row in cur.fetchall() if row[0] not in _SYSTEM_SCHEMAS]
+
+    def _list_tables(self, pattern: str | None = None) -> list[Identifier]:
+        """List tables in Hologres, excluding system schemas and partition children."""
+        with hologres_connection(self._inner) as conn, conn.cursor() as cur:
+            query = """
+                SELECT n.nspname, c.relname
+                FROM pg_class c
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE c.relkind IN ('r', 'p')
+                  AND n.nspname NOT IN (%s, %s, %s, %s)
+                  AND NOT c.relispartition
+            """
+            params: list[str] = list(_SYSTEM_SCHEMAS[:4])
+            if pattern:
+                query += " AND c.relname LIKE %s"
+                params.append(pattern + "%")
+            query += " ORDER BY n.nspname, c.relname"
+            cur.execute(query, params)
+            return [Identifier(row[0], row[1]) for row in cur.fetchall()]
+
+
+def _normalize_keys(value: Any) -> list[str]:
+    """Normalize a primary key option (str, sequence of str, or None)."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    try:
+        keys = [str(v) for v in value]
+    except TypeError:
+        raise ValueError(f"Invalid primary key option: {value!r}")
+    return keys
+
+
+class HologresTable(Table):
+    """A Hologres table backed by a PostgreSQL connection string."""
+
+    _inner: tuple[str, Identifier]  # (connection string, identifier)
+
+    _read_options = {
+        "read_mode",  # "arrow" (COPY TO ARROW_LZ4, default) or "select"
+        "partition_col",
+        "num_partitions",
+        "partition_bound_strategy",
+        "shard_parallelism",
+        "disable_pushdowns_to_sql",
+    }
+    _append_options = {
+        "copy_mode",  # "stream" (default) or "bulk_load"
+        "copy_format",  # "binary" (default) or "text"
+        "on_conflict",  # "update" (default with PK), "ignore", "replace", "none"
+    }
+    _overwrite_options = {
+        "copy_mode",
+        "copy_format",
+        "on_conflict",
+    }
+
+    def __init__(self) -> None:
+        raise RuntimeError("HologresTable.__init__ is not supported, please use `Catalog.from_hologres` instead.")
+
+    @classmethod
+    def _from_catalog(cls, connection_string: str, identifier: Identifier) -> HologresTable:
+        """Create a HologresTable from catalog connection details."""
+        t = cls.__new__(cls)
+        t._inner = (connection_string, identifier)
+        return t
+
+    @property
+    def name(self) -> str:
+        """Returns the table's name."""
+        _, identifier = self._inner
+        if len(identifier) == 1:
+            return identifier[0]
+        elif len(identifier) == 2:
+            return identifier[1]
+        else:
+            raise ValueError(f"Invalid table identifier: {identifier}")
+
+    @property
+    def connection_string(self) -> str:
+        return self._inner[0]
+
+    @property
+    def identifier(self) -> Identifier:
+        return self._inner[1]
+
+    @staticmethod
+    def _from_obj(obj: object) -> HologresTable:
+        """Returns a HologresTable if the given object can be adapted so."""
+        raise ValueError(f"Unsupported hologres table type: {type(obj)}")
+
+    ###
+    # Table ABC methods (populated by the read/write integration commits)
+    ###
+
+    def schema(self) -> Schema:
+        raise NotImplementedError("HologresTable.schema() is not implemented yet")
+
+    def read(self, **options: Any) -> DataFrame:
+        self._validate_options("Hologres read", options, HologresTable._read_options)
+        raise NotImplementedError("HologresTable.read() is not implemented yet")
+
+    def append(self, df: DataFrame, **options: Any) -> None:
+        self._validate_options("Hologres append", options, HologresTable._append_options)
+        raise NotImplementedError("HologresTable.append() is not implemented yet")
+
+    def overwrite(self, df: DataFrame, **options: Any) -> None:
+        self._validate_options("Hologres overwrite", options, HologresTable._overwrite_options)
+        raise NotImplementedError("HologresTable.overwrite() is not implemented yet")

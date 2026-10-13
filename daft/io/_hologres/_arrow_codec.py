@@ -177,7 +177,7 @@ class ArrowStageBuffer:
         if self._writer is not None:
             try:
                 self._writer.close()
-            except Exception as e:  # noqa: BLE001 -- best-effort close must not mask the original error
+            except Exception as e:
                 logger.debug("Failed to close Arrow IPC writer: %s", e)
         self._buffer = None
         self._writer = None
