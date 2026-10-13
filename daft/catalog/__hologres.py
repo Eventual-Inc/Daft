@@ -450,8 +450,53 @@ class HologresTable(Table):
             return load_table_schema(conn, schema_name, table_name)
 
     def read(self, **options: Any) -> DataFrame:
+        """Read the table as a DataFrame via the Hologres Arrow COPY export.
+
+        Options:
+            read_mode: "arrow" (default) or "select" (generic SQL path).
+            partition_col: column to split parallel reads by bounds; defaults
+                to the logical partition column when the table is a logical
+                partition parent.
+            num_partitions: number of parallel read tasks.
+            partition_bound_strategy: "min-max" or "percentile".
+            shard_parallelism: split reads by physical shard (default True).
+            disable_pushdowns: don't push filters/projections into the query.
+        """
         self._validate_options("Hologres read", options, HologresTable._read_options)
-        raise NotImplementedError("HologresTable.read() is not implemented yet")
+
+        from daft import context
+        from daft.daft import ScanOperatorHandle, StorageConfig
+        from daft.dataframe import DataFrame
+        from daft.io._hologres.scan import HologresScanOperator
+        from daft.logical.builder import LogicalPlanBuilder
+        from daft.sql.sql_scan import PartitionBoundStrategy
+
+        holo = self._load_hologres_schema()
+
+        partition_col = options.get("partition_col")
+        bound_strategy = options.get("partition_bound_strategy", "min-max")
+        if partition_col is None and holo.partition_column is not None:
+            # Logical partition table: align reads with the partition column.
+            partition_col = holo.partition_column
+            dtype = self.schema()[partition_col].dtype
+            if not (dtype.is_numeric() or dtype.is_temporal()):
+                bound_strategy = "percentile"
+
+        io_config = context.get_context().daft_planning_config.default_io_config
+        operator = HologresScanOperator(
+            connection_uri=self.connection_string,
+            holo_schema=holo,
+            storage_config=StorageConfig(True, io_config),
+            disable_pushdowns=options.get("disable_pushdowns", False),
+            read_mode=options.get("read_mode", "arrow"),
+            shard_parallelism=options.get("shard_parallelism", True),
+            partition_col=partition_col,
+            num_partitions=options.get("num_partitions"),
+            partition_bound_strategy=PartitionBoundStrategy.from_str(bound_strategy),
+        )
+        handle = ScanOperatorHandle.from_python_scan_operator(operator)
+        builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
+        return DataFrame(builder)
 
     def append(self, df: DataFrame, **options: Any) -> None:
         self._validate_options("Hologres append", options, HologresTable._append_options)
