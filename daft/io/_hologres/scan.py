@@ -511,20 +511,23 @@ _PG_BINARY_SIGNATURE = b"PGCOPY\n\xff\r\n\x00"
 
 
 def _compact_table(table: pa.Table) -> pa.Table:
-    """Re-serialize a decoded table so all buffers hold exactly the logical data.
+    """Rebuild decoded arrays with fresh, zero-padded buffers.
 
     Hologres' Arrow export pads buffers with uninitialized bytes (a 5-row
-    batch can carry 32KB string buffers). Downstream consumers that validate
-    whole buffers (e.g. arrow-rs via FFI) reject the padding, so the table is
-    round-tripped through a fresh IPC stream, which compacts every buffer.
+    batch can carry 32KB string buffers). Strict consumers validate whole
+    buffers, so string/list columns are re-encoded from their Python values,
+    guaranteeing clean, zero-padded buffers regardless of what the export
+    left in the padding.
     """
     import pyarrow as pa
 
-    sink = pa.BufferOutputStream()
-    with pa.ipc.new_stream(sink, table.schema) as writer:
-        writer.write_table(table)
-    with pa.ipc.open_stream(pa.BufferReader(sink.getvalue())) as reader:
-        return reader.read_all()
+    # Strip custom field metadata: Hologres attaches binary column-statistics
+    # metadata ("col_stat") that downstream consumers choke on.
+    clean_schema = pa.schema([pa.field(f.name, f.type, nullable=f.nullable) for f in table.schema])
+    return pa.Table.from_pydict(
+        {name: table.column(name).to_pylist() for name in table.column_names},
+        schema=clean_schema,
+    )
 
 
 def _fix_arrow_types(table: pa.Table, bool_columns: list[str], tz_columns: list[str]) -> pa.Table:

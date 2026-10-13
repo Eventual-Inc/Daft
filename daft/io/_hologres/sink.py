@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 from typing import TYPE_CHECKING, Any, Literal
 
 from daft.datatype import DataType
@@ -46,6 +47,46 @@ _METRICS_SCHEMA = Schema._from_field_name_and_types(
         ("total_written_bytes", DataType.int64()),
     ]
 )
+
+
+_STAGE_FILE_SIZE_LIMIT = 64 * 1024 * 1024  # 64 MB
+
+
+def _prepare_stage_table(table, holo_schema: HologresTableSchema):
+    """Project a decoded batch onto the table columns and JSON-encode jsonb.
+
+    The stage wire format stores json/jsonb as UTF-8 text and timestamps as
+    date64; :meth:`ArrowStageBuffer.put_table` casts the rest.
+    """
+    import pyarrow as pa
+
+    columns = []
+    fields = []
+    for col_meta in holo_schema.columns:
+        col = table.column(col_meta.name)
+        if col_meta.type_name in ("json", "jsonb"):
+            col = pa.array([None if v is None else _to_json_text(v) for v in col.to_pylist()], pa.utf8())
+        columns.append(col)
+        fields.append(pa.field(col_meta.name, col.type, nullable=True))
+    return pa.Table.from_arrays(columns, schema=pa.schema(fields))
+
+
+def _commit_stage_sql(self) -> str:
+    from daft.io._hologres._stage_sql import build_insert_select_from_stage_sql_pk
+
+    columns = [(c.name, c.type_name, c.precision, c.scale) for c in self._holo_schema.columns]
+    conflict = None
+    if self._holo_schema.has_primary_key and self._on_conflict is not OnConflictAction.NONE:
+        conflict = "ignore" if self._on_conflict is OnConflictAction.INSERT_OR_IGNORE else "update"
+    return build_insert_select_from_stage_sql_pk(
+        schema_name=self._schema_name,
+        table_name=self._table_name,
+        columns=columns,
+        primary_keys=self._holo_schema.primary_keys,
+        stages=[self._stage_name],
+        conflict_action=conflict,
+        is_overwrite=self._write_mode == "overwrite",
+    )
 
 
 def _child_partition_name(table_name: str, value: Any) -> str:
@@ -83,7 +124,7 @@ class HologresDataSink(DataSink[dict[str, Any] | None]):
         schema_name: str,
         table_name: str,
         write_mode: Literal["append", "overwrite", "fail"] = "append",
-        copy_mode: Literal["stream", "bulk_load"] = "stream",
+        copy_mode: Literal["stream", "bulk_load", "stage"] = "stream",
         copy_format: Literal["binary", "text"] = "binary",
         on_conflict: Literal["update", "ignore", "replace", "none"] | None = None,
     ) -> None:
@@ -108,6 +149,23 @@ class HologresDataSink(DataSink[dict[str, Any] | None]):
             on_conflict = "update" if self._holo_schema.has_primary_key else "none"
         self._on_conflict = OnConflictAction(on_conflict)
 
+        if copy_mode == "stage":
+            from daft.io._hologres._schema_loader import get_holo_version
+
+            conn = psycopg.connect(connection_uri, autocommit=True)
+            try:
+                version = get_holo_version(conn)
+            finally:
+                conn.close()
+            if version < (4, 1, 0):
+                raise ValueError(
+                    f"copy_mode='stage' requires Hologres >= 4.1.0, but the instance reports "
+                    f"{version[0]}.{version[1]}.{version[2]}. Use copy_mode='stream' or 'bulk_load' instead."
+                )
+        self._stage_name: str | None = (
+            f"daft_{schema_name}_{table_name}_{uuid.uuid4().hex[:8]}"[:63] if copy_mode == "stage" else None
+        )
+
     def name(self) -> str:
         return "HologresDataSink"
 
@@ -115,19 +173,25 @@ class HologresDataSink(DataSink[dict[str, Any] | None]):
         return _METRICS_SCHEMA
 
     def start(self) -> None:
-        """Driver-side one-shot setup: existence checks and truncation."""
+        """Driver-side one-shot setup: existence checks, truncation, staging."""
         from daft.catalog.__hologres import hologres_connection
         from daft.io._hologres._ddl import build_truncate_table_sql
+        from daft.io._hologres._stage_sql import build_create_stage_sql
 
         with hologres_connection(self._connection_uri) as conn:
             if self._write_mode == "fail" and table_exists(conn, self._schema_name, self._table_name):
                 raise ValueError(
                     f"Table {self._schema_name}.{self._table_name} already exists, cannot write with write_mode='fail'."
                 )
-            if self._write_mode == "overwrite":
+            if self._write_mode == "overwrite" and self._copy_mode is not CopyMode.STAGE:
+                # Stage mode overwrites with INSERT OVERWRITE at commit time.
                 with conn.cursor() as cur:
                     cur.execute(build_truncate_table_sql(self._schema_name, self._table_name))
                 logger.info("Truncated table %s.%s for overwrite", self._schema_name, self._table_name)
+            if self._stage_name:
+                with conn.cursor() as cur:
+                    cur.execute(build_create_stage_sql(self._stage_name))
+                logger.info("Created internal stage %s", self._stage_name)
 
     def _ensure_partitions(self, table) -> None:
         """Create child partitions for the partition values in ``table``.
@@ -176,6 +240,10 @@ class HologresDataSink(DataSink[dict[str, Any] | None]):
     def write(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteResult[dict[str, Any] | None]]:
         import psycopg
 
+        if self._copy_mode is CopyMode.STAGE:
+            yield from self._write_stage(micropartitions)
+            return
+
         for micropartition in micropartitions:
             table = micropartition.to_arrow()
             if table.num_rows == 0:
@@ -223,8 +291,93 @@ class HologresDataSink(DataSink[dict[str, Any] | None]):
                 bytes_written=bytes_written,
             )
 
+    def _fixed_fe_connect(self):
+        """Connect routed to the Hologres FixedFE (required for stage uploads)."""
+        import psycopg
+
+        return psycopg.connect(self._connection_uri, autocommit=True, options="type=fixed")
+
+    def _write_stage(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteResult[dict[str, Any] | None]]:
+        """Upload micropartitions to the shared internal stage as Arrow files.
+
+        Files are named uniquely per task; the coordinator commits once in
+        ``finalize()`` so every staged file is loaded exactly once.
+        """
+        from daft.io._hologres._arrow_codec import ArrowStageBuffer, columns_for
+
+        columns = columns_for(self._holo_schema, [c.name for c in self._holo_schema.columns])
+        buffer = ArrowStageBuffer(columns)
+        file_prefix = f"{self._schema_name}_{self._table_name}_{uuid.uuid4().hex[:8]}"
+        file_index = 0
+        rows_written = 0
+        bytes_written = 0
+        conn = self._fixed_fe_connect()
+        try:
+            with conn.cursor() as cur:
+                for micropartition in micropartitions:
+                    table = micropartition.to_arrow()
+                    if table.num_rows == 0:
+                        continue
+                    table = _prepare_stage_table(table, self._holo_schema)
+                    buffer.put_table(table)
+                    rows_written += table.num_rows
+                    bytes_written += table.nbytes
+                    if buffer.data_size >= _STAGE_FILE_SIZE_LIMIT:
+                        data = buffer.end_and_get_bytes()
+                        self._upload_stage_file(cur, file_prefix, file_index, data)
+                        file_index += 1
+                data = buffer.end_and_get_bytes()
+                if data:
+                    self._upload_stage_file(cur, file_prefix, file_index, data)
+                    file_index += 1
+        finally:
+            conn.close()
+
+        yield WriteResult(
+            result={"stage": self._stage_name},
+            rows_written=rows_written,
+            bytes_written=bytes_written,
+        )
+
+    def _upload_stage_file(self, cur, file_prefix: str, file_index: int, data: bytes) -> None:
+        from daft.io._hologres._stage_sql import build_copy_in_stage_sql
+
+        file_name = f"{file_prefix}_{file_index}.arrow"
+        with cur.copy(build_copy_in_stage_sql(self._stage_name, file_name)) as copy:
+            copy.write(data)
+        logger.info("Uploaded %d bytes to stage %s as %s", len(data), self._stage_name, file_name)
+
+    def _commit_stage(self) -> None:
+        """Coordinator: load every staged file into the table, then drop it."""
+        import psycopg
+
+        from daft.io._hologres._stage_sql import build_drop_stage_sql
+
+        insert_sql = _commit_stage_sql(self)
+        logger.info("Stage commit SQL: %s", insert_sql)
+        conn = psycopg.connect(self._connection_uri, autocommit=True)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(insert_sql)
+        finally:
+            conn.close()
+        try:
+            with psycopg.connect(self._connection_uri, autocommit=True) as conn, conn.cursor() as cur:
+                cur.execute(build_drop_stage_sql(self._stage_name))
+        except Exception as e:
+            logger.warning("Failed to drop stage %s: %s", self._stage_name, e)
+
     def finalize(self, write_results: list[WriteResult[dict[str, Any] | None]]) -> MicroPartition:
         from daft.recordbatch import MicroPartition
+
+        if self._copy_mode is CopyMode.STAGE:
+            self._commit_stage()
+            return MicroPartition.from_pydict(
+                {
+                    "total_written_rows": [sum(r.rows_written for r in write_results)],
+                    "total_written_bytes": [sum(r.bytes_written for r in write_results)],
+                }
+            )
 
         total_rows = sum(r.rows_written for r in write_results)
         total_bytes = sum(r.bytes_written for r in write_results)

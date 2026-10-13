@@ -31,7 +31,10 @@ class CopyMode(Enum):
       supports on_conflict; works on all versions; safe for concurrent writers.
     - BULK_LOAD: standard PostgreSQL COPY path with a table-level lock;
       highest throughput; on_conflict requires Hologres >= 3.1.
+    - STAGE: Arrow IPC upload to an internal stage followed by one
+      INSERT ... SELECT at commit; requires Hologres >= 4.1.
     """
 
     STREAM = "stream"
     BULK_LOAD = "bulk_load"
+    STAGE = "stage"
