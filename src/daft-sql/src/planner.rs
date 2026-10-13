@@ -8,7 +8,7 @@ use std::{
 
 use common_error::{DaftError, DaftResult};
 use daft_catalog::Identifier;
-use daft_core::prelude::*;
+use daft_core::{prelude::*, utils::supertype::try_get_supertype};
 use daft_dsl::{
     Column, Expr, ExprRef, PlanRef, Subquery, UnresolvedColumn,
     functions::{FunctionExpr, ScalarUDF, scalar::ScalarFn, struct_::StructExpr},
@@ -1637,6 +1637,68 @@ impl SQLPlanner<'_> {
         })
     }
 
+    /// Plan a searched `CASE`. Numeric literals are rewritten to the decimal type of
+    /// the other branches only when the original SQL digits fit that type exactly.
+    fn plan_searched_case(
+        &self,
+        operand: Option<&sqlparser::ast::Expr>,
+        conditions: &[sqlparser::ast::CaseWhen],
+        else_result: Option<&sqlparser::ast::Expr>,
+    ) -> SQLPlannerResult<ExprRef> {
+        if operand.is_some() {
+            unsupported_sql_err!("CASE with operand not yet supported");
+        }
+
+        let Some(else_sql) = else_result else {
+            unsupported_sql_err!("CASE with no else result");
+        };
+        let else_expr = self.plan_expr(else_sql)?;
+
+        let planned = conditions
+            .iter()
+            .map(|when| {
+                Ok((
+                    self.plan_expr(&when.condition)?,
+                    self.plan_expr(&when.result)?,
+                ))
+            })
+            .collect::<SQLPlannerResult<Vec<_>>>()?;
+
+        let mut results = planned
+            .iter()
+            .map(|(_, result)| result.clone())
+            .collect::<Vec<_>>();
+        results.push(else_expr);
+        let mut sources = conditions
+            .iter()
+            .map(|when| &when.result)
+            .collect::<Vec<_>>();
+        sources.push(else_sql);
+        self.coerce_exact_decimal_literals(&mut results, &sources);
+
+        // `results` always contains the ELSE branch pushed above.
+        let Some(mut else_expr) = results.pop() else {
+            unreachable!("CASE literal alignment dropped the ELSE branch");
+        };
+        // Fold from the last WHEN so each ELSE is the chain built so far.
+        for ((condition, _), result) in planned.into_iter().zip(results).rev() {
+            else_expr = condition.if_else(result, else_expr);
+        }
+        Ok(else_expr)
+    }
+
+    fn coerce_exact_decimal_literals(
+        &self,
+        branches: &mut [ExprRef],
+        sources: &[&sqlparser::ast::Expr],
+    ) {
+        let schema = match &self.current_plan {
+            Some(plan) => plan.schema(),
+            None => Arc::new(Schema::empty()),
+        };
+        coerce_case_branches_to_decimal(branches, sources, schema.as_ref());
+    }
+
     pub(crate) fn plan_expr(&self, expr: &sqlparser::ast::Expr) -> SQLPlannerResult<ExprRef> {
         use sqlparser::ast::Expr as SQLExpr;
         match expr {
@@ -1881,27 +1943,7 @@ impl SQLPlanner<'_> {
                 else_result,
                 case_token: _,
                 end_token: _,
-            } => {
-                if operand.is_some() {
-                    unsupported_sql_err!("CASE with operand not yet supported");
-                }
-
-                let else_expr = match else_result {
-                    Some(expr) => self.plan_expr(expr)?,
-                    None => unsupported_sql_err!("CASE with no else result"),
-                };
-
-                // we need to traverse from back to front to build the if else chain
-                // because we need to start with the else expression
-                conditions
-                    .iter()
-                    .rev()
-                    .try_fold(else_expr, |else_expr, when| {
-                        let cond = self.plan_expr(&when.condition)?;
-                        let res = self.plan_expr(&when.result)?;
-                        Ok(cond.if_else(res, else_expr))
-                    })
-            }
+            } => self.plan_searched_case(operand.as_deref(), conditions, else_result.as_deref()),
             SQLExpr::Exists { subquery, negated } => {
                 let mut child_planner = self.new_child();
                 let subquery = child_planner.plan_query(subquery)?;
@@ -2591,12 +2633,280 @@ fn singleton_plan() -> DaftResult<LogicalPlanBuilder> {
     ))
 }
 
+/// Rewrite numeric literals in `CASE` branches to the shared decimal type when the
+/// original SQL digits are exactly representable there.
+///
+/// `value_to_lit` has already turned those digits into `Int64` or `Float64`. This uses
+/// the SQL text instead, so `0.1` stays a decimal tenth rather than a binary float.
+/// A literal that would round or overflow is left unchanged and the existing `if_else`
+/// supertype check rejects it. Non-literals are never rewritten.
+fn coerce_case_branches_to_decimal(
+    branches: &mut [ExprRef],
+    sources: &[&ast::Expr],
+    schema: &Schema,
+) {
+    if branches.len() != sources.len() {
+        return;
+    }
+    let mut dtypes = Vec::with_capacity(branches.len());
+    for branch in branches.iter() {
+        let Ok(field) = branch.to_field(schema) else {
+            return;
+        };
+        dtypes.push(field.dtype);
+    }
+
+    let Some(DataType::Decimal128(precision, scale)) = decimal_case_target(&dtypes) else {
+        return;
+    };
+
+    for ((branch, dtype), source) in branches.iter_mut().zip(dtypes).zip(sources) {
+        if matches!(dtype, DataType::Decimal128(_, _)) {
+            continue;
+        }
+        let Some((text, negative)) = sql_number_literal(source) else {
+            continue;
+        };
+        if let Some(decimal) = decimal_from_sql_number(text, negative, precision, scale) {
+            *branch = lit(decimal);
+        }
+    }
+}
+
+/// Supertype of every decimal branch. `None` when no branch is decimal, or when a decimal
+/// branch is not a valid `Decimal128` in `1..=38` precision.
+fn decimal_case_target(dtypes: &[DataType]) -> Option<DataType> {
+    let mut target: Option<DataType> = None;
+    for dtype in dtypes {
+        let DataType::Decimal128(precision, scale) = dtype else {
+            continue;
+        };
+        if !(1..=38).contains(precision) || scale > precision {
+            return None;
+        }
+        target = Some(match target {
+            None => DataType::Decimal128(*precision, *scale),
+            Some(current) => {
+                let combined = try_get_supertype(&current, dtype).ok()?;
+                let DataType::Decimal128(precision, scale) = combined else {
+                    return None;
+                };
+                if !(1..=38).contains(&precision) || scale > precision {
+                    return None;
+                }
+                DataType::Decimal128(precision, scale)
+            }
+        });
+    }
+    target
+}
+
+/// The original digits of a numeric SQL literal, plus whether unary minuses make it negative.
+///
+/// Parentheses and unary plus are ignored. Anything that is not a single number, such as a
+/// column or `0.1 + 0`, returns `None`.
+fn sql_number_literal(expr: &ast::Expr) -> Option<(&str, bool)> {
+    fn walk(expr: &ast::Expr, negative: bool) -> Option<(&str, bool)> {
+        match expr {
+            ast::Expr::Nested(inner) => walk(inner, negative),
+            ast::Expr::UnaryOp {
+                op: UnaryOperator::Plus,
+                expr,
+            } => walk(expr, negative),
+            ast::Expr::UnaryOp {
+                op: UnaryOperator::Minus,
+                expr,
+            } => walk(expr, !negative),
+            ast::Expr::Value(ast::ValueWithSpan {
+                value: ast::Value::Number(text, _),
+                ..
+            }) => Some((text.as_str(), negative)),
+            _ => None,
+        }
+    }
+    walk(expr, false)
+}
+
+/// `Literal::Decimal` for SQL digits whose exact value fits `precision` and `scale`.
+///
+/// `negative` comes from unary minuses around the number. Rounding and overflow return `None`.
+fn decimal_from_sql_number(
+    text: &str,
+    negative: bool,
+    precision: usize,
+    scale: usize,
+) -> Option<Literal> {
+    if !(1..=38).contains(&precision) || scale > precision {
+        return None;
+    }
+    let (magnitude, exponent, text_negative) = parse_sql_decimal(text)?;
+    let mut coefficient =
+        scale_coefficient(magnitude, exponent.checked_add(i32::try_from(scale).ok()?)?)?;
+    if negative ^ text_negative && coefficient != 0 {
+        coefficient = coefficient.checked_neg()?;
+    }
+    if !decimal_coefficient_fits(coefficient, precision) {
+        return None;
+    }
+    Some(Literal::Decimal(
+        coefficient,
+        u8::try_from(precision).ok()?,
+        i8::try_from(scale).ok()?,
+    ))
+}
+
+/// `(magnitude, base-10 exponent, negative)` for `text`, so the value is
+/// `magnitude * 10^exponent`. The exponent may be negative.
+fn parse_sql_decimal(text: &str) -> Option<(i128, i32, bool)> {
+    let (negative, unsigned) = match text.as_bytes().first() {
+        Some(b'+') => (false, &text[1..]),
+        Some(b'-') => (true, &text[1..]),
+        Some(_) => (false, text),
+        None => return None,
+    };
+    let split = unsigned.find(['e', 'E']);
+    let (mantissa, exponent) = match split {
+        Some(pos) => (&unsigned[..pos], parse_exponent(&unsigned[pos + 1..])?),
+        None => (unsigned, 0),
+    };
+    let (magnitude, fractional_digits) = parse_mantissa(mantissa)?;
+    Some((
+        magnitude,
+        exponent.checked_sub(fractional_digits)?,
+        negative,
+    ))
+}
+
+fn parse_exponent(text: &str) -> Option<i32> {
+    let (negative, digits) = match text.as_bytes().first() {
+        Some(b'+') => (false, &text[1..]),
+        Some(b'-') => (true, &text[1..]),
+        Some(_) => (false, text),
+        None => return None,
+    };
+    if digits.is_empty() {
+        return None;
+    }
+    let mut exponent: i32 = 0;
+    for byte in digits.bytes() {
+        let digit = byte.checked_sub(b'0')?;
+        if digit > 9 {
+            return None;
+        }
+        exponent = exponent.checked_mul(10)?.checked_add(i32::from(digit))?;
+    }
+    if negative {
+        exponent = exponent.checked_neg()?;
+    }
+    Some(exponent)
+}
+
+/// Integer digits of a mantissa and how many of them sit after the decimal point.
+fn parse_mantissa(text: &str) -> Option<(i128, i32)> {
+    if text.is_empty() {
+        return None;
+    }
+    let mut magnitude: i128 = 0;
+    let mut seen_digit = false;
+    let mut seen_dot = false;
+    let mut fractional_digits: i32 = 0;
+    for byte in text.bytes() {
+        match byte {
+            b'0'..=b'9' => {
+                seen_digit = true;
+                magnitude = magnitude
+                    .checked_mul(10)?
+                    .checked_add(i128::from(byte - b'0'))?;
+                if seen_dot {
+                    fractional_digits = fractional_digits.checked_add(1)?;
+                }
+            }
+            b'.' if !seen_dot => seen_dot = true,
+            _ => return None,
+        }
+    }
+    if !seen_digit {
+        return None;
+    }
+    Some((magnitude, fractional_digits))
+}
+
+/// `coefficient * 10^shift`. A negative shift must divide exactly, which is what rejects
+/// values that would otherwise be rounded.
+fn scale_coefficient(coefficient: i128, shift: i32) -> Option<i128> {
+    if coefficient == 0 {
+        return Some(0);
+    }
+    // Nonzero Decimal128 values have at most 38 digits, and an i128 has at most 39.
+    if !(-39..=38).contains(&shift) {
+        return None;
+    }
+    let mut coefficient = coefficient;
+    if shift >= 0 {
+        for _ in 0..shift {
+            coefficient = coefficient.checked_mul(10)?;
+        }
+        return Some(coefficient);
+    }
+    for _ in 0..(-shift) {
+        if coefficient.checked_rem(10)? != 0 {
+            return None;
+        }
+        coefficient = coefficient.checked_div(10)?;
+    }
+    Some(coefficient)
+}
+
+fn decimal_coefficient_fits(coefficient: i128, precision: usize) -> bool {
+    let Ok(precision) = u32::try_from(precision) else {
+        return false;
+    };
+    let Some(limit) = 10_i128.checked_pow(precision) else {
+        return false;
+    };
+    coefficient.checked_abs().is_some_and(|abs| abs < limit)
+}
+
 #[cfg(test)]
 mod tests {
-    use daft_core::prelude::*;
-    use sqlparser::ast::{Ident, ObjectName, ObjectNamePart};
+    use std::sync::Arc;
 
+    use daft_core::prelude::*;
+    use daft_dsl::{Column, Expr, ExprRef, PlanRef, UnresolvedColumn};
+    use sqlparser::{
+        ast::{self, Ident, ObjectName, ObjectNamePart},
+        dialect::GenericDialect,
+        parser::{Parser, ParserOptions},
+        tokenizer::Tokenizer,
+    };
+
+    use super::{coerce_case_branches_to_decimal, decimal_from_sql_number, sql_number_literal};
     use crate::{planner::is_table_path, sql_schema};
+
+    fn parse_expr(sql: &str) -> ast::Expr {
+        let tokens = Tokenizer::new(&GenericDialect {}, sql)
+            .tokenize_with_location()
+            .unwrap();
+        let mut parser = Parser::new(&GenericDialect {})
+            .with_options(ParserOptions {
+                trailing_commas: true,
+                ..Default::default()
+            })
+            .with_tokens_with_locations(tokens);
+        parser.parse_expr().unwrap()
+    }
+
+    fn literal(value: Literal) -> ExprRef {
+        Arc::new(Expr::Literal(value))
+    }
+
+    fn column(name: &str, schema: SchemaRef) -> ExprRef {
+        Arc::new(Expr::Column(Column::Unresolved(UnresolvedColumn {
+            name: Arc::from(name),
+            plan_ref: PlanRef::Unqualified,
+            plan_schema: Some(schema),
+        })))
+    }
 
     #[test]
     fn test_sql_schema_creates_expected_schema() {
@@ -2646,5 +2956,173 @@ mod tests {
         assert!(!is_table_path(&ObjectName(vec![
             ObjectNamePart::Identifier(Ident::new("path/to/file.ext"))
         ])));
+    }
+
+    #[test]
+    fn sqlparser_preserves_case_numeric_literal_text() {
+        let expr = parse_expr(
+            "CASE WHEN true THEN 0.1 WHEN false THEN +1.10 WHEN false THEN 0.01 \
+             WHEN false THEN (1e-1) WHEN false THEN 1E+2 WHEN false THEN .5 \
+             WHEN false THEN -(0.01) ELSE -0.1 END",
+        );
+        let ast::Expr::Case {
+            conditions,
+            else_result,
+            ..
+        } = expr
+        else {
+            panic!("expected CASE");
+        };
+        let texts = conditions
+            .iter()
+            .map(|when| sql_number_literal(&when.result))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            texts,
+            vec![
+                Some(("0.1", false)),
+                Some(("1.10", false)),
+                Some(("0.01", false)),
+                Some(("1e-1", false)),
+                Some(("1E+2", false)),
+                Some((".5", false)),
+                Some(("0.01", true)),
+            ]
+        );
+        assert_eq!(
+            sql_number_literal(else_result.as_deref().unwrap()),
+            Some(("0.1", true))
+        );
+    }
+
+    #[test]
+    fn exact_decimal_spellings_keep_precision_and_scale() {
+        assert_eq!(
+            decimal_from_sql_number("0", false, 15, 2),
+            Some(Literal::Decimal(0, 15, 2))
+        );
+        assert_eq!(
+            decimal_from_sql_number("0.0", false, 15, 2),
+            Some(Literal::Decimal(0, 15, 2))
+        );
+        assert_eq!(
+            decimal_from_sql_number("0.1", false, 15, 2),
+            Some(Literal::Decimal(10, 15, 2))
+        );
+        assert_eq!(
+            decimal_from_sql_number("0.01", false, 15, 2),
+            Some(Literal::Decimal(1, 15, 2))
+        );
+        assert_eq!(
+            decimal_from_sql_number("1.10", false, 15, 2),
+            Some(Literal::Decimal(110, 15, 2))
+        );
+        assert_eq!(
+            decimal_from_sql_number("0.1", true, 15, 2),
+            Some(Literal::Decimal(-10, 15, 2))
+        );
+        assert_eq!(
+            decimal_from_sql_number("1e-1", false, 15, 2),
+            Some(Literal::Decimal(10, 15, 2))
+        );
+        assert_eq!(
+            decimal_from_sql_number("1E+2", false, 15, 2),
+            Some(Literal::Decimal(10_000, 15, 2))
+        );
+        assert_eq!(
+            decimal_from_sql_number("1.25e1", false, 15, 2),
+            Some(Literal::Decimal(1_250, 15, 2))
+        );
+        assert_eq!(
+            decimal_from_sql_number(".5", false, 15, 2),
+            Some(Literal::Decimal(50, 15, 2))
+        );
+        assert_eq!(
+            decimal_from_sql_number("2", true, 15, 2),
+            Some(Literal::Decimal(-200, 15, 2))
+        );
+    }
+
+    #[test]
+    fn rounding_or_overflow_is_not_converted() {
+        assert_eq!(decimal_from_sql_number("0.125", false, 15, 2), None);
+        assert_eq!(decimal_from_sql_number("1e-3", false, 15, 2), None);
+        assert_eq!(decimal_from_sql_number("0.5", false, 15, 0), None);
+        // 10^13 needs 14 integer digits and does not fit in Decimal(15, 2).
+        assert_eq!(
+            decimal_from_sql_number("10000000000000", false, 15, 2),
+            None
+        );
+        assert_eq!(decimal_from_sql_number("1e40", false, 15, 2), None);
+        assert_eq!(decimal_from_sql_number("1.2.3", false, 15, 2), None);
+    }
+
+    #[test]
+    fn case_coercion_rewrites_fitting_literals_only() {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("price", DataType::Decimal128(15, 2)),
+            Field::new("fee", DataType::Decimal128(10, 4)),
+            Field::new("qty", DataType::Int64),
+        ]));
+        let price = column("price", schema.clone());
+        let fee = column("fee", schema.clone());
+        let qty = column("qty", schema.clone());
+        let price_sql = parse_expr("price");
+        let zero_sql = parse_expr("0");
+        let mut with_literal = vec![price.clone(), literal(Literal::Int64(0))];
+        coerce_case_branches_to_decimal(
+            &mut with_literal,
+            &[&price_sql, &zero_sql],
+            schema.as_ref(),
+        );
+        assert_eq!(with_literal[0], price);
+        assert_eq!(
+            with_literal[1].as_ref(),
+            &Expr::Literal(Literal::Decimal(0, 15, 2))
+        );
+
+        let tenth_sql = parse_expr("-0.1");
+        let mut signed = vec![price.clone(), literal(Literal::Float64(-0.1))];
+        coerce_case_branches_to_decimal(&mut signed, &[&price_sql, &tenth_sql], schema.as_ref());
+        assert_eq!(
+            signed[1].as_ref(),
+            &Expr::Literal(Literal::Decimal(-10, 15, 2))
+        );
+
+        let qty_sql = parse_expr("qty");
+        let mut with_column = vec![price.clone(), qty.clone()];
+        coerce_case_branches_to_decimal(&mut with_column, &[&price_sql, &qty_sql], schema.as_ref());
+        assert_eq!(with_column[0], price);
+        assert_eq!(with_column[1], qty);
+
+        let one_sql = parse_expr("1");
+        let mut integers_only = vec![literal(Literal::Int64(1)), literal(Literal::Int64(0))];
+        coerce_case_branches_to_decimal(
+            &mut integers_only,
+            &[&one_sql, &zero_sql],
+            schema.as_ref(),
+        );
+        assert_eq!(integers_only[0].as_ref(), &Expr::Literal(Literal::Int64(1)));
+        assert_eq!(integers_only[1].as_ref(), &Expr::Literal(Literal::Int64(0)));
+
+        let fee_sql = parse_expr("fee");
+        let tenth = parse_expr("0.1");
+        let mut mixed = vec![price.clone(), fee.clone(), literal(Literal::Float64(0.1))];
+        coerce_case_branches_to_decimal(
+            &mut mixed,
+            &[&price_sql, &fee_sql, &tenth],
+            schema.as_ref(),
+        );
+        assert_eq!(mixed[0], price);
+        assert_eq!(mixed[1], fee);
+        assert_eq!(
+            mixed[2].as_ref(),
+            &Expr::Literal(Literal::Decimal(1_000, 15, 4))
+        );
+
+        let rounded = parse_expr("0.125");
+        let mut inexact = vec![price, literal(Literal::Float64(0.125))];
+        coerce_case_branches_to_decimal(&mut inexact, &[&price_sql, &rounded], schema.as_ref());
+        assert_eq!(inexact[1].as_ref(), &Expr::Literal(Literal::Float64(0.125)));
     }
 }
