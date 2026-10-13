@@ -499,9 +499,55 @@ class HologresTable(Table):
         return DataFrame(builder)
 
     def append(self, df: DataFrame, **options: Any) -> None:
+        """Append rows to the table; primary-key tables upsert (on conflict update).
+
+        Rows are streamed with the Hologres stream COPY (fixed plan), which
+        takes row-level locks and is safe for concurrent writers.
+
+        Options:
+            copy_mode: "stream" (default) or "bulk_load" (table lock,
+                highest throughput; on_conflict requires Hologres >= 3.1).
+            copy_format: "binary" (default) or "text".
+            on_conflict: "update" (default with PK), "ignore", "replace",
+                "none".
+        """
         self._validate_options("Hologres append", options, HologresTable._append_options)
-        raise NotImplementedError("HologresTable.append() is not implemented yet")
+
+        from daft.io._hologres.sink import HologresDataSink
+
+        schema_name, table_name = self._qualified_name()
+        sink = HologresDataSink(
+            connection_uri=self.connection_string,
+            schema_name=schema_name,
+            table_name=table_name,
+            write_mode="append",
+            copy_mode=options.get("copy_mode", "stream"),
+            copy_format=options.get("copy_format", "binary"),
+            on_conflict=options.get("on_conflict"),
+        )
+        df.write_sink(sink)
 
     def overwrite(self, df: DataFrame, **options: Any) -> None:
+        """Overwrite the whole table (TRUNCATE first, driver-side).
+
+        Accepts the same options as :meth:`append` (except write_mode).
+        """
         self._validate_options("Hologres overwrite", options, HologresTable._overwrite_options)
-        raise NotImplementedError("HologresTable.overwrite() is not implemented yet")
+
+        from daft.io._hologres.sink import HologresDataSink
+
+        schema_name, table_name = self._qualified_name()
+        sink = HologresDataSink(
+            connection_uri=self.connection_string,
+            schema_name=schema_name,
+            table_name=table_name,
+            write_mode="overwrite",
+            copy_mode=options.get("copy_mode", "stream"),
+            copy_format=options.get("copy_format", "binary"),
+            on_conflict=options.get("on_conflict"),
+        )
+        df.write_sink(sink)
+
+    def _qualified_name(self) -> tuple[str, str]:
+        schema_name, table_name = _resolve_identifier(self.identifier, "table")
+        return (schema_name or "public", table_name)

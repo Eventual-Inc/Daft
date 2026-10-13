@@ -53,6 +53,14 @@ def _daft_schema_from_holo(holo_schema: HologresTableSchema) -> Schema:
     return Schema._from_fields(fields)
 
 
+def _force_sqlalchemy_uri(uri: str) -> str:
+    if uri.startswith("postgresql://"):
+        return "postgresql+psycopg://" + uri[len("postgresql://") :]
+    if uri.startswith("postgres://"):
+        return "postgresql+psycopg://" + uri[len("postgres://") :]
+    return uri
+
+
 def _normalize_predicate(predicate: str) -> str:
     """Normalize a Daft-generated predicate to the postgres dialect."""
     import sqlglot
@@ -88,7 +96,10 @@ class HologresScanOperator(ScanOperator):
         self._num_partitions = num_partitions
         self._partition_bound_strategy = partition_bound_strategy or PartitionBoundStrategy.MIN_MAX
         self._schema = _daft_schema_from_holo(holo_schema)
-        self._sql_conn = SQLConnection.from_url(connection_uri)
+        # Aux queries and the SELECT fallback go through SQLAlchemy + psycopg:
+        # connectorx cannot parse jsonb/bytea columns that Hologres tables
+        # commonly carry.
+        self._sql_conn = SQLConnection.from_url(_force_sqlalchemy_uri(connection_uri))
 
     def schema(self) -> Schema:
         return self._schema
@@ -140,9 +151,11 @@ class HologresScanOperator(ScanOperator):
                 yield self._scan_task(pushdowns, use_arrow, shard_list=shard_list, partition_bounds=None)
 
     def _projects_json_columns(self, pushdowns: PyPushdowns) -> bool:
-        if pushdowns.columns is None:
-            return False
-        for name in pushdowns.columns:
+        columns = pushdowns.columns
+        if columns is None:
+            # A full scan projects every column, json/jsonb included.
+            return any(c.type_name in ("json", "jsonb") for c in self._holo_schema.columns)
+        for name in columns:
             idx = self._holo_schema.get_column_index(name)
             if idx is not None and self._holo_schema.columns[idx].type_name in ("json", "jsonb"):
                 return True
@@ -227,14 +240,18 @@ class HologresScanOperator(ScanOperator):
         push_limit = None if use_arrow else pushdowns.limit
 
         if apply_pushdowns:
+            projection = (
+                self._quoted_columns(pushdowns.columns) if use_arrow else self._select_projection(pushdowns.columns)
+            )
             sql = self._compose_query(
-                projection=pushdowns.columns,
+                projection=projection,
                 predicate=predicate_sql,
                 limit=push_limit,
                 partition_bounds=partition_bounds,
             )
         else:
-            sql = self._compose_query()
+            projection = pushdowns.columns if use_arrow else self._select_projection(None)
+            sql = self._compose_query(projection=projection)
 
         if use_arrow:
             projected_schema = self._projected_schema(pushdowns)
@@ -266,6 +283,28 @@ class HologresScanOperator(ScanOperator):
             stats=stats,
         )
 
+    def _quoted_columns(self, projection: list[str] | None) -> list[str] | None:
+        if projection is None:
+            return None
+        return [f'"{c}"' for c in projection]
+
+    def _select_projection(self, projection: list[str] | None) -> list[str]:
+        """Projection for the SELECT path with json/jsonb cast to text.
+
+        The declared Daft type for json/jsonb columns is string, so drivers
+        must return text instead of parsed objects.
+        """
+        if projection is None:
+            projection = [c.name for c in self._holo_schema.columns]
+        out = []
+        for name in projection:
+            idx = self._holo_schema.get_column_index(name)
+            if idx is not None and self._holo_schema.columns[idx].type_name in ("json", "jsonb"):
+                out.append(f'"{name}"::text AS "{name}"')
+            else:
+                out.append(f'"{name}"')
+        return out
+
     def _projected_schema(self, pushdowns: PyPushdowns) -> Schema:
         if pushdowns.columns is None:
             return self._schema
@@ -289,7 +328,8 @@ class HologresScanOperator(ScanOperator):
         one flat SELECT. Daft-generated predicates are normalized through
         SQLGlot's postgres dialect.
         """
-        cols = ", ".join(f'"{c}"' for c in projection) if projection else "*"
+        # Projection items are raw SQL fragments (already quoted).
+        cols = ", ".join(projection) if projection else "*"
         sql = f"SELECT {cols} FROM {self._base_query()}"
 
         where_parts: list[str] = []

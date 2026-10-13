@@ -354,7 +354,10 @@ def daft_type_to_pg(dtype: DataType, set_dimensions: bool = True) -> str:
     elif dtype.is_time():
         return "time"
     elif dtype.is_decimal128():
-        return "numeric"
+        # Hologres requires explicit precision and scale.
+        precision = dtype.precision if dtype.precision and dtype.precision > 0 else 38
+        scale = dtype.scale if dtype.scale and dtype.scale >= 0 else 0
+        return f"numeric({precision},{scale})"
     elif dtype.is_list() or dtype.is_fixed_size_list():
         try:
             inner = dtype.dtype

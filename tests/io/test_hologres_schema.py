@@ -106,7 +106,7 @@ class TestDaftToPg:
             (DataType.timestamp("us"), "timestamp"),
             (DataType.timestamp("us", "UTC"), "timestamptz"),
             (DataType.time("us"), "time"),
-            (DataType.decimal128(10, 2), "numeric"),
+            (DataType.decimal128(10, 2), "numeric(10,2)"),
             (DataType.list(DataType.int32()), "integer[]"),
             (DataType.list(DataType.string()), "text[]"),
             (DataType.list(DataType.float32()), "real[]"),
