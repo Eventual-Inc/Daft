@@ -2014,10 +2014,8 @@ dependencies = [
  "brotli",
  "bzip2",
  "compression-core",
- "deflate64",
  "flate2",
  "liblzma",
- "lz4",
  "memchr",
  "zstd",
  "zstd-safe",
@@ -3734,12 +3732,6 @@ name = "debug_unsafe"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7eed2c4702fa172d1ce21078faa7c5203e69f5394d48cc436d25928394a867a2"
-
-[[package]]
-name = "deflate64"
-version = "0.1.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac6b926516df9c60bfa16e107b21086399f8285a44ca9711344b9e553c5146e2"
 
 [[package]]
 name = "defmt"
@@ -5576,7 +5568,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "45aec2360b3933207e27908049d8e4df4e476b58180afb1e56b2a4fb72efe4ba"
 dependencies = [
  "liblzma-sys",
- "num_cpus",
 ]
 
 [[package]]

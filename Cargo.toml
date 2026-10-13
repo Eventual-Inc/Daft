@@ -266,7 +266,14 @@ arc-swap = "1.7.1"
 async-compat = "0.2.5"
 async-compression = {version = "0.4.43", features = [
   "tokio",
-  "all-algorithms"
+  "brotli",
+  "bzip2",
+  "deflate",
+  "gzip",
+  "lzma",
+  "xz",
+  "zlib",
+  "zstd"
 ]}
 async-stream = "0.3.6"
 async-trait = "0.1.89"
