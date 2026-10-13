@@ -253,13 +253,15 @@ class HologresDataSink(DataSink[dict[str, Any] | None]):
                 self._ensure_partitions(table)
 
             columns = list(table.column_names)
-            plan, has_float_array = _CopyPlan.build(self._holo_schema, columns)
-            rows_written = table.num_rows
-            bytes_written = table.nbytes
-
             # Hologres' binary COPY rejects PostgreSQL array wire data for
             # float4[] columns, so writes touching them fall back to TEXT.
+            table_types = {c.name: c.type_name for c in self._holo_schema.columns if c.name in columns}
+            has_float_array = any(t in ("real[]", "float4[]", "_float4") for t in table_types.values())
             copy_format = CopyFormat.TEXT if has_float_array else self._copy_format
+
+            plan, _ = _CopyPlan.build(self._holo_schema, columns, copy_format)
+            rows_written = table.num_rows
+            bytes_written = table.nbytes
 
             conn = psycopg.connect(self._connection_uri, autocommit=True)
             try:
@@ -397,7 +399,9 @@ class _CopyPlan:
         self._columns = columns
 
     @classmethod
-    def build(cls, holo_schema: HologresTableSchema, column_names: list[str]) -> tuple[_CopyPlan, bool]:
+    def build(
+        cls, holo_schema: HologresTableSchema, column_names: list[str], copy_format: CopyFormat
+    ) -> tuple[_CopyPlan, bool]:
         plan: list[tuple[str, int, Any]] = []
         has_float_array = False
         for name in column_names:
@@ -415,10 +419,10 @@ class _CopyPlan:
                 # TEXT format; the binary COPY path rejects array wire data.
                 has_float_array = True
                 plan.append((name, oid, _to_float4_array_literal))
-            elif pg_type in ("jsonb", "json", "text", "varchar", "character varying") or pg_type.startswith(
-                "character"
-            ):
-                plan.append((name, oid, _to_json_text))
+            elif pg_type in ("jsonb", "json"):
+                # Binary COPY: pass the Python object and let psycopg's jsonb
+                # dumper encode it once. TEXT COPY needs pre-encoded JSON text.
+                plan.append((name, oid, _identity if copy_format is CopyFormat.BINARY else _to_json_text))
             else:
                 plan.append((name, oid, _identity))
         return cls(plan), has_float_array

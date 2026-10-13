@@ -136,6 +136,36 @@ def build_set_table_property_sql(schema_name: str, table_name: str, key: str, va
     )
 
 
+def build_fulltext_index_statements(
+    schema_name: str,
+    table_name: str,
+    columns: Sequence[str],
+    if_not_exists: bool = True,
+) -> list[str]:
+    """Build ``CREATE INDEX ... USING fulltext`` statements for text columns.
+
+    Hologres 5.x exposes the full-text inverted index through the ``fulltext``
+    access method (older releases used ``SET_TABLE_PROPERTY(..., 'index', ...)``).
+    """
+    index_name_base = f"{table_name}_fulltext_idx"
+    statements = []
+    for i, column in enumerate(columns):
+        name = f"{index_name_base}_{i}"[:63]
+        if_not = "IF NOT EXISTS " if if_not_exists else ""
+        statements.append(
+            sql.SQL("CREATE INDEX {}{} ON {}.{} USING fulltext ({})")
+            .format(
+                sql.SQL(if_not),
+                sql.Identifier(name),
+                sql.Identifier(schema_name),
+                sql.Identifier(table_name),
+                sql.Identifier(column),
+            )
+            .as_string()
+        )
+    return statements
+
+
 def build_table_property_statements(
     schema_name: str,
     table_name: str,
@@ -145,11 +175,14 @@ def build_table_property_statements(
 
     Supported options (all optional):
         distribution_key, clustering_key, orientation, time_to_live_in_days,
-        bitmap_columns, dictionary_encoding, index, proxima_vectors,
+        bitmap_columns, dictionary_encoding, proxima_vectors,
         table_properties (free-form dict).
 
     Note: shard_count is a table-group-level setting on Hologres and cannot
-    be set per table, so it is intentionally not an option here.
+    be set per table. Full-text indexes are emitted by
+    :func:`build_fulltext_index_statements` (the ``fulltext`` access method),
+    not through table properties. proxima_vectors / hgraph vector indexes
+    only exist on instances with the vector extension installed.
     """
     statements: list[str] = []
 
@@ -159,7 +192,6 @@ def build_table_property_statements(
         "orientation",
         "bitmap_columns",
         "dictionary_encoding",
-        "index",
     )
     for key in simple_keys:
         if key in options and options[key] is not None:

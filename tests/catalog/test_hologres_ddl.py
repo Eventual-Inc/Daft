@@ -103,14 +103,31 @@ class TestTablePropertyStatements:
                 "distribution_key": "id",
                 "clustering_key": "id:name",
                 "orientation": "column",
-                "index": "name:text_gin",
             },
         )
         assert stmts == [
             "CALL SET_TABLE_PROPERTY('public.t', 'distribution_key', 'id')",
             "CALL SET_TABLE_PROPERTY('public.t', 'clustering_key', 'id:name')",
             "CALL SET_TABLE_PROPERTY('public.t', 'orientation', 'column')",
-            "CALL SET_TABLE_PROPERTY('public.t', 'index', 'name:text_gin')",
+        ]
+
+
+class TestFulltextIndexStatements:
+    def test_single_column(self):
+        from daft.io._hologres._ddl import build_fulltext_index_statements
+
+        stmts = build_fulltext_index_statements("public", "t", ["name"])
+        assert stmts == [
+            'CREATE INDEX IF NOT EXISTS "t_fulltext_idx_0" ON "public"."t" USING fulltext ("name")'
+        ]
+
+    def test_multiple_columns(self):
+        from daft.io._hologres._ddl import build_fulltext_index_statements
+
+        stmts = build_fulltext_index_statements("public", "docs", ["title", "body"], if_not_exists=False)
+        assert stmts == [
+            'CREATE INDEX "docs_fulltext_idx_0" ON "public"."docs" USING fulltext ("title")',
+            'CREATE INDEX "docs_fulltext_idx_1" ON "public"."docs" USING fulltext ("body")',
         ]
 
     def test_int_values(self):

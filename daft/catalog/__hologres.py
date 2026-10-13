@@ -23,6 +23,7 @@ from daft.io._hologres._ddl import (
     build_create_table_sql,
     build_drop_schema_sql,
     build_drop_table_sql,
+    build_fulltext_index_statements,
     build_table_property_statements,
 )
 from daft.io._hologres._schema_loader import HologresTableSchema, load_table_schema
@@ -206,6 +207,10 @@ class HologresCatalog(Catalog):
                 )
                 for stmt in build_table_property_statements(schema_name or "public", table_name, options):
                     cur.execute(stmt)
+                index_columns = _normalize_index_columns(options.get("index"))
+                if index_columns:
+                    for stmt in build_fulltext_index_statements(schema_name or "public", table_name, index_columns):
+                        cur.execute(stmt)
             except psycopg.errors.DuplicateTable:
                 raise TableAlreadyExistsError(f"Table {identifier} already exists")
             except psycopg.Error as e:
@@ -334,6 +339,20 @@ class HologresCatalog(Catalog):
             return [Identifier(row[0], row[1]) for row in cur.fetchall()]
 
 
+def _normalize_index_columns(value: Any) -> list[str]:
+    """Normalize the full-text ``index`` option (str, sequence, or dict)."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [str(k) for k in value]
+    try:
+        return [str(v) for v in value]
+    except TypeError:
+        raise ValueError(f"Invalid full-text index option: {value!r}")
+
+
 def _normalize_keys(value: Any) -> list[str]:
     """Normalize a primary key option (str, sequence of str, or None)."""
     if value is None:
@@ -421,7 +440,10 @@ class HologresTable(Table):
         from daft.datatype import DataType
         from daft.io._hologres._schema_loader import schema_to_daft
 
-        return [(name, dtype if dtype is not None else DataType.string()) for name, dtype in schema_to_daft(self._load_hologres_schema())]
+        return [
+            (name, dtype if dtype is not None else DataType.string())
+            for name, dtype in schema_to_daft(self._load_hologres_schema())
+        ]
 
     def _load_hologres_schema(self) -> HologresTableSchema:
         """Load full Hologres metadata (columns, PK, partitioning, shards)."""
