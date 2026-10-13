@@ -25,6 +25,7 @@ from daft.io._hologres._ddl import (
     build_drop_table_sql,
     build_table_property_statements,
 )
+from daft.io._hologres._schema_loader import HologresTableSchema, load_table_schema
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator
@@ -89,7 +90,6 @@ class HologresCatalog(Catalog):
         "orientation",
         "time_to_live_in_days",
         "time_to_live_in_seconds",
-        "shard_count",
         "bitmap_columns",
         "dictionary_encoding",
         "index",
@@ -176,11 +176,14 @@ class HologresCatalog(Catalog):
         if partition_by is not None:
             options["partition_by"] = partition_by
 
-        # Primary key: option or fall back to the partition column.
+        # Primary key: option or fall back to the partition column. Hologres
+        # requires the partition column to be part of the primary key, so it
+        # is appended when missing.
         primary_keys = _normalize_keys(options.get("primary_key"))
         if not primary_keys and partition_by:
-            # Hologres requires the partition column in the primary key.
             primary_keys = [partition_by]
+        elif partition_by and partition_by not in primary_keys:
+            primary_keys = [*primary_keys, partition_by]
         column_defs = build_column_defs(schema)
         column_names = [c.name for c in column_defs]
         for pk in primary_keys:
@@ -403,11 +406,48 @@ class HologresTable(Table):
         raise ValueError(f"Unsupported hologres table type: {type(obj)}")
 
     ###
-    # Table ABC methods (populated by the read/write integration commits)
+    # Table ABC methods
     ###
 
     def schema(self) -> Schema:
-        raise NotImplementedError("HologresTable.schema() is not implemented yet")
+        """Returns the table's schema, read from Hologres metadata."""
+        pairs = self._daft_schema_pairs()
+        from daft.logical.schema import Field
+
+        return Schema._from_fields([Field.create(name, dtype) for name, dtype in pairs])
+
+    def _daft_schema_pairs(self) -> list[tuple[str, Any]]:
+        """(name, DataType) pairs for this table; unmappable columns become string."""
+        from daft.datatype import DataType
+        from daft.io._hologres._schema_loader import schema_to_daft
+
+        return [(name, dtype if dtype is not None else DataType.string()) for name, dtype in schema_to_daft(self._load_hologres_schema())]
+
+    def _load_hologres_schema(self) -> HologresTableSchema:
+        """Load full Hologres metadata (columns, PK, partitioning, shards)."""
+        from daft.io._hologres._schema_loader import table_exists
+
+        schema_name, table_name = _resolve_identifier(self.identifier, "table")
+        with hologres_connection(self.connection_string) as conn:
+            if schema_name is None:
+                # Resolve the actual schema via the search-path convention:
+                # prefer the default 'public' schema, else the first match.
+                if table_exists(conn, "public", table_name):
+                    schema_name = "public"
+                else:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "SELECT table_schema FROM information_schema.tables WHERE table_name = %s "
+                            "AND table_schema NOT IN (%s, %s, %s) LIMIT 1",
+                            (table_name, *_SYSTEM_SCHEMAS[:3]),
+                        )
+                        row = cur.fetchone()
+                    if row is None:
+                        raise NotFoundError(f"Table {self.identifier} not found")
+                    schema_name = row[0]
+            elif not table_exists(conn, schema_name, table_name):
+                raise NotFoundError(f"Table {self.identifier} not found")
+            return load_table_schema(conn, schema_name, table_name)
 
     def read(self, **options: Any) -> DataFrame:
         self._validate_options("Hologres read", options, HologresTable._read_options)

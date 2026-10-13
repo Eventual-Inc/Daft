@@ -114,10 +114,9 @@ class TestTablePropertyStatements:
         ]
 
     def test_int_values(self):
-        stmts = build_table_property_statements("public", "t", {"time_to_live_in_days": 30, "shard_count": 4})
+        stmts = build_table_property_statements("public", "t", {"time_to_live_in_days": 30})
         assert stmts == [
             "CALL SET_TABLE_PROPERTY('public.t', 'time_to_live_in_seconds', '2592000')",
-            "CALL SET_TABLE_PROPERTY('public.t', 'shard_count', '4')",
         ]
 
     def test_ttl_seconds_passthrough(self):

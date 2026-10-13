@@ -112,7 +112,7 @@ SELECT a.attname
 FROM pg_catalog.pg_class c
 JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
 JOIN pg_catalog.pg_partitioned_table part ON c.oid = part.partrelid
-JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid AND a.attnum = part.partattrs[1]
+JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid AND a.attnum = part.partattrs[0]
 WHERE n.nspname = {0} AND c.relname = {1} AND part.partstrat = 'l'
 LIMIT 1
 """)

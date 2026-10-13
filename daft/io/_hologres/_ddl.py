@@ -145,8 +145,11 @@ def build_table_property_statements(
 
     Supported options (all optional):
         distribution_key, clustering_key, orientation, time_to_live_in_days,
-        shard_count, bitmap_columns, dictionary_encoding, index,
-        proxima_vectors, table_properties (free-form dict).
+        bitmap_columns, dictionary_encoding, index, proxima_vectors,
+        table_properties (free-form dict).
+
+    Note: shard_count is a table-group-level setting on Hologres and cannot
+    be set per table, so it is intentionally not an option here.
     """
     statements: list[str] = []
 
@@ -177,10 +180,6 @@ def build_table_property_statements(
             build_set_table_property_sql(
                 schema_name, table_name, "time_to_live_in_seconds", int(options["time_to_live_in_seconds"])
             )
-        )
-    if options.get("shard_count") is not None:
-        statements.append(
-            build_set_table_property_sql(schema_name, table_name, "shard_count", int(options["shard_count"]))
         )
     if options.get("proxima_vectors") is not None:
         proxima = options["proxima_vectors"]
