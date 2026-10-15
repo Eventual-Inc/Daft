@@ -172,7 +172,7 @@ def test_chained_actor_pool_udfs_prioritize_downstream_under_resource_pressure(t
             time.sleep(0.35)
             return [v * 2 for v in x]
 
-    with execution_config_ctx(actor_udf_ready_timeout=30, maintain_order=False, min_cpu_per_task=0):
+    with execution_config_ctx(actor_udf_ready_timeout=30, maintain_order=False):
         df = daft.from_pydict({"x": list(range(8))}).repartition(4, "x")
         result = df.select(SlowDownstream()(FastUpstream()(df["x"]))).to_pydict()
     assert sorted(result["x"]) == sorted([(x + 1) * 2 for x in range(8)])
@@ -214,7 +214,7 @@ def test_three_chained_actor_pool_udfs_prioritize_slowest_downstream(tmp_path, m
             time.sleep(0.35)
             return [v - 3 for v in x]
 
-    with execution_config_ctx(actor_udf_ready_timeout=30, maintain_order=False, min_cpu_per_task=0):
+    with execution_config_ctx(actor_udf_ready_timeout=30, maintain_order=False):
         df = daft.from_pydict({"x": list(range(12))}).repartition(6, "x")
         result = df.select(SlowThird()(MediumSecond()(FastFirst()(df["x"])))).to_pydict()
     assert sorted(result["x"]) == sorted([(x + 1) * 2 - 3 for x in range(12)])
@@ -255,7 +255,7 @@ def test_three_chained_actor_pool_udfs_middle_scales_up_then_down_e2e(tmp_path, 
             time.sleep(0.35)
             return [v - 3 for v in x]
 
-    with execution_config_ctx(actor_udf_ready_timeout=30, maintain_order=False, min_cpu_per_task=0):
+    with execution_config_ctx(actor_udf_ready_timeout=30, maintain_order=False):
         df = daft.from_pydict({"x": list(range(36))}).repartition(12, "x")
         result = df.select(SlowTail()(BurstyMiddle()(FastHead()(df["x"])))).to_pydict()
     assert sorted(result["x"]) == sorted([(x + 1) * 2 - 3 for x in range(36)])
