@@ -15,14 +15,20 @@ import pyarrow as pa
 import pytest
 
 import daft
+from daft.daft import StorageConfig
 
 pyiceberg = pytest.importorskip("pyiceberg")
 
 from pyiceberg.catalog.sql import SqlCatalog
+from pyiceberg.manifest import ManifestContent, ManifestFile
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
+from pyiceberg.table import DataScan
+from pyiceberg.table.snapshots import Snapshot
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.types import LongType, NestedField, StringType
+
+from daft.io.iceberg.iceberg_scan import IcebergDataSource
 
 
 @pytest.fixture
@@ -227,6 +233,58 @@ def test_count_rows_applies_partition_and_data_predicates_together(partitioned_c
 
     assert df.count_rows() == 2
     assert len(df.to_pydict()["x"]) == 2
+
+
+def _source(table, snapshot_id=None) -> IcebergDataSource:
+    return IcebergDataSource(table, snapshot_id=snapshot_id, storage_config=StorageConfig(True, None))
+
+
+def test_read_iceberg_does_not_plan_files(partitioned_counts, monkeypatch):
+    """Building the source must not plan the scan, which reads every manifest (#5588)."""
+    planned = []
+    plan_files = DataScan.plan_files
+    monkeypatch.setattr(DataScan, "plan_files", lambda scan: planned.append(scan) or plan_files(scan))
+
+    df = daft.read_iceberg(partitioned_counts)
+
+    assert planned == []
+    assert df.count_rows() == 8
+
+
+@pytest.mark.parametrize(
+    ("content", "added", "existing", "has_deletes"),
+    [
+        (ManifestContent.DATA, 1, 1, False),
+        (ManifestContent.DELETES, 1, 0, True),
+        (ManifestContent.DELETES, 0, 1, True),
+        # Every entry in the manifest was removed by a later snapshot.
+        (ManifestContent.DELETES, 0, 0, False),
+    ],
+)
+def test_count_pushdown_disabled_by_live_delete_manifests(
+    partitioned_counts, monkeypatch, content, added, existing, has_deletes
+):
+    manifest = ManifestFile.from_args(content=content, added_files_count=added, existing_files_count=existing)
+    monkeypatch.setattr(Snapshot, "manifests", lambda snapshot, io: [manifest])
+
+    assert _source(partitioned_counts).supports_count_pushdown() is not has_deletes
+
+
+def test_count_pushdown_checks_the_scanned_snapshot(table_with_refs, monkeypatch):
+    table, first_snapshot_id = table_with_refs
+    deletes = ManifestFile.from_args(content=ManifestContent.DELETES, added_files_count=1, existing_files_count=0)
+    monkeypatch.setattr(
+        Snapshot, "manifests", lambda snapshot, io: [deletes] if snapshot.snapshot_id != first_snapshot_id else []
+    )
+
+    assert _source(table).supports_count_pushdown() is False
+    assert _source(table, snapshot_id=first_snapshot_id).supports_count_pushdown() is True
+
+
+def test_count_pushdown_on_table_without_snapshots(local_catalog):
+    table = local_catalog.create_table("default.no_snapshots", Schema(NestedField(1, "x", LongType(), required=False)))
+
+    assert _source(table).supports_count_pushdown() is True
 
 
 def test_count_rows_with_partition_predicate_matching_nothing(partitioned_counts):
