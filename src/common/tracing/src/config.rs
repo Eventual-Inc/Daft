@@ -22,9 +22,10 @@ fn parse_protocol(s: &str) -> Protocol {
         "http/protobuf" => Protocol::HttpBinary,
         "http/json" => {
             // TODO: Support by enabling the `http/json` feature of the opentelemetry-otlp crate
-            panic!(
-                "`http/json` protocol is currently not supported for metrics exporter. Set `OTEL_EXPORTER_OTLP_PROTOCOL` to `grpc` or `http/protobuf` instead"
+            log::warn!(
+                "`http/json` protocol is currently not supported for metrics exporter. Set `OTEL_EXPORTER_OTLP_PROTOCOL` to `grpc` or `http/protobuf` instead. Defaulting to `grpc`."
             );
+            Protocol::Grpc
         }
         _ => Protocol::Grpc,
     }
