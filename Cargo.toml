@@ -369,7 +369,7 @@ smallvec = {version = "1.15.1", features = ["serde", "impl_bincode"]}
 snafu = {version = "0.9.0", features = ["futures"]}
 spark-connect = {path = "src/generated/spark-connect", default-features = false}
 sqlparser = "0.59.0"
-sysinfo = "0.38.4"
+sysinfo = "0.39"
 tango-bench = "0.6.0"
 test-log = "0.2.19"
 thiserror = "2.0.17"

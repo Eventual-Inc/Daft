@@ -4,16 +4,16 @@ use async_trait::async_trait;
 use common_io_config::GCSConfig;
 use common_runtime::get_io_pool_num_threads;
 use futures::{TryStreamExt, stream::BoxStream};
-use google_cloud_storage::{
+use gcloud_storage::{
     client::{Client, ClientConfig, google_cloud_auth::credentials::CredentialsFile},
     http::{
         Error as GError,
         objects::{delete::DeleteObjectRequest, get::GetObjectRequest, list::ListObjectsRequest},
     },
 };
-use google_cloud_token::{TokenSource, TokenSourceProvider};
 use regex::Regex;
 use snafu::{IntoError, ResultExt, Snafu};
+use token_source::{TokenSource, TokenSourceProvider};
 use tokio::sync::Semaphore;
 
 use crate::{
@@ -45,7 +45,7 @@ enum Error {
 
     #[snafu(display("Unable to load Credentials: {}", source))]
     UnableToLoadCredentials {
-        source: google_cloud_storage::client::google_cloud_auth::error::Error,
+        source: gcloud_storage::client::google_cloud_auth::error::Error,
     },
     #[snafu(display("Not a File: \"{}\"", path))]
     NotAFile { path: String },
@@ -177,7 +177,7 @@ struct GCSClientWrapper {
 
 fn parse_raw_uri(uri: &str) -> super::Result<(&str, &str)> {
     // We use regex here instead of the more robust url crate because we do not want to handle character escaping
-    // which is done by `google_cloud_storage::client::Client` already
+    // which is done by `gcloud_storage::client::Client` already
     let re = Regex::new(r"^gs://([^/]+)(?:/(.*))?$").unwrap();
 
     if let Some(cap) = re.captures(uri) {
@@ -228,7 +228,7 @@ impl GCSClientWrapper {
             object: key.into(),
             ..Default::default()
         };
-        use google_cloud_storage::http::objects::download::Range as GcsRange;
+        use gcloud_storage::http::objects::download::Range as GcsRange;
         let (grange, size) = if let Some(range) = range {
             range.validate().context(InvalidRangeRequestSnafu)?;
             match range {
@@ -522,7 +522,7 @@ impl GCSSource {
 
             let get_client_config = async || {
                 ClientConfig::default().with_auth().await.map_err(|e| {
-                    use google_cloud_storage::client::google_cloud_auth::error::Error::HttpError;
+                    use gcloud_storage::client::google_cloud_auth::error::Error::HttpError;
 
                     // retry when we may receive an error from hitting the credentials server too much
                     if let HttpError(reqwest_err) = &e
@@ -705,7 +705,7 @@ mod tests {
     use std::sync::Arc;
 
     use common_io_config::GCSConfig;
-    use google_cloud_storage::{
+    use gcloud_storage::{
         client::ClientConfig,
         http::objects::upload::{Media, UploadObjectRequest, UploadType},
     };
