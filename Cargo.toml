@@ -325,7 +325,7 @@ daft-schema = {path = "src/daft-schema"}
 daft-session = {path = "src/daft-session"}
 daft-sql = {path = "src/daft-sql"}
 dashmap = "6.2"
-educe = "0.6.0"
+educe = "^0.8"
 futures = "0.3.30"
 half = {version = "2.7.1", features = ["num-traits", "bytemuck", "serde"]}
 hashbrown = "0.17"
@@ -362,12 +362,11 @@ regex = "1.12.2"
 rstest = "0.26.1"
 reqwest = {version = "0.13", default-features = false, features = ["json"]}
 serde_json = "1.0.145"
-sha1 = "0.10.6"
+sha1 = "^0.11"
 simdutf8 = "0.1.5"
 sketches-ddsketch = {version = "0.2.2", features = ["use_serde"]}
 smallvec = {version = "1.15.1", features = ["serde", "impl_bincode"]}
 snafu = {version = "0.9.0", features = ["futures"]}
-spark-connect = {path = "src/generated/spark-connect", default-features = false}
 sqlparser = "0.59.0"
 sysinfo = "0.39"
 tango-bench = "0.6.0"
