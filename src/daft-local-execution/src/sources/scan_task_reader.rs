@@ -432,8 +432,25 @@ async fn read_database(
 async fn read_python_function(
     scan_task: &Arc<ScanTask>,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
-    let iter = daft_micropartition::python::read_pyfunc_into_table_iter(scan_task.clone())?;
-    let stream = futures::stream::iter(iter.map(|r| r.map_err(|e| e.into())));
+    let runtime = common_runtime::get_io_runtime(true);
+    let scan_task = scan_task.clone();
+    let iter = runtime
+        .spawn_blocking(move || daft_micropartition::python::read_pyfunc_into_table_iter(scan_task))
+        .await??;
+
+    // Python iterators can wait for async producers which need this same I/O
+    // runtime. Advance them on its blocking pool so parallel scans cannot occupy
+    // every async worker while waiting for their own file operations.
+    let stream = futures::stream::try_unfold(iter, move |mut iter| {
+        let runtime = runtime.clone();
+        async move {
+            let (next, iter) = runtime.spawn_blocking(move || (iter.next(), iter)).await?;
+            Ok::<_, common_error::DaftError>(match next {
+                Some(batch) => Some((batch?, iter)),
+                None => None,
+            })
+        }
+    });
     Ok(Box::pin(stream))
 }
 
