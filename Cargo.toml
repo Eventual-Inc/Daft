@@ -350,7 +350,6 @@ opentelemetry-otlp = {version = "0.33", features = ["grpc-tonic", "logs"]}
 opentelemetry_sdk = {version = "0.33", features = ["logs"]}
 parking_lot = "0.12.5"
 parquet = "59.0.0"
-path_macro = "1.0.0"
 pretty_assertions = "1.4.1"
 proptest = "1.9.0"
 prost = "0.13.5"

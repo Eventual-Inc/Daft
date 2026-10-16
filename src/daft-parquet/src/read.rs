@@ -712,18 +712,9 @@ mod tests {
 
     #[test]
     fn test_invalid_utf8_parquet_reading() {
-        let parquet: Arc<str> = path_macro::path!(
-            env!("CARGO_MANIFEST_DIR")
-                / ".."
-                / ".."
-                / "tests"
-                / "assets"
-                / "parquet-data"
-                / "invalid_utf8.parquet"
-        )
-        .to_str()
-        .unwrap()
-        .into();
+        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        path.push("../../tests/assets/parquet-data/invalid_utf8.parquet");
+        let parquet: Arc<str> = path.to_str().unwrap().into();
         let io_client = Arc::new(IOClient::new(IOConfig::default().into()).unwrap());
         let runtime = get_io_runtime(true);
         let file_metadata = runtime
