@@ -19,8 +19,14 @@ pub const ENV_METRICS_EXPORT_INTERVAL_MS: &str = "OTEL_METRIC_EXPORT_INTERVAL";
 fn parse_protocol(s: &str) -> Protocol {
     match s {
         "grpc" => Protocol::Grpc,
-        "http/json" => Protocol::HttpJson,
         "http/protobuf" => Protocol::HttpBinary,
+        "http/json" => {
+            // TODO: Support by enabling the `http/json` feature of the opentelemetry-otlp crate
+            log::warn!(
+                "`http/json` protocol is currently not supported for metrics exporter. Set `OTEL_EXPORTER_OTLP_PROTOCOL` to `grpc` or `http/protobuf` instead. Defaulting to `grpc`."
+            );
+            Protocol::Grpc
+        }
         _ => Protocol::Grpc,
     }
 }
@@ -115,12 +121,18 @@ impl Config {
         let service_name = detected_resource
             .get(&Key::new("service.name"))
             .map(|value| value.to_string())
-            // OpenTelemetry uses this placeholder when no service name is configured.
-            .filter(|name| name != "unknown_service")
+            // OpenTelemetry uses `unknown_service` or
+            // `unknown_service:<process.executable.name>` when no service name is configured.
+            .filter(|name| !is_default_service_name(name))
             .unwrap_or_else(|| "daft".to_string());
 
         Resource::builder().with_service_name(service_name).build()
     }
+}
+
+/// SDK placeholder used when `OTEL_SERVICE_NAME` and `service.name` are unset.
+fn is_default_service_name(name: &str) -> bool {
+    name == "unknown_service" || name.starts_with("unknown_service:")
 }
 
 #[cfg(test)]
@@ -134,29 +146,34 @@ mod tests {
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn with_env_vars<R>(vars: &[(&str, Option<&str>)], f: impl FnOnce() -> R) -> R {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|err| err.into_inner());
         let previous_values: Vec<_> = vars
             .iter()
             .map(|(name, _)| (*name, std::env::var(name).ok()))
             .collect();
 
         for (name, value) in vars {
-            match value {
-                Some(value) => unsafe { std::env::set_var(name, value) },
-                None => unsafe { std::env::remove_var(name) },
-            }
+            set_env(name, *value);
         }
 
-        let result = f();
-
-        for (name, value) in previous_values {
-            match value {
-                Some(value) => unsafe { std::env::set_var(name, value) },
-                None => unsafe { std::env::remove_var(name) },
+        struct Restore<'a>(&'a [(&'a str, Option<String>)]);
+        impl Drop for Restore<'_> {
+            fn drop(&mut self) {
+                for (name, value) in self.0 {
+                    set_env(name, value.as_deref());
+                }
             }
         }
+        let _restore = Restore(&previous_values);
 
-        result
+        f()
+    }
+
+    fn set_env(name: &str, value: Option<&str>) {
+        match value {
+            Some(value) => unsafe { std::env::set_var(name, value) },
+            None => unsafe { std::env::remove_var(name) },
+        }
     }
 
     #[test]
