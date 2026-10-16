@@ -266,7 +266,14 @@ arc-swap = "1.7.1"
 async-compat = "0.2.5"
 async-compression = {version = "0.4.43", features = [
   "tokio",
-  "all-algorithms"
+  "brotli",
+  "bzip2",
+  "deflate",
+  "gzip",
+  "lzma",
+  "xz",
+  "zlib",
+  "zstd"
 ]}
 async-stream = "0.3.6"
 async-trait = "0.1.89"
@@ -318,7 +325,7 @@ daft-schema = {path = "src/daft-schema"}
 daft-session = {path = "src/daft-session"}
 daft-sql = {path = "src/daft-sql"}
 dashmap = "6.2"
-educe = "0.6.0"
+educe = "^0.8"
 futures = "0.3.30"
 half = {version = "2.7.1", features = ["num-traits", "bytemuck", "serde"]}
 hashbrown = "0.17"
@@ -339,9 +346,9 @@ num-derive = "0.4.2"
 num-format = "0.4.4"
 num-traits = "0.2"
 numpy = {version = "0.29", features = ["half"]}
-opentelemetry = {version = "0.31", features = ["trace", "metrics", "logs"]}
-opentelemetry-otlp = {version = "0.31", features = ["grpc-tonic", "logs"]}
-opentelemetry_sdk = {version = "0.31", features = ["logs"]}
+opentelemetry = {version = "0.33", features = ["trace", "metrics", "logs"]}
+opentelemetry-otlp = {version = "0.33", features = ["grpc-tonic", "logs"]}
+opentelemetry_sdk = {version = "0.33", features = ["logs"]}
 parking_lot = "0.12.5"
 parquet = "59.0.0"
 path_macro = "1.0.0"
@@ -353,16 +360,15 @@ rand = "^0.9"
 rayon = "1.12.0"
 regex = "1.12.2"
 rstest = "0.26.1"
-reqwest = {version = "0.12.19", default-features = false, features = ["json"]}
+reqwest = {version = "0.13", default-features = false, features = ["json"]}
 serde_json = "1.0.145"
-sha1 = "0.10.6"
+sha1 = "^0.11"
 simdutf8 = "0.1.5"
 sketches-ddsketch = {version = "0.2.2", features = ["use_serde"]}
 smallvec = {version = "1.15.1", features = ["serde", "impl_bincode"]}
 snafu = {version = "0.9.0", features = ["futures"]}
-spark-connect = {path = "src/generated/spark-connect", default-features = false}
 sqlparser = "0.59.0"
-sysinfo = "0.38.4"
+sysinfo = "0.39"
 tango-bench = "0.6.0"
 test-log = "0.2.19"
 thiserror = "2.0.17"
