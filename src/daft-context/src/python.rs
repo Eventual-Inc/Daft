@@ -1,8 +1,9 @@
 use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::{PyDaftEventLogConfig, PyDaftExecutionConfig, PyDaftPlanningConfig};
-use common_metrics::QueryEndState;
+use common_metrics::{QueryEndState, snapshot::StatSnapshotImpl};
 use daft_core::python::PySchema;
+use daft_local_plan::python::PyExecutionStats;
 use pyo3::prelude::*;
 
 use crate::{
@@ -338,6 +339,31 @@ impl PyDaftContext {
                 .collect(),
         );
         let all_stats = vec![(node_id, stats_map)];
+        py.detach(|| {
+            self.inner
+                .notify_exec_emit_stats(query_id.into(), all_stats)
+        })?;
+        Ok(())
+    }
+
+    /// Emit one `Stats` event carrying the final per-node totals of a finished execution.
+    ///
+    /// Used by the Ray runner to replay the scheduler actor's final stats on the driver, whose
+    /// subscribers otherwise never see operator-level events emitted inside the actor.
+    pub fn notify_exec_emit_execution_stats(
+        &self,
+        py: Python,
+        query_id: String,
+        stats: PyExecutionStats,
+    ) -> PyResult<()> {
+        let nodes = &stats.inner().nodes;
+        if nodes.is_empty() {
+            return Ok(());
+        }
+        let all_stats = nodes
+            .iter()
+            .map(|(node_info, snapshot)| (node_info.id, snapshot.to_stats()))
+            .collect::<Vec<_>>();
         py.detach(|| {
             self.inner
                 .notify_exec_emit_stats(query_id.into(), all_stats)

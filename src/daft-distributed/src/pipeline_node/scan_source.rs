@@ -3,7 +3,7 @@ use std::sync::{Arc, atomic::Ordering};
 use common_display::{DisplayAs, DisplayLevel};
 use common_error::DaftResult;
 use common_metrics::{
-    BYTES_READ_KEY, Counter, Meter, StatSnapshot, UNIT_BYTES,
+    BYTES_READ_KEY, Counter, IO_REQUESTS_KEY, Meter, StatSnapshot, UNIT_BYTES,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::SourceSnapshot,
 };
@@ -32,6 +32,7 @@ pub struct SourceStats {
     bytes_read: Counter,
     bytes_out: Counter,
     num_tasks: Counter,
+    requests: Counter,
     node_kv: Vec<KeyValue>,
 }
 
@@ -48,6 +49,11 @@ impl SourceStats {
             ),
             bytes_out: meter.bytes_out_metric(),
             num_tasks: meter.num_tasks_metric(),
+            requests: meter.u64_counter_with_desc_and_unit(
+                IO_REQUESTS_KEY,
+                Some("Number of I/O requests (GET + HEAD + LIST) issued".into()),
+                None,
+            ),
             node_kv,
         }
     }
@@ -66,6 +72,8 @@ impl RuntimeStats for SourceStats {
             .add(snapshot.bytes_read, self.node_kv.as_slice());
         self.bytes_out
             .add(snapshot.bytes_out, self.node_kv.as_slice());
+        self.requests
+            .add(snapshot.requests, self.node_kv.as_slice());
     }
 
     fn export_snapshot(&self) -> StatSnapshot {
@@ -75,6 +83,7 @@ impl RuntimeStats for SourceStats {
             bytes_read: self.bytes_read.load(Ordering::Relaxed),
             bytes_out: self.bytes_out.load(Ordering::Relaxed),
             num_tasks: self.num_tasks.load(Ordering::Relaxed),
+            requests: self.requests.load(Ordering::Relaxed),
         })
     }
 
