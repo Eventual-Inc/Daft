@@ -195,8 +195,8 @@ class EventLogSubscriber(Subscriber):
             "daft_version": event.metadata.daft_version,
             "python_version": event.metadata.python_version,
         }
-        if event.metadata.ray_version is not None:
-            payload["runner_version"] = event.metadata.ray_version
+        if event.metadata.runner_version is not None:
+            payload["runner_version"] = event.metadata.runner_version
 
         self._write_event(
             event.query_id,

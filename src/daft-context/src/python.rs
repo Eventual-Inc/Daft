@@ -7,7 +7,7 @@ use pyo3::prelude::*;
 
 use crate::{
     DaftContext, subscribers,
-    subscribers::{QueryMetadata, QueryResult},
+    subscribers::{QueryMetadata, QueryResult, RunnerInfo},
 };
 
 #[pyclass(frozen, from_py_object)]
@@ -17,27 +17,33 @@ pub struct PyQueryMetadata(pub(crate) Arc<QueryMetadata>);
 #[pymethods]
 impl PyQueryMetadata {
     #[new]
-    #[pyo3(signature = (output_schema, unoptimized_plan, runner, ray_dashboard_url=None, entrypoint=None, python_version=None, daft_version=None, ray_version=None))]
+    #[pyo3(signature = (output_schema, unoptimized_plan, runner, dashboard_url=None, entrypoint=None, python_version=None, daft_version=None, runner_version=None, distributed=false, task_events_enabled=None))]
     #[allow(clippy::too_many_arguments)]
     fn __new__(
         output_schema: PySchema,
         unoptimized_plan: &str,
         runner: &str,
-        ray_dashboard_url: Option<String>,
+        dashboard_url: Option<String>,
         entrypoint: Option<String>,
         python_version: Option<String>,
         daft_version: Option<String>,
-        ray_version: Option<String>,
+        runner_version: Option<String>,
+        distributed: bool,
+        task_events_enabled: Option<bool>,
     ) -> Self {
         Self(Arc::new(QueryMetadata {
             output_schema: output_schema.into(),
             unoptimized_plan: unoptimized_plan.into(),
-            runner: runner.into(),
-            ray_dashboard_url,
+            runner: RunnerInfo {
+                name: runner.to_string(),
+                version: runner_version,
+                distributed,
+                dashboard_url,
+                task_events_enabled,
+            },
             entrypoint,
             python_version,
             daft_version,
-            ray_version,
         }))
     }
     #[getter]
@@ -50,11 +56,11 @@ impl PyQueryMetadata {
     }
     #[getter]
     pub fn runner(&self) -> String {
-        self.0.runner.clone()
+        self.0.runner.name.clone()
     }
     #[getter]
-    pub fn ray_dashboard_url(&self) -> Option<String> {
-        self.0.ray_dashboard_url.clone()
+    pub fn dashboard_url(&self) -> Option<String> {
+        self.0.runner.dashboard_url.clone()
     }
     #[getter]
     pub fn entrypoint(&self) -> Option<String> {
@@ -69,8 +75,16 @@ impl PyQueryMetadata {
         self.0.daft_version.clone()
     }
     #[getter]
-    pub fn ray_version(&self) -> Option<String> {
-        self.0.ray_version.clone()
+    pub fn runner_version(&self) -> Option<String> {
+        self.0.runner.version.clone()
+    }
+    #[getter]
+    pub fn distributed(&self) -> bool {
+        self.0.runner.distributed
+    }
+    #[getter]
+    pub fn task_events_enabled(&self) -> Option<bool> {
+        self.0.runner.task_events_enabled
     }
 }
 
