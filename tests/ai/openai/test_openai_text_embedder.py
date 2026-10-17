@@ -121,7 +121,6 @@ def test_custom_base_url_dimensions_none_probes_for_non_native_model():
         mock_sync_client.embeddings.create.assert_called_once_with(
             input="dimension probe",
             model=model,
-            encoding_format="float",
             extra_body={"input_type": "passage"},
         )
 
@@ -146,7 +145,6 @@ def test_custom_base_url_passes_dimensions_param_through(mock_client):
     mock_client.embeddings.create.assert_awaited_once_with(
         input=["hello"],
         model="BAAI/bge-m3",
-        encoding_format="float",
         dimensions=1024,
     )
 
@@ -207,7 +205,6 @@ def test_embed_text_single_input(mock_text_embedder, mock_client):
     mock_client.embeddings.create.assert_awaited_once_with(
         input=["Hello world"],
         model="text-embedding-3-small",
-        encoding_format="float",
         dimensions=omit,
     )
 
@@ -235,7 +232,6 @@ def test_embed_text_multiple_inputs(mock_text_embedder, mock_client):
     mock_client.embeddings.create.assert_awaited_once_with(
         input=["Hello", "World", "Test"],
         model="text-embedding-3-small",
-        encoding_format="float",
         dimensions=omit,
     )
 
@@ -263,7 +259,6 @@ def test_embed_text_forwards_extra_body(mock_client):
     mock_client.embeddings.create.assert_awaited_once_with(
         input=["batch input"],
         model="BAAI/bge-m3",
-        encoding_format="float",
         dimensions=1024,
         extra_body=extra_body,
     )
@@ -273,10 +268,109 @@ def test_embed_text_forwards_extra_body(mock_client):
     mock_client.embeddings.create.assert_awaited_once_with(
         input="single input",
         model="BAAI/bge-m3",
-        encoding_format="float",
         dimensions=1024,
         extra_body=extra_body,
     )
+
+
+def test_embed_text_omits_encoding_format_by_default(mock_text_embedder, mock_client):
+    """The OpenAI SDK only requests and decodes base64 when encoding_format is unset."""
+    mock_response = Mock(spec=CreateEmbeddingResponse)
+    mock_embedding = Mock(spec=OpenAIEmbedding)
+    mock_embedding.embedding = np.array([0.1] * 1536, dtype=np.float32)
+    mock_response.data = [mock_embedding]
+    mock_client.embeddings.create.return_value = mock_response
+
+    run(mock_text_embedder._embed_text_batch(["batch input"]))
+    assert "encoding_format" not in mock_client.embeddings.create.await_args[1]
+
+    mock_client.embeddings.create.reset_mock()
+    run(mock_text_embedder._embed_text("single input"))
+    assert "encoding_format" not in mock_client.embeddings.create.await_args[1]
+
+
+def test_embed_text_forwards_float_encoding_format_when_requested(mock_client):
+    """Servers that reject base64 can opt back into float responses."""
+    embedder = OpenAITextEmbedder(
+        provider_options={"api_key": "test-key", "base_url": "http://localhost:8000/v1"},
+        model="BAAI/bge-m3",
+        embed_options={"encoding_format": "float"},
+        dimensions=1024,
+    )
+    embedder._client = mock_client
+
+    mock_response = Mock(spec=CreateEmbeddingResponse)
+    mock_embedding = Mock(spec=OpenAIEmbedding)
+    mock_embedding.embedding = np.array([0.1] * 1024, dtype=np.float32)
+    mock_response.data = [mock_embedding]
+    mock_client.embeddings.create.return_value = mock_response
+
+    run(embedder._embed_text_batch(["batch input"]))
+    mock_client.embeddings.create.assert_awaited_once_with(
+        input=["batch input"],
+        model="BAAI/bge-m3",
+        dimensions=1024,
+        encoding_format="float",
+    )
+
+    mock_client.embeddings.create.reset_mock()
+    run(embedder._embed_text("single input"))
+    mock_client.embeddings.create.assert_awaited_once_with(
+        input="single input",
+        model="BAAI/bge-m3",
+        dimensions=1024,
+        encoding_format="float",
+    )
+
+
+def test_embed_text_decodes_base64_embeddings_from_sdk():
+    """Covers the SDK-side decoding that leaving encoding_format unset relies on.
+
+    Every other test in this module replaces ``Embeddings.create`` itself, so the
+    SDK's response parsing never runs. Stubbing the HTTP transport is the only way
+    to exercise the base64 round trip; feeding a base64 string through a mocked
+    ``OpenAIEmbedding`` is not possible because its field is typed ``list[float]``.
+    """
+    import array
+    import base64
+    import json
+
+    import httpx
+    from openai import AsyncOpenAI
+
+    vector = [0.25, -0.5, 0.125, 1.0]
+    encoded = base64.b64encode(array.array("f", vector).tobytes()).decode()
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.update(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "object": "list",
+                "model": "text-embedding-3-small",
+                "data": [{"object": "embedding", "index": 0, "embedding": encoded}],
+                "usage": {"prompt_tokens": 1, "total_tokens": 1},
+            },
+        )
+
+    embedder = OpenAITextEmbedder(
+        provider_options={"api_key": "test-key"},
+        model="text-embedding-3-small",
+        embed_options={},
+    )
+    embedder._client = AsyncOpenAI(
+        api_key="test-key",
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+
+    result = run(embedder.embed_text(["hello"]))
+
+    # The SDK asks the server for base64 on our behalf...
+    assert captured["encoding_format"] == "base64"
+    # ...and hands back decoded floats rather than the raw string.
+    assert len(result) == 1
+    np.testing.assert_allclose(result[0], vector)
 
 
 def test_embed_text_batch_splitting(mock_text_embedder, mock_client):
@@ -304,7 +398,7 @@ def test_embed_text_batch_splitting(mock_text_embedder, mock_client):
     assert len(result) == 3
     for call in mock_client.embeddings.create.await_args_list:
         assert call[1]["model"] == "text-embedding-3-small"
-        assert call[1]["encoding_format"] == "float"
+        assert "encoding_format" not in call[1]
 
 
 def test_embed_text_large_input_chunking(mock_text_embedder, mock_client):
@@ -399,7 +493,7 @@ def test_embed_text_with_none_values(mock_text_embedder, mock_client):
     call_args = mock_client.embeddings.create.call_args
     assert call_args[1]["input"] == ["", "Hello", ""]
     assert call_args[1]["model"] == "text-embedding-3-small"
-    assert call_args[1]["encoding_format"] == "float"
+    assert "encoding_format" not in call_args[1]
 
 
 def test_embed_text_failure_with_zero_on_failure(mock_text_embedder, mock_client):
@@ -646,7 +740,6 @@ def test_supports_overriding_dimensions_default_true(mock_client):
     mock_client.embeddings.create.assert_awaited_once_with(
         input=["Hello world"],
         model="text-embedding-3-small",
-        encoding_format="float",
         dimensions=256,
     )
 
@@ -676,7 +769,6 @@ def test_supports_overriding_dimensions_explicit_false(mock_client):
     mock_client.embeddings.create.assert_awaited_once_with(
         input=["Hello world"],
         model="text-embedding-3-small",
-        encoding_format="float",
         dimensions=omit,
     )
 
@@ -706,7 +798,6 @@ def test_supports_overriding_dimensions_true(mock_client):
     mock_client.embeddings.create.assert_awaited_once_with(
         input=["Hello world"],
         model="text-embedding-3-small",
-        encoding_format="float",
         dimensions=256,
     )
 
@@ -739,7 +830,6 @@ def test_supports_overriding_dimensions_true_batch(mock_client):
     mock_client.embeddings.create.assert_awaited_once_with(
         input=["text1", "text2"],
         model="text-embedding-3-small",
-        encoding_format="float",
         dimensions=256,
     )
 
@@ -769,6 +859,5 @@ def test_supports_overriding_dimensions_false_single_method(mock_client):
     mock_client.embeddings.create.assert_awaited_once_with(
         input="Hello world",
         model="text-embedding-3-small",
-        encoding_format="float",
         dimensions=omit,
     )

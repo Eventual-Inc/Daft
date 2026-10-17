@@ -69,7 +69,6 @@ class LMStudioTextEmbedderDescriptor(TextEmbedderDescriptor):
             response = client.embeddings.create(
                 input="dimension probe",
                 model=self.model_name,
-                encoding_format="float",
                 **_embedding_request_options(self.embed_options),
             )
             size = len(response.data[0].embedding)

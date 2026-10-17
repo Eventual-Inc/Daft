@@ -66,8 +66,21 @@ _models: dict[EmbeddingModel, _ModelProfile] = {
 
 
 def _embedding_request_options(embed_options: EmbedTextOptions) -> dict[str, Any]:
+    options: dict[str, Any] = {}
+
     extra_body = embed_options.get("extra_body")
-    return {} if extra_body is None else {"extra_body": extra_body}
+    if extra_body is not None:
+        options["extra_body"] = extra_body
+
+    # Leaving encoding_format unset lets the OpenAI SDK ask for base64 and decode it
+    # with numpy. Passing *any* value disables that fast path, and the SDK then builds
+    # one Python object per float, which dominates runtime on large batches. Note that
+    # "base64" must not be passed explicitly either: the SDK skips its own decoding
+    # whenever the caller specifies a format, leaving raw base64 strings behind.
+    if embed_options.get("encoding_format") == "float":
+        options["encoding_format"] = "float"
+
+    return options
 
 
 def get_input_text_token_limit_for_model(model_name: str) -> int:
@@ -137,7 +150,6 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
                 response = client.embeddings.create(
                     input="dimension probe",
                     model=self.model_name,
-                    encoding_format="float",
                     **_embedding_request_options(self.embed_options),
                 )
                 size = len(response.data[0].embedding)
@@ -273,7 +285,6 @@ class OpenAITextEmbedder(TextEmbedder):
             response = await self._client.embeddings.create(
                 input=input_batch,
                 model=self._model,
-                encoding_format="float",
                 dimensions=dimensions,
                 **self._request_options,
             )
@@ -293,7 +304,6 @@ class OpenAITextEmbedder(TextEmbedder):
             response: CreateEmbeddingResponse = await self._client.embeddings.create(
                 input=input_text,
                 model=self._model,
-                encoding_format="float",
                 dimensions=dimensions,
                 **self._request_options,
             )
