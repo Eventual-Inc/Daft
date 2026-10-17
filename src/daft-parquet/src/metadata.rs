@@ -5,7 +5,7 @@ use common_runtime::get_io_runtime;
 use daft_core::datatypes::Field;
 use daft_io::{GetRange, IOClient, IOStatsRef};
 use parquet::{
-    basic::{ConvertedType, LogicalType},
+    basic::{ConvertedType, LogicalType, Repetition},
     schema::types::{BasicTypeInfo, Type, TypePtr},
 };
 use serde::{Deserialize, Serialize};
@@ -61,6 +61,20 @@ fn is_map(info: &BasicTypeInfo) -> bool {
         )
 }
 
+/// Whether `repeated`, the repeated group of LIST `list`, is itself the element of a legacy
+/// two-level list rather than a three-level wrapper, per parquet's backward-compatibility rules.
+pub(crate) fn is_two_level_list_group(list: &Type, repeated: &Type) -> bool {
+    match repeated.get_fields() {
+        [child] => {
+            !is_list(repeated.get_basic_info())
+                && child.get_basic_info().repetition() != Repetition::REPEATED
+                && (repeated.name() == "array"
+                    || repeated.name() == format!("{}_tuple", list.name()))
+        }
+        _ => true,
+    }
+}
+
 /// Rebuild a type with the given name, field ID and (for groups) children, keeping all other
 /// attributes.
 fn rebuild_type(tp: &Type, name: &str, id: Option<i32>, fields: Vec<TypePtr>) -> Type {
@@ -110,14 +124,24 @@ fn assign_field_ids(root: &Type, mapping: &[MappedField]) -> Type {
                 .iter()
                 .map(|repeated| match repeated.as_ref() {
                     // 3-level list: the repeated group wraps the element.
-                    Type::GroupType { fields: inner, .. } if inner.len() == 1 => rebuild_type(
-                        repeated,
-                        repeated.name(),
-                        None,
-                        vec![Arc::new(assign(&inner[0], find(children, "element")))],
-                    ),
-                    // 2-level list: the repeated field is the element.
-                    _ => assign(repeated, find(children, "element")),
+                    Type::GroupType { fields: inner, .. }
+                        if !is_two_level_list_group(tp, repeated) =>
+                    {
+                        rebuild_type(
+                            repeated,
+                            repeated.name(),
+                            None,
+                            vec![Arc::new(assign(&inner[0], find(children, "element")))],
+                        )
+                    }
+                    // 2-level list of groups: the repeated group is the element. It keeps no ID
+                    // and is named `array`, so the rename by ID preserves the legacy marker.
+                    Type::GroupType { .. } => {
+                        let element = assign(repeated, find(children, "element"));
+                        rebuild_type(&element, "array", None, element.get_fields().to_vec())
+                    }
+                    // 2-level list of primitives: the repeated field is the element.
+                    Type::PrimitiveType { .. } => assign(repeated, find(children, "element")),
                 })
                 .map(Arc::new)
                 .collect(),
@@ -655,6 +679,7 @@ pub(crate) async fn read_parquet_metadata(
 mod tests {
     use std::sync::Arc;
 
+    use arrow::datatypes::DataType as ArrowDataType;
     use common_error::DaftResult;
     use daft_core::datatypes::{DataType, Field};
     use daft_io::{IOClient, IOConfig};
@@ -671,7 +696,7 @@ mod tests {
         FieldIdMapping, MappedField, apply_field_ids_to_arrowrs_parquet_metadata,
         read_parquet_metadata,
     };
-    use crate::Error;
+    use crate::{Error, schema_inference::infer_schema_from_parquet_metadata_arrowrs};
 
     fn mapped(field_id: i32, names: &[&str], fields: Vec<MappedField>) -> MappedField {
         MappedField {
@@ -694,6 +719,8 @@ mod tests {
                     repeated group key_value { required binary key (STRING); optional int64 value; }
                 }
                 optional int64 unmapped;
+                optional group structs (LIST) { repeated group array { optional int64 x; } }
+                optional group tuples_old (LIST) { repeated group tuples_old_tuple { optional int64 y; } }
             }",
         )
         .unwrap();
@@ -739,6 +766,12 @@ mod tests {
             "value",
             "hive_list",
             "element",
+            "structs",
+            "element",
+            "x",
+            "tuples",
+            "element",
+            "y",
         ];
         let mapping = FieldIdMapping {
             fields: (1..)
@@ -757,6 +790,16 @@ mod tests {
                     vec![mapped(10, &["key"], vec![]), mapped(11, &["value"], vec![])],
                 ),
                 mapped(12, &["hive_list"], vec![mapped(13, &["element"], vec![])]),
+                mapped(
+                    14,
+                    &["structs"],
+                    vec![mapped(15, &["element"], vec![mapped(16, &["x"], vec![])])],
+                ),
+                mapped(
+                    17,
+                    &["tuples", "tuples_old"],
+                    vec![mapped(18, &["element"], vec![mapped(19, &["y"], vec![])])],
+                ),
             ]),
         };
 
@@ -780,9 +823,20 @@ mod tests {
                 "legacy.element",
                 "m.key_value.key",
                 "m.key_value.value",
+                "structs.array.x",
+                "tuples.array.y",
                 "hive_list.bag.element",
             ]
         );
+        // Two-level lists of groups must still read as lists of structs after the rename.
+        let schema = infer_schema_from_parquet_metadata_arrowrs(&metadata, None, false).unwrap();
+        for name in ["structs", "tuples"] {
+            let ArrowDataType::List(element) = schema.field_with_name(name).unwrap().data_type()
+            else {
+                panic!("{name} is not a list");
+            };
+            assert!(matches!(element.data_type(), ArrowDataType::Struct(_)));
+        }
     }
 
     #[tokio::test]
