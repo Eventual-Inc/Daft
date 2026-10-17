@@ -7,6 +7,7 @@ from daft.api_annotations import PublicAPI
 from daft.context import get_context
 from daft.exceptions import DaftCoreException
 from daft.io._parquet import read_parquet
+from daft.io.huggingface._features import decode_huggingface_images, parquet_features
 from daft.io.huggingface._lerobot import warn_if_lerobot
 from daft.io.huggingface._metadata import parquet_files, repo_root, source_files
 from daft.io.webdataset import read_webdataset
@@ -24,6 +25,7 @@ def _fallback_to_datasets_library(
     split: str | None,
     data_dir: str | None,
     revision: str | None,
+    decode_images: bool = False,
 ) -> DataFrame:
     """Fall back to using the datasets library when parquet files are not available."""
     try:
@@ -59,7 +61,10 @@ def _fallback_to_datasets_library(
     # Convert to arrow format for better compatibility
     all_data = all_data.with_format("arrow")
     arrow_table = all_data.data.table
-    return daft.from_arrow(arrow_table)
+    df = daft.from_arrow(arrow_table)
+    if decode_images:
+        df = decode_huggingface_images(df, all_data.features.to_dict(), repo_root(repo, revision), io_config)
+    return df
 
 
 @PublicAPI
@@ -73,6 +78,7 @@ def read_huggingface(
     data_dir: str | None = None,
     revision: str | None = None,
     allow_partial: bool = False,
+    decode_images: bool = False,
 ) -> DataFrame:
     """Create a DataFrame from a Hugging Face dataset.
 
@@ -97,6 +103,10 @@ def read_huggingface(
         revision: Repository branch, tag, or commit. Explicit non-main revisions
             read original files, never the viewer's conversion of current main.
         allow_partial: Explicitly allow incomplete converted Parquet, with a warning.
+        decode_images: Opt in to lazy image decoding for HF Image feature metadata.
+            Raw bytes/path structs remain the default. Nested structs are supported;
+            wrapped/sequence image features are not yet supported. Opting in reads
+            every selected Parquet footer to verify consistent image annotations.
 
     Note:
         The datasets fallback can download/materialize the selection before this
@@ -116,6 +126,8 @@ def read_huggingface(
     warn_if_lerobot(repo, revision, io_config)
 
     if format == "webdataset":
+        if decode_images:
+            raise ValueError("WebDataset media are lazy ImageFile references; use decode_image_file() explicitly")
         if config_name is None and split is None and data_dir is None:
             paths: str | list[str] = f"{repo_root(repo, revision)}/**/*.tar"
         else:
@@ -123,7 +135,15 @@ def read_huggingface(
         return read_webdataset(paths, io_config=io_config)
 
     def fallback(error: Exception | None) -> DataFrame:
-        return _fallback_to_datasets_library(repo, error, io_config, config_name, split, data_dir, revision)
+        return _fallback_to_datasets_library(
+            repo, error, io_config, config_name, split, data_dir, revision, decode_images
+        )
+
+    def scan(files: list[str]) -> DataFrame:
+        df = read_parquet(files, io_config=io_config)
+        if decode_images:
+            df = decode_huggingface_images(df, parquet_features(files, io_config), repo_root(repo, revision), io_config)
+        return df
 
     if format == "datasets":
         return fallback(None)
@@ -133,7 +153,7 @@ def read_huggingface(
             original_files = source_files(repo, ".parquet", config_name, split, data_dir, revision, io_config)
         except FileNotFoundError:
             return fallback(error)
-        return read_parquet(original_files, io_config=io_config)
+        return scan(original_files)
 
     try:
         if data_dir is not None or revision not in (None, "main"):
@@ -151,4 +171,4 @@ def read_huggingface(
         if any(marker in e_msg for marker in ("Status(400", "400 Bad Request", "Status(404", "404 Not Found")):
             return original_parquet_or_fallback(e)
         raise
-    return read_parquet(files, io_config=io_config)
+    return scan(files)
