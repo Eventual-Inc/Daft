@@ -65,6 +65,13 @@ _models: dict[EmbeddingModel, _ModelProfile] = {
 }
 
 
+# An embeddings request may carry at most this many inputs. This is a protocol limit
+# rather than a tuning knob: OpenAI rejects a request carrying more of them with an HTTP
+# 400, and the token limits cannot stand in for it, since short rows reach this cap long
+# before they reach `batch_token_limit`.
+MAX_INPUTS_PER_REQUEST = 2048
+
+
 def _embedding_request_options(embed_options: EmbedTextOptions) -> dict[str, Any]:
     extra_body = embed_options.get("extra_body")
     return {} if extra_body is None else {"extra_body": extra_body}
@@ -91,9 +98,12 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
     provider_options: OpenAIProviderOptions
     model_name: str
     dimensions: int | None
-    embed_options: EmbedTextOptions = field(
-        default_factory=lambda: EmbedTextOptions(batch_size=64, max_retries=3, on_error="raise")
-    )
+    # No defaults are declared here. A provider always passes ``embed_options`` explicitly -
+    # an empty dict when the caller supplied no options - and an explicitly passed argument
+    # wins over ``default_factory``, so anything declared here never applied on the
+    # ``embed_text`` path (#7614). Request size is bounded by ``MAX_INPUTS_PER_REQUEST`` and
+    # ``batch_token_limit`` inside ``OpenAITextEmbedder`` instead.
+    embed_options: EmbedTextOptions = field(default_factory=lambda: EmbedTextOptions())
 
     def __post_init__(self) -> None:
         if self.provider_options.get("base_url") is None:
@@ -184,6 +194,9 @@ class OpenAITextEmbedder(TextEmbedder):
         and input_text_token_limit (model-level, defaults to 8,192).
         This implementation uses len(text) // 3 to estimate token count,
         which is conservative and O(1) rather than being perfect with tiktoken.
+
+        A request also carries at most max_inputs_per_request inputs, which the API
+        enforces independently of either token limit.
     """
 
     _client: AsyncOpenAI
@@ -191,6 +204,7 @@ class OpenAITextEmbedder(TextEmbedder):
     _dimensions: int | None
     _batch_token_limit: int
     _input_text_token_limit: int
+    _max_inputs_per_request: int
 
     def __init__(
         self,
@@ -202,6 +216,7 @@ class OpenAITextEmbedder(TextEmbedder):
         provider_name: str = "openai",
         batch_token_limit: int = 300_000,
         input_text_token_limit: int = 8192,
+        max_inputs_per_request: int = MAX_INPUTS_PER_REQUEST,
     ):
         self._model = model
         self._zero_on_failure = zero_on_failure
@@ -209,6 +224,7 @@ class OpenAITextEmbedder(TextEmbedder):
         self._provider_name = provider_name
         self._batch_token_limit = batch_token_limit
         self._input_text_token_limit = input_text_token_limit
+        self._max_inputs_per_request = max_inputs_per_request
         self._request_options = _embedding_request_options(embed_options)
 
         merged_provider_options: dict[str, Any] = merge_provider_and_api_options(
@@ -255,7 +271,10 @@ class OpenAITextEmbedder(TextEmbedder):
                 chunked_vec = np.average(chunked_result, axis=0, weights=chunked_lens)
                 chunked_vec = chunked_vec / np.linalg.norm(chunked_vec)  # normalizes length to 1
                 embeddings.append(chunked_vec)
-            elif input_text_token_count + curr_batch_token_count >= self._batch_token_limit:
+            elif (
+                input_text_token_count + curr_batch_token_count >= self._batch_token_limit
+                or len(curr_batch) >= self._max_inputs_per_request
+            ):
                 await flush()
                 curr_batch.append(input_text)
                 curr_batch_token_count += input_text_token_count

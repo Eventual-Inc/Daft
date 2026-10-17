@@ -16,6 +16,7 @@ from openai.types.embedding import Embedding as OpenAIEmbedding
 
 from daft import DataType
 from daft.ai.openai.protocols.text_embedder import (
+    MAX_INPUTS_PER_REQUEST,
     OpenAITextEmbedder,
     OpenAITextEmbedderDescriptor,
     _ModelProfile,
@@ -54,6 +55,21 @@ def run(coro):
     return asyncio.run(coro)
 
 
+async def one_embedding_per_input(*args, **kwargs):
+    """Mock `embeddings.create`, answering with one vector per input it was given."""
+    mock_response = Mock(spec=CreateEmbeddingResponse)
+    mock_response.data = []
+    for _ in kwargs.get("input", []):
+        mock_embedding = Mock(spec=OpenAIEmbedding)
+        mock_embedding.embedding = np.array([0.1, 0.2, 0.3] * 512, dtype=np.float32)
+        mock_response.data.append(mock_embedding)
+    return mock_response
+
+
+def awaited_batch_sizes(mock_client) -> list[int]:
+    return [len(call[1]["input"]) for call in mock_client.embeddings.create.await_args_list]
+
+
 def test_valid_model_names():
     """Test that valid model names are accepted."""
     for model_name in _models.keys():
@@ -68,6 +84,64 @@ def test_valid_model_names():
         assert descriptor.get_model() == model_name
         assert descriptor.get_options() == {}
         assert descriptor.get_dimensions() == _models[model_name].dimensions
+
+
+def test_provider_declares_no_embed_option_defaults():
+    """A provider must not declare defaults that it then always overrides.
+
+    `OpenAIProvider.get_text_embedder` always passes `embed_options`, so a declared
+    `default_factory` never ran. Request size is bounded inside `embed_text` (see
+    `test_embed_text_bounds_inputs_per_request`) rather than by a declared `batch_size`,
+    so there is nothing left for this path to default.
+    """
+    from daft.ai.openai.provider import OpenAIProvider
+
+    descriptor = OpenAIProvider("openai", api_key="test-key").get_text_embedder()
+    assert descriptor.get_options() == {}
+    assert descriptor.get_udf_options().batch_size is None
+
+
+def test_embed_text_bounds_inputs_per_request(mock_text_embedder, mock_client):
+    """Short rows must not produce a request carrying more inputs than the API accepts.
+
+    The token limits cannot bound this: 5000 rows of one token each are nowhere near
+    `batch_token_limit`, yet the request would carry 5000 inputs and be rejected.
+    """
+    mock_client.embeddings.create.side_effect = one_embedding_per_input
+
+    result = run(mock_text_embedder.embed_text(["short row"] * 5000))
+
+    assert len(result) == 5000
+    assert awaited_batch_sizes(mock_client) == [MAX_INPUTS_PER_REQUEST, MAX_INPUTS_PER_REQUEST, 904]
+
+
+def test_embed_text_input_cap_is_configurable(mock_client):
+    """A server with a lower cap than OpenAI's can be accommodated."""
+    embedder = OpenAITextEmbedder(
+        provider_options={"api_key": "test-key"},
+        model="text-embedding-3-small",
+        embed_options={},
+        max_inputs_per_request=4,
+    )
+    embedder._client = mock_client
+    mock_client.embeddings.create.side_effect = one_embedding_per_input
+
+    result = run(embedder.embed_text(["short row"] * 10))
+
+    assert len(result) == 10
+    assert awaited_batch_sizes(mock_client) == [4, 4, 2]
+
+
+def test_embed_text_input_cap_does_not_disturb_token_batching(mock_text_embedder, mock_client):
+    """Long rows still flush on the token limit, well before the input cap."""
+    mock_client.embeddings.create.side_effect = one_embedding_per_input
+
+    # 800 chars per row, which the batcher estimates at 266 tokens, so `batch_token_limit`
+    # flushes after 1127 rows - well under the input cap.
+    result = run(mock_text_embedder.embed_text([new_input(approx_tokens=200)] * 2000))
+
+    assert len(result) == 2000
+    assert awaited_batch_sizes(mock_client) == [1127, 873]
 
 
 def test_invalid_model_name():
