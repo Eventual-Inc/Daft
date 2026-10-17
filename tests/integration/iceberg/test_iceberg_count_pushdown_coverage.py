@@ -7,6 +7,8 @@ import pytest
 
 pyiceberg = pytest.importorskip("pyiceberg")
 
+from pyiceberg.manifest import ManifestContent, ManifestFile
+
 from daft.daft import CountMode
 from daft.io.iceberg.iceberg_scan import (
     IcebergDataSource,
@@ -129,6 +131,11 @@ class TestIcebergDataSourceUnit:
             mock_tasks.append(mock_task)
 
         mock_scan.plan_files.return_value = mock_tasks
+
+        manifest_content = ManifestContent.DELETES if has_delete_files else ManifestContent.DATA
+        mock_table.current_snapshot.return_value.manifests.return_value = [
+            ManifestFile.from_args(content=manifest_content, added_files_count=1, existing_files_count=0)
+        ]
 
         return mock_table
 
