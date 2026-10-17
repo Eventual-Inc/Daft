@@ -28,7 +28,7 @@ def read_parquet(
     schema: dict[str, DataType] | None = None,
     io_config: IOConfig | None = None,
     file_path_column: str | None = None,
-    hive_partitioning: bool = False,
+    hive_partitioning: bool | None = None,
     coerce_int96_timestamp_unit: str | TimeUnit | None = None,
     ignore_corrupt_files: bool = False,
     _multithreaded_io: bool | None = None,
@@ -44,7 +44,10 @@ def read_parquet(
         schema (dict[str, DataType]): A schema that is used as the definitive schema for the Parquet file if infer_schema is False, otherwise it is used as a schema hint that is applied after the schema is inferred (overriding the types of inferred columns, and appending any new columns not found during inference).
         io_config (IOConfig): Config to be used with the native downloader
         file_path_column: Include the source path(s) as a column with this name. Defaults to None.
-        hive_partitioning: Whether to infer hive_style partitions from file paths and include them as columns in the Dataframe. Defaults to False.
+        hive_partitioning: Whether to infer Hive-style partitions from file paths and
+        include them as columns in the DataFrame. If None, automatically detects
+        Hive partitioning from the expanded file paths. True forces Hive
+        partitioning and False disables it. Defaults to None.
         coerce_int96_timestamp_unit: TimeUnit to coerce Int96 TimeStamps to. e.g.: [ns, us, ms], Defaults to None.
         ignore_corrupt_files: If True, corrupt or unreadable Parquet files are silently skipped
             instead of raising an error. Skipped files are recorded in ``df.skipped_corrupt_files`` after
