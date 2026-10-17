@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import array
 import asyncio
+import base64
+import json
 
 import pytest
 
@@ -8,8 +11,9 @@ pytest.importorskip("openai")
 
 from unittest.mock import AsyncMock, Mock, patch
 
+import httpx
 import numpy as np
-from openai import RateLimitError
+from openai import AsyncOpenAI, OpenAIError, RateLimitError
 from openai._types import omit
 from openai.types.create_embedding_response import CreateEmbeddingResponse, Usage
 from openai.types.embedding import Embedding as OpenAIEmbedding
@@ -22,6 +26,7 @@ from daft.ai.openai.protocols.text_embedder import (
     _models,
     chunk_text,
 )
+from daft.ai.openai.provider import OpenAIProvider
 from daft.ai.protocols import TextEmbedder
 from daft.ai.typing import EmbeddingDimensions
 
@@ -348,8 +353,6 @@ def test_embed_text_omits_encoding_format_when_base64_requested(mock_client):
 
 def test_provider_forwards_explicit_float_encoding_format(mock_client):
     """The option must survive embed_text() -> provider -> descriptor -> embedder."""
-    from daft.ai.openai.provider import OpenAIProvider
-
     descriptor = OpenAIProvider("openai", api_key="test-key").get_text_embedder(encoding_format="float")
     embedder = descriptor.instantiate()
     embedder._client = mock_client
@@ -366,8 +369,6 @@ def test_provider_forwards_explicit_float_encoding_format(mock_client):
 
 def test_openai_error_points_at_the_float_escape_hatch(mock_text_embedder, mock_client):
     """A server that rejects base64 must be told how to opt back out."""
-    from openai import OpenAIError
-
     mock_client.embeddings.create.side_effect = OpenAIError("unsupported encoding_format")
 
     with pytest.raises(ValueError, match=r'encoding_format="float"'):
@@ -382,13 +383,6 @@ def test_embed_text_decodes_base64_embeddings_from_sdk():
     to exercise the base64 round trip; feeding a base64 string through a mocked
     ``OpenAIEmbedding`` is not possible because its field is typed ``list[float]``.
     """
-    import array
-    import base64
-    import json
-
-    import httpx
-    from openai import AsyncOpenAI
-
     vector = [0.25, -0.5, 0.125, 1.0]
     encoded = base64.b64encode(array.array("f", vector).tobytes()).decode()
     captured: dict[str, object] = {}
