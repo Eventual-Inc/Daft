@@ -50,8 +50,6 @@ def _s3_config_to_storage_options(s3_config: S3Config, bucket: str) -> dict[str,
         storage_options["secret_access_key"] = s3_config.access_key
     if s3_config.use_ssl is not None:
         storage_options["allow_http"] = "false" if s3_config.use_ssl else "true"
-    if s3_config.verify_ssl is not None:
-        storage_options["allow_invalid_certificates"] = "false" if s3_config.verify_ssl else "true"
     if s3_config.connect_timeout_ms is not None:
         storage_options["connect_timeout"] = str(s3_config.connect_timeout_ms) + "ms"
     if s3_config.anonymous:

@@ -15,7 +15,7 @@ def boto3_client_from_s3_config(service: str, s3_config: S3Config) -> boto3.clie
         service,
         region_name=s3_config.region_name,
         use_ssl=s3_config.use_ssl,
-        verify=s3_config.verify_ssl,
+        verify=True,
         endpoint_url=s3_config.endpoint_url,
         aws_access_key_id=s3_config.key_id,
         aws_secret_access_key=s3_config.access_key,

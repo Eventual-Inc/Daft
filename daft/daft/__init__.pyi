@@ -607,8 +607,6 @@ class S3Config:
     retry_mode: str | None
     anonymous: bool
     use_ssl: bool
-    verify_ssl: bool
-    check_hostname_ssl: bool
     requester_pays: bool | None
     force_virtual_addressing: bool | None
     profile_name: str | None
@@ -633,8 +631,6 @@ class S3Config:
         retry_mode: str | None = None,
         anonymous: bool | None = None,
         use_ssl: bool | None = None,
-        verify_ssl: bool | None = None,
-        check_hostname_ssl: bool | None = None,
         requester_pays: bool | None = None,
         force_virtual_addressing: bool | None = None,
         profile_name: str | None = None,
@@ -658,8 +654,6 @@ class S3Config:
         retry_mode: str | None = None,
         anonymous: bool | None = None,
         use_ssl: bool | None = None,
-        verify_ssl: bool | None = None,
-        check_hostname_ssl: bool | None = None,
         requester_pays: bool | None = None,
         force_virtual_addressing: bool | None = None,
         profile_name: str | None = None,
