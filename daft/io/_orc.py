@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -79,6 +80,38 @@ def _infer_orc_schema(path: str, io_config: IOConfig | None) -> pa.Schema:
         return schema
 
 
+def _is_ignorable_orc_error(error: BaseException) -> bool:
+    """Recognize ORC parser failures while preserving unrelated I/O errors."""
+    if isinstance(error, FileNotFoundError):
+        return True
+    if type(error) is not OSError or error.errno is not None:
+        return False
+    message = str(error)
+    if error.__cause__ is None or not message.startswith(
+        ("Unable to infer ORC schema for ", "Unable to read ORC file ")
+    ):
+        return False
+    cause = error.__cause__
+    if isinstance(cause, FileNotFoundError):
+        return True
+    if type(cause) is not OSError or cause.errno is not None:
+        return False
+    message = str(cause)
+    if message.startswith("Could not open ORC input source '"):
+        return message.endswith(
+            (
+                ": Not an ORC file",
+                ": File size too small",
+                ": Failed to parse the postscript from ArrowInputFile",
+                ": Failed to parse the footer from ArrowInputFile",
+            )
+        )
+    return (
+        message == "bad read in RleDecoderV2::readByte"
+        or re.fullmatch(r"bad StripeFooter from ArrowInputFile from \d+ for \d+", message) is not None
+    )
+
+
 def _iter_orc_batches(
     path: str,
     schema: pa.Schema,
@@ -89,35 +122,44 @@ def _iter_orc_batches(
         try:
             fragment = pads.OrcFileFormat().make_fragment(file)
             physical_schema = fragment.physical_schema
-            columns = [name for name in schema.names if name in physical_schema.names]
-            target_schema = Schema.from_pyarrow_schema(schema)
-            projection = ExpressionsProjection(
-                [
-                    (col(field.name) if field.name in columns else lit(None)).cast(field.dtype).alias(field.name)
-                    for field in target_schema
-                ]
-            )
             scanner = pads.Scanner.from_fragment(
                 fragment,
                 schema=physical_schema,
-                columns=columns,
+                columns=[name for name in schema.names if name in physical_schema.names],
                 batch_size=batch_size,
                 batch_readahead=0,
                 use_threads=False,
             )
-            for batch in scanner.to_batches():
-                if batch.num_columns == 0:
-                    # Preserve cardinality for empty projections (e.g. count).
-                    record_batch = RecordBatch._from_series([], num_rows=batch.num_rows)
-                else:
-                    record_batch = RecordBatch.from_arrow_record_batches([batch], batch.schema)
-                # Match native file scans: cast and fill through Daft rather
-                # than Arrow, whose nested schema evolution varies by version.
-                if record_batch.schema() != target_schema:
-                    record_batch = record_batch.eval_expression_list(projection)
-                yield record_batch
+            batches = scanner.to_batches()
         except OSError as error:
             raise OSError(f"Unable to read ORC file {path!r}: {error}") from error
+
+        # Conversion errors are outside the file-decoding error boundary.
+        columns = [name for name in schema.names if name in physical_schema.names]
+        target_schema = Schema.from_pyarrow_schema(schema)
+        projection = ExpressionsProjection(
+            [
+                (col(field.name) if field.name in columns else lit(None)).cast(field.dtype).alias(field.name)
+                for field in target_schema
+            ]
+        )
+        while True:
+            try:
+                batch = next(batches, None)
+            except OSError as error:
+                raise OSError(f"Unable to read ORC file {path!r}: {error}") from error
+            if batch is None:
+                break
+            if batch.num_columns == 0:
+                # Preserve cardinality for empty projections (e.g. count).
+                record_batch = RecordBatch._from_series([], num_rows=batch.num_rows)
+            else:
+                record_batch = RecordBatch.from_arrow_record_batches([batch], batch.schema)
+            # Match native file scans: cast and fill through Daft rather
+            # than Arrow, whose nested schema evolution varies by version.
+            if record_batch.schema() != target_schema:
+                record_batch = record_batch.eval_expression_list(projection)
+            yield record_batch
 
 
 @PublicAPI
@@ -125,6 +167,7 @@ def read_orc(
     path: str | list[str],
     io_config: IOConfig | None = None,
     batch_size: int = 128 * 1024,
+    ignore_corrupt_files: bool = False,
 ) -> DataFrame:
     """Creates a DataFrame from ORC file(s).
 
@@ -137,12 +180,18 @@ def read_orc(
             the planning context's default I/O configuration.
         batch_size: Maximum number of rows yielded per record batch. Defaults
             to 131072. This does not impose a fixed memory limit.
+        ignore_corrupt_files: Skip recognized ORC corruption and files that
+            disappear during schema inference or reading. Defaults to False.
+            Skipped files are recorded in ``df.skipped_corrupt_files`` after
+            ``collect()``. Permission, network, and conversion errors propagate.
 
     Returns:
         DataFrame: parsed DataFrame.
 
     Note:
-        The schema is inferred from the first matched file. Later files are
+        The schema is inferred from the first readable candidate when corruption
+        is ignored, or from the first matched file otherwise. If no schema can
+        be inferred, an error is raised. Later files are
         aligned to that schema: missing fields become nulls and extra fields
         are excluded. Conversions follow Daft's rules, as with Parquet reads:
         unsupported conversions raise an error, while some invalid values
@@ -154,6 +203,8 @@ def read_orc(
         A limit does not guarantee early termination of file reads. The shared
         Python source bridge can continue reading and buffering batches after
         the returned-row limit is reached.
+        Batches already returned before corruption are retained and reported
+        with ``partial=True``. Unmatched input paths and empty globs still fail.
 
     Examples:
         Read ORC files from a local path:
@@ -163,17 +214,32 @@ def read_orc(
     """
     if isinstance(batch_size, bool) or not isinstance(batch_size, int) or batch_size <= 0:
         raise ValueError(f"batch_size must be a positive integer, received {batch_size!r}")
+    if not isinstance(ignore_corrupt_files, bool):
+        raise TypeError(f"ignore_corrupt_files must be a boolean, received {ignore_corrupt_files!r}")
 
     io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
-    return OrcSource(path, io_config=io_config, batch_size=batch_size).read()
+    return OrcSource(path, io_config=io_config, batch_size=batch_size, ignore_corrupt_files=ignore_corrupt_files).read()
 
 
 class OrcSource(DataSource):
-    def __init__(self, path: str | list[str], io_config: IOConfig | None, batch_size: int) -> None:
+    def __init__(
+        self, path: str | list[str], io_config: IOConfig | None, batch_size: int, ignore_corrupt_files: bool = False
+    ) -> None:
         self._paths = _resolve_orc_paths(path, io_config)
         self._io_config = io_config
         self._batch_size = batch_size
-        self._arrow_schema = _infer_orc_schema(self._paths[0], io_config)
+        self._ignore_corrupt_files = ignore_corrupt_files
+        for candidate in self._paths:
+            try:
+                self._arrow_schema = _infer_orc_schema(candidate, io_config)
+                break
+            except OSError as error:
+                if not ignore_corrupt_files or not _is_ignorable_orc_error(error):
+                    raise
+        else:
+            raise ValueError(
+                "All ORC files are corrupt or missing; cannot infer an ORC schema (ignore_corrupt_files=True)"
+            )
         self._schema = Schema.from_pyarrow_schema(self._arrow_schema)
 
     @property
@@ -191,7 +257,7 @@ class OrcSource(DataSource):
             required = set(pushdowns.columns) | pushdowns.filter_required_column_names()
             schema = pa.schema([field for field in self._arrow_schema if field.name in required])
         for path in self._paths:
-            yield OrcSourceTask(path, schema, self._io_config, self._batch_size)
+            yield OrcSourceTask(path, schema, self._io_config, self._batch_size, self._ignore_corrupt_files)
 
 
 @dataclass
@@ -200,6 +266,7 @@ class OrcSourceTask(DataSourceTask):
     _arrow_schema: pa.Schema
     _io_config: IOConfig | None
     _batch_size: int
+    _ignore_corrupt_files: bool = False
 
     @property
     def schema(self) -> Schema:
