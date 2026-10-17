@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterator
+from types import SimpleNamespace
 
 import pytest
 
@@ -127,6 +128,864 @@ def test_cls_with_ray_options():
     # Verify execution
     result = df.select(model.predict(df["x"])).to_pydict()
     assert result == {"x": [1, 2, 3]}
+
+
+def test_cls_min_max_concurrency_explain_and_execution():
+    @daft.cls(min_concurrency=1, max_concurrency=2)
+    class MyModel:
+        @daft.method(return_dtype=DataType.int64())
+        def predict(self, x):
+            return x
+
+    model = MyModel()
+    df = daft.from_pydict({"x": [1, 2, 3]})
+
+    import io
+
+    f = io.StringIO()
+    df.select(model.predict(df["x"])).explain(file=f, show_all=True)
+    explanation = f.getvalue()
+
+    assert "min_concurrency = 1" in explanation
+    assert "concurrency = 2" in explanation
+    assert df.select(model.predict(df["x"])).to_pydict() == {"x": [1, 2, 3]}
+
+
+def test_cls_rejects_invalid_min_max_concurrency():
+    with pytest.raises(ValueError, match="min_concurrency for udf must be non-zero"):
+
+        @daft.cls(min_concurrency=0, max_concurrency=1)
+        class MinZero:
+            pass
+
+    with pytest.raises(ValueError, match="min_concurrency for udf must be non-zero"):
+
+        @daft.cls(min_concurrency=-1, max_concurrency=1)
+        class MinNegative:
+            pass
+
+    with pytest.raises(ValueError, match="max_concurrency for udf must be non-zero"):
+
+        @daft.cls(min_concurrency=1, max_concurrency=-1)
+        class MaxNegative:
+            pass
+
+    with pytest.raises(ValueError, match="min_concurrency for udf requires max_concurrency"):
+
+        @daft.cls(min_concurrency=1)
+        class MinWithoutMax:
+            pass
+
+    with pytest.raises(ValueError, match="min_concurrency for udf must be less than or equal to max_concurrency"):
+
+        @daft.cls(min_concurrency=3, max_concurrency=2)
+        class MinGreaterThanMax:
+            pass
+
+
+def test_actor_pool_scales_active_handles_with_backlog(monkeypatch):
+    from daft.execution import ray_actor_pool_udf
+
+    teardown_calls = []
+
+    class FakeHandle:
+        def __init__(self, name: str):
+            self.name = name
+
+        def teardown(self) -> None:
+            teardown_calls.append(self.name)
+
+    created_handles = []
+
+    async def fake_start_actor(self, rank: int):
+        handle = FakeHandle(f"actor-{rank}")
+        created_handles.append(handle.name)
+        return handle
+
+    monkeypatch.setattr(ray_actor_pool_udf.UDFActorPool, "_start_actor", fake_start_actor)
+
+    pool = ray_actor_pool_udf.UDFActorPool(
+        expr_projection=SimpleNamespace(),
+        min_actors=1,
+        max_actors=3,
+        udf_options={},
+        timeout=1,
+        actor_name="test",
+    )
+
+    async def run_test():
+        await pool.start()
+
+        assert [handle.name for handle in await pool.get_actor_handles(pending_tasks=1)] == ["actor-0"]
+        assert [handle.name for handle in await pool.get_actor_handles(pending_tasks=3)] == [
+            "actor-0",
+            "actor-1",
+            "actor-2",
+        ]
+        assert created_handles == ["actor-0", "actor-1", "actor-2"]
+
+        assert [handle.name for handle in await pool.get_actor_handles(pending_tasks=1)] == ["actor-0"]
+        assert teardown_calls == []
+
+        pool.cleanup_retired_actors()
+        assert teardown_calls == ["actor-1", "actor-2"]
+
+    asyncio.run(run_test())
+
+
+def test_start_actor_pool_preserves_requested_max_when_cluster_can_grow(monkeypatch):
+    from daft.execution import ray_actor_pool_udf
+
+    async def fake_start(self):
+        pass
+
+    monkeypatch.setattr(ray_actor_pool_udf.Expression, "_from_pyexpr", lambda projection: projection)
+    monkeypatch.setattr(ray_actor_pool_udf, "ExpressionsProjection", lambda expressions: expressions)
+    monkeypatch.setattr(ray_actor_pool_udf.UDFActorPool, "start", fake_start)
+    monkeypatch.setattr(ray_actor_pool_udf.ray, "nodes", lambda: [{"Alive": True, "Resources": {"CPU": 2}}])
+    monkeypatch.setattr(ray_actor_pool_udf.ray, "cluster_resources", lambda: {"CPU": 2})
+    monkeypatch.setattr(ray_actor_pool_udf.ray, "available_resources", lambda: {"CPU": 2})
+
+    async def run_test():
+        pool = await ray_actor_pool_udf.start_udf_actor_pool(
+            projection=SimpleNamespace(),
+            min_actors=1,
+            max_actors=4,
+            num_gpus_per_actor=0,
+            num_cpus_per_actor=1,
+            memory_per_actor=0,
+            ray_options=None,
+            timeout=1,
+        )
+
+        assert pool.max_actors == 4
+
+    asyncio.run(run_test())
+
+
+def test_actor_pool_refreshes_cluster_capacity_after_interval(monkeypatch):
+    from daft.execution import ray_actor_pool_udf
+
+    class FakeHandle:
+        def __init__(self, name: str):
+            self.name = name
+
+        def teardown(self) -> None:
+            pass
+
+    async def fake_start_actor(self, rank: int):
+        return FakeHandle(f"actor-{rank}")
+
+    monkeypatch.setattr(ray_actor_pool_udf.UDFActorPool, "_start_actor", fake_start_actor)
+
+    now = 0.0
+    available_cpus = 1.0
+    cluster_cpus = 1.0
+    available_resource_queries = 0
+    cluster_resource_queries = 0
+
+    def monotonic_time():
+        return now
+
+    def available_resources():
+        nonlocal available_resource_queries
+        available_resource_queries += 1
+        return {"CPU": available_cpus, "GPU": 0}
+
+    def cluster_resources():
+        nonlocal cluster_resource_queries
+        cluster_resource_queries += 1
+        return {"CPU": cluster_cpus, "GPU": 0}
+
+    resource_manager = ray_actor_pool_udf.UDFActorPoolResourceManager(
+        total_cpus=1,
+        total_gpus=0,
+        available_resources_getter=available_resources,
+        cluster_resources_getter=cluster_resources,
+        resource_refresh_interval_s=60,
+        monotonic_time_getter=monotonic_time,
+    )
+    pool = ray_actor_pool_udf.UDFActorPool(
+        expr_projection=SimpleNamespace(),
+        min_actors=1,
+        max_actors=4,
+        udf_options={},
+        timeout=1,
+        cpus_per_actor=1,
+        resource_manager=resource_manager,
+    )
+    pool._initial_above_min_deferrals_remaining = 0
+
+    async def run_test():
+        nonlocal now, available_cpus, cluster_cpus
+
+        await pool.start()
+        assert available_resource_queries >= 1
+        assert cluster_resource_queries == 1
+
+        available_cpus = 3
+        cluster_cpus = 4
+        now = 30
+        assert len(await pool.get_actor_handles(pending_tasks=4)) == 1
+        assert available_resource_queries >= 2
+        assert cluster_resource_queries == 1
+
+        now = 61
+        assert len(await pool.get_actor_handles(pending_tasks=4)) == 4
+        assert available_resource_queries >= 3
+        assert cluster_resource_queries == 2
+
+    asyncio.run(run_test())
+
+
+def test_global_actor_pool_resource_manager_survives_cluster_resize(monkeypatch):
+    from daft.execution import ray_actor_pool_udf
+
+    monkeypatch.setattr(ray_actor_pool_udf, "_GLOBAL_UDF_ACTOR_POOL_RESOURCE_MANAGER", None)
+
+    first_manager = ray_actor_pool_udf._get_global_udf_actor_pool_resource_manager(
+        total_cpus=2,
+        total_gpus=0,
+        available_resources_getter=lambda: {"CPU": 2},
+    )
+    pool = ray_actor_pool_udf.UDFActorPool(
+        expr_projection=SimpleNamespace(),
+        min_actors=1,
+        max_actors=4,
+        udf_options={},
+        timeout=1,
+        resource_manager=first_manager,
+    )
+    first_manager.register(pool)
+
+    resized_manager = ray_actor_pool_udf._get_global_udf_actor_pool_resource_manager(
+        total_cpus=4,
+        total_gpus=0,
+        available_resources_getter=lambda: {"CPU": 4},
+    )
+
+    assert resized_manager is first_manager
+    assert pool in resized_manager._pools
+    assert resized_manager.total_cpus == 4
+
+
+def test_actor_pool_keeps_at_least_min_and_at_most_max_active_handles(monkeypatch):
+    from daft.execution import ray_actor_pool_udf
+
+    class FakeHandle:
+        def __init__(self, name: str):
+            self.name = name
+
+        def teardown(self) -> None:
+            pass
+
+    async def fake_start_actor(self, rank: int):
+        return FakeHandle(f"actor-{rank}")
+
+    monkeypatch.setattr(ray_actor_pool_udf.UDFActorPool, "_start_actor", fake_start_actor)
+
+    pool = ray_actor_pool_udf.UDFActorPool(
+        expr_projection=SimpleNamespace(),
+        min_actors=2,
+        max_actors=4,
+        udf_options={},
+        timeout=1,
+        actor_name=None,
+    )
+
+    async def run_test():
+        await pool.start()
+
+        assert [handle.name for handle in await pool.get_actor_handles(pending_tasks=0)] == ["actor-0", "actor-1"]
+        assert [handle.name for handle in await pool.get_actor_handles(pending_tasks=99)] == [
+            "actor-0",
+            "actor-1",
+            "actor-2",
+            "actor-3",
+        ]
+
+    asyncio.run(run_test())
+
+
+def test_actor_pool_reuses_retired_handles_when_scaling_back_up(monkeypatch):
+    from daft.execution import ray_actor_pool_udf
+
+    class FakeHandle:
+        def __init__(self, name: str):
+            self.name = name
+
+        def teardown(self) -> None:
+            pass
+
+    created_handles = []
+
+    async def fake_start_actor(self, rank: int):
+        handle = FakeHandle(f"actor-{rank}")
+        created_handles.append(handle.name)
+        return handle
+
+    monkeypatch.setattr(ray_actor_pool_udf.UDFActorPool, "_start_actor", fake_start_actor)
+
+    pool = ray_actor_pool_udf.UDFActorPool(
+        expr_projection=SimpleNamespace(),
+        min_actors=1,
+        max_actors=3,
+        udf_options={},
+        timeout=1,
+        actor_name=None,
+    )
+
+    async def run_test():
+        await pool.start()
+
+        assert [handle.name for handle in await pool.get_actor_handles(pending_tasks=3)] == [
+            "actor-0",
+            "actor-1",
+            "actor-2",
+        ]
+        assert [handle.name for handle in await pool.get_actor_handles(pending_tasks=1)] == ["actor-0"]
+        assert [handle.name for handle in await pool.get_actor_handles(pending_tasks=3)] == [
+            "actor-0",
+            "actor-1",
+            "actor-2",
+        ]
+        assert created_handles == ["actor-0", "actor-1", "actor-2"]
+
+    asyncio.run(run_test())
+
+
+def test_actor_pool_preserves_capacity_for_downstream_min(monkeypatch):
+    from daft.execution import ray_actor_pool_udf
+
+    teardown_calls = []
+
+    class FakeHandle:
+        def __init__(self, name: str):
+            self.name = name
+
+        def teardown(self) -> None:
+            teardown_calls.append(self.name)
+
+    async def fake_start_actor(self, rank: int):
+        return FakeHandle(f"{self.actor_name}-{rank}")
+
+    monkeypatch.setattr(ray_actor_pool_udf.UDFActorPool, "_start_actor", fake_start_actor)
+
+    resource_manager = ray_actor_pool_udf.UDFActorPoolResourceManager(total_cpus=2, total_gpus=0)
+    upstream = ray_actor_pool_udf.UDFActorPool(
+        expr_projection=SimpleNamespace(),
+        min_actors=1,
+        max_actors=2,
+        udf_options={},
+        timeout=1,
+        actor_name="upstream",
+        cpus_per_actor=1,
+        resource_manager=resource_manager,
+    )
+    downstream = ray_actor_pool_udf.UDFActorPool(
+        expr_projection=SimpleNamespace(),
+        min_actors=1,
+        max_actors=1,
+        udf_options={},
+        timeout=1,
+        actor_name="downstream",
+        cpus_per_actor=1,
+        resource_manager=resource_manager,
+    )
+    downstream = ray_actor_pool_udf.UDFActorPool(
+        expr_projection=SimpleNamespace(),
+        min_actors=1,
+        max_actors=2,
+        udf_options={},
+        timeout=1,
+        actor_name="downstream",
+        cpus_per_actor=1,
+        resource_manager=resource_manager,
+    )
+
+    async def run_test():
+        await upstream.start()
+        assert [handle.name for handle in await upstream.get_actor_handles(pending_tasks=3)] == ["upstream-0"]
+        assert [handle.name for handle in await upstream.get_actor_handles(pending_tasks=3)] == ["upstream-0"]
+
+        await downstream.start()
+
+        assert [handle.name for handle in await upstream.get_actor_handles(pending_tasks=3)] == ["upstream-0"]
+        assert [handle.name for handle in await downstream.get_actor_handles(pending_tasks=1)] == ["downstream-0"]
+        assert teardown_calls == []
+
+    asyncio.run(run_test())
+
+
+def test_actor_pool_defers_initial_above_min_until_downstream_can_register(monkeypatch):
+    from daft.execution import ray_actor_pool_udf
+
+    class FakeHandle:
+        def __init__(self, name: str):
+            self.name = name
+
+        def teardown(self) -> None:
+            pass
+
+    async def fake_start_actor(self, rank: int):
+        return FakeHandle(f"{self.actor_name}-{rank}")
+
+    monkeypatch.setattr(ray_actor_pool_udf.UDFActorPool, "_start_actor", fake_start_actor)
+
+    resource_manager = ray_actor_pool_udf.UDFActorPoolResourceManager(total_cpus=2, total_gpus=0)
+    upstream = ray_actor_pool_udf.UDFActorPool(
+        expr_projection=SimpleNamespace(),
+        min_actors=1,
+        max_actors=2,
+        udf_options={},
+        timeout=1,
+        actor_name="upstream",
+        cpus_per_actor=1,
+        resource_manager=resource_manager,
+    )
+    downstream = ray_actor_pool_udf.UDFActorPool(
+        expr_projection=SimpleNamespace(),
+        min_actors=1,
+        max_actors=2,
+        udf_options={},
+        timeout=1,
+        actor_name="downstream",
+        cpus_per_actor=1,
+        resource_manager=resource_manager,
+    )
+
+    async def run_test():
+        await upstream.start()
+
+        assert [handle.name for handle in await upstream.get_actor_handles(pending_tasks=3)] == ["upstream-0"]
+
+        await downstream.start()
+
+        assert [handle.name for handle in await downstream.get_actor_handles(pending_tasks=1)] == ["downstream-0"]
+
+    asyncio.run(run_test())
+
+
+def test_actor_pool_resource_reclaim_waits_for_actor_handle_lease(monkeypatch):
+    from daft.execution import ray_actor_pool_udf
+
+    teardown_calls = []
+
+    class FakeHandle:
+        def __init__(self, name: str):
+            self.name = name
+
+        def teardown(self) -> None:
+            teardown_calls.append(self.name)
+
+    async def fake_start_actor(self, rank: int):
+        return FakeHandle(f"{self.actor_name}-{rank}")
+
+    monkeypatch.setattr(ray_actor_pool_udf.UDFActorPool, "_start_actor", fake_start_actor)
+
+    resource_manager = ray_actor_pool_udf.UDFActorPoolResourceManager(total_cpus=4, total_gpus=0)
+    upstream = ray_actor_pool_udf.UDFActorPool(
+        expr_projection=SimpleNamespace(),
+        min_actors=1,
+        max_actors=2,
+        udf_options={},
+        timeout=1,
+        actor_name="upstream",
+        cpus_per_actor=1,
+        resource_manager=resource_manager,
+    )
+
+    async def run_test():
+        await upstream.start()
+        assert [handle.name for handle in await upstream.get_actor_handles(pending_tasks=3)] == [
+            "upstream-0",
+            "upstream-1",
+        ]
+
+        upstream.lease_actor_handles()
+        upstream._release_one_above_min_for_resource_reclaim()
+
+        assert [handle.name for handle in upstream._active_actors] == ["upstream-0"]
+        assert [handle.name for handle in upstream._retired_actors] == ["upstream-1"]
+        assert teardown_calls == []
+
+        upstream.release_actor_handles()
+
+        assert teardown_calls == ["upstream-1"]
+        assert upstream._retired_actors == []
+
+    asyncio.run(run_test())
+
+
+def test_actor_pool_does_not_create_leased_upstream_extra_that_blocks_downstream_min(monkeypatch):
+    from daft.execution import ray_actor_pool_udf
+
+    class FakeHandle:
+        def __init__(self, name: str):
+            self.name = name
+
+        def teardown(self) -> None:
+            pass
+
+    async def fake_start_actor(self, rank: int):
+        return FakeHandle(f"{self.actor_name}-{rank}")
+
+    monkeypatch.setattr(ray_actor_pool_udf.UDFActorPool, "_start_actor", fake_start_actor)
+
+    resource_manager = ray_actor_pool_udf.UDFActorPoolResourceManager(total_cpus=2, total_gpus=0)
+    upstream = ray_actor_pool_udf.UDFActorPool(
+        expr_projection=SimpleNamespace(),
+        min_actors=1,
+        max_actors=2,
+        udf_options={},
+        timeout=1,
+        actor_name="upstream",
+        cpus_per_actor=1,
+        resource_manager=resource_manager,
+    )
+    downstream = ray_actor_pool_udf.UDFActorPool(
+        expr_projection=SimpleNamespace(),
+        min_actors=1,
+        max_actors=2,
+        udf_options={},
+        timeout=1,
+        actor_name="downstream",
+        cpus_per_actor=1,
+        resource_manager=resource_manager,
+    )
+
+    async def run_test():
+        await upstream.start()
+        assert [handle.name for handle in await upstream.get_actor_handles(pending_tasks=3)] == ["upstream-0"]
+        assert [handle.name for handle in await upstream.get_actor_handles(pending_tasks=3)] == ["upstream-0"]
+        upstream.lease_actor_handles()
+
+        assert [handle.name for handle in await downstream.get_actor_handles(pending_tasks=1)] == ["downstream-0"]
+
+        upstream.release_actor_handles()
+
+    asyncio.run(run_test())
+
+
+def test_actor_pool_defers_middle_pool_above_min_until_its_downstream_can_register(monkeypatch):
+    from daft.execution import ray_actor_pool_udf
+
+    class FakeHandle:
+        def __init__(self, name: str):
+            self.name = name
+
+        def teardown(self) -> None:
+            pass
+
+    async def fake_start_actor(self, rank: int):
+        return FakeHandle(f"{self.actor_name}-{rank}")
+
+    monkeypatch.setattr(ray_actor_pool_udf.UDFActorPool, "_start_actor", fake_start_actor)
+
+    resource_manager = ray_actor_pool_udf.UDFActorPoolResourceManager(total_cpus=3, total_gpus=0)
+    upstream = ray_actor_pool_udf.UDFActorPool(
+        expr_projection=SimpleNamespace(),
+        min_actors=1,
+        max_actors=2,
+        udf_options={},
+        timeout=1,
+        actor_name="upstream",
+        cpus_per_actor=1,
+        resource_manager=resource_manager,
+    )
+    middle = ray_actor_pool_udf.UDFActorPool(
+        expr_projection=SimpleNamespace(),
+        min_actors=1,
+        max_actors=2,
+        udf_options={},
+        timeout=1,
+        actor_name="middle",
+        cpus_per_actor=1,
+        resource_manager=resource_manager,
+    )
+    downstream = ray_actor_pool_udf.UDFActorPool(
+        expr_projection=SimpleNamespace(),
+        min_actors=1,
+        max_actors=2,
+        udf_options={},
+        timeout=1,
+        actor_name="downstream",
+        cpus_per_actor=1,
+        resource_manager=resource_manager,
+    )
+
+    async def run_test():
+        await upstream.start()
+        await middle.start()
+
+        assert [handle.name for handle in await middle.get_actor_handles(pending_tasks=3)] == ["middle-0"]
+
+        await downstream.start()
+
+        assert [handle.name for handle in await downstream.get_actor_handles(pending_tasks=1)] == ["downstream-0"]
+
+    asyncio.run(run_test())
+
+
+def test_actor_pool_middle_scales_up_then_down_for_slow_downstream(monkeypatch):
+    from daft.execution import ray_actor_pool_udf
+
+    teardown_calls = []
+
+    class FakeHandle:
+        def __init__(self, name: str):
+            self.name = name
+
+        def teardown(self) -> None:
+            teardown_calls.append(self.name)
+
+    async def fake_start_actor(self, rank: int):
+        return FakeHandle(f"{self.actor_name}-{rank}")
+
+    monkeypatch.setattr(ray_actor_pool_udf.UDFActorPool, "_start_actor", fake_start_actor)
+
+    # Six actor slots allow the middle UDF to use two extra slots after the slow tail has reserved
+    # its min actor, while still leaving one extra slot for the tail: first=1, middle=3, tail=2.
+    # Once the tail asks for backlog capacity, the middle UDF is treated as upstream and is scaled
+    # back to min so the tail can scale up to 3.
+    resource_manager = ray_actor_pool_udf.UDFActorPoolResourceManager(total_cpus=6, total_gpus=0)
+    first = ray_actor_pool_udf.UDFActorPool(
+        expr_projection=SimpleNamespace(),
+        min_actors=1,
+        max_actors=1,
+        udf_options={},
+        timeout=1,
+        actor_name="first",
+        cpus_per_actor=1,
+        resource_manager=resource_manager,
+    )
+    middle = ray_actor_pool_udf.UDFActorPool(
+        expr_projection=SimpleNamespace(),
+        min_actors=1,
+        max_actors=3,
+        udf_options={},
+        timeout=1,
+        actor_name="middle",
+        cpus_per_actor=1,
+        resource_manager=resource_manager,
+    )
+    slow_tail = ray_actor_pool_udf.UDFActorPool(
+        expr_projection=SimpleNamespace(),
+        min_actors=1,
+        max_actors=3,
+        udf_options={},
+        timeout=1,
+        actor_name="slow_tail",
+        cpus_per_actor=1,
+        resource_manager=resource_manager,
+    )
+
+    async def run_test():
+        await first.start()
+        await middle.start()
+        await slow_tail.start()
+
+        assert [handle.name for handle in await middle.get_actor_handles(pending_tasks=3)] == [
+            "middle-0",
+            "middle-1",
+            "middle-2",
+        ]
+
+        assert [handle.name for handle in await slow_tail.get_actor_handles(pending_tasks=3)] == ["slow_tail-0"]
+        assert [handle.name for handle in await slow_tail.get_actor_handles(pending_tasks=3)] == ["slow_tail-0"]
+        assert [handle.name for handle in await slow_tail.get_actor_handles(pending_tasks=3)] == [
+            "slow_tail-0",
+            "slow_tail-1",
+            "slow_tail-2",
+        ]
+        assert [handle.name for handle in await middle.get_actor_handles(pending_tasks=3)] == ["middle-0"]
+        middle.cleanup_retired_actors()
+        assert sorted(teardown_calls) == ["middle-1", "middle-2"]
+
+    asyncio.run(run_test())
+
+
+def test_actor_pool_counts_pending_actor_starts_as_reserved_resources(monkeypatch):
+    from daft.execution import ray_actor_pool_udf
+
+    pool1_actor_started = asyncio.Event()
+    pool1_actor_can_finish = asyncio.Event()
+
+    class FakeHandle:
+        def __init__(self, name: str):
+            self.name = name
+
+        def teardown(self) -> None:
+            pass
+
+    async def fake_start_actor(self, rank: int):
+        if self.actor_name == "pool1" and rank == 0:
+            pool1_actor_started.set()
+            await pool1_actor_can_finish.wait()
+        return FakeHandle(f"{self.actor_name}-{rank}")
+
+    monkeypatch.setattr(ray_actor_pool_udf.UDFActorPool, "_start_actor", fake_start_actor)
+
+    resource_manager = ray_actor_pool_udf.UDFActorPoolResourceManager(total_cpus=1, total_gpus=0)
+    pool1 = ray_actor_pool_udf.UDFActorPool(
+        expr_projection=SimpleNamespace(),
+        min_actors=1,
+        max_actors=1,
+        udf_options={},
+        timeout=1,
+        actor_name="pool1",
+        cpus_per_actor=1,
+        resource_manager=resource_manager,
+    )
+    pool2 = ray_actor_pool_udf.UDFActorPool(
+        expr_projection=SimpleNamespace(),
+        min_actors=1,
+        max_actors=1,
+        udf_options={},
+        timeout=1,
+        actor_name="pool2",
+        cpus_per_actor=1,
+        resource_manager=resource_manager,
+    )
+
+    async def run_test():
+        pool1_start_task = asyncio.create_task(pool1.start())
+        await pool1_actor_started.wait()
+
+        with pytest.raises(RuntimeError):
+            await pool2.start()
+
+        pool1_actor_can_finish.set()
+        await pool1_start_task
+
+    asyncio.run(run_test())
+
+
+def test_actor_pool_uses_dynamic_available_resources_for_above_min_capacity(monkeypatch):
+    from daft.execution import ray_actor_pool_udf
+
+    class FakeHandle:
+        def __init__(self, name: str):
+            self.name = name
+
+        def teardown(self) -> None:
+            pass
+
+    async def fake_start_actor(self, rank: int):
+        return FakeHandle(f"{self.actor_name}-{rank}")
+
+    monkeypatch.setattr(ray_actor_pool_udf.UDFActorPool, "_start_actor", fake_start_actor)
+
+    available_cpus = 3
+    resource_manager = ray_actor_pool_udf.UDFActorPoolResourceManager(
+        total_cpus=4,
+        total_gpus=0,
+        available_resources_getter=lambda: {"CPU": available_cpus, "GPU": 0},
+        resource_refresh_interval_s=0,
+    )
+    pool = ray_actor_pool_udf.UDFActorPool(
+        expr_projection=SimpleNamespace(),
+        min_actors=1,
+        max_actors=4,
+        udf_options={},
+        timeout=1,
+        actor_name="pool",
+        cpus_per_actor=1,
+        resource_manager=resource_manager,
+    )
+    downstream = ray_actor_pool_udf.UDFActorPool(
+        expr_projection=SimpleNamespace(),
+        min_actors=1,
+        max_actors=1,
+        udf_options={},
+        timeout=1,
+        actor_name="downstream",
+        cpus_per_actor=1,
+        resource_manager=resource_manager,
+    )
+
+    async def run_test():
+        nonlocal available_cpus
+
+        await pool.start()
+        await downstream.start()
+        # Another Daft job takes resources. This query already owns two actors across its pools, so
+        # it should only be allowed to grow to three total actors: two currently owned + one
+        # currently available CPU.
+        available_cpus = 1
+        assert [handle.name for handle in await pool.get_actor_handles(pending_tasks=4)] == ["pool-0", "pool-1"]
+        available_cpus = 0
+
+        # Once the other job releases resources, this pool can observe the larger dynamic budget and
+        # grow again.
+        available_cpus = 1
+        assert [handle.name for handle in await pool.get_actor_handles(pending_tasks=4)] == [
+            "pool-0",
+            "pool-1",
+            "pool-2",
+        ]
+
+    asyncio.run(run_test())
+
+
+def test_actor_pool_prioritizes_downstream_backlog_over_upstream_above_min(monkeypatch):
+    from daft.execution import ray_actor_pool_udf
+
+    teardown_calls = []
+
+    class FakeHandle:
+        def __init__(self, name: str):
+            self.name = name
+
+        def teardown(self) -> None:
+            teardown_calls.append(self.name)
+
+    async def fake_start_actor(self, rank: int):
+        return FakeHandle(f"{self.actor_name}-{rank}")
+
+    monkeypatch.setattr(ray_actor_pool_udf.UDFActorPool, "_start_actor", fake_start_actor)
+
+    resource_manager = ray_actor_pool_udf.UDFActorPoolResourceManager(total_cpus=4, total_gpus=0)
+    upstream = ray_actor_pool_udf.UDFActorPool(
+        expr_projection=SimpleNamespace(),
+        min_actors=1,
+        max_actors=2,
+        udf_options={},
+        timeout=1,
+        actor_name="upstream",
+        cpus_per_actor=1,
+        resource_manager=resource_manager,
+    )
+    downstream = ray_actor_pool_udf.UDFActorPool(
+        expr_projection=SimpleNamespace(),
+        min_actors=1,
+        max_actors=2,
+        udf_options={},
+        timeout=1,
+        actor_name="downstream",
+        cpus_per_actor=1,
+        resource_manager=resource_manager,
+    )
+
+    async def run_test():
+        await upstream.start()
+        assert [handle.name for handle in await upstream.get_actor_handles(pending_tasks=3)] == [
+            "upstream-0",
+            "upstream-1",
+        ]
+        await downstream.start()
+        resource_manager.total_cpus = 3
+
+        assert [handle.name for handle in await downstream.get_actor_handles(pending_tasks=3)] == ["downstream-0"]
+        assert [handle.name for handle in await downstream.get_actor_handles(pending_tasks=3)] == ["downstream-0"]
+        assert [handle.name for handle in await downstream.get_actor_handles(pending_tasks=3)] == [
+            "downstream-0",
+            "downstream-1",
+        ]
+        assert [handle.name for handle in await upstream.get_actor_handles(pending_tasks=3)] == ["upstream-0"]
+        assert teardown_calls == ["upstream-1"]
+
+    asyncio.run(run_test())
 
 
 @pytest.mark.parametrize("concurrency", [None, 1, 2])

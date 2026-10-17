@@ -60,6 +60,7 @@ class Func(Generic[P, T, C]):
     cpus: float | None
     gpus: float
     use_process: bool | None
+    min_concurrency: int | None
     max_concurrency: int | None
     max_retries: int | None
     on_error: str | None
@@ -80,6 +81,7 @@ class Func(Generic[P, T, C]):
         use_process: bool | None = None,
         is_batch: bool = False,
         batch_size: int | None = None,
+        min_concurrency: int | None = None,
         max_concurrency: int | None = None,
         max_retries: int | None = None,
         on_error: Literal["raise", "log", "ignore"] | None = None,
@@ -100,9 +102,9 @@ class Func(Generic[P, T, C]):
         is_generator = inspect.isgeneratorfunction(fn)
         is_async = inspect.iscoroutinefunction(fn)
 
-        if max_concurrency is not None and not is_async:
+        if (min_concurrency is not None or max_concurrency is not None) and not is_async:
             raise ValueError(
-                "`max_concurrency` on a synchronous `@daft.func` has no effect. "
+                "`min_concurrency`/`max_concurrency` on a synchronous `@daft.func` has no effect. "
                 "Use `@daft.cls` for actor pool concurrency or an async function for coroutine concurrency."
             )
 
@@ -119,6 +121,7 @@ class Func(Generic[P, T, C]):
             cpus,
             gpus,
             use_process,
+            min_concurrency,
             max_concurrency,
             max_retries,
             on_error,
@@ -135,6 +138,7 @@ class Func(Generic[P, T, C]):
         cpus: float | None,
         gpus: float,
         use_process: bool | None,
+        min_concurrency: int | None,
         max_concurrency: int | None,
         max_retries: int | None,
         on_error: Literal["raise", "log", "ignore"] | None = None,
@@ -164,6 +168,7 @@ class Func(Generic[P, T, C]):
             cpus,
             gpus,
             use_process,
+            min_concurrency,
             max_concurrency,
             effective_max_retries,
             effective_on_error,
@@ -188,8 +193,21 @@ class Func(Generic[P, T, C]):
         if self.is_async and self.is_generator:
             raise ValueError("Daft functions do not yet support both async and generator functions.")
 
-        if self.max_concurrency is not None and self.max_concurrency == 0:
+        if self.max_concurrency is not None and self.max_concurrency <= 0:
             raise ValueError("max_concurrency for udf must be non-zero")
+
+        if self.min_concurrency is not None and self.min_concurrency <= 0:
+            raise ValueError("min_concurrency for udf must be non-zero")
+
+        if self.min_concurrency is not None and self.max_concurrency is None:
+            raise ValueError("min_concurrency for udf requires max_concurrency")
+
+        if (
+            self.min_concurrency is not None
+            and self.max_concurrency is not None
+            and self.min_concurrency > self.max_concurrency
+        ):
+            raise ValueError("min_concurrency for udf must be less than or equal to max_concurrency")
 
         if self.cpus is not None and self.cpus < 0:
             raise ValueError(f"num_cpus must be non-negative, got {self.cpus}")
@@ -213,16 +231,17 @@ class Func(Generic[P, T, C]):
         new_ray_options.update(ray_options)
         return replace(self, ray_options=new_ray_options)
 
-    def with_concurrency(self, max_concurrency: int) -> Func[P, T, C]:
+    def with_concurrency(self, max_concurrency: int, min_concurrency: int | None = None) -> Func[P, T, C]:
         """Create a new Daft function with the specified maximum concurrency.
 
         Args:
             max_concurrency: The maximum concurrency to use for this function.
+            min_concurrency: The minimum concurrency to use when autoscaling this function.
 
         Returns:
             A new Daft function with the specified maximum concurrency.
         """
-        return replace(self, max_concurrency=max_concurrency)
+        return replace(self, min_concurrency=min_concurrency, max_concurrency=max_concurrency)
 
     def _derive_function_names(self) -> tuple[str, str]:
         """Compute a unique name for the function using its module and qualified name."""
@@ -319,6 +338,7 @@ class Func(Generic[P, T, C]):
 
         # If there are any ray options (other than the banned resource ones), we must use an actor pool
         max_concurrency = self.max_concurrency or (1 if ray_options else None)
+        min_concurrency = self.min_concurrency or (1 if ray_options else None)
 
         # TODO: implement generator UDFs on the engine side
         if self.is_generator:
@@ -338,6 +358,7 @@ class Func(Generic[P, T, C]):
                     self.cpus,
                     self.gpus,
                     self.use_process,
+                    min_concurrency,
                     max_concurrency,
                     self.max_retries,
                     self.on_error,
@@ -359,6 +380,7 @@ class Func(Generic[P, T, C]):
                     self.cpus,
                     self.gpus,
                     self.use_process,
+                    min_concurrency,
                     max_concurrency,
                     self.batch_size,
                     self.max_retries,
@@ -381,6 +403,7 @@ class Func(Generic[P, T, C]):
                     self.cpus,
                     self.gpus,
                     self.use_process,
+                    min_concurrency,
                     max_concurrency,
                     self.max_retries,
                     self.on_error,
@@ -445,6 +468,7 @@ def wrap_cls(
     cpus: float | None,
     gpus: float,
     use_process: bool | None,
+    min_concurrency: int | None,
     max_concurrency: int | None,
     max_retries: int | None,
     on_error: Literal["raise", "log", "ignore"] | None = None,
@@ -479,6 +503,7 @@ def wrap_cls(
                 cpus,
                 gpus,
                 use_process,
+                min_concurrency,
                 max_concurrency,
                 max_retries,
                 on_error,
