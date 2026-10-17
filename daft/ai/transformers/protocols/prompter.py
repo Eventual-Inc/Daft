@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import threading
 import warnings
 from dataclasses import dataclass, field
 from functools import singledispatchmethod
@@ -10,13 +9,11 @@ from typing import TYPE_CHECKING, Any
 from transformers import pipeline
 
 from daft.ai.protocols import Prompter, PrompterDescriptor
+from daft.ai.transformers.protocols import model_loading_lock
 from daft.ai.typing import Options, PromptOptions, UDFOptions
 from daft.ai.utils import get_gpu_udf_options, get_torch_device
 from daft.daft import guess_mimetype_from_content
 from daft.file import File
-
-# Global lock to prevent concurrent model loading which can cause meta tensor issues
-_model_loading_lock = threading.Lock()
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
@@ -99,7 +96,7 @@ class TransformersPrompter(Prompter):
         pipeline_init: dict[str, Any] = dict(pipeline_kwargs)
         if "device" not in pipeline_init and "device_map" not in pipeline_init:
             pipeline_init["device"] = get_torch_device()
-        with _model_loading_lock:
+        with model_loading_lock:
             self._pipeline = pipeline(task="text-generation", model=model_name, **pipeline_init)
 
         self._has_chat_template = getattr(self._pipeline.tokenizer, "chat_template", None) is not None
