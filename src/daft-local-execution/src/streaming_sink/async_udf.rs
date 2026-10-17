@@ -217,8 +217,20 @@ impl StreamingSink for AsyncUdfSink {
                                 state.udf_initialized = true;
                             }
 
-                            // Spawn tasks for each batch
+                            let max_inflight_tasks = params
+                                .udf_properties
+                                .concurrency
+                                .map(|c| c.get())
+                                .unwrap_or_else(get_max_inflight_tasks);
+                            let mut ready_batches = Vec::new();
+
                             for batch in input.record_batches() {
+                                // Admit a new task only when an execution slot is free.
+                                while state.task_set.len() >= max_inflight_tasks {
+                                    if let Some(join_res) = state.task_set.join_next().await {
+                                        ready_batches.push(join_res??);
+                                    }
+                                }
                                 let params = params.clone();
                                 let expr = state.udf_expr.clone();
                                 let batch = batch.clone();
@@ -250,25 +262,9 @@ impl StreamingSink for AsyncUdfSink {
                             }
 
                             // Drain any ready tasks non-blockingly
-                            let mut ready_batches = Vec::new();
                             while let Some(join_res) = state.task_set.try_join_next() {
                                 let batch = join_res??;
                                 ready_batches.push(batch);
-                            }
-
-                            // Force drain tasks until the number of inflight tasks is less than the concurrency limit
-                            let mut num_inflight_tasks = state.task_set.len();
-                            let max_inflight_tasks = params
-                                .udf_properties
-                                .concurrency
-                                .map(|c| c.get())
-                                .unwrap_or_else(get_max_inflight_tasks);
-                            while num_inflight_tasks > max_inflight_tasks {
-                                if let Some(join_res) = state.task_set.join_next().await {
-                                    let batch = join_res??;
-                                    ready_batches.push(batch);
-                                }
-                                num_inflight_tasks = state.task_set.len();
                             }
 
                             if ready_batches.is_empty() {
