@@ -215,6 +215,7 @@ class IcebergDataSource(DataSource):
         self._parquet_config = ParquetSourceConfig(
             field_id_mapping=field_id_mapping,
             ignore_corrupt_files=ignore_corrupt_files,
+            name_mapping=iceberg_table.properties.get("schema.name-mapping.default"),
         )
 
         self._schema = convert_iceberg_schema(iceberg_schema)
