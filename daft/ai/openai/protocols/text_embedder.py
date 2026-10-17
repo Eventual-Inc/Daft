@@ -98,9 +98,12 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
     provider_options: OpenAIProviderOptions
     model_name: str
     dimensions: int | None
-    embed_options: EmbedTextOptions = field(
-        default_factory=lambda: EmbedTextOptions(batch_size=64, max_retries=3, on_error="raise")
-    )
+    # No defaults are declared here. A provider always passes ``embed_options`` explicitly -
+    # an empty dict when the caller supplied no options - and an explicitly passed argument
+    # wins over ``default_factory``, so anything declared here never applied on the
+    # ``embed_text`` path (#7614). Request size is bounded by ``MAX_INPUTS_PER_REQUEST`` and
+    # ``batch_token_limit`` inside ``OpenAITextEmbedder`` instead.
+    embed_options: EmbedTextOptions = field(default_factory=lambda: EmbedTextOptions())
 
     def __post_init__(self) -> None:
         if self.provider_options.get("base_url") is None:

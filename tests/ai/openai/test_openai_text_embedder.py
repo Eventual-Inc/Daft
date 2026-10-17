@@ -86,6 +86,21 @@ def test_valid_model_names():
         assert descriptor.get_dimensions() == _models[model_name].dimensions
 
 
+def test_provider_declares_no_embed_option_defaults():
+    """A provider must not declare defaults that it then always overrides.
+
+    `OpenAIProvider.get_text_embedder` always passes `embed_options`, so a declared
+    `default_factory` never ran. Request size is bounded inside `embed_text` (see
+    `test_embed_text_bounds_inputs_per_request`) rather than by a declared `batch_size`,
+    so there is nothing left for this path to default.
+    """
+    from daft.ai.openai.provider import OpenAIProvider
+
+    descriptor = OpenAIProvider("openai", api_key="test-key").get_text_embedder()
+    assert descriptor.get_options() == {}
+    assert descriptor.get_udf_options().batch_size is None
+
+
 def test_embed_text_bounds_inputs_per_request(mock_text_embedder, mock_client):
     """Short rows must not produce a request carrying more inputs than the API accepts.
 
