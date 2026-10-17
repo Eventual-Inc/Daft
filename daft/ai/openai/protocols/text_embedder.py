@@ -74,11 +74,12 @@ def _embedding_request_options(embed_options: EmbedTextOptions) -> dict[str, Any
 
     # Leaving encoding_format unset lets the OpenAI SDK ask for base64 and decode it
     # with numpy. Passing *any* value disables that fast path, and the SDK then builds
-    # one Python object per float, which dominates runtime on large batches. Note that
-    # "base64" must not be passed explicitly either: the SDK skips its own decoding
-    # whenever the caller specifies a format, leaving raw base64 strings behind.
-    if embed_options.get("encoding_format") == "float":
-        options["encoding_format"] = "float"
+    # one Python object per float, which dominates runtime on large batches. So the
+    # base64 setting is expressed by OMITTING the parameter: sending "base64" would
+    # make the SDK skip its own decoding and leave raw base64 strings behind.
+    encoding_format = embed_options.get("encoding_format", "base64")
+    if encoding_format != "base64":
+        options["encoding_format"] = encoding_format
 
     return options
 
@@ -157,7 +158,8 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
             except Exception as ex:
                 raise ValueError(
                     "Failed to determine embedding dimensions from OpenAI-compatible embedding server. "
-                    "Specify `dimensions=...` or ensure the server supports embeddings.create."
+                    "Specify `dimensions=...`, or ensure the server supports embeddings.create. If it "
+                    'rejects base64 embedding responses, pass encoding_format="float".'
                 ) from ex
         else:
             return _models[self.model_name].dimensions
@@ -295,7 +297,10 @@ class OpenAITextEmbedder(TextEmbedder):
             # consider sleeping or other backoff mechanisms
             return await asyncio.gather(*(self._embed_text(text) for text in input_batch))
         except OpenAIError as ex:
-            raise ValueError("The `embed_text` method encountered an OpenAI error.") from ex
+            raise ValueError(
+                "The `embed_text` method encountered an OpenAI error. If the server does not "
+                'support base64 embedding responses, pass encoding_format="float".'
+            ) from ex
 
     async def _embed_text(self, input_text: str) -> Embedding:
         """Embeds a single text input and possibly returns a zero vector."""

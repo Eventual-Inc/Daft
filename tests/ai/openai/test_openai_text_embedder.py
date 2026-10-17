@@ -323,6 +323,57 @@ def test_embed_text_forwards_float_encoding_format_when_requested(mock_client):
     )
 
 
+def test_embed_text_omits_encoding_format_when_base64_requested(mock_client):
+    """base64 is expressed by omitting the parameter, never by sending it.
+
+    Sending "base64" would make the SDK skip its own decoding and hand back raw
+    base64 strings, so this invariant is what keeps the fast path working.
+    """
+    embedder = OpenAITextEmbedder(
+        provider_options={"api_key": "test-key"},
+        model="text-embedding-3-small",
+        embed_options={"encoding_format": "base64"},
+    )
+    embedder._client = mock_client
+
+    mock_response = Mock(spec=CreateEmbeddingResponse)
+    mock_embedding = Mock(spec=OpenAIEmbedding)
+    mock_embedding.embedding = np.array([0.1] * 1536, dtype=np.float32)
+    mock_response.data = [mock_embedding]
+    mock_client.embeddings.create.return_value = mock_response
+
+    run(embedder._embed_text_batch(["batch input"]))
+    assert "encoding_format" not in mock_client.embeddings.create.await_args[1]
+
+
+def test_provider_forwards_explicit_float_encoding_format(mock_client):
+    """The option must survive embed_text() -> provider -> descriptor -> embedder."""
+    from daft.ai.openai.provider import OpenAIProvider
+
+    descriptor = OpenAIProvider("openai", api_key="test-key").get_text_embedder(encoding_format="float")
+    embedder = descriptor.instantiate()
+    embedder._client = mock_client
+
+    mock_response = Mock(spec=CreateEmbeddingResponse)
+    mock_embedding = Mock(spec=OpenAIEmbedding)
+    mock_embedding.embedding = np.array([0.1] * 1536, dtype=np.float32)
+    mock_response.data = [mock_embedding]
+    mock_client.embeddings.create.return_value = mock_response
+
+    run(embedder._embed_text_batch(["batch input"]))
+    assert mock_client.embeddings.create.await_args[1]["encoding_format"] == "float"
+
+
+def test_openai_error_points_at_the_float_escape_hatch(mock_text_embedder, mock_client):
+    """A server that rejects base64 must be told how to opt back out."""
+    from openai import OpenAIError
+
+    mock_client.embeddings.create.side_effect = OpenAIError("unsupported encoding_format")
+
+    with pytest.raises(ValueError, match=r'encoding_format="float"'):
+        run(mock_text_embedder._embed_text_batch(["batch input"]))
+
+
 def test_embed_text_decodes_base64_embeddings_from_sdk():
     """Covers the SDK-side decoding that leaving encoding_format unset relies on.
 
