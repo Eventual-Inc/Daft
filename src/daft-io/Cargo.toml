@@ -9,7 +9,7 @@ aws-smithy-http-client = "1.1.2"
 aws-smithy-runtime-api = "1.8.0"
 azure_core = {version = "1.1.0", features = ["reqwest", "reqwest_rustls", "tokio", "hmac_rust", "xml"], default-features = false}
 azure_identity = {version = "1.0.0", features = ["tokio"], default-features = false}
-azure_storage_blob = {version = "1.1.0-beta.1", default-features = false}
+azure_storage_blob = {version = "1.1.0", default-features = false}
 bytes = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 common-file-formats = {path = "../common/file-formats", default-features = false}
@@ -38,7 +38,7 @@ opendal = {version = "0.58", default-features = false, features = [
 ]}
 pyo3 = {workspace = true, optional = true}
 rand = {workspace = true}
-regex = "1.12.2"
+regex = {workspace = true}
 reqwest = {workspace = true, default-features = false, features = ["stream", "json"]}
 reqwest-middleware = "0.5"
 reqwest-retry = "0.9"
