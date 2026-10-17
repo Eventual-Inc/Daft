@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import math
+import os
 import struct
+import subprocess
+import sys
 import tempfile
+import threading
 from contextlib import contextmanager
 
 import pyarrow as pa
@@ -549,3 +553,120 @@ def test_negative_nan_multicolumn_sort():
     result = df.sort(["a", "b"]).to_pydict()["b"]
     assert result[0] == 0.0
     assert math.isnan(result[1])
+
+
+@pytest.mark.parametrize("logical_type", ["uuid", "embedding"])
+@pytest.mark.parametrize("descending", [False, True])
+def test_sort_logical_secondary_key(logical_type, descending):
+    from daft.functions import uuid
+
+    df = daft.from_pydict({"key": [0, 0, 0], "id": [0, 1, 2], "value": [[3.0, 0.0], [1.0, 0.0], [2.0, 0.0]]})
+    if logical_type == "uuid":
+        df = df.with_column("value", uuid())
+    else:
+        df = df.with_column("value", daft.col("value").cast(DataType.embedding(DataType.float64(), 2)))
+    df = df.collect()
+    values = df.to_pydict()["value"]
+    expected = sorted(
+        range(3),
+        key=lambda i: values[i] if logical_type == "uuid" else tuple(values[i]),
+        reverse=descending,
+    )
+    # Tie the first key so the logical secondary key actually determines order.
+    result = df.sort(["key", "value"], desc=descending).collect()
+    assert result.to_pydict()["id"] == expected
+    assert result.schema()["value"].dtype == df.schema()["value"].dtype
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Non-pickleable payload is local-only")
+def test_sort_preserves_non_pickleable_python_payload():
+    payload = [threading.Lock(), threading.Lock()]
+    series = daft.Series.from_pylist(payload, name="payload", dtype=DataType.python())
+    result = daft.from_pydict({"key": [2, 1], "payload": series}).sort("key").to_pydict()
+    assert result["key"] == [1, 2]
+    assert result["payload"][0] is payload[1]
+    assert result["payload"][1] is payload[0]
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native", reason="Checks local Python object reference preservation"
+)
+@pytest.mark.parametrize("payload_bytes", [10_000, 1_000_000])
+def test_sort_preserves_pickleable_python_payload(payload_bytes):
+    # Sorting copies object references, not serialized payloads. The retained run
+    # must use the same size measure as its pre-sort reservation.
+    payload = [{"text": "x" * payload_bytes}, {"text": "y" * payload_bytes}]
+    series = daft.Series.from_pylist(payload, name="payload", dtype=DataType.python())
+    result = daft.from_pydict({"key": [2, 1], "payload": series}).sort("key").to_pydict()
+    assert result["key"] == [1, 2]
+    assert result["payload"][0] is payload[1]
+    assert result["payload"][1] is payload[0]
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Tests local Sort memory admission")
+def test_sort_downstream_udf_memory_admission(tmp_path):
+    # Worker limits are initialized once per process. A subprocess also bounds a
+    # regression to a test failure instead of hanging the test suite indefinitely.
+    code = """
+import daft
+@daft.udf(return_dtype=daft.DataType.int64())
+def identity(series):
+    return series.to_pylist()
+fn = identity.override_options(memory_bytes=16 * 1024 * 1024)
+df = daft.from_pydict({'key': list(range(1_000_000, 0, -1))})
+out = df.sort('key').with_column('out', fn(daft.col('key'))).to_pydict()
+assert out['key'] == list(range(1, 1_000_001))
+assert out['out'] == out['key']
+"""
+    subprocess.run(
+        [sys.executable, "-c", code],
+        env={
+            **os.environ,
+            "DAFT_RUNNER": "native",
+            "DAFT_MEMORY_LIMIT": str(32 * 1024 * 1024),
+            "DAFT_SPILL_DIRS": str(tmp_path),
+            "DAFT_PROGRESS_BAR": "0",
+        },
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert not list(tmp_path.rglob("*.spill"))
+
+
+@pytest.mark.parametrize("computed_key", ["literal", "expanding", "multiple"])
+def test_sort_large_computed_keys(computed_key):
+    # The original data is only a few bytes; each computed key can be megabytes.
+    df = daft.from_pydict({"key": [2, 1], "__daft_sort_key_0": ["b", "a"]})
+    suffix = daft.lit("x" * 1_000_000)
+    expanding = daft.col("__daft_sort_key_0") + suffix
+    by = {"literal": [suffix, daft.col("key")], "expanding": [expanding], "multiple": [expanding, suffix]}[computed_key]
+    assert df.sort(by).to_pydict() == {"key": [1, 2], "__daft_sort_key_0": ["a", "b"]}
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="Tests local Sort memory admission")
+def test_sort_projected_keys_spill(tmp_path):
+    code = """
+import daft
+df = daft.from_pydict({'key': list(range(1000, 0, -1))})
+suffix = 'x' * 32768
+key = daft.col('key').cast(daft.DataType.string()) + daft.lit(suffix)
+out = df.sort([key, daft.col('key')]).to_pydict()
+assert out['key'] == sorted(range(1, 1001), key=lambda x: str(x) + suffix)
+"""
+    subprocess.run(
+        [sys.executable, "-c", code],
+        env={
+            **os.environ,
+            "DAFT_RUNNER": "native",
+            "DAFT_MEMORY_LIMIT": str(16 * 1024 * 1024),
+            "DAFT_SPILL_DIRS": str(tmp_path),
+            "DAFT_PROGRESS_BAR": "0",
+        },
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert not list(tmp_path.rglob("*.spill"))
