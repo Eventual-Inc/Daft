@@ -68,7 +68,7 @@ class File:
     ) -> None:
         if offset is not None:
             warnings.warn(
-                "`offset` is deprecated; use `position` instead.",
+                "`offset` is deprecated and will be removed in v0.9.0. Use `position` instead.",
                 DeprecationWarning,
                 stacklevel=2,
             )
@@ -77,7 +77,7 @@ class File:
 
         if length is not None:
             warnings.warn(
-                "`length` is deprecated; use `size` instead.",
+                "`length` is deprecated and will be removed in v0.9.0. Use `size` instead.",
                 DeprecationWarning,
                 stacklevel=2,
             )
@@ -145,7 +145,7 @@ class File:
     def offset(self) -> int | None:
         """Deprecated alias for `position`. The byte offset for range reads, or None for full-file reads. Will be removed in v0.9.0."""
         warnings.warn(
-            "`File.offset` is deprecated; use `File.position` instead.",
+            "`File.offset` is deprecated and will be removed in v0.9.0. Use `File.position` instead.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -159,7 +159,7 @@ class File:
         size. Use `File.size()` for the actual file size.
         """
         warnings.warn(
-            "`File.length` is deprecated; use `File.size()` instead.",
+            "`File.length` is deprecated and will be removed in v0.9.0. Use `File.size()` instead.",
             DeprecationWarning,
             stacklevel=2,
         )
