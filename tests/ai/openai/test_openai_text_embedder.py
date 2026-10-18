@@ -144,6 +144,72 @@ def test_embed_text_input_cap_does_not_disturb_token_batching(mock_text_embedder
     assert awaited_batch_sizes(mock_client) == [1127, 873]
 
 
+def test_embed_text_bounds_chunks_of_one_long_row(mock_text_embedder, mock_client):
+    """The chunks of a single oversized row are bound by the same per-request limits.
+
+    One row long enough to chunk 40 ways carries more estimated tokens than
+    `batch_token_limit`, so it cannot be embedded in one request either.
+    """
+    mock_client.embeddings.create.side_effect = one_embedding_per_input
+    chunk_chars = 8192 * 3  # input_text_token_limit, at the batcher's 3 chars per token
+
+    result = run(mock_text_embedder.embed_text(["x" * 40 * chunk_chars]))
+
+    assert len(result) == 1
+    assert awaited_batch_sizes(mock_client) == [36, 4]
+
+
+def test_embed_text_chunks_of_one_long_row_respect_input_cap(mock_client):
+    """A server capping inputs below OpenAI's splits a long row's chunks too."""
+    embedder = OpenAITextEmbedder(
+        provider_options={"api_key": "test-key"},
+        model="text-embedding-3-small",
+        embed_options={},
+        max_inputs_per_request=4,
+    )
+    embedder._client = mock_client
+    mock_client.embeddings.create.side_effect = one_embedding_per_input
+    chunk_chars = 8192 * 3
+
+    result = run(embedder.embed_text(["x" * 5 * chunk_chars]))
+
+    assert len(result) == 1
+    assert awaited_batch_sizes(mock_client) == [4, 1]
+
+
+def test_embed_text_splitting_a_long_row_does_not_change_its_embedding(mock_client):
+    """Splitting a row's chunks across requests must not change the weighted average."""
+
+    async def one_vector_per_chunk(*args, **kwargs):
+        response = Mock(spec=CreateEmbeddingResponse)
+        response.data = []
+        for text in kwargs.get("input", []):
+            embedding = Mock(spec=OpenAIEmbedding)
+            # a vector that depends on the chunk, so reordering or regrouping would show
+            embedding.embedding = np.full(1536, float(len(text)), dtype=np.float32)
+            response.data.append(embedding)
+        return response
+
+    chunk_chars = 8192 * 3
+    row = "x" * (5 * chunk_chars - 7)  # a short final chunk, so the weights differ
+
+    embeddings = []
+    for max_inputs_per_request in (2048, 2):
+        embedder = OpenAITextEmbedder(
+            provider_options={"api_key": "test-key"},
+            model="text-embedding-3-small",
+            embed_options={},
+            max_inputs_per_request=max_inputs_per_request,
+        )
+        embedder._client = mock_client
+        mock_client.embeddings.create.reset_mock()
+        mock_client.embeddings.create.side_effect = one_vector_per_chunk
+        embeddings.append(run(embedder.embed_text([row]))[0])
+        assert awaited_batch_sizes(mock_client) == ([5] if max_inputs_per_request == 2048 else [2, 2, 1])
+
+    np.testing.assert_array_equal(embeddings[0], embeddings[1])
+
+
 def test_invalid_model_name():
     """Test that invalid model names raise ValueError."""
     with pytest.raises(ValueError, match="Unsupported OpenAI embedding model"):

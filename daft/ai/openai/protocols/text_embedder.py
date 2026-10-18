@@ -266,17 +266,29 @@ class OpenAITextEmbedder(TextEmbedder):
                 # If the current input exceeds the maximum tokens per input (configurable, default 8192),
                 # then we will split this single input into its own batch request.
                 chunked_batch = chunk_text(input_text, input_text_chars_limit)
-                chunked_result = await self._embed_text_batch(chunked_batch)
+                # The chunks of one oversized input are bound by the same per-request
+                # limits as any other batch, so they may need more than one request.
+                chunked_result: list[Embedding] = []
+                chunk_request: list[str] = []
+                chunk_request_token_count = 0
+                for chunk in chunked_batch:
+                    chunk_token_count = len(chunk) // approx_chars_per_token
+                    if chunk_request and self._request_is_full(
+                        len(chunk_request), chunk_request_token_count, chunk_token_count
+                    ):
+                        chunked_result.extend(await self._embed_text_batch(chunk_request))
+                        chunk_request = []
+                        chunk_request_token_count = 0
+                    chunk_request.append(chunk)
+                    chunk_request_token_count += chunk_token_count
+                chunked_result.extend(await self._embed_text_batch(chunk_request))
                 # We combine all result embedding vectors into a single embedding using a weighted average.
                 # https://github.com/openai/openai-cookbook/blob/main/examples/Embedding_long_inputs.ipynb
                 chunked_lens = [len(chunk) for chunk in chunked_batch]
                 chunked_vec = np.average(chunked_result, axis=0, weights=chunked_lens)
                 chunked_vec = chunked_vec / np.linalg.norm(chunked_vec)  # normalizes length to 1
                 embeddings.append(chunked_vec)
-            elif (
-                input_text_token_count + curr_batch_token_count >= self._batch_token_limit
-                or len(curr_batch) >= self._max_inputs_per_request
-            ):
+            elif self._request_is_full(len(curr_batch), curr_batch_token_count, input_text_token_count):
                 await flush()
                 curr_batch.append(input_text)
                 curr_batch_token_count += input_text_token_count
@@ -286,6 +298,13 @@ class OpenAITextEmbedder(TextEmbedder):
         await flush()
 
         return embeddings
+
+    def _request_is_full(self, batch_size: int, batch_token_count: int, next_token_count: int) -> bool:
+        """Whether a batch cannot take one more input of next_token_count without exceeding a per-request limit."""
+        return (
+            batch_token_count + next_token_count >= self._batch_token_limit
+            or batch_size >= self._max_inputs_per_request
+        )
 
     async def _embed_text_batch(self, input_batch: list[str]) -> list[Embedding]:
         """Embeds text as a batch call, falling back to _embed_text on rate limit exceptions."""
