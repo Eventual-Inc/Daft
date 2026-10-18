@@ -3244,7 +3244,6 @@ dependencies = [
  "common-io-config",
  "common-partitioning",
  "common-py-serde",
- "common-resource-request",
  "common-treenode",
  "daft-algebra",
  "daft-checkpoint",
