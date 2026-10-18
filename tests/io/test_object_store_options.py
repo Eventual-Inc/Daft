@@ -11,7 +11,6 @@ def test_convert_to_s3_config():
         key_id="dummy_ak",
         access_key="dummy_sk",
         use_ssl=True,
-        verify_ssl=True,
         connect_timeout_ms=1000,
         anonymous=True,
         force_virtual_addressing=True,

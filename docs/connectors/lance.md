@@ -74,7 +74,6 @@ For S3-compatible services (e.g. Volcengine TOS), configure IO options for authe
             endpoint_url=f"https://tos-s3-{region}.ivolces.com",
             region_name=region,
             force_virtual_addressing=True,
-            verify_ssl=True,
             key_id="your-access-key-id",
             access_key="your-secret-access-key",
         )
@@ -242,7 +241,6 @@ right_on="id")` after retaining `fragment_id` and `id` in `updates`.
             endpoint_url=f"https://tos-s3-{region}.ivolces.com",
             region_name=region,
             force_virtual_addressing=True,
-            verify_ssl=True,
             key_id="your-access-key-id",
             access_key="your-secret-access-key",
         )

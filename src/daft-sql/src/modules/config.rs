@@ -53,8 +53,6 @@ impl SQLFunction for S3ConfigFunction {
                 "retry_mode",
                 "anonymous",
                 "use_ssl",
-                "verify_ssl",
-                "check_hostname_ssl",
                 "requester_pays",
                 "force_virtual_addressing",
                 "profile_name",
@@ -93,8 +91,6 @@ impl SQLFunction for S3ConfigFunction {
         let retry_mode = args.try_get_named::<String>("retry_mode")?;
         let anonymous = args.try_get_named::<bool>("anonymous")?;
         let use_ssl = args.try_get_named::<bool>("use_ssl")?;
-        let verify_ssl = args.try_get_named::<bool>("verify_ssl")?;
-        let check_hostname_ssl = args.try_get_named::<bool>("check_hostname_ssl")?;
         let requester_pays = args.try_get_named::<bool>("requester_pays")?;
         let force_virtual_addressing = args.try_get_named::<bool>("force_virtual_addressing")?;
         let profile_name = args.try_get_named::<String>("profile_name")?;
@@ -121,8 +117,6 @@ impl SQLFunction for S3ConfigFunction {
             item!(retry_mode),
             item!(anonymous),
             item!(use_ssl),
-            item!(verify_ssl),
-            item!(check_hostname_ssl),
             item!(requester_pays),
             item!(force_virtual_addressing),
             item!(profile_name),
@@ -156,8 +150,6 @@ impl SQLFunction for S3ConfigFunction {
             "retry_mode",
             "anonymous",
             "use_ssl",
-            "verify_ssl",
-            "check_hostname_ssl",
             "requester_pays",
             "force_virtual_addressing",
             "profile_name",

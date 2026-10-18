@@ -73,7 +73,6 @@ def _get_s3_io_config() -> IOConfig:
             force_virtual_addressing=True,
             key_id=os.environ["AWS_ACCESS_KEY_ID"],
             access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
-            verify_ssl=True,
             region_name=os.environ.get("AWS_REGION", "cn-beijing"),
         )
     )
