@@ -233,3 +233,15 @@ def test_field_id_mapping_with_field_ids_reads_values(tmp_path: Path):
     result = FieldIdMappingSource(path, schema).read().sort("a").to_pydict()
 
     assert result == {"a": [1, 2, 3], "b": ["x", "y", "z"]}
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"field_id_mapping": {}, "name_mapping": "not json"}, "Invalid name mapping"),
+        ({"name_mapping": "[]"}, "`name_mapping` requires `field_id_mapping`"),
+    ],
+)
+def test_parquet_source_config_rejects_unusable_name_mapping(kwargs, match):
+    with pytest.raises(ValueError, match=match):
+        ParquetSourceConfig(**kwargs)

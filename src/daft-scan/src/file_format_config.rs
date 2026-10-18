@@ -179,6 +179,11 @@ impl ParquetSourceConfig {
         ignore_corrupt_files: bool,
         name_mapping: Option<String>,
     ) -> PyResult<Self> {
+        if field_id_mapping.is_none() && name_mapping.is_some() {
+            return Err(PyValueError::new_err(
+                "`name_mapping` requires `field_id_mapping`",
+            ));
+        }
         let name_mapping = name_mapping
             .map(|json| serde_json::from_str(&json))
             .transpose()

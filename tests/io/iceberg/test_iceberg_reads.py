@@ -378,6 +378,8 @@ def test_read_add_files_table_with_nested_types(local_catalog, tmp_path):
             "s": [{"x": 1, "y": "a"}, {"x": 2, "y": "b"}],
             "l": [[1, 2], [3]],
             "m": pa.array([[("k1", 1)], [("k2", 2)]], type=pa.map_(pa.string(), pa.int64())),
+            "ll": [[[1], [2, 3]], [[4]]],
+            "lm": pa.array([[[("k1", 1)]], [[("k2", 2)]]], type=pa.list_(pa.map_(pa.string(), pa.int64()))),
         }
     )
     table = _add_files_table(local_catalog, tmp_path, data)
