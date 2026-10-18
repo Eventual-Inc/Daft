@@ -124,7 +124,7 @@ fn start(py: Python, opts: StartArgs) {
 
             match cmd.spawn() {
                 Ok(_) => {
-                    println!("🚀 Launched the Daft dashboard in daemon mode!",);
+                    println!("🚀 Launched the Daft dashboard in daemon mode!");
                     println!("The log path is '{}'", log_path.display());
                 }
                 Err(e) => {

@@ -204,24 +204,20 @@ fn binary_slice<'a>(
         Box::new(input_iter.clone().map(|i| i.map(|i| i.len() as i64)))
     };
 
-    let slices = start_iter
-        .zip(end_iter)
-        .zip(input_iter)
-        .map(|((s, e), i)| {
-            let (Some(s), Some(e), Some(i)) = (s, e, i) else {
-                return None;
-            };
+    let slices = start_iter.zip(end_iter).zip(input_iter).map(|((s, e), i)| {
+        let (Some(s), Some(e), Some(i)) = (s, e, i) else {
+            return None;
+        };
 
-            let s = bound_index(s, i.len());
-            let e = bound_index(e, i.len());
+        let s = bound_index(s, i.len());
+        let e = bound_index(e, i.len());
 
-            if s >= e {
-                Some(&[] as &[u8])
-            } else {
-                Some(&i[s..e])
-            }
-        })
-        .collect::<Vec<_>>();
+        if s >= e {
+            Some(&[] as &[u8])
+        } else {
+            Some(&i[s..e])
+        }
+    });
 
-    BinaryArray::from_iter(name, slices.into_iter())
+    BinaryArray::from_iter(name, slices)
 }

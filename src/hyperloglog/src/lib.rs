@@ -139,7 +139,7 @@ impl HyperLogLog<'_> {
             z += *i as f64;
             z *= 0.5;
         }
-        z += m * hll_sigma(histogram[0] as f64 / m);
+        z = m.mul_add(hll_sigma(histogram[0] as f64 / m), z);
         (0.5 / 2_f64.ln() * m * m / z).round() as usize
     }
 }
@@ -158,7 +158,7 @@ fn hll_sigma(x: f64) -> f64 {
         loop {
             x *= x;
             let z_prime = z;
-            z += x * y;
+            z = x.mul_add(y, z);
             y += y;
             if z_prime == z {
                 break;
@@ -183,7 +183,7 @@ fn hll_tau(x: f64) -> f64 {
             x = x.sqrt();
             let z_prime = z;
             y *= 0.5;
-            z -= (1.0 - x).powi(2) * y;
+            z = (1.0 - x).powi(2).mul_add(-y, z);
             if z_prime == z {
                 break;
             }

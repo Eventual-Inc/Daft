@@ -22,7 +22,6 @@ pub use agg_fn::{AggFn, AggFnHandle, State};
 use common_error::DaftResult;
 use daft_core::prelude::*;
 pub use function_args::{FunctionArg, FunctionArgs, UnaryArg};
-use python::LegacyPythonUDF;
 use scalar::DynamicScalarFunction;
 pub use scalar::{
     AsyncScalarUDF, BuiltinScalarFn, BuiltinScalarFnVariant, ScalarFunctionFactory, ScalarUDF,
@@ -37,7 +36,6 @@ pub enum FunctionExpr {
     Map(MapExpr),
     Sketch(SketchExpr),
     Struct(StructExpr),
-    Python(LegacyPythonUDF),
     Partitioning(PartitioningExpr),
 }
 
@@ -59,7 +57,6 @@ impl FunctionExpr {
             Self::Map(expr) => expr.get_evaluator(),
             Self::Sketch(expr) => expr.get_evaluator(),
             Self::Struct(expr) => expr.get_evaluator(),
-            Self::Python(expr) => expr,
             Self::Partitioning(expr) => expr.get_evaluator(),
         }
     }

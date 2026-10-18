@@ -898,9 +898,9 @@ impl TensorArray {
                     let shape_series = shape_series.unwrap();
                     let data_series = data_series.unwrap();
                     let shape_array = shape_series.u64().unwrap();
-                    assert!(
-                        data_series.len()
-                            == shape_array.into_iter().flatten().product::<u64>() as usize
+                    assert_eq!(
+                        data_series.len(),
+                        shape_array.into_iter().flatten().product::<u64>() as usize
                     );
                     let non_zero_mask = data_series.not_equal(&zero_series)?;
                     let data = data_series.filter(&non_zero_mask)?;

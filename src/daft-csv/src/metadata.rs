@@ -1,7 +1,6 @@
 use std::{collections::HashSet, sync::Arc};
 
 use arrow_schema::{DataType, Field, Schema as ArrowSchema};
-use async_compat::CompatExt;
 use common_error::DaftResult;
 use csv_async::{AsyncReaderBuilder, ByteRecord};
 use daft_compression::CompressionCodec;
@@ -14,7 +13,7 @@ use tokio::{
     fs::File,
     io::{AsyncBufRead, AsyncRead, BufReader},
 };
-use tokio_util::io::StreamReader;
+use tokio_util::{compat::TokioAsyncReadCompatExt, io::StreamReader};
 
 use crate::{CsvParseOptions, schema::merge_schema};
 
@@ -256,7 +255,7 @@ where
         let delta = (record_size as f64) - mean;
         mean += delta / (records_count as f64);
         let delta2 = (record_size as f64) - mean;
-        m2 += delta * delta2;
+        m2 = delta.mul_add(delta2, m2);
         for (i, column) in column_types.iter_mut().enumerate() {
             if let Some(string) = record.get(i) {
                 column.insert(infer(string));
@@ -280,7 +279,7 @@ where
         let delta = (record_size as f64) - mean;
         mean += delta / (records_count as f64);
         let delta2 = (record_size as f64) - mean;
-        m2 += delta * delta2;
+        m2 = delta.mul_add(delta2, m2);
         for (i, column) in column_types.iter_mut().enumerate() {
             if let Some(string) = record.get(i) {
                 column.insert(infer(string));
@@ -397,7 +396,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_csv_schema_local_read_stats() -> DaftResult<()> {
-        let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"),);
+        let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"));
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
@@ -476,7 +475,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_csv_schema_local_nulls() -> DaftResult<()> {
-        let file = format!("{}/test/iris_tiny_nulls.csv", env!("CARGO_MANIFEST_DIR"),);
+        let file = format!("{}/test/iris_tiny_nulls.csv", env!("CARGO_MANIFEST_DIR"));
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
@@ -532,7 +531,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_csv_schema_local_max_bytes() -> DaftResult<()> {
-        let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"),);
+        let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"));
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;

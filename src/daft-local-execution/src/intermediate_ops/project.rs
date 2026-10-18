@@ -238,8 +238,8 @@ impl IntermediateOperator for ProjectOperator {
                         ));
                     };
                     LatencyConstrainedBatchingStrategy {
-                        target_batch_latency: Duration::from_millis(5000),
-                        latency_tolerance: Duration::from_millis(1000),
+                        target_batch_latency: Duration::from_secs(5),
+                        latency_tolerance: Duration::from_secs(1),
                         step_size_alpha: 2048,
                         correction_delta: 64,
                         b_min: min_batch_size,

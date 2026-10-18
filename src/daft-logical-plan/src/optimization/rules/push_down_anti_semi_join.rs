@@ -277,12 +277,7 @@ impl OptimizerRule for PushDownAntiSemiJoin {
                         }
                     }
                     // Anti/semi join cannot be pushed down a non inner join.
-                    LogicalPlan::Join(Join {
-                        left: _,
-                        right: _,
-                        join_type: _,
-                        ..
-                    }) => {
+                    LogicalPlan::Join(Join { .. }) => {
                         return Ok(Transformed::no(node));
                     }
                     // Anti/semi join can be trivially pushed down these ops

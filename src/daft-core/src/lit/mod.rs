@@ -97,7 +97,7 @@ pub enum Literal {
     #[cfg(feature = "python")]
     Python(PyObjectWrapper),
     /// TODO chore: audit struct literal vs. struct expression support.
-    Struct(IndexMap<String, Literal>),
+    Struct(IndexMap<String, Self>),
     File(FileReference),
     /// A tensor
     Tensor {

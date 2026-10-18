@@ -410,7 +410,7 @@ pub fn delta_scan<T: IntoGlobPath>(
 #[cfg(feature = "python")]
 pub fn iceberg_scan<T: AsRef<str>>(
     metadata_location: T,
-    snapshot_id: Option<usize>,
+    snapshot_id: Option<i64>,
     branch: Option<String>,
     tag: Option<String>,
     io_config: Option<IOConfig>,
@@ -448,7 +448,7 @@ pub fn iceberg_scan<T: AsRef<str>>(
 #[cfg(not(feature = "python"))]
 pub fn iceberg_scan<T: AsRef<str>>(
     _uri: T,
-    _snapshot_id: Option<usize>,
+    _snapshot_id: Option<i64>,
     _branch: Option<String>,
     _tag: Option<String>,
     _io_config: Option<IOConfig>,

@@ -151,6 +151,7 @@ dev = [
   "vllm==0.21.0; sys_platform == 'linux'",
   "openai==2.38.0",
   "google-genai==2.6.0",
+  "typesafe-sdk==0.7.2",
   # AV
   "av==17.0.1",
   "h5py==3.16.0",

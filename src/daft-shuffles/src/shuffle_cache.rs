@@ -206,7 +206,7 @@ async fn writer_task(
         .into_iter()
         .map(|file_path_table| {
             assert!(file_path_table.num_columns() > 0);
-            assert!(file_path_table.num_rows() == 1);
+            assert_eq!(file_path_table.num_rows(), 1);
             // IPC writer should always return a RecordBatch of one path column
             let path = file_path_table
                 .get_column(0)
@@ -218,7 +218,7 @@ async fn writer_task(
         .collect::<DaftResult<Vec<String>>>()?;
 
     let bytes_per_file = writer.bytes_per_file();
-    assert!(bytes_per_file.len() == file_paths.len());
+    assert_eq!(bytes_per_file.len(), file_paths.len());
     Ok(WriterTaskResult {
         bytes_per_file,
         total_rows_written,
@@ -287,7 +287,7 @@ mod tests {
         let total_bytes: usize = partition_cache.bytes_per_file.iter().sum();
 
         // We should have recorded bytes for our two micropartitions
-        assert!(total_bytes == 300);
+        assert_eq!(total_bytes, 300);
 
         Ok(())
     }
@@ -310,7 +310,7 @@ mod tests {
         let partition_cache = cache.close().await?;
 
         // Even though we pushed empty partitions, we should still have the schema
-        assert!(partition_cache.schema.names() == vec!["ints"]);
+        assert_eq!(partition_cache.schema.names(), vec!["ints"]);
         assert_eq!(partition_cache.file_paths.len(), 0);
         assert!(
             partition_cache

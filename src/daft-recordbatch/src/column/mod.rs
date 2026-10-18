@@ -374,8 +374,8 @@ mod tests {
     #[test]
     fn scalar_column_materialize_cached() {
         let sc = ScalarColumn::new(Arc::from("c"), DataType::Int64, Literal::Int64(1), 5);
-        let ptr1 = sc.as_materialized_series() as *const Series;
-        let ptr2 = sc.as_materialized_series() as *const Series;
+        let ptr1 = std::ptr::from_ref::<Series>(sc.as_materialized_series());
+        let ptr2 = std::ptr::from_ref::<Series>(sc.as_materialized_series());
         assert_eq!(ptr1, ptr2);
     }
 

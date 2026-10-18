@@ -105,7 +105,7 @@ jobs:
     steps:
     - name: Free Disk Space (Ubuntu)
       if: ${{ (runner.os == 'Linux') }}
-      uses: jlumbroso/free-disk-space@v1.3.1
+      uses: jlumbroso/free-disk-space@v2.0.0
       with:
         tool-cache: false
         android: true
@@ -351,8 +351,7 @@ jobs:
         uv venv --seed .venv
         echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
         source .venv/bin/activate
-        # Pin maturin <1.14: 1.14 rejects `--timings=html` (used in the Build wheels step below).
-        uv pip install -U twine toml 'maturin<1.14'
+        uv pip install -U twine toml maturin
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -378,7 +377,7 @@ jobs:
     - name: Build wheels
       run: |
         source .venv/bin/activate
-        maturin build --release --compatibility linux --out dist --timings=html -Z unstable-options
+        maturin build --release --compatibility linux --out dist --timings -Z unstable-options
     - name: Upload wheels
       uses: actions/upload-artifact@v7
       with:
@@ -488,7 +487,7 @@ jobs:
         daft-runner: [ray, native]
     steps:
     - name: Free Disk Space (Ubuntu)
-      uses: jlumbroso/free-disk-space@v1.3.1
+      uses: jlumbroso/free-disk-space@v2.0.0
       with:
         tool-cache: false
         android: true
@@ -540,7 +539,7 @@ jobs:
         mkdir -p /tmp/daft-integration-testing/nginx
         chmod +rw /tmp/daft-integration-testing/nginx
     - name: Spin up IO services
-      uses: isbang/compose-action@v3.1.0
+      uses: isbang/compose-action@v3.2.0
       with:
         compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
         up-flags: --wait --wait-timeout 600
@@ -599,7 +598,7 @@ jobs:
   #     contents: read
   #   steps:
   #   - name: Free Disk Space (Ubuntu)
-  #     uses: jlumbroso/free-disk-space@v1.3.1
+  #     uses: jlumbroso/free-disk-space@v2.0.0
   #     with:
   #       tool-cache: false
   #       android: true
@@ -665,7 +664,7 @@ jobs:
   #       # workload_identity_provider: ${{ secrets.ACTIONS_GCP_WORKLOAD_IDENTITY_PROVIDER }}
   #       # service_account: ${{ secrets.ACTIONS_GCP_SERVICE_ACCOUNT }}
   #   - name: Spin up IO services
-  #     uses: isbang/compose-action@v3.1.0
+  #     uses: isbang/compose-action@v3.2.0
   #     with:
   #       compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
   #       down-flags: --volumes
@@ -710,7 +709,7 @@ jobs:
         daft-runner: [native, ray]
     steps:
     - name: Free Disk Space (Ubuntu)
-      uses: jlumbroso/free-disk-space@v1.3.1
+      uses: jlumbroso/free-disk-space@v2.0.0
       with:
         tool-cache: false
         android: true
@@ -809,7 +808,7 @@ jobs:
       package-name: daft
     steps:
     - name: Free Disk Space (Ubuntu)
-      uses: jlumbroso/free-disk-space@v1.3.1
+      uses: jlumbroso/free-disk-space@v2.0.0
       with:
         tool-cache: false
         android: true
@@ -829,7 +828,7 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
-    - uses: actions/setup-java@v5
+    - uses: actions/setup-java@v6
       with:
         distribution: "temurin"
         java-version: "17"
@@ -1085,7 +1084,7 @@ jobs:
         daft-runner: [ray, native]
     steps:
     - name: Free Disk Space (Ubuntu)
-      uses: jlumbroso/free-disk-space@v1.3.1
+      uses: jlumbroso/free-disk-space@v2.0.0
       with:
         tool-cache: false
         android: true
@@ -1450,7 +1449,7 @@ jobs:
       if: ${{ matrix.os != 'Windows' }}
     - name: Free Disk Space (Ubuntu)
       if: ${{ matrix.os == 'ubuntu' }}
-      uses: jlumbroso/free-disk-space@v1.3.1
+      uses: jlumbroso/free-disk-space@v2.0.0
       with:
         tool-cache: false
         android: true
@@ -1572,7 +1571,7 @@ jobs:
       python-version: "3.10"
     steps:
     - name: Free Disk Space (Ubuntu)
-      uses: jlumbroso/free-disk-space@v1.3.1
+      uses: jlumbroso/free-disk-space@v2.0.0
       with:
         tool-cache: false
         android: true

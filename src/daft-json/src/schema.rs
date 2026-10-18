@@ -300,7 +300,7 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_json_schema_local_dtypes() -> DaftResult<()> {
-        let file = format!("{}/test/dtypes.jsonl", env!("CARGO_MANIFEST_DIR"),);
+        let file = format!("{}/test/dtypes.jsonl", env!("CARGO_MANIFEST_DIR"));
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
@@ -362,7 +362,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_json_schema_local_nulls() -> DaftResult<()> {
-        let file = format!("{}/test/iris_tiny_nulls.jsonl", env!("CARGO_MANIFEST_DIR"),);
+        let file = format!("{}/test/iris_tiny_nulls.jsonl", env!("CARGO_MANIFEST_DIR"));
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
@@ -413,7 +413,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_json_schema_local_max_bytes() -> DaftResult<()> {
-        let file = format!("{}/test/iris_tiny.jsonl", env!("CARGO_MANIFEST_DIR"),);
+        let file = format!("{}/test/iris_tiny.jsonl", env!("CARGO_MANIFEST_DIR"));
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;

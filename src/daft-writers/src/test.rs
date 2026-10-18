@@ -136,6 +136,7 @@ impl WriterFactory for FailingWriterFactory {
     }
 }
 
+#[allow(dead_code)]
 pub struct FailingWriter {
     pub file_idx: String,
     pub partition_values: Option<RecordBatch>,

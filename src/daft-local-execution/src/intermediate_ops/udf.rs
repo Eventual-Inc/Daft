@@ -261,14 +261,10 @@ impl UdfHandle {
 
     fn eval_input_inline(
         &self,
-        udf_expr: &mut BoundExpr,
+        udf_expr: &BoundExpr,
         func_input: RecordBatch,
         runtime_stats: &UdfRuntimeStats,
     ) -> DaftResult<Series> {
-        use daft_dsl::functions::python::initialize_udfs;
-
-        // Only actually initialized the first time
-        *udf_expr = BoundExpr::new_unchecked(initialize_udfs(udf_expr.inner().clone())?);
         let mut collected_metrics = OperatorMetrics::default();
         let result = func_input.eval_expression_with_metrics(udf_expr, &mut collected_metrics)?;
         runtime_stats.update_metrics(collected_metrics);
@@ -277,7 +273,7 @@ impl UdfHandle {
 
     pub(crate) fn eval_input(
         &mut self,
-        expr: &mut BoundExpr,
+        expr: &BoundExpr,
         params: &UdfParams,
         worker_idx: usize,
         input: MicroPartition,
@@ -457,7 +453,7 @@ impl IntermediateOperator for UdfOperator {
                 #[cfg(feature = "python")]
                 {
                     let result = state.udf_handle.eval_input(
-                        &mut state.expr,
+                        &state.expr,
                         &params,
                         state.worker_idx,
                         input,
@@ -589,8 +585,8 @@ impl IntermediateOperator for UdfOperator {
                         ));
                     };
                     LatencyConstrainedBatchingStrategy {
-                        target_batch_latency: Duration::from_millis(5000),
-                        latency_tolerance: Duration::from_millis(1000), // udf's have high variance so we have a high tolerance
+                        target_batch_latency: Duration::from_secs(5),
+                        latency_tolerance: Duration::from_secs(1), // udf's have high variance so we have a high tolerance
                         step_size_alpha: 16, // step size is small as udfs are expensive
                         correction_delta: 4, // similarly the correction delta is small because the step size is small
                         b_min: min_batch_size,

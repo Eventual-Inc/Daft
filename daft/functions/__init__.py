@@ -105,6 +105,7 @@ from .similarity import (
 )
 
 from .image_file_ import image_file_metadata, decode_image_file
+from .jev_ import jev, jev_choice, jev_prob, jev_score
 from .hdf5 import (
     hdf5_attrs,
     hdf5_keys,
@@ -465,6 +466,10 @@ __all__ = [
     "jaccard_similarity",
     "jaro_similarity",
     "jaro_winkler_similarity",
+    "jev",
+    "jev_choice",
+    "jev_prob",
+    "jev_score",
     "jq",
     "json_array_length",
     "json_object_keys",
