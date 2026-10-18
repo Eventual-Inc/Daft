@@ -308,6 +308,7 @@ pub(crate) fn apply_field_ids_to_arrowrs_parquet_metadata(
         .row_groups()
         .iter()
         .map(|rg| {
+            debug_assert_eq!(rg.columns().len(), source_schema.num_columns());
             let new_columns: Vec<ColumnChunkMetaData> = rg
                 .columns()
                 .iter()

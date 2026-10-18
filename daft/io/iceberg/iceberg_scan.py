@@ -212,10 +212,11 @@ class IcebergDataSource(DataSource):
         self._storage_config = storage_config
 
         field_id_mapping = visit(iceberg_schema, SchemaFieldIdMappingVisitor())
+        name_mapping = iceberg_table.name_mapping()
         self._parquet_config = ParquetSourceConfig(
             field_id_mapping=field_id_mapping,
             ignore_corrupt_files=ignore_corrupt_files,
-            name_mapping=iceberg_table.properties.get("schema.name-mapping.default"),
+            name_mapping=name_mapping.model_dump_json() if name_mapping is not None else None,
         )
 
         self._schema = convert_iceberg_schema(iceberg_schema)
