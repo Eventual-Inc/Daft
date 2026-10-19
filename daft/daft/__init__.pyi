@@ -279,6 +279,7 @@ class ParquetSourceConfig:
         row_groups: list[list[int]] | None = None,
         chunk_size: int | None = None,
         ignore_corrupt_files: bool = False,
+        name_mapping: str | None = None,
     ): ...
 
 class CsvSourceConfig:
