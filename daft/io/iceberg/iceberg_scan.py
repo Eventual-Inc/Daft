@@ -7,7 +7,9 @@ from typing import TYPE_CHECKING
 
 from pyiceberg.conversions import from_bytes
 from pyiceberg.io.pyarrow import schema_to_pyarrow
+from pyiceberg.manifest import ManifestContent
 from pyiceberg.schema import visit
+from pyiceberg.transforms import IdentityTransform, VoidTransform
 from pyiceberg.types import PrimitiveType
 
 import daft
@@ -92,24 +94,44 @@ class _IcebergCountTask(DataSourceTask):
 
 def _iceberg_partition_field_to_daft_partition_field(
     iceberg_schema: IcebergSchema, pfield: IcebergPartitionField
-) -> PartitionField:
+) -> PartitionField | None:
+    # In v1, removing a partition field replaces its transform with void. Its
+    # null values neither settle predicates nor represent the source column.
+    if isinstance(pfield.transform, VoidTransform):
+        return None
     source_id = pfield.source_id
-    source_field = iceberg_schema.find_field(source_id)
+    try:
+        source_field = iceberg_schema.find_field(source_id)
+    except ValueError:
+        # The current spec may reference a column absent from a historical snapshot.
+        return None
     source_name = source_field.name
+    if iceberg_schema.find_column_name(source_id) != source_name:
+        # PartitionField source names address top-level columns, not nested leaves.
+        return None
+    is_identity = isinstance(pfield.transform, IdentityTransform)
+    if not is_identity and pfield.name in iceberg_schema.column_names:
+        # A current partition name may collide with a historical data column.
+        # Never let derived values masquerade as that column's identity values.
+        return None
     source_type = convert_iceberg_data_type(source_field.field_type)
     daft_field = Field.create(source_name, source_type)
     try:
         partition_transform, result_type = convert_iceberg_transform(pfield.transform, source_type)
     except NotImplementedError:
         warnings.warn(f"{pfield.transform} not implemented, Please make an issue!")
-        partition_transform = None
-        result_type = source_type
-    result_field = Field.create(pfield.name, result_type)
+        return None
+    # Identity values are source values, regardless of the partition field's
+    # metadata name. Use the query's column name so aliases retain count pushdown.
+    field_name = source_name if is_identity else pfield.name
+    result_field = Field.create(field_name, result_type)
     return PartitionField.create(result_field, daft_field, transform=partition_transform)
 
 
-def iceberg_partition_spec_to_fields(iceberg_schema: IcebergSchema, spec: IcebergPartitionSpec) -> list[PartitionField]:
-    return [_iceberg_partition_field_to_daft_partition_field(iceberg_schema, field) for field in spec.fields]
+def _partition_field_key(field: IcebergPartitionField) -> tuple[int, str]:
+    # The serialized transform includes its parameters (e.g. bucket[4]). Names
+    # can change without changing values, and v1 partition IDs can be reused.
+    return field.source_id, str(field.transform)
 
 
 def _build_iceberg_data_source_task_stats(
@@ -218,7 +240,12 @@ class IcebergDataSource(DataSource):
         )
 
         self._schema = convert_iceberg_schema(iceberg_schema)
-        self._partition_fields = iceberg_partition_spec_to_fields(iceberg_schema, self._iceberg_table.spec())
+        self._partition_fields = {
+            _partition_field_key(field): converted
+            for field in self._iceberg_table.spec().fields
+            if (converted := _iceberg_partition_field_to_daft_partition_field(iceberg_schema, field)) is not None
+        }
+        self._settleable_partition_fields: list[PartitionField] | None = None
 
         # Precompute ordered field metadata for per-file stats decoding.  The
         # order must match self._schema — downstream consumers (TableStatistics,
@@ -243,26 +270,90 @@ class IcebergDataSource(DataSource):
         return self._schema
 
     def get_partition_fields(self) -> list[PartitionField]:
-        return self._partition_fields
+        """Partition fields the optimizer may treat as settling a predicate on their own.
 
-    def _iceberg_record_to_partition_spec(
+        A predicate over an identity-partitioned field is dropped from the row-level filter
+        on the assumption that pruning covers it. Partition evolution breaks that: a file
+        written before a field was added carries no value for it and holds a mix of matching
+        and non-matching rows. Reporting only the fields every live file carries keeps such
+        predicates as ordinary row filters instead.
+        """
+        if self._settleable_partition_fields is None:
+            if not self._partition_fields:
+                self._settleable_partition_fields = []
+                return self._settleable_partition_fields
+            live = self._live_partition_field_keys()
+            if live is None:
+                # A later call can retry a failed manifest-list read. Successful
+                # empty intersections, unlike failures, are safe to cache.
+                return []
+            self._settleable_partition_fields = [field for key, field in self._partition_fields.items() if key in live]
+        return self._settleable_partition_fields
+
+    def _live_partition_field_keys(self) -> set[tuple[int, str]] | None:
+        """Partition semantics carried by every live data file in the selected snapshot.
+
+        Manifests record the spec they were written with, so this reads the manifest list
+        rather than planning files. Returns None when that cannot be determined, which
+        callers treat as "settle nothing".
+        """
+        try:
+            snapshot = (
+                self._iceberg_table.snapshot_by_id(self._snapshot_id)
+                if self._snapshot_id is not None
+                else self._iceberg_table.current_snapshot()
+            )
+            live = set(self._partition_fields)
+            if snapshot is None:
+                return live
+            specs = self._iceberg_table.specs()
+            spec_ids = {
+                manifest.partition_spec_id
+                for manifest in snapshot.manifests(self._iceberg_table.io)
+                if manifest.content == ManifestContent.DATA
+                and (manifest.has_added_files() or manifest.has_existing_files())
+            }
+            for spec_id in spec_ids:
+                spec = specs.get(spec_id)
+                if spec is None:
+                    return None
+                live.intersection_update(_partition_field_key(field) for field in spec.fields)
+            return live
+        except Exception as e:
+            logger.warning("Could not determine partition specs in use: %s, disabling partition pruning", e)
+            return None
+
+    def _iceberg_record_to_partition_values(
         self, spec: IcebergPartitionSpec, record: Record
-    ) -> daft.recordbatch.RecordBatch | None:
-        partition_fields = iceberg_partition_spec_to_fields(self._iceberg_table.schema(), spec)
-        arrays = dict()
-        assert len(record) == len(partition_fields)
-        for idx, pfield in enumerate(partition_fields):
+    ) -> tuple[RecordBatch | None, RecordBatch | None]:
+        """Return pruning values and identity constants safe to fill into data columns."""
+        pruning_values = {}
+        identity_values = {}
+        assert len(record) == len(spec.fields)
+        # Record positions belong to the original spec, including removed/void fields.
+        for idx, iceberg_field in enumerate(spec.fields):
+            candidate = self._partition_fields.get(_partition_field_key(iceberg_field))
+            is_identity = isinstance(iceberg_field.transform, IdentityTransform)
+            pfield = candidate
+            if pfield is None and is_identity:
+                pfield = _iceberg_partition_field_to_daft_partition_field(self._iceberg_schema, iceberg_field)
+            if pfield is None:
+                continue
             field = pfield.field
             field_name = field.name
             field_dtype = field.dtype
             arrow_type = field_dtype.to_arrow_dtype()
-            arrays[field_name] = daft.Series.from_arrow(pa.array([record[idx]], type=arrow_type), name=field_name).cast(
-                field_dtype
-            )
-        if len(arrays) > 0:
-            return daft.recordbatch.RecordBatch.from_pydict(arrays)
-        else:
-            return None
+            value = daft.Series.from_arrow(pa.array([record[idx]], type=arrow_type), name=field_name).cast(field_dtype)
+            if candidate is not None:
+                pruning_values[field_name] = value
+            if is_identity:
+                # Native readers may skip these columns and fill them with constants.
+                # Derived partition values (especially void's null) cannot be used here.
+                identity_values[field_name] = value
+        return (
+            RecordBatch.from_pydict(pruning_values) if pruning_values else None,
+            RecordBatch.from_pydict(identity_values) if identity_values else None,
+        )
 
     async def get_tasks(self, pushdowns: Pushdowns) -> AsyncIterator[DataSourceTask]:
         # Check if there is a count aggregation pushdown
@@ -304,13 +395,18 @@ class IcebergDataSource(DataSource):
             snapshot_id=self._snapshot_id,
         ).plan_files()
 
+        # Fields a file's partition record must carry for the predicate to be evaluable.
+        required_partition_fields = (
+            _ColumnVisitor().visit(pushdowns.partition_filters) if pushdowns.partition_filters is not None else set()
+        )
+
         should_limit_files = limit is not None and pushdowns.filters is None and pushdowns.partition_filters is None
 
         if len(self._partition_fields) > 0 and pushdowns.partition_filters is None:
             logger.warning(
                 "%s has Partitioning Keys: %s but no partition filter was specified. This will result in a full table scan.",
                 self.name,
-                self._partition_fields,
+                list(self._partition_fields.values()),
             )
 
         if limit is not None:
@@ -330,10 +426,19 @@ class IcebergDataSource(DataSource):
 
             iceberg_delete_files = [f.file_path for f in task.delete_files]
 
-            pspec = self._iceberg_record_to_partition_spec(self._iceberg_table.specs()[file.spec_id], file.partition)
+            pspec, partition_values = self._iceberg_record_to_partition_values(
+                self._iceberg_table.specs()[file.spec_id], file.partition
+            )
 
             # Partition pruning is the DataSource's responsibility in the DataSource model.
-            if pspec is not None and pushdowns.partition_filters is not None:
+            # Only prune on a record that carries every field the predicate references;
+            # get_partition_fields keeps such predicates out of `partition_filters` in the
+            # first place. Keep this check before evaluating synthetic partition columns.
+            if (
+                pspec is not None
+                and pushdowns.partition_filters is not None
+                and required_partition_fields.issubset(pspec.schema().column_names())
+            ):
                 filtered = pspec.filter(ExpressionsProjection([pushdowns.partition_filters]))
                 if len(filtered) == 0:
                     continue
@@ -351,7 +456,7 @@ class IcebergDataSource(DataSource):
                 pushdowns=pushdowns,
                 num_rows=record_count,
                 size_bytes=file.file_size_in_bytes,
-                partition_values=pspec,
+                partition_values=partition_values,
                 stats=stats,
                 storage_config=self._storage_config,
                 iceberg_delete_files=iceberg_delete_files if iceberg_delete_files else None,
@@ -393,7 +498,7 @@ class IcebergDataSource(DataSource):
             for task in iceberg_tasks:
                 data_file = task.file
                 if pushdowns.partition_filters is not None:
-                    pspec = self._iceberg_record_to_partition_spec(
+                    pspec, _ = self._iceberg_record_to_partition_values(
                         self._iceberg_table.specs()[data_file.spec_id], data_file.partition
                     )
                     # A file written under an older spec need not carry the fields the
