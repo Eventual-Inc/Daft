@@ -19,7 +19,7 @@ maintainers = [
 ]
 name = "daft"
 readme = "README.rst"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.15"
 
 [project.scripts]
 daft = "daft.cli:main"
@@ -68,11 +68,10 @@ viz = []
 [dependency-groups]
 dev = [
   "ipdb==0.13.13",
-  "maturin==1.13.3",
-  "pre-commit==4.6.0",
+  "maturin==1.15.0",
+  "pre-commit==4.6.2",
   "ruff==0.15.14",
-  "mypy==2.1.0",
-  "docker==7.1.0",
+  "mypy==2.4.0",
   # Pinned aiohttp due to Ray connection issue in aiohttp==3.12.6
   "aiohttp==3.13.5",
   # Pinned httpx due to unitycatalog-python issue: https://github.com/unitycatalog/unitycatalog-python/issues/9
@@ -110,6 +109,7 @@ dev = [
   "torchvision==0.26.0",
   "jax==0.6.2",
   "jaxtyping==0.3.7",
+  "docker==7.2.0",
   # Pyarrow
   "pyarrow >= 16.0.0,<26.0.0",
   "pyarrow-stubs==20.0.0.20251215",
@@ -216,11 +216,6 @@ ignore_missing_imports = true
 module = [
   "pyarrow.*",
   "fsspec.*",
-  "icebridge.*",
-  "cloudpickle.*",
-  "docker.*",
-  "uvicorn.*",
-  "numba.*",
   "viztracer.*"
 ]
 
@@ -251,7 +246,7 @@ testpaths = [
 ]
 
 [tool.uv]
-required-version = "~=0.12.0"
+required-version = ">=0.12.0"
 
 [tool.uv.sources.daft_dashboard]
 workspace = true
