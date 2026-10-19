@@ -53,7 +53,8 @@ impl Config {
     pub fn from_env() -> Self {
         if let Ok(endpoint) = std::env::var(ENV_OLD_OTLP_ENDPOINT) {
             log::warn!(
-                "Detected environment variable `{ENV_OLD_OTLP_ENDPOINT}={endpoint}` in the process. This variable was deprecated and removed in v0.8.0. Use `OTEL_EXPORTER_OTLP_ENDPOINT` instead. This warning will be removed in v0.9.0.",
+                "Detected environment variable `{ENV_OLD_OTLP_ENDPOINT}={}***` in the process. This variable was deprecated and removed in v0.8.0. Use `OTEL_EXPORTER_OTLP_ENDPOINT` instead. This warning will be removed in v0.9.0.",
+                endpoint.chars().take(4).collect::<String>(),
             );
         }
 
