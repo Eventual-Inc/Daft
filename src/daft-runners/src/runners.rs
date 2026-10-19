@@ -235,7 +235,7 @@ fn get_ray_runner_config_from_env() -> RunnerConfig {
 
     let address = if let Ok(address) = std::env::var(DAFT_RAY_ADDRESS) {
         log::warn!(
-            "Detected usage of the ${} environment variable. This will be deprecated and removed in v0.9.0, please use ${} instead.",
+            "Detected usage of the ${} environment variable. This will be deprecated, please use ${} instead.",
             DAFT_RAY_ADDRESS,
             RAY_ADDRESS
         );

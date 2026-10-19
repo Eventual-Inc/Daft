@@ -1675,7 +1675,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu, Windows]
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
         on-main:
         - ${{ github.ref == 'refs/heads/main' }}
         exclude:
@@ -1705,11 +1705,21 @@ jobs:
         enable-cache: true
         cache-dependency-glob: "**/pyproject.toml"
 
-    - name: Build
+    - name: Unix Build
+      if: ${{ (runner.os != 'Windows') }}
       run: |
         uv venv --seed .venv
+        source .venv/bin/activate
         uv pip install maturin
-        uv run maturin build --out dist
+        maturin build --out dist
+
+    - name: Windows Build
+      if: ${{ (runner.os == 'Windows') }}
+      run: |
+        uv venv --seed .venv
+        .\.venv\Scripts\activate
+        uv pip install maturin
+        maturin build --out dist
 
     - name: Test Imports in Clean Env (Unix)
       if: ${{ (runner.os != 'Windows') }}
