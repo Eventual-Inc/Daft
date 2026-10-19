@@ -214,8 +214,8 @@ def read_mcap(
         topic_start_time_resolver: Optional per-file callback
             returning non-negative topic start times. Each result fans out into
             one native task per topic, using `max(start_time, resolved_start_time)`.
-        output_format: Column types to emit. This argument is deprecated
-            and will be removed in v0.9.0, always using `"raw"` instead.
+        output_format: Column types to emit. The `"raw_legacy"` choice is deprecated
+            and will be removed in v0.9.0. Use `"raw"` instead.
             - `"raw"` (default): The default output types.
             - `"raw_legacy"`: `log_time` and `publish_time` are int64,
               `sequence` is int32, and `data` is string.
