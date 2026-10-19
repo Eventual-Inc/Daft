@@ -13,6 +13,8 @@ use opentelemetry_sdk::Resource;
 /// Environment variable for metrics export interval in milliseconds.
 /// Mimics the official env since it's not exported out
 pub const ENV_METRICS_EXPORT_INTERVAL_MS: &str = "OTEL_METRIC_EXPORT_INTERVAL";
+/// Deprecated and removed Daft-specific environment variable
+const ENV_OLD_OTLP_ENDPOINT: &str = "DAFT_DEV_OTEL_EXPORTER_OTLP_ENDPOINT";
 
 fn parse_protocol(s: &str) -> Protocol {
     match s {
@@ -49,6 +51,12 @@ pub struct Config {
 impl Config {
     /// Load config from environment variables.
     pub fn from_env() -> Self {
+        if let Ok(endpoint) = std::env::var(ENV_OLD_OTLP_ENDPOINT) {
+            log::warn!(
+                "Detected environment variable `{ENV_OLD_OTLP_ENDPOINT}={endpoint}` in the process. This variable was deprecated and removed in v0.8.0. Use `OTEL_EXPORTER_OTLP_ENDPOINT` instead. This warning will be removed in v0.9.0.",
+            );
+        }
+
         // Note that even though the OTEL SDK can detect these automatically, we still need them
         // to enable the OTLP exporters
         Self {
