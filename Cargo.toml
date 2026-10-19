@@ -323,7 +323,7 @@ daft-scan = {path = "src/daft-scan"}
 daft-schema = {path = "src/daft-schema"}
 daft-session = {path = "src/daft-session"}
 daft-sql = {path = "src/daft-sql"}
-dashmap = "6.2"
+dashmap = "=6.2"
 educe = "^0.8"
 futures = "0.3.30"
 half = {version = "2.7.1", features = ["num-traits", "bytemuck", "serde"]}
@@ -391,7 +391,7 @@ typetag = "0.2.21"
 rustfft = "6"
 url = "2.4.0"
 uuid = {version = "1.19.0", features = ["v4", "v7", "serde", "fast-rng"]}
-xxhash-rust = {version = "0.8.15", features = ["const_xxh3", "xxh64", "xxh3", "xxh32"]}
+xxhash-rust = {version = "0.8.19", features = ["const_xxh3", "xxh64", "xxh3", "xxh32"]}
 libc = {version = "^0.2.150", default-features = false}
 hex = "0.4.3"
 
