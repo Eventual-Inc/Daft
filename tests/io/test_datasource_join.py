@@ -10,14 +10,14 @@ joins and aggregations.  This caused a HashJoin schema assertion panic.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator
 
 import pyarrow as pa
 
 from daft import col
 from daft.io.pushdowns import Pushdowns
 from daft.io.source import DataSource, DataSourceTask
-from daft.recordbatch import MicroPartition
+from daft.recordbatch import RecordBatch
 from daft.schema import Schema
 
 # ---------------------------------------------------------------------------
@@ -37,11 +37,11 @@ class _InMemoryTask(DataSourceTask):
             return Schema.from_pyarrow_schema(projected)
         return Schema.from_pyarrow_schema(self._table.schema)
 
-    def get_micro_partitions(self) -> Iterator[MicroPartition]:
+    async def read(self) -> AsyncIterator[RecordBatch]:
         t = self._table
         if self._columns:
             t = t.select(self._columns)
-        yield MicroPartition.from_arrow(t)
+        yield RecordBatch.from_arrow_table(t)
 
 
 class InMemorySource(DataSource):

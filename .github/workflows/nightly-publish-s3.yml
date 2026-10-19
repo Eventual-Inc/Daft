@@ -208,7 +208,7 @@ jobs:
       contents: read
     steps:
     - name: Free Disk Space (Ubuntu)
-      uses: jlumbroso/free-disk-space@v1.3.1
+      uses: jlumbroso/free-disk-space@v2.0.0
       with:
         tool-cache: false
         android: true
@@ -264,7 +264,7 @@ jobs:
         role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
         role-session-name: DaftPythonPackageGitHubWorkflow
     - name: Spin up IO services
-      uses: isbang/compose-action@v3.1.0
+      uses: isbang/compose-action@v3.2.0
       with:
         compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
         up-flags: --wait --wait-timeout 60

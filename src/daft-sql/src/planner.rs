@@ -921,7 +921,8 @@ impl SQLPlanner<'_> {
             use sqlparser::ast::{
                 JoinConstraint,
                 JoinOperator::{
-                    FullOuter, Inner, Join, Left, LeftAnti, LeftOuter, LeftSemi, Right, RightOuter,
+                    CrossJoin, FullOuter, Inner, Join, Left, LeftAnti, LeftOuter, LeftSemi, Right,
+                    RightOuter,
                 },
             };
 
@@ -933,6 +934,10 @@ impl SQLPlanner<'_> {
             }
 
             let (join_type, constraint) = match &join.join_operator {
+                CrossJoin(JoinConstraint::None) => {
+                    left_planner.update_plan(|plan| plan.cross_join(right_plan, join_options))?;
+                    continue;
+                }
                 Join(constraint) => (JoinType::Inner, constraint),
                 Inner(constraint) => (JoinType::Inner, constraint),
                 Left(constraint) => (JoinType::Left, constraint),
