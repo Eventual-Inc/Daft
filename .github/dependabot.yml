@@ -12,6 +12,17 @@ updates:
       patterns:
       - "*"
 
+# Example benchmark environments, not daft or development dependencies
+- package-ecosystem: pip
+  directories:
+  - "/benchmarking/ai/*"
+  - "/benchmarking/parquet"
+  schedule:
+    interval: monthly
+  open-pull-requests-limit: 0
+  ignore:
+  - dependency-name: "*"
+
 - package-ecosystem: cargo
   directory: /
   schedule:
