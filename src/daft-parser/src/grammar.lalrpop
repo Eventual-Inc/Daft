@@ -1,0 +1,1228 @@
+// Daft SQL grammar: the subset of DuckDB's PEG grammar that Daft and DuckDB both accept, with
+// DuckDB's rule names. Rules stay thin; each one that builds a node calls its `ast::` function.
+
+use daft_ast as ast;
+
+use crate::{error::ParseError, lexer::Token};
+
+grammar<'input>;
+
+extern {
+    type Location = usize;
+    type Error = ParseError;
+
+    // Operators are matched by run text; an undeclared run is a syntax error.
+    enum Token<'input> {
+        // symbols
+        "(" => Token::LParen,
+        ")" => Token::RParen,
+        "[" => Token::LBracket,
+        "]" => Token::RBracket,
+        "{" => Token::LBrace,
+        "}" => Token::RBrace,
+        "," => Token::Comma,
+        ";" => Token::Semicolon,
+        ":" => Token::Colon,
+        "::" => Token::DoubleColon,
+        "." => Token::Dot,
+        "+" => Token::Operator("+"),
+        "-" => Token::Operator("-"),
+        "*" => Token::Operator("*"),
+        "/" => Token::Operator("/"),
+        "//" => Token::Operator("//"),
+        "%" => Token::Operator("%"),
+        "=" => Token::Operator("="),
+        "==" => Token::Operator("=="),
+        "<>" => Token::Operator("<>"),
+        "!=" => Token::Operator("!="),
+        "<" => Token::Operator("<"),
+        "<=" => Token::Operator("<="),
+        ">" => Token::Operator(">"),
+        ">=" => Token::Operator(">="),
+        ":=" => Token::Operator(":="),
+        "=>" => Token::Operator("=>"),
+        // keywords
+        "ALL" => Token::All,
+        "AND" => Token::And,
+        "ARRAY" => Token::Array,
+        "AS" => Token::As,
+        "ASC" => Token::Asc,
+        "BERNOULLI" => Token::Bernoulli,
+        "BETWEEN" => Token::Between,
+        "BY" => Token::By,
+        "CASE" => Token::Case,
+        "CAST" => Token::Cast,
+        "COALESCE" => Token::Coalesce,
+        "CREATE" => Token::Create,
+        "CURRENT" => Token::Current,
+        "DESC" => Token::Desc,
+        "DESCRIBE" => Token::Describe,
+        "DISTINCT" => Token::Distinct,
+        "ELSE" => Token::Else,
+        "END" => Token::End,
+        "EXCLUDE" => Token::Exclude,
+        "EXISTS" => Token::Exists,
+        "EXTRACT" => Token::Extract,
+        "FIRST" => Token::First,
+        "FOLLOWING" => Token::Following,
+        "FOR" => Token::For,
+        "FROM" => Token::From,
+        "FULL" => Token::Full,
+        "GROUP" => Token::Group,
+        "HAVING" => Token::Having,
+        "IF" => Token::If,
+        "ILIKE" => Token::ILike,
+        "IN" => Token::In,
+        "INNER" => Token::Inner,
+        "INTERSECT" => Token::Intersect,
+        "INTERVAL" => Token::Interval,
+        "IS" => Token::Is,
+        "JOIN" => Token::Join,
+        "LAST" => Token::Last,
+        "LEFT" => Token::Left,
+        "LIKE" => Token::Like,
+        "LIMIT" => Token::Limit,
+        "NAME" => Token::Name,
+        "NOT" => Token::Not,
+        "NULLS" => Token::Nulls,
+        "OFFSET" => Token::Offset,
+        "ON" => Token::On,
+        "OR" => Token::Or,
+        "ORDER" => Token::Order,
+        "OUTER" => Token::Outer,
+        "OVER" => Token::Over,
+        "PARTITION" => Token::Partition,
+        "PERCENT" => Token::Percent,
+        "PRECEDING" => Token::Preceding,
+        "PRECISION" => Token::Precision,
+        "RANGE" => Token::Range,
+        "REPEATABLE" => Token::Repeatable,
+        "RIGHT" => Token::Right,
+        "ROLLUP" => Token::Rollup,
+        "ROW" => Token::Row,
+        "ROWS" => Token::Rows,
+        "SELECT" => Token::Select,
+        "SHOW" => Token::Show,
+        "SUBSTRING" => Token::Substring,
+        "SYSTEM" => Token::System,
+        "TABLE" => Token::Table,
+        "TABLES" => Token::Tables,
+        "TABLESAMPLE" => Token::Tablesample,
+        "THEN" => Token::Then,
+        "TRY_CAST" => Token::TryCast,
+        "UNBOUNDED" => Token::Unbounded,
+        "UNION" => Token::Union,
+        "USE" => Token::Use,
+        "USING" => Token::Using,
+        "WHEN" => Token::When,
+        "WHERE" => Token::Where,
+        "WITH" => Token::With,
+        // date parts
+        "YEAR" => Token::Year,
+        "QUARTER" => Token::Quarter,
+        "MONTH" => Token::Month,
+        "WEEK" => Token::Week,
+        "DAY" => Token::Day,
+        "HOUR" => Token::Hour,
+        "MINUTE" => Token::Minute,
+        "SECOND" => Token::Second,
+        "MILLISECOND" => Token::Millisecond,
+        "MICROSECOND" => Token::Microsecond,
+        // types
+        "BIGINT" => Token::TypeBigint,
+        "BINARY" => Token::TypeBinary,
+        "BOOL" => Token::TypeBool,
+        "BOOLEAN" => Token::TypeBoolean,
+        "DATE" => Token::TypeDate,
+        "DEC" => Token::TypeDec,
+        "DECIMAL" => Token::TypeDecimal,
+        "DOUBLE" => Token::TypeDouble,
+        "FLOAT" => Token::TypeFloat,
+        "INT" => Token::TypeInt,
+        "INT16" => Token::TypeInt16,
+        "INT32" => Token::TypeInt32,
+        "INT64" => Token::TypeInt64,
+        "INTEGER" => Token::TypeInteger,
+        "NUMERIC" => Token::TypeNumeric,
+        "REAL" => Token::TypeReal,
+        "SMALLINT" => Token::TypeSmallint,
+        "STRING" => Token::TypeString,
+        "TEXT" => Token::TypeText,
+        "TIME" => Token::TypeTime,
+        "TIMESTAMP" => Token::TypeTimestamp,
+        "TINYINT" => Token::TypeTinyint,
+        "UINT16" => Token::TypeUint16,
+        "UINT32" => Token::TypeUint32,
+        "UINT64" => Token::TypeUint64,
+        "VARCHAR" => Token::TypeVarchar,
+        // literals
+        "NULL" => Token::Null,
+        "TRUE" => Token::True,
+        "FALSE" => Token::False,
+        "number" => Token::Number(<&'input str>),
+        "string" => Token::String(<&'input str>),
+        "string_continuation" => Token::StringContinuation(<&'input str>),
+        // names
+        "ident" => Token::Ident(<&'input str>),
+        "quoted_ident" => Token::QuotedIdent(<&'input str>),
+    }
+}
+
+//------------------------------
+// STATEMENTS
+//------------------------------
+
+pub Program: ast::Statement = TopLevelStatement;
+
+TopLevelStatement: ast::Statement = <Statement> ";"*;
+
+Statement: ast::Statement = {
+    CreateStatement => ast::Statement::CreateTable(<>),
+    SelectStatement,
+    UseStatement => ast::Statement::Use(<>),
+};
+
+//------------------------------
+// QUERIES
+//------------------------------
+
+SelectStatement: ast::Statement = {
+    DescribeStatement,
+    SelectStatementInternal => ast::Statement::Query(<>),
+};
+
+// ResultModifiers already matches empty, so it takes no `?`.
+SelectStatementInternal: ast::Query =
+    <WithClause?> <SelectSetOpChain> <ResultModifiers> => ast::select_statement_internal(<>);
+
+SelectSetOpChain: ast::SetExpr =
+    <IntersectChain> <SelectSetOpChainTail*> => ast::select_set_op_chain(<>);
+
+SelectSetOpChainTail: (ast::SetOperator, ast::SetExpr) = SetopClause IntersectChain;
+
+SetopClause: ast::SetOperator =
+    <op:SetopType> <quantifier:DistinctOrAll?> <by_name:ByName?> =>
+        ast::setop_clause(op, quantifier, by_name.is_some());
+
+SetopType: ast::SetOp = SetopUnion;
+
+SetopUnion: ast::SetOp = "UNION" => ast::SetOp::Union;
+
+ByName: () = "BY" "NAME" => ();
+
+IntersectChain: ast::SetExpr = <SelectAtom> <IntersectChainTail*> => ast::intersect_chain(<>);
+
+IntersectChainTail: (ast::SetOperator, ast::SetExpr) = SetIntersectClause SelectAtom;
+
+SetIntersectClause: ast::SetOperator = "INTERSECT" <DistinctOrAll?> => ast::set_intersect_clause(<>);
+
+SelectAtom: ast::SetExpr = SelectStatementType => ast::select_atom(<>);
+
+SelectStatementType: ast::Select = SimpleSelect;
+
+DistinctOrAll: ast::SetQuantifier = {
+    DistinctKeyword,
+    AllKeyword,
+};
+
+DistinctKeyword: ast::SetQuantifier = "DISTINCT" => ast::SetQuantifier::Distinct;
+
+AllKeyword: ast::SetQuantifier = "ALL" => ast::SetQuantifier::All;
+
+WithClause: Vec<ast::Cte> = "WITH" <List<WithStatement>>;
+
+WithStatement: ast::Cte =
+    <ColIdOrString> <ColumnAliases?> "AS" <CTEBody> => ast::with_statement(<>);
+
+CTEBody: ast::Query = CTESelectBody;
+
+CTESelectBody: ast::Query = Parens<SelectStatementInternal>;
+
+ColumnAliases: Vec<ast::Ident> = Parens<List<ColIdOrString>>;
+
+ResultModifiers: (Option<Vec<ast::OrderByExpr>>, Option<ast::Limit>) = OrderByClause? LimitOffset?;
+
+LimitOffset: ast::Limit = {
+    LimitOffsetClause,
+    OffsetLimitClause,
+};
+
+LimitOffsetClause: ast::Limit = <LimitClause> <OffsetClause?> => ast::limit_offset_clause(<>);
+
+OffsetLimitClause: ast::Limit = <OffsetClause> <LimitClause> => ast::offset_limit_clause(<>);
+
+LimitClause: ast::LimitValue = "LIMIT" <LimitValue>;
+
+LimitValue: ast::LimitValue = {
+    LimitAll,
+    LimitExpression,
+};
+
+LimitAll: ast::LimitValue = "ALL" => ast::LimitValue::All;
+
+LimitExpression: ast::LimitValue = IntegerLiteral => ast::LimitValue::Count(<>);
+
+OffsetClause: u64 = "OFFSET" <OffsetValue>;
+
+OffsetValue: u64 = <IntegerLiteral> RowOrRows?;
+
+RowOrRows: () = {
+    "ROW" => (),
+    "ROWS" => (),
+};
+
+OrderByClause: Vec<ast::OrderByExpr> = "ORDER" "BY" <OrderByExpressions>;
+
+OrderByExpressions: Vec<ast::OrderByExpr> = OrderByExpressionList;
+
+OrderByExpressionList: Vec<ast::OrderByExpr> = List<OrderByExpression>;
+
+OrderByExpression: ast::OrderByExpr =
+    <Expression> <DescOrAsc?> <NullsFirstOrLast?> => ast::order_by_expression(<>);
+
+DescOrAsc: ast::SortOrder = {
+    DescendingOrder,
+    AscendingOrder,
+};
+
+DescendingOrder: ast::SortOrder = "DESC" => ast::SortOrder::Desc;
+
+AscendingOrder: ast::SortOrder = "ASC" => ast::SortOrder::Asc;
+
+NullsFirstOrLast: ast::NullsOrder = {
+    NullsFirst,
+    NullsLast,
+};
+
+NullsFirst: ast::NullsOrder = "NULLS" "FIRST" => ast::NullsOrder::First;
+
+NullsLast: ast::NullsOrder = "NULLS" "LAST" => ast::NullsOrder::Last;
+
+//------------------------------
+// SELECT CLAUSE
+//------------------------------
+
+SimpleSelect: ast::Select =
+    <SelectFrom> <WhereClause?> <GroupByClause?> <HavingClause?> => ast::simple_select(<>);
+
+SelectFrom: ast::Select = {
+    SelectFromClause,
+    FromSelectClause,
+};
+
+SelectFromClause: ast::Select = <SelectClause> <FromClause?> => ast::select_from_clause(<>);
+
+FromSelectClause: ast::Select = <FromClause> <SelectClause> => ast::from_select_clause(<>);
+
+SelectClause: ast::Select = "SELECT" <DistinctClause?> <TargetList> => ast::select_clause(<>);
+
+DistinctClause: ast::DistinctClause = {
+    DistinctOn,
+    DistinctAll,
+};
+
+DistinctAll: ast::DistinctClause = "ALL" => ast::DistinctClause::All;
+
+DistinctOn: ast::DistinctClause = "DISTINCT" <DistinctOnTargets?> => ast::distinct_on(<>);
+
+DistinctOnTargets: Vec<ast::Expr> = "ON" <Parens<List<Expression>>>;
+
+TargetList: Vec<ast::SelectItem> = List<AliasedExpression>;
+
+AliasedExpression: ast::SelectItem = {
+    ExpressionAsCollabel,
+    ExpressionOptIdentifier,
+};
+
+ExpressionAsCollabel: ast::SelectItem =
+    <Expression> "AS" <ColLabelOrString> => ast::expression_as_collabel(<>);
+
+ExpressionOptIdentifier: ast::SelectItem =
+    <Expression> <Identifier?> => ast::expression_opt_identifier(<>);
+
+StarExpression: ast::Expr =
+    <StarQualifierList?> "*" <ExcludeList?> => ast::star_expression(<>);
+
+StarQualifierList: ast::Ident = ColIdDot;
+
+ColIdDot: ast::Ident = <ColId> ".";
+
+ExcludeList: Vec<ast::Ident> = ExcludeOrExcept <ExcludeNames>;
+
+ExcludeOrExcept: () = "EXCLUDE" => ();
+
+ExcludeNames: Vec<ast::Ident> = {
+    ExcludeNameList,
+    ExcludeNameSingle,
+};
+
+ExcludeNameList: Vec<ast::Ident> = Parens<List<ExcludeName>>;
+
+ExcludeNameSingle: Vec<ast::Ident> = ExcludeName => ast::exclude_name_single(<>);
+
+ExcludeName: ast::Ident = ExcludeColumnName;
+
+ExcludeColumnName: ast::Ident = ColId;
+
+//------------------------------
+// FROM AND JOINS
+//------------------------------
+
+FromClause: Vec<ast::TableRef> = "FROM" <TableRef> <("," <TableRef>)*> => ast::from_clause(<>);
+
+TableRef: ast::TableRef = <InnerTableRef> <JoinClause*> => ast::table_ref(<>);
+
+InnerTableRef: ast::TableFactor = {
+    TableFunction,
+    TableSubquery,
+    BaseTableRef,
+};
+
+TableSubquery: ast::TableFactor = <SubqueryReference> <TableAlias?> => ast::table_subquery(<>);
+
+SubqueryReference: ast::Query = Parens<SelectStatementInternal>;
+
+BaseTableRef: ast::TableFactor =
+    <BaseTableName> <TableAlias?> <SampleClause?> => ast::base_table_ref(<>);
+
+BaseTableName: ast::TableName = {
+    QualifiedTableName => ast::TableName::Object(<>),
+    UnqualifiedBaseTableName,
+};
+
+UnqualifiedBaseTableName: ast::TableName = TableName;
+
+QualifiedTableName: ast::ObjectName = {
+    CatalogReservedSchemaTable,
+    SchemaReservedTable,
+};
+
+SchemaReservedTable: ast::ObjectName =
+    <SchemaQualification> <ReservedTableName> => ast::schema_reserved_table(<>);
+
+CatalogReservedSchemaTable: ast::ObjectName =
+    <CatalogQualification> <ReservedSchemaQualification+> <ReservedTableName> =>
+        ast::catalog_reserved_schema_table(<>);
+
+TableFunction: ast::TableFactor = TableFunctionLateralOpt;
+
+TableFunctionLateralOpt: ast::TableFactor =
+    <QualifiedTableFunction> <TableFunctionArguments> <TableAlias?> =>
+        ast::table_function_lateral_opt(<>);
+
+QualifiedTableFunction: ast::Ident = TableFunctionName;
+
+TableFunctionArguments: Option<Vec<ast::FunctionArg>> = Parens<List<FunctionArgument>?>;
+
+FunctionArgument: ast::FunctionArg = {
+    NamedFunctionArgument,
+    PositionalFunctionArgument,
+};
+
+NamedFunctionArgument: ast::FunctionArg = NamedParameter;
+
+PositionalFunctionArgument: ast::FunctionArg = Expression => ast::FunctionArg::Positional(<>);
+
+NamedParameter: ast::FunctionArg =
+    <TypeFuncName> NamedParameterAssignment <Expression> => ast::FunctionArg::Named(<>);
+
+NamedParameterAssignment: () = {
+    ":=" => (),
+    "=>" => (),
+};
+
+TableAlias: ast::TableAlias = {
+    TableAliasAs,
+    TableAliasWithoutAs,
+};
+
+TableAliasAs: ast::TableAlias =
+    "AS" <IdentifierOrStringLiteral> <ColumnAliases?> => ast::table_alias_as(<>);
+
+TableAliasWithoutAs: ast::TableAlias =
+    <Identifier> <ColumnAliases?> => ast::table_alias_without_as(<>);
+
+JoinClause: ast::Join = RegularJoinClause;
+
+RegularJoinClause: ast::Join =
+    <JoinType?> "JOIN" <TableRef> <JoinQualifier> => ast::regular_join_clause(<>);
+
+JoinType: ast::JoinType = {
+    FullJoin,
+    LeftJoin,
+    RightJoin,
+    InnerJoin,
+};
+
+FullJoin: ast::JoinType = "FULL" "OUTER"? => ast::JoinType::Full;
+
+LeftJoin: ast::JoinType = "LEFT" "OUTER"? => ast::JoinType::Left;
+
+RightJoin: ast::JoinType = "RIGHT" "OUTER"? => ast::JoinType::Right;
+
+InnerJoin: ast::JoinType = "INNER" => ast::JoinType::Inner;
+
+JoinQualifier: ast::JoinConstraint = {
+    OnClause => ast::JoinConstraint::On(<>),
+    UsingClause => ast::JoinConstraint::Using(<>),
+};
+
+OnClause: ast::Expr = "ON" <Expression>;
+
+UsingClause: Vec<ast::Ident> = "USING" <Parens<List<UsingColumnName>>>;
+
+UsingColumnName: ast::Ident = ColumnName;
+
+SampleClause: ast::Sample = TableSample <SampleEntry>;
+
+TableSample: () = "TABLESAMPLE" => ();
+
+SampleEntry: ast::Sample = {
+    SampleEntryFunction,
+    SampleEntryCount,
+};
+
+SampleEntryCount: ast::Sample = SampleCount => ast::sample_entry_count(<>);
+
+SampleEntryFunction: ast::Sample =
+    <SampleFunction?> <Parens<SampleCount>> <RepeatableSample?> => ast::sample_entry_function(<>);
+
+SampleFunction: ast::SampleMethod = {
+    "BERNOULLI" => ast::SampleMethod::Bernoulli,
+    "SYSTEM" => ast::SampleMethod::System,
+};
+
+SampleCount: ast::SampleCount = <SampleValue> <SampleUnit> => ast::sample_count(<>);
+
+SampleValue: ast::Lit = NumberLiteral;
+
+SampleUnit: ast::SampleUnit = {
+    SamplePercentage,
+    SampleRows,
+};
+
+SamplePercentage: ast::SampleUnit = "PERCENT" => ast::SampleUnit::Percent;
+
+SampleRows: ast::SampleUnit = "ROWS" => ast::SampleUnit::Rows;
+
+RepeatableSample: u64 = "REPEATABLE" <Parens<SampleSeed>>;
+
+SampleSeed: u64 = IntegerLiteral;
+
+//------------------------------
+// WHERE, GROUP BY AND HAVING
+//------------------------------
+
+WhereClause: ast::Expr = "WHERE" <Expression>;
+
+GroupByClause: ast::GroupBy = "GROUP" "BY" <GroupByExpressions>;
+
+GroupByExpressions: ast::GroupBy = GroupByList;
+
+GroupByList: ast::GroupBy = {
+    CubeOrRollupClause => ast::GroupBy::Rollup(<>),
+    List<GroupByBaseExpression> => ast::GroupBy::Exprs(<>),
+};
+
+GroupByBaseExpression: ast::Expr = Expression;
+
+CubeOrRollupClause: Vec<ast::Expr> = CubeOrRollup <Parens<List<Expression>>>;
+
+CubeOrRollup: () = RollupKeyword;
+
+RollupKeyword: () = "ROLLUP" => ();
+
+HavingClause: ast::Expr = "HAVING" <Expression>;
+
+//------------------------------
+// DESCRIBE AND SHOW TABLES
+//------------------------------
+
+DescribeStatement: ast::Statement = {
+    ShowTables,
+    DescribeSelect,
+    ShowByName,
+    DescribeByName,
+};
+
+ShowTables: ast::Statement = ShowRule "TABLES" "FROM" <QualifiedName> => ast::show_tables(<>);
+
+ShowByName: ast::Statement = ShowRule ShowTarget => ast::show_by_name();
+
+ShowTarget: () = ShowSpecialForm;
+
+ShowSpecialForm: () = "TABLES" => ();
+
+DescribeSelect: ast::Statement =
+    DescribeOrSummarize <SelectStatementInternal> => ast::describe_select(<>);
+
+DescribeByName: ast::Statement =
+    DescribeOrSummarize <DescribeTarget> => ast::Statement::Describe(ast::Describe::Table(<>));
+
+DescribeTarget: ast::TableName = DescribeBaseTableName;
+
+DescribeBaseTableName: ast::TableName = BaseTableName;
+
+DescribeOrSummarize: () = DescribeRule;
+
+DescribeRule: () = DescribeLongRule;
+
+DescribeLongRule: () = "DESCRIBE" => ();
+
+ShowRule: () = "SHOW" => ();
+
+//------------------------------
+// USE
+//------------------------------
+
+UseStatement: ast::Use = "USE" <UseTarget>;
+
+UseTarget: ast::Use = {
+    UseTargetCatalogSchema,
+    CatalogNameAsUseTarget,
+};
+
+UseTargetCatalogSchema: ast::Use =
+    <CatalogName> "." <ReservedSchemaName> => ast::use_target_catalog_schema(<>);
+
+CatalogNameAsUseTarget: ast::Use = CatalogName => ast::catalog_name_as_use_target(<>);
+
+//------------------------------
+// CREATE TABLE
+//------------------------------
+
+CreateStatement: ast::CreateTable = "CREATE" <CreateStatementVariation>;
+
+CreateStatementVariation: ast::CreateTable = CreateTableStmt;
+
+CreateTableStmt: ast::CreateTable =
+    "TABLE" <if_not_exists:IfNotExists?> <name:QualifiedName> <columns:CreateTableDefinition> =>
+        ast::create_table_stmt(if_not_exists.is_some(), name, columns);
+
+CreateTableDefinition: Vec<ast::ColumnDef> = CreateColumnList;
+
+CreateColumnList: Vec<ast::ColumnDef> = Parens<CreateTableColumnList>;
+
+CreateTableColumnList: Vec<ast::ColumnDef> = List<CreateTableColumnElement>;
+
+CreateTableColumnElement: ast::ColumnDef = CreateTableColumnDefinition;
+
+CreateTableColumnDefinition: ast::ColumnDef = ColumnDefinition;
+
+ColumnDefinition: ast::ColumnDef = <Identifier> <Type> => ast::column_definition(<>);
+
+IfNotExists: () = "IF" "NOT" "EXISTS" => ();
+
+//------------------------------
+// EXPRESSIONS
+//------------------------------
+
+// A `pub` precedence rule would build a parser per level, so the entry point wraps it.
+pub Expr: ast::Expr = Expression;
+
+// The macro rewrites every `Expression` in an alternative to a level, so an operand that must be a
+// full expression goes through its own rule (SliceBound, InClause, ParensExpression).
+Expression: ast::Expr = {
+    #[precedence(level="0")]
+    SingleExpression,
+
+    // SliceExpression: one subscript, before any cast.
+    #[precedence(level="1")] #[assoc(side="none")]
+    <Expression> <SliceExpression> => ast::slice_expression(<>),
+
+    #[precedence(level="2")] #[assoc(side="left")]
+    <Expression> "::" <Type> => ast::cast_operator(<>),
+
+    #[precedence(level="3")] #[assoc(side="all")]
+    <PrefixOperator> <Expression> => ast::prefix_expression(<>),
+
+    #[precedence(level="4")] #[assoc(side="left")]
+    <Expression> <Factor> <Expression> => ast::multiplicative_expression(<>),
+
+    #[precedence(level="5")] #[assoc(side="left")]
+    <Expression> <Term> <Expression> => ast::additive_expression(<>),
+
+    // ComparisonExpression and BetweenInLikeExpression: non-associative, so nothing chains or mixes.
+    #[precedence(level="6")] #[assoc(side="none")]
+    <Expression> <ComparisonOperator> <Expression> => ast::comparison_expression(<>),
+    <e:Expression> <not:"NOT"?> <rhs:InClause> => ast::in_predicate(e, not.is_some(), rhs),
+    <e:Expression> <not:"NOT"?> "BETWEEN" <low:Expression> "AND" <high:Expression> =>
+        ast::between_clause(e, not.is_some(), low, high),
+    <e:Expression> <not:"NOT"?> <ci:LikeVariations> <pattern:Expression> =>
+        ast::like_clause(e, not.is_some(), ci, pattern),
+    // Postfix NOT NULL sits here, not with IS: LR(1) can't tell it from NOT IN until after NOT.
+    <Expression> "NOT" "NULL" => ast::not_null(<>),
+
+    // IsExpression
+    #[precedence(level="7")] #[assoc(side="none")]
+    <e:Expression> "IS" <not:"NOT"?> "NULL" => ast::is_literal(e, not.is_some()),
+
+    #[precedence(level="8")] #[assoc(side="all")]
+    "NOT" <Expression> => ast::logical_not_expression(<>),
+
+    #[precedence(level="9")] #[assoc(side="left")]
+    <Expression> "AND" <Expression> => ast::logical_and_expression(<>),
+
+    #[precedence(level="10")] #[assoc(side="left")]
+    <Expression> "OR" <Expression> => ast::logical_or_expression(<>),
+};
+
+ComparisonOperator: ast::BinaryOp = {
+    OperatorEqual,
+    OperatorNotEqual,
+    OperatorLessThan,
+    OperatorGreaterThan,
+    OperatorLessThanEquals,
+    OperatorGreaterThanEquals,
+};
+
+OperatorEqual: ast::BinaryOp = {
+    "=" => ast::BinaryOp::Eq,
+    "==" => ast::BinaryOp::Eq,
+};
+
+OperatorNotEqual: ast::BinaryOp = {
+    "!=" => ast::BinaryOp::NotEq,
+    "<>" => ast::BinaryOp::NotEq,
+};
+
+OperatorLessThan: ast::BinaryOp = "<" => ast::BinaryOp::Lt;
+
+OperatorGreaterThan: ast::BinaryOp = ">" => ast::BinaryOp::Gt;
+
+OperatorLessThanEquals: ast::BinaryOp = "<=" => ast::BinaryOp::LtEq;
+
+OperatorGreaterThanEquals: ast::BinaryOp = ">=" => ast::BinaryOp::GtEq;
+
+InClause: ast::InExpression = "IN" <InExpression>;
+
+InExpression: ast::InExpression = {
+    InExpressionList => ast::InExpression::List(<>),
+    InSelectStatement => ast::in_select_statement(<>),
+};
+
+InExpressionList: Vec<ast::Expr> = Parens<List<Expression>>;
+
+InSelectStatement: ast::Query = Parens<SelectStatementInternal>;
+
+LikeVariations: bool = {
+    ILikeToken,
+    LikeToken,
+};
+
+ILikeToken: bool = "ILIKE" => true;
+
+LikeToken: bool = "LIKE" => false;
+
+Term: ast::BinaryOp = {
+    "+" => ast::BinaryOp::Add,
+    "-" => ast::BinaryOp::Sub,
+};
+
+Factor: ast::BinaryOp = {
+    "*" => ast::BinaryOp::Mul,
+    "/" => ast::BinaryOp::Div,
+    "//" => ast::BinaryOp::IntDiv,
+    "%" => ast::BinaryOp::Mod,
+};
+
+PrefixOperator: ast::UnaryOp = {
+    MinusPrefixOperator,
+    PlusPrefixOperator,
+};
+
+MinusPrefixOperator: ast::UnaryOp = "-" => ast::UnaryOp::Neg;
+
+PlusPrefixOperator: ast::UnaryOp = "+" => ast::UnaryOp::Plus;
+
+SliceExpression: ast::Expr = "[" <SliceBound> "]";
+
+SliceBound: ast::Expr = Expression;
+
+//------------------------------
+// PRIMARY EXPRESSIONS
+//------------------------------
+
+SingleExpression: ast::Expr = {
+    ParensExpression,
+    LiteralExpression => ast::Expr::Lit(<>),
+    SubqueryExpression,
+    SpecialFunctionExpression,
+    IntervalLiteral,
+    TypeLiteral,
+    CaseExpression,
+    StarExpression,
+    CastExpression,
+    FunctionExpression,
+    ColumnReference,
+    ListExpression,
+    StructExpression,
+};
+
+ParensExpression: ast::Expr = Parens<Expression>;
+
+LiteralExpression: ast::Lit = {
+    StringLiteral => ast::Lit::String(<>),
+    NumberLiteral,
+    ConstantLiteral,
+};
+
+ConstantLiteral: ast::Lit = {
+    NullLiteral,
+    TrueLiteral,
+    FalseLiteral,
+};
+
+NullLiteral: ast::Lit = "NULL" => ast::Lit::Null;
+
+TrueLiteral: ast::Lit = "TRUE" => ast::Lit::Bool(true);
+
+FalseLiteral: ast::Lit = "FALSE" => ast::Lit::Bool(false);
+
+// No SubqueryNot: a leading NOT already parses `NOT EXISTS (…)`, and the two NOTs are ambiguous.
+SubqueryExpression: ast::Expr = {
+    SubqueryExists <SubqueryReference> => ast::subquery_exists(<>),
+    SubqueryReference => ast::subquery_expression(<>),
+};
+
+SubqueryExists: () = "EXISTS" => ();
+
+CaseExpression: ast::Expr = "CASE" <CaseWhenThen+> <CaseElse> "END" => ast::case_expression(<>);
+
+CaseWhenThen: (ast::Expr, ast::Expr) = "WHEN" <Expression> "THEN" <Expression>;
+
+CaseElse: ast::Expr = "ELSE" <Expression>;
+
+CastExpression: ast::Expr = <CastOrTryCast> <Parens<CastArguments>> => ast::cast_expression(<>);
+
+CastArguments: (ast::Expr, ast::DataType) = <Expression> "AS" <Type>;
+
+CastOrTryCast: bool = {
+    CastKeyword,
+    TryCastKeyword,
+};
+
+CastKeyword: bool = "CAST" => false;
+
+TryCastKeyword: bool = "TRY_CAST" => true;
+
+TypeLiteral: ast::Expr = "DATE" <StringLiteral> => ast::Expr::Date(<>);
+
+IntervalLiteral: ast::Expr = "INTERVAL" <IntervalParameter> <Interval?> => ast::interval_literal(<>);
+
+IntervalParameter: String = IntervalStringParameter;
+
+IntervalStringParameter: String = StringLiteral;
+
+Interval: ast::DatePart = {
+    YearKeyword,
+    MonthKeyword,
+    DayKeyword,
+    HourKeyword,
+    MinuteKeyword,
+    SecondKeyword,
+    MillisecondKeyword,
+    MicrosecondKeyword,
+    WeekKeyword,
+};
+
+YearKeyword: ast::DatePart = "YEAR" => ast::DatePart::Year;
+
+MonthKeyword: ast::DatePart = "MONTH" => ast::DatePart::Month;
+
+DayKeyword: ast::DatePart = "DAY" => ast::DatePart::Day;
+
+HourKeyword: ast::DatePart = "HOUR" => ast::DatePart::Hour;
+
+MinuteKeyword: ast::DatePart = "MINUTE" => ast::DatePart::Minute;
+
+SecondKeyword: ast::DatePart = "SECOND" => ast::DatePart::Second;
+
+MillisecondKeyword: ast::DatePart = "MILLISECOND" => ast::DatePart::Millisecond;
+
+MicrosecondKeyword: ast::DatePart = "MICROSECOND" => ast::DatePart::Microsecond;
+
+WeekKeyword: ast::DatePart = "WEEK" => ast::DatePart::Week;
+
+QuarterKeyword: ast::DatePart = "QUARTER" => ast::DatePart::Quarter;
+
+FunctionExpression: ast::Expr =
+    <FunctionIdentifier> <FunctionExpressionArguments> <OverClause?> => ast::function_expression(<>);
+
+FunctionIdentifier: ast::Ident = FunctionNameAsQualifiedName;
+
+FunctionNameAsQualifiedName: ast::Ident = FunctionName;
+
+FunctionExpressionArguments: (Option<ast::SetQuantifier>, Option<Vec<ast::FunctionArg>>) =
+    Parens<FunctionExpressionArgumentList>;
+
+FunctionExpressionArgumentList: (Option<ast::SetQuantifier>, Option<Vec<ast::FunctionArg>>) =
+    DistinctOrAll? FunctionArgumentList?;
+
+FunctionArgumentList: Vec<ast::FunctionArg> = List<FunctionArgument>;
+
+OverClause: ast::Window = "OVER" <WindowFrame>;
+
+WindowFrame: ast::Window = WindowFrameDefinition;
+
+WindowFrameDefinition: ast::Window = WindowFrameContentsParens;
+
+WindowFrameContentsParens: ast::Window = Parens<WindowFrameContents>;
+
+WindowFrameContents: ast::Window =
+    <WindowPartition?> <OrderByClause?> <FrameClause?> => ast::window_frame_contents(<>);
+
+WindowPartition: Vec<ast::Expr> = "PARTITION" "BY" <List<Expression>>;
+
+FrameClause: ast::Frame = <Framing> <FrameExtent> => ast::frame_clause(<>);
+
+Framing: ast::FrameUnits = {
+    RowsFraming,
+    RangeFraming,
+};
+
+RowsFraming: ast::FrameUnits = "ROWS" => ast::FrameUnits::Rows;
+
+RangeFraming: ast::FrameUnits = "RANGE" => ast::FrameUnits::Range;
+
+FrameExtent: ast::FrameExtent = {
+    BetweenFrameExtent,
+    SingleFrameExtent,
+};
+
+BetweenFrameExtent: ast::FrameExtent =
+    "BETWEEN" <FrameBound> "AND" <FrameBound> => ast::FrameExtent::Between(<>);
+
+SingleFrameExtent: ast::FrameExtent = FrameBound => ast::FrameExtent::Single(<>);
+
+FrameBound: ast::FrameBound = {
+    FrameUnbounded,
+    FrameCurrentRow,
+    FrameExpression,
+};
+
+FrameUnbounded: ast::FrameBound = "UNBOUNDED" <PrecedingOrFollowing> => ast::FrameBound::Unbounded(<>);
+
+FrameCurrentRow: ast::FrameBound = "CURRENT" "ROW" => ast::FrameBound::CurrentRow;
+
+FrameExpression: ast::FrameBound = {
+    <n:NumberLiteral> <d:PrecedingOrFollowing> => ast::FrameBound::Offset(ast::Expr::Lit(n), d),
+    <IntervalLiteral> <PrecedingOrFollowing> => ast::FrameBound::Offset(<>),
+};
+
+PrecedingOrFollowing: ast::FrameDirection = {
+    PrecedingFrame,
+    FollowingFrame,
+};
+
+PrecedingFrame: ast::FrameDirection = "PRECEDING" => ast::FrameDirection::Preceding;
+
+FollowingFrame: ast::FrameDirection = "FOLLOWING" => ast::FrameDirection::Following;
+
+SpecialFunctionExpression: ast::Expr = {
+    CoalesceExpression,
+    ExtractExpression,
+    SubstringExpression,
+};
+
+CoalesceExpression: ast::Expr = "COALESCE" <Parens<List<Expression>>> => ast::Expr::Coalesce(<>);
+
+ExtractExpression: ast::Expr = "EXTRACT" <Parens<ExtractArguments>> => ast::extract_expression(<>);
+
+ExtractArguments: (ast::DatePart, ast::Expr) = <ExtractArgument> "FROM" <Expression>;
+
+ExtractArgument: ast::DatePart = ExtractDatePartArgument;
+
+ExtractDatePartArgument: ast::DatePart = ExtractDatePart;
+
+ExtractDatePart: ast::DatePart = {
+    YearKeyword,
+    QuarterKeyword,
+    MonthKeyword,
+    DayKeyword,
+    HourKeyword,
+    MinuteKeyword,
+    SecondKeyword,
+};
+
+SubstringExpression: ast::Expr = "SUBSTRING" <Parens<SubstringArguments>>;
+
+SubstringArguments: ast::Expr = {
+    SubstringParameters,
+    SubstringExpressionList,
+};
+
+SubstringExpressionList: ast::Expr =
+    <Expression> "," <Expression> <("," <Expression>)?> => ast::substring_expression_list(<>);
+
+SubstringParameters: ast::Expr = <Expression> <SubstringFromFor> => ast::substring_parameters(<>);
+
+SubstringFromFor: (Option<ast::Expr>, Option<ast::Expr>) = {
+    SubstringFromOptionalFor,
+    SubstringFor,
+};
+
+SubstringFromOptionalFor: (Option<ast::Expr>, Option<ast::Expr>) =
+    <FromExpression> <ForExpression?> => ast::substring_from_optional_for(<>);
+
+SubstringFor: (Option<ast::Expr>, Option<ast::Expr>) = ForExpression => ast::substring_for(<>);
+
+FromExpression: ast::Expr = "FROM" <Expression>;
+
+ForExpression: ast::Expr = "FOR" <Expression>;
+
+ColumnReference: ast::Expr = NestedColumnName => ast::Expr::Column(<>);
+
+// Spelled without `IdentifierDot*`, whose empty match would fight FunctionName.
+NestedColumnName: Vec<ast::Ident> = {
+    ColumnName => ast::nested_column_name(vec![], <>),
+    <IdentifierDot+> <ColumnName> => ast::nested_column_name(<>),
+};
+
+IdentifierDot: ast::Ident = <Identifier> ".";
+
+ListExpression: ast::Expr = ArrayBoundedListExpression;
+
+ArrayBoundedListExpression: ast::Expr = "ARRAY"? <BoundedListExpression>;
+
+BoundedListExpression: ast::Expr = "[" <List<Expression>> "]" => ast::Expr::List(<>);
+
+StructExpression: ast::Expr = "{" <List<StructField>> "}" => ast::Expr::Struct(<>);
+
+StructField: (ast::Ident, ast::Expr) = <ColIdOrString> ":" <Expression>;
+
+//------------------------------
+// TYPES
+//------------------------------
+
+Type: ast::DataType = <TypeVariations> <ArrayBounds*> => ast::type_(<>);
+
+TypeVariations: ast::DataType = {
+    TimeType,
+    IntervalType,
+    NumericType,
+    SimpleType,
+};
+
+SimpleType: ast::DataType = {
+    CharacterSimpleType,
+    QualifiedSimpleType,
+};
+
+CharacterSimpleType: ast::DataType = CharacterType <TypeModifiers?> => ast::DataType::Varchar(<>);
+
+CharacterType: () = "VARCHAR" => ();
+
+QualifiedSimpleType: ast::DataType = QualifiedTypeName;
+
+QualifiedTypeName: ast::DataType = TypeNameAsQualifiedName;
+
+TypeNameAsQualifiedName: ast::DataType = TypeName;
+
+TypeName: ast::DataType = {
+    "BOOL" => ast::DataType::Boolean,
+    "TINYINT" => ast::DataType::TinyInt,
+    "INT16" => ast::DataType::SmallInt,
+    "INT32" => ast::DataType::Int,
+    "INT64" => ast::DataType::BigInt,
+    "UINT16" => ast::DataType::UInt16,
+    "UINT32" => ast::DataType::UInt32,
+    "UINT64" => ast::DataType::UInt64,
+    "DOUBLE" => ast::DataType::Double,
+    "TEXT" => ast::DataType::Varchar(None),
+    "STRING" => ast::DataType::Varchar(None),
+    "BINARY" => ast::DataType::Binary,
+    "DATE" => ast::DataType::Date,
+};
+
+NumericType: ast::DataType = {
+    SimpleNumericType,
+    DecimalNumericType,
+};
+
+SimpleNumericType: ast::DataType = {
+    IntType,
+    IntegerType,
+    SmallintType,
+    BigintType,
+    RealType,
+    BooleanType,
+    DoubleType,
+};
+
+IntType: ast::DataType = "INT" => ast::DataType::Int;
+
+IntegerType: ast::DataType = "INTEGER" => ast::DataType::Int;
+
+SmallintType: ast::DataType = "SMALLINT" => ast::DataType::SmallInt;
+
+BigintType: ast::DataType = "BIGINT" => ast::DataType::BigInt;
+
+RealType: ast::DataType = "REAL" => ast::DataType::Real;
+
+BooleanType: ast::DataType = "BOOLEAN" => ast::DataType::Boolean;
+
+DoubleType: ast::DataType = "DOUBLE" "PRECISION" => ast::DataType::Double;
+
+DecimalNumericType: ast::DataType = {
+    FloatType,
+    DecimalType,
+    DecType,
+    NumericModType,
+};
+
+FloatType: ast::DataType = "FLOAT" <Parens<IntegerLiteral>> => ast::DataType::Float(<>);
+
+DecimalType: ast::DataType = "DECIMAL" <TypeModifiers> => ast::DataType::Decimal(<>);
+
+DecType: ast::DataType = "DEC" <TypeModifiers> => ast::DataType::Decimal(<>);
+
+NumericModType: ast::DataType = "NUMERIC" <TypeModifiers> => ast::DataType::Decimal(<>);
+
+TypeModifiers: Vec<u64> = Parens<List<IntegerLiteral>>;
+
+TimeType: ast::DataType = {
+    TimestampTypeId <TypeModifiers?> => ast::DataType::Timestamp(<>),
+    TimeTypeId => ast::DataType::Time,
+};
+
+TimeTypeId: () = "TIME" => ();
+
+TimestampTypeId: () = "TIMESTAMP" => ();
+
+IntervalType: ast::DataType = IntervalWithoutSpecifier;
+
+IntervalWithoutSpecifier: ast::DataType = "INTERVAL" => ast::DataType::Interval;
+
+ArrayBounds: Option<u64> = SquareBracketsArray;
+
+SquareBracketsArray: Option<u64> = "[" <IntegerLiteral?> "]";
+
+//------------------------------
+// NAMES
+//------------------------------
+
+Identifier: ast::Ident = {
+    QuotedIdentifier,
+    PlainIdentifier,
+};
+
+QuotedIdentifier: ast::Ident = "quoted_ident" => ast::quoted_identifier(<>);
+
+PlainIdentifier: ast::Ident = "ident" => ast::plain_identifier(<>);
+
+// Name aliases are inlined so dotted names don't hit reduce/reduce conflicts before the next `.`.
+#[inline]
+ColId: ast::Ident = Identifier;
+
+ColIdOrString: ast::Ident = {
+    ColId,
+    StringLiteralIdentifier,
+};
+
+StringLiteralIdentifier: ast::Ident = StringLiteral => ast::string_literal_identifier(<>);
+
+#[inline]
+ColLabel: ast::Ident = Identifier;
+
+ColLabelOrString: ast::Ident = {
+    ColLabelIdentifier,
+    StringLiteralIdentifier,
+};
+
+#[inline]
+ColLabelIdentifier: ast::Ident = ColLabel;
+
+#[inline]
+TypeFuncName: ast::Ident = Identifier;
+
+IdentifierOrStringLiteral: ast::Ident = {
+    Identifier,
+    StringLiteralIdentifier,
+};
+
+#[inline]
+ReservedIdentifierOrStringLiteral: ast::Ident = ReservedIdentifier;
+
+QualifiedName: ast::ObjectName = {
+    CatalogReservedSchemaIdentifier,
+    SchemaReservedIdentifierOrStringLiteral,
+    Identifier => ast::qualified_name(<>),
+};
+
+CatalogReservedSchemaIdentifier: ast::ObjectName =
+    <CatalogQualification> <ReservedSchemaQualification+> <ReservedIdentifierOrStringLiteral> =>
+        ast::catalog_reserved_schema_identifier(<>);
+
+SchemaReservedIdentifierOrStringLiteral: ast::ObjectName =
+    <SchemaQualification> <ReservedIdentifierOrStringLiteral> =>
+        ast::schema_reserved_identifier_or_string_literal(<>);
+
+#[inline]
+CatalogQualification: ast::Ident = <CatalogName> ".";
+
+#[inline]
+SchemaQualification: ast::Ident = <SchemaName> ".";
+
+#[inline]
+ReservedSchemaQualification: ast::Ident = <ReservedSchemaName> ".";
+
+#[inline]
+CatalogName: ast::Ident = Identifier;
+
+#[inline]
+SchemaName: ast::Ident = Identifier;
+
+#[inline]
+ReservedSchemaName: ast::Ident = Identifier;
+
+TableName: ast::TableName = {
+    Identifier => ast::table_name(<>),
+    StringLiteral => ast::TableName::Path(<>),
+};
+
+#[inline]
+ReservedTableName: ast::Ident = Identifier;
+
+#[inline]
+ReservedIdentifier: ast::Ident = Identifier;
+
+#[inline]
+ColumnName: ast::Ident = Identifier;
+
+#[inline]
+FunctionName: ast::Ident = Identifier;
+
+#[inline]
+TableFunctionName: ast::Ident = Identifier;
+
+//------------------------------
+// LITERALS
+//------------------------------
+
+StringLiteral: String = <"string"> <"string_continuation"*> => ast::string_literal(<>);
+
+NumberLiteral: ast::Lit = <l:@L> <n:"number"> <r:@R> =>? {
+    ast::number_literal(n).ok_or_else(|| {
+        ParseError::new(format!("could not convert \"{n}\" to a number"), l..r).into()
+    })
+};
+
+// A NumberLiteral in a slot the spec restricts to a non-negative integer.
+IntegerLiteral: u64 = <l:@L> <n:"number"> <r:@R> =>? {
+    ast::integer_literal(n).ok_or_else(|| {
+        ParseError::new(format!("expected a non-negative integer, found \"{n}\""), l..r).into()
+    })
+};
+
+//------------------------------
+// MACROS
+//------------------------------
+
+// One or more, with an optional trailing comma.
+List<D>: Vec<D> = <mut v:(<D> ",")*> <e:D> ","? => {
+    v.push(e);
+    v
+};
+
+Parens<D>: D = "(" <D> ")";

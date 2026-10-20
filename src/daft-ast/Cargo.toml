@@ -1,0 +1,7 @@
+[package]
+name = "daft-ast"
+edition.workspace = true
+version.workspace = true
+
+[lints]
+workspace = true

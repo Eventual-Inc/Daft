@@ -1,0 +1,23 @@
+[build-dependencies]
+lalrpop = {version = "0.23.1", default-features = false}
+
+[dependencies]
+daft-ast = {path = "../daft-ast"}
+lalrpop-util = {version = "0.23.1", default-features = false}
+logos = "0.16.1"
+thiserror = {workspace = true}
+
+[dev-dependencies]
+rstest = {workspace = true}
+
+[lints]
+workspace = true
+
+[package]
+name = "daft-parser"
+edition.workspace = true
+version.workspace = true
+
+# Used only by build.rs, which machete does not scan.
+[package.metadata.cargo-machete]
+ignored = ["lalrpop"]
