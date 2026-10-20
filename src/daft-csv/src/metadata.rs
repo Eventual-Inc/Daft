@@ -1,7 +1,6 @@
 use std::{collections::HashSet, sync::Arc};
 
 use arrow_schema::{DataType, Field, Schema as ArrowSchema};
-use async_compat::CompatExt;
 use common_error::DaftResult;
 use csv_async::{AsyncReaderBuilder, ByteRecord};
 use daft_compression::CompressionCodec;
@@ -14,7 +13,7 @@ use tokio::{
     fs::File,
     io::{AsyncBufRead, AsyncRead, BufReader},
 };
-use tokio_util::io::StreamReader;
+use tokio_util::{compat::TokioAsyncReadCompatExt, io::StreamReader};
 
 use crate::{CsvParseOptions, schema::merge_schema};
 

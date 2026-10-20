@@ -71,23 +71,11 @@ impl PipelineNodeImpl for ProjectNode {
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
-        use daft_dsl::functions::python::get_resource_request;
         use itertools::Itertools;
-        let mut res = vec![];
-        res.push(format!(
+        vec![format!(
             "Project: {}",
             self.projection.iter().map(|e| e.to_string()).join(", ")
-        ));
-        if let Some(resource_request) = get_resource_request(&self.projection) {
-            let multiline_display = resource_request.multiline_display();
-            res.push(format!(
-                "Resource request = {{ {} }}",
-                multiline_display.join(", ")
-            ));
-        } else {
-            res.push("Resource request = None".to_string());
-        }
-        res
+        )]
     }
 
     fn produce_tasks(
