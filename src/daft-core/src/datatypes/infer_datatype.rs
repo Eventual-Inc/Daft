@@ -379,10 +379,15 @@ impl Div for InferDataType<'_> {
                     // operands need. Naively capping precision at 38 while keeping that scale would
                     // leave the result with zero integer digits, so every whole-number quotient
                     // would overflow to null. When the ideal precision exceeds 38, shrink the scale
-                    // to preserve the quotient's integer digits (`p_prime - s_prime == p1 - s1`).
+                    // just enough to preserve the quotient's integer digits
+                    // (`p_prime - s_prime == p1 - s1`).
                     let integer_digits = (p_prime - s_prime).clamp(0, 38);
-                    let s_prime = s_prime.min(38 - integer_digits);
-                    let p_prime = integer_digits + s_prime;
+                    // The shared cast path casts the divisor to the result type, so a scale
+                    // below the divisor's would truncate its fraction (0.5 -> 0). Keep at
+                    // least the divisor's scale and give up integer digits instead; quotients
+                    // that no longer fit are nulled by the checked kernel.
+                    let s_prime = (s_prime - (p_prime - 38).max(0)).clamp(s2, 38);
+                    let p_prime = (integer_digits + s_prime).min(38);
                     Ok(bound_decimal128(p_prime as usize, s_prime as usize))
                 }
                 (s, o) if s.is_numeric() && o.is_numeric() => Ok(DataType::Float64),
@@ -857,6 +862,14 @@ mod tests {
         // than collapsing to scale 38 which could not hold any whole number.
         let out = (InferDataType::from(&dec(38, 4)) / InferDataType::from(&dec(23, 2))).unwrap();
         assert_eq!(out, dec(38, 4));
+    }
+
+    #[test]
+    fn div_bounded_scale_never_drops_below_divisor_scale() {
+        // Decimal(38, 0) / Decimal(2, 1): the bounded scale would be 0, but the
+        // divisor is cast to the result type, and scale 0 cannot represent 0.5.
+        let out = (InferDataType::from(&dec(38, 0)) / InferDataType::from(&dec(2, 1))).unwrap();
+        assert_eq!(out, dec(38, 1));
     }
 
     #[test]
