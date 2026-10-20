@@ -101,6 +101,7 @@ class TestIcebergDataSourceUnit:
         mock_spec = Mock()
         mock_spec.fields = []
         mock_table.spec.return_value = mock_spec
+        mock_table.name_mapping.return_value = None
 
         # Mock scan
         mock_scan = Mock()
@@ -295,6 +296,7 @@ class TestIcebergDataSourceUnit:
         mock_spec = Mock()
         mock_spec.fields = []
         mock_table.spec.return_value = mock_spec
+        mock_table.name_mapping.return_value = None
 
         # Mock scan that fails
         mock_scan = Mock()
@@ -328,6 +330,7 @@ class TestIcebergDataSourceUnit:
         mock_spec = Mock()
         mock_spec.fields = []
         mock_table.spec.return_value = mock_spec
+        mock_table.name_mapping.return_value = None
 
         source = self.create_source(mock_table)
 
