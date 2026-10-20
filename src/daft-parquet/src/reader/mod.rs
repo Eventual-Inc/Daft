@@ -546,6 +546,12 @@ fn count_only_stream(
                 .unwrap_or_else(|| metadata.row_group(i).num_rows() as usize)
         })
         .sum();
+    if n == 0 {
+        // Same convention as the empty-rg case in `stream_parquet`: emit no
+        // batches at all. A 0-row batch still counts as data for downstream
+        // sinks (e.g. the iceberg writer would land an empty snapshot).
+        return Ok((return_schema, futures::stream::empty().boxed()));
+    }
     let batch = RecordBatch::new_with_size(return_schema.clone(), Vec::new(), n)?;
     Ok((
         return_schema,

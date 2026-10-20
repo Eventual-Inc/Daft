@@ -835,7 +835,16 @@ mod tests {
         };
         use parquet::{arrow::ArrowWriter, file::properties::WriterProperties};
 
-        let dir = std::env::temp_dir().join("daft_test_count_only_deletes");
+        // Unique per run: tests execute in parallel and a fixed path would let
+        // one run read another's file.
+        let dir = std::env::temp_dir().join(format!(
+            "daft_test_count_only_deletes_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
         std::fs::create_dir_all(&dir).unwrap();
         let file_path = dir.join("data.parquet");
 
@@ -862,7 +871,7 @@ mod tests {
         let io_client = Arc::new(IOClient::new(IOConfig::default().into()).unwrap());
         let runtime = get_io_runtime(true);
 
-        let (baseline, with_deletes) = runtime
+        let (baseline, with_deletes, fully_deleted) = runtime
             .block_within_async_context(async move {
                 // Zero-column projection, no deletes -> physical row count.
                 let opts = ParquetReadOptions {
@@ -892,7 +901,25 @@ mod tests {
                     del += batch.unwrap().len();
                 }
 
-                (base, del)
+                // Every row deleted -> the stream must be fully empty. A 0-row
+                // batch would make downstream sinks (e.g. the iceberg writer)
+                // treat the read as data and land an empty snapshot.
+                let opts = ParquetReadOptions {
+                    columns: Some(vec![]),
+                    delete_rows: Some((0..200i64).collect()),
+                    ..Default::default()
+                };
+                let mut stream = read_parquet(&uri, io_client.clone(), None, opts)
+                    .await
+                    .unwrap();
+                let mut all_deleted = (0usize, 0usize);
+                while let Some(batch) = stream.next().await {
+                    let batch = batch.unwrap();
+                    all_deleted.0 += 1;
+                    all_deleted.1 += batch.len();
+                }
+
+                (base, del, all_deleted)
             })
             .unwrap();
 
@@ -905,6 +932,11 @@ mod tests {
         assert_eq!(
             with_deletes, 160,
             "count-only fast path must exclude the 40 positionally-deleted rows (#7560)"
+        );
+        assert_eq!(
+            fully_deleted,
+            (0, 0),
+            "a fully-deleted count-only read must yield no batches, not a 0-row batch"
         );
     }
 }
