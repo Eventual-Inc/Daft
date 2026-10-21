@@ -264,11 +264,25 @@ jobs:
         role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
         role-session-name: DaftPythonPackageGitHubWorkflow
     - name: Spin up IO services
-      uses: isbang/compose-action@v3.2.0
-      with:
-        compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
-        up-flags: --wait --wait-timeout 60
-        down-flags: --volumes
+      run: |
+        set -euo pipefail
+        compose_file=./tests/integration/io/docker-compose/docker-compose.yml
+
+        # Retry image pulls on their own. `docker compose up` failures after this
+        # are startup problems, and retrying those just hides the error.
+        for attempt in 1 2 3; do
+          if docker compose -f "$compose_file" pull --ignore-buildable; then
+            break
+          fi
+          if [ "$attempt" -eq 3 ]; then
+            echo "docker compose pull failed after 3 attempts" >&2
+            exit 1
+          fi
+          echo "docker compose pull failed (attempt ${attempt}); retrying in 10s" >&2
+          sleep 10
+        done
+
+        docker compose -f "$compose_file" up -d --wait --wait-timeout 600
     - name: Run IO integration tests
       run: |
         source activate
@@ -278,8 +292,11 @@ jobs:
     - name: Show IO service diagnostics
       if: failure()
       run: |
-        docker compose -f ./tests/integration/io/docker-compose/docker-compose.yml ps -a
-        docker compose -f ./tests/integration/io/docker-compose/docker-compose.yml logs --no-color
+        docker compose -f ./tests/integration/io/docker-compose/docker-compose.yml ps -a || true
+        docker compose -f ./tests/integration/io/docker-compose/docker-compose.yml logs --no-color || true
+    - name: Stop IO services
+      if: always()
+      run: docker compose -f ./tests/integration/io/docker-compose/docker-compose.yml down --volumes || true
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v4.0.0
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.ref == 'refs/heads/main') }}
