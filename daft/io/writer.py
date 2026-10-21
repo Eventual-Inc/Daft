@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import uuid
+import warnings
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from daft.datatype import DataType
 from daft.dependencies import pa, pacsv, pafs, pq
@@ -27,6 +28,7 @@ from daft.recordbatch.partitioning import (
 )
 from daft.recordbatch.recordbatch import RecordBatch
 from daft.series import Series
+from daft.utils import get_arrow_version
 
 if TYPE_CHECKING:
     from pyiceberg.schema import Schema as IcebergSchema
@@ -123,7 +125,7 @@ class ParquetFileWriter(FileWriterBase):
         default_partition_fallback: str | None = None,
         metadata_collector: list[pq.FileMetaData] | None = None,
         column_compression: dict[str, str] | None = None,
-        compression_level: int | None = None,
+        writer_options: dict[str, Any] | None = None,
     ):
         super().__init__(
             root_dir=root_dir,
@@ -139,10 +141,10 @@ class ParquetFileWriter(FileWriterBase):
         self.current_writer: pq.ParquetWriter | None = None
         self.metadata_collector: list[pq.FileMetaData] | None = metadata_collector
         self.column_compression = column_compression
-        self.compression_level = compression_level
+        self.writer_options = writer_options or {}
 
     def _create_writer(self, schema: pa.Schema) -> pq.ParquetWriter:
-        opts = {}
+        opts = dict(self.writer_options)
         if self.metadata_collector is not None:
             opts["metadata_collector"] = self.metadata_collector
         compression: str | dict[str, str]
@@ -154,7 +156,6 @@ class ParquetFileWriter(FileWriterBase):
             self.full_path,
             schema,
             compression=compression,
-            compression_level=self.compression_level,
             use_compliant_nested_type=False,
             filesystem=self.fs,
             # When using Arrow 8, it defaults to parquet version 1.
@@ -338,12 +339,22 @@ class IcebergWriter(ParquetFileWriter):
 
         codec = properties.get("write.parquet.compression-codec", "zstd")
         level = properties.get("write.parquet.compression-level")
+        writer_options = {
+            "compression_level": int(level) if level is not None else None,
+            "data_page_size": int(properties.get("write.parquet.page-size-bytes", 1024 * 1024)),
+            "dictionary_pagesize_limit": int(properties.get("write.parquet.dict-size-bytes", 2 * 1024 * 1024)),
+        }
+        if (page_row_limit := properties.get("write.parquet.page-row-limit")) is not None:
+            if get_arrow_version() >= (23,):
+                writer_options["max_rows_per_page"] = int(page_row_limit)
+            else:
+                warnings.warn("write.parquet.page-row-limit requires pyarrow >= 23.0.0; ignoring it")
         super().__init__(
             root_dir=root_dir,
             file_idx=file_idx,
             partition_values=partition_values,
             compression="none" if codec == "uncompressed" else codec,
-            compression_level=int(level) if level is not None else None,
+            writer_options=writer_options,
             io_config=io_config,
             version=None,
             default_partition_fallback="null",

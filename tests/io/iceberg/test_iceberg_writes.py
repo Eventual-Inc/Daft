@@ -49,6 +49,7 @@ from pyiceberg.types import NestedField as _NestedField
 import daft
 from daft.io.writer import IcebergWriter
 from daft.recordbatch.micropartition import MicroPartition
+from daft.utils import get_arrow_version
 
 
 @pytest.fixture(scope="function", params=[False, True], ids=["no_mock", "with_mock"])
@@ -369,6 +370,31 @@ def test_write_honors_compression_level_property(local_catalog):
     )
 
     assert level_1.total_compressed_size != level_9.total_compressed_size
+
+
+@pytest.mark.parametrize(
+    "prop",
+    [
+        "write.parquet.page-size-bytes",
+        "write.parquet.dict-size-bytes",
+        pytest.param(
+            "write.parquet.page-row-limit",
+            marks=pytest.mark.skipif(get_arrow_version() < (23,), reason="max_rows_per_page needs pyarrow >= 23"),
+        ),
+    ],
+)
+def test_write_honors_parquet_page_properties(local_catalog, prop):
+    default = _write_and_read_back(local_catalog, "default", {})
+    small_pages = _write_and_read_back(local_catalog, "small_pages", {prop: "100"})
+
+    assert small_pages.total_compressed_size != default.total_compressed_size
+
+
+@pytest.mark.skipif(get_arrow_version() >= (23,), reason="max_rows_per_page needs pyarrow >= 23")
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="the warning is raised in a Ray worker")
+def test_write_warns_on_page_row_limit_without_pyarrow_support(local_catalog):
+    with pytest.warns(UserWarning, match="page-row-limit"):
+        _write_and_read_back(local_catalog, "page_row_limit", {"write.parquet.page-row-limit": "100"})
 
 
 @pytest.fixture
