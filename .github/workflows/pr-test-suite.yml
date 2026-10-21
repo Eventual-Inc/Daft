@@ -538,24 +538,15 @@ jobs:
       run: |
         mkdir -p /tmp/daft-integration-testing/nginx
         chmod +rw /tmp/daft-integration-testing/nginx
+    - name: Pull IO service images
+      uses: nick-fields/retry@v4
+      with:
+        timeout_minutes: 10
+        max_attempts: 3
+        retry_wait_seconds: 10
+        command: docker compose -f ./tests/integration/io/docker-compose/docker-compose.yml pull --ignore-buildable
     - name: Spin up IO services
-      run: |
-        set -euo pipefail
-        compose_file=./tests/integration/io/docker-compose/docker-compose.yml
-        # Retry image pulls on their own. `docker compose up` failures after this
-        # are startup problems, and retrying those just hides the error.
-        for attempt in 1 2 3; do
-          if docker compose -f "$compose_file" pull --ignore-buildable; then
-            break
-          fi
-          if [ "$attempt" -eq 3 ]; then
-            echo "docker compose pull failed after 3 attempts" >&2
-            exit 1
-          fi
-          echo "docker compose pull failed (attempt ${attempt}); retrying in 10s" >&2
-          sleep 10
-        done
-        docker compose -f "$compose_file" up -d --wait --wait-timeout 600
+      run: docker compose -f ./tests/integration/io/docker-compose/docker-compose.yml up -d --wait --wait-timeout 600
     - name: Run IO integration tests
       run: |
         set -o pipefail
