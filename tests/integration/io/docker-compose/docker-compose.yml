@@ -39,10 +39,9 @@ services:
   # Use nginx to serve static files
   # Test fixtures should dump data in the `/tmp/daft-integration-testing/nginx` folder
   nginx:
-    build:
-      context: .
-      dockerfile: Dockerfile.nginx
+    image: nginx:1.30.6-alpine
     volumes:
+    - ./nginx-serve-static-files.conf:/etc/nginx/nginx.conf:ro
     - /tmp/daft-integration-testing/nginx:/app/static:rw
     ports:
     - 8080:8080
