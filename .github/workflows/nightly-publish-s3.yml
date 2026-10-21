@@ -279,7 +279,7 @@ jobs:
       if: failure()
       run: |
         docker compose -f ./tests/integration/io/docker-compose/docker-compose.yml ps -a
-        docker compose -f ./tests/integration/io/docker-compose/docker-compose.yml logs --no-color bigtable-emulator
+        docker compose -f ./tests/integration/io/docker-compose/docker-compose.yml logs --no-color
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v4.0.0
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.ref == 'refs/heads/main') }}
