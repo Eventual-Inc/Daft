@@ -538,12 +538,15 @@ jobs:
       run: |
         mkdir -p /tmp/daft-integration-testing/nginx
         chmod +rw /tmp/daft-integration-testing/nginx
-    - name: Spin up IO services
-      uses: isbang/compose-action@v3.2.0
+    - name: Pull IO service images
+      uses: nick-fields/retry@v4
       with:
-        compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
-        up-flags: --wait --wait-timeout 600
-        down-flags: --volumes
+        timeout_minutes: 10
+        max_attempts: 3
+        retry_wait_seconds: 10
+        command: docker compose -f ./tests/integration/io/docker-compose/docker-compose.yml pull --ignore-buildable
+    - name: Spin up IO services
+      run: docker compose -f ./tests/integration/io/docker-compose/docker-compose.yml up -d --wait --wait-timeout 600
     - name: Run IO integration tests
       run: |
         set -o pipefail
@@ -554,6 +557,14 @@ jobs:
         python tools/aggregate_test_durations.py io_integration_pytest_output.txt io_integration_pytest_output_2.txt io_integration_pytest_output_3.txt
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+    - name: Show IO service diagnostics
+      if: failure()
+      run: |
+        docker compose -f ./tests/integration/io/docker-compose/docker-compose.yml ps -a || true
+        docker compose -f ./tests/integration/io/docker-compose/docker-compose.yml logs --no-color || true
+    - name: Stop IO services
+      if: always()
+      run: docker compose -f ./tests/integration/io/docker-compose/docker-compose.yml down --volumes || true
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v4.0.0
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}

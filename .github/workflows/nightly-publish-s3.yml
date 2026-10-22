@@ -263,12 +263,15 @@ jobs:
         aws-region: us-west-2
         role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
         role-session-name: DaftPythonPackageGitHubWorkflow
-    - name: Spin up IO services
-      uses: isbang/compose-action@v3.2.0
+    - name: Pull IO service images
+      uses: nick-fields/retry@v4
       with:
-        compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
-        up-flags: --wait --wait-timeout 60
-        down-flags: --volumes
+        timeout_minutes: 10
+        max_attempts: 3
+        retry_wait_seconds: 10
+        command: docker compose -f ./tests/integration/io/docker-compose/docker-compose.yml pull --ignore-buildable
+    - name: Spin up IO services
+      run: docker compose -f ./tests/integration/io/docker-compose/docker-compose.yml up -d --wait --wait-timeout 600
     - name: Run IO integration tests
       run: |
         source activate
@@ -278,8 +281,11 @@ jobs:
     - name: Show IO service diagnostics
       if: failure()
       run: |
-        docker compose -f ./tests/integration/io/docker-compose/docker-compose.yml ps -a
-        docker compose -f ./tests/integration/io/docker-compose/docker-compose.yml logs --no-color bigtable-emulator
+        docker compose -f ./tests/integration/io/docker-compose/docker-compose.yml ps -a || true
+        docker compose -f ./tests/integration/io/docker-compose/docker-compose.yml logs --no-color || true
+    - name: Stop IO services
+      if: always()
+      run: docker compose -f ./tests/integration/io/docker-compose/docker-compose.yml down --volumes || true
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v4.0.0
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.ref == 'refs/heads/main') }}
