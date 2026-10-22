@@ -31,7 +31,7 @@ use crate::{
 /// ```
 ///
 /// So if `left` was:
-/// ```
+/// ```text
 /// ╭───────╮
 /// │ x     │
 /// │ ---   │
@@ -45,7 +45,7 @@ use crate::{
 /// ╰───────╯
 /// ```
 /// And `right` was:
-/// ```
+/// ```text
 /// ╭───────╮
 /// │ y     │
 /// │ ---   │
@@ -61,7 +61,7 @@ use crate::{
 /// the original query would join on all rows, whereas the new query would first filter out null rows and join on the following:
 ///
 /// `non_null_left`:
-/// ```
+/// ```text
 /// ╭───────╮
 /// │ x     │
 /// │ ---   │
@@ -73,7 +73,7 @@ use crate::{
 /// ╰───────╯
 /// ```
 /// `non_null_right`:
-/// ```
+/// ```text
 /// ╭───────╮
 /// │ y     │
 /// │ ---   │

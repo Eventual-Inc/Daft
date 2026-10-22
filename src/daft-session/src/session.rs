@@ -59,6 +59,8 @@ impl Session {
     /// # Example
     ///
     /// ```no_run
+    /// use daft_session::Session;
+    ///
     /// let original_session = Session::empty();
     /// // ... configure original_session ...
     ///
