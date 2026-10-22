@@ -526,14 +526,30 @@ fn build_rg_stream(
 fn count_only_stream(
     metadata: &ParquetMetaData,
     rg_indices: &[usize],
-    num_rows: Option<usize>,
+    opts: &ParquetReadOptions,
     return_schema: Arc<Schema>,
 ) -> DaftResult<(Arc<Schema>, BoxStream<'static, DaftResult<RecordBatch>>)> {
-    let total: usize = rg_indices
+    // Live rows, not physical: `build_base_selections` applies offset + Iceberg
+    // positional deletes + limit exactly as the decode path does, so the
+    // count-only fast path must derive its total from it rather than summing
+    // physical row-group sizes (#7560). The limit is already baked into the
+    // selections, so use the total directly.
+    let selections = build_base_selections(metadata, rg_indices, opts);
+    let n: usize = rg_indices
         .iter()
-        .map(|&i| metadata.row_group(i).num_rows() as usize)
+        .zip(&selections)
+        .map(|(&i, sel)| {
+            sel.as_ref()
+                .map(|s| s.row_count())
+                .unwrap_or_else(|| metadata.row_group(i).num_rows() as usize)
+        })
         .sum();
-    let n = num_rows.map(|n| n.min(total)).unwrap_or(total);
+    if n == 0 {
+        // Same convention as the empty-rg case in `stream_parquet`: emit no
+        // batches at all. A 0-row batch still counts as data for downstream
+        // sinks (e.g. the iceberg writer would land an empty snapshot).
+        return Ok((return_schema, futures::stream::empty().boxed()));
+    }
     let batch = RecordBatch::new_with_size(return_schema.clone(), Vec::new(), n)?;
     Ok((
         return_schema,
@@ -611,7 +627,7 @@ pub async fn stream_parquet(
         return count_only_stream(
             &prepared.parquet_metadata,
             &rg_indices,
-            opts.num_rows,
+            opts,
             plan.return_daft_schema,
         );
     }

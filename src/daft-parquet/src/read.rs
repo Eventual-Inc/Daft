@@ -812,4 +812,122 @@ mod tests {
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    /// Regression test for #7560: a read that projects zero file columns takes
+    /// the count-only fast path, which must still exclude Iceberg positional
+    /// deletes carried on the scan task. Before the fix, `count_only_stream`
+    /// summed physical row-group sizes and ignored `delete_rows`, so the
+    /// delete-aware read returned 200 instead of 160.
+    #[test]
+    fn test_count_only_projection_applies_positional_deletes() {
+        use arrow::{
+            array::Int32Array,
+            datatypes::{DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema},
+        };
+        use parquet::{arrow::ArrowWriter, file::properties::WriterProperties};
+
+        // Unique per run: tests execute in parallel and a fixed path would let
+        // one run read another's file.
+        let dir = std::env::temp_dir().join(format!(
+            "daft_test_count_only_deletes_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file_path = dir.join("data.parquet");
+
+        // 200 rows split across 4 row groups of 50.
+        let schema = Arc::new(ArrowSchema::new(vec![ArrowField::new(
+            "x",
+            ArrowDataType::Int32,
+            false,
+        )]));
+        let file = std::fs::File::create(&file_path).unwrap();
+        let props = WriterProperties::builder()
+            .set_max_row_group_row_count(Some(50))
+            .build();
+        let mut writer = ArrowWriter::try_new(file, schema.clone(), Some(props)).unwrap();
+        let batch = arrow::array::RecordBatch::try_new(
+            schema,
+            vec![Arc::new(Int32Array::from((0..200).collect::<Vec<i32>>()))],
+        )
+        .unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+
+        let uri = file_path.to_str().unwrap().to_string();
+        let io_client = Arc::new(IOClient::new(IOConfig::default().into()).unwrap());
+        let runtime = get_io_runtime(true);
+
+        let (baseline, with_deletes, fully_deleted) = runtime
+            .block_within_async_context(async move {
+                // Zero-column projection, no deletes -> physical row count.
+                let opts = ParquetReadOptions {
+                    columns: Some(vec![]),
+                    ..Default::default()
+                };
+                let mut stream = read_parquet(&uri, io_client.clone(), None, opts)
+                    .await
+                    .unwrap();
+                let mut base = 0;
+                while let Some(batch) = stream.next().await {
+                    base += batch.unwrap().len();
+                }
+
+                // Zero-column projection with 40 positional deletes (rows 0..39)
+                // -> 160 live rows.
+                let opts = ParquetReadOptions {
+                    columns: Some(vec![]),
+                    delete_rows: Some((0..40i64).collect()),
+                    ..Default::default()
+                };
+                let mut stream = read_parquet(&uri, io_client.clone(), None, opts)
+                    .await
+                    .unwrap();
+                let mut del = 0;
+                while let Some(batch) = stream.next().await {
+                    del += batch.unwrap().len();
+                }
+
+                // Every row deleted -> the stream must be fully empty. A 0-row
+                // batch would make downstream sinks (e.g. the iceberg writer)
+                // treat the read as data and land an empty snapshot.
+                let opts = ParquetReadOptions {
+                    columns: Some(vec![]),
+                    delete_rows: Some((0..200i64).collect()),
+                    ..Default::default()
+                };
+                let mut stream = read_parquet(&uri, io_client.clone(), None, opts)
+                    .await
+                    .unwrap();
+                let mut all_deleted = (0usize, 0usize);
+                while let Some(batch) = stream.next().await {
+                    let batch = batch.unwrap();
+                    all_deleted.0 += 1;
+                    all_deleted.1 += batch.len();
+                }
+
+                (base, del, all_deleted)
+            })
+            .unwrap();
+
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert_eq!(
+            baseline, 200,
+            "zero-column projection with no deletes should count all physical rows"
+        );
+        assert_eq!(
+            with_deletes, 160,
+            "count-only fast path must exclude the 40 positionally-deleted rows (#7560)"
+        );
+        assert_eq!(
+            fully_deleted,
+            (0, 0),
+            "a fully-deleted count-only read must yield no batches, not a 0-row batch"
+        );
+    }
 }
