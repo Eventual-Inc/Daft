@@ -394,9 +394,13 @@ pub mod pylib {
     use common_daft_config::PyDaftExecutionConfig;
     use common_error::DaftResult;
     use common_py_serde::impl_bincode_py_state_serialization;
+    use daft_core::python::PySeries;
     use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr, python::PyExpr};
     use daft_recordbatch::{RecordBatch, python::PyRecordBatch};
-    use daft_schema::{python::schema::PySchema, schema::SchemaRef};
+    use daft_schema::{
+        python::schema::PySchema,
+        schema::{Schema, SchemaRef},
+    };
     use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
     use pyo3::{prelude::*, pyclass, types::PyIterator};
     use serde::{Deserialize, Serialize};
@@ -408,9 +412,27 @@ pub mod pylib {
         SupportsPushdownFilters,
         anonymous::AnonymousScanOperator,
         glob::GlobScanOperator,
+        hive::{hive_partitions_to_fields, hive_partitions_to_series, parse_hive_partitioning},
         python::pylib_scan_info::{PyPartitionField, PyPushdowns},
         storage_config::StorageConfig,
     };
+
+    /// Infer partition fields using the same Hive helpers as native file scans.
+    #[pyfunction]
+    pub fn _infer_hive_partition_schema(uri: &str) -> PyResult<PySchema> {
+        let partitions = parse_hive_partitioning(uri)?;
+        Ok(Arc::new(Schema::new(hive_partitions_to_fields(&partitions))).into())
+    }
+
+    /// Convert present, declared partition keys to single-value typed series.
+    #[pyfunction]
+    pub fn _parse_hive_partition_values(uri: &str, schema: PySchema) -> PyResult<Vec<PySeries>> {
+        let partitions = parse_hive_partitioning(uri)?;
+        Ok(hive_partitions_to_series(&partitions, &schema.schema)?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
 
     #[pyclass(module = "daft.daft", frozen, from_py_object)]
     #[derive(Debug, Clone)]
@@ -1322,6 +1344,14 @@ pub mod pylib_scan_info {
 }
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
+    parent.add_function(wrap_pyfunction!(
+        pylib::_infer_hive_partition_schema,
+        parent
+    )?)?;
+    parent.add_function(wrap_pyfunction!(
+        pylib::_parse_hive_partition_values,
+        parent
+    )?)?;
     parent.add_class::<StorageConfig>()?;
     parent.add_class::<PyFileFormatConfig>()?;
     parent.add_class::<pylib::ScanOperatorHandle>()?;
