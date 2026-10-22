@@ -11,11 +11,13 @@ import pytest
 from pyarrow import orc
 
 import daft
+from daft import DataType
 from daft.io import _orc
 from daft.io._orc import OrcSource, OrcSourceTask
 from daft.io.pushdowns import Pushdowns
 from daft.pickle import cloudpickle
 from daft.recordbatch import RecordBatch
+from daft.schema import Schema
 
 
 def _write_orc(path: Path, table: pa.Table, **kwargs) -> str:
@@ -227,6 +229,193 @@ def test_read_orc_casts_to_inferred_schema(tmp_path: Path) -> None:
     tables = [pa.table({"id": [1], "seq": [1]}), pa.table({"id": ["2", "not-an-integer"], "seq": [2, 3]})]
     orc_paths = [_write_orc(tmp_path / f"{index}.orc", table) for index, table in enumerate(tables)]
     assert daft.read_orc(orc_paths).sort("seq").to_pydict() == {"id": [1, 2, None], "seq": [1, 2, 3]}
+
+
+def test_read_orc_explicit_schema_skips_inference(orc_path: str, monkeypatch) -> None:
+    def unexpected_inference(*args, **kwargs):
+        pytest.fail("An explicit schema must not trigger planning-time inference")
+
+    monkeypatch.setattr(_orc, "_infer_orc_schema", unexpected_inference)
+    schema = {"name": DataType.string(), "id": DataType.string(), "missing": DataType.int32()}
+    df = daft.read_orc(orc_path, schema=schema, infer_schema=False, batch_size=2)
+    assert df.schema() == Schema.from_pydict(schema)
+    assert df.to_pydict() == {
+        "name": [f"row-{i}" for i in range(9)],
+        "id": [str(i) for i in range(9)],
+        "missing": [None] * 9,
+    }
+
+
+def test_read_orc_requires_explicit_schema_before_io(monkeypatch) -> None:
+    def unexpected_io(*args, **kwargs):
+        pytest.fail("Missing schema must be rejected before filesystem access")
+
+    monkeypatch.setattr(_orc, "_resolve_orc_paths", unexpected_io)
+    with pytest.raises(ValueError, match="Cannot read DataFrame with infer_schema=False and schema=None"):
+        daft.read_orc("unused.orc", infer_schema=False)
+
+
+def test_read_orc_schema_hints_append_fields_in_order(tmp_path: Path) -> None:
+    first = _write_orc(tmp_path / "first.orc", pa.table({"id": [1], "name": ["a"]}))
+    second = _write_orc(tmp_path / "second.orc", pa.table({"later": [7], "name": ["b"], "id": [2]}))
+    hints = {"later": DataType.int32(), "id": DataType.string(), "missing": DataType.bool()}
+    df = daft.read_orc([first, second], schema=hints, batch_size=1)
+    assert df.schema() == Schema.from_pydict(
+        {"id": DataType.string(), "name": DataType.string(), "later": DataType.int32(), "missing": DataType.bool()}
+    )
+    assert df.sort("id").to_pydict() == {
+        "id": ["1", "2"],
+        "name": ["a", "b"],
+        "later": [None, 7],
+        "missing": [None, None],
+    }
+
+
+@pytest.mark.parametrize("infer_schema", [False, True])
+def test_read_orc_schema_preserves_positional_arguments(orc_path: str, infer_schema: bool) -> None:
+    df = daft.read_orc(orc_path, None, 2, schema={"id": DataType.string()}, infer_schema=infer_schema)
+    assert df.select("id").to_pydict() == {"id": [str(i) for i in range(9)]}
+    assert df.column_names == (["id", "name"] if infer_schema else ["id"])
+
+
+@pytest.mark.parametrize("infer_schema", [False, True])
+def test_read_orc_empty_schema(orc_path: str, infer_schema: bool) -> None:
+    df = daft.read_orc(orc_path, schema={}, infer_schema=infer_schema, batch_size=2)
+    assert df.column_names == (["id", "name"] if infer_schema else [])
+    assert df.select(daft.lit(1).alias("constant")).to_pydict() == {"constant": [1] * 9}
+    assert df.select(daft.lit(1).alias("constant")).count_rows() == 9
+
+
+@pytest.mark.parametrize("infer_schema", [False, True])
+def test_read_orc_schema_missing_fields(orc_path: str, infer_schema: bool) -> None:
+    df = daft.read_orc(orc_path, schema={"missing": DataType.int32()}, infer_schema=infer_schema, batch_size=2)
+    assert df.select("missing").to_pydict() == {"missing": [None] * 9}
+    assert df.where(daft.col("missing").is_null()).count_rows() == 9
+    assert df.where(daft.col("missing").not_null()).count_rows() == 0
+
+
+@pytest.mark.parametrize("infer_schema", [False, True])
+@pytest.mark.parametrize(
+    "physical_dtype,target_dtype,values,expected",
+    [
+        (pa.int32(), DataType.int64(), [1, None, -2], [1, None, -2]),
+        (pa.string(), DataType.int64(), ["10", None, "invalid"], [10, None, None]),
+        (pa.int64(), DataType.string(), [1, None, -2], ["1", None, "-2"]),
+        (pa.list_(pa.int32()), DataType.list(DataType.int64()), [[1, None], None, []], [[1, None], None, []]),
+        (
+            pa.struct([("a", pa.int32())]),
+            DataType.struct({"a": DataType.int64(), "b": DataType.string()}),
+            [{"a": 1}, None, {"a": None}],
+            [{"a": 1, "b": None}, None, {"a": None, "b": None}],
+        ),
+        (
+            pa.map_(pa.string(), pa.struct([("a", pa.int32())])),
+            DataType.map(DataType.string(), DataType.struct({"a": DataType.int64(), "b": DataType.string()})),
+            [[("x", {"a": 1})], None, []],
+            [[("x", {"a": 1, "b": None})], None, []],
+        ),
+    ],
+)
+def test_read_orc_schema_type_conversion(
+    tmp_path: Path,
+    infer_schema: bool,
+    physical_dtype: pa.DataType,
+    target_dtype: DataType,
+    values: list,
+    expected: list,
+) -> None:
+    table = pa.table({"value": pa.array(values, type=physical_dtype)})
+    path = _write_orc(tmp_path / "types.orc", table)
+    schema = {"value": target_dtype}
+    df = daft.read_orc(path, schema=schema, infer_schema=infer_schema, batch_size=1)
+    assert df.schema() == Schema.from_pydict(schema)
+    assert df.to_pydict() == {"value": expected}
+
+
+@pytest.mark.parametrize("infer_schema", [False, True])
+def test_read_orc_schema_incompatible_type(tmp_path: Path, infer_schema: bool) -> None:
+    path = _write_orc(tmp_path / "incompatible.orc", pa.table({"id": [{"value": 1}]}))
+    with pytest.raises(Exception, match="(?i)(cast|convert|parse)"):
+        daft.read_orc(path, schema={"id": DataType.int64()}, infer_schema=infer_schema).collect()
+
+
+@pytest.mark.parametrize("infer_schema", [False, True])
+def test_read_orc_schema_casts_before_filtering(tmp_path: Path, infer_schema: bool) -> None:
+    path = _write_orc(tmp_path / "strings.orc", pa.table({"id": ["2", "10", "invalid"], "name": ["two", "ten", "bad"]}))
+    df = daft.read_orc(path, schema={"id": DataType.int64()}, infer_schema=infer_schema, batch_size=1)
+    projected = "name" if infer_schema else "id"
+    assert df.where(daft.col("id") >= 6).select(projected).to_pydict() == {projected: ["ten" if infer_schema else 10]}
+    assert df.where(daft.col("id").is_null()).select(projected).to_pydict() == {
+        projected: ["bad" if infer_schema else None]
+    }
+    assert df.where(daft.col("id") >= 6).count_rows() == 1
+
+
+@pytest.mark.parametrize("infer_schema", [False, True])
+def test_orc_schema_task_projection(orc_path: str, infer_schema: bool) -> None:
+    schema = {"name": DataType.string(), "id": DataType.string(), "missing": DataType.int32()}
+    source = OrcSource(orc_path, None, 2, schema=schema, infer_schema=infer_schema)
+    task = _tasks(source, Pushdowns(columns=["missing"], filters=daft.col("id") == "6"))[0]
+    expected_schema = Schema.from_pydict({"id": DataType.string(), "missing": DataType.int32()})
+    assert task.schema == expected_schema
+    batches = _batches(task)
+    assert all(batch.schema() == expected_schema for batch in batches)
+    assert [value for batch in batches for value in batch.to_pydict()["id"]] == [str(i) for i in range(9)]
+    assert all(batch.to_pydict()["missing"] == [None] * len(batch) for batch in batches)
+
+
+@pytest.mark.parametrize("infer_schema", [False, True])
+def test_orc_schema_task_empty_projection(orc_path: str, infer_schema: bool) -> None:
+    source = OrcSource(orc_path, None, 2, schema={"missing": DataType.int64()}, infer_schema=infer_schema)
+    task = _tasks(source, Pushdowns(columns=[]))[0]
+    batches = _batches(task)
+    assert task.schema.column_names() == []
+    assert sum(len(batch) for batch in batches) == 9
+    assert all(batch.schema() == task.schema for batch in batches)
+
+
+@pytest.mark.parametrize("infer_schema", [False, True])
+def test_read_orc_schema_empty_file(tmp_path: Path, infer_schema: bool) -> None:
+    path = _write_orc(tmp_path / "empty.orc", pa.table({"id": pa.array([], pa.int32())}))
+    schema = {"missing": DataType.string(), "id": DataType.int64()}
+    df = daft.read_orc(path, schema=schema, infer_schema=infer_schema)
+    expected_names = ["id", "missing"] if infer_schema else ["missing", "id"]
+    assert df.column_names == expected_names
+    assert df.schema() == Schema.from_pydict({name: schema[name] for name in expected_names})
+    assert df.to_pydict() == {name: [] for name in expected_names}
+    assert df.count_rows() == 0
+
+
+@pytest.mark.parametrize("infer_schema", [False, True])
+def test_orc_schema_serialization(orc_path: str, infer_schema: bool) -> None:
+    source = OrcSource(
+        orc_path, None, 2, schema={"id": DataType.string(), "missing": DataType.int32()}, infer_schema=infer_schema
+    )
+    source = cloudpickle.loads(cloudpickle.dumps(source))
+    task = cloudpickle.loads(cloudpickle.dumps(_tasks(source)[0]))
+    assert source.schema == task.schema
+    batches = _batches(task)
+    assert all(batch.schema() == source.schema for batch in batches)
+    assert sum(len(batch) for batch in batches) == 9
+
+
+@pytest.mark.parametrize("infer_schema", [False, True])
+def test_read_orc_schema_python_type(orc_path: str, infer_schema: bool) -> None:
+    df = daft.read_orc(orc_path, schema={"id": DataType.python()}, infer_schema=infer_schema, batch_size=2)
+    assert df.schema()["id"].dtype == DataType.python()
+    assert df.select("id").to_pydict() == {"id": list(range(9))}
+
+
+def test_read_orc_explicit_schema_corrupt_file(tmp_path: Path) -> None:
+    path = tmp_path / "corrupt.orc"
+    path.write_bytes(b"not an ORC file")
+    schema = {"id": DataType.int64()}
+    source = OrcSource(str(path), None, 2, schema=schema, infer_schema=False)
+    with pytest.raises(OSError, match="corrupt.orc"):
+        _batches(_tasks(source)[0])
+    df = daft.read_orc(str(path), schema=schema, infer_schema=False)
+    with pytest.raises(Exception, match="corrupt.orc"):
+        df.collect()
 
 
 def test_read_orc_projection_and_filter(orc_path: str) -> None:
