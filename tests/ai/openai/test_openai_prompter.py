@@ -596,6 +596,54 @@ def test_openai_prompter_with_image_numpy():
         assert messages[0]["content"][1]["image_url"].startswith("data:image/png;base64,")
 
 
+# Pillow 13 changed PNG encoding of mode "I" images. These are the array layouts that
+# Daft image columns produce (uint8 L/LA/RGB/RGBA, uint16 L16). Each must round-trip
+# through the PNG data URI without a change in pixel values.
+_IMAGE_ARRAY_SHAPES = {
+    "L": ((6, 5), "uint8"),
+    "LA": ((6, 5, 2), "uint8"),
+    "RGB": ((6, 5, 3), "uint8"),
+    "RGBA": ((6, 5, 4), "uint8"),
+    "L16": ((6, 5), "uint16"),
+}
+
+
+@pytest.mark.parametrize("mode", list(_IMAGE_ARRAY_SHAPES))
+def test_openai_prompter_numpy_image_png_roundtrip(mode):
+    """Test that numpy image messages are encoded as PNG with exact pixel values."""
+    import base64
+    import io
+
+    from PIL import Image as PILImage
+
+    from daft.dependencies import np
+
+    shape, dtype = _IMAGE_ARRAY_SHAPES[mode]
+    max_value = np.iinfo(dtype).max
+    image = (np.arange(np.prod(shape)) * (max_value // np.prod(shape))).reshape(shape).astype(dtype)
+
+    async def _test():
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_response.output_text = "ok"
+        mock_client.responses.create = AsyncMock(return_value=mock_response)
+
+        prompter = create_prompter()
+        prompter.llm = mock_client
+
+        await prompter.prompt(("Describe this image.", image))
+
+        messages = mock_client.responses.create.call_args.kwargs["input"]
+        image_url = messages[0]["content"][1]["image_url"]
+        prefix = "data:image/png;base64,"
+        assert image_url.startswith(prefix)
+        decoded = PILImage.open(io.BytesIO(base64.b64decode(image_url[len(prefix) :])))
+        assert decoded.format == "PNG"
+        assert np.array_equal(np.asarray(decoded), image)
+
+    run_async(_test())
+
+
 def test_openai_prompter_raises_without_pillow_on_image():
     """Test that prompting with image fails without Pillow."""
     from daft.dependencies import np
