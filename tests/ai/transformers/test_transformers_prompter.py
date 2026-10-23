@@ -97,6 +97,7 @@ def test_provider_get_prompter_default():
     assert descriptor.get_model() == TransformersProvider.DEFAULT_PROMPTER
 
 
+@pytest.mark.filterwarnings("ignore:Could not determine vision capability")
 def test_provider_get_prompter_with_overrides():
     from daft.ai.transformers.provider import TransformersProvider
 
