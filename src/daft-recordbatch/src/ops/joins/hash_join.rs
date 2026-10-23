@@ -246,11 +246,21 @@ pub(super) fn hash_semi_anti_join(
 
     let (lkeys, rkeys) = match_types_for_tables(&lkeys, &rkeys)?;
 
-    let lidx = if lkeys.columns.iter().any(|s| s.data_type().is_null())
-        || rkeys.columns.iter().any(|s| s.data_type().is_null())
-    {
+    // After type matching, Null-dtype key columns are null on both sides. Such a column can
+    // never match unless null_equals_nulls is set for it; when it is, fall through to the
+    // regular path below, which supports Null keys and honors the flag.
+    let has_never_matching_null_key = lkeys
+        .columns
+        .iter()
+        .zip(rkeys.columns.iter())
+        .enumerate()
+        .any(|(i, (lcol, rcol))| {
+            (lcol.data_type().is_null() || rcol.data_type().is_null())
+                && !null_equals_nulls.get(i).copied().unwrap_or(false)
+        });
+
+    let lidx = if has_never_matching_null_key {
         if is_anti {
-            // if we have a null column match, then all of the rows match for an anti join!
             return Ok(left.clone());
         } else {
             UInt64Array::empty("left_indices", &DataType::UInt64)
