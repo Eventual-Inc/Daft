@@ -4,6 +4,7 @@ import math
 import struct
 import tempfile
 from contextlib import contextmanager
+from itertools import accumulate
 
 import pyarrow as pa
 import pytest
@@ -48,6 +49,26 @@ def test_disallowed_sort_bytes(make_df):
 ###
 # Functional tests
 ###
+
+
+@pytest.mark.parametrize("operation", ["projection", "filter"])
+def test_sort_preserved_before_batch_udf(operation):
+    @daft.func.batch(return_dtype=DataType.int64(), batch_size=3)
+    def prefix_sum(x: daft.Series) -> daft.Series:
+        assert len(x) == 3
+        return daft.Series.from_pylist(list(accumulate(x.to_pylist())))
+
+    with daft.execution_config_ctx(default_morsel_size=3):
+        df = daft.from_pydict({"x": [3, 1, 2]}).sort("x")
+        if operation == "projection":
+            df = df.with_column("y", prefix_sum(daft.col("x")))
+            expected = {"x": [1, 2, 3], "y": [1, 3, 6]}
+        else:
+            df = df.where(prefix_sum(daft.col("x")) <= 3)
+            expected = {"x": [1, 2]}
+        result = df.sort("x").to_pydict()
+
+    assert result == expected
 
 
 @pytest.mark.parametrize("desc", [True, False])
