@@ -9,7 +9,7 @@ use daft_dsl::{
     AggExpr, bound_col,
     expr::bound_expr::{BoundAggExpr, BoundExpr},
 };
-use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, ShuffleReadBackend};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, ShuffleBackend, ShuffleReadBackend};
 use daft_logical_plan::{AsofJoinStrategy, stats::StatsState};
 use daft_schema::{
     field::Field,
@@ -195,6 +195,10 @@ impl AsofJoinNode {
             self.left.config().schema.clone(),
             self.right.config().schema.clone(),
             num_partitions,
+            // The carryover phase below groups the shuffled outputs by worker and
+            // pins tasks with worker affinity, which relies on Ray ref locality, so
+            // asof join stays on the Ray backend for now.
+            ShuffleBackend::Ray,
             self.as_ref(),
             task_id_counter,
             scheduler_handle,
