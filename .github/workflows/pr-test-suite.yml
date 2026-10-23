@@ -538,15 +538,12 @@ jobs:
       run: |
         mkdir -p /tmp/daft-integration-testing/nginx
         chmod +rw /tmp/daft-integration-testing/nginx
-    - name: Pull IO service images
-      uses: nick-fields/retry@v4
-      with:
-        timeout_minutes: 10
-        max_attempts: 3
-        retry_wait_seconds: 10
-        command: docker compose -f ./tests/integration/io/docker-compose/docker-compose.yml pull --ignore-buildable
     - name: Spin up IO services
-      run: docker compose -f ./tests/integration/io/docker-compose/docker-compose.yml up -d --wait --wait-timeout 600
+      uses: ./.github/actions/docker-image-cache
+      with:
+        key: io-images-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tests/integration/io/docker-compose/**') }}
+        pull_command: docker compose -f ./tests/integration/io/docker-compose/docker-compose.yml pull --ignore-buildable
+        command: docker compose -f ./tests/integration/io/docker-compose/docker-compose.yml up -d --wait --wait-timeout 600
     - name: Run IO integration tests
       run: |
         set -o pipefail
