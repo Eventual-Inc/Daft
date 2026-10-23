@@ -35,7 +35,9 @@ runs:
     shell: bash
     run: |
       set -euo pipefail
-      docker image ls --no-trunc --filter dangling=false --format '{{.ID}}' | sort -u > "${{ runner.temp }}/docker-image-cache-before.txt"
+      docker image ls --filter dangling=false --format '{{.Repository}}:{{.Tag}}' \
+        | awk '$0 != "<none>:<none>"' \
+        | LC_ALL=C sort -u > "${{ runner.temp }}/docker-image-cache-before.txt"
 
   - name: Restore cached Docker images
     id: cache
@@ -80,12 +82,17 @@ runs:
       archive="${{ runner.temp }}/docker-image-cache.tar"
       before="${{ runner.temp }}/docker-image-cache-before.txt"
       current="$(mktemp)"
-      docker image ls --no-trunc --filter dangling=false --format '{{.ID}}' | sort -u > "$current"
-      mapfile -t ids < <(comm -13 "$before" "$current")
+      docker image ls --filter dangling=false --format '{{.Repository}}:{{.Tag}}' \
+        | awk '$0 != "<none>:<none>"' \
+        | LC_ALL=C sort -u > "$current"
+      mapfile -t names < <(comm -13 "$before" "$current")
       rm -f "$current"
-      if [ "${#ids[@]}" -eq 0 ]; then
+      if [ "${#names[@]}" -eq 0 ]; then
         echo "No new Docker images to cache"
         exit 0
       fi
-      echo "Saving ${#ids[@]} Docker images"
-      docker save -o "$archive" "${ids[@]}"
+      echo "Saving ${#names[@]} Docker images"
+      printf '  %s\n' "${names[@]}"
+      # Save by name. docker save of an image ID omits repository tags, and
+      # docker load would restore untagged images that Compose cannot find.
+      docker save -o "$archive" "${names[@]}"
