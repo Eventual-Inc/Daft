@@ -87,6 +87,7 @@ impl BlockingSink for AggregateSink {
         input: MicroPartition,
         mut state: Self::State,
         _runtime_stats: Arc<Self::Stats>,
+        _spill_scope: crate::spilling::SpillScopeId,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let params = self.agg_sink_params.clone();
@@ -106,6 +107,7 @@ impl BlockingSink for AggregateSink {
     fn finalize(
         &self,
         states: Vec<Self::State>,
+        _spill_scope: crate::spilling::SpillScopeId,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult {
         let params = self.agg_sink_params.clone();
@@ -119,7 +121,7 @@ impl BlockingSink for AggregateSink {
                     let concated = MicroPartition::concat(all_parts)?;
                     let agged = concated.agg(&params.finalize_agg_exprs, &[])?;
                     let projected = agged.eval_expression_list(&params.final_projections)?;
-                    Ok(BlockingSinkOutput::Partitions(vec![projected]))
+                    Ok(BlockingSinkOutput::partitions(vec![projected]))
                 },
                 Span::current(),
             )
