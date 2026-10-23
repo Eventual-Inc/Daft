@@ -124,6 +124,45 @@ def test_is_done_transitions():
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
+def test_limit_counter_claim_after_teardown_returns_done():
+    """Regression: claim/start_task on a torn-down counter actor must not raise.
+
+    When `LimitNode` kills the counter actor after the limit is satisfied,
+    sibling worker `claim`/`start_task` calls used to raise
+    `ActorDiedError`, propagating out of `DistributedLimitSink::execute`
+    and tearing down the worker's pipeline. `LimitCounterHandle` now
+    swallows that error and reports the limit as done, so cancelled
+    tasks drain without noise.
+    """
+    import asyncio
+
+    from daft.execution.ray_distributed_limit import start_limit_counter_actor
+
+    if not ray.is_initialized():
+        ray.init(num_cpus=2, ignore_reinit_error=True, configure_logging=False, log_to_driver=False)
+
+    async def main():
+        handle = await start_limit_counter_actor(limit=10, offset=0, timeout=10)
+        handle.teardown()
+        # ray.kill is asynchronous; wait until the actor is observably gone
+        # so we're actually exercising the dead-actor path.
+        for _ in range(50):
+            try:
+                await handle.actor.claim.remote("probe", 0)
+            except ray.exceptions.ActorDiedError:
+                break
+            await asyncio.sleep(0.05)
+        else:
+            pytest.fail("LimitCounterActor did not die after teardown")
+
+        # Pre-fix: each raises ActorDiedError. Post-fix: silent.
+        assert await handle.claim("t1", 50) == (0, 0, True)
+        await handle.start_task("t2")
+
+    asyncio.run(main())
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
 def test_distributed_limit_retries_after_worker_death(tmp_path):
     """`.limit(N)` must still produce N rows when a SwordfishTask crashes mid-claim.
 
