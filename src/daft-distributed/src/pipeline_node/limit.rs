@@ -141,6 +141,18 @@ impl LimitNode {
         let mut contributors: Option<HashSet<TaskID>> = None;
         let mut limit_completed = Box::pin(await_limit_completion(&actor));
         let mut input_exhausted = false;
+        // Held in an `Option` so the sender is dropped — closing our output
+        // stream — the moment there is nothing left to forward, rather than
+        // when this loop ends. The loop only makes progress once the tasks it
+        // emitted are actually running, because completion is reported through
+        // the counter actor. But a downstream node may buffer our whole builder
+        // stream before submitting anything: `IntoPartitionsNode` has to count
+        // its input tasks before it can choose between coalescing and
+        // splitting, so it drains us to exhaustion first. Holding the sender
+        // past exhaustion deadlocks the two — it waits for a stream close that
+        // never comes, we wait for tasks it never submits, and the query hangs
+        // with the actor spinning in `await_limit_completion`.
+        let mut result_tx = Some(result_tx);
         while !limit_loop_done(
             contributors.as_ref(),
             &completed_ids,
@@ -165,6 +177,7 @@ impl LimitNode {
                 builder_opt = input_task_stream.next(), if !input_exhausted => {
                     let Some(builder) = builder_opt else {
                         input_exhausted = true;
+                        result_tx = None;
                         continue;
                     };
                     let limit = self.limit;
@@ -186,8 +199,12 @@ impl LimitNode {
                         .add_notify_token();
 
                     running_tasks.spawn(notify_token);
-                    if result_tx.send(builder).await.is_err() {
+                    let sender = result_tx
+                        .as_ref()
+                        .expect("limit result sender is live until the input stream ends");
+                    if sender.send(builder).await.is_err() {
                         input_exhausted = true;
+                        result_tx = None;
                     }
                 }
                 else => break,
