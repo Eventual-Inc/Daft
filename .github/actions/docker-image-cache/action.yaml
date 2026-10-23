@@ -35,8 +35,10 @@ runs:
     shell: bash
     run: |
       set -euo pipefail
-      docker image ls --filter dangling=false --format '{{.Repository}}:{{.Tag}}' \
-        | awk '$0 != "<none>:<none>"' \
+      # Digest-pinned images have no local tag, so .Tag is <none>. repo:<none>
+      # is not a reference docker save accepts.
+      docker image ls --filter dangling=false --format '{{.Repository}}|{{.Tag}}' \
+        | awk -F'|' '$1 != "<none>" && $2 != "<none>" && $2 != "" { print $1 ":" $2 }' \
         | LC_ALL=C sort -u > "${{ runner.temp }}/docker-image-cache-before.txt"
 
   - name: Restore cached Docker images
@@ -82,8 +84,8 @@ runs:
       archive="${{ runner.temp }}/docker-image-cache.tar"
       before="${{ runner.temp }}/docker-image-cache-before.txt"
       current="$(mktemp)"
-      docker image ls --filter dangling=false --format '{{.Repository}}:{{.Tag}}' \
-        | awk '$0 != "<none>:<none>"' \
+      docker image ls --filter dangling=false --format '{{.Repository}}|{{.Tag}}' \
+        | awk -F'|' '$1 != "<none>" && $2 != "<none>" && $2 != "" { print $1 ":" $2 }' \
         | LC_ALL=C sort -u > "$current"
       mapfile -t names < <(comm -13 "$before" "$current")
       rm -f "$current"
