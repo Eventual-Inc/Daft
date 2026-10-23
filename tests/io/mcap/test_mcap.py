@@ -439,7 +439,7 @@ def test_mcap_per_file_keyframe_scanner(tmp_path_factory):
     assert pdf[pdf["topic"] == topic1]["log_time"].min() >= 1000
 
 
-def test_mcap_use_legacy_types_schema_and_deprecation(tmp_path):
+def test_mcap_output_format(tmp_path):
     path = tmp_path / "legacy.mcap"
     with path.open("wb") as output:
         writer = MCAPWriter(output)
@@ -449,9 +449,8 @@ def test_mcap_use_legacy_types_schema_and_deprecation(tmp_path):
         writer.add_message(channel_id, log_time=1, publish_time=2, sequence=3, data=b"payload")
         writer.finish()
 
-    with pytest.warns(DeprecationWarning, match="use_legacy_types"):
-        legacy_df = daft.read_mcap(path, use_legacy_types=True)
-
+    with pytest.warns(DeprecationWarning, match="raw_legacy"):
+        legacy_df = daft.read_mcap(path, output_format="raw_legacy")
     assert legacy_df.schema()["log_time"].dtype == DataType.int64()
     assert legacy_df.schema()["publish_time"].dtype == DataType.int64()
     assert legacy_df.schema()["sequence"].dtype == DataType.int32()
@@ -465,18 +464,22 @@ def test_mcap_use_legacy_types_schema_and_deprecation(tmp_path):
 
     with warnings.catch_warnings():
         warnings.simplefilter("error", DeprecationWarning)
-        native_df = daft.read_mcap(path)
+        raw_frames = (daft.read_mcap(path), daft.read_mcap(path, output_format="raw"))
 
-    assert native_df.schema()["log_time"].dtype == DataType.uint64()
-    assert native_df.schema()["publish_time"].dtype == DataType.uint64()
-    assert native_df.schema()["sequence"].dtype == DataType.uint32()
-    assert native_df.schema()["data"].dtype == DataType.binary()
-    assert native_df.select("log_time", "publish_time", "sequence", "data").to_pydict() == {
-        "log_time": [1],
-        "publish_time": [2],
-        "sequence": [3],
-        "data": [b"payload"],
-    }
+    for df in raw_frames:
+        assert df.schema()["log_time"].dtype == DataType.uint64()
+        assert df.schema()["publish_time"].dtype == DataType.uint64()
+        assert df.schema()["sequence"].dtype == DataType.uint32()
+        assert df.schema()["data"].dtype == DataType.binary()
+        assert df.select("log_time", "publish_time", "sequence", "data").to_pydict() == {
+            "log_time": [1],
+            "publish_time": [2],
+            "sequence": [3],
+            "data": [b"payload"],
+        }
+
+    with pytest.raises(ValueError, match="output_format"):
+        daft.read_mcap(path, output_format="decoded")
 
 
 def test_glob_pattern_expands_directories_only():

@@ -2,7 +2,6 @@ use core::str;
 use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
 use arrow_schema::Field as ArrowField;
-use async_compat::{Compat, CompatExt};
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_io_runtime;
 use csv_async::{AsyncReader, AsyncReaderBuilder};
@@ -26,7 +25,10 @@ use tokio::{
     io::{AsyncBufRead, AsyncRead, BufReader},
     task::JoinHandle,
 };
-use tokio_util::io::StreamReader;
+use tokio_util::{
+    compat::{Compat, TokioAsyncReadCompatExt},
+    io::StreamReader,
+};
 
 use crate::{CsvConvertOptions, CsvParseOptions, CsvReadOptions, metadata::read_csv_schema_single};
 

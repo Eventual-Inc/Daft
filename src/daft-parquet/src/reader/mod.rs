@@ -3,10 +3,7 @@ mod field_reader;
 mod rg_processor;
 mod util;
 
-use std::{
-    collections::{BTreeMap, HashSet},
-    sync::Arc,
-};
+use std::{collections::HashSet, sync::Arc};
 
 use arrow::{array::ArrayRef, datatypes::Schema as ArrowSchema};
 use chunk_source::{
@@ -39,7 +36,8 @@ use crate::{
         substitute_missing_cols,
     },
     metadata::{
-        apply_field_ids_to_arrowrs_parquet_metadata, strip_string_types_from_parquet_metadata,
+        FieldIdMapping, apply_field_ids_to_arrowrs_parquet_metadata,
+        strip_string_types_from_parquet_metadata,
     },
     read::{ParquetReadOptions, ParquetSchemaInferenceOptions, StringEncoding},
 };
@@ -104,7 +102,7 @@ struct PreparedMetadata {
 
 fn prepare_metadata(
     arrow_metadata: ArrowReaderMetadata,
-    field_id_mapping: Option<&Arc<BTreeMap<i32, Field>>>,
+    field_id_mapping: Option<&Arc<FieldIdMapping>>,
     opts: ParquetSchemaInferenceOptions,
     path: &str,
 ) -> crate::Result<PreparedMetadata> {
