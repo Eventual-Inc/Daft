@@ -1,9 +1,10 @@
-use std::{collections::BTreeMap, hash::Hash, sync::Arc};
+use std::{hash::Hash, sync::Arc};
 
 use common_file_formats::FileFormat;
 use common_py_serde::impl_bincode_py_state_serialization;
 use daft_avro::AvroSourceConfig;
-use daft_schema::{field::Field, time_unit::TimeUnit};
+use daft_parquet::metadata::FieldIdMapping;
+use daft_schema::time_unit::TimeUnit;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
 use {
@@ -13,6 +14,7 @@ use {
         Py, PyAny, PyResult, Python, exceptions::PyValueError, pyclass, pymethods,
         types::PyAnyMethods,
     },
+    std::collections::BTreeMap,
 };
 
 /// Configuration for parsing a particular file format.
@@ -96,7 +98,7 @@ pub struct ParquetSourceConfig {
     /// data according to the provided field_ids.
     ///
     /// See: https://github.com/apache/parquet-format/blob/master/src/main/thrift/parquet.thrift#L456-L459
-    pub field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
+    pub field_id_mapping: Option<Arc<FieldIdMapping>>,
     pub row_groups: Option<Vec<Option<Vec<i64>>>>,
     pub chunk_size: Option<usize>,
     /// If true, corrupt or unreadable Parquet files are silently skipped instead of raising an
@@ -118,6 +120,7 @@ impl ParquetSourceConfig {
             res.push(format!(
                 "Field ID to Fields = {{{}}}",
                 mapping
+                    .fields
                     .iter()
                     .map(|(fid, f)| format!("{fid}: {f}"))
                     .collect::<Vec<String>>()
@@ -163,25 +166,37 @@ impl Default for ParquetSourceConfig {
 #[pymethods]
 impl ParquetSourceConfig {
     /// Create a config for a Parquet data source.
+    ///
+    /// `name_mapping` is an Iceberg `schema.name-mapping.default` JSON string, used to resolve
+    /// the columns of files written without field IDs.
     #[new]
-    #[pyo3(signature = (coerce_int96_timestamp_unit=None, field_id_mapping=None, row_groups=None, chunk_size=None, ignore_corrupt_files=false))]
+    #[pyo3(signature = (coerce_int96_timestamp_unit=None, field_id_mapping=None, row_groups=None, chunk_size=None, ignore_corrupt_files=false, name_mapping=None))]
     fn new(
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
         field_id_mapping: Option<BTreeMap<i32, PyField>>,
         row_groups: Option<Vec<Option<Vec<i64>>>>,
         chunk_size: Option<usize>,
         ignore_corrupt_files: bool,
-    ) -> Self {
-        Self {
+        name_mapping: Option<String>,
+    ) -> PyResult<Self> {
+        let name_mapping = name_mapping
+            .map(|json| serde_json::from_str(&json))
+            .transpose()
+            .map_err(|e| PyValueError::new_err(format!("Invalid name mapping: {e}")))?;
+        Ok(Self {
             coerce_int96_timestamp_unit: coerce_int96_timestamp_unit
                 .unwrap_or_else(|| TimeUnit::Nanoseconds.into())
                 .into(),
-            field_id_mapping: field_id_mapping
-                .map(|map| Arc::new(map.into_iter().map(|(k, v)| (k, v.field)).collect())),
+            field_id_mapping: field_id_mapping.map(|map| {
+                Arc::new(FieldIdMapping {
+                    fields: map.into_iter().map(|(k, v)| (k, v.field)).collect(),
+                    name_mapping,
+                })
+            }),
             row_groups,
             chunk_size,
             ignore_corrupt_files,
-        }
+        })
     }
 
     #[getter]
