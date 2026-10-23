@@ -11,6 +11,7 @@ use std::{
 };
 
 use common_error::DaftResult;
+use common_io_config::IOConfig;
 use daft_dsl::{Expr, ExprRef};
 use daft_logical_plan::LogicalPlanBuilder;
 use read_csv::ReadCsvFunction;
@@ -22,7 +23,7 @@ use sqlparser::ast::TableFunctionArgs;
 
 use crate::{
     error::{PlannerError, SQLPlannerResult},
-    functions::SQLLiteral,
+    functions::{SQLFunctionArguments, SQLLiteral},
     invalid_operation_err,
     modules::config::expr_to_iocfg,
     planner::SQLPlanner,
@@ -118,5 +119,16 @@ where
     #[cfg(not(feature = "python"))]
     {
         runtime.block_within_async_context(future)
+    }
+}
+
+/// Resolve a reader's `io_config` argument, falling back to the context default.
+///
+/// This lives in `daft-sql` rather than in the scan builders because `daft-context`
+/// depends on `daft-logical-plan`, so the reverse dependency would cycle.
+pub(crate) fn resolve_io_config(args: &SQLFunctionArguments) -> Result<IOConfig, PlannerError> {
+    match args.get_named("io_config") {
+        Some(expr) => expr_to_iocfg(expr),
+        None => Ok(daft_context::get_context().io_config()),
     }
 }
