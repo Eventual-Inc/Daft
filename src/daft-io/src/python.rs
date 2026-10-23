@@ -7,7 +7,7 @@ mod py {
     use futures::TryStreamExt;
     use pyo3::{prelude::*, types::PyDict};
 
-    use crate::{get_io_client, parse_url, s3_like, stats::IOStatsContext};
+    use crate::{GetRange, get_io_client, parse_url, s3_like, stats::IOStatsContext};
 
     #[pyfunction(signature = (
         input,
@@ -134,11 +134,141 @@ mod py {
         Ok(())
     }
 
+    #[pyfunction(signature = (
+        path,
+        multithreaded_io=None,
+        io_config=None,
+        range_start=None,
+        range_end=None,
+        suffix=None
+    ))]
+    fn io_get(
+        py: Python,
+        path: String,
+        multithreaded_io: Option<bool>,
+        io_config: Option<common_io_config::python::IOConfig>,
+        range_start: Option<usize>,
+        range_end: Option<usize>,
+        suffix: Option<usize>,
+    ) -> PyResult<Vec<u8>> {
+        if suffix.is_some() && (range_start.is_some() || range_end.is_some()) {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "suffix cannot be combined with range_start or range_end",
+            ));
+        }
+        if range_end.is_some() && range_start.is_none() {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "range_end requires range_start",
+            ));
+        }
+        let range = match (range_start, range_end, suffix) {
+            (_, _, Some(suffix)) => Some(GetRange::Suffix(suffix)),
+            (Some(start), Some(end), None) => Some(GetRange::Bounded(start..end)),
+            (Some(start), None, None) => Some(GetRange::Offset(start)),
+            (None, None, None) => None,
+            _ => unreachable!(),
+        };
+        let multithreaded_io = multithreaded_io.unwrap_or(true);
+        let io_stats = IOStatsContext::new(format!("io_get for {path}"));
+        let result: DaftResult<Vec<u8>> = py.detach(|| {
+            let io_client = get_io_client(
+                multithreaded_io,
+                io_config.unwrap_or_default().config.into(),
+            )?;
+            let runtime_handle = get_io_runtime(multithreaded_io);
+            runtime_handle.block_on_current_thread(async {
+                let result = io_client
+                    .single_url_get(path, range, Some(io_stats))
+                    .await?;
+                Ok(result.bytes().await?.to_vec())
+            })
+        });
+        Ok(result?)
+    }
+
+    #[pyfunction(signature = (path, multithreaded_io=None, io_config=None))]
+    fn io_get_size(
+        py: Python,
+        path: String,
+        multithreaded_io: Option<bool>,
+        io_config: Option<common_io_config::python::IOConfig>,
+    ) -> PyResult<usize> {
+        let multithreaded_io = multithreaded_io.unwrap_or(true);
+        let io_stats = IOStatsContext::new(format!("io_get_size for {path}"));
+        let result: DaftResult<usize> = py.detach(|| {
+            let io_client = get_io_client(
+                multithreaded_io,
+                io_config.unwrap_or_default().config.into(),
+            )?;
+            let runtime_handle = get_io_runtime(multithreaded_io);
+            runtime_handle.block_on_current_thread(async {
+                Ok(io_client.single_url_get_size(path, Some(io_stats)).await?)
+            })
+        });
+        Ok(result?)
+    }
+
+    #[pyfunction(signature = (
+        path,
+        posix,
+        continuation_token=None,
+        page_size=None,
+        multithreaded_io=None,
+        io_config=None
+    ))]
+    fn io_ls(
+        py: Python,
+        path: String,
+        posix: bool,
+        continuation_token: Option<String>,
+        page_size: Option<i32>,
+        multithreaded_io: Option<bool>,
+        io_config: Option<common_io_config::python::IOConfig>,
+    ) -> PyResult<(Vec<Bound<PyDict>>, Option<String>, bool)> {
+        let multithreaded_io = multithreaded_io.unwrap_or(true);
+        let io_stats = IOStatsContext::new(format!("io_ls for {path}"));
+        let result: DaftResult<crate::object_io::LSResult> = py.detach(|| {
+            let io_client = get_io_client(
+                multithreaded_io,
+                io_config.unwrap_or_default().config.into(),
+            )?;
+            let runtime_handle = get_io_runtime(multithreaded_io);
+            runtime_handle.block_on_current_thread(async {
+                let (source, source_path) = io_client.get_source_and_path(&path).await?;
+                Ok(source
+                    .ls(
+                        &source_path,
+                        posix,
+                        continuation_token.as_deref(),
+                        page_size,
+                        Some(io_stats),
+                    )
+                    .await?)
+            })
+        });
+        let result = result?;
+        let files = result
+            .files
+            .into_iter()
+            .map(|file| {
+                let dict = PyDict::new(py);
+                dict.set_item("type", format!("{:?}", file.filetype))?;
+                dict.set_item("path", file.filepath)?;
+                dict.set_item("size", file.size)?;
+                Ok(dict)
+            })
+            .collect::<PyResult<_>>()?;
+        Ok((files, result.continuation_token, result.not_found_if_empty))
+    }
+
     pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
         common_io_config::python::register_modules(parent)?;
         parent.add_function(wrap_pyfunction!(io_glob, parent)?)?;
         parent.add_function(wrap_pyfunction!(s3_config_from_env, parent)?)?;
         parent.add_function(wrap_pyfunction!(io_put, parent)?)?;
+        parent.add_function(wrap_pyfunction!(io_get, parent)?)?;
+        parent.add_function(wrap_pyfunction!(io_get_size, parent)?)?;
+        parent.add_function(wrap_pyfunction!(io_ls, parent)?)?;
         Ok(())
     }
 }
