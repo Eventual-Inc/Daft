@@ -2612,6 +2612,7 @@ name = "daft-core"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow",
+ "arrow-buffer 59.0.0",
  "arrow-row",
  "bincode",
  "bytemuck",
