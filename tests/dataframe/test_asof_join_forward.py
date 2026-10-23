@@ -58,13 +58,11 @@ class TestAsofJoinForwardMatchCorrectness:
         assert result.to_pydict() == {"ts": [6, 6, 11], "v": [1, 2, 3], "w": [80, 80, 150]}
 
     def test_duplicate_right_timestamps(self):
-        """Multiple right rows at the same timestamp -- one is picked (either is valid)."""
+        """Multiple right rows at the same timestamp -- forward deterministically keeps the least."""
         left = daft.from_pydict({"ts": [7], "v": [1]})
         right = daft.from_pydict({"ts": [7, 7], "w": [70, 77]})
         result = left.join_asof(right, on="ts", strategy="forward")
-        assert result.to_pydict()["ts"] == [7]
-        assert result.to_pydict()["v"] == [1]
-        assert result.to_pydict()["w"][0] in [70, 77]
+        assert result.to_pydict() == {"ts": [7], "v": [1], "w": [70]}
 
     @pytest.mark.parametrize("n_partitions", get_n_partitions())
     def test_trades_quotes_with_by(self, make_df, n_partitions, with_default_morsel_size):
