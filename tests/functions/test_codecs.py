@@ -97,6 +97,20 @@ def test_null_handling():
     assert result2["v"][1] is None
 
 
+def test_null_handling_try_and_text():
+    import zlib
+
+    df = daft.from_pydict({"z": [None, zlib.compress(TEXT)], "t": [None, TEXT]})
+    result = df.select(
+        col("z").try_decompress("zlib").alias("try_decompress"),
+        col("t").decode("utf-8").alias("decode"),
+        col("t").try_decode("utf-8").alias("try_decode"),
+    ).to_pydict()
+    assert result["try_decompress"] == [None, TEXT]
+    assert result["decode"] == [None, TEXT.decode("utf-8")]
+    assert result["try_decode"] == [None, TEXT.decode("utf-8")]
+
+
 def test_with_strings():
     import zlib
 
