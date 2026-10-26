@@ -2953,7 +2953,7 @@ dependencies = [
  "daft-core",
  "daft-dsl",
  "daft-io",
- "rustc-hash 1.1.0",
+ "rustc-hash",
  "serde",
  "snafu",
  "tiktoken-rs",
@@ -5977,7 +5977,7 @@ dependencies = [
  "num-traits",
  "pyo3",
  "pyo3-build-config",
- "rustc-hash 2.1.1",
+ "rustc-hash",
 ]
 
 [[package]]
@@ -7002,7 +7002,7 @@ dependencies = [
  "pin-project-lite",
  "quinn-proto",
  "quinn-udp",
- "rustc-hash 2.1.1",
+ "rustc-hash",
  "rustls",
  "socket2",
  "thiserror 2.0.18",
@@ -7024,7 +7024,7 @@ dependencies = [
  "rand 0.10.1",
  "rand_pcg",
  "ring",
- "rustc-hash 2.1.1",
+ "rustc-hash",
  "rustls",
  "rustls-pki-types",
  "slab",
@@ -7579,12 +7579,6 @@ dependencies = [
  "cfg-if",
  "ordered-multimap",
 ]
-
-[[package]]
-name = "rustc-hash"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2"
 
 [[package]]
 name = "rustc-hash"
@@ -8513,7 +8507,7 @@ dependencies = [
  "bstr",
  "fancy-regex",
  "regex",
- "rustc-hash 2.1.1",
+ "rustc-hash",
 ]
 
 [[package]]
