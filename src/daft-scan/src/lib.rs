@@ -21,6 +21,7 @@ mod expr_rewriter;
 mod file_format_config;
 pub mod source;
 pub use daft_avro::AvroSourceConfig;
+pub use daft_parquet::metadata::FieldIdMapping;
 #[cfg(feature = "python")]
 pub use file_format_config::DatabaseSourceConfig;
 pub use file_format_config::{
