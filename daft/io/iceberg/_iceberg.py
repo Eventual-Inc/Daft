@@ -22,6 +22,29 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _get_iceberg_scoped_azure_sas(props: dict[str, Any]) -> tuple[str | None, str | None]:
+    # Keep host scope intact when detecting ambiguity; two hosts can share an account name.
+    scoped_tokens = {}
+    for prefix in ("adls.sas-token.", "adlfs.sas-token."):
+        for key, value in props.items():
+            if key.startswith(prefix) and value:
+                scoped_tokens.setdefault(key[len(prefix) :], value)
+    if not scoped_tokens:
+        return None, None
+
+    explicit_account = props.get("adls.account-name") or props.get("adlfs.account-name")
+    if explicit_account:
+        scoped_tokens = {host: token for host, token in scoped_tokens.items() if host.split(".")[0] == explicit_account}
+        if not scoped_tokens:
+            return None, None
+    elif len(scoped_tokens) > 1:
+        return None, None
+
+    host, sas_token = next(iter(scoped_tokens.items()))
+    account = host.split(".")[0]
+    return account, sas_token
+
+
 def _convert_iceberg_file_io_properties_to_io_config(
     props: dict[str, Any], location: str | None = None
 ) -> IOConfig | None:
@@ -45,6 +68,14 @@ def _convert_iceberg_file_io_properties_to_io_config(
 
     is_oss = location is not None and get_protocol_from_path(location) == "oss"
 
+    azure_account = get_first_property_value("adls.account-name", "adlfs.account-name")
+    azure_sas_token = get_first_property_value("adls.sas-token", "adlfs.sas-token")
+    scoped_account, scoped_sas_token = _get_iceberg_scoped_azure_sas(props)
+    if scoped_sas_token is not None:
+        azure_account = azure_account or scoped_account
+        azure_sas_token = azure_sas_token or scoped_sas_token
+        any_props_set = True
+
     io_config = IOConfig(
         s3=S3Config(
             endpoint_url=get_first_property_value("s3.endpoint"),
@@ -55,9 +86,9 @@ def _convert_iceberg_file_io_properties_to_io_config(
             force_virtual_addressing=True if is_oss else None,
         ),
         azure=AzureConfig(
-            storage_account=get_first_property_value("adls.account-name", "adlfs.account-name"),
+            storage_account=azure_account,
             access_key=get_first_property_value("adls.account-key", "adlfs.account-key"),
-            sas_token=get_first_property_value("adls.sas-token", "adlfs.sas-token"),
+            sas_token=azure_sas_token,
             tenant_id=get_first_property_value("adls.tenant-id", "adlfs.tenant-id"),
             client_id=get_first_property_value("adls.client-id", "adlfs.client-id"),
             client_secret=get_first_property_value("adls.client-secret", "adlfs.client-secret"),
@@ -116,6 +147,9 @@ def resolve_iceberg_io_config(table: "PyIcebergTable", io_config: IOConfig | Non
     FileIO properties are translated (handling S3/Azure/GCS credentials and the ``oss://``
     alias); otherwise the context ``default_io_config`` is used.
 
+    Explicit Azure account names select matching account-scoped SAS properties. Without
+    an explicit account name, multiple scoped hosts are ignored as ambiguous.
+
     Shared by :func:`read_iceberg` and the Rust SQL ``read_iceberg`` scan path so both honor
     table-embedded credentials and the globally-set default IOConfig.
     """
@@ -146,7 +180,8 @@ def read_iceberg(
         snapshot_id (int, optional): Snapshot ID of the table to query
         branch (str, optional): Iceberg branch name to query. Cannot be combined with ``snapshot_id`` or ``tag``.
         tag (str, optional): Iceberg tag name to query. Cannot be combined with ``snapshot_id`` or ``branch``.
-        io_config (IOConfig, optional): A custom IOConfig to use when accessing Iceberg object storage data. If provided, configurations set in `table` are ignored.
+        io_config (IOConfig, optional): A custom IOConfig to use when accessing Iceberg object storage data.
+            If provided, configurations set in `table` are ignored and are not validated.
         checkpoint: Optional :class:`daft.CheckpointConfig` for progress tracking across runs. Bundles the
             checkpoint store, the source key column (``on=``), and optional anti-join tuning. Rows whose key
             already exists in the store are skipped on re-run. Requires the Ray runner.
