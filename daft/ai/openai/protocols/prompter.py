@@ -206,17 +206,14 @@ class OpenAIPrompter(Prompter):
         def _process_image_message(self, msg: np.typing.NDArray[Any]) -> dict[str, Any]:
             """Handle numpy array messages (images)."""
             import base64
-            import io
 
+            from daft.ai.utils import encode_image_array_as_png
             from daft.dependencies import pil_image
 
             if not pil_image.module_available():
                 raise ProviderImportError("openai", function="prompt")
 
-            pil_image = pil_image.fromarray(msg)
-            bio = io.BytesIO()
-            pil_image.save(bio, "PNG")
-            base64_string = base64.b64encode(bio.getvalue()).decode("utf-8")
+            base64_string = base64.b64encode(encode_image_array_as_png(msg)).decode("utf-8")
             encoded_content = f"data:image/png;base64,{base64_string}"
             return self._build_image_message(encoded_content)
 

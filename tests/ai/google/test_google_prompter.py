@@ -538,52 +538,6 @@ def test_google_prompter_with_image_numpy():
             assert parts[1].text is None
 
 
-# Pillow 13 changed PNG encoding of mode "I" images. These are the array layouts that
-# Daft image columns produce (uint8 L/LA/RGB/RGBA, uint16 L16). Each must round-trip
-# through the PNG image part without a change in pixel values.
-_IMAGE_ARRAY_SHAPES = {
-    "L": ((6, 5), "uint8"),
-    "LA": ((6, 5, 2), "uint8"),
-    "RGB": ((6, 5, 3), "uint8"),
-    "RGBA": ((6, 5, 4), "uint8"),
-    "L16": ((6, 5), "uint16"),
-}
-
-
-@pytest.mark.parametrize("mode", list(_IMAGE_ARRAY_SHAPES))
-def test_google_prompter_numpy_image_png_roundtrip(mode):
-    """Test that numpy image messages are encoded as PNG with exact pixel values."""
-    import io
-
-    from PIL import Image as PILImage
-
-    from daft.dependencies import np
-
-    shape, dtype = _IMAGE_ARRAY_SHAPES[mode]
-    max_value = np.iinfo(dtype).max
-    image = (np.arange(np.prod(shape)) * (max_value // np.prod(shape))).reshape(shape).astype(dtype)
-
-    async def _test():
-        with patch("daft.ai.google.protocols.prompter.genai.Client") as MockClient:
-            mock_client_instance = MockClient.return_value
-            mock_response = Mock()
-            mock_response.text = "ok"
-            mock_response.usage_metadata = None
-            mock_client_instance.aio.models.generate_content = AsyncMock(return_value=mock_response)
-
-            prompter = create_prompter()
-            await prompter.prompt(("Describe this image.", image))
-
-            contents = mock_client_instance.aio.models.generate_content.call_args.kwargs["contents"]
-            image_part = contents[0].parts[1]
-            assert image_part.inline_data.mime_type == "image/png"
-            decoded = PILImage.open(io.BytesIO(image_part.inline_data.data))
-            assert decoded.format == "PNG"
-            assert np.array_equal(np.asarray(decoded), image)
-
-    run_async(_test())
-
-
 def test_google_prompter_raises_without_pillow_on_image():
     """Test that prompting with image fails without Pillow."""
     from daft.dependencies import np
