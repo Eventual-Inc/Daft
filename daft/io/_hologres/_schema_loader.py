@@ -9,7 +9,9 @@ Adapted from holo-client-py (hologres/_schema_loader.py, hologres/column.py).
 
 from __future__ import annotations
 
+import json
 import logging
+import re
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
@@ -23,6 +25,26 @@ if TYPE_CHECKING:
     import psycopg
 
 logger = logging.getLogger(__name__)
+
+
+def quote_identifier_if_needed(name: str) -> str:
+    """Quote a PostgreSQL identifier only when it would otherwise be folded.
+
+    Unquoted identifiers are case-folded to lowercase by PostgreSQL. Quoting
+    every identifier would work for lookups through ``regclass``, but it also
+    changes the value Hologres receives for APIs such as
+    ``SET_TABLE_PROPERTY`` which accept a ``schema.table`` string. Quoting only
+    mixed-case/special identifiers preserves the common lowercase form while
+    still supporting names such as ``"Events"`` or ``a"b``.
+    """
+    if re.fullmatch(r"[a-z_][a-z0-9_]*", name):
+        return name
+    return '"' + name.replace('"', '""') + '"'
+
+
+def qualified_name_for_sql(schema_name: str, table_name: str) -> str:
+    """Build a safely quoted ``schema.table`` string for use in SQL literals."""
+    return f"{quote_identifier_if_needed(schema_name)}.{quote_identifier_if_needed(table_name)}"
 
 
 @dataclass(frozen=True)
@@ -154,7 +176,9 @@ def load_table_schema(
     table_name: str,
 ) -> HologresTableSchema:
     """Load a :class:`HologresTableSchema` from the database."""
-    qualified = sql.Literal(f"{schema_name}.{table_name}")
+    # ``regclass`` parses the string, so mixed-case/dotted names must be quoted
+    # before being embedded in the literal.
+    qualified = sql.Literal(qualified_name_for_sql(schema_name, table_name))
     schema_lit = sql.Literal(schema_name)
     table_lit = sql.Literal(table_name)
 
@@ -234,8 +258,6 @@ def table_exists(conn: psycopg.Connection, schema_name: str, table_name: str) ->
 
 def get_holo_version(conn: psycopg.Connection) -> tuple[int, int, int]:
     """Detect the Hologres version as a (major, minor, fix) tuple."""
-    import re
-
     pattern = re.compile(r"Hologres ([^ -]*)")
     with conn.cursor() as cur:
         cur.execute("SELECT hg_version()")
@@ -401,8 +423,6 @@ def daft_type_to_arrow_value(value: object, pg_type: str) -> object:
     Complex types that map to jsonb/text columns must be JSON-serialized
     before being handed to psycopg.
     """
-    import json
-
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
     if isinstance(value, bytes):

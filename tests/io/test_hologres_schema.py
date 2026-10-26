@@ -9,6 +9,8 @@ from daft.io._hologres._schema_loader import (
     _strip_type_args,
     daft_type_to_pg,
     pg_type_to_daft,
+    qualified_name_for_sql,
+    quote_identifier_if_needed,
 )
 
 
@@ -131,3 +133,22 @@ class TestHologresColumn:
         assert col.nullable is True
         assert col.is_primary_key is False
         assert col.precision == 0 and col.scale == 0
+
+
+class TestQualifiedNames:
+    @pytest.mark.parametrize(
+        ("name", "expected"),
+        [
+            ("events", "events"),
+            ("events_2024", "events_2024"),
+            ("Events", '"Events"'),
+            ("order date", '"order date"'),
+            ('a"b', '"a""b"'),
+        ],
+    )
+    def test_quote_identifier_if_needed(self, name, expected):
+        assert quote_identifier_if_needed(name) == expected
+
+    def test_qualified_name_preserves_mixed_case(self):
+        assert qualified_name_for_sql("analytics", "Events") == 'analytics."Events"'
+        assert qualified_name_for_sql("public", "events") == "public.events"

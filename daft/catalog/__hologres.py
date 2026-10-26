@@ -26,7 +26,7 @@ from daft.io._hologres._ddl import (
     build_fulltext_index_statements,
     build_table_property_statements,
 )
-from daft.io._hologres._schema_loader import HologresTableSchema, load_table_schema
+from daft.io._hologres._schema_loader import HologresTableSchema, load_table_schema, table_exists
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator
@@ -76,6 +76,42 @@ def _resolve_identifier(identifier: Identifier, what: str) -> tuple[str | None, 
         return identifier[0], identifier[1]
     else:
         raise ValueError(f"Hologres {what} identifier must be 'schema.table' or 'table', got {identifier}")
+
+
+def _resolve_table_schema(
+    conn: psycopg.Connection,
+    identifier: Identifier,
+) -> tuple[str, str]:
+    """Resolve an identifier to the concrete ``(schema, table)`` it refers to.
+
+    Unqualified names follow the connection search path, matching PostgreSQL's
+    own resolution rules. This prevents a bare ``get_table("events")`` from
+    reading one schema while ``append``/``overwrite`` write to ``public``.
+    """
+    schema_name, table_name = _resolve_identifier(identifier, "table")
+    if schema_name is not None:
+        if not table_exists(conn, schema_name, table_name):
+            raise NotFoundError(f"Table {identifier} not found")
+        return schema_name, table_name
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT n.nspname
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE c.relname = %s
+              AND c.relkind IN ('r', 'p')
+              AND pg_table_is_visible(c.oid)
+            ORDER BY array_position(current_schemas(false), n.nspname)
+            LIMIT 1
+            """,
+            (table_name,),
+        )
+        row = cur.fetchone()
+    if row is None:
+        raise NotFoundError(f"Table {identifier} not found")
+    return row[0], table_name
 
 
 class HologresCatalog(Catalog):
@@ -205,18 +241,29 @@ class HologresCatalog(Catalog):
                         partition_by=partition_by,
                     )
                 )
-                for stmt in build_table_property_statements(schema_name or "public", table_name, options):
+                if schema_name is None:
+                    # CREATE TABLE without a schema follows the search path;
+                    # resolve it once so every subsequent property/index
+                    # statement targets the table that was just created.
+                    cur.execute("SELECT current_schema()")
+                    row = cur.fetchone()
+                    if row is None or row[0] is None:
+                        raise ValueError("Unable to resolve the current schema for an unqualified table name")
+                    effective_schema = row[0]
+                else:
+                    effective_schema = schema_name
+                for stmt in build_table_property_statements(effective_schema, table_name, options):
                     cur.execute(stmt)
                 index_columns = _normalize_index_columns(options.get("index"))
                 if index_columns:
-                    for stmt in build_fulltext_index_statements(schema_name or "public", table_name, index_columns):
+                    for stmt in build_fulltext_index_statements(effective_schema, table_name, index_columns):
                         cur.execute(stmt)
             except psycopg.errors.DuplicateTable:
                 raise TableAlreadyExistsError(f"Table {identifier} already exists")
             except psycopg.Error as e:
                 raise ValueError(f"Failed to create table {identifier}: {e}") from e
 
-        return HologresTable._from_catalog(self._inner, identifier)
+        return HologresTable._from_catalog(self._inner, Identifier(effective_schema, table_name))
 
     ###
     # drop_*
@@ -280,24 +327,27 @@ class HologresCatalog(Catalog):
 
     def _has_table(self, identifier: Identifier) -> bool:
         """Check if a table exists in Hologres."""
-        if len(identifier) == 1:
-            schema_name = None
-            table_name = identifier[0]
-        elif len(identifier) == 2:
-            schema_name, table_name = identifier[0], identifier[1]
-        else:
+        if len(identifier) not in (1, 2):
             return False
 
         with hologres_connection(self._inner) as conn, conn.cursor() as cur:
-            if schema_name:
+            if len(identifier) == 2:
+                schema_name, table_name = identifier[0], identifier[1]
                 cur.execute(
                     "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema = %s AND table_name = %s)",
                     (schema_name, table_name),
                 )
             else:
                 cur.execute(
-                    "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = %s)",
-                    (table_name,),
+                    """
+                    SELECT EXISTS(
+                        SELECT 1 FROM pg_class c
+                        WHERE c.relname = %s
+                          AND c.relkind IN ('r', 'p')
+                          AND pg_table_is_visible(c.oid)
+                    )
+                    """,
+                    (identifier[0],),
                 )
             result = cur.fetchone()
             return result[0] if result else False
@@ -377,7 +427,7 @@ class HologresTable(Table):
         "num_partitions",
         "partition_bound_strategy",
         "shard_parallelism",
-        "disable_pushdowns_to_sql",
+        "disable_pushdowns",
     }
     _append_options = {
         "copy_mode",  # "stream" (default) or "bulk_load"
@@ -447,28 +497,8 @@ class HologresTable(Table):
 
     def _load_hologres_schema(self) -> HologresTableSchema:
         """Load full Hologres metadata (columns, PK, partitioning, shards)."""
-        from daft.io._hologres._schema_loader import table_exists
-
-        schema_name, table_name = _resolve_identifier(self.identifier, "table")
         with hologres_connection(self.connection_string) as conn:
-            if schema_name is None:
-                # Resolve the actual schema via the search-path convention:
-                # prefer the default 'public' schema, else the first match.
-                if table_exists(conn, "public", table_name):
-                    schema_name = "public"
-                else:
-                    with conn.cursor() as cur:
-                        cur.execute(
-                            "SELECT table_schema FROM information_schema.tables WHERE table_name = %s "
-                            "AND table_schema NOT IN (%s, %s, %s) LIMIT 1",
-                            (table_name, *_SYSTEM_SCHEMAS[:3]),
-                        )
-                        row = cur.fetchone()
-                    if row is None:
-                        raise NotFoundError(f"Table {self.identifier} not found")
-                    schema_name = row[0]
-            elif not table_exists(conn, schema_name, table_name):
-                raise NotFoundError(f"Table {self.identifier} not found")
+            schema_name, table_name = _resolve_table_schema(conn, self.identifier)
             return load_table_schema(conn, schema_name, table_name)
 
     def read(self, **options: Any) -> DataFrame:
@@ -482,7 +512,8 @@ class HologresTable(Table):
             num_partitions: number of parallel read tasks.
             partition_bound_strategy: "min-max" or "percentile".
             shard_parallelism: split reads by physical shard (default True).
-            disable_pushdowns: don't push filters/projections into the query.
+            disable_pushdowns: don't push filters/limits into the query;
+                shard/partition restrictions and the projection are still applied.
         """
         self._validate_options("Hologres read", options, HologresTable._read_options)
 
@@ -537,11 +568,11 @@ class HologresTable(Table):
 
         from daft.io._hologres.sink import HologresDataSink
 
-        schema_name, table_name = self._qualified_name()
+        holo = self._load_hologres_schema()
         sink = HologresDataSink(
             connection_uri=self.connection_string,
-            schema_name=schema_name,
-            table_name=table_name,
+            schema_name=holo.schema_name,
+            table_name=holo.table_name,
             write_mode="append",
             copy_mode=options.get("copy_mode", "stream"),
             copy_format=options.get("copy_format", "binary"),
@@ -558,18 +589,22 @@ class HologresTable(Table):
 
         from daft.io._hologres.sink import HologresDataSink
 
-        schema_name, table_name = self._qualified_name()
+        copy_mode = options.get("copy_mode", "stream")
+        if copy_mode != "stage":
+            # ``start()`` truncates before the lazy input is evaluated, so
+            # ``table.overwrite(table.read().where(...))`` would erase its own
+            # source. Materialize the replacement first for the non-stage
+            # paths; stage mode reads all input before its INSERT OVERWRITE.
+            df = df.collect()
+
+        holo = self._load_hologres_schema()
         sink = HologresDataSink(
             connection_uri=self.connection_string,
-            schema_name=schema_name,
-            table_name=table_name,
+            schema_name=holo.schema_name,
+            table_name=holo.table_name,
             write_mode="overwrite",
-            copy_mode=options.get("copy_mode", "stream"),
+            copy_mode=copy_mode,
             copy_format=options.get("copy_format", "binary"),
             on_conflict=options.get("on_conflict"),
         )
         df.write_sink(sink)
-
-    def _qualified_name(self) -> tuple[str, str]:
-        schema_name, table_name = _resolve_identifier(self.identifier, "table")
-        return (schema_name or "public", table_name)

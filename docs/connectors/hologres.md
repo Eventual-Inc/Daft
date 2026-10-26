@@ -4,7 +4,7 @@
 
 ## Installing Daft with Hologres Support
 
-Install Daft with the `daft[hologres]` extra, or manually install the required packages: [psycopg](https://www.psycopg.org/), [connectorx](https://sfu-db.github.io/connector-x/) and [sqlglot](https://sqlglot.com/).
+Install Daft with the `daft[hologres]` extra, or manually install the required packages: [psycopg](https://www.psycopg.org/), [connectorx](https://sfu-db.github.io/connector-x/), [SQLAlchemy](https://www.sqlalchemy.org/) and [sqlglot](https://sqlglot.com/).
 
 ```bash
 pip install -U "daft[hologres]"
@@ -42,6 +42,7 @@ The catalog supports the full namespace/table lifecycle: `create_namespace`, `cr
             ("name", daft.DataType.string()),
             ("score", daft.DataType.float64()),
             ("meta", daft.DataType.struct({"k": daft.DataType.string()})),  # stored as JSONB
+            ("ds", daft.DataType.string()),
         ]
     )
 
@@ -54,7 +55,6 @@ The catalog supports the full namespace/table lifecycle: `create_namespace`, `cr
             "orientation": "column",             # row | column | rowcolumn
             "clustering_key": "id",
             "time_to_live_in_days": 30,          # emitted as time_to_live_in_seconds
-            "shard_count": None,                 # table-group-level; not settable per table
             "index": "name",                     # full-text inverted index (CREATE INDEX ... USING fulltext)
             "partition_by": "ds",                # logical partition table (PARTITION BY LIST)
             "table_properties": {                # free-form SET_TABLE_PROPERTY passthrough
@@ -67,7 +67,8 @@ The catalog supports the full namespace/table lifecycle: `create_namespace`, `cr
 Notes:
 
 - Hologres requires the logical partition column to be part of the primary key; Daft appends it automatically.
-- `vector_index`/`proxima_vectors` options exist for instances with the vector extension; availability depends on the deployment.
+- `shard_count` is a table-group-level setting on Hologres and cannot be set per table.
+- The `proxima_vectors` option exists for instances with the vector extension; availability depends on the deployment.
 
 ## Reading
 
@@ -85,7 +86,7 @@ Notes:
         partition_col="ds",           # or split by partition-column bounds
         num_partitions=4,
         partition_bound_strategy="min-max",  # or "percentile"
-        disable_pushdowns=False,
+        disable_pushdowns=False,      # skip filter/limit pushdowns (shard/partition splits stay enabled)
     )
     ```
 

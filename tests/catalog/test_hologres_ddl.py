@@ -10,6 +10,7 @@ from daft.io._hologres._ddl import (
     build_create_table_sql,
     build_drop_schema_sql,
     build_drop_table_sql,
+    build_fulltext_index_statements,
     build_set_table_property_sql,
     build_table_property_statements,
     build_truncate_table_sql,
@@ -89,6 +90,10 @@ class TestSetTableProperty:
         sql = build_set_table_property_sql("public", "t", "distribution_key", "id")
         assert sql == "CALL SET_TABLE_PROPERTY('public.t', 'distribution_key', 'id')"
 
+    def test_mixed_case_table_name_is_quoted(self):
+        sql = build_set_table_property_sql("analytics", "Events", "distribution_key", "id")
+        assert sql == "CALL SET_TABLE_PROPERTY('analytics.\"Events\"', 'distribution_key', 'id')"
+
     def test_invalid_key_raises(self):
         with pytest.raises(ValueError):
             build_set_table_property_sql("public", "t", "", "x")
@@ -117,18 +122,22 @@ class TestFulltextIndexStatements:
         from daft.io._hologres._ddl import build_fulltext_index_statements
 
         stmts = build_fulltext_index_statements("public", "t", ["name"])
-        assert stmts == [
-            'CREATE INDEX IF NOT EXISTS "t_fulltext_idx_0" ON "public"."t" USING fulltext ("name")'
-        ]
+        assert stmts == ['CREATE INDEX IF NOT EXISTS "t_fulltext_idx_0" ON "public"."t" USING fulltext ("name")']
 
     def test_multiple_columns(self):
-        from daft.io._hologres._ddl import build_fulltext_index_statements
-
         stmts = build_fulltext_index_statements("public", "docs", ["title", "body"], if_not_exists=False)
         assert stmts == [
             'CREATE INDEX "docs_fulltext_idx_0" ON "public"."docs" USING fulltext ("title")',
             'CREATE INDEX "docs_fulltext_idx_1" ON "public"."docs" USING fulltext ("body")',
         ]
+
+    def test_long_table_name_keeps_unique_suffix(self):
+        table_name = "t" * 60
+        stmts = build_fulltext_index_statements("public", table_name, ["a", "b"], if_not_exists=False)
+        names = [stmt.split('"')[1] for stmt in stmts]
+        assert len(set(names)) == 2
+        assert all(len(name) <= 63 for name in names)
+        assert names[0].endswith("_0") and names[1].endswith("_1")
 
     def test_int_values(self):
         stmts = build_table_property_statements("public", "t", {"time_to_live_in_days": 30})

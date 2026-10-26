@@ -13,8 +13,10 @@ Adapts value coercion from holo-client-py (hologres/collector.py).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import re
 import uuid
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -53,17 +55,25 @@ _STAGE_FILE_SIZE_LIMIT = 64 * 1024 * 1024  # 64 MB
 
 
 def _prepare_stage_table(table, holo_schema: HologresTableSchema):
-    """Project a decoded batch onto the table columns and JSON-encode jsonb.
+    """Project a decoded batch onto its supplied columns and JSON-encode jsonb.
 
     The stage wire format stores json/jsonb as UTF-8 text and timestamps as
-    date64; :meth:`ArrowStageBuffer.put_table` casts the rest.
+    date64; :meth:`ArrowStageBuffer.put_table` casts the rest. Columns omitted
+    from the input are intentionally left out so that the database can apply
+    their defaults during the final ``INSERT ... SELECT``.
     """
     import pyarrow as pa
 
     columns = []
     fields = []
-    for col_meta in holo_schema.columns:
-        col = table.column(col_meta.name)
+    for name in table.column_names:
+        idx = holo_schema.get_column_index(name)
+        if idx is None:
+            raise ValueError(
+                f"Column {name!r} not found in Hologres table {holo_schema.schema_name}.{holo_schema.table_name}"
+            )
+        col_meta = holo_schema.columns[idx]
+        col = table.column(name)
         if col_meta.type_name in ("json", "jsonb"):
             col = pa.array([None if v is None else _to_json_text(v) for v in col.to_pylist()], pa.utf8())
         columns.append(col)
@@ -74,7 +84,7 @@ def _prepare_stage_table(table, holo_schema: HologresTableSchema):
 def _commit_stage_sql(self) -> str:
     from daft.io._hologres._stage_sql import build_insert_select_from_stage_sql_pk
 
-    columns = [(c.name, c.type_name, c.precision, c.scale) for c in self._holo_schema.columns]
+    columns = [(c.name, c.type_name, c.precision, c.scale) for c in self._stage_columns]
     conflict = None
     if self._holo_schema.has_primary_key and self._on_conflict is not OnConflictAction.NONE:
         conflict = "ignore" if self._on_conflict is OnConflictAction.INSERT_OR_IGNORE else "update"
@@ -91,12 +101,13 @@ def _commit_stage_sql(self) -> str:
 
 def _child_partition_name(table_name: str, value: Any) -> str:
     """Deterministic child partition name for a partition value."""
-    import hashlib
-    import re
-
     sanitized = re.sub(r"[^a-zA-Z0-9_]", "_", str(value).lower())[:40]
     digest = hashlib.md5(str(value).encode()).hexdigest()[:8]
-    return f"{table_name}_p_{sanitized}_{digest}"[:63]
+    suffix = f"_p_{sanitized}_{digest}"
+    # PostgreSQL truncates identifiers at 63 bytes. Reserve room for the
+    # value-derived suffix so long table names cannot collapse every child
+    # partition onto the same name.
+    return f"{table_name[: 63 - len(suffix)]}{suffix}"
 
 
 class HologresDataSink(DataSink[dict[str, Any] | None]):
@@ -162,9 +173,13 @@ class HologresDataSink(DataSink[dict[str, Any] | None]):
                     f"copy_mode='stage' requires Hologres >= 4.1.0, but the instance reports "
                     f"{version[0]}.{version[1]}.{version[2]}. Use copy_mode='stream' or 'bulk_load' instead."
                 )
-        self._stage_name: str | None = (
-            f"daft_{schema_name}_{table_name}_{uuid.uuid4().hex[:8]}"[:63] if copy_mode == "stage" else None
-        )
+        stage_suffix = f"_{uuid.uuid4().hex[:8]}"
+        stage_prefix = f"daft_{schema_name}_{table_name}"[: 63 - len(stage_suffix)]
+        self._stage_name: str | None = f"{stage_prefix}{stage_suffix}" if copy_mode == "stage" else None
+        # Set by _write_stage from the actual input schema. The final INSERT
+        # must only name columns that were staged, otherwise omitted columns
+        # would be written as NULL instead of receiving database defaults.
+        self._stage_columns: list[Any] = []
 
     def name(self) -> str:
         return "HologresDataSink"
@@ -193,17 +208,23 @@ class HologresDataSink(DataSink[dict[str, Any] | None]):
                     cur.execute(build_create_stage_sql(self._stage_name))
                 logger.info("Created internal stage %s", self._stage_name)
 
-    def _ensure_partitions(self, table) -> None:
+    def _ensure_partitions(self, table, *, require_partition_col: bool = True) -> None:
         """Create child partitions for the partition values in ``table``.
 
         Logical partition tables reject rows whose partition value has no
         child partition, so values are created up front. DDL is idempotent
         (``IF NOT EXISTS``) and duplicate-creation races are ignored.
+
+        When ``require_partition_col`` is false (stage writes, which may omit
+        columns and let the database fill defaults), a missing partition
+        column is simply skipped because no partition values are known.
         """
         import psycopg
 
         partition_col = self._holo_schema.partition_column
         if partition_col not in table.column_names:
+            if not require_partition_col:
+                return
             raise ValueError(
                 f"Partition column {partition_col!r} missing from the DataFrame written to "
                 f"{self._schema_name}.{self._table_name}"
@@ -307,9 +328,10 @@ class HologresDataSink(DataSink[dict[str, Any] | None]):
         """
         from daft.io._hologres._arrow_codec import ArrowStageBuffer, columns_for
 
-        columns = columns_for(self._holo_schema, [c.name for c in self._holo_schema.columns])
-        buffer = ArrowStageBuffer(columns)
-        file_prefix = f"{self._schema_name}_{self._table_name}_{uuid.uuid4().hex[:8]}"
+        buffer: ArrowStageBuffer | None = None
+        stage_columns: list[Any] = []
+        file_suffix = f"_{uuid.uuid4().hex[:8]}"
+        file_prefix = f"{self._schema_name}_{self._table_name}"[: 120 - len(file_suffix)] + file_suffix
         file_index = 0
         rows_written = 0
         bytes_written = 0
@@ -320,7 +342,19 @@ class HologresDataSink(DataSink[dict[str, Any] | None]):
                     table = micropartition.to_arrow()
                     if table.num_rows == 0:
                         continue
+                    if self._holo_schema.is_partition_parent:
+                        # Staged rows are only committed in finalize(), but the
+                        # child partitions must exist before that INSERT runs.
+                        self._ensure_partitions(table, require_partition_col=False)
                     table = _prepare_stage_table(table, self._holo_schema)
+                    if buffer is None:
+                        stage_columns = columns_for(self._holo_schema, list(table.column_names))
+                        buffer = ArrowStageBuffer(stage_columns)
+                    elif list(table.column_names) != [c.name for c in stage_columns]:
+                        raise ValueError(
+                            "All micropartitions written in stage mode must have the same columns; "
+                            f"expected {[c.name for c in stage_columns]}, got {list(table.column_names)}"
+                        )
                     buffer.put_table(table)
                     rows_written += table.num_rows
                     bytes_written += table.nbytes
@@ -328,15 +362,17 @@ class HologresDataSink(DataSink[dict[str, Any] | None]):
                         data = buffer.end_and_get_bytes()
                         self._upload_stage_file(cur, file_prefix, file_index, data)
                         file_index += 1
-                data = buffer.end_and_get_bytes()
-                if data:
-                    self._upload_stage_file(cur, file_prefix, file_index, data)
-                    file_index += 1
+                if buffer is not None:
+                    data = buffer.end_and_get_bytes()
+                    if data:
+                        self._upload_stage_file(cur, file_prefix, file_index, data)
+                        file_index += 1
         finally:
             conn.close()
 
+        self._stage_columns = stage_columns
         yield WriteResult(
-            result={"stage": self._stage_name},
+            result={"stage": self._stage_name, "columns": [c.name for c in stage_columns]},
             rows_written=rows_written,
             bytes_written=bytes_written,
         )
@@ -349,18 +385,42 @@ class HologresDataSink(DataSink[dict[str, Any] | None]):
             copy.write(data)
         logger.info("Uploaded %d bytes to stage %s as %s", len(data), self._stage_name, file_name)
 
-    def _commit_stage(self) -> None:
+    def _commit_stage(self, write_results: list[WriteResult[dict[str, Any] | None]]) -> None:
         """Coordinator: load every staged file into the table, then drop it."""
         import psycopg
 
+        from daft.io._hologres._arrow_codec import columns_for
+        from daft.io._hologres._ddl import build_truncate_table_sql
         from daft.io._hologres._stage_sql import build_drop_stage_sql
 
-        insert_sql = _commit_stage_sql(self)
-        logger.info("Stage commit SQL: %s", insert_sql)
+        staged_column_names: list[str] | None = None
+        for result in write_results:
+            if not result.result:
+                continue
+            columns = result.result.get("columns")
+            if not columns:
+                continue
+            if staged_column_names is None:
+                staged_column_names = list(columns)
+            elif staged_column_names != list(columns):
+                raise ValueError(
+                    "All workers in a stage write must stage the same columns; "
+                    f"got {staged_column_names} and {list(columns)}"
+                )
+
         conn = psycopg.connect(self._connection_uri, autocommit=True)
         try:
             with conn.cursor() as cur:
-                cur.execute(insert_sql)
+                if staged_column_names:
+                    # Keep the INSERT column list aligned with the staged files:
+                    # omitted columns must be filled by database defaults.
+                    self._stage_columns = columns_for(self._holo_schema, staged_column_names)
+                    insert_sql = _commit_stage_sql(self)
+                    logger.info("Stage commit SQL: %s", insert_sql)
+                    cur.execute(insert_sql)
+                elif self._write_mode == "overwrite":
+                    # An empty replacement still has to clear the target.
+                    cur.execute(build_truncate_table_sql(self._schema_name, self._table_name))
         finally:
             conn.close()
         try:
@@ -373,7 +433,7 @@ class HologresDataSink(DataSink[dict[str, Any] | None]):
         from daft.recordbatch import MicroPartition
 
         if self._copy_mode is CopyMode.STAGE:
-            self._commit_stage()
+            self._commit_stage(write_results)
             return MicroPartition.from_pydict(
                 {
                     "total_written_rows": [sum(r.rows_written for r in write_results)],

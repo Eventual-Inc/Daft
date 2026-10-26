@@ -21,6 +21,8 @@ from typing import TYPE_CHECKING
 
 from psycopg import sql
 
+from daft.io._hologres._schema_loader import qualified_name_for_sql
+
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
@@ -128,7 +130,7 @@ def build_set_table_property_sql(schema_name: str, table_name: str, key: str, va
     return (
         sql.SQL("CALL SET_TABLE_PROPERTY({}, {}, {})")
         .format(
-            sql.Literal(f"{schema_name}.{table_name}"),
+            sql.Literal(qualified_name_for_sql(schema_name, table_name)),
             sql.Literal(key),
             sql.Literal(str(value)),
         )
@@ -150,7 +152,10 @@ def build_fulltext_index_statements(
     index_name_base = f"{table_name}_fulltext_idx"
     statements = []
     for i, column in enumerate(columns):
-        name = f"{index_name_base}_{i}"[:63]
+        # Keep the numeric suffix: slicing the fully built name would make long
+        # table names produce identical index names for every column.
+        suffix = f"_{i}"
+        name = f"{index_name_base[: 63 - len(suffix)]}{suffix}"
         if_not = "IF NOT EXISTS " if if_not_exists else ""
         statements.append(
             sql.SQL("CREATE INDEX {}{} ON {}.{} USING fulltext ({})")

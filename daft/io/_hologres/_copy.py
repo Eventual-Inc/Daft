@@ -23,6 +23,7 @@ import psycopg
 import psycopg.pq
 from psycopg import sql
 
+from daft.io._hologres._schema_loader import qualified_name_for_sql
 from daft.io._hologres.types import CopyFormat, CopyMode, OnConflictAction
 
 if TYPE_CHECKING:
@@ -169,7 +170,7 @@ def load_column_type_info(
     table_name: str,
 ) -> tuple[dict[str, int], dict[str, str]]:
     """Load column name -> (type OID, type name) mappings from pg_attribute."""
-    qualified = sql.Literal(f"{schema_name}.{table_name}")
+    qualified = sql.Literal(qualified_name_for_sql(schema_name, table_name))
     with conn.cursor() as cur:
         cur.execute(_TYPE_OID_SQL.format(qualified))
         oids: dict[str, int] = {}

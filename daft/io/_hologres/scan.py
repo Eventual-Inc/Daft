@@ -17,8 +17,10 @@ Types needing conversion after the Arrow decode:
 
 from __future__ import annotations
 
+import io
 import logging
 import math
+import struct
 import warnings
 from typing import TYPE_CHECKING
 
@@ -30,7 +32,12 @@ from daft.daft import (
     ScanTask,
     StorageConfig,
 )
-from daft.io._hologres._schema_loader import HologresTableSchema, pg_type_to_daft
+from daft.io._hologres._schema_loader import (
+    HologresTableSchema,
+    pg_type_to_daft,
+    qualified_name_for_sql,
+    quote_identifier_if_needed,
+)
 from daft.io.scan import ScanOperator
 from daft.recordbatch import RecordBatch
 from daft.schema import DataType, Field, Schema
@@ -40,9 +47,13 @@ from daft.sql.sql_scan import PartitionBoundStrategy
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    import pyarrow as pa
+
 logger = logging.getLogger(__name__)
 
 _ARROW_SCAN_SOURCE_NAME = "HologresScanOperator"
+_ARROW_IPC_PREFIX = b"ARROW1"
+_PG_BINARY_SIGNATURE = b"PGCOPY\n\xff\r\n\x00"
 
 
 def _daft_schema_from_holo(holo_schema: HologresTableSchema) -> Schema:
@@ -205,10 +216,19 @@ class HologresScanOperator(ScanOperator):
         size_bytes = math.ceil(
             self._get_num_rows(pushdowns) * self._schema.estimate_row_size_bytes() / max(1, len(bounds) - 1)
         )
+        partition_col = quote_identifier_if_needed(self._partition_col)
         for i in range(len(bounds) - 1):
-            left = f"{self._partition_col} >= {self._literal_sql(bounds[i])}"
+            left = f"{partition_col} >= {self._literal_sql(bounds[i])}"
             right_op = "<=" if i == len(bounds) - 2 else "<"
-            right = f"{self._partition_col} {right_op} {self._literal_sql(bounds[i + 1])}"
+            right = f"{partition_col} {right_op} {self._literal_sql(bounds[i + 1])}"
+            if i == 0:
+                # The min/max (and string distinct-value) queries ignore nulls,
+                # so no range would contain them. Include null keys in the
+                # first range on both sides: the right bound is exclusive for
+                # all but the last range, so nulls must satisfy both
+                # comparisons to be emitted exactly once.
+                left = f"({left} OR {partition_col} IS NULL)"
+                right = f"({right} OR {partition_col} IS NULL)"
             stats = RecordBatch.from_pydict({self._partition_col: [bounds[i], bounds[i + 1]]})
             yield self._scan_task(
                 pushdowns,
@@ -228,36 +248,31 @@ class HologresScanOperator(ScanOperator):
         size_bytes: int | None = None,
         stats=None,
     ) -> ScanTask:
-        predicate_sql = pushdowns.filters.to_sql() if pushdowns.filters is not None else None
-        if shard_list:
-            shard_predicate = f"hg_shard_id IN ({', '.join(map(str, shard_list))})"
-            predicate_sql = f"({predicate_sql}) AND {shard_predicate}" if predicate_sql else shard_predicate
+        predicate_sql, filter_applied, limit_applied = self._plan_query_pushdowns(
+            pushdowns, use_arrow=use_arrow, shard_list=shard_list
+        )
+        push_limit = pushdowns.limit if limit_applied else None
 
-        apply_pushdowns = not self._disable_pushdowns and (pushdowns.filters is None or predicate_sql is not None)
-        # Hologres' COPY TO ARROW export truncates or corrupts batches when a
-        # pushed LIMIT runs through its export path, so the arrow path never
-        # pushes the limit; the engine enforces it on the returned batches.
-        push_limit = None if use_arrow else pushdowns.limit
-
-        if apply_pushdowns:
-            projection = (
-                self._quoted_columns(pushdowns.columns) if use_arrow else self._select_projection(pushdowns.columns)
-            )
-            sql = self._compose_query(
-                projection=projection,
-                predicate=predicate_sql,
-                limit=push_limit,
-                partition_bounds=partition_bounds,
-            )
-        else:
-            projection = pushdowns.columns if use_arrow else self._select_projection(None)
-            sql = self._compose_query(projection=projection)
+        # Projection is part of the materialized schema, so it is always
+        # pushed into the query even when filter/limit pushdowns are disabled.
+        projection = (
+            self._quoted_columns(pushdowns.columns) if use_arrow else self._select_projection(pushdowns.columns)
+        )
+        sql = self._compose_query(
+            projection=projection,
+            predicate=predicate_sql,
+            limit=push_limit,
+            partition_bounds=partition_bounds,
+        )
 
         if use_arrow:
             projected_schema = self._projected_schema(pushdowns)
-            # Keep the limit in the remaining pushdowns so the engine still
-            # enforces it, since the arrow query does not.
-            remaining = PyPushdowns(limit=pushdowns.limit) if pushdowns.limit is not None else PyPushdowns()
+            # The arrow query never pushes LIMIT, and filters which could not
+            # be rendered as SQL must still be evaluated by the engine.
+            remaining = PyPushdowns(
+                filters=pushdowns.filters if not filter_applied else None,
+                limit=pushdowns.limit,
+            )
             return ScanTask.python_factory_func_scan_task(
                 module=_hologres_arrow_scan_factory.__module__,
                 func_name=_hologres_arrow_scan_factory.__name__,
@@ -271,7 +286,11 @@ class HologresScanOperator(ScanOperator):
             )
 
         db_config = DatabaseSourceConfig(sql, self._sql_conn)
-        remaining_pushdowns = pushdowns if not apply_pushdowns else PyPushdowns(columns=pushdowns.columns)
+        remaining_pushdowns = PyPushdowns(
+            filters=pushdowns.filters if not filter_applied else None,
+            columns=pushdowns.columns,
+            limit=pushdowns.limit if not limit_applied else None,
+        )
         return ScanTask.sql_scan_task(
             url=self._sql_conn.url,
             config=db_config,
@@ -283,10 +302,43 @@ class HologresScanOperator(ScanOperator):
             stats=stats,
         )
 
+    def _plan_query_pushdowns(
+        self,
+        pushdowns: PyPushdowns,
+        *,
+        use_arrow: bool,
+        shard_list: list[int] | None = None,
+    ) -> tuple[str | None, bool, bool]:
+        """Decide which pushdowns go into SQL and which remain for the engine.
+
+        Returns ``(predicate_sql, filter_applied, limit_applied)``. Shard and
+        partition restrictions which make tasks disjoint are always kept;
+        ``disable_pushdowns`` only suppresses optional filter/limit pushdowns.
+        """
+        # Restrictions which split the table into disjoint tasks (physical
+        # shards and partition bounds) are always applied. Only the optional
+        # filter/limit pushdowns are controlled by ``disable_pushdowns``.
+        filter_sql = pushdowns.filters.to_sql() if pushdowns.filters is not None else None
+        filter_applied = not self._disable_pushdowns and filter_sql is not None
+
+        predicate_parts: list[str] = []
+        if filter_applied:
+            predicate_parts.append(f"({filter_sql})")
+        if shard_list:
+            shard_predicate = f"hg_shard_id IN ({', '.join(map(str, shard_list))})"
+            predicate_parts.append(shard_predicate)
+        predicate_sql = " AND ".join(predicate_parts) if predicate_parts else None
+
+        # Hologres' COPY TO ARROW export truncates or corrupts batches when a
+        # pushed LIMIT runs through its export path, so the arrow path never
+        # pushes the limit; the engine enforces it on the returned batches.
+        limit_applied = not self._disable_pushdowns and not use_arrow and pushdowns.limit is not None
+        return predicate_sql, filter_applied, limit_applied
+
     def _quoted_columns(self, projection: list[str] | None) -> list[str] | None:
         if projection is None:
             return None
-        return [f'"{c}"' for c in projection]
+        return [quote_identifier_if_needed(c) for c in projection]
 
     def _select_projection(self, projection: list[str] | None) -> list[str]:
         """Projection for the SELECT path with json/jsonb cast to text.
@@ -298,11 +350,12 @@ class HologresScanOperator(ScanOperator):
             projection = [c.name for c in self._holo_schema.columns]
         out = []
         for name in projection:
+            quoted = quote_identifier_if_needed(name)
             idx = self._holo_schema.get_column_index(name)
             if idx is not None and self._holo_schema.columns[idx].type_name in ("json", "jsonb"):
-                out.append(f'"{name}"::text AS "{name}"')
+                out.append(f"{quoted}::text AS {quoted}")
             else:
-                out.append(f'"{name}"')
+                out.append(quoted)
         return out
 
     def _projected_schema(self, pushdowns: PyPushdowns) -> Schema:
@@ -312,7 +365,7 @@ class HologresScanOperator(ScanOperator):
 
     def _base_query(self) -> str:
         holo = self._holo_schema
-        return f'"{holo.schema_name}"."{holo.table_name}"'
+        return qualified_name_for_sql(holo.schema_name, holo.table_name)
 
     def _compose_query(
         self,
@@ -372,24 +425,18 @@ class HologresScanOperator(ScanOperator):
         if dtype.is_string():
             # Hologres' percentile aggregates reject strings; split the sorted
             # distinct values instead, which is exact for partition columns.
-            distinct_sql = f"SELECT DISTINCT {self._partition_col} FROM {self._base_query()} ORDER BY 1"
+            partition_col = quote_identifier_if_needed(self._partition_col)
+            distinct_sql = f"SELECT DISTINCT {partition_col} FROM {self._base_query()} ORDER BY 1"
             table = self._sql_conn.execute_sql_query(distinct_sql)
             values = [r[0] for r in zip(*table.to_pydict().values())] if table.num_rows else []
-            if not values:
-                return None
-            chunk = max(1, -(-len(values) // num_scan_tasks))
-            bounds = [values[0]]
-            for i in range(chunk - 1, len(values) - 1, chunk):
-                bounds.append(values[i])
-            if bounds[-1] != values[-1]:
-                bounds.append(values[-1])
-            return bounds
+            return _string_partition_bounds(values, num_scan_tasks)
 
         if self._partition_bound_strategy == PartitionBoundStrategy.PERCENTILE:
             try:
+                partition_col = quote_identifier_if_needed(self._partition_col)
                 percentiles = [i / num_scan_tasks for i in range(num_scan_tasks + 1)]
                 bounds = ", ".join(
-                    f"percentile_disc({p}) WITHIN GROUP (ORDER BY {self._partition_col}) AS bound_{i}"
+                    f"percentile_disc({p}) WITHIN GROUP (ORDER BY {partition_col}) AS bound_{i}"
                     for i, p in enumerate(percentiles)
                 )
                 percentile_sql = f"SELECT {bounds} FROM {self._base_query()} LIMIT 1"
@@ -402,9 +449,8 @@ class HologresScanOperator(ScanOperator):
                 warnings.warn(f"Failed percentile partitioning ({e}); falling back to MIN_MAX.", UserWarning)
                 self._partition_bound_strategy = PartitionBoundStrategy.MIN_MAX
 
-        min_max_sql = (
-            f"SELECT MIN({self._partition_col}) AS min, MAX({self._partition_col}) AS max FROM {self._base_query()}"
-        )
+        partition_col = quote_identifier_if_needed(self._partition_col)
+        min_max_sql = f"SELECT MIN({partition_col}) AS min, MAX({partition_col}) AS max FROM {self._base_query()}"
         import pyarrow as pa
 
         pa_schema = pa.schema([pa.field("min", dtype.to_arrow_dtype()), pa.field("max", dtype.to_arrow_dtype())])
@@ -429,6 +475,30 @@ class HologresScanOperator(ScanOperator):
         return sql
 
 
+def _string_partition_bounds(values: list, num_scan_tasks: int) -> list | None:
+    """Split sorted distinct string partition values into non-empty bounds.
+
+    Nulls are excluded: MIN/MAX and DISTINCT ordering put them outside the
+    useful range. The first generated scan task explicitly includes null keys
+    (see :meth:`HologresScanOperator._partition_bound_scan_tasks`).
+    """
+    values = sorted({v for v in values if v is not None})
+    if not values:
+        return None
+    num_scan_tasks = min(num_scan_tasks, len(values))
+    if num_scan_tasks <= 1:
+        return None
+
+    chunk = max(1, -(-len(values) // num_scan_tasks))
+    bounds = [values[0]]
+    for i in range(chunk - 1, len(values) - 1, chunk):
+        if values[i] != bounds[-1]:
+            bounds.append(values[i])
+    if bounds[-1] != values[-1]:
+        bounds.append(values[-1])
+    return bounds
+
+
 def _hologres_arrow_scan_factory(connection_uri: str, sql: str, schema) -> Iterator:
     """ScanTask factory: stream a ``COPY ... TO STDOUT (FORMAT ARROW)`` query.
 
@@ -438,8 +508,6 @@ def _hologres_arrow_scan_factory(connection_uri: str, sql: str, schema) -> Itera
     RecordBatch; the type fixes the Arrow export needs (boolean uint8 -> bool,
     timestamptz date64 -> UTC timestamp) are applied afterwards.
     """
-    import io
-
     import psycopg
     import pyarrow as pa
 
@@ -456,26 +524,135 @@ def _hologres_arrow_scan_factory(connection_uri: str, sql: str, schema) -> Itera
         with conn.cursor() as cur:
             cur.execute("SET timezone TO 'UTC'")
             with cur.copy(f"COPY ({sql}) TO STDOUT WITH (FORMAT ARROW)") as copy:
-                try:
-                    raw = bytearray()
-                    while chunk := copy.read():
-                        raw.extend(chunk)
-
-                    for data in _iter_arrow_blocks(bytes(raw)):
-                        with pa.ipc.open_stream(io.BytesIO(data)) as reader:
-                            table = reader.read_all()
-                        table = _fix_arrow_types(table, bool_columns, tz_columns)
-                        table = _compact_table(table)
-                        yield RecordBatch.from_arrow_table(table)._recordbatch
-                except GeneratorExit:
-                    # The consumer stopped early (e.g. LIMIT): the whole
-                    # response is already buffered, so just unwind.
-                    raise
+                for data in _iter_arrow_blocks_from_copy(copy):
+                    with pa.ipc.open_stream(io.BytesIO(data)) as reader:
+                        for batch in reader:
+                            table = pa.Table.from_batches([batch])
+                            table = _fix_arrow_types(table, bool_columns, tz_columns)
+                            table = _compact_table(table)
+                            yield RecordBatch.from_arrow_table(table)._recordbatch
     finally:
         try:
             conn.close()
         except Exception:
             pass
+
+
+_PG_COPY_HEADER_SIZE = len(_PG_BINARY_SIGNATURE) + 8  # signature + flags + extension length
+
+
+class _CopyStreamReader:
+    """Incrementally read a psycopg COPY stream without buffering the result."""
+
+    def __init__(self, copy) -> None:
+        self._copy = copy
+        self._buffer = bytearray()
+        self._eof = False
+
+    def _fill(self, size: int) -> bool:
+        while len(self._buffer) < size and not self._eof:
+            # psycopg's Copy.read() takes no size argument; every call returns
+            # the next chunk made available by the server.
+            chunk = self._copy.read()
+            if not chunk:
+                self._eof = True
+                break
+            self._buffer.extend(chunk)
+        return len(self._buffer) >= size
+
+    def read(self, size: int = -1) -> bytes:
+        if size is None or size < 0:
+            parts = [bytes(self._buffer)]
+            self._buffer.clear()
+            while not self._eof:
+                chunk = self._copy.read()
+                if not chunk:
+                    self._eof = True
+                    break
+                parts.append(chunk)
+            return b"".join(parts)
+
+        self._fill(size)
+        data = bytes(self._buffer[:size])
+        del self._buffer[:size]
+        return data
+
+
+class _RawArrowReader:
+    """File-like adapter feeding an already-read prefix plus a COPY stream."""
+
+    def __init__(self, prefix: bytes, stream: _CopyStreamReader) -> None:
+        self._prefix = prefix
+        self._stream = stream
+        self._closed = False
+
+    def read(self, size: int = -1) -> bytes:
+        if size is None or size < 0:
+            data = self._prefix + self._stream.read()
+            self._prefix = b""
+            return data
+        if not self._prefix:
+            return self._stream.read(size)
+        if len(self._prefix) >= size:
+            data = self._prefix[:size]
+            self._prefix = self._prefix[size:]
+            return data
+        prefix = self._prefix
+        self._prefix = b""
+        return prefix + self._stream.read(size - len(prefix))
+
+    def readable(self) -> bool:
+        return True
+
+    def seekable(self) -> bool:
+        return False
+
+    @property
+    def closed(self) -> bool:
+        return self._closed
+
+    def close(self) -> None:
+        self._closed = True
+
+
+def _iter_arrow_blocks_from_copy(copy) -> Iterator[bytes]:
+    """Yield Arrow IPC streams from a live ``COPY ... TO STDOUT`` response."""
+    stream = _CopyStreamReader(copy)
+    header = stream.read(_PG_COPY_HEADER_SIZE)
+
+    if not header.startswith(_PG_BINARY_SIGNATURE):
+        # Some servers return a bare Arrow IPC stream instead of PGCOPY
+        # framing. Feed the prefix back to pyarrow together with the rest of
+        # the stream so it can still decode incrementally.
+        if not header:
+            raise ValueError("Empty Hologres COPY ARROW response")
+        reader = _RawArrowReader(header, stream)
+        import pyarrow as pa
+
+        with pa.ipc.open_stream(reader) as ipc_reader:
+            for batch in ipc_reader:
+                buffer = pa.BufferOutputStream()
+                with pa.ipc.new_stream(buffer, batch.schema) as writer:
+                    writer.write_batch(batch)
+                yield buffer.getvalue().to_pybytes()
+        return
+
+    while True:
+        nfields_bytes = stream.read(2)
+        if len(nfields_bytes) < 2:
+            break
+        (nfields,) = struct.unpack("!h", nfields_bytes)
+        if nfields == -1:  # trailer
+            break
+
+        length_bytes = stream.read(4)
+        if len(length_bytes) < 4:
+            raise ValueError("Truncated Hologres COPY ARROW field length")
+        (field_length,) = struct.unpack("!i", length_bytes)
+        data = stream.read(field_length)
+        if len(data) < field_length:
+            raise ValueError("Truncated Hologres COPY ARROW field data")
+        yield data
 
 
 def _iter_arrow_blocks(raw: bytes) -> Iterator[bytes]:
@@ -485,16 +662,14 @@ def _iter_arrow_blocks(raw: bytes) -> Iterator[bytes]:
     (signature + flags + extension length), then rows of
     ``[nfields][length][arrow IPC stream]``, terminated by ``ff ff``.
     """
-    import struct
-
-    if raw.startswith(_ARROW_IPC_PREFIX):
+    if raw.startswith((_ARROW_IPC_PREFIX, b"\xff\xff\xff\xff")):
         yield raw
         return
 
     if not raw.startswith(_PG_BINARY_SIGNATURE):
         raise ValueError("Unrecognized Hologres COPY ARROW response format")
 
-    pos = len(_PG_BINARY_SIGNATURE) + 8  # header + flags + extension length
+    pos = _PG_COPY_HEADER_SIZE
     while pos + 2 <= len(raw):
         (nfields,) = struct.unpack("!h", raw[pos : pos + 2])
         pos += 2
@@ -504,10 +679,6 @@ def _iter_arrow_blocks(raw: bytes) -> Iterator[bytes]:
         pos += 4
         yield raw[pos : pos + flen]
         pos += flen
-
-
-_ARROW_IPC_PREFIX = b"ARROW1"
-_PG_BINARY_SIGNATURE = b"PGCOPY\n\xff\r\n\x00"
 
 
 def _compact_table(table: pa.Table) -> pa.Table:

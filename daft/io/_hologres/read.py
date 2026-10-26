@@ -7,8 +7,6 @@ from daft.api_annotations import PublicAPI
 from daft.catalog import Identifier
 from daft.daft import ScanOperatorHandle, StorageConfig
 from daft.dataframe import DataFrame
-from daft.io._hologres._schema_loader import load_table_schema, table_exists
-from daft.io._hologres.scan import HologresScanOperator
 from daft.logical.builder import LogicalPlanBuilder
 from daft.sql.sql_scan import PartitionBoundStrategy
 
@@ -45,7 +43,9 @@ def read_hologres(
         partition_bound_strategy (str): ``"min-max"`` (default) or ``"percentile"``.
         shard_parallelism (bool): split reads by physical shard when the table
             has more than one shard; on by default.
-        disable_pushdowns (bool): disable pushing filters/projections into the query.
+        disable_pushdowns (bool): disable pushing filters/limits into the query.
+            Shard/partition restrictions and the required projection are still
+            applied.
 
     Returns:
         DataFrame: DataFrame with the table's contents.
@@ -62,7 +62,16 @@ def read_hologres(
     else:
         raise ValueError(f"Invalid Hologres table identifier: {identifier}")
 
-    import psycopg
+    # These modules depend on optional Hologres dependencies (psycopg and
+    # SQLAlchemy). Keep them behind the call boundary so that a base Daft
+    # installation can still be imported without those packages.
+    try:
+        import psycopg
+    except ImportError:
+        raise ImportError("Hologres support not installed: pip install -U 'daft[hologres]'")
+
+    from daft.io._hologres._schema_loader import load_table_schema, table_exists
+    from daft.io._hologres.scan import HologresScanOperator
 
     conn_obj = psycopg.connect(connection_string, autocommit=True)
     try:
