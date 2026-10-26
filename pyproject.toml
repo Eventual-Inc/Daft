@@ -41,7 +41,7 @@ gravitino = ["requests>=2.28.0,<3.0.0"]
 hdf5 = ["h5py>=3.16.0,<4.0.0", "numpy<2.4.0"]
 http = ["fsspec[http]<2026.10.0"]
 hudi = []
-huggingface = ["huggingface-hub<3", "datasets<5.2.0", "fsspec<2026.10.0"]
+huggingface = ["huggingface-hub<2", "datasets<4.9.0", "fsspec<2026.10.0"]
 iceberg = ["pyiceberg >= 0.7.0, != 0.9.1, != 0.10.0, <= 0.12.0"]
 jev = ["typesafe-sdk >= 0.7.2, < 0.8.0"]
 kafka = ["confluent-kafka"]
@@ -70,7 +70,7 @@ dev = [
   "ipdb==0.13.13",
   "maturin==1.15.0",
   "pre-commit==4.6.2",
-  "ruff==0.17.1",
+  "ruff==0.15.14",
   "mypy==2.4.0",
   # Pinned aiohttp due to Ray connection issue in aiohttp==3.12.6
   "aiohttp==3.14.5",
@@ -104,9 +104,9 @@ dev = [
   "opencv-python==5.0.0.93",
   "tiktoken==0.14.0",
   "duckdb==1.5.6",
-  "datasets==5.1.0",
-  "torch==2.14.1",
-  "torchvision==0.29.1",
+  "datasets==4.8.5",
+  "torch==2.13.0",
+  "torchvision==0.28.0",
   "jax==0.6.2",
   "jaxtyping==0.3.7",
   "docker==7.2.0",
@@ -119,8 +119,8 @@ dev = [
   "daft-lance==0.6.0",
   # Iceberg
   "pyiceberg==0.12.0",
-  "pydantic==2.12.4",
-  "tenacity==9.2.1",
+  "pydantic==2.12.5",
+  "tenacity==9.1.4",
   # Delta Lake
   "deltalake==1.6.6",
   # Databricks
@@ -136,17 +136,17 @@ dev = [
   "sqlglot==30.24.0",
   "pyodbc==5.3.0",
   # AWS
-  "s3fs==2026.9.0",
-  "boto3==1.43.116",
-  "boto3-stubs[essential,glue,s3,s3tables]==1.43.115",
+  "s3fs==2024.9.0",
+  "boto3==1.36.2",
+  "boto3-stubs[essential,glue,s3,s3tables]==1.38.46",
   "moto[glue,s3,server]==5.2.4",
   # Azure
   "adlfs==2026.8.0",
   "azure-storage-blob==12.31.0",
   # GCS
-  "gcsfs==2026.10.1",
+  "gcsfs==2024.9.0.post1",
   # Hugging Face
-  "huggingface-hub==2.2.0",
+  "huggingface-hub==1.33.0",
   # AI
   # vllm (and its CUDA deps, e.g. nvidia-cudnn-frontend) ship no macOS/Windows wheels; gate to Linux.
   "vllm==0.31.0; sys_platform == 'linux'",
