@@ -4,7 +4,7 @@ import logging
 import pathlib
 import warnings
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from daft import context, runners
 from daft.api_annotations import PublicAPI
@@ -199,7 +199,7 @@ def read_mcap(
     topics: list[str] | None = None,
     batch_size: int = 1000,
     topic_start_time_resolver: Callable[[str], dict[str, int]] | None = None,
-    use_legacy_types: bool = False,
+    output_format: Literal["raw", "raw_legacy"] = "raw",
     _multithreaded_io: bool | None = None,
 ) -> DataFrame:
     """Read raw messages from one or more MCAP files.
@@ -214,15 +214,11 @@ def read_mcap(
         topic_start_time_resolver: Optional per-file callback
             returning non-negative topic start times. Each result fans out into
             one native task per topic, using `max(start_time, resolved_start_time)`.
-        use_legacy_types: This is deprecated and will be removed in v0.9.0.
-            If True, cast the output DataFrame to the schema emitted
-            by the legacy MCAP reader. Specifically the output columns will be:
-            - `source_path`: Unchanged (str)
-            - `topic`: Unchanged (str)
-            - `log_time`: uint64 -> int64
-            - `publish_time`: uint64 -> int64
-            - `sequence`: uint32 -> int32
-            - `data`: binary -> string
+        output_format: Column types to emit. The `"raw_legacy"` choice is deprecated
+            and will be removed in v0.9.0. Use `"raw"` instead.
+            - `"raw"` (default): The default output types.
+            - `"raw_legacy"`: `log_time` and `publish_time` are int64,
+              `sequence` is int32, and `data` is string.
 
     Warning:
         Times returned by `topic_start_time_resolver` must be between 0 and
@@ -232,14 +228,17 @@ def read_mcap(
         A DataFrame with columns:
         - `source_path` (str): The path to the MCAP file
         - `topic` (str): The topic of the message
-        - `log_time` (int64 by default, uint64 when `use_legacy_types=False`): Message log time
-        - `publish_time` (int64 by default, uint64 when `use_legacy_types=False`): Message publish time
-        - `sequence` (int32 by default, uint32 when `use_legacy_types=False`): Message sequence number
-        - `data` (string by default, binary when `use_legacy_types=False`): Message payload
+        - `log_time` (uint64, or int64 when `output_format="raw_legacy"`): Message log time
+        - `publish_time` (uint64, or int64 when `output_format="raw_legacy"`): Message publish time
+        - `sequence` (uint32, or int32 when `output_format="raw_legacy"`): Message sequence number
+        - `data` (binary, or string when `output_format="raw_legacy"`): Message payload
     """
-    if use_legacy_types:
+    if output_format not in ("raw", "raw_legacy"):
+        raise ValueError(f"Invalid output_format {output_format!r}. Expected 'raw' or 'raw_legacy'.")
+
+    if output_format == "raw_legacy":
         warnings.warn(
-            "`use_legacy_types=True` is deprecated and will be removed in v0.9.0. Update your script to use the currently emitted column types. See `daft.io.read_mcap` documentation for more details.",
+            "`output_format='raw_legacy'` is deprecated and will be removed in v0.9.0. Update your script to use the currently emitted column types. See `daft.io.read_mcap` documentation for more details.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -261,7 +260,7 @@ def read_mcap(
         storage_config=storage_config,
     ).read()
 
-    if use_legacy_types:
+    if output_format == "raw_legacy":
         df = df.with_columns(
             {
                 "log_time": col("log_time").cast(DataType.int64()),

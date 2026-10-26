@@ -1396,6 +1396,35 @@ impl HTTPConfig {
     pub fn __repr__(&self) -> PyResult<String> {
         Ok(format!("{}", self.config))
     }
+
+    #[getter]
+    pub fn bearer_token(&self) -> Option<String> {
+        self.config
+            .bearer_token
+            .as_ref()
+            .map(super::ObfuscatedString::as_string)
+            .cloned()
+    }
+
+    #[getter]
+    pub fn retry_initial_backoff_ms(&self) -> u64 {
+        self.config.retry_initial_backoff_ms
+    }
+
+    #[getter]
+    pub fn connect_timeout_ms(&self) -> u64 {
+        self.config.connect_timeout_ms
+    }
+
+    #[getter]
+    pub fn read_timeout_ms(&self) -> u64 {
+        self.config.read_timeout_ms
+    }
+
+    #[getter]
+    pub fn num_tries(&self) -> u32 {
+        self.config.num_tries
+    }
 }
 
 #[pymethods]
