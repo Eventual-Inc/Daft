@@ -42,10 +42,10 @@ hdf5 = ["h5py>=3.16.0,<4.0.0", "numpy<2.4.0"]
 http = ["fsspec[http]<2026.10.0"]
 hudi = []
 huggingface = ["huggingface-hub<2", "datasets<4.9.0", "fsspec<2026.10.0"]
-iceberg = ["pyiceberg >= 0.7.0, != 0.9.1, != 0.10.0, <= 0.12.0"]
+iceberg = ["pyiceberg >= 0.7.0, != 0.9.1, != 0.10.0, <= 0.11.1"]
 jev = ["typesafe-sdk >= 0.7.2, < 0.8.0"]
 kafka = ["confluent-kafka"]
-lance = ["daft-lance>=0.5.0,<0.7.0"]
+lance = ["daft-lance>=0.5.0,<0.6.0"]
 # The reader is native. Retain the extra as a no-op for installation compatibility.
 mcap = []
 numpy = ["numpy<2.4.0"]
@@ -116,9 +116,9 @@ dev = [
   # Ray
   "ray[data, client]==2.59.0",
   # Lance
-  "daft-lance==0.6.0",
+  "daft-lance==0.5.0",
   # Iceberg
-  "pyiceberg==0.12.0",
+  "pyiceberg==0.11.1",
   "pydantic==2.12.5",
   "tenacity==9.1.4",
   # Delta Lake
@@ -152,7 +152,7 @@ dev = [
   "vllm==0.31.0; sys_platform == 'linux'",
   "openai==3.35.1",
   "google-genai==2.31.0",
-  "typesafe-sdk==0.7.5",
+  "typesafe-sdk==0.7.2",
   # AV
   "av==17.1.0",
   "h5py==3.16.0",
@@ -173,7 +173,7 @@ docs = [
   "mkdocs-material==9.7.7",
   "mkdocs-macros-plugin==1.5.0",
   "mkdocs-simple-hooks==0.1.5",
-  "pymdown-extensions==12.3",
+  "pymdown-extensions==10.21.3",
   # NOTE: [imaging] extra removed because it pins pillow<12.0, conflicting with pillow==12.3.0 (security fix).
   # Image optimization for docs is not critical. Re-add when mkdocs-material supports Pillow 12+.
   # "mkdocs-material[imaging]==9.7.7",
