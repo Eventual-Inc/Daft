@@ -51,11 +51,26 @@ def fake_vllm(monkeypatch):
 def executor(fake_vllm):
     executor = LocalVLLMExecutor("fake-model", {}, {})
     yield executor
-    executor.loop.call_soon_threadsafe(executor.loop.stop)
+    stop_executor(executor)
 
 
 def run_on_executor_loop(executor, coro):
     return asyncio.run_coroutine_threadsafe(coro, executor.loop).result(timeout=10)
+
+
+def stop_executor(executor):
+    """Cancel the tasks still pending on the executor's loop (e.g. `_periodic_log`), then stop and close the loop."""
+
+    async def cancel_pending_tasks():
+        tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    run_on_executor_loop(executor, cancel_pending_tasks())
+    executor.loop.call_soon_threadsafe(executor.loop.stop)
+    executor.loop_thread.join(timeout=10)
+    executor.loop.close()
 
 
 def generate_tasks():
