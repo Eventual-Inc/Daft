@@ -249,17 +249,17 @@ exclude = [
 ]
 
 [workspace.dependencies]
-arrow = "59.0.0"
-arrow-array = {version = "59.0.0", features = ["chrono-tz"]}
-arrow-buffer = "59.0.0"
-arrow-csv = "59.0.0"
-arrow-data = "59.0.0"
-arrow-flight = "59.0.0"
-arrow-ipc = {version = "59.0.0", features = ["lz4", "zstd"]}
-arrow-json = "59.0.0"
-arrow-row = "59.0.0"
-arrow-schema = "59.0.0"
-arrow-select = "59.0.0"
+arrow = "60.0.0"
+arrow-array = {version = "60.0.0", features = ["chrono-tz"]}
+arrow-buffer = "60.0.0"
+arrow-csv = "60.0.0"
+arrow-data = "60.0.0"
+arrow-flight = "60.0.0"
+arrow-ipc = {version = "60.0.0", features = ["lz4", "zstd"]}
+arrow-json = "60.0.0"
+arrow-row = "60.0.0"
+arrow-schema = "60.0.0"
+arrow-select = "60.0.0"
 approx = "0.5.1"
 arc-swap = "1.7.1"
 async-compression = {version = "0.4.43", features = [
@@ -348,7 +348,7 @@ opentelemetry = {version = "0.33", features = ["trace", "metrics", "logs"]}
 opentelemetry-otlp = {version = "0.33", features = ["grpc-tonic", "logs"]}
 opentelemetry_sdk = {version = "0.33", features = ["logs"]}
 parking_lot = "0.12.5"
-parquet = "59.0.0"
+parquet = "60.0.0"
 pretty_assertions = "1.4.1"
 proptest = "1.9.0"
 prost = "0.13.5"
