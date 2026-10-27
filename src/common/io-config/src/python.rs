@@ -8,7 +8,8 @@ use std::{
 use chrono::{DateTime, Utc};
 use common_error::DaftResult;
 use common_py_serde::{
-    deserialize_py_object, impl_bincode_py_state_serialization, serialize_py_object,
+    deserialize_py_object, impl_bincode_py_state_serialization, pickle_dumps, pickle_loads,
+    serialize_py_object,
 };
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -133,6 +134,7 @@ pub struct GCSConfig {
 ///     s3: Configuration to use when accessing URLs with the `s3://` scheme
 ///     azure: Configuration to use when accessing URLs with the `az://` or `abfs://` scheme
 ///     gcs: Configuration to use when accessing URLs with the `gs://` or `gcs://` scheme
+///     io_extensions: Async Python IO extensions keyed by URI scheme
 ///
 /// Examples:
 ///     >>> io_config = IOConfig(s3=S3Config(key_id="xxx", access_key="xxx", num_tries=10), azure=AzureConfig(anonymous=True), gcs=GCSConfig(...))
@@ -276,10 +278,12 @@ impl IOConfig {
         goosefs=None,
         hdfs=None,
         opendal_backends=None,
-        protocol_aliases=None
+        protocol_aliases=None,
+        io_extensions=None
     ))]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
+        py: Python<'_>,
         s3: Option<S3Config>,
         azure: Option<AzureConfig>,
         gcs: Option<GCSConfig>,
@@ -294,6 +298,7 @@ impl IOConfig {
         hdfs: Option<HdfsConfig>,
         opendal_backends: Option<HashMap<String, HashMap<String, String>>>,
         protocol_aliases: Option<HashMap<String, String>>,
+        io_extensions: Option<HashMap<String, Py<PyAny>>>,
     ) -> PyResult<Self> {
         let cfg = config::IOConfig {
             s3: s3.unwrap_or_default().config,
@@ -318,8 +323,17 @@ impl IOConfig {
                 .into_iter()
                 .map(|(k, v)| (k.to_lowercase(), v.to_lowercase()))
                 .collect(),
+            io_extensions: io_extensions
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(scheme, extension)| {
+                    Ok((scheme.to_lowercase(), pickle_dumps(py, &extension)?))
+                })
+                .collect::<PyResult<_>>()?,
         };
         cfg.validate_protocol_aliases()
+            .map_err(pyo3::exceptions::PyValueError::new_err)?;
+        cfg.validate_io_extensions()
             .map_err(pyo3::exceptions::PyValueError::new_err)?;
         Ok(Self { config: cfg })
     }
@@ -339,11 +353,13 @@ impl IOConfig {
         goosefs=None,
         hdfs=None,
         opendal_backends=None,
-        protocol_aliases=None
+        protocol_aliases=None,
+        io_extensions=None
     ))]
     #[allow(clippy::too_many_arguments)]
     pub fn replace(
         &self,
+        py: Python<'_>,
         s3: Option<S3Config>,
         azure: Option<AzureConfig>,
         gcs: Option<GCSConfig>,
@@ -358,6 +374,7 @@ impl IOConfig {
         hdfs: Option<HdfsConfig>,
         opendal_backends: Option<HashMap<String, HashMap<String, String>>>,
         protocol_aliases: Option<HashMap<String, String>>,
+        io_extensions: Option<HashMap<String, Py<PyAny>>>,
     ) -> PyResult<Self> {
         let cfg = config::IOConfig {
             s3: s3
@@ -408,8 +425,21 @@ impl IOConfig {
                         .collect()
                 })
                 .unwrap_or_else(|| self.config.protocol_aliases.clone()),
+            io_extensions: io_extensions
+                .map(|extensions| {
+                    extensions
+                        .into_iter()
+                        .map(|(scheme, extension)| {
+                            Ok((scheme.to_lowercase(), pickle_dumps(py, &extension)?))
+                        })
+                        .collect::<PyResult<_>>()
+                })
+                .transpose()?
+                .unwrap_or_else(|| self.config.io_extensions.clone()),
         };
         cfg.validate_protocol_aliases()
+            .map_err(pyo3::exceptions::PyValueError::new_err)?;
+        cfg.validate_io_extensions()
             .map_err(pyo3::exceptions::PyValueError::new_err)?;
         Ok(Self { config: cfg })
     }
@@ -503,6 +533,21 @@ impl IOConfig {
             .iter()
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect())
+    }
+
+    /// Python IO extensions keyed by URI scheme.
+    #[getter]
+    pub fn io_extensions(&self, py: Python<'_>) -> PyResult<HashMap<String, Py<PyAny>>> {
+        self.config
+            .io_extensions
+            .iter()
+            .map(|(scheme, serialized)| {
+                Ok((
+                    scheme.clone(),
+                    pickle_loads(py, serialized.as_slice())?.unbind(),
+                ))
+            })
+            .collect()
     }
 
     /// Configuration to be used when accessing COS URLs

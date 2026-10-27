@@ -30,6 +30,8 @@ pub struct IOConfig {
     /// Protocol aliases: maps custom scheme names to existing scheme names.
     /// For example, {"my-s3": "s3"} rewrites "my-s3://bucket/path" to "s3://bucket/path".
     pub protocol_aliases: BTreeMap<String, String>,
+    /// Pickled Python IO extension objects, keyed by URI scheme.
+    pub io_extensions: BTreeMap<String, Vec<u8>>,
 }
 
 /// Identifies which IOConfig backend section is relevant for a URI scheme.
@@ -180,6 +182,12 @@ impl IOConfig {
         if !self.protocol_aliases.is_empty() {
             res.push(format!("Protocol aliases = {:?}", self.protocol_aliases));
         }
+        if !self.io_extensions.is_empty() {
+            res.push(format!(
+                "IO extensions = {:?}",
+                self.io_extensions.keys().collect::<Vec<_>>()
+            ));
+        }
         res
     }
 
@@ -194,6 +202,26 @@ impl IOConfig {
                 return Err(format!(
                     "Protocol alias key '{key}' conflicts with built-in scheme. \
                      Aliases can only map new custom scheme names to existing schemes."
+                ));
+            }
+            if self.io_extensions.contains_key(key) {
+                return Err(format!(
+                    "URI scheme '{key}' cannot be configured as both a protocol alias and an IO extension."
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Validates Python IO extension URI schemes.
+    pub fn validate_io_extensions(&self) -> std::result::Result<(), String> {
+        for scheme in self.io_extensions.keys() {
+            let mut chars = scheme.chars();
+            if !chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+                || !chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+            {
+                return Err(format!(
+                    "Invalid IO extension URI scheme '{scheme}'. Schemes must start with an ASCII letter and contain only ASCII letters, digits, '+', '-', or '.'."
                 ));
             }
         }
@@ -274,5 +302,37 @@ mod tests {
             None
         );
         assert_eq!(IoBackendKind::from_uris(["oss://bucket/path"]), None);
+    }
+
+    #[test]
+    fn io_extension_display_hides_serialized_payload() {
+        let mut config = IOConfig::default();
+        config
+            .io_extensions
+            .insert("custom".to_string(), vec![1, 2, 3]);
+
+        let display = format!("{config}");
+        assert!(display.contains("custom"));
+        assert!(!display.contains("1, 2, 3"));
+    }
+
+    #[test]
+    fn validates_io_extension_schemes_and_alias_conflicts() {
+        let mut config = IOConfig::default();
+        config
+            .io_extensions
+            .insert("custom+fs".to_string(), Vec::new());
+        assert!(config.validate_io_extensions().is_ok());
+
+        config
+            .io_extensions
+            .insert("invalid_scheme".to_string(), Vec::new());
+        assert!(config.validate_io_extensions().is_err());
+
+        config.io_extensions.remove("invalid_scheme");
+        config
+            .protocol_aliases
+            .insert("custom+fs".to_string(), "file".to_string());
+        assert!(config.validate_protocol_aliases().is_err());
     }
 }
