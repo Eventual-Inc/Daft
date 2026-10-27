@@ -4,6 +4,11 @@ use bytes::{Bytes, BytesMut};
 use common_runtime::get_io_runtime;
 use daft_core::datatypes::Field;
 use daft_io::{GetRange, IOClient, IOStatsRef};
+use parquet::{
+    basic::{ConvertedType, LogicalType, Repetition},
+    schema::types::{BasicTypeInfo, Type, TypePtr},
+};
+use serde::{Deserialize, Serialize};
 use snafu::ResultExt;
 
 use crate::{Error, ParquetMetadataSnafu, task_err};
@@ -18,25 +23,173 @@ const ARROW_SCHEMA_KEY: &str = "ARROW:schema";
 // Arrow-rs field ID mapping
 // ---------------------------------------------------------------------------
 
+/// Resolves parquet columns to table fields by parquet field ID.
+///
+/// Files written without field IDs (e.g. registered with Iceberg's `add_files`) are resolved
+/// by column name through `name_mapping`, the table's `schema.name-mapping.default`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct FieldIdMapping {
+    pub fields: BTreeMap<i32, Field>,
+    pub name_mapping: Option<Vec<MappedField>>,
+}
+
+/// An Iceberg name mapping entry, in the table spec's JSON form.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct MappedField {
+    #[serde(rename = "field-id", default)]
+    pub field_id: Option<i32>,
+    pub names: Vec<String>,
+    #[serde(default)]
+    pub fields: Option<Vec<Self>>,
+}
+
 /// Extract the optional field ID from a parquet `BasicTypeInfo`.
-fn get_field_id(info: &parquet::schema::types::BasicTypeInfo) -> Option<i32> {
+fn get_field_id(info: &BasicTypeInfo) -> Option<i32> {
     info.has_id().then(|| info.id())
+}
+
+fn is_list(info: &BasicTypeInfo) -> bool {
+    matches!(info.logical_type_ref(), Some(LogicalType::List))
+        || info.converted_type() == ConvertedType::LIST
+}
+
+fn is_map(info: &BasicTypeInfo) -> bool {
+    matches!(info.logical_type_ref(), Some(LogicalType::Map))
+        || matches!(
+            info.converted_type(),
+            ConvertedType::MAP | ConvertedType::MAP_KEY_VALUE
+        )
+}
+
+/// Whether `repeated`, the repeated group of LIST `list`, is itself the element of a legacy
+/// two-level list rather than a three-level wrapper, per parquet's backward-compatibility rules.
+pub(crate) fn is_two_level_list_group(list: &Type, repeated: &Type) -> bool {
+    match repeated.get_fields() {
+        [child] => {
+            !is_list(repeated.get_basic_info())
+                && child.get_basic_info().repetition() != Repetition::REPEATED
+                && (repeated.name() == "array"
+                    || repeated.name() == format!("{}_tuple", list.name()))
+        }
+        _ => true,
+    }
+}
+
+/// Rebuild a type with the given name, field ID and (for groups) children, keeping all other
+/// attributes.
+fn rebuild_type(tp: &Type, name: &str, id: Option<i32>, fields: Vec<TypePtr>) -> Type {
+    let info = tp.get_basic_info();
+    match tp {
+        Type::PrimitiveType {
+            physical_type,
+            type_length,
+            scale,
+            precision,
+            ..
+        } => Type::primitive_type_builder(name, *physical_type)
+            .with_repetition(info.repetition())
+            .with_converted_type(info.converted_type())
+            .with_logical_type(info.logical_type_ref().cloned())
+            .with_length(*type_length)
+            .with_precision(*precision)
+            .with_scale(*scale)
+            .with_id(id)
+            .build(),
+        Type::GroupType { .. } => Type::group_type_builder(name)
+            .with_repetition(info.repetition())
+            .with_converted_type(info.converted_type())
+            .with_logical_type(info.logical_type_ref().cloned())
+            .with_fields(fields)
+            .with_id(id)
+            .build(),
+    }
+    .expect("rebuilding a type with its own attributes should not fail")
+}
+
+/// Assign field IDs to the fields of a schema written without them, matching names against the
+/// Iceberg name mapping. LIST elements and MAP keys/values match the mapping's `element`, `key`
+/// and `value` entries whatever their physical names. Unmatched fields get no ID.
+fn assign_field_ids(root: &Type, mapping: &[MappedField]) -> Type {
+    fn find<'a>(mapping: &'a [MappedField], name: &str) -> Option<&'a MappedField> {
+        mapping.iter().find(|f| f.names.iter().any(|n| n == name))
+    }
+
+    fn assign(tp: &Type, mapped: Option<&MappedField>) -> Type {
+        let id = mapped.and_then(|m| m.field_id);
+        let children = mapped.and_then(|m| m.fields.as_deref()).unwrap_or_default();
+        let info = tp.get_basic_info();
+        let fields = match tp {
+            Type::PrimitiveType { .. } => vec![],
+            Type::GroupType { fields, .. } if is_list(info) => fields
+                .iter()
+                .map(|repeated| match repeated.as_ref() {
+                    // 3-level list: the repeated group wraps the element.
+                    Type::GroupType { fields: inner, .. }
+                        if !is_two_level_list_group(tp, repeated) =>
+                    {
+                        rebuild_type(
+                            repeated,
+                            repeated.name(),
+                            None,
+                            vec![Arc::new(assign(&inner[0], find(children, "element")))],
+                        )
+                    }
+                    // 2-level list of groups: the repeated group is the element. It keeps no ID
+                    // and is named `array`, so the rename by ID preserves the legacy marker.
+                    Type::GroupType { .. } => {
+                        let element = assign(repeated, find(children, "element"));
+                        rebuild_type(&element, "array", None, element.get_fields().to_vec())
+                    }
+                    // 2-level list of primitives: the repeated field is the element.
+                    Type::PrimitiveType { .. } => assign(repeated, find(children, "element")),
+                })
+                .map(Arc::new)
+                .collect(),
+            Type::GroupType { fields, .. } if is_map(info) => fields
+                .iter()
+                .map(|key_value| {
+                    let entries = key_value.get_fields().iter().zip(["key", "value"]);
+                    let entries =
+                        entries.map(|(f, name)| Arc::new(assign(f, find(children, name))));
+                    Arc::new(rebuild_type(
+                        key_value,
+                        key_value.name(),
+                        None,
+                        entries.collect(),
+                    ))
+                })
+                .collect(),
+            Type::GroupType { fields, .. } => fields
+                .iter()
+                .map(|f| Arc::new(assign(f, find(children, f.name()))))
+                .collect(),
+        };
+        rebuild_type(tp, tp.name(), id, fields)
+    }
+
+    let fields = root.get_fields().iter();
+    let fields = fields.map(|f| Arc::new(assign(f, find(mapping, f.name()))));
+    Type::group_type_builder(root.name())
+        .with_fields(fields.collect())
+        .build()
+        .expect("rebuilding the schema root should not fail")
 }
 
 /// Rewrite children of a group type per the field_id_mapping.
 ///
-/// When the parent has a logical type (LIST/MAP), intermediate children without
+/// When the parent is a LIST/MAP (or has another logical type), intermediate children without
 /// a field ID are preserved (with their own children recursed). Otherwise
 /// (plain struct), unmapped children are dropped.
 fn rewrite_children(
-    fields: &[Arc<parquet::schema::types::Type>],
-    has_logical_type: bool,
+    parent: &BasicTypeInfo,
+    fields: &[TypePtr],
     field_id_mapping: &BTreeMap<i32, Field>,
-) -> Vec<Arc<parquet::schema::types::Type>> {
+) -> Vec<TypePtr> {
+    let is_container = parent.logical_type_ref().is_some() || is_list(parent) || is_map(parent);
     fields
         .iter()
         .filter_map(|child| {
-            if has_logical_type {
+            if is_container {
                 // LIST/MAP intermediate nodes may lack field IDs but still
                 // contain mapped descendants (e.g. struct fields inside a list).
                 Some(Arc::new(
@@ -55,74 +208,33 @@ fn rewrite_children(
 /// dropping unmapped struct children.  Returns `None` if this field should be
 /// dropped entirely (no field ID, or ID not in the mapping).
 fn rewrite_arrowrs_type_with_field_ids(
-    tp: &parquet::schema::types::Type,
+    tp: &Type,
     field_id_mapping: &BTreeMap<i32, Field>,
-) -> Option<parquet::schema::types::Type> {
-    use parquet::schema::types::Type;
-
+) -> Option<Type> {
     let info = tp.get_basic_info();
     let mapped_field = get_field_id(info).and_then(|fid| field_id_mapping.get(&fid))?;
-
-    match tp {
-        Type::PrimitiveType {
-            physical_type,
-            type_length,
-            scale,
-            precision,
-            ..
-        } => {
-            let new_type = Type::primitive_type_builder(&mapped_field.name, *physical_type)
-                .with_repetition(info.repetition())
-                .with_converted_type(info.converted_type())
-                .with_logical_type(info.logical_type_ref().cloned())
-                .with_length(*type_length)
-                .with_precision(*precision)
-                .with_scale(*scale)
-                .with_id(get_field_id(info))
-                .build()
-                .expect("rebuilding primitive type with same attributes should not fail");
-            Some(new_type)
-        }
-        Type::GroupType { fields, .. } => {
-            let new_children =
-                rewrite_children(fields, info.logical_type_ref().is_some(), field_id_mapping);
-            let new_type = Type::group_type_builder(&mapped_field.name)
-                .with_repetition(info.repetition())
-                .with_converted_type(info.converted_type())
-                .with_logical_type(info.logical_type_ref().cloned())
-                .with_fields(new_children)
-                .with_id(get_field_id(info))
-                .build()
-                .expect("rebuilding group type with same attributes should not fail");
-            Some(new_type)
-        }
-    }
+    let children = match tp {
+        Type::PrimitiveType { .. } => vec![],
+        Type::GroupType { fields, .. } => rewrite_children(info, fields, field_id_mapping),
+    };
+    Some(rebuild_type(
+        tp,
+        &mapped_field.name,
+        get_field_id(info),
+        children,
+    ))
 }
 
 /// Rebuild a group node preserving its original name/attributes, but still
 /// recursing into its children to rename/filter them per the field_id_mapping.
 /// For primitive nodes, returns an unchanged clone.
-fn recurse_children_only(
-    tp: &parquet::schema::types::Type,
-    field_id_mapping: &BTreeMap<i32, Field>,
-) -> parquet::schema::types::Type {
-    use parquet::schema::types::Type;
-    match tp {
-        Type::PrimitiveType { .. } => tp.clone(),
-        Type::GroupType { fields, .. } => {
-            let info = tp.get_basic_info();
-            let new_children =
-                rewrite_children(fields, info.logical_type_ref().is_some(), field_id_mapping);
-            Type::group_type_builder(info.name())
-                .with_repetition(info.repetition())
-                .with_converted_type(info.converted_type())
-                .with_logical_type(info.logical_type_ref().cloned())
-                .with_fields(new_children)
-                .with_id(get_field_id(info))
-                .build()
-                .expect("rebuilding group type with same attributes should not fail")
-        }
-    }
+fn recurse_children_only(tp: &Type, field_id_mapping: &BTreeMap<i32, Field>) -> Type {
+    let Type::GroupType { fields, .. } = tp else {
+        return tp.clone();
+    };
+    let info = tp.get_basic_info();
+    let children = rewrite_children(info, fields, field_id_mapping);
+    rebuild_type(tp, info.name(), get_field_id(info), children)
 }
 
 /// Applies field_ids to an arrow-rs `ParquetMetaData`:
@@ -130,37 +242,46 @@ fn recurse_children_only(
 /// 2. Drop columns without a field_id or without a corresponding mapping entry
 pub(crate) fn apply_field_ids_to_arrowrs_parquet_metadata(
     metadata: Arc<parquet::file::metadata::ParquetMetaData>,
-    field_id_mapping: &BTreeMap<i32, Field>,
+    field_id_mapping: &FieldIdMapping,
     path: &str,
 ) -> crate::Result<Arc<parquet::file::metadata::ParquetMetaData>> {
     use parquet::{
         file::metadata::{ColumnChunkMetaData, ParquetMetaData, RowGroupMetaData},
-        schema::types::{SchemaDescriptor, Type},
+        schema::types::SchemaDescriptor,
     };
 
     let old_schema = metadata.file_metadata().schema_descr();
     let old_root = old_schema.root_schema();
 
-    // A file with no field IDs at all cannot be matched against the mapping, so every
-    // mapped column would silently read as null. Fail instead — a partially-annotated
-    // file is still handled below, where unmapped children are dropped on purpose.
-    if !old_root.get_fields().is_empty()
+    // A file with no field IDs at all can only be matched by name, through the name mapping.
+    // Without one, every mapped column would silently read as null, so fail instead — a
+    // partially-annotated file is still handled below, where unmapped children are dropped
+    // on purpose.
+    let named_schema;
+    let source_schema = if !old_root.get_fields().is_empty()
         && !old_root
             .get_fields()
             .iter()
             .any(|field| get_field_id(field.get_basic_info()).is_some())
     {
-        return Err(Error::MissingParquetFieldIds {
-            path: path.to_string(),
-        });
-    }
+        let Some(name_mapping) = &field_id_mapping.name_mapping else {
+            return Err(Error::MissingParquetFieldIds {
+                path: path.to_string(),
+            });
+        };
+        named_schema = SchemaDescriptor::new(Arc::new(assign_field_ids(old_root, name_mapping)));
+        &named_schema
+    } else {
+        old_schema
+    };
 
     // 1. Rewrite the schema type tree: rename + filter by field_id_mapping
-    let new_fields: Vec<_> = old_root
+    let new_fields: Vec<_> = source_schema
+        .root_schema()
         .get_fields()
         .iter()
         .filter_map(|field| {
-            rewrite_arrowrs_type_with_field_ids(field, field_id_mapping).map(Arc::new)
+            rewrite_arrowrs_type_with_field_ids(field, &field_id_mapping.fields).map(Arc::new)
         })
         .collect();
 
@@ -187,11 +308,13 @@ pub(crate) fn apply_field_ids_to_arrowrs_parquet_metadata(
         .row_groups()
         .iter()
         .map(|rg| {
+            debug_assert_eq!(rg.columns().len(), source_schema.num_columns());
             let new_columns: Vec<ColumnChunkMetaData> = rg
                 .columns()
                 .iter()
-                .filter_map(|col| {
-                    let col_info = col.column_descr().self_type().get_basic_info();
+                .zip(source_schema.columns())
+                .filter_map(|(col, source_descr)| {
+                    let col_info = source_descr.self_type().get_basic_info();
                     let new_descr =
                         get_field_id(col_info).and_then(|fid| field_id_to_col_descr.get(&fid))?;
 
@@ -520,7 +643,7 @@ pub(crate) async fn read_parquet_metadata(
     file_size: Option<usize>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
-    field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
+    field_id_mapping: Option<Arc<FieldIdMapping>>,
     default_footer_read_size: Option<usize>,
 ) -> super::Result<Arc<parquet::file::metadata::ParquetMetaData>> {
     let (data, remaining) = fetch_parquet_footer_bytes(
@@ -557,11 +680,165 @@ pub(crate) async fn read_parquet_metadata(
 mod tests {
     use std::sync::Arc;
 
+    use arrow::datatypes::DataType as ArrowDataType;
     use common_error::DaftResult;
+    use daft_core::datatypes::{DataType, Field};
     use daft_io::{IOClient, IOConfig};
+    use parquet::{
+        basic::{ConvertedType, Repetition, Type as PhysicalType},
+        file::metadata::{FileMetaData, ParquetMetaData},
+        schema::{
+            parser::parse_message_type,
+            types::{SchemaDescriptor, Type},
+        },
+    };
 
-    use super::read_parquet_metadata;
-    use crate::Error;
+    use super::{
+        FieldIdMapping, MappedField, apply_field_ids_to_arrowrs_parquet_metadata,
+        read_parquet_metadata,
+    };
+    use crate::{Error, schema_inference::infer_schema_from_parquet_metadata_arrowrs};
+
+    fn mapped(field_id: i32, names: &[&str], fields: Vec<MappedField>) -> MappedField {
+        MappedField {
+            field_id: Some(field_id),
+            names: names.iter().map(|n| (*n).to_string()).collect(),
+            fields: Some(fields),
+        }
+    }
+
+    #[test]
+    fn test_apply_name_mapping_to_file_without_field_ids() {
+        let parsed = parse_message_type(
+            "message hive_schema {
+                optional int64 a;
+                optional binary b_old (STRING);
+                optional group s { optional int32 x; }
+                optional group l (LIST) { repeated group list { optional int64 element; } }
+                optional group legacy (LIST) { repeated int64 array; }
+                optional group m (MAP) {
+                    repeated group key_value { required binary key (STRING); optional int64 value; }
+                }
+                optional int64 unmapped;
+                optional group structs (LIST) { repeated group array { optional int64 x; } }
+                optional group tuples_old (LIST) { repeated group tuples_old_tuple { optional int64 y; } }
+            }",
+        )
+        .unwrap();
+        // Older writers annotate lists with only the converted type.
+        let element = Type::primitive_type_builder("array_element", PhysicalType::INT64)
+            .with_repetition(Repetition::OPTIONAL)
+            .build()
+            .unwrap();
+        let bag = Type::group_type_builder("bag")
+            .with_repetition(Repetition::REPEATED)
+            .with_fields(vec![Arc::new(element)])
+            .build()
+            .unwrap();
+        let converted_only_list = Type::group_type_builder("hive_list")
+            .with_repetition(Repetition::OPTIONAL)
+            .with_converted_type(ConvertedType::LIST)
+            .with_fields(vec![Arc::new(bag)])
+            .build()
+            .unwrap();
+        let mut fields = parsed.get_fields().to_vec();
+        fields.push(Arc::new(converted_only_list));
+        let schema = Type::group_type_builder("hive_schema")
+            .with_fields(fields)
+            .build()
+            .unwrap();
+        let schema = Arc::new(SchemaDescriptor::new(Arc::new(schema)));
+        let metadata = Arc::new(ParquetMetaData::new(
+            FileMetaData::new(1, 0, None, None, schema, None),
+            vec![],
+        ));
+
+        let names = [
+            "a",
+            "b",
+            "s",
+            "x",
+            "l",
+            "element",
+            "legacy",
+            "element",
+            "m",
+            "key",
+            "value",
+            "hive_list",
+            "element",
+            "structs",
+            "element",
+            "x",
+            "tuples",
+            "element",
+            "y",
+        ];
+        let mapping = FieldIdMapping {
+            fields: (1..)
+                .zip(names)
+                .map(|(id, name)| (id, Field::new(name, DataType::Null)))
+                .collect(),
+            name_mapping: Some(vec![
+                mapped(1, &["a"], vec![]),
+                mapped(2, &["b", "b_old"], vec![]),
+                mapped(3, &["s"], vec![mapped(4, &["x"], vec![])]),
+                mapped(5, &["l"], vec![mapped(6, &["element"], vec![])]),
+                mapped(7, &["legacy"], vec![mapped(8, &["element"], vec![])]),
+                mapped(
+                    9,
+                    &["m"],
+                    vec![mapped(10, &["key"], vec![]), mapped(11, &["value"], vec![])],
+                ),
+                mapped(12, &["hive_list"], vec![mapped(13, &["element"], vec![])]),
+                mapped(
+                    14,
+                    &["structs"],
+                    vec![mapped(15, &["element"], vec![mapped(16, &["x"], vec![])])],
+                ),
+                mapped(
+                    17,
+                    &["tuples", "tuples_old"],
+                    vec![mapped(18, &["element"], vec![mapped(19, &["y"], vec![])])],
+                ),
+            ]),
+        };
+
+        let metadata =
+            apply_field_ids_to_arrowrs_parquet_metadata(metadata, &mapping, "test").unwrap();
+
+        let columns: Vec<_> = metadata
+            .file_metadata()
+            .schema_descr()
+            .columns()
+            .iter()
+            .map(|c| c.path().string())
+            .collect();
+        assert_eq!(
+            columns,
+            [
+                "a",
+                "b",
+                "s.x",
+                "l.list.element",
+                "legacy.element",
+                "m.key_value.key",
+                "m.key_value.value",
+                "structs.array.x",
+                "tuples.array.y",
+                "hive_list.bag.element",
+            ]
+        );
+        // Two-level lists of groups must still read as lists of structs after the rename.
+        let schema = infer_schema_from_parquet_metadata_arrowrs(&metadata, None, false).unwrap();
+        for name in ["structs", "tuples"] {
+            let ArrowDataType::List(element) = schema.field_with_name(name).unwrap().data_type()
+            else {
+                panic!("{name} is not a list");
+            };
+            assert!(matches!(element.data_type(), ArrowDataType::Struct(_)));
+        }
+    }
 
     #[tokio::test]
     async fn test_parquet_metadata_from_s3() -> DaftResult<()> {
