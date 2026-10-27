@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 def _get_iceberg_scoped_azure_sas(props: dict[str, Any]) -> tuple[str | None, str | None]:
     # Keep host scope intact when detecting ambiguity; two hosts can share an account name.
-    scoped_tokens = {}
+    scoped_tokens: dict[str, str] = {}
     for prefix in ("adls.sas-token.", "adlfs.sas-token."):
         for key, value in props.items():
             if key.startswith(prefix) and value:
