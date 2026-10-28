@@ -105,6 +105,18 @@ def test_image_round_trip(give_mode):
     np.testing.assert_equal(t_copy.to_pylist(), t.to_pylist())
 
 
+def test_cast_image_with_unknown_mode_keeps_type_unknown():
+    # Casting a uniform tensor column to Image(None) keeps the type-level mode
+    # unknown: refining it to Image(mode) would violate the plan-time/runtime
+    # dtype equality invariant enforced during expression evaluation.
+    arr = np.arange(12, dtype=np.uint8).reshape((3, 2, 2))
+    s = Series.from_pylist([arr, arr, None])
+
+    t = s.cast(DataType.image())
+
+    assert t.datatype() == DataType.image()
+
+
 def test_fixed_shape_image_round_trip():
     height = 2
     width = 2
@@ -331,7 +343,7 @@ def test_image_decode_pil(mode, file_format):
     arrow_arr = pa.array([img_bytes, img_bytes, img_bytes], type=pa.binary())
     s = Series.from_arrow(arrow_arr)
     t = s.image.decode(mode=None)
-    # TODO(Clark): Infer type-leve mode if all images are the same mode.
+    # Decoding without an explicit mode leaves the mode unknown at the type level.
     assert t.datatype() == DataType.image()
     out = t.cast(DataType.python()).to_pylist()
     expected_arrs = [arr, arr, arr]
@@ -420,7 +432,7 @@ def test_image_encode_decode_pil_roundtrip(fixed_shape, mode, file_format):
     arrow_arr = pa.array(imgs_bytes, type=pa.binary())
     s = Series.from_arrow(arrow_arr)
     t = s.image.decode(mode=None)
-    # TODO(Clark): Infer type-leve mode if all images are the same mode.
+    # Decoding without an explicit mode leaves the mode unknown at the type level.
     assert t.datatype() == DataType.image()
 
     u = t.image.encode(file_format.upper())
@@ -526,10 +538,8 @@ def test_image_decode_opencv(mode, file_format):
     arrow_arr = pa.array([img_bytes, img_bytes, img_bytes], type=pa.binary())
     s = Series.from_arrow(arrow_arr)
     t = s.image.decode(mode=None)
-    # TODO(Clark): Support constructing an Image type with an unknown mode by known dtype.
-    if np_dtype == np.uint8:
-        # TODO(Clark): Infer type-leve mode if all images are the same mode.
-        assert t.datatype() == DataType.image()
+    # Decoding without an explicit mode leaves the mode unknown at the type level.
+    assert t.datatype() == DataType.image()
     out = t.cast(DataType.python()).to_pylist()
     expected_arrs = [arr, arr, arr]
     np.testing.assert_equal(out, expected_arrs)
@@ -625,10 +635,8 @@ def test_image_encode_decode_opencv_roundtrip(mode, file_format):
 
     s = Series.from_arrow(arrow_arr)
     t = s.image.decode(mode=None)
-    # TODO(Clark): Support constructing an Image type with an unknown mode by known dtype.
-    if np_dtype == np.uint8:
-        # TODO(Clark): Infer type-leve mode if all images are the same mode.
-        assert t.datatype() == DataType.image()
+    # Decoding without an explicit mode leaves the mode unknown at the type level.
+    assert t.datatype() == DataType.image()
 
     u = t.image.encode(file_format.upper())
     opencv_decoded_imgs = [
