@@ -9,12 +9,20 @@
 
 // ── Daft ABI (must match daft-ext repr(C) layouts) ─────────────────
 
-static constexpr uint32_t DAFT_ABI_VERSION = 1;
+static constexpr uint32_t DAFT_ABI_VERSION = 2;
+
+// Planning-time description of one argument: its field, plus its value when the
+// argument folds to a constant. `literal.release == nullptr` means "not a
+// foldable constant". The host owns both members for the duration of the call.
+struct ArgDescriptor {
+    ArrowSchema field;
+    ArrowArray literal;
+};
 
 struct FFI_ScalarFunction {
     const void *ctx;
     const char *(*name)(const void *ctx);
-    int (*get_return_field)(const void *ctx, const ArrowSchema *args, size_t args_count,
+    int (*get_return_field)(const void *ctx, const ArgDescriptor *args, size_t args_count,
                             ArrowSchema *ret, char **errmsg);
     int (*call)(const void *ctx, const ArrowArray *args, const ArrowSchema *args_schemas,
                 size_t args_count, ArrowArray *ret_array, ArrowSchema *ret_schema, char **errmsg);
@@ -43,14 +51,14 @@ static void module_free_string(char *s) { free(s); }
 
 static const char *greet_name(const void *) { return "greet_cpp"; }
 
-static int greet_get_return_field(const void *, const ArrowSchema *args, size_t args_count,
+static int greet_get_return_field(const void *, const ArgDescriptor *args, size_t args_count,
                                   ArrowSchema *ret, char **errmsg) {
     if (args_count != 1) {
         *errmsg = alloc_error("greet_cpp: expected 1 argument, got " + std::to_string(args_count));
         return 1;
     }
 
-    const char *fmt = args[0].format;
+    const char *fmt = args[0].field.format;
     if (strcmp(fmt, "u") != 0 && strcmp(fmt, "U") != 0) {
         *errmsg = alloc_error(std::string("greet_cpp: expected string argument, got format '") +
                               fmt + "'");

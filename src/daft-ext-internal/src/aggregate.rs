@@ -173,6 +173,16 @@ impl AggregateFunctionHandle {
     }
 }
 
+/// Release schemas the host exported for a planning call.
+///
+/// `get_return_field` / `get_state_schema` only borrow their arguments, and
+/// [`ArrowSchema`] has no `Drop` impl, so the host must release them itself.
+fn release_schemas(schemas: &mut [ArrowSchema]) {
+    for schema in schemas {
+        unsafe { schema.release() };
+    }
+}
+
 #[typetag::serde(name = "AggregateFunctionHandle")]
 impl AggFn for AggregateFunctionHandle {
     fn name(&self) -> &str {
@@ -187,7 +197,7 @@ impl AggFn for AggregateFunctionHandle {
             .enumerate()
             .map(|(i, dt)| Field::new(format!("arg{i}"), dt.clone()))
             .collect();
-        let ffi_schemas = Self::fields_to_ffi_schemas(&fields)?;
+        let mut ffi_schemas = Self::fields_to_ffi_schemas(&fields)?;
 
         let mut ret_schema = ArrowSchema::empty();
         let mut errmsg: *mut c_char = std::ptr::null_mut();
@@ -200,6 +210,7 @@ impl AggFn for AggregateFunctionHandle {
                 &raw mut errmsg,
             )
         };
+        release_schemas(&mut ffi_schemas);
         inner.check(rc, errmsg, "error in extension get_return_field")?;
 
         let field = Self::ffi_schema_to_field(ret_schema)?;
@@ -208,7 +219,7 @@ impl AggFn for AggregateFunctionHandle {
 
     fn state_fields(&self, inputs: &[Field]) -> DaftResult<Vec<Field>> {
         let inner = self.inner()?;
-        let ffi_schemas = Self::fields_to_ffi_schemas(inputs)?;
+        let mut ffi_schemas = Self::fields_to_ffi_schemas(inputs)?;
 
         let mut ret_schema = ArrowSchema::empty();
         let mut errmsg: *mut c_char = std::ptr::null_mut();
@@ -221,6 +232,7 @@ impl AggFn for AggregateFunctionHandle {
                 &raw mut errmsg,
             )
         };
+        release_schemas(&mut ffi_schemas);
         inner.check(rc, errmsg, "error in extension get_state_schema")?;
 
         let mut children = unsafe { ret_schema.take_struct_children() };
