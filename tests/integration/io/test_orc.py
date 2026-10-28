@@ -12,6 +12,8 @@ import pytest
 from pyarrow import orc
 
 import daft
+from daft import DataType
+from daft.schema import Schema
 from tests.integration.io.conftest import minio_create_bucket
 
 
@@ -48,6 +50,20 @@ def test_read_orc_http(orc_http_url: str) -> None:
     assert df.where(daft.col("id") >= 6).select("name").limit(2).sort("name").to_pydict() == {
         "name": ["row-6", "row-7"]
     }
+
+
+@pytest.mark.integration()
+@pytest.mark.parametrize("infer_schema", [False, True])
+def test_read_orc_http_schema(orc_http_url: str, infer_schema: bool) -> None:
+    schema = {"name": DataType.string(), "id": DataType.string(), "missing": DataType.int32()}
+    df = daft.read_orc(orc_http_url, schema=schema, infer_schema=infer_schema, batch_size=2)
+    expected_names = ["id", "name", "missing"] if infer_schema else list(schema)
+    assert df.schema() == Schema.from_pydict({name: schema[name] for name in expected_names})
+    assert df.where(daft.col("id") == "6").select("name", "missing").to_pydict() == {
+        "name": ["row-6"],
+        "missing": [None],
+    }
+    assert df.where(daft.col("missing").is_null()).count_rows() == 9
 
 
 @pytest.mark.integration()
@@ -105,6 +121,28 @@ def test_read_orc_s3_schema_alignment(minio_io_config: daft.io.IOConfig) -> None
         df = daft.read_orc([first, second], io_config=minio_io_config, batch_size=1)
         assert df.sort("id").to_pydict() == {"id": [1, 2, 3], "name": ["a", None, None]}
         assert df.where(daft.col("name").is_null()).select("id").sort("id").to_pydict() == {"id": [2, 3]}
+
+
+@pytest.mark.integration()
+@pytest.mark.parametrize("infer_schema", [False, True])
+def test_read_orc_s3_schema(minio_io_config: daft.io.IOConfig, infer_schema: bool) -> None:
+    with minio_create_bucket(minio_io_config=minio_io_config) as (fs, bucket):
+        first = f"s3://{bucket}/first.orc"
+        second = f"s3://{bucket}/second.orc"
+        fs.write_bytes(first, _orc_bytes(pa.table({"id": ["1"], "name": ["a"]})))
+        fs.write_bytes(second, _orc_bytes(pa.table({"id": ["2", "invalid"], "score": [3.5, 4.5]})))
+        schema = {"score": DataType.float32(), "id": DataType.int64(), "missing": DataType.string()}
+        df = daft.read_orc(
+            [first, second], io_config=minio_io_config, schema=schema, infer_schema=infer_schema, batch_size=1
+        )
+        expected = {"score": [None, 3.5, 4.5], "id": [1, 2, None], "missing": [None, None, None]}
+        if infer_schema:
+            expected["name"] = ["a", None, None]
+        assert df.sort("id", desc=False, nulls_first=False).to_pydict() == expected
+        assert df.schema()["score"].dtype == DataType.float32()
+        assert df.where(daft.col("id") >= 2).select("score").to_pydict() == {"score": [3.5]}
+        assert df.where(daft.col("id").is_null()).select("score").to_pydict() == {"score": [4.5]}
+        assert df.where(daft.col("missing").is_null()).count_rows() == 3
 
 
 @pytest.mark.integration()
