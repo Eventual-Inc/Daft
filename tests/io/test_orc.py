@@ -5,6 +5,7 @@ import datetime
 import threading
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 
 import pyarrow as pa
 import pytest
@@ -51,6 +52,132 @@ def test_read_orc(orc_path: str) -> None:
     assert daft.read_orc is daft.io.read_orc
     expected = daft.from_arrow(orc.read_table(orc_path)).to_arrow()
     assert daft.read_orc(orc_path, batch_size=2).to_arrow() == expected
+
+
+def test_read_orc_file_path_column_default(orc_path: str) -> None:
+    expected = {"id": list(range(9)), "name": [f"row-{i}" for i in range(9)]}
+    assert daft.read_orc(orc_path, None, 2).to_pydict() == expected
+    assert daft.read_orc(orc_path, file_path_column=None).to_pydict() == expected
+
+
+@pytest.mark.parametrize("kind", ["file", "directory", "glob", "list", "overlap"])
+def test_read_orc_file_path_column(tmp_path: Path, kind: str) -> None:
+    first = _write_orc(tmp_path / "first.orc", pa.table({"id": [1, 2]}))
+    nested = tmp_path / "nested"
+    nested.mkdir()
+    second = _write_orc(nested / "second.orc", pa.table({"id": [3, 4]}))
+    paths = {
+        "file": first,
+        "directory": str(tmp_path),
+        "glob": str(tmp_path / "**" / "*.orc"),
+        "list": [first, second],
+        "overlap": [first, first, str(tmp_path / "**" / "*.orc")],
+    }
+    df = daft.read_orc(paths[kind], batch_size=1, file_path_column="source_path")
+    assert df.column_names == ["id", "source_path"]
+    assert df.schema()["source_path"].dtype == daft.DataType.string()
+    expected = {"id": [1, 2], "source_path": [Path(first).as_posix()] * 2}
+    if kind != "file":
+        expected["id"].extend([3, 4])
+        expected["source_path"].extend([Path(second).as_posix()] * 2)
+    assert df.sort("id").to_pydict() == expected
+    assert df.select("source_path").count_rows() == len(expected["id"])
+    assert df.select("source_path").sort("source_path").to_pydict() == {"source_path": sorted(expected["source_path"])}
+
+
+@pytest.mark.parametrize("kind", ["absolute", "relative", "file_uri"])
+def test_read_orc_file_path_representation(tmp_path: Path, monkeypatch, kind: str) -> None:
+    path = tmp_path / "file with spaces %20 数据.orc"
+    _write_orc(path, pa.table({"id": [1, 2]}))
+    if kind == "relative":
+        monkeypatch.chdir(tmp_path)
+        input_path = path.name
+    elif kind == "file_uri":
+        input_path = _native_file_uri(path)
+    else:
+        input_path = str(path)
+    df = daft.read_orc(input_path, file_path_column="source path")
+    monkeypatch.chdir(tmp_path.parent)
+    assert df.to_pydict() == {"id": [1, 2], "source path": [path.as_posix()] * 2}
+
+
+@pytest.mark.parametrize("position", ["first", "middle", "last"])
+@pytest.mark.parametrize("dtype,values", [(pa.int64(), [1, 2]), (pa.string(), ["a", "b"])])
+def test_read_orc_file_path_column_conflict(tmp_path: Path, position: str, dtype: pa.DataType, values: list) -> None:
+    fields = {
+        "first": ["source_path", "id", "name"],
+        "middle": ["id", "source_path", "name"],
+        "last": ["id", "name", "source_path"],
+    }
+    data = {"id": [1, 2], "name": ["a", "b"], "source_path": pa.array(values, dtype)}
+    path = _write_orc(tmp_path / "conflict.orc", pa.table({name: data[name] for name in fields[position]}))
+    with pytest.raises(ValueError, match="file path column name that already exists: source_path"):
+        daft.read_orc(path, file_path_column="source_path")
+
+
+@pytest.mark.parametrize("values", [[100, 200], ["physical-first", "physical-second"]])
+def test_read_orc_file_path_column_in_later_file(tmp_path: Path, values: list) -> None:
+    first = _write_orc(tmp_path / "first.orc", pa.table({"id": [1]}))
+    second = _write_orc(tmp_path / "second.orc", pa.table({"id": [2, 3], "source_path": values}))
+    df = daft.read_orc([first, second], batch_size=1, file_path_column="source_path")
+    paths = [Path(first).as_posix(), Path(second).as_posix(), Path(second).as_posix()]
+    assert df.sort("id").to_pydict() == {"id": [1, 2, 3], "source_path": paths}
+    assert df.select("source_path").sort("source_path").to_pydict() == {"source_path": sorted(paths)}
+
+
+def test_read_orc_file_path_schema_alignment(tmp_path: Path) -> None:
+    first = _write_orc(tmp_path / "first.orc", pa.table({"id": [1], "name": ["a"], "seq": [1]}))
+    second = _write_orc(
+        tmp_path / "second.orc", pa.table({"id": ["2", "invalid"], "seq": [2, 3], "extra": [True, False]})
+    )
+    df = daft.read_orc([first, second], batch_size=1, file_path_column="source_path")
+    assert df.sort("seq").to_pydict() == {
+        "id": [1, 2, None],
+        "name": ["a", None, None],
+        "seq": [1, 2, 3],
+        "source_path": [Path(first).as_posix(), Path(second).as_posix(), Path(second).as_posix()],
+    }
+    assert df.where((daft.col("source_path") == Path(second).as_posix()) & daft.col("name").is_null()).select(
+        "source_path"
+    ).to_pydict() == {"source_path": [Path(second).as_posix()] * 2}
+
+
+def test_read_orc_file_path_projection_and_filter(tmp_path: Path) -> None:
+    first = _write_orc(tmp_path / "first.orc", pa.table({"id": [1, 2], "name": ["a", "b"]}))
+    second = _write_orc(tmp_path / "second.orc", pa.table({"id": [3, 4, 5], "name": ["c", "d", "e"]}))
+    df = daft.read_orc([first, second], batch_size=1, file_path_column="source_path")
+    source_path = daft.col("source_path")
+    assert df.select("source_path", "name").column_names == ["source_path", "name"]
+    assert df.where((source_path == Path(second).as_posix()) & (daft.col("id") >= 4)).select("name").sort(
+        "name"
+    ).to_pydict() == {"name": ["d", "e"]}
+    assert df.where(daft.col("id") >= 4).select("source_path").to_pydict() == {
+        "source_path": [Path(second).as_posix()] * 2
+    }
+    assert df.where(source_path == Path(second).as_posix()).select("source_path").to_pydict() == {
+        "source_path": [Path(second).as_posix()] * 3
+    }
+    assert df.where(source_path == Path(first).as_posix()).count_rows() == 2
+    assert df.where(source_path == "missing.orc").select("name").to_pydict() == {"name": []}
+    assert df.where(source_path == Path(second).as_posix()).select("source_path").limit(2).to_pydict() == {
+        "source_path": [Path(second).as_posix()] * 2
+    }
+
+
+@pytest.mark.parametrize("with_data", [False, True])
+def test_read_orc_empty_file_path_column(tmp_path: Path, with_data: bool) -> None:
+    empty = _write_orc(tmp_path / "empty.orc", pa.table({"id": pa.array([], pa.int64())}))
+    paths = [empty]
+    expected = {"id": [], "source_path": []}
+    if with_data:
+        data = _write_orc(tmp_path / "data.orc", pa.table({"id": [1, 2]}))
+        paths.append(data)
+        expected = {"id": [1, 2], "source_path": [Path(data).as_posix()] * 2}
+    df = daft.read_orc(paths, file_path_column="source_path")
+    assert df.column_names == ["id", "source_path"]
+    assert df.sort("id").to_pydict() == expected
+    assert df.select("source_path").to_pydict() == {"source_path": expected["source_path"]}
+    assert df.select("source_path").count_rows() == len(expected["id"])
 
 
 @pytest.mark.parametrize("compression", ["uncompressed", "snappy", "zlib", "lz4", "zstd"])
@@ -319,6 +446,61 @@ def test_orc_serialization(orc_path: str) -> None:
     task = cloudpickle.loads(cloudpickle.dumps(_tasks(source)[0]))
     assert source.schema == task.schema
     assert sum(len(batch) for batch in _batches(task)) == 9
+
+
+@pytest.mark.parametrize(
+    "columns,filters,expected_columns",
+    [
+        (None, None, ["id", "name", "source_path"]),
+        (["source_path"], None, ["source_path"]),
+        (["name"], daft.col("source_path") != "missing", ["name", "source_path"]),
+        (["source_path"], daft.col("id") >= 6, ["id", "source_path"]),
+        ([], None, []),
+        ([], (daft.col("source_path") != "missing") & (daft.col("id") >= 6), ["id", "source_path"]),
+    ],
+)
+def test_orc_file_path_task_schema_and_serialization(orc_path: str, columns, filters, expected_columns) -> None:
+    source = cloudpickle.loads(cloudpickle.dumps(OrcSource(orc_path, None, 2, file_path_column="source_path")))
+    assert source.schema.column_names() == ["id", "name", "source_path"]
+    task = cloudpickle.loads(cloudpickle.dumps(_tasks(source, Pushdowns(columns=columns, filters=filters))[0]))
+    assert task.schema.column_names() == expected_columns
+    batches = _batches(task)
+    assert [len(batch) for batch in batches] == [2, 2, 2, 2, 1]
+    assert all(batch.schema() == task.schema for batch in batches)
+    if "source_path" in expected_columns:
+        assert [path for batch in batches for path in batch.to_pydict()["source_path"]] == [
+            Path(orc_path).as_posix()
+        ] * 9
+
+
+def test_orc_file_path_column_excluded_from_scanner(orc_path: str, monkeypatch) -> None:
+    scanner = _orc.pads.Scanner
+    scanned_columns = []
+
+    class ScannerSpy:
+        @staticmethod
+        def from_fragment(*args, **kwargs):
+            scanned_columns.append(kwargs["columns"])
+            return scanner.from_fragment(*args, **kwargs)
+
+    monkeypatch.setattr(_orc.pads, "Scanner", ScannerSpy)
+    task = _tasks(OrcSource(orc_path, None, 2, file_path_column="source_path"), Pushdowns(columns=["source_path"]))[0]
+    assert sum(len(batch) for batch in _batches(task)) == 9
+    assert scanned_columns == [[]]
+
+
+def test_orc_windows_file_path_column(orc_path: str, monkeypatch) -> None:
+    original_open = _orc.open_file
+
+    def open_local_fixture(path: str, *args, **kwargs):
+        assert path == "file:///C:/data.orc"
+        return original_open(orc_path, *args, **kwargs)
+
+    monkeypatch.setattr(_orc, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(_orc, "open_file", open_local_fixture)
+    schema = daft.Schema.from_pydict({"source_path": daft.DataType.string()})
+    task = OrcSourceTask("file:///C:/data.orc", schema, None, 2, "source_path")
+    assert [path for batch in _batches(task) for path in batch.to_pydict()["source_path"]] == ["C:/data.orc"] * 9
 
 
 def test_orc_file_is_opened_at_execution(orc_path: str, monkeypatch) -> None:
