@@ -1,0 +1,10 @@
+[dependencies]
+common-error = {workspace = true}
+
+[lints]
+workspace = true
+
+[package]
+edition = {workspace = true}
+name = "daft-device"
+version = {workspace = true}
