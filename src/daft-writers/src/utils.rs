@@ -127,15 +127,26 @@ fn build_object_path(
     let ObjectPath {
         scheme: _scheme,
         bucket,
-        key,
+        mut key,
     } = daft_io::utils::parse_object_url(root_dir)?;
-    let key = Path::new(&key).join(partition_path).join(filename);
-    Ok(PathBuf::from(format!("{}/{}", bucket, key.display())))
+    // Object keys use '/' on every platform. Keep the user-provided key intact,
+    // including literal backslashes, and only join generated components here.
+    if !key.is_empty() && !key.ends_with('/') {
+        key.push('/');
+    }
+    for part in &partition_path {
+        key.push_str(part.to_str().ok_or_else(|| {
+            DaftError::ValueError("Partition path must be valid UTF-8".to_string())
+        })?);
+        key.push('/');
+    }
+    key.push_str(&filename);
+    Ok(PathBuf::from(format!("{bucket}/{key}")))
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{path::PathBuf, sync::Arc};
 
     use arrow_array::create_array;
     use common_error::{DaftError, DaftResult};
@@ -221,8 +232,6 @@ mod tests {
 
     #[test]
     fn test_build_object_path_preserves_port() -> DaftResult<()> {
-        use std::path::PathBuf;
-
         // Regression guard: a port-bearing authority (e.g. an HDFS name node)
         // must keep its port with the bucket and never leak it into the key,
         // which previously produced an invalid path like `localhost/:9000/...`.
@@ -252,6 +261,45 @@ mod tests {
         )?;
         assert_eq!(path, PathBuf::from("bucket/prefix/file.parquet"));
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_build_object_path_uses_forward_slashes() -> DaftResult<()> {
+        for (root, prefix) in [
+            ("s3://bucket", "bucket/"),
+            ("s3://bucket/", "bucket/"),
+            ("s3://bucket/prefix", "bucket/prefix/"),
+            ("s3://bucket/prefix/", "bucket/prefix/"),
+            ("hdfs://localhost:9000/out", "localhost:9000/out/"),
+        ] {
+            for (partition, suffix) in [
+                (PathBuf::new(), "file.parquet"),
+                (
+                    PathBuf::from("year=2026").join("month=10"),
+                    "year=2026/month=10/file.parquet",
+                ),
+            ] {
+                let path = build_object_path(root, partition, "file.parquet".to_string())?;
+                // Path equality on Windows treats both separators as equivalent;
+                // object storage needs the serialized string to use forward slashes.
+                assert_eq!(path.to_str().unwrap(), format!("{prefix}{suffix}"));
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_build_object_path_preserves_key_characters() -> DaftResult<()> {
+        let path = build_object_path(
+            "s3://bucket/literal\\key/%2F/雪//prefix/",
+            PathBuf::from("part=a%2Fb%5Cc").join("null=__HIVE_DEFAULT_PARTITION__"),
+            "file.json".to_string(),
+        )?;
+        assert_eq!(
+            path.to_str().unwrap(),
+            "bucket/literal\\key/%2F/雪//prefix/part=a%2Fb%5Cc/null=__HIVE_DEFAULT_PARTITION__/file.json"
+        );
         Ok(())
     }
 }
