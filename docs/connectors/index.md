@@ -14,6 +14,14 @@ Daft natively supports reading and writing data to major cloud object storage pr
 | [Tencent Cloud COS](cos.md) | `cos://`, `cosn://` | [`CosConfig`][daft.io.CosConfig] |
 | [GooseFS](goosefs.md) | `goosefs://` | [`GooseFSConfig`][daft.io.GooseFSConfig] |
 
+## Distributed File Systems
+
+Daft supports reading and writing data on distributed file systems:
+
+| Provider | URL Protocols | Configuration |
+|----------|---------------|---------------|
+| [HDFS](hdfs.md) | `hdfs://` | [`HdfsConfig`][daft.io.HdfsConfig] |
+
 ## Table Formats
 
 Daft reads and writes the major open table formats.
