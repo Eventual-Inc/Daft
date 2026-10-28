@@ -17,6 +17,7 @@ pub mod random;
 pub mod simhash;
 pub mod similarity;
 pub mod slice;
+pub mod to_map;
 pub mod to_struct;
 pub mod uuid;
 pub mod vector_utils;
@@ -30,6 +31,7 @@ use minhash::MinHashFunction;
 pub use python::register as register_modules;
 use simhash::SimHashFunction;
 use snafu::Snafu;
+use to_map::ToMapFunction;
 use to_struct::ToStructFunction;
 use uuid::{
     ExtractDayUuid7, ExtractHourUuid7, ExtractMinuteUuid7, ExtractMonthUuid7, Uuid, UuidV7,
@@ -73,6 +75,7 @@ impl FunctionModule for MiscFunctions {
         parent.add_fn(MinHashFunction);
         parent.add_fn(SimHashFunction);
         parent.add_fn(Length);
+        parent.add_fn(ToMapFunction);
         parent.add_fn(ToStructFunction);
         parent.add_fn(Slice);
         parent.add_fn(Uuid);
