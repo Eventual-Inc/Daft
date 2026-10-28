@@ -111,10 +111,11 @@ class OpenAITextEmbedder(TextEmbedder):
     # This is a simple version using the batch API. The full implementation
     # uses dynamic batching and has error handling mechanisms.
     def embed_text(self, text: list[str]) -> list[Embedding]:
+        # Leave `encoding_format` unset: the OpenAI SDK then requests base64 and
+        # decodes it with numpy, which is far cheaper than parsing JSON floats.
         response = self.client.embeddings.create(
             input=text,
             model=self.model,
-            encoding_format="float",
         )
         return [np.array(embedding.embedding) for embedding in response.data]
 ```
