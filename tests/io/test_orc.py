@@ -2,20 +2,417 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import math
 import threading
 from decimal import Decimal
 from pathlib import Path
+from urllib.parse import quote
 
 import pyarrow as pa
 import pytest
 from pyarrow import orc
 
 import daft
+from daft.daft import _infer_hive_partition_schema, _parse_hive_partition_values
+from daft.exceptions import DaftCoreException
 from daft.io import _orc
 from daft.io._orc import OrcSource, OrcSourceTask
 from daft.io.pushdowns import Pushdowns
 from daft.pickle import cloudpickle
 from daft.recordbatch import RecordBatch
+from daft.schema import Schema
+from daft.series import Series
+
+
+def _write_hive_orc(root: Path, directory: str, ids: list[int] | pa.Array, **columns) -> str:
+    path = root / directory / "data.orc"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return _write_orc(path, pa.table({"id": ids, **columns}))
+
+
+def _hive_value(value: str, dtype: pa.DataType) -> Series:
+    schema = Schema.from_pyarrow_schema(pa.schema([pa.field("p", dtype)]))
+    values = _parse_hive_partition_values(f"/p={quote(value, safe='')}/data.orc", schema._schema)
+    return Series._from_pyseries(values[0])
+
+
+@pytest.mark.parametrize(
+    "path,expected",
+    [
+        ("s3://bucket/year=2024/plain/month=03/data.orc", {"year": "2024", "month": "03"}),
+        (r"C:\year=2024\month=03\data.orc", {"year": "2024", "month": "03"}),
+        ("/p=first/p=last/q=x/data.orc", {"p": "last", "q": "x"}),
+        ("/p=/q=__HIVE_DEFAULT_PARTITION__/data.orc", {"p": None, "q": None}),
+        ("/p=null/q=None/data.orc", {"p": "null", "q": "None"}),
+        ("/key%3Dname=a%2Fb/city=%E5%8C%97%E4%BA%AC/p=a+b/data.orc", {"key=name": "a/b", "city": "北京", "p": "a+b"}),
+        ("/p=%252F/data.orc", {"p": "%2F"}),
+        ("/invalid==value/=empty/p=ok/data.orc", {"p": "ok"}),
+        ("/p=x/data.orc?query=other", {"p": "x"}),
+        ("/p=x/\nq=y/data.orc", {"p": "x"}),
+        ("/plain/p=filename.orc", {}),
+        ("", {}),
+    ],
+)
+def test_orc_hive_directory_parser(path: str, expected: dict[str, str | None]) -> None:
+    schema = Schema._from_pyschema(_infer_hive_partition_schema(path))
+    assert schema.column_names() == list(expected)
+    string_schema = Schema.from_field_name_and_types([(key, daft.DataType.string()) for key in expected])
+    values = [Series._from_pyseries(value) for value in _parse_hive_partition_values(path, string_schema._schema)]
+    assert {value.name(): value.to_pylist()[0] for value in values} == expected
+
+
+def test_orc_hive_invalid_utf8() -> None:
+    with pytest.raises(DaftCoreException, match="(?i)utf-8"):
+        _infer_hive_partition_schema("/p=%FF/data.orc")
+    schema = Schema.from_field_name_and_types([("p", daft.DataType.string())])
+    with pytest.raises(DaftCoreException, match="(?i)utf-8"):
+        _parse_hive_partition_values("/p=%FF/data.orc", schema._schema)
+
+
+@pytest.mark.parametrize(
+    "value,dtype,physical",
+    [
+        ("03", pa.int64(), 3),
+        ("+0003", pa.int64(), 3),
+        ("-9223372036854775808", pa.int64(), -(2**63)),
+        ("9223372036854775808", pa.float64(), float(2**63)),
+        ("1.5", pa.float64(), 1.5),
+        ("1e3", pa.float64(), 1000.0),
+        ("inf", pa.float64(), math.inf),
+        ("1e400", pa.float64(), math.inf),
+        ("TRUE", pa.bool_(), True),
+        ("False", pa.bool_(), False),
+        ("2024-01-01", pa.date32(), 19723),
+        ("2024/01/01", pa.date32(), 19723),
+        ("12:30:00", pa.time64("us"), 45000000000),
+        ("12:30:00.123456789", pa.time64("ns"), 45000123456789),
+        ("2024-01-01T00:00:00.000", pa.timestamp("s"), 1704067200),
+        ("2024-01-01 00:00:00.123", pa.timestamp("ms"), 1704067200123),
+        ("2024-01-01T00:00:00.123456", pa.timestamp("us"), 1704067200123456),
+        ("2024-01-01T00:00:00.123456789", pa.timestamp("ns"), 1704067200123456789),
+        ("2024-01-01T08:00:00.123456789+08:00", pa.timestamp("ns", "+08:00"), 1704067200123456789),
+        ("2024-01-01T00:00:00Z", pa.timestamp("s", "+00:00"), 1704067200),
+        ("1969-12-31T23:59:59.123456789", pa.timestamp("ns"), -876543211),
+        ("2500-01-01T00:00:00", pa.timestamp("s"), 16725225600),
+        ("2500-01-01T00:00:00.123456789", pa.timestamp("ns"), None),
+        ("hello", pa.string(), "hello"),
+        ("İNF", pa.string(), "İNF"),
+        ("1_000", pa.string(), "1_000"),
+        (" 3 ", pa.string(), " 3 "),
+        ("2024-02-30", pa.string(), "2024-02-30"),
+        ("__HIVE_DEFAULT_PARTITION__", pa.string(), None),
+    ],
+)
+def test_read_orc_hive_types(tmp_path: Path, value: str, dtype: pa.DataType, physical) -> None:
+    path = _write_hive_orc(tmp_path, f"p={quote(value, safe='')}", [1, 2])
+    df = daft.read_orc(path, hive_partitioning=True, batch_size=1)
+    result = df.select("p").to_arrow().column("p")
+    assert result.type == (pa.large_string() if pa.types.is_string(dtype) else dtype)
+    if pa.types.is_temporal(dtype):
+        result = result.cast(pa.int32() if pa.types.is_date32(dtype) else pa.int64())
+    assert result.to_pylist() == [physical, physical]
+
+
+@pytest.mark.parametrize(
+    "first,second,expected",
+    [
+        ("03", "abc", [3, None]),
+        ("03", "9223372036854775808", [3, None]),
+        ("03", " 4 ", [3, None]),
+        ("true", "1", [True, None]),
+        ("true", "FALSE", [True, False]),
+        ("1.5", "bad", [1.5, None]),
+        ("__HIVE_DEFAULT_PARTITION__", "2024", [None, "2024"]),
+        ("2024-01-01", "2024-02-30", [datetime.date(2024, 1, 1), None]),
+    ],
+)
+def test_read_orc_hive_fixed_types(tmp_path: Path, first: str, second: str, expected: list) -> None:
+    paths = [
+        _write_hive_orc(tmp_path, f"p={quote(first, safe='')}", [1]),
+        _write_hive_orc(tmp_path, f"p={quote(second, safe='')}", [2]),
+    ]
+    assert daft.read_orc(paths, hive_partitioning=True).sort("id").to_pydict()["p"] == expected
+
+
+def test_orc_hive_nan_and_conversion_errors(tmp_path: Path) -> None:
+    path = _write_hive_orc(tmp_path, "p=NaN", [1])
+    df = daft.read_orc(path, hive_partitioning=True)
+    assert df.schema()["p"].dtype == daft.DataType.float64()
+    assert math.isnan(df.to_pydict()["p"][0])
+    with pytest.raises(DaftCoreException, match="Deserializing type"):
+        _hive_value("value", pa.list_(pa.int64()))
+    assert _hive_value("0" * 5000 + "3", pa.int64()).to_pylist() == [3]
+
+
+def test_orc_hive_temporal_fixed_precision_and_failures(tmp_path: Path) -> None:
+    paths = [
+        _write_hive_orc(tmp_path, "p=2024-01-01T00%3A00%3A00.123", [1]),
+        _write_hive_orc(tmp_path, "p=2024-01-01T00%3A00%3A00.123456789", [2]),
+        _write_hive_orc(tmp_path, "p=2024-01-01T25%3A00%3A00", [3]),
+    ]
+    result = daft.read_orc(paths, hive_partitioning=True).sort("id").to_arrow().column("p")
+    assert result.type == pa.timestamp("ms")
+    assert result.cast(pa.int64()).to_pylist() == [1704067200123, 1704067200123, None]
+    assert _hive_value("12:00:00", pa.timestamp("s")).to_pylist() == [None]
+    assert _hive_value("2024-01-01T00:00:00Z", pa.timestamp("s")).to_pylist() == [None]
+
+
+def test_orc_hive_duplicate_keys_and_field_order(tmp_path: Path) -> None:
+    path = _write_hive_orc(tmp_path, "p=1/q=x/p=3", [1], p=[99], z=[True])
+    df = daft.read_orc(path, hive_partitioning=True)
+    assert df.column_names == ["id", "p", "z", "q"]
+    assert df.to_pydict() == {"id": [1], "p": [3], "z": [True], "q": ["x"]}
+
+
+@pytest.mark.parametrize(
+    "value,dtype,ticks",
+    [
+        ("12:30", pa.time64("us"), 45000000000),
+        (" 12 : 30:00 ", pa.time64("us"), 45000000000),
+        (" 12 : 30:00.123456789 ", pa.time64("ns"), 45000123456789),
+        ("2024-01-01  00:00:00", pa.timestamp("s"), 1704067200),
+        ("2024-01-01\t00:00:00", pa.timestamp("s"), 1704067200),
+        ("2024-01-0100:00:00", pa.timestamp("s"), 1704067200),
+        ("2024-01-01T08:00:00+0800", pa.timestamp("s", "+08:00"), 1704067200),
+        ("2024-01-01T00:00:00-05:00", pa.timestamp("s", "-05:00"), 1704085200),
+        ("2024-01-01 00:00:00Z", pa.timestamp("s", "+00:00"), 1704067200),
+        ("2024-01-01t00:00:00z", pa.timestamp("s", "+00:00"), 1704067200),
+        ("2024-01-01t00:00:00", pa.string(), "2024-01-01t00:00:00"),
+        ("2024-01-01T23:59:60Z", pa.timestamp("s", "+00:00"), 1704153599),
+    ],
+)
+def test_read_orc_hive_temporal_formats(tmp_path: Path, value: str, dtype: pa.DataType, ticks) -> None:
+    path = _write_hive_orc(tmp_path, f"p={quote(value, safe='')}", [1])
+    result = daft.read_orc(path, hive_partitioning=True).select("p").to_arrow().column("p")
+    if pa.types.is_temporal(dtype):
+        assert result.type == dtype
+        result = result.cast(pa.int64())
+    else:
+        assert result.type == pa.large_string()
+    assert result.to_pylist() == [ticks]
+
+
+def test_orc_hive_leap_second_conversion() -> None:
+    seconds = _hive_value("2024-01-01T23:59:60.123Z", pa.timestamp("s", "+00:00"))
+    milliseconds = _hive_value("2024-01-01T23:59:60Z", pa.timestamp("ms", "+00:00"))
+    assert seconds.cast(daft.DataType.int64()).to_pylist() == [1704153599]
+    assert milliseconds.cast(daft.DataType.int64()).to_pylist() == [1704153600000]
+
+
+@pytest.mark.parametrize(
+    "value,dtype,ticks",
+    [
+        ("2024-01-01T00:00:00\u221205:00", pa.timestamp("s", "-05:00"), 1704085200),
+        ("2024-01-01T00:00:00.123456789\u221205:00", pa.timestamp("ns", "-05:00"), 1704085200123456789),
+        ("2024-01-01T00:00:00+05: 00", pa.timestamp("s", "+05:00"), 1704049200),
+        ("2024-01-01T00:00:00+05 :00", pa.timestamp("s", "+05:00"), 1704049200),
+        ("2024-01-01T00:00:00+05 : : 00", pa.timestamp("s", "+05:00"), 1704049200),
+    ],
+)
+def test_read_orc_hive_timezone_tokens(tmp_path: Path, value: str, dtype: pa.DataType, ticks: int) -> None:
+    path = _write_hive_orc(tmp_path, f"p={quote(value, safe='')}", [1, 2])
+    result = daft.read_orc(path, hive_partitioning=True).select("p").to_arrow().column("p")
+    assert result.type == dtype
+    assert result.cast(pa.int64()).to_pylist() == [ticks, ticks]
+
+
+@pytest.mark.parametrize(
+    "value,ticks",
+    [
+        ("2024-01-01T00:00:00\u221205:00", 1704085200),
+        ("2024-01-01T00:00:00+05: 00", 1704049200),
+        ("2024-01-01T00:00:00+05 : : 00", 1704049200),
+    ],
+)
+def test_orc_hive_timezone_token_pruning(tmp_path: Path, monkeypatch, value: str, ticks: int) -> None:
+    paths = [
+        _write_hive_orc(tmp_path, "p=2024-01-01T00%3A00%3A00Z", [1]),
+        _write_hive_orc(tmp_path, f"p={quote(value, safe='')}", [2]),
+        _write_hive_orc(tmp_path, "p=invalid-timestamp", [3]),
+    ]
+    source = OrcSource(paths, None, 1, hive_partitioning=True)
+    predicate = daft.col("p") == daft.lit(ticks).cast(daft.DataType.timestamp("s", "+00:00"))
+    tasks = _tasks(source, Pushdowns(columns=["id"], partition_filters=predicate))
+    assert [task._path for task in tasks] == [_native_file_uri(Path(paths[1]))]
+    scanned: list[str] = []
+    original = _orc._iter_orc_batches
+
+    def tracking_batches(path, *args, **kwargs):
+        scanned.append(path)
+        yield from original(path, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(_orc, "_iter_orc_batches", tracking_batches)
+        assert [batch.to_pydict() for batch in _batches(tasks[0])] == [{"id": [2]}]
+    assert scanned == [_native_file_uri(Path(paths[1]))]
+    df = source.read()
+    result = df.sort("id").to_arrow().column("p")
+    assert result.type == pa.timestamp("s", "+00:00")
+    assert result.cast(pa.int64()).to_pylist() == [1704067200, ticks, None]
+    assert df.where(predicate).select("id").to_pydict() == {"id": [2]}
+
+
+@pytest.mark.parametrize("offset", ["-05:30", "-00:30"])
+def test_orc_hive_invalid_timezone_metadata(tmp_path: Path, offset: str) -> None:
+    # Preserve the current Hive inference's negative-minute offset metadata,
+    # and expose its conversion error rather than silently producing a null.
+    path = _write_hive_orc(tmp_path, f"p={quote(f'2024-01-01T00:00:00{offset}', safe='')}", [1])
+    with pytest.raises(ValueError, match="(?i)timezone"):
+        _tasks(OrcSource(path, None, 1, hive_partitioning=True))
+
+
+def test_read_orc_hive_timezone_conversion(tmp_path: Path) -> None:
+    paths = [
+        _write_hive_orc(tmp_path, "p=2024-01-01T08%3A00%3A00.123456789%2B08%3A00", [1]),
+        _write_hive_orc(tmp_path, "p=2024-01-01T00%3A00%3A00.123456789Z", [2]),
+    ]
+    result = daft.read_orc(paths, hive_partitioning=True).select("p").to_arrow().column("p")
+    assert result.type == pa.timestamp("ns", "+08:00")
+    assert result.cast(pa.int64()).to_pylist() == [1704067200123456789] * 2
+
+
+def test_orc_hive_first_path_fields(tmp_path: Path) -> None:
+    first = _write_hive_orc(tmp_path, "p=3", [1])
+    second = _write_hive_orc(tmp_path, "q=4", [2])
+    plain = _write_hive_orc(tmp_path, "plain", [3])
+    df = daft.read_orc([first, second, plain], hive_partitioning=True)
+    assert df.column_names == ["id", "p"]
+    assert df.sort("id").to_pydict() == {"id": [1, 2, 3], "p": [3, None, None]}
+    assert daft.read_orc([plain, first], hive_partitioning=True).column_names == ["id"]
+
+
+def test_orc_hive_missing_keys_and_tasks(tmp_path: Path) -> None:
+    first = _write_hive_orc(tmp_path, "p=3/q=x", [1])
+    second = _write_hive_orc(tmp_path, "q=y", [2])
+    source = OrcSource([first, second], None, 1, hive_partitioning=True)
+    assert [partition.field.name for partition in source.get_partition_fields()] == ["p", "q"]
+    assert [task._path for task in _tasks(source, Pushdowns(columns=["id"], partition_filters=daft.col("p") == 3))] == [
+        _native_file_uri(Path(first))
+    ]
+    assert [task._path for task in _tasks(source, Pushdowns(partition_filters=daft.col("p").is_null()))] == [
+        _native_file_uri(Path(second))
+    ]
+    df = source.read()
+    assert df.where(daft.col("p").is_null()).select("id").to_pydict() == {"id": [2]}
+    assert df.where(daft.col("p") == 3).select("id").to_pydict() == {"id": [1]}
+
+
+def test_orc_hive_physical_conflict(tmp_path: Path) -> None:
+    first = _write_hive_orc(tmp_path, "p=3", [1, 2], p=["wrong", "values"])
+    second = _write_hive_orc(tmp_path, "plain", [3], p=["physical"])
+    df = daft.read_orc([first, second], hive_partitioning=True)
+    assert df.column_names == ["id", "p"]
+    assert df.sort("id").to_pydict() == {"id": [1, 2, 3], "p": [3, 3, None]}
+    assert df.select("p").to_pydict() == {"p": [3, 3, None]}
+    assert df.where(daft.col("p") == 3).select("id").sort("id").to_pydict() == {"id": [1, 2]}
+    assert daft.read_orc(first).to_pydict()["p"] == ["wrong", "values"]
+
+
+def test_orc_hive_scanner_excludes_partition_columns(tmp_path: Path, monkeypatch) -> None:
+    path = _write_hive_orc(tmp_path, "p=3", [1, 2], p=[99, 99])
+    source = OrcSource(path, None, 1, hive_partitioning=True)
+    original = _orc.pads.Scanner
+    requested: list[list[str]] = []
+
+    class TrackingScanner:
+        @staticmethod
+        def from_fragment(*args, **kwargs):
+            requested.append(kwargs["columns"])
+            return original.from_fragment(*args, **kwargs)
+
+    monkeypatch.setattr(_orc.pads, "Scanner", TrackingScanner)
+    for columns in [None, ["p"], []]:
+        batches = _batches(_tasks(source, Pushdowns(columns=columns))[0])
+        assert sum(len(batch) for batch in batches) == 2
+    assert requested == [["id"], [], []]
+
+
+def test_read_orc_hive_queries(tmp_path: Path) -> None:
+    paths = [_write_hive_orc(tmp_path, f"p={p}", [p * 10, p * 10 + 1]) for p in [1, 2]]
+    df = daft.read_orc(paths, hive_partitioning=True, batch_size=1)
+    assert df.select("p").sort("p").to_pydict() == {"p": [1, 1, 2, 2]}
+    assert df.where((daft.col("p") == 2) & (daft.col("id") > 20)).select("id").to_pydict() == {"id": [21]}
+    assert df.where((daft.col("p") == 1) | (daft.col("id") > 20)).select("id").sort("id").to_pydict() == {
+        "id": [10, 11, 21]
+    }
+    assert df.where(daft.col("id") > daft.col("p") * 10).sort("id").to_pydict() == {"id": [11, 21], "p": [1, 2]}
+    assert df.where(daft.col("p") == 2).count_rows() == 2
+    assert df.where(daft.col("p") == 2).limit(1).count_rows() == 1
+    empty = df.where(daft.col("p") == 99).to_arrow()
+    assert empty.num_rows == 0 and empty.schema == df.to_arrow().schema
+
+
+def test_orc_hive_empty_file_and_serialization(tmp_path: Path) -> None:
+    empty = _write_hive_orc(tmp_path, "p=1", pa.array([], pa.int64()))
+    data = _write_hive_orc(tmp_path, "p=2", [1, 2])
+    source = cloudpickle.loads(cloudpickle.dumps(OrcSource([empty, data], None, 1, hive_partitioning=True)))
+    tasks = _tasks(source)
+    task = cloudpickle.loads(cloudpickle.dumps(tasks[1]))
+    assert [batch.to_pydict() for batch in _batches(task)] == [{"id": [1], "p": [2]}, {"id": [2], "p": [2]}]
+    assert source.read().to_pydict() == {"id": [1, 2], "p": [2, 2]}
+
+
+def test_hive_binding_declared_and_missing_fields() -> None:
+    schema = Schema.from_field_name_and_types([("p", daft.DataType.int64()), ("q", daft.DataType.bool())])
+    values = [
+        Series._from_pyseries(value)
+        for value in _parse_hive_partition_values("/extra=x/q=TRUE/p=bad/data.orc", schema._schema)
+    ]
+    assert [value.name() for value in values] == ["q", "p"]
+    assert [value.datatype() for value in values] == [daft.DataType.bool(), daft.DataType.int64()]
+    assert [value.to_pylist() for value in values] == [[True], [None]]
+    assert _parse_hive_partition_values("/plain/data.orc", schema._schema) == []
+    empty = Schema.from_field_name_and_types([])
+    assert _parse_hive_partition_values("/p=3/data.orc", empty._schema) == []
+
+
+@pytest.mark.parametrize(
+    "value,dtype,physical",
+    [
+        ("3", pa.int64(), 3),
+        ("TRUE", pa.bool_(), True),
+        ("1.5", pa.float64(), 1.5),
+        ("hello", pa.large_string(), "hello"),
+        ("__HIVE_DEFAULT_PARTITION__", pa.large_string(), None),
+        ("2024-01-01", pa.date32(), 19723),
+        ("12:30:00.123456789", pa.time64("ns"), 45000123456789),
+        ("1969-12-31T23:59:59.123456789", pa.timestamp("ns"), -876543211),
+        ("2024-01-01T08:00:00.123456789+08:00", pa.timestamp("ns", "+08:00"), 1704067200123456789),
+    ],
+)
+def test_orc_hive_typed_constant_serialization(tmp_path: Path, value: str, dtype: pa.DataType, physical) -> None:
+    paths = [
+        _write_hive_orc(tmp_path, f"p={quote(value, safe='')}", [1, 2], p=["physical", "physical"]),
+        _write_hive_orc(tmp_path, "plain", [3], p=["physical"]),
+    ]
+    source = cloudpickle.loads(cloudpickle.dumps(OrcSource(paths, None, 1, hive_partitioning=True)))
+    tasks = [cloudpickle.loads(cloudpickle.dumps(task)) for task in _tasks(source, Pushdowns(columns=["p"]))]
+    assert [task._partition_values["p"].datatype() for task in tasks] == [daft.DataType.from_arrow_type(dtype)] * 2
+    batches = [batch for task in tasks for batch in _batches(task)]
+    assert sum(len(batch) for batch in batches) == 3
+    result = pa.concat_tables([batch.to_arrow_table() for batch in batches]).column("p")
+    assert result.type == dtype
+    if pa.types.is_temporal(dtype):
+        result = result.cast(pa.int32() if pa.types.is_date32(dtype) else pa.int64())
+    assert result.to_pylist() == [physical, physical, None]
+    assert source.read().select("p").to_arrow().column("p").type == dtype
+
+
+def test_orc_hive_real_file_pruning(tmp_path: Path, monkeypatch) -> None:
+    paths = [_write_hive_orc(tmp_path, f"p={p}", [p]) for p in [1, 2]]
+    source = OrcSource(paths, None, 1, hive_partitioning=True)
+    original = _orc._iter_orc_batches
+    scanned: list[str] = []
+
+    def tracking_batches(path, *args, **kwargs):
+        scanned.append(path)
+        yield from original(path, *args, **kwargs)
+
+    monkeypatch.setattr(_orc, "_iter_orc_batches", tracking_batches)
+    tasks = _tasks(source, Pushdowns(partition_filters=daft.col("p") == 2))
+    assert [task._path for task in tasks] == [_native_file_uri(Path(paths[1]))]
+    assert _batches(tasks[0])[0].to_pydict() == {"id": [2], "p": [2]}
+    assert scanned == [_native_file_uri(Path(paths[1]))]
 
 
 def _write_orc(path: Path, table: pa.Table, **kwargs) -> str:
