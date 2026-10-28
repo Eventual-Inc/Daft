@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use crate::{
     ScalarFunction, ambiguous_identifier_err,
-    error::CatalogResult,
+    error::{CatalogError, CatalogResult},
     obj_already_exists_err, obj_not_found_err,
     options::{IdentifierMode, Options},
     unsupported_err,
@@ -467,6 +467,20 @@ impl Session {
         Ok(out)
     }
 
+    /// Sets the identifier mode used for name resolution.
+    pub fn set_identifier_mode(&self, mode: &str) -> CatalogResult<()> {
+        let parsed = mode
+            .parse::<IdentifierMode>()
+            .map_err(CatalogError::invalid_identifier)?;
+        self.state_mut().options.identifier_mode = parsed;
+        Ok(())
+    }
+
+    /// Returns the current identifier mode.
+    pub fn identifier_mode(&self) -> IdentifierMode {
+        self.state().options.identifier_mode
+    }
+
     /// Sets the current_catalog.
     pub fn set_catalog(&self, ident: Option<&str>) -> CatalogResult<()> {
         if let Some(ident) = ident {
@@ -786,6 +800,28 @@ mod tests {
         assert!(sess.get_function(&ident).is_ok());
         sess.detach_function("temp_fn").unwrap();
         assert!(sess.get_function(&ident).is_err());
+    }
+
+    #[test]
+    fn test_set_identifier_mode() {
+        let sess = Session::empty();
+        assert_eq!(sess.identifier_mode(), IdentifierMode::Sensitive);
+
+        sess.set_identifier_mode("insensitive").unwrap();
+        assert_eq!(sess.identifier_mode(), IdentifierMode::Insensitive);
+
+        sess.set_identifier_mode("normalized").unwrap();
+        assert_eq!(sess.identifier_mode(), IdentifierMode::Normalize);
+
+        let err = sess.set_identifier_mode("x").unwrap_err();
+        assert!(
+            matches!(err, CatalogError::InvalidIdentifier { .. }),
+            "unexpected error: {err}"
+        );
+        assert!(
+            err.to_string().contains("identifier_mode 'x'"),
+            "unexpected error: {err}"
+        );
     }
 
     // ── Aggregate function tests ────────────────────────────────────────
