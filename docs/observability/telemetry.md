@@ -38,7 +38,6 @@ python my-daft-script.py
 | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | Traces-only OTLP endpoint. Overrides `OTEL_EXPORTER_OTLP_ENDPOINT` for traces. | Unset | OTLP endpoint URL |
 | `OTEL_EXPORTER_OTLP_PROTOCOL` | OTLP exporter protocol. | `grpc` | `grpc`, `http/protobuf`, `http/json` |
 | `OTEL_METRIC_EXPORT_INTERVAL` | Metrics export interval in milliseconds. | `500` | Positive integer (milliseconds) |
-| `DAFT_DEV_OTEL_EXPORTER_OTLP_ENDPOINT` | Deprecated alias for `OTEL_EXPORTER_OTLP_ENDPOINT`. | Unset | OTLP endpoint URL |
 
 !!! info
     `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`, and `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` take precedence over `OTEL_EXPORTER_OTLP_ENDPOINT` for their respective signal.
