@@ -85,7 +85,10 @@ def test_read_huggingface_webdataset_routes_to_webdataset_reader():
     repo = "laion/conceptual-captions-12m-webdataset"
     sentinel = object()
 
-    with patch("daft.io.huggingface.read_webdataset", return_value=sentinel) as mock_read_webdataset:
+    with (
+        patch("daft.io.huggingface.read_webdataset", return_value=sentinel) as mock_read_webdataset,
+        patch("daft.io.huggingface.warn_if_lerobot"),
+    ):
         result = daft.read_huggingface(repo, format="webdataset")
 
     assert result is sentinel
@@ -102,6 +105,7 @@ def test_read_huggingface_parquet_format(format):
 
     with (
         patch("daft.io.huggingface.parquet_files", return_value=["example.parquet"]),
+        patch("daft.io.huggingface.warn_if_lerobot"),
         patch("daft.io.huggingface.read_parquet", return_value=sentinel) as mock_read_parquet,
     ):
         result = daft.read_huggingface(repo, format=format)
