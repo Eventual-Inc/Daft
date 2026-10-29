@@ -225,10 +225,15 @@ impl Decimal128Array {
 
         let hashes = arr.into_iter().map(|d| {
             d.map(|d| {
-                let twos_compliment = u128::from_ne_bytes(d.to_ne_bytes());
-                let bits_needed = u128::BITS - twos_compliment.leading_zeros();
-                let bytes_needed = bits_needed.div_ceil(8) as usize;
-                let be_bytes = twos_compliment.to_be_bytes();
+                // Minimal big-endian two's complement with room for the sign bit, as Java's
+                // `BigInteger.toByteArray()`: 0 -> [00], 128 -> [00 80], -1 -> [FF].
+                let sign_bits = if d < 0 {
+                    d.leading_ones()
+                } else {
+                    d.leading_zeros()
+                };
+                let bytes_needed = ((i128::BITS - sign_bits) / 8 + 1) as usize;
+                let be_bytes = d.to_be_bytes();
                 let unsigned =
                     mur3::murmurhash3_x86_32(&be_bytes[(be_bytes.len() - bytes_needed)..], 0);
                 i32::from_ne_bytes(unsigned.to_ne_bytes())
@@ -861,21 +866,24 @@ mod tests {
 
     #[test]
     fn test_decimal_murmur3_values() {
-        let values: Vec<i128> = vec![100, 200];
+        // Unscaled values and the bytes Java's `BigInteger.toByteArray()` produces for them.
+        let cases: [(i128, &[u8]); 7] = [
+            (0, &[0x00]),
+            (127, &[0x7F]),
+            (128, &[0x00, 0x80]),
+            (1420, &[0x05, 0x8C]),
+            (-1, &[0xFF]),
+            (-128, &[0x80]),
+            (-129, &[0xFF, 0x7F]),
+        ];
         let arr = Decimal128Array::from_field_and_values(
             Field::new("d", DataType::Decimal128(10, 2)),
-            values.clone(),
+            cases.iter().map(|(v, _)| *v),
         );
         let result = arr.murmur3_32().unwrap();
 
-        for (i, d) in values.iter().enumerate() {
-            let twos_compliment = u128::from_ne_bytes(d.to_ne_bytes());
-            let bits_needed = u128::BITS - twos_compliment.leading_zeros();
-            let bytes_needed = bits_needed.div_ceil(8) as usize;
-            let be_bytes = twos_compliment.to_be_bytes();
-            let unsigned =
-                mur3::murmurhash3_x86_32(&be_bytes[(be_bytes.len() - bytes_needed)..], 0);
-            let expected = i32::from_ne_bytes(unsigned.to_ne_bytes());
+        for (i, (_, bytes)) in cases.iter().enumerate() {
+            let expected = i32::from_ne_bytes(mur3::murmurhash3_x86_32(bytes, 0).to_ne_bytes());
             assert_eq!(result.get(i).unwrap(), expected);
         }
     }
