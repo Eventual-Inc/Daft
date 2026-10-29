@@ -216,6 +216,29 @@ def test_get_table_no_impls(glue_catalog, glue_client):
         glue_catalog.get_table("test_database.test_table")
 
 
+def test_has_table(glue_catalog, glue_client):
+    create_glue_database(glue_client, "test_database")
+    create_glue_table(glue_client, "test_database", "test_table")
+
+    assert glue_catalog.has_table("test_database.test_table")
+    assert not glue_catalog.has_table("test_database.nonexistent_table")
+
+    # Invalid identifiers
+    with pytest.raises(ValueError, match="Expected identifier with form `<database_name>.<table_name>`"):
+        glue_catalog.has_table("a.b.c")
+    with pytest.raises(ValueError, match="Expected identifier with form `<database_name>.<table_name>`"):
+        glue_catalog.has_table("a")
+
+
+def test_has_table_no_impls(glue_catalog, glue_client):
+    create_glue_database(glue_client, "test_database")
+    create_glue_table(glue_client, "test_database", "test_table")
+
+    # The table exists even if Daft has no implementation to read it.
+    glue_catalog._table_impls = []
+    assert glue_catalog.has_table("test_database.test_table")
+
+
 def test_drop_table(glue_catalog, glue_client):
     # create a table with the client
     create_glue_database(glue_client, "test_database")
