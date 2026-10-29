@@ -24,7 +24,7 @@ from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import IdentityTransform
-from pyiceberg.types import LongType, NestedField, StringType
+from pyiceberg.types import BooleanType, LongType, NestedField, StringType
 
 
 @pytest.fixture
@@ -144,6 +144,83 @@ def test_read_iceberg_schema_evolution_per_snapshot(local_catalog):
     assert current.sort("x").to_pydict() == {"x": [1, 2, 3, 4], "y": [None, None, "a", "b"]}
     assert historical.schema().column_names() == ["x"]
     assert historical.sort("x").to_pydict() == {"x": [1, 2]}
+
+
+@pytest.fixture(params=["added", "readded"])
+def table_with_missing_column(local_catalog, request):
+    fields = [NestedField(1, "id", LongType(), required=False)]
+    data = {"id": [0, 1, 2, 3]}
+    if request.param == "readded":
+        fields.append(NestedField(2, "z", LongType(), required=False))
+        data["z"] = [10, 20, 60, 70]
+    table = local_catalog.create_table("default.missing_column", Schema(*fields))
+    table.append(pa.table(data))
+
+    if request.param == "readded":
+        with table.update_schema() as update:
+            update.delete_column("z")
+    with table.update_schema() as update:
+        update.add_column("z", LongType())
+    table.refresh()
+    return table
+
+
+@pytest.mark.parametrize("query", ["count_rows", "sql", "projection"])
+@pytest.mark.parametrize("with_new_file", [False, True], ids=["old-only", "mixed-files"])
+@pytest.mark.parametrize(
+    "predicate, sql_predicate, old_values, new_values",
+    [
+        (daft.col("z") >= 50, "z >= 50", [], [75]),
+        (daft.col("z").is_null(), "z IS NULL", [None] * 4, [None]),
+        (daft.col("z").not_null(), "z IS NOT NULL", [], [25, 75]),
+        (daft.col("z").is_null() | (daft.col("z") >= 50), "z IS NULL OR z >= 50", [None] * 4, [None, 75]),
+    ],
+    ids=["comparison", "is-null", "not-null", "null-or-comparison"],
+)
+def test_filter_on_missing_column(
+    table_with_missing_column, query, with_new_file, predicate, sql_predicate, old_values, new_values
+):
+    table = table_with_missing_column
+    if with_new_file:
+        table.append(pa.table({"id": [4, 5, 6], "z": pa.array([None, 25, 75], type=pa.int64())}))
+        table.refresh()
+    expected = old_values + (new_values if with_new_file else [])
+
+    if query == "count_rows":
+        assert daft.read_iceberg(table).where(predicate).count_rows() == len(expected)
+    elif query == "sql":
+        result = daft.sql(f"SELECT count(*) AS n FROM t WHERE {sql_predicate}", t=daft.read_iceberg(table))
+        assert result.to_pydict() == {"n": [len(expected)]}
+    else:
+        result = daft.read_iceberg(table).where(predicate).select("z").sort("z", nulls_first=True)
+        assert result.to_pydict() == {"z": expected}
+
+
+def test_limit_with_predicate_on_missing_column(table_with_missing_column):
+    table = table_with_missing_column
+    assert daft.read_iceberg(table).where(daft.col("z") >= 50).select("z").limit(2).to_pydict() == {"z": []}
+    assert daft.read_iceberg(table).where(daft.col("z").is_null()).select("z").limit(2).to_pydict() == {
+        "z": [None, None]
+    }
+
+
+@pytest.mark.parametrize("query", ["count_rows", "sql", "projection"])
+def test_filter_on_missing_boolean_column(local_catalog, query):
+    table = local_catalog.create_table(
+        "default.missing_boolean", Schema(NestedField(1, "id", LongType(), required=False))
+    )
+    table.append(pa.table({"id": [0, 1, 2, 3]}))
+    with table.update_schema() as update:
+        update.add_column("flag", BooleanType())
+    table.refresh()
+
+    if query == "count_rows":
+        assert daft.read_iceberg(table).where(daft.col("flag")).count_rows() == 0
+    elif query == "sql":
+        result = daft.sql("SELECT count(*) AS n FROM t WHERE flag", t=daft.read_iceberg(table))
+        assert result.to_pydict() == {"n": [0]}
+    else:
+        assert daft.read_iceberg(table).where(daft.col("flag")).select("flag").to_pydict() == {"flag": []}
 
 
 def test_read_iceberg_pushdowns(local_catalog):
