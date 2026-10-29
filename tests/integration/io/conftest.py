@@ -8,14 +8,16 @@ import pathlib
 import shutil
 import uuid
 from collections.abc import Generator
-from typing import TypeAlias, TypeVar
+from typing import TYPE_CHECKING, TypeAlias, TypeVar
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
-from azure.storage.blob import BlobServiceClient
 
 import daft
+
+if TYPE_CHECKING:
+    from azure.storage.blob import BlobServiceClient
 
 T = TypeVar("T")
 
@@ -95,6 +97,8 @@ def azurite_create_container(
     Yields a tuple of (BlobServiceClient, container_name, io_config).
     If container_name is not provided, generates a unique one using UUID.
     """
+    from azure.storage.blob import BlobServiceClient
+
     if container_name is None:
         container_name = f"container-{uuid.uuid4()}"
 
