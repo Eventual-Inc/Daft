@@ -500,6 +500,30 @@ fn normalize_endpoint_url(url_str: &str) -> String {
     }
 }
 
+/// Neon Object Storage endpoints look like `https://<branch_id>.storage.<cell>.<region>.aws.neon.tech`.
+/// Neon only serves path-style requests: the TLS certificate covers `*.storage.<cell>.<region>.aws.neon.tech`,
+/// so a virtual-hosted `<bucket>.<branch_id>.storage...` host fails the handshake.
+fn is_neon_storage_endpoint(url_str: &str) -> bool {
+    url::Url::parse(&normalize_endpoint_url(url_str))
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_ascii_lowercase))
+        .is_some_and(|host| host.ends_with(".neon.tech") && host.contains(".storage."))
+}
+
+/// Path-style addressing is used for custom endpoints unless `force_virtual_addressing` is set,
+/// and always for Neon Object Storage, wherever its endpoint was configured.
+fn use_path_style(config: &S3Config, resolved_endpoint_url: Option<&str>) -> bool {
+    if resolved_endpoint_url.is_some_and(is_neon_storage_endpoint) {
+        if config.force_virtual_addressing {
+            log::warn!(
+                "Ignoring `force_virtual_addressing` for Neon Object Storage endpoint, which only supports path-style requests"
+            );
+        }
+        return true;
+    }
+    config.endpoint_url.is_some() && !config.force_virtual_addressing
+}
+
 async fn build_s3_conf(config: &S3Config) -> super::Result<s3::Config> {
     const DEFAULT_REGION: Region = Region::from_static("us-east-1");
 
@@ -674,7 +698,13 @@ async fn build_s3_conf(config: &S3Config) -> super::Result<s3::Config> {
 
     let mut builder = aws_sdk_s3::config::Builder::from(&sdk_config);
 
-    let force_path_style = config.endpoint_url.is_some() && !config.force_virtual_addressing;
+    // The endpoint may also come from `AWS_ENDPOINT_URL_S3` / `AWS_ENDPOINT_URL` rather than `S3Config`.
+    let resolved_endpoint_url = config
+        .endpoint_url
+        .clone()
+        .or_else(|| std::env::var("AWS_ENDPOINT_URL_S3").ok())
+        .or_else(|| sdk_config.endpoint_url().map(str::to_string));
+    let force_path_style = use_path_style(config, resolved_endpoint_url.as_deref());
     builder = builder.force_path_style(force_path_style);
 
     // Add custom retry classifier for customized retry messages
@@ -1824,8 +1854,10 @@ mod tests {
     use common_io_config::S3Config;
 
     use crate::{
-        Result, S3LikeSource, integrations::test_full_get, object_io::ObjectSource,
-        s3_like::normalize_endpoint_url,
+        Result, S3LikeSource,
+        integrations::test_full_get,
+        object_io::ObjectSource,
+        s3_like::{is_neon_storage_endpoint, normalize_endpoint_url, use_path_style},
     };
 
     #[test]
@@ -1886,6 +1918,69 @@ mod tests {
         // `Url::parse`, so the `Err(_)` fallback is exercised (and must not panic).
         assert_eq!(normalize_endpoint_url(""), "https://");
         assert_eq!(normalize_endpoint_url("a b.com"), "https://a b.com/");
+    }
+
+    #[test]
+    fn test_is_neon_storage_endpoint() {
+        assert!(is_neon_storage_endpoint(
+            "https://br-raspy-haze-b5ospiib.storage.c-7.us-east-2.aws.neon.tech"
+        ));
+        assert!(is_neon_storage_endpoint(
+            "https://br-raspy-haze-b5ospiib.storage.c-7.us-east-2.aws.neon.tech/"
+        ));
+        // Bare host, as an Iceberg REST catalog might vend it.
+        assert!(is_neon_storage_endpoint(
+            "br-raspy-haze-b5ospiib.storage.c-7.us-east-2.aws.neon.tech"
+        ));
+        assert!(is_neon_storage_endpoint(
+            "HTTPS://BR-RASPY-HAZE-B5OSPIIB.STORAGE.C-7.US-EAST-2.AWS.NEON.TECH"
+        ));
+
+        // Postgres hosts and look-alike domains are not storage endpoints.
+        assert!(!is_neon_storage_endpoint(
+            "https://ep-cool-sun-123456.c-7.us-east-2.aws.neon.tech"
+        ));
+        assert!(!is_neon_storage_endpoint(
+            "https://abc.storage.supabase.co/storage/v1/s3"
+        ));
+        assert!(!is_neon_storage_endpoint(
+            "https://br-x.storage.neon.tech.example.com"
+        ));
+        assert!(!is_neon_storage_endpoint(""));
+    }
+
+    #[test]
+    fn test_use_path_style() {
+        let neon = "https://br-raspy-haze-b5ospiib.storage.c-7.us-east-2.aws.neon.tech";
+        let minio = "http://localhost:9000";
+
+        // AWS S3 with no endpoint keeps virtual-hosted addressing.
+        assert!(!use_path_style(&S3Config::default(), None));
+
+        // Custom endpoints default to path-style, and `force_virtual_addressing` opts out.
+        let custom = S3Config {
+            endpoint_url: Some(minio.to_string()),
+            ..Default::default()
+        };
+        assert!(use_path_style(&custom, Some(minio)));
+        let custom_vhost = S3Config {
+            force_virtual_addressing: true,
+            ..custom
+        };
+        assert!(!use_path_style(&custom_vhost, Some(minio)));
+
+        // Neon is always path-style, even when the endpoint came from the environment
+        // (so `S3Config.endpoint_url` is unset) or virtual addressing was forced.
+        assert!(use_path_style(&S3Config::default(), Some(neon)));
+        let neon_vhost = S3Config {
+            endpoint_url: Some(neon.to_string()),
+            force_virtual_addressing: true,
+            ..Default::default()
+        };
+        assert!(use_path_style(&neon_vhost, Some(neon)));
+
+        // An endpoint from the environment that is not Neon keeps the existing behavior.
+        assert!(!use_path_style(&S3Config::default(), Some(minio)));
     }
 
     #[tokio::test]
