@@ -76,6 +76,7 @@ impl BlockingSink for WindowPartitionOnlySink {
         input: MicroPartition,
         mut state: Self::State,
         _runtime_stats: Arc<Self::Stats>,
+        _spill_scope: crate::spilling::SpillScopeId,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let params = self.window_partition_only_params.clone();
@@ -95,6 +96,7 @@ impl BlockingSink for WindowPartitionOnlySink {
     fn finalize(
         &self,
         states: Vec<Self::State>,
+        _spill_scope: crate::spilling::SpillScopeId,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult {
         let params = self.window_partition_only_params.clone();
@@ -150,7 +152,7 @@ impl BlockingSink for WindowPartitionOnlySink {
                     if results.is_empty() {
                         let empty_result =
                             MicroPartition::empty(Some(params.original_schema.clone()));
-                        return Ok(BlockingSinkOutput::Partitions(vec![empty_result]));
+                        return Ok(BlockingSinkOutput::partitions(vec![empty_result]));
                     }
 
                     let final_result = MicroPartition::new_loaded(
@@ -159,7 +161,7 @@ impl BlockingSink for WindowPartitionOnlySink {
                         None,
                     );
 
-                    Ok(BlockingSinkOutput::Partitions(vec![final_result]))
+                    Ok(BlockingSinkOutput::partitions(vec![final_result]))
                 },
                 Span::current(),
             )
