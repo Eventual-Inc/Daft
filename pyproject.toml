@@ -29,7 +29,7 @@ homepage = "https://www.daft.ai"
 repository = "https://github.com/Eventual-Inc/Daft"
 
 [project.optional-dependencies]
-all = ["daft[audio, aws, azure, clickhouse, deltalake, google, gravitino, hdf5, http, huggingface, iceberg, jev, kafka, lance, mcap, numpy, openai, pandas, postgres, ray, sql, transformers, turbopuffer, unity, video]"]
+all = ["daft[audio, aws, azure, clickhouse, deltalake, google, gravitino, hdf5, http, hologres, huggingface, iceberg, jev, kafka, lance, mcap, numpy, openai, pandas, postgres, ray, sql, transformers, turbopuffer, unity, video]"]
 audio = ["soundfile >= 0.13.0,<0.14.0", "librosa >= 0.11.0,<0.12.0"]
 aws = ["boto3<1.44.0", "mypy-boto3-glue"]
 azure = ["fsspec<2026.8.0", "adlfs<2026.5.0"]
@@ -51,6 +51,12 @@ mcap = []
 numpy = ["numpy<2.4.0"]
 openai = ["openai<2.39.0", "numpy<2.4.0", "pillow<13"]
 pandas = ["pandas<2.4.0"]
+hologres = [
+  "psycopg[binary]<3.4.0",
+  "sqlglot<30.9.0",
+  "sqlalchemy<2.1.0",
+  "connectorx>=0.4.4,<0.5.0",
+]
 postgres = ["psycopg[binary]<3.4.0", "pgvector<0.5.0", "sqlglot<30.9.0", "connectorx>=0.4.4,<0.5.0"]
 ray = [
   # floor is 2.11: flotilla uses ray.exceptions.ActorUnavailableError, added in ray 2.11

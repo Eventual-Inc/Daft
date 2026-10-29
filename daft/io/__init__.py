@@ -30,6 +30,7 @@ from daft.io._json import read_json
 from daft.io._kafka import read_kafka
 from daft.io._parquet import read_parquet
 from daft.io._orc import read_orc
+from daft.io._hologres.read import read_hologres
 from daft.io._sql import read_sql
 from daft.io._warc import read_warc
 from daft.io.huggingface import read_huggingface
@@ -79,6 +80,7 @@ __all__ = [
     "read_blob",
     "read_csv",
     "read_deltalake",
+    "read_hologres",
     "read_hudi",
     "read_huggingface",
     "read_iceberg",
