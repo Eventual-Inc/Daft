@@ -148,29 +148,49 @@ impl_into_groups_primitive_array!(UInt32Type);
 impl_into_groups_primitive_array!(UInt64Type);
 impl_into_groups_primitive_array!(Decimal128Type);
 
-// Floats (canonicalize NaN)
-// Canonicalize all NaN payloads so every NaN hashes/equates into one group.
+// Floats (canonicalize NaN and negative zero)
+// Canonicalize all NaN payloads so every NaN hashes/equates into one group, and
+// fold -0.0 into 0.0 so equal values share a group, matching comparisons.
+
+#[inline]
+fn canonical_f16_bits(value: half::f16) -> u16 {
+    if value.is_nan() {
+        half::f16::NAN.to_bits()
+    } else if value == half::f16::ZERO {
+        half::f16::ZERO.to_bits()
+    } else {
+        value.to_bits()
+    }
+}
+
+#[inline]
+fn canonical_f32_bits(value: f32) -> u32 {
+    if value.is_nan() {
+        f32::NAN.to_bits()
+    } else if value == 0.0 {
+        0.0f32.to_bits()
+    } else {
+        value.to_bits()
+    }
+}
+
+#[inline]
+fn canonical_f64_bits(value: f64) -> u64 {
+    if value.is_nan() {
+        f64::NAN.to_bits()
+    } else if value == 0.0 {
+        0.0f64.to_bits()
+    } else {
+        value.to_bits()
+    }
+}
 
 impl IntoGroups for Float16Array {
     fn make_groups(&self) -> DaftResult<crate::GroupIndicesPair> {
         if self.null_count() > 0 {
-            make_groups(self.into_iter().map(|f| {
-                f.map(|v| {
-                    match v.is_nan() {
-                        true => half::f16::NAN,
-                        false => v,
-                    }
-                    .to_bits()
-                })
-            }))
+            make_groups(self.into_iter().map(|f| f.map(canonical_f16_bits)))
         } else {
-            make_groups(self.values().iter().map(|f| {
-                match f.is_nan() {
-                    true => half::f16::NAN,
-                    false => *f,
-                }
-                .to_bits()
-            }))
+            make_groups(self.values().iter().copied().map(canonical_f16_bits))
         }
     }
 }
@@ -178,23 +198,9 @@ impl IntoGroups for Float16Array {
 impl IntoUniqueIdxs for Float16Array {
     fn make_unique_idxs(&self) -> DaftResult<crate::Indices> {
         if self.null_count() > 0 {
-            make_unique_idxs(self.into_iter().map(|f| {
-                f.map(|v| {
-                    match v.is_nan() {
-                        true => half::f16::NAN,
-                        false => v,
-                    }
-                    .to_bits()
-                })
-            }))
+            make_unique_idxs(self.into_iter().map(|f| f.map(canonical_f16_bits)))
         } else {
-            make_unique_idxs(self.values().iter().map(|f| {
-                match f.is_nan() {
-                    true => half::f16::NAN,
-                    false => *f,
-                }
-                .to_bits()
-            }))
+            make_unique_idxs(self.values().iter().copied().map(canonical_f16_bits))
         }
     }
 }
@@ -202,23 +208,9 @@ impl IntoUniqueIdxs for Float16Array {
 impl IntoGroups for Float32Array {
     fn make_groups(&self) -> DaftResult<crate::GroupIndicesPair> {
         if self.null_count() > 0 {
-            make_groups(self.into_iter().map(|f| {
-                f.map(|v| {
-                    match v.is_nan() {
-                        true => f32::NAN,
-                        false => v,
-                    }
-                    .to_bits()
-                })
-            }))
+            make_groups(self.into_iter().map(|f| f.map(canonical_f32_bits)))
         } else {
-            make_groups(self.values().iter().map(|f| {
-                match f.is_nan() {
-                    true => f32::NAN,
-                    false => *f,
-                }
-                .to_bits()
-            }))
+            make_groups(self.values().iter().copied().map(canonical_f32_bits))
         }
     }
 }
@@ -226,23 +218,9 @@ impl IntoGroups for Float32Array {
 impl IntoUniqueIdxs for Float32Array {
     fn make_unique_idxs(&self) -> DaftResult<crate::Indices> {
         if self.null_count() > 0 {
-            make_unique_idxs(self.into_iter().map(|f| {
-                f.map(|v| {
-                    match v.is_nan() {
-                        true => f32::NAN,
-                        false => v,
-                    }
-                    .to_bits()
-                })
-            }))
+            make_unique_idxs(self.into_iter().map(|f| f.map(canonical_f32_bits)))
         } else {
-            make_unique_idxs(self.values().iter().map(|f| {
-                match f.is_nan() {
-                    true => f32::NAN,
-                    false => *f,
-                }
-                .to_bits()
-            }))
+            make_unique_idxs(self.values().iter().copied().map(canonical_f32_bits))
         }
     }
 }
@@ -250,23 +228,9 @@ impl IntoUniqueIdxs for Float32Array {
 impl IntoGroups for Float64Array {
     fn make_groups(&self) -> DaftResult<crate::GroupIndicesPair> {
         if self.null_count() > 0 {
-            make_groups(self.into_iter().map(|f| {
-                f.map(|v| {
-                    match v.is_nan() {
-                        true => f64::NAN,
-                        false => v,
-                    }
-                    .to_bits()
-                })
-            }))
+            make_groups(self.into_iter().map(|f| f.map(canonical_f64_bits)))
         } else {
-            make_groups(self.values().iter().map(|f| {
-                match f.is_nan() {
-                    true => f64::NAN,
-                    false => *f,
-                }
-                .to_bits()
-            }))
+            make_groups(self.values().iter().copied().map(canonical_f64_bits))
         }
     }
 }
@@ -274,23 +238,9 @@ impl IntoGroups for Float64Array {
 impl IntoUniqueIdxs for Float64Array {
     fn make_unique_idxs(&self) -> DaftResult<crate::Indices> {
         if self.null_count() > 0 {
-            make_unique_idxs(self.into_iter().map(|f| {
-                f.map(|v| {
-                    match v.is_nan() {
-                        true => f64::NAN,
-                        false => v,
-                    }
-                    .to_bits()
-                })
-            }))
+            make_unique_idxs(self.into_iter().map(|f| f.map(canonical_f64_bits)))
         } else {
-            make_unique_idxs(self.values().iter().map(|f| {
-                match f.is_nan() {
-                    true => f64::NAN,
-                    false => *f,
-                }
-                .to_bits()
-            }))
+            make_unique_idxs(self.values().iter().copied().map(canonical_f64_bits))
         }
     }
 }
@@ -469,7 +419,7 @@ mod tests {
     use common_error::DaftResult;
     use daft_core::{
         array::ops::{VecIndices, full::FullNull},
-        datatypes::{DataType, Field, FixedSizeBinaryArray, Float64Array, Int64Array, NullArray},
+        datatypes::{DataType, Field, FixedSizeBinaryArray, Float32Array, Float64Array, Int64Array, NullArray},
     };
     use smallvec::smallvec;
 
@@ -527,6 +477,40 @@ mod tests {
         let mut unique_idxs = arr.make_unique_idxs()?;
         unique_idxs.sort_unstable();
         assert_eq!(unique_idxs, vec![0, 1]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_make_groups_float64_canonicalizes_negative_zero() -> DaftResult<()> {
+        let arr = Float64Array::from_values("a", [0.0, -0.0, 1.0, -1.0]);
+
+        let (sample_indices, group_indices) = arr.make_groups()?;
+        let grouped = grouped_by_sample(sample_indices, group_indices);
+        assert_eq!(
+            grouped,
+            BTreeMap::from([
+                (0u64, smallvec![0u64, 1u64]),
+                (2u64, smallvec![2u64]),
+                (3u64, smallvec![3u64]),
+            ])
+        );
+
+        let mut unique_idxs = arr.make_unique_idxs()?;
+        unique_idxs.sort_unstable();
+        assert_eq!(unique_idxs, vec![0, 2, 3]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_make_groups_float32_canonicalizes_negative_zero() -> DaftResult<()> {
+        let arr = Float32Array::from_values("a", [0.0f32, -0.0, 1.0]);
+
+        let (sample_indices, group_indices) = arr.make_groups()?;
+        let grouped = grouped_by_sample(sample_indices, group_indices);
+        assert_eq!(
+            grouped,
+            BTreeMap::from([(0u64, smallvec![0u64, 1u64]), (2u64, smallvec![2u64])])
+        );
         Ok(())
     }
 
