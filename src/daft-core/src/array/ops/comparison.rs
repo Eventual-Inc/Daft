@@ -41,6 +41,8 @@ fn compare_arrays(
     rhs: ArrayRef,
     op: CompareKernel,
 ) -> DaftResult<BooleanArray> {
+    let lhs = crate::kernels::cmp::canonicalize_negative_zero(&lhs);
+    let rhs = crate::kernels::cmp::canonicalize_negative_zero(&rhs);
     let arrow_arr = match (lhs_len, rhs_len) {
         (1, 1) => op(
             &arrow::array::Scalar::new(lhs.clone()),
@@ -656,9 +658,13 @@ where
     ) -> DaftResult<BooleanArray> {
         let rhs: <<T::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native =
             NumCast::from(rhs).expect("could not cast to underlying DataArray type");
-        let rhs = PrimitiveArray::<<T::Native as NumericNative>::ARROWTYPE>::new_scalar(rhs);
+        let rhs: ArrayRef = Arc::new(PrimitiveArray::<
+            <T::Native as NumericNative>::ARROWTYPE,
+        >::from_iter_values([rhs]));
+        let rhs = crate::kernels::cmp::canonicalize_negative_zero(&rhs);
+        let lhs = crate::kernels::cmp::canonicalize_negative_zero(&self.to_arrow());
 
-        compare_array_to_scalar(self.name(), &self.to_arrow(), &rhs, op)
+        compare_array_to_scalar(self.name(), &lhs, &arrow::array::Scalar::new(rhs), op)
     }
 }
 
@@ -1022,8 +1028,8 @@ mod tests {
             ops::{DaftCompare, DaftLogical, full::FullNull},
         },
         datatypes::{
-            BinaryArray, BooleanArray, DataType, Field, FixedSizeBinaryArray, Int64Array,
-            NullArray, Utf8Array,
+            BinaryArray, BooleanArray, DataType, Field, FixedSizeBinaryArray, Float32Array,
+            Float64Array, Int64Array, NullArray, Utf8Array,
         },
         series::IntoSeries,
     };
@@ -1038,6 +1044,39 @@ mod tests {
         let array = array.with_nulls_slice(&[true, false, true])?;
         let result: Vec<_> = array.equal(2)?.into_iter().collect();
         assert_eq!(result[..], [Some(false), None, Some(false)]);
+        Ok(())
+    }
+
+    #[test]
+    fn float_negative_zero_compares_equal() -> DaftResult<()> {
+        let lhs = Float64Array::from_values("a", [-0.0, 0.0, 1.0]);
+        let rhs = Float64Array::from_values("a", [0.0, 0.0, 0.0]);
+
+        let result: Vec<_> = lhs.equal(&rhs)?.into_iter().collect();
+        assert_eq!(result, vec![Some(true), Some(true), Some(false)]);
+
+        let result: Vec<_> = lhs.lt(&rhs)?.into_iter().collect();
+        assert_eq!(result, vec![Some(false), Some(false), Some(false)]);
+
+        let result: Vec<_> = lhs.gt(&rhs)?.into_iter().collect();
+        assert_eq!(result, vec![Some(false), Some(false), Some(true)]);
+
+        // Scalar literals, including negative zero, follow the same semantics.
+        let result: Vec<_> = lhs.equal(0.0)?.into_iter().collect();
+        assert_eq!(result, vec![Some(true), Some(true), Some(false)]);
+
+        let result: Vec<_> = lhs.equal(-0.0)?.into_iter().collect();
+        assert_eq!(result, vec![Some(true), Some(true), Some(false)]);
+        Ok(())
+    }
+
+    #[test]
+    fn float_nan_still_orders_last() -> DaftResult<()> {
+        let lhs = Float64Array::from_values("a", [f64::NAN, 1.0]);
+        let rhs = Float64Array::from_values("a", [1.0, 1.0]);
+
+        let result: Vec<_> = lhs.gt(&rhs)?.into_iter().collect();
+        assert_eq!(result, vec![Some(true), Some(false)]);
         Ok(())
     }
 

@@ -1,12 +1,38 @@
 use std::cmp::Ordering;
+use std::sync::Arc;
 
 use arrow::{
-    array::{Array, ArrowPrimitiveType, PrimitiveArray, make_comparator},
-    compute::SortOptions,
+    array::{Array, ArrayRef, ArrowPrimitiveType, PrimitiveArray, make_comparator},
+    compute::{SortOptions, kernels::arity::unary},
     datatypes::*,
 };
 use common_error::DaftResult;
 use num_traits::Float;
+
+/// Canonicalize `-0.0` to `0.0` in float arrays.
+///
+/// Arrow's comparison kernels use IEEE totalOrder, which keeps `-0.0` and
+/// `0.0` distinct, while SQL, Python, and the rest of Daft treat them as
+/// equal. NaN is left untouched so that Daft keeps ordering it above every
+/// number.
+pub fn canonicalize_negative_zero(array: &ArrayRef) -> ArrayRef {
+    macro_rules! canon {
+        ($t:ty, $zero:expr) => {{
+            let arr = array
+                .as_any()
+                .downcast_ref::<PrimitiveArray<$t>>()
+                .unwrap();
+            let normalized = unary::<$t, _, $t>(arr, |v| if v == $zero { $zero } else { v });
+            Arc::new(normalized) as ArrayRef
+        }};
+    }
+    match array.data_type() {
+        DataType::Float16 => canon!(Float16Type, half::f16::ZERO),
+        DataType::Float32 => canon!(Float32Type, 0.0f32),
+        DataType::Float64 => canon!(Float64Type, 0.0f64),
+        _ => array.clone(),
+    }
+}
 
 #[allow(clippy::eq_op)]
 #[inline]
