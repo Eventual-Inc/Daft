@@ -8,8 +8,10 @@ import unicodedata
 import pyarrow as pa
 import pytest
 
+import daft
 import daft.exceptions
 from daft import DataType, Series
+from daft.functions import btrim
 from daft.series import SeriesStringNamespace
 
 
@@ -405,6 +407,18 @@ def test_series_utf8_btrim(data, trim_str, expected) -> None:
     s = Series.from_arrow(pa.array(data, type=pa.string()))
     result = s.str.btrim(trim_str)
     assert result.to_pylist() == expected
+
+
+def test_btrim_null_arguments() -> None:
+    df = daft.from_pydict({"s": ["xxaxx", "b"]})
+
+    # A null-typed `trim_str` broadcasts nulls instead of failing during planning.
+    assert df.select(daft.col("s").btrim(None)).to_pydict() == {"s": [None, None]}
+
+    # A null-typed input produces a null column.
+    out = df.select(btrim(daft.lit(None), "x"))
+    assert out.to_pydict() == {"literal": [None, None]}
+    assert out.schema()["literal"].dtype == DataType.null()
 
 
 @pytest.mark.parametrize(

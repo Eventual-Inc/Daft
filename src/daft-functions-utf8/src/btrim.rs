@@ -1,4 +1,4 @@
-use common_error::{DaftError, DaftResult};
+use common_error::{DaftError, DaftResult, ensure};
 use daft_core::{
     prelude::{DataType, Field, FullNull, Schema, Utf8Array},
     series::{IntoSeries, Series},
@@ -9,9 +9,7 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::utils::{
-    binary_utf8_evaluate, binary_utf8_to_field, create_broadcasted_str_iter, parse_inputs,
-};
+use crate::utils::{binary_utf8_evaluate, create_broadcasted_str_iter, parse_inputs};
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct BTrim;
@@ -28,6 +26,9 @@ impl ScalarUDF for BTrim {
         _ctx: &daft_dsl::functions::scalar::EvalContext,
     ) -> DaftResult<Series> {
         binary_utf8_evaluate(inputs, "trim_str", |s, trim_str| {
+            // A null-typed `trim_str` (e.g. `lit(None)` or a NULL SQL literal) broadcasts
+            // nulls, which the all-null path in `btrim_impl` already handles.
+            let trim_str = trim_str.cast(&DataType::Utf8)?;
             s.with_utf8_array(|arr| {
                 trim_str.with_utf8_array(|trim_arr| Ok(btrim_impl(arr, trim_arr)?.into_series()))
             })
@@ -39,14 +40,18 @@ impl ScalarUDF for BTrim {
         inputs: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<Field> {
-        binary_utf8_to_field(
-            inputs,
-            schema,
-            "trim_str",
-            DataType::is_string,
-            self.name(),
-            DataType::Utf8,
-        )
+        ensure!(inputs.len() == 2, SchemaMismatch: "btrim expects 2 arguments");
+        let input = inputs.required((0, "input"))?.to_field(schema)?;
+        if input.dtype.is_null() {
+            return Ok(Field::new(input.name, DataType::Null));
+        }
+        ensure!(input.dtype == DataType::Utf8, TypeError: "input must be of type Utf8");
+        let trim_str = inputs.required((1, "trim_str"))?.to_field(schema)?;
+        ensure!(
+            trim_str.dtype.is_string() || trim_str.dtype.is_null(),
+            TypeError: "invalid argument type for 'btrim'"
+        );
+        Ok(Field::new(input.name, DataType::Utf8))
     }
 
     fn docstring(&self) -> &'static str {
