@@ -37,6 +37,7 @@ from pyiceberg.types import (
     StringType,
     StructType,
     TimestampType,
+    TimestamptzType,
     TimeType,
 )
 
@@ -63,6 +64,7 @@ from daft.io.partitioning import PartitionTransform
         (DoubleType(), DataType.float64()),
         (DateType(), DataType.date()),
         (TimestampType(), DataType.timestamp("us", None)),
+        (TimestamptzType(), DataType.timestamp("us", "UTC")),
         (DecimalType(9, 2), DataType.decimal128(9, 2)),
         (TimeType(), DataType.time("us")),
         (BinaryType(), DataType.binary()),
@@ -83,6 +85,7 @@ from daft.io.partitioning import PartitionTransform
         "double",
         "date",
         "timestamp",
+        "timestamptz",
         "decimal",
         "time",
         "binary",
