@@ -838,3 +838,30 @@ def test_order_by_only_multiple_columns():
     )
 
     assert_df_equals(sql_result.to_pandas(), daft_result.to_pandas(), sort_key=["x", "y"])
+
+
+def test_order_by_sets_row_order_with_window_projection():
+    """ORDER BY determines row order even when the SELECT list contains a window function."""
+    df = daft.from_pydict({"g": [1, 1, 1, 2, 2], "o": [3, 4, 1, 2, 5], "v": [10, 20, 30, 40, 50]})
+
+    ordered = daft.sql("SELECT g, o, sum(v) OVER (PARTITION BY g) AS s FROM df ORDER BY o", df=df)
+    assert ordered.to_pydict() == {
+        "g": [1, 2, 1, 1, 2],
+        "o": [1, 2, 3, 4, 5],
+        "s": [60, 90, 60, 60, 90],
+    }
+
+    by_row_number = daft.sql(
+        "SELECT o, row_number() OVER (ORDER BY o DESC) AS rn FROM df ORDER BY o",
+        df=df,
+    )
+    assert by_row_number.to_pydict() == {"o": [1, 2, 3, 4, 5], "rn": [5, 4, 3, 2, 1]}
+
+    by_multiple_keys = daft.sql(
+        "SELECT o, sum(v) OVER (PARTITION BY g) AS s FROM df ORDER BY g, o",
+        df=df,
+    )
+    assert by_multiple_keys.to_pydict() == {"o": [1, 3, 4, 2, 5], "s": [60, 60, 60, 90, 90]}
+
+    limited = daft.sql("SELECT o, sum(v) OVER (PARTITION BY g) AS s FROM df ORDER BY o LIMIT 2", df=df)
+    assert limited.to_pydict() == {"o": [1, 2], "s": [60, 90]}
