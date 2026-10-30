@@ -306,3 +306,20 @@ def test_sql_config_constructors_are_case_insensitive(io_config_sample_parquet, 
     )
 
     assert "eu-central-1" in explain_to_text(daft.sql(query))
+
+
+@pytest.mark.parametrize(
+    "argument, expected",
+    [
+        ("retry_initial_backoff_ms => 500", "Retry initial backoff ms = 500"),
+        ("connect_timeout_ms => 1234", "Connect timeout ms = 1234"),
+        ("read_timeout_ms => 4321", "Read timeout ms = 4321"),
+        ("num_tries => 7", "Max retries = 7"),
+    ],
+    ids=["retry_initial_backoff_ms", "connect_timeout_ms", "read_timeout_ms", "num_tries"],
+)
+def test_sql_http_config_accepts_documented_arguments(io_config_sample_parquet, argument, expected):
+    """HTTPConfig accepts every argument it documents, not just user_agent and bearer_token."""
+    query = f"SELECT * FROM read_parquet('{io_config_sample_parquet}', io_config := HTTPConfig({argument}))"
+
+    assert expected in explain_to_text(daft.sql(query))
