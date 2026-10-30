@@ -295,23 +295,7 @@ impl Add for InferDataType<'_> {
                 (DataType::Decimal128(p1, s1), DataType::Decimal128(p2, s2)) => {
                     let s_max = *std::cmp::max(s1, s2);
                     let p_prime = std::cmp::max(p1 - s1, p2 - s2) + s_max + 1;
-
-
-                    if !(1..=38).contains(&p_prime) {
-                        Err(DaftError::TypeError(
-                            format!("Cannot infer supertypes for addition on types: {}, {} result precision: {p_prime} exceed bounds of [1, 38]", self, other)
-                        ))
-                    } else if s_max > 38 {
-                        Err(DaftError::TypeError(
-                            format!("Cannot infer supertypes for addition on types: {}, {} result scale: {s_max} exceed bounds of [0, 38]", self, other)
-                        ))
-                    } else if s_max > p_prime {
-                        Err(DaftError::TypeError(
-                            format!("Cannot infer supertypes for addition on types: {}, {} result scale: {s_max} exceed precision {p_prime}", self, other)
-                        ))
-                    } else {
-                        Ok(DataType::Decimal128(p_prime, s_max))
-                    }
+                    Ok(bound_decimal128(p_prime, s_max))
                 }
                 _ => Err(DaftError::TypeError(
                     format!("Cannot infer supertypes for addition on types: {}, {}", self, other)
@@ -353,21 +337,7 @@ impl Sub for InferDataType<'_> {
                 (DataType::Decimal128(p1, s1), DataType::Decimal128(p2, s2)) => {
                     let s_max = *std::cmp::max(s1, s2);
                     let p_prime = std::cmp::max(p1 - s1, p2 - s2) + s_max + 1;
-                    if !(1..=38).contains(&p_prime) {
-                        Err(DaftError::TypeError(
-                            format!("Cannot infer supertypes for subtraction on types: {}, {} result precision: {p_prime} exceed bounds of [1, 38]", self, other)
-                        ))
-                    } else if s_max > 38 {
-                        Err(DaftError::TypeError(
-                            format!("Cannot infer supertypes for subtraction on types: {}, {} result scale: {s_max} exceed bounds of [0, 38]", self, other)
-                        ))
-                    } else if s_max > p_prime {
-                        Err(DaftError::TypeError(
-                            format!("Cannot infer supertypes for subtraction on types: {}, {} result scale: {s_max} exceed precision {p_prime}", self, other)
-                        ))
-                    } else {
-                        Ok(DataType::Decimal128(p_prime, s_max))
-                    }
+                    Ok(bound_decimal128(p_prime, s_max))
                 }
                 (DataType::Interval, dtype) | (dtype, DataType::Interval) if dtype.is_temporal() => Ok(dtype.clone()),
                 _ => Err(DaftError::TypeError(
@@ -384,34 +354,41 @@ impl Div for InferDataType<'_> {
     fn div(self, other: Self) -> Self::Output {
         try_fixed_shape_numeric_datatype(self.0, other.0, |l, r| {
             InferDataType::from(l) / InferDataType::from(r)
-        }).or_else(|_| {
+        })
+        .or_else(|_| {
             match (&self.0, &other.0) {
                 #[cfg(feature = "python")]
                 (DataType::Python, _) | (_, DataType::Python) => Ok(DataType::Python),
-                (DataType::Decimal128(..), right) if right.is_integer() => self.div(InferDataType::from(&integer_to_decimal128(right)?)),
-                (left, DataType::Decimal128(..)) if left.is_integer() => InferDataType::from(&integer_to_decimal128(left)?).div(other),
-                (DataType::Decimal128(..), DataType::Float32 | DataType::Float64 ) | (DataType::Float32 | DataType::Float64, DataType::Decimal128(..)) => Ok(DataType::Float64),
+                (DataType::Decimal128(..), right) if right.is_integer() => {
+                    self.div(InferDataType::from(&integer_to_decimal128(right)?))
+                }
+                (left, DataType::Decimal128(..)) if left.is_integer() => {
+                    InferDataType::from(&integer_to_decimal128(left)?).div(other)
+                }
+                (DataType::Decimal128(..), DataType::Float32 | DataType::Float64)
+                | (DataType::Float32 | DataType::Float64, DataType::Decimal128(..)) => {
+                    Ok(DataType::Float64)
+                }
                 (DataType::Decimal128(p1, s1), DataType::Decimal128(_, s2)) => {
                     let s1 = *s1 as i64;
                     let s2 = *s2 as i64;
                     let p1 = *p1 as i64;
-                    let s_prime = s1 - s2 + std::cmp::max(6, p1+s2+1);
+                    let s_prime = s1 - s2 + std::cmp::max(6, p1 + s2 + 1);
                     let p_prime = p1 - s1 + s_prime;
-                    if !(1..=38).contains(&p_prime) {
-                        Err(DaftError::TypeError(
-                            format!("Cannot infer supertypes for divide on types: {}, {} result precision: {p_prime} exceed bounds of [1, 38]. scale: {s_prime}", self, other)
-                        ))
-                    } else if !(0..=38).contains(&s_prime){
-                        Err(DaftError::TypeError(
-                            format!("Cannot infer supertypes for divide on types: {}, {} result scale: {s_prime} exceed bounds of [0, 38]. precision: {p_prime}", self, other)
-                        ))
-                    } else if s_prime > p_prime {
-                        Err(DaftError::TypeError(
-                            format!("Cannot infer supertypes for divide on types: {}, {} result scale: {s_prime} exceed precision {p_prime}", self, other)
-                        ))
-                    } else {
-                        Ok(DataType::Decimal128(p_prime as usize, s_prime as usize))
-                    }
+                    // Division inflates the scale via the `max(6, ..)` term far beyond what the
+                    // operands need. Naively capping precision at 38 while keeping that scale would
+                    // leave the result with zero integer digits, so every whole-number quotient
+                    // would overflow to null. When the ideal precision exceeds 38, shrink the scale
+                    // just enough to preserve the quotient's integer digits
+                    // (`p_prime - s_prime == p1 - s1`).
+                    let integer_digits = (p_prime - s_prime).clamp(0, 38);
+                    // The shared cast path casts the divisor to the result type, so a scale
+                    // below the divisor's would truncate its fraction (0.5 -> 0). Keep at
+                    // least the divisor's scale and give up integer digits instead; quotients
+                    // that no longer fit are nulled by the checked kernel.
+                    let s_prime = (s_prime - (p_prime - 38).max(0)).clamp(s2, 38);
+                    let p_prime = (integer_digits + s_prime).min(38);
+                    Ok(bound_decimal128(p_prime as usize, s_prime as usize))
                 }
                 (s, o) if s.is_numeric() && o.is_numeric() => Ok(DataType::Float64),
                 (l, r) => Err(DaftError::TypeError(format!(
@@ -419,7 +396,6 @@ impl Div for InferDataType<'_> {
                     l, r
                 ))),
             }
-
         })
     }
 }
@@ -437,28 +413,20 @@ impl Mul for InferDataType<'_> {
             .or(match (self.0, other.0) {
                 #[cfg(feature = "python")]
                 (DataType::Python, _) | (_, DataType::Python) => Ok(DataType::Python),
-                (DataType::Decimal128(..), other) if other.is_integer() => self.mul(InferDataType::from(&integer_to_decimal128(other)?)),
-                (left, DataType::Decimal128(..)) if left.is_integer() => InferDataType::from(&integer_to_decimal128(left)?).mul(other),
-                (DataType::Decimal128(..), DataType::Float32) | (DataType::Float32, DataType::Decimal128(..)) => Ok(DataType::Float32),
-                (DataType::Decimal128(..), DataType::Float64) | (DataType::Float64, DataType::Decimal128(..)) => Ok(DataType::Float64),
+                (DataType::Decimal128(..), other) if other.is_integer() => {
+                    self.mul(InferDataType::from(&integer_to_decimal128(other)?))
+                }
+                (left, DataType::Decimal128(..)) if left.is_integer() => {
+                    InferDataType::from(&integer_to_decimal128(left)?).mul(other)
+                }
+                (DataType::Decimal128(..), DataType::Float32)
+                | (DataType::Float32, DataType::Decimal128(..)) => Ok(DataType::Float32),
+                (DataType::Decimal128(..), DataType::Float64)
+                | (DataType::Float64, DataType::Decimal128(..)) => Ok(DataType::Float64),
                 (DataType::Decimal128(p1, s1), DataType::Decimal128(p2, s2)) => {
                     let s_prime = s1 + s2;
                     let p_prime = p1 + p2;
-                    if !(1..=38).contains(&p_prime) {
-                        Err(DaftError::TypeError(
-                            format!("Cannot infer supertypes for multiply on types: {}, {} result precision: {p_prime} exceed bounds of [1, 38]", self, other)
-                        ))
-                    } else if s_prime > 34 {
-                        Err(DaftError::TypeError(
-                            format!("Cannot infer supertypes for multiply on types: {}, {} result scale: {s_prime} exceed bounds of [0, 38]", self, other)
-                        ))
-                    } else if s_prime > p_prime {
-                        Err(DaftError::TypeError(
-                            format!("Cannot infer supertypes for multiply on types: {}, {} result scale: {s_prime} exceed precision {p_prime}", self, other)
-                        ))
-                    } else {
-                        Ok(DataType::Decimal128(p_prime, s_prime))
-                    }
+                    Ok(bound_decimal128(p_prime, s_prime))
                 }
                 (DataType::Interval, other) if other.is_integer() => Ok(DataType::Interval),
                 (other, DataType::Interval) if other.is_integer() => Ok(DataType::Interval),
@@ -535,6 +503,25 @@ pub fn integer_to_decimal128(dtype: &DataType) -> DaftResult<DataType> {
     let num_digits = ((num_bits as f64) * constant).ceil() as usize;
 
     Ok(DataType::Decimal128(num_digits, 0))
+}
+
+/// `Decimal128` is backed by an `i128`, so 38 digits is a hard physical limit.
+/// When an arithmetic result would need more precision than that, we cannot
+/// represent it exactly; rather than failing to plan, cap the precision at 38
+/// and shrink the scale only as far as needed to stay representable. This
+/// mirrors Daft's decimal aggregation supertypes (`try_sum_supertype` /
+/// `try_product_supertype` in `agg_ops.rs` use `Decimal128(_, s) => Decimal128(38, s)`)
+/// and the behaviour of other SQL engines (Spark, DuckDB), so chained decimal
+/// arithmetic such as TPC-H Q1/Q9 can plan.
+fn bound_decimal128(precision: usize, scale: usize) -> DataType {
+    const MAX_PRECISION: usize = 38;
+    const MAX_SCALE: usize = 38;
+
+    let scale = scale.min(MAX_SCALE);
+    // A valid Decimal128 needs precision in [1, 38] and precision >= scale; the divide
+    // path can drive the raw values negative (clamped to 0), so enforce both bounds here.
+    let precision = precision.clamp(scale, MAX_PRECISION).max(1);
+    DataType::Decimal128(precision, scale)
 }
 
 pub fn try_physical_supertype(l: &DataType, r: &DataType) -> DaftResult<DataType> {
@@ -811,5 +798,91 @@ where
             "Invalid arguments to numeric supertype: {}, {}",
             l, r
         ))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dec(precision: usize, scale: usize) -> DataType {
+        DataType::Decimal128(precision, scale)
+    }
+
+    #[test]
+    fn bound_keeps_in_range_types() {
+        assert_eq!(bound_decimal128(25, 4), dec(25, 4));
+        assert_eq!(bound_decimal128(38, 38), dec(38, 38));
+    }
+
+    #[test]
+    fn bound_caps_precision_and_keeps_scale() {
+        assert_eq!(bound_decimal128(61, 6), dec(38, 6));
+        assert_eq!(bound_decimal128(39, 4), dec(38, 4));
+    }
+
+    #[test]
+    fn bound_clamps_scale_to_precision() {
+        // Scale can never exceed the (capped) precision or the max of 38.
+        assert_eq!(bound_decimal128(40, 45), dec(38, 38));
+    }
+
+    #[test]
+    fn mul_bounds_overflowing_precision() {
+        // TPC-H Q1: price * (1 - discount) * (1 + tax) inflates precision past 38.
+        let out = (InferDataType::from(&dec(38, 4)) * InferDataType::from(&dec(23, 2))).unwrap();
+        assert_eq!(out, dec(38, 6));
+    }
+
+    #[test]
+    fn sub_bounds_overflowing_precision() {
+        // TPC-H Q9: Decimal(38, 4) - Decimal(30, 4) needs precision 39.
+        let out = (InferDataType::from(&dec(38, 4)) - InferDataType::from(&dec(30, 4))).unwrap();
+        assert_eq!(out, dec(38, 4));
+    }
+
+    #[test]
+    fn add_bounds_overflowing_precision() {
+        let out = (InferDataType::from(&dec(38, 2)) + InferDataType::from(&dec(38, 2))).unwrap();
+        assert_eq!(out, dec(38, 2));
+    }
+
+    #[test]
+    fn mul_with_integer_widens_then_bounds() {
+        // Int64 widens to Decimal(20, 0), so Decimal(20, 2) * Int64 needs precision 40.
+        let out =
+            (InferDataType::from(&dec(20, 2)) * InferDataType::from(&DataType::Int64)).unwrap();
+        assert_eq!(out, dec(38, 2));
+    }
+
+    #[test]
+    fn div_bounds_overflowing_precision_preserving_integer_digits() {
+        // Decimal(38, 4) / Decimal(23, 2): the divide formula inflates the ideal scale to 43;
+        // we cap precision at 38 but keep the quotient's 34 integer digits (scale 4), rather
+        // than collapsing to scale 38 which could not hold any whole number.
+        let out = (InferDataType::from(&dec(38, 4)) / InferDataType::from(&dec(23, 2))).unwrap();
+        assert_eq!(out, dec(38, 4));
+    }
+
+    #[test]
+    fn div_bounded_scale_never_drops_below_divisor_scale() {
+        // Decimal(38, 0) / Decimal(2, 1): the bounded scale would be 0, but the
+        // divisor is cast to the result type, and scale 0 cannot represent 0.5.
+        let out = (InferDataType::from(&dec(38, 0)) / InferDataType::from(&dec(2, 1))).unwrap();
+        assert_eq!(out, dec(38, 1));
+    }
+
+    #[test]
+    fn in_range_divide_is_unchanged() {
+        // Decimal(10, 8) / Decimal(10, 2) stays within 38 digits, so the ideal type is kept.
+        let out = (InferDataType::from(&dec(10, 8)) / InferDataType::from(&dec(10, 2))).unwrap();
+        assert_eq!(out, dec(21, 19));
+    }
+
+    #[test]
+    fn in_range_arithmetic_is_unchanged() {
+        // Regression guard: results that already fit within 38 digits are not altered.
+        let out = (InferDataType::from(&dec(15, 2)) * InferDataType::from(&dec(10, 2))).unwrap();
+        assert_eq!(out, dec(25, 4));
     }
 }
