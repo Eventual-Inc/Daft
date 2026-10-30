@@ -669,7 +669,7 @@ impl SQLPlanner<'_> {
                 // Pick temporary names that cannot collide with input columns, otherwise
                 // `with_projs` would contain two columns with the same name.
                 let mut used_names: HashSet<String> =
-                    input_names.iter().map(|name| name.to_string()).collect();
+                    input_names.iter().map(|name| name.clone()).collect();
                 let tmp_names = (0..projections.len())
                     .map(|i| {
                         let mut name = format!("__sql_window_proj_{i}");
