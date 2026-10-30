@@ -123,6 +123,9 @@ pub fn parquet_statistics_to_column_range_statistics(
             let (Some(&lower), Some(&upper)) = (s.min_opt(), s.max_opt()) else {
                 return Ok(ColumnRangeStatistics::Missing);
             };
+            if lower.is_nan() || upper.is_nan() {
+                return Ok(ColumnRangeStatistics::Missing);
+            }
             let lower = Float32Array::from_slice("lower", &[lower]).into_series();
             let upper = Float32Array::from_slice("upper", &[upper]).into_series();
             ColumnRangeStatistics::new(Some(lower), Some(upper))?
@@ -131,6 +134,9 @@ pub fn parquet_statistics_to_column_range_statistics(
             let (Some(&lower), Some(&upper)) = (s.min_opt(), s.max_opt()) else {
                 return Ok(ColumnRangeStatistics::Missing);
             };
+            if lower.is_nan() || upper.is_nan() {
+                return Ok(ColumnRangeStatistics::Missing);
+            }
             let lower = Float64Array::from_slice("lower", &[lower]).into_series();
             let upper = Float64Array::from_slice("upper", &[upper]).into_series();
             ColumnRangeStatistics::new(Some(lower), Some(upper))?

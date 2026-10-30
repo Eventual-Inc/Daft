@@ -218,6 +218,25 @@ def test_count_rows_respects_row_groups(tmp_path):
     assert "Aggregation pushdown = count" in plan.getvalue()
 
 
+def test_float_nan_rows_survive_row_group_pruning(tmp_path):
+    # Parquet float min/max exclude NaN, so a group holding [NaN, 5.0] reports
+    # min = max = 5.0. NaN still satisfies `!=` and, because Daft orders NaN above
+    # every number, `>`. Pruning from those bounds used to drop the NaN row.
+    table = pa.table({"id": [1, 2], "f": [float("nan"), 5.0]})
+    stats_path = tmp_path / "stats.parquet"
+    no_stats_path = tmp_path / "no_stats.parquet"
+    papq.write_table(table, stats_path)
+    papq.write_table(table, no_stats_path, write_statistics=False)
+
+    for path in (stats_path, no_stats_path):
+        df = daft.read_parquet(str(path))
+        assert df.where(col("f") != 5.0).to_pydict()["id"] == [1]
+        assert df.where(col("f") > 6.0).to_pydict()["id"] == [1]
+        # NaN does not satisfy `<`, so the fifth row is the only match and the
+        # comparison is still prunable in the other direction.
+        assert df.where(col("f") < 6.0).to_pydict()["id"] == [2]
+
+
 def test_read_parquet_casts_map_values_to_explicit_schema(tmp_path):
     int32_path = tmp_path / "map_i32.parquet"
     int64_path = tmp_path / "map_i64.parquet"
