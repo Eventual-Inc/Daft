@@ -1623,8 +1623,8 @@ impl ListArray {
                         // Slice child to match offsets if necessary
                         if casted_child.len() / size > self.len() {
                             casted_child = casted_child.slice(
-                                *self.offsets().first().unwrap() as usize,
-                                *self.offsets().last().unwrap() as usize,
+                                self.offsets().first() as usize,
+                                self.offsets().last() as usize,
                             )?;
                         }
                         Ok(FixedSizeListArray::new(
