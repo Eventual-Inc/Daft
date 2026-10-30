@@ -661,6 +661,32 @@ impl SQLPlanner<'_> {
             nulls_first,
         }) = order_by
         {
+            // Window functions do not preserve row order, so when the projection contains
+            // one, compute the projection first (keeping the input columns that the sort
+            // may reference), then sort, then select the final output columns.
+            if projections.iter().any(has_window) {
+                let input_names = self.current_plan_ref().schema().names();
+                let tmp_name = |i: usize| format!("__sql_window_proj_{i}");
+                let mut with_projs = input_names
+                    .iter()
+                    .map(|name| resolved_col(name.as_str()))
+                    .collect::<Vec<_>>();
+                with_projs.extend(
+                    projections
+                        .iter()
+                        .enumerate()
+                        .map(|(i, e)| e.clone().alias(tmp_name(i).as_str())),
+                );
+                let final_projs = projections
+                    .iter()
+                    .enumerate()
+                    .map(|(i, e)| resolved_col(tmp_name(i).as_str()).alias(e.name()))
+                    .collect::<Vec<_>>();
+                self.update_plan(|plan| plan.select(with_projs))?;
+                self.update_plan(|plan| plan.sort(exprs, descending, nulls_first))?;
+                self.update_plan(|plan| plan.select(final_projs))?;
+                return Ok(());
+            }
             self.update_plan(|plan| plan.sort(exprs, descending, nulls_first))?;
         }
 
@@ -2294,6 +2320,11 @@ impl SQLPlanner<'_> {
 
 /// Returns `Some(ast_expr)` for derived GROUP BY expressions (candidates for aliasing),
 /// `None` for plain column references that should keep their original name.
+fn has_window(expr: &ExprRef) -> bool {
+    matches!(expr.as_ref(), Expr::Over(..) | Expr::WindowFunction(_))
+        || expr.children().iter().any(has_window)
+}
+
 fn derived_ast(expr: &ast::Expr) -> Option<&ast::Expr> {
     if matches!(
         expr,
