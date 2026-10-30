@@ -271,6 +271,57 @@ def test_async_rowwise_on_err_ignore():
     assert actual == expected
 
 
+@pytest.mark.parametrize(
+    "return_dtype",
+    [
+        DataType.tensor(DataType.float32()),
+        DataType.sparse_tensor(DataType.float32()),
+        DataType.map(DataType.string(), DataType.int64()),
+    ],
+    ids=["tensor", "sparse_tensor", "map"],
+)
+def test_rowwise_all_null_complex_dtype_returns_null_column(return_dtype):
+    # Regression test for https://github.com/Eventual-Inc/Daft/issues/7584: when every
+    # row in a batch is null, building the result column must not fail with
+    # "Need at least 1 series to perform concat".
+    df = daft.from_pydict({"x": [1, 2]})
+
+    @daft.func(return_dtype=return_dtype)
+    def returns_none(x):
+        return None
+
+    assert df.select(returns_none(col("x")).alias("y")).to_pydict() == {"y": [None, None]}
+
+    @daft.func(return_dtype=return_dtype, on_error="ignore")
+    def always_raises(x):
+        raise ValueError(f"bad input: {x}")
+
+    assert df.select(always_raises(col("x")).alias("y")).to_pydict() == {"y": [None, None]}
+
+
+@pytest.mark.parametrize(
+    "return_dtype",
+    [
+        DataType.tensor(DataType.float32()),
+        DataType.sparse_tensor(DataType.float32()),
+        DataType.map(DataType.string(), DataType.int64()),
+    ],
+    ids=["tensor", "sparse_tensor", "map"],
+)
+def test_rowwise_all_errored_complex_dtype_surfaces_real_error(return_dtype):
+    # The UDF's real exception must surface, not be masked by the concat failure.
+    df = daft.from_pydict({"x": [1, 2]})
+
+    @daft.func(return_dtype=return_dtype, on_error="raise")
+    def always_raises(x):
+        raise ValueError(f"bad input: {x}")
+
+    with pytest.raises(ValueError, match="bad input") as exc_info:
+        df.select(always_raises(col("x")).alias("y")).to_pydict()
+
+    assert "Need at least 1 series" not in str(exc_info.value)
+
+
 def test_rowwise_retry():
     class RetryState:
         def __init__(self):
