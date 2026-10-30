@@ -21,14 +21,14 @@ pub fn canonicalize_negative_zero(array: &ArrayRef) -> ArrayRef {
     macro_rules! canon {
         ($t:ty, $zero:expr) => {{
             let arr = array.as_any().downcast_ref::<PrimitiveArray<$t>>().unwrap();
-            if !arr
-                .values()
-                .iter()
-                .any(|v| *v == $zero && v.is_sign_negative())
-            {
+            // Match the `-0.0` bit pattern directly: a single integer comparison
+            // per element vectorizes better than comparing as floats.
+            let neg_zero = (-$zero).to_bits();
+            if !arr.values().iter().any(|v| v.to_bits() == neg_zero) {
                 return array.clone();
             }
-            let normalized = unary::<$t, _, $t>(arr, |v| if v == $zero { $zero } else { v });
+            let normalized =
+                unary::<$t, _, $t>(arr, |v| if v.to_bits() == neg_zero { $zero } else { v });
             Arc::new(normalized) as ArrayRef
         }};
     }
