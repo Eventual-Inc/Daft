@@ -10,7 +10,7 @@ use parquet::{
         },
         arrow_reader::RowSelection,
     },
-    basic::{ConvertedType, LogicalType, Repetition, Type as PhysicalType},
+    basic::{ConvertedType, Repetition, Type as PhysicalType},
     column::page::{PageIterator, PageReader},
     data_type::{BoolType, DoubleType, FloatType, Int32Type, Int64Type, Int96Type},
     errors::{ParquetError, Result as ParquetResult},
@@ -20,7 +20,7 @@ use parquet::{
 use snafu::ResultExt;
 
 use super::chunk_source::OffsetBytes;
-use crate::ParquetColumnDecodeSnafu;
+use crate::{ParquetColumnDecodeSnafu, metadata::is_two_level_list_group};
 
 struct SinglePageIter {
     inner: Option<Box<dyn PageReader>>,
@@ -160,27 +160,6 @@ fn build_primitive_leaf_reader(
         }
     };
     Ok(reader)
-}
-
-fn parquet_type_is_list(t: &ParquetType) -> bool {
-    if !t.is_group() {
-        return false;
-    }
-    let info = t.get_basic_info();
-    if let Some(lt) = info.logical_type_ref() {
-        return lt == &LogicalType::List;
-    }
-    info.converted_type() == ConvertedType::LIST
-}
-
-fn parquet_type_has_single_repeated_child(t: &ParquetType) -> bool {
-    if !t.is_group() {
-        return false;
-    }
-    let children = t.get_fields();
-    children.len() == 1
-        && children[0].get_basic_info().has_repetition()
-        && children[0].get_basic_info().repetition() == Repetition::REPEATED
 }
 
 /// Root schema has no repetition; treat as REQUIRED.
@@ -579,15 +558,8 @@ impl FieldReaderBuilder<'_> {
             ));
         }
 
-        // 2-level legacy group element detection.
         let items = repeated_field.get_fields();
-        let is_two_level_group = items.len() != 1
-            || (!parquet_type_is_list(repeated_field)
-                && !parquet_type_has_single_repeated_child(repeated_field)
-                && (repeated_field.name() == "array"
-                    || repeated_field.name() == format!("{}_tuple", parquet_type.name())));
-
-        if is_two_level_group {
+        if is_two_level_list_group(parquet_type, repeated_field) {
             // Element is the repeated group (treated as a struct);
             // build_struct will see REPEATED and wrap as List<Struct>.
             return self.build_struct(
