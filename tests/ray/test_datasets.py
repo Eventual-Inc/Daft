@@ -9,9 +9,10 @@ import ray
 
 import daft
 from daft import DataType
+from daft.runners.ray_compat import parse_ray_version
 from tests.conftest import get_tests_daft_runner_name
 
-RAY_VERSION = tuple(int(s) for s in ray.__version__.split(".")[0:3])
+RAY_VERSION = parse_ray_version(ray.__version__)
 
 
 class MyObj:
