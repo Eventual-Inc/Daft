@@ -235,6 +235,11 @@ def test_field_id_mapping_with_field_ids_reads_values(tmp_path: Path):
     assert result == {"a": [1, 2, 3], "b": ["x", "y", "z"]}
 
 
+def test_parquet_source_config_rejects_invalid_name_mapping():
+    with pytest.raises(ValueError, match="Invalid name mapping"):
+        ParquetSourceConfig(field_id_mapping={}, name_mapping="not json")
+
+
 @pytest.fixture
 def deleted_rows_parquet(tmp_path: Path) -> tuple[str, str]:
     """200 rows across 4 row groups, with positional deletes for rows 0..39.

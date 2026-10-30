@@ -921,7 +921,8 @@ impl SQLPlanner<'_> {
             use sqlparser::ast::{
                 JoinConstraint,
                 JoinOperator::{
-                    FullOuter, Inner, Join, Left, LeftAnti, LeftOuter, LeftSemi, Right, RightOuter,
+                    CrossJoin, FullOuter, Inner, Join, Left, LeftAnti, LeftOuter, LeftSemi, Right,
+                    RightOuter,
                 },
             };
 
@@ -933,6 +934,10 @@ impl SQLPlanner<'_> {
             }
 
             let (join_type, constraint) = match &join.join_operator {
+                CrossJoin(JoinConstraint::None) => {
+                    left_planner.update_plan(|plan| plan.cross_join(right_plan, join_options))?;
+                    continue;
+                }
                 Join(constraint) => (JoinType::Inner, constraint),
                 Inner(constraint) => (JoinType::Inner, constraint),
                 Left(constraint) => (JoinType::Left, constraint),
@@ -1668,10 +1673,11 @@ impl SQLPlanner<'_> {
                 let expr = self.plan_expr(expr)?;
                 Ok(expr.try_cast(&dtype))
             }
-            SQLExpr::IsFalse(expr) => Ok(self.plan_expr(expr)?.eq(lit(false))),
-            SQLExpr::IsNotFalse(_) => Ok(self.plan_expr(expr)?.eq(lit(false)).not()),
-            SQLExpr::IsTrue(expr) => Ok(self.plan_expr(expr)?.eq(lit(true))),
-            SQLExpr::IsNotTrue(expr) => Ok(self.plan_expr(expr)?.eq(lit(true)).not()),
+            // Null-safe so these never return NULL, per the SQL standard.
+            SQLExpr::IsFalse(expr) => Ok(self.plan_expr(expr)?.eq_null_safe(lit(false))),
+            SQLExpr::IsNotFalse(expr) => Ok(self.plan_expr(expr)?.eq_null_safe(lit(false)).not()),
+            SQLExpr::IsTrue(expr) => Ok(self.plan_expr(expr)?.eq_null_safe(lit(true))),
+            SQLExpr::IsNotTrue(expr) => Ok(self.plan_expr(expr)?.eq_null_safe(lit(true)).not()),
             SQLExpr::IsNull(expr) => Ok(self.plan_expr(expr)?.is_null()),
             SQLExpr::IsNotNull(expr) => Ok(self.plan_expr(expr)?.is_null().not()),
             SQLExpr::UnaryOp { op, expr } => self.plan_unary_op(op, expr),
@@ -1825,24 +1831,25 @@ impl SQLPlanner<'_> {
                 expr,
                 substring_from,
                 substring_for,
-                special: true, // We only support SUBSTRING(expr, start, length) syntax
                 shorthand,
+                ..
             } => {
-                let (Some(substring_from), Some(substring_for)) = (substring_from, substring_for)
-                else {
-                    unsupported_sql_err!("SUBSTRING")
-                };
+                if substring_from.is_none() && substring_for.is_none() {
+                    invalid_operation_err!("SUBSTRING requires a start position or a length");
+                }
 
                 let expr = self.plan_expr(expr)?;
-                let start = self.plan_expr(substring_from)?;
-                let length = self.plan_expr(substring_for)?;
-
-                let start = if *shorthand { start } else { start.sub(lit(1)) };
+                let start = match substring_from {
+                    Some(from) if *shorthand => self.plan_expr(from)?,
+                    Some(from) => self.plan_expr(from)?.sub(lit(1)),
+                    None => lit(0),
+                };
+                let length = match substring_for {
+                    Some(for_expr) => self.plan_expr(for_expr)?,
+                    None => null_lit(),
+                };
 
                 Ok(daft_functions_utf8::substr(expr, start, length))
-            }
-            SQLExpr::Substring { special: false, .. } => {
-                unsupported_sql_err!("`SUBSTRING(expr [FROM start] [FOR len])` syntax")
             }
             SQLExpr::Trim { .. } => unsupported_sql_err!("TRIM"),
             SQLExpr::Overlay { .. } => unsupported_sql_err!("OVERLAY"),
