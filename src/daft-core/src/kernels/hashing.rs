@@ -43,14 +43,36 @@ impl_to_le_bytes!(u8, 1);
 impl_to_le_bytes!(u16, 2);
 impl_to_le_bytes!(u32, 4);
 impl_to_le_bytes!(u64, 8);
-impl_to_le_bytes!(f32, 4);
-impl_to_le_bytes!(f64, 8);
+
+// Hash `-0.0` identically to `0.0`, matching equality semantics elsewhere.
+impl ToLeBytes for f32 {
+    type Bytes = [u8; 4];
+    #[inline]
+    fn to_le_bytes_arr(&self) -> [u8; 4] {
+        let value = if *self == 0.0 { 0.0 } else { *self };
+        value.to_le_bytes()
+    }
+}
+
+impl ToLeBytes for f64 {
+    type Bytes = [u8; 8];
+    #[inline]
+    fn to_le_bytes_arr(&self) -> [u8; 8] {
+        let value = if *self == 0.0 { 0.0 } else { *self };
+        value.to_le_bytes()
+    }
+}
 
 impl ToLeBytes for half::f16 {
     type Bytes = [u8; 2];
     #[inline]
     fn to_le_bytes_arr(&self) -> [u8; 2] {
-        self.to_le_bytes()
+        let value = if *self == Self::ZERO {
+            Self::ZERO
+        } else {
+            *self
+        };
+        value.to_le_bytes()
     }
 }
 
@@ -815,6 +837,17 @@ mod tests {
         // Hash with seed should differ from hash without seed
         let result_no_seed = hash_primitive(&array, None, HashFunctionKind::XxHash3_64);
         assert_ne!(result.values(), result_no_seed.values());
+    }
+
+    #[test]
+    fn test_hash_floats_canonicalize_negative_zero() {
+        let f64_array = PrimitiveArray::<Float64Type>::from(vec![-0.0f64, 0.0]);
+        let result = hash_primitive(&f64_array, None, HashFunctionKind::XxHash3_64);
+        assert_eq!(result.value(0), result.value(1));
+
+        let f32_array = PrimitiveArray::<Float32Type>::from(vec![-0.0f32, 0.0]);
+        let result = hash_primitive(&f32_array, None, HashFunctionKind::XxHash3_64);
+        assert_eq!(result.value(0), result.value(1));
     }
 
     #[test]
