@@ -582,6 +582,31 @@ def strip(expr: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("strip", expr)
 
 
+def btrim(expr: Expression, trim_str: str | Expression) -> Expression:
+    """Strip a set of characters from both sides of a UTF-8 string.
+
+    `trim_str` is treated as a set of characters. Characters are removed from both ends
+    of the string until a character not in the set is found. If `trim_str` is empty, the
+    string is returned unchanged.
+
+    Args:
+        expr: The expression to trim.
+        trim_str: The characters to remove, as a literal string or as a column to pick values from.
+
+    Returns:
+        Expression: a String expression with the given characters trimmed from both sides
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import btrim
+        >>> df = daft.from_pydict({"x": ["xyxtrimyyx", "  spaced  ", "abc"]})
+        >>> df.select(btrim(df["x"], "xy")).to_pydict()
+        {'x': ['trim', '  spaced  ', 'abc']}
+
+    """
+    return Expression._call_builtin_scalar_fn("btrim", expr, trim_str)
+
+
 def reverse(expr: Expression) -> Expression:
     """Reverse a UTF-8 string.
 
