@@ -402,7 +402,7 @@ def test_series_utf8_strip(data, expected) -> None:
     ],
 )
 def test_series_utf8_btrim(data, trim_str, expected) -> None:
-    s = Series.from_arrow(pa.array(data))
+    s = Series.from_arrow(pa.array(data, type=pa.string()))
     result = s.str.btrim(trim_str)
     assert result.to_pylist() == expected
 
