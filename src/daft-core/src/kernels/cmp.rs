@@ -14,10 +14,20 @@ use num_traits::Float;
 /// `0.0` distinct, while SQL, Python, and the rest of Daft treat them as
 /// equal. NaN is left untouched so that Daft keeps ordering it above every
 /// number.
+///
+/// The array is only rebuilt when it actually contains a negative zero;
+/// otherwise the input is returned unchanged.
 pub fn canonicalize_negative_zero(array: &ArrayRef) -> ArrayRef {
     macro_rules! canon {
         ($t:ty, $zero:expr) => {{
             let arr = array.as_any().downcast_ref::<PrimitiveArray<$t>>().unwrap();
+            if !arr
+                .values()
+                .iter()
+                .any(|v| *v == $zero && v.is_sign_negative())
+            {
+                return array.clone();
+            }
             let normalized = unary::<$t, _, $t>(arr, |v| if v == $zero { $zero } else { v });
             Arc::new(normalized) as ArrayRef
         }};
@@ -254,5 +264,42 @@ pub fn is_nearer(
         DataType::Float32 => extract_and_cmp_float!(Float32Type),
         DataType::Float64 => extract_and_cmp_float!(Float64Type),
         t => unreachable!("nearest join: unsupported on-key type {t:?}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use arrow::{
+        array::{ArrayRef, PrimitiveArray},
+        datatypes::Float64Type,
+    };
+
+    use super::canonicalize_negative_zero;
+
+    #[test]
+    fn canonicalize_negative_zero_does_not_copy_arrays_without_negative_zero() {
+        let array: ArrayRef = Arc::new(PrimitiveArray::<Float64Type>::from(vec![
+            0.0,
+            1.0,
+            f64::NAN,
+            f64::NEG_INFINITY,
+        ]));
+        assert!(Arc::ptr_eq(&array, &canonicalize_negative_zero(&array)));
+    }
+
+    #[test]
+    fn canonicalize_negative_zero_rebuilds_arrays_with_negative_zero() {
+        let array: ArrayRef = Arc::new(PrimitiveArray::<Float64Type>::from(vec![-0.0, 1.0]));
+        let canonicalized = canonicalize_negative_zero(&array);
+
+        assert!(!Arc::ptr_eq(&array, &canonicalized));
+        let values = canonicalized
+            .as_any()
+            .downcast_ref::<PrimitiveArray<Float64Type>>()
+            .unwrap();
+        assert!(values.value(0).is_sign_positive());
+        assert_eq!(values.value(1), 1.0);
     }
 }
