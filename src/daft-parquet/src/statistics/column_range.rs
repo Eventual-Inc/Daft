@@ -127,7 +127,10 @@ pub fn parquet_statistics_to_column_range_statistics(
                 return Ok(ColumnRangeStatistics::Missing);
             }
             let lower = Float32Array::from_slice("lower", &[lower]).into_series();
-            let upper = Float32Array::from_slice("upper", &[upper]).into_series();
+            // Parquet min/max exclude NaN, but Daft orders NaN above every number and
+            // NaN never equals any value. Record the upper bound as NaN so that any
+            // comparison against these bounds stays conservative.
+            let upper = Float32Array::from_slice("upper", &[f32::NAN]).into_series();
             ColumnRangeStatistics::new(Some(lower), Some(upper))?
         }
         ArrowStatistics::Double(s) => {
@@ -138,7 +141,8 @@ pub fn parquet_statistics_to_column_range_statistics(
                 return Ok(ColumnRangeStatistics::Missing);
             }
             let lower = Float64Array::from_slice("lower", &[lower]).into_series();
-            let upper = Float64Array::from_slice("upper", &[upper]).into_series();
+            // See Float above: an upper bound of NaN keeps comparisons conservative.
+            let upper = Float64Array::from_slice("upper", &[f64::NAN]).into_series();
             ColumnRangeStatistics::new(Some(lower), Some(upper))?
         }
         ArrowStatistics::ByteArray(s) => {

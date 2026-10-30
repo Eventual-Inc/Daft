@@ -232,9 +232,14 @@ def test_float_nan_rows_survive_row_group_pruning(tmp_path):
         df = daft.read_parquet(str(path))
         assert df.where(col("f") != 5.0).to_pydict()["id"] == [1]
         assert df.where(col("f") > 6.0).to_pydict()["id"] == [1]
-        # NaN does not satisfy `<`, so the fifth row is the only match and the
+        # NaN does not satisfy `<`, so the row holding 5.0 is the only match and the
         # comparison is still prunable in the other direction.
         assert df.where(col("f") < 6.0).to_pydict()["id"] == [2]
+        # Reversed operands (literal on the left) and negated comparisons keep the
+        # NaN row too.
+        reversed_result = daft.sql("SELECT id FROM df WHERE 6.0 < f", df=df)
+        assert sorted(reversed_result.to_pydict()["id"]) == [1]
+        assert df.where(~(col("f") == 5.0)).to_pydict()["id"] == [1]
 
 
 def test_read_parquet_casts_map_values_to_explicit_schema(tmp_path):
