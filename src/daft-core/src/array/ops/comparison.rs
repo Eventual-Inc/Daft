@@ -1028,8 +1028,8 @@ mod tests {
             ops::{DaftCompare, DaftLogical, full::FullNull},
         },
         datatypes::{
-            BinaryArray, BooleanArray, DataType, Field, FixedSizeBinaryArray, Float32Array,
-            Float64Array, Int64Array, NullArray, Utf8Array,
+            BinaryArray, BooleanArray, DataType, Field, FixedSizeBinaryArray, Float64Array,
+            Int64Array, NullArray, Utf8Array,
         },
         series::IntoSeries,
     };

@@ -67,8 +67,8 @@ impl ToLeBytes for half::f16 {
     type Bytes = [u8; 2];
     #[inline]
     fn to_le_bytes_arr(&self) -> [u8; 2] {
-        let value = if *self == half::f16::ZERO {
-            half::f16::ZERO
+        let value = if *self == Self::ZERO {
+            Self::ZERO
         } else {
             *self
         };
