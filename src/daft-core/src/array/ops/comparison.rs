@@ -658,9 +658,9 @@ where
     ) -> DaftResult<BooleanArray> {
         let rhs: <<T::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native =
             NumCast::from(rhs).expect("could not cast to underlying DataArray type");
-        let rhs: ArrayRef = Arc::new(PrimitiveArray::<
-            <T::Native as NumericNative>::ARROWTYPE,
-        >::from_iter_values([rhs]));
+        let rhs: ArrayRef = Arc::new(
+            PrimitiveArray::<<T::Native as NumericNative>::ARROWTYPE>::from_iter_values([rhs]),
+        );
         let rhs = crate::kernels::cmp::canonicalize_negative_zero(&rhs);
         let lhs = crate::kernels::cmp::canonicalize_negative_zero(&self.to_arrow());
 

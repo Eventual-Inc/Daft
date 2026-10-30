@@ -1,5 +1,4 @@
-use std::cmp::Ordering;
-use std::sync::Arc;
+use std::{cmp::Ordering, sync::Arc};
 
 use arrow::{
     array::{Array, ArrayRef, ArrowPrimitiveType, PrimitiveArray, make_comparator},
@@ -18,10 +17,7 @@ use num_traits::Float;
 pub fn canonicalize_negative_zero(array: &ArrayRef) -> ArrayRef {
     macro_rules! canon {
         ($t:ty, $zero:expr) => {{
-            let arr = array
-                .as_any()
-                .downcast_ref::<PrimitiveArray<$t>>()
-                .unwrap();
+            let arr = array.as_any().downcast_ref::<PrimitiveArray<$t>>().unwrap();
             let normalized = unary::<$t, _, $t>(arr, |v| if v == $zero { $zero } else { v });
             Arc::new(normalized) as ArrayRef
         }};
