@@ -98,9 +98,9 @@ pub enum Error {
     ReaderInternal { path: String, message: String },
 
     #[snafu(display(
-        "{path} carries no parquet field IDs, but a field ID mapping was supplied, so every \
-         mapped column would read as null. Tables registered with `add_files` rely on the \
-         `schema.name-mapping.default` property, which Daft does not apply yet"
+        "{path} carries no parquet field IDs and no name mapping was supplied, so every mapped \
+         column would read as null. Iceberg tables registered with `add_files` need the \
+         `schema.name-mapping.default` table property"
     ))]
     MissingParquetFieldIds { path: String },
 

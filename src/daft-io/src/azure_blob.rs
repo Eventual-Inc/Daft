@@ -3,7 +3,7 @@ use std::{any::Any, sync::Arc};
 use async_trait::async_trait;
 use azure_core::{
     credentials::{Secret, TokenCredential},
-    http::{ClientOptions, StatusCode, Url, policies::Policy},
+    http::{ClientOptions, Context, StatusCode, Url, pager::PagerOptions, policies::Policy},
 };
 use azure_identity::{
     ClientSecretCredential, DeveloperToolsCredential, ManagedIdentityCredential,
@@ -14,8 +14,7 @@ use azure_storage_blob::{
     BlobServiceClient, BlobServiceClientOptions,
     models::{
         BlobClientDownloadOptions, BlobClientGetPropertiesResultHeaders,
-        BlobContainerClientListBlobsHierarchicalOptions, BlobContainerClientListBlobsOptions,
-        BlobItem, ContainerItem, HttpRange,
+        BlobContainerClientListBlobsOptions, BlobItem, ContainerItem, HttpRange,
     },
 };
 use common_io_config::AzureConfig;
@@ -25,7 +24,10 @@ use snafu::{IntoError, ResultExt, Snafu};
 
 use crate::{
     FileFormat, GetResult, InvalidRangeRequestSnafu,
-    azure_auth::{SasTokenPolicy, SharedKeyAuthorizationPolicy, StaticBearerCredential},
+    azure_auth::{
+        ListBlobsDelimiter, ListBlobsDelimiterPolicy, SasTokenPolicy, SharedKeyAuthorizationPolicy,
+        StaticBearerCredential,
+    },
     object_io::{FileMetadata, FileType, LSResult, ObjectSource},
     range::GetRange,
     stats::IOStatsRef,
@@ -286,12 +288,12 @@ struct ParsedBlobList {
     prefixes: Vec<String>,
 }
 
-/// Parse a List Blobs (hierarchical / delimiter) XML body.
+/// Parse a delimiter List Blobs XML body.
 ///
-/// `azure_storage_blob` 1.1.0-beta.1 deserializes `blob_prefixes` as
-/// `Option<Vec<BlobPrefix>>`, which treats a second `<BlobPrefix>` sibling as a
-/// duplicate field. HNS accounts also attach `<Properties>` to prefixes. Parse
-/// the XML ourselves so posix listing keeps working.
+/// `ListBlobsResponse` does not include `BlobPrefix`, and a second
+/// `<BlobPrefix>` sibling is treated as a duplicate field. HNS accounts also
+/// attach `<Properties>` to prefixes. Read the XML directly so posix listing
+/// still returns virtual directories.
 fn parse_hierarchical_listing_xml(xml: &[u8]) -> Result<ParsedBlobList, String> {
     let text = std::str::from_utf8(xml).map_err(|e| format!("invalid utf-8: {e}"))?;
     let text = text.trim_start_matches('\u{feff}');
@@ -476,6 +478,8 @@ impl AzureBlobSource {
         let endpoint = ensure_trailing_slash(endpoint);
 
         let client_options = ClientOptions {
+            // Per-call so `delimiter` is on the URL before per-try SharedKey signing.
+            per_call_policies: vec![ListBlobsDelimiterPolicy::new() as _],
             per_try_policies,
             ..Default::default()
         };
@@ -725,23 +729,28 @@ impl AzureBlobSource {
             };
             let request_path = format!("{}://{}{}", protocol, container_name, prefix);
             if posix {
-                // Setting a delimiter triggers "directory-mode" which is a posix-like ls for the current directory.
-                let options = BlobContainerClientListBlobsHierarchicalOptions {
+                // `delimiter` is directory-mode: one level of blobs and virtual directories.
+                // The per-call policy adds the query parameter when this context value is set.
+                let options = BlobContainerClientListBlobsOptions {
                     prefix: request_prefix.clone(),
+                    method_options: PagerOptions {
+                        context: Context::new()
+                            .with_value(ListBlobsDelimiter(AZURE_DELIMITER.to_string())),
+                        ..Default::default()
+                    },
                     ..Default::default()
                 };
-                let mut pager =
-                    match container_client.list_blobs_hierarchical(AZURE_DELIMITER, Some(options)) {
-                        Ok(pager) => pager,
-                        Err(error) => {
-                            yield Err(Error::RequestFailedForPath {
-                                path: request_path,
-                                source: error,
-                            }
-                            .into());
-                            return;
+                let mut pager = match container_client.list_blobs(Some(options)) {
+                    Ok(pager) => pager.into_pages(),
+                    Err(error) => {
+                        yield Err(Error::RequestFailedForPath {
+                            path: request_path,
+                            source: error,
                         }
-                    };
+                        .into());
+                        return;
+                    }
+                };
                 while let Some(page) = pager.next().await {
                     if let Some(is) = io_stats.clone() {
                         is.mark_list_requests(1);
@@ -1100,6 +1109,20 @@ mod tests {
         let listing = parse_hierarchical_listing_xml(xml.as_bytes()).unwrap();
         assert_eq!(listing.prefixes, vec!["iceberg/", "test_ls/"]);
         assert_eq!(listing.blobs, vec![("mvp.parquet".to_string(), Some(1234))]);
+
+        // `list_blobs` pages by deserializing only `NextMarker`. Delimiter responses
+        // still have to parse, including an empty marker on the last page.
+        #[derive(serde::Deserialize)]
+        struct ListPage {
+            #[serde(rename = "NextMarker")]
+            next_marker: Option<String>,
+        }
+        let page: ListPage = azure_core::xml::from_xml(xml.as_bytes()).unwrap();
+        assert_eq!(page.next_marker.as_deref(), Some(""));
+
+        let continued = xml.replace("<NextMarker />", "<NextMarker>page-2</NextMarker>");
+        let page: ListPage = azure_core::xml::from_xml(continued.as_bytes()).unwrap();
+        assert_eq!(page.next_marker.as_deref(), Some("page-2"));
     }
 
     #[test]

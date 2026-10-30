@@ -29,6 +29,7 @@ from daft.io.paimon._paimon import read_paimon
 from daft.io._json import read_json
 from daft.io._kafka import read_kafka
 from daft.io._parquet import read_parquet
+from daft.io._orc import read_orc
 from daft.io._sql import read_sql
 from daft.io._warc import read_warc
 from daft.io.huggingface import read_huggingface
@@ -85,6 +86,7 @@ __all__ = [
     "read_kafka",
     "read_lance",
     "read_mcap",
+    "read_orc",
     "read_paimon",
     "read_parquet",
     "read_sql",
