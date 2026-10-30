@@ -419,7 +419,10 @@ mod tests {
     use common_error::DaftResult;
     use daft_core::{
         array::ops::{VecIndices, full::FullNull},
-        datatypes::{DataType, Field, FixedSizeBinaryArray, Float32Array, Float64Array, Int64Array, NullArray},
+        datatypes::{
+            DataType, Field, FixedSizeBinaryArray, Float32Array, Float64Array, Int64Array,
+            NullArray,
+        },
     };
     use smallvec::smallvec;
 
