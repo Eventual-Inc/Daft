@@ -1,4 +1,5 @@
 mod ascii;
+mod btrim;
 mod capitalize;
 mod case;
 mod chr;
@@ -45,6 +46,7 @@ mod upper;
 pub(crate) mod utils;
 
 pub use ascii::*;
+pub use btrim::*;
 pub use capitalize::*;
 pub use case::*;
 pub use chr::*;
@@ -92,6 +94,7 @@ pub struct Utf8Functions;
 
 impl daft_dsl::functions::FunctionModule for Utf8Functions {
     fn register(parent: &mut daft_dsl::functions::FunctionRegistry) {
+        parent.add_fn(BTrim);
         parent.add_fn(CamelCase);
         parent.add_fn(Capitalize);
         parent.add_fn(Contains);

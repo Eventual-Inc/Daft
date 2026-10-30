@@ -386,6 +386,28 @@ def test_series_utf8_strip(data, expected) -> None:
 
 
 @pytest.mark.parametrize(
+    ["data", "trim_str", "expected"],
+    [
+        (["xyxtrimyyx", "  spaced  ", "abc"], "xy", ["trim", "  spaced  ", "abc"]),
+        # Empty trim set leaves the string unchanged
+        (["  spaced  "], "", ["  spaced  "]),
+        # Every character trimmed
+        (["xxxx", ""], "x", ["", ""]),
+        # Unicode-aware, not byte-based
+        (["😃😄hello😄😃", "こんにちは"], "😃😄", ["hello", "こんにちは"]),
+        # With at least one null
+        (["xyxtrimyyx", None, "abc"], "xy", ["trim", None, "abc"]),
+        # With all nulls
+        ([None] * 4, "xy", [None] * 4),
+    ],
+)
+def test_series_utf8_btrim(data, trim_str, expected) -> None:
+    s = Series.from_arrow(pa.array(data))
+    result = s.str.btrim(trim_str)
+    assert result.to_pylist() == expected
+
+
+@pytest.mark.parametrize(
     ["data", "expected"],
     [
         (["abc", "def", "ghi"], ["cba", "fed", "ihg"]),
