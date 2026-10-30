@@ -40,6 +40,11 @@ impl DaftCompare<&Self> for ColumnRangeStatistics {
         }
     }
     fn not_equal(&self, rhs: &Self) -> Self::Output {
+        // Parquet float bounds exclude NaN, but a NaN still satisfies `!=`. Since the
+        // statistics carry no NaN count, a float row group can never be ruled out.
+        if self.has_float_bounds() || rhs.has_float_bounds() {
+            return Ok(Self::Missing);
+        }
         // invert of equal
         self.equal(rhs)?.not()
     }
@@ -51,6 +56,12 @@ impl DaftCompare<&Self> for ColumnRangeStatistics {
     fn gt(&self, rhs: &Self) -> Self::Output {
         // lower_bound: True greater (self.lower > rhs.upper)
         // upper_bound: some value that can be greater (self.upper > rhs.lower)
+
+        // Daft orders NaN above every number while Parquet bounds exclude NaN, so a
+        // float row group that may hold NaN cannot be pruned for `>`.
+        if self.has_float_bounds() || rhs.has_float_bounds() {
+            return Ok(Self::Missing);
+        }
 
         match (self, rhs) {
             (Self::Missing, _) | (_, Self::Missing) => Ok(Self::Missing),
@@ -69,6 +80,12 @@ impl DaftCompare<&Self> for ColumnRangeStatistics {
     }
 
     fn gte(&self, rhs: &Self) -> Self::Output {
+        // NaN is not below any number in Daft's ordering, so the same caveat as `gt`
+        // applies to `>=`.
+        if self.has_float_bounds() || rhs.has_float_bounds() {
+            return Ok(Self::Missing);
+        }
+
         match (self, rhs) {
             (Self::Missing, _) | (_, Self::Missing) => Ok(Self::Missing),
             (Self::Loaded(s_lower, s_upper), Self::Loaded(r_lower, r_upper)) => {
@@ -124,6 +141,19 @@ impl DaftCompare<&Self> for ColumnRangeStatistics {
 }
 
 impl ColumnRangeStatistics {
+    fn has_float_bounds(&self) -> bool {
+        matches!(
+            self,
+            Self::Loaded(lower, _)
+                if matches!(
+                    lower.data_type(),
+                    DataType::Float16 | DataType::Float32 | DataType::Float64
+                )
+        )
+    }
+}
+
+impl ColumnRangeStatistics {
     pub fn union(&self, rhs: &Self) -> crate::Result<Self> {
         match (self, rhs) {
             (Self::Missing, _) | (_, Self::Missing) => Ok(Self::Missing),
@@ -147,5 +177,48 @@ impl ColumnRangeStatistics {
                 ))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::TruthValue;
+
+    fn range(value: f64) -> ColumnRangeStatistics {
+        let series = Float64Array::from_slice("f", &[value]).into_series();
+        ColumnRangeStatistics::new(Some(series.clone()), Some(series)).unwrap()
+    }
+
+    #[test]
+    fn float_bounds_do_not_prune_inequality_or_greater_than() {
+        // A group holding [NaN, 5.0] reports min = max = 5.0, yet NaN != 5.0 and
+        // NaN > 6.0 both hold.
+        let bounds = range(5.0);
+        assert_eq!(
+            bounds.not_equal(&range(5.0)).unwrap().to_truth_value(),
+            TruthValue::Maybe
+        );
+        assert_eq!(
+            bounds.gt(&range(6.0)).unwrap().to_truth_value(),
+            TruthValue::Maybe
+        );
+        assert_eq!(
+            bounds.gte(&range(6.0)).unwrap().to_truth_value(),
+            TruthValue::Maybe
+        );
+    }
+
+    #[test]
+    fn float_bounds_still_prune_equality_and_less_than() {
+        let bounds = range(5.0);
+        assert_eq!(
+            bounds.equal(&range(6.0)).unwrap().to_truth_value(),
+            TruthValue::False
+        );
+        assert_eq!(
+            bounds.lt(&range(4.0)).unwrap().to_truth_value(),
+            TruthValue::False
+        );
     }
 }
