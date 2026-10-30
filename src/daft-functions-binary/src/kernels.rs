@@ -36,7 +36,11 @@ impl BinaryArrayExtension for BinaryArray {
         //
         let mut values = Vec::<u8>::new();
         let mut offsets = OffsetBufferBuilder::new(input.len());
-        for span in input.offsets().windows(2) {
+        for (i, span) in input.offsets().windows(2).enumerate() {
+            if nulls.as_ref().is_some_and(|n| n.is_null(i)) {
+                offsets.push_length(0);
+                continue;
+            }
             let s = span[0] as usize;
             let e = span[1] as usize;
             let bytes = transform(&buffer[s..e])?;
@@ -80,6 +84,10 @@ impl BinaryArrayExtension for BinaryArray {
         let mut values = Vec::<u8>::new();
         let mut offsets = OffsetBufferBuilder::new(input.len());
         for (i, span) in input.offsets().windows(2).enumerate() {
+            if !nulls.get_bit(i) {
+                offsets.push_length(0);
+                continue;
+            }
             let s = span[0] as usize;
             let e = span[1] as usize;
             match transform(&buffer[s..e]) {
@@ -113,7 +121,11 @@ impl BinaryArrayExtension for BinaryArray {
         let mut values = Vec::<u8>::new();
         let mut offsets = OffsetBufferBuilder::new(input.len() + 1);
 
-        for span in input.offsets().windows(2) {
+        for (i, span) in input.offsets().windows(2).enumerate() {
+            if nulls.as_ref().is_some_and(|n| n.is_null(i)) {
+                offsets.push_length(0);
+                continue;
+            }
             let s = span[0] as usize;
             let e = span[1] as usize;
             let bytes = decoder(&buffer[s..e])?;
@@ -156,6 +168,10 @@ impl BinaryArrayExtension for BinaryArray {
 
         let mut offsets = OffsetBufferBuilder::new(input.len());
         for (i, span) in input.offsets().windows(2).enumerate() {
+            if !nulls.get_bit(i) {
+                offsets.push_length(0);
+                continue;
+            }
             let s = span[0] as usize;
             let e = span[1] as usize;
             match decoder(&buffer[s..e]) {
