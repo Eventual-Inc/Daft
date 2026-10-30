@@ -865,3 +865,19 @@ def test_order_by_sets_row_order_with_window_projection():
 
     limited = daft.sql("SELECT o, sum(v) OVER (PARTITION BY g) AS s FROM df ORDER BY o LIMIT 2", df=df)
     assert limited.to_pydict() == {"o": [1, 2], "s": [60, 90]}
+
+
+def test_order_by_with_window_projection_and_conflicting_tmp_column():
+    """Internal temporary column names must not collide with user columns."""
+    df = daft.from_pydict(
+        {
+            "__sql_window_proj_0": [1, 2, 3],
+            "o": [3, 1, 2],
+        }
+    )
+
+    result = daft.sql(
+        "SELECT row_number() OVER (ORDER BY o) AS rn FROM df ORDER BY o",
+        df=df,
+    )
+    assert result.to_pydict() == {"rn": [1, 2, 3]}

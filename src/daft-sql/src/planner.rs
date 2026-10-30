@@ -666,7 +666,19 @@ impl SQLPlanner<'_> {
             // may reference), then sort, then select the final output columns.
             if projections.iter().any(has_window) {
                 let input_names = self.current_plan_ref().schema().names();
-                let tmp_name = |i: usize| format!("__sql_window_proj_{i}");
+                // Pick temporary names that cannot collide with input columns, otherwise
+                // `with_projs` would contain two columns with the same name.
+                let mut used_names: HashSet<String> =
+                    input_names.iter().map(|name| name.to_string()).collect();
+                let tmp_names = (0..projections.len())
+                    .map(|i| {
+                        let mut name = format!("__sql_window_proj_{i}");
+                        while !used_names.insert(name.clone()) {
+                            name.push('_');
+                        }
+                        name
+                    })
+                    .collect::<Vec<_>>();
                 let mut with_projs = input_names
                     .iter()
                     .map(|name| resolved_col(name.as_str()))
@@ -674,13 +686,13 @@ impl SQLPlanner<'_> {
                 with_projs.extend(
                     projections
                         .iter()
-                        .enumerate()
-                        .map(|(i, e)| e.clone().alias(tmp_name(i).as_str())),
+                        .zip(tmp_names.iter())
+                        .map(|(e, name)| e.clone().alias(name.as_str())),
                 );
                 let final_projs = projections
                     .iter()
-                    .enumerate()
-                    .map(|(i, e)| resolved_col(tmp_name(i).as_str()).alias(e.name()))
+                    .zip(tmp_names.iter())
+                    .map(|(e, name)| resolved_col(name.as_str()).alias(e.name()))
                     .collect::<Vec<_>>();
                 self.update_plan(|plan| plan.select(with_projs))?;
                 self.update_plan(|plan| plan.sort(exprs, descending, nulls_first))?;
