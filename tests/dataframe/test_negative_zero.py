@@ -11,6 +11,10 @@ def test_negative_zero_equality_across_operators():
     assert df.where(daft.col("f") < 0.0).to_pydict()["f"] == []
     assert df.where(daft.col("f") >= 0.0).to_pydict()["f"] == [-0.0, 0.0, 1.0]
 
+    # Non-zero literals compare both zeros identically.
+    assert df.where(daft.col("f") < 1.0).to_pydict()["f"] == [-0.0, 0.0]
+    assert df.where(daft.col("f") == 1.0).to_pydict()["f"] == [1.0]
+
     assert daft.sql("SELECT f FROM df WHERE f = 0.0", df=df).to_pydict()["f"] == [-0.0, 0.0]
 
     assert df.distinct().count_rows() == 2
