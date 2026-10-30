@@ -8,10 +8,10 @@ use super::{
     logical_plan_tracker::LogicalPlanTracker,
     rules::{
         DetectMonotonicId, DropIntoBatches, DropRepartition, EliminateCrossJoin, EliminateOffsets,
-        EliminateSubqueryAliasRule, EnrichWithStats, ExtractWindowFunction, FilterNullJoinKey,
-        LiftProjectFromAgg, MaterializeScans, OptimizerRule, PushDownAggregation,
-        PushDownAntiSemiJoin, PushDownFilter, PushDownJoinPredicate, PushDownLimit,
-        PushDownProjection, PushDownShard, ReorderJoins, RewriteCheckpointSource,
+        EliminateRedundantSort, EliminateSubqueryAliasRule, EnrichWithStats, ExtractWindowFunction,
+        FilterNullJoinKey, LiftProjectFromAgg, MaterializeScans, OptimizerRule,
+        PushDownAggregation, PushDownAntiSemiJoin, PushDownFilter, PushDownJoinPredicate,
+        PushDownLimit, PushDownProjection, PushDownShard, ReorderJoins, RewriteCheckpointSource,
         RewriteCountDistinct, RewriteOffset, ShardScans, SimplifyExpressionsRule,
         SimplifyNullFilteredJoin, SplitExplodeFromProject, SplitGranularProjection, SplitUDFs,
         SplitUDFsFromFilters, UnnestPredicateSubquery, UnnestScalarSubquery,
@@ -140,6 +140,15 @@ impl OptimizerBuilder {
             RuleBatch::new(
                 vec![Box::new(SimplifyExpressionsRule::new())],
                 RuleExecutionStrategy::FixedPoint(None),
+            ),
+            // --- Eliminate redundant sorts ---
+            // A Sort that is followed by another Sort (possibly through row-wise,
+            // order-insensitive operators like Project/Filter) is redundant work, since the
+            // later sort re-establishes the ordering from scratch. Run this before the pushdown
+            // rules so downstream rules operate on the simplified plan.
+            RuleBatch::new(
+                vec![Box::new(EliminateRedundantSort::new())],
+                RuleExecutionStrategy::Once,
             ),
             // --- Filter out null join keys ---
             // This rule should be run once, before any filter pushdown rules.
