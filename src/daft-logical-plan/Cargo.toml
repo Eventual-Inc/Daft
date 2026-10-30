@@ -8,7 +8,6 @@ common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper", defa
 common-io-config = {path = "../common/io-config", default-features = false}
 common-partitioning = {path = "../common/partitioning", default-features = false}
 common-py-serde = {path = "../common/py-serde", default-features = false}
-common-resource-request = {path = "../common/resource-request", default-features = false}
 common-treenode = {path = "../common/treenode", default-features = false}
 daft-algebra = {path = "../daft-algebra", default-features = false}
 daft-checkpoint = {path = "../daft-checkpoint", default-features = false, features = ["s3"]}
@@ -50,7 +49,6 @@ python = [
   "common-io-config/python",
   "common-daft-config/python",
   "common-py-serde/python",
-  "common-resource-request/python",
   "common-partitioning/python",
   "daft-core/python",
   "daft-dsl/python",
