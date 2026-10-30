@@ -10,10 +10,11 @@ import pytest
 import ray._private.ray_constants as ray_constants
 
 from daft import DataType, col, get_or_infer_runner_type
+from daft.runners.ray_compat import parse_ray_version
 
 ray = pytest.importorskip("ray")
 RAY_VERSION = getattr(ray, "__version__", "0.0.0")
-RAY_VERSION_TUPLE = tuple(map(int, RAY_VERSION.split(".")[:3]))
+RAY_VERSION_TUPLE = parse_ray_version(RAY_VERSION)
 
 import daft
 

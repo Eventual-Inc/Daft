@@ -3,10 +3,17 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from packaging.version import Version
+
 logger = logging.getLogger(__name__)
 
 
 # Ray is required for this module but imported locally in functions that use it
+
+
+def parse_ray_version(version: str) -> tuple[int, ...]:
+    """Parse the numeric release components from a Ray version string."""
+    return Version(version).release
 
 
 def _supports_label_selector_option() -> bool:
