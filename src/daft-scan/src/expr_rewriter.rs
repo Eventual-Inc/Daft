@@ -158,7 +158,7 @@ pub fn rewrite_predicate_for_partitioning(
         map
     };
 
-    let get_pfield_for_col = |expr: &ExprRef| -> Option<&&PartitionField> {
+    let lookup_pfield = |expr: &ExprRef| -> Option<&&PartitionField> {
         if let Expr::Column(Column::Resolved(ResolvedColumn::Basic(col_name))) = expr.as_ref() {
             source_to_pfield.get(col_name.as_ref())
         } else {
@@ -166,7 +166,15 @@ pub fn rewrite_predicate_for_partitioning(
         }
     };
 
-    let with_part_cols = predicate.transform(&|expr: ExprRef| {
+    // A lossy transform (bucket, truncate, year/month/day/hour) turns a comparison into a
+    // superset of the matching partitions. Negating a superset gives a subset, so under a `NOT`
+    // only exact (identity) partition columns may be rewritten.
+    let rewrite_leaf = |expr: ExprRef, exact_only: bool| -> DaftResult<Transformed<ExprRef>> {
+        let get_pfield_for_col = |expr: &ExprRef| -> Option<&&PartitionField> {
+            lookup_pfield(expr).filter(|pfield| {
+                !exact_only || matches!(pfield.transform, Some(PartitionTransform::Identity) | None)
+            })
+        };
         use Operator::{Eq, Gt, GtEq, Lt, LtEq, NotEq};
         match expr.as_ref() {
             // Binary Op for Eq
@@ -307,6 +315,19 @@ pub fn rewrite_predicate_for_partitioning(
             ),
             _ => Ok(Transformed::no(expr)),
         }
+    };
+
+    let with_part_cols = predicate.transform_down(|expr: ExprRef| {
+        if let Expr::Not(inner) = expr.as_ref() {
+            let inner = inner.clone().transform(|e| rewrite_leaf(e, true))?.data;
+            Ok(Transformed::new(
+                Expr::Not(inner).arced(),
+                true,
+                TreeNodeRecursion::Jump,
+            ))
+        } else {
+            rewrite_leaf(expr, false)
+        }
     })?;
 
     let with_part_cols = with_part_cols.data;
@@ -336,4 +357,57 @@ pub fn rewrite_predicate_for_partitioning(
         data_preds,
         needs_filter_op_preds,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use daft_dsl::{lit, resolved_col};
+    use daft_schema::{dtype::DataType, field::Field};
+
+    use super::*;
+
+    fn pfield(transform: PartitionTransform) -> PartitionField {
+        let name = if matches!(transform, PartitionTransform::Identity) {
+            "i"
+        } else {
+            "i_part"
+        };
+        PartitionField::new(
+            Field::new(name, DataType::Int64),
+            Some(Field::new("i", DataType::Int64)),
+            Some(transform),
+        )
+        .unwrap()
+    }
+
+    fn pushed(predicate: &ExprRef, transform: PartitionTransform) -> usize {
+        rewrite_predicate_for_partitioning(predicate, &[pfield(transform)])
+            .unwrap()
+            .partition_only_filter
+            .len()
+    }
+
+    #[test]
+    fn lossy_transform_comparison_is_pushed_down() {
+        let lt = resolved_col("i").lt(lit(10_i64));
+        assert_eq!(pushed(&lt, PartitionTransform::IcebergTruncate(5)), 1);
+        let eq = resolved_col("i").eq(lit(3_i64));
+        assert_eq!(pushed(&eq, PartitionTransform::IcebergBucket(4)), 1);
+    }
+
+    /// Negating the superset a lossy transform produces gives a subset of the
+    /// matching partitions, so a comparison under NOT must stay a data filter.
+    #[test]
+    fn lossy_transform_comparison_under_not_is_not_pushed_down() {
+        let lt = resolved_col("i").lt(lit(10_i64)).not();
+        assert_eq!(pushed(&lt, PartitionTransform::IcebergTruncate(5)), 0);
+        let eq = resolved_col("i").eq(lit(3_i64)).not();
+        assert_eq!(pushed(&eq, PartitionTransform::IcebergBucket(4)), 0);
+    }
+
+    #[test]
+    fn identity_comparison_under_not_is_still_pushed_down() {
+        let lt = resolved_col("i").lt(lit(10_i64)).not();
+        assert_eq!(pushed(&lt, PartitionTransform::Identity), 1);
+    }
 }
