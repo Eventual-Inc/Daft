@@ -211,7 +211,9 @@ class GooglePrompter(Prompter):
         if response.usage_metadata:
             self._record_usage_metrics(
                 input_tokens=response.usage_metadata.prompt_token_count or 0,
-                output_tokens=response.usage_metadata.candidates_token_count or 0,
+                # Gemini thinking models report reasoning tokens separately from candidates
+                output_tokens=(response.usage_metadata.candidates_token_count or 0)
+                + (response.usage_metadata.thoughts_token_count or 0),
                 total_tokens=response.usage_metadata.total_token_count or 0,
             )
 
