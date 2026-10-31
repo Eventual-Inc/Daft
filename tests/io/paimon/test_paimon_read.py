@@ -561,3 +561,26 @@ class TestCompositePrimaryKey:
         result = df.to_pydict()
 
         assert len(result["pk1"]) == 3
+
+
+def test_get_catalog_options_accepts_options_object():
+    """pypaimon >= 1.4.1 exposes file_io.properties as an Options object, not a dict."""
+    from types import SimpleNamespace
+
+    from daft.io.paimon._paimon import _get_catalog_options
+
+    class _Options:
+        def __init__(self, data):
+            self.data = data
+
+        def to_map(self):
+            return self.data
+
+        def get(self, key, default=None):
+            return self.data.get(key.key, default)
+
+    options = {"warehouse": "oss://bucket/wh"}
+    assert _get_catalog_options(SimpleNamespace(file_io=SimpleNamespace(properties=_Options(options)))) == options
+    assert _get_catalog_options(SimpleNamespace(file_io=SimpleNamespace(properties=options))) == options
+    assert _get_catalog_options(SimpleNamespace(file_io=SimpleNamespace(properties=None))) == {}
+    assert _get_catalog_options(SimpleNamespace()) == {}
