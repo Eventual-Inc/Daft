@@ -123,7 +123,10 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
 
     def get_dimensions(self) -> EmbeddingDimensions:
         if self.dimensions is not None:
-            return EmbeddingDimensions(size=self.dimensions, dtype=_models[self.model_name].dimensions.dtype)
+            # Custom models served behind a `base_url` have no profile; they return float32 vectors.
+            profile = _models.get(self.model_name)
+            dtype = profile.dimensions.dtype if profile is not None else DataType.float32()
+            return EmbeddingDimensions(size=self.dimensions, dtype=dtype)
 
         if self.provider_options.get("base_url") is not None and self.model_name not in _models:
             try:
@@ -301,9 +304,11 @@ class OpenAITextEmbedder(TextEmbedder):
             return np.array(response.data[0].embedding)
         except Exception as ex:
             if self._zero_on_failure:
-                model_profile = _models[self._model]
-                dtype = model_profile.dimensions.dtype
-                size = self._dimensions or model_profile.dimensions.size
+                model_profile = _models.get(self._model)
+                dtype = model_profile.dimensions.dtype if model_profile is not None else DataType.float32()
+                size = self._dimensions or (model_profile.dimensions.size if model_profile is not None else None)
+                if size is None:
+                    raise ex
                 np_dtype = np.float64 if dtype == DataType.float64() else np.float32
                 return np.zeros(size, dtype=np_dtype)
             else:
