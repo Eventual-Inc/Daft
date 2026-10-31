@@ -172,8 +172,7 @@ pub fn rewrite_predicate_for_partitioning(
     let rewrite_leaf = |expr: ExprRef, exact_only: bool| -> DaftResult<Transformed<ExprRef>> {
         let get_pfield_for_col = |expr: &ExprRef| -> Option<&&PartitionField> {
             lookup_pfield(expr).filter(|pfield| {
-                !exact_only
-                    || matches!(pfield.transform, Some(PartitionTransform::Identity) | None)
+                !exact_only || matches!(pfield.transform, Some(PartitionTransform::Identity) | None)
             })
         };
         use Operator::{Eq, Gt, GtEq, Lt, LtEq, NotEq};
