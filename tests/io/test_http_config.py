@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import functools
 import os
 import pickle
+import threading
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from daft.io import HTTPConfig
+import daft
+from daft.io import HTTPConfig, IOConfig
 
 
 def test_http_config_documented_properties():
@@ -31,8 +35,6 @@ def test_http_config_default_properties():
 
 
 def test_http_config_user_agent_roundtrip():
-    from daft.io import IOConfig
-
     config = HTTPConfig(user_agent="my-app/1.0", bearer_token="test-token")
     for actual in (config, IOConfig(http=config).http, pickle.loads(pickle.dumps(config))):
         assert actual.user_agent == "my-app/1.0"
@@ -47,13 +49,6 @@ def test_http_config_user_agent_roundtrip():
 
 @pytest.mark.skipif(os.getenv("DAFT_RUNNER") == "ray", reason="local HTTP server is unavailable to Ray workers")
 def test_http_config_user_agent_sent_to_server(tmp_path):
-    import functools
-    import threading
-    from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-
-    import daft
-    from daft.io import IOConfig
-
     (tmp_path / "data.csv").write_text("value\n42\n")
     user_agents = []
 
