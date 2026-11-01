@@ -487,6 +487,41 @@ impl NativeExecutor {
             None
         };
 
+        // If a plan with this fingerprint already exists but its execution
+        // task has terminated with an error (e.g. a UDF on a previous input
+        // raised), surface the real error from `task_handle` rather than
+        // masking it with a generic InternalError when the next input tries
+        // to enqueue.
+        //
+        // We must be careful to distinguish between two cases where
+        // `enqueue_input_sender.is_closed()` becomes true:
+        //   1. The execution loop exited with an error (pipeline failure).
+        //      -> Take the plan out and propagate the real error.
+        //   2. The execution loop exited normally after pipeline EOF.
+        //      -> Leave the plan in place so already-enqueued inputs can
+        //         still complete `try_finish()` and collect stats; this
+        //         branch is only relevant when callers attempt to enqueue
+        //         a *new* input after the pipeline already drained, which
+        //         is itself unusual but should not corrupt earlier inputs'
+        //         state.
+        let captured_err: Option<common_error::DaftError> = self
+            .plans
+            .get_mut(&fingerprint)
+            .filter(|s| s.enqueue_input_sender.is_closed())
+            .and_then(|s| s.task_handle.try_join_next())
+            .and_then(|res| match res {
+                Ok(Ok(())) => None,              // task completed successfully
+                Ok(Err(e)) => Some(e),           // pipeline returned a DaftError
+                Err(join_err) => Some(join_err), // task panicked / was cancelled
+            });
+        if let Some(err) = captured_err {
+            // Drop the now-finished plan. Earlier inputs that have already
+            // produced output have their results buffered in their per-input
+            // result channels, so they will still be visible to the caller.
+            self.plans.remove(&fingerprint);
+            return Ok((fingerprint, async move { Err(err) }.boxed()));
+        }
+
         if !self.plans.contains_key(&fingerprint) {
             let cancel = self.cancel.clone();
             let additional_context = additional_context.unwrap_or_default();
@@ -550,6 +585,10 @@ impl NativeExecutor {
                     result_sender: result_tx,
                 };
                 if enqueue_input_sender.send(enqueue_msg).await.is_err() {
+                    // The pipeline died between the closed-channel check above
+                    // and this enqueue attempt. The real error will be observed
+                    // by the next call into `run`/`try_finish` for this plan,
+                    // but we also surface a clear message to the current caller.
                     return Err(common_error::DaftError::InternalError(
                         "Plan execution task has died; cannot enqueue new input".to_string(),
                     ));
