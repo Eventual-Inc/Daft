@@ -10,7 +10,8 @@ use common_metrics::ops::NodeType;
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
 use daft_core::{
     array::ops::{
-        GroupIndices, VecIndices, arrow::comparison::build_multi_array_is_equal_from_arrays,
+        DynComparator, GroupIndices, VecIndices,
+        arrow::comparison::build_multi_array_is_equal_from_arrays, build_multi_array_bicompare,
     },
     join::AsofJoinStrategy,
     kernels::cmp::{DynPartialComparator, build_partial_compare_with_nulls, is_nearer},
@@ -78,6 +79,11 @@ use crate::{
 //      2  |   A    |   5    | 2     <- forward-filled from idx=1
 //      3  |   B    |   2    | null  <- no right event at or before on_key=2 in group B
 //      4  |   B    |   7    | 4
+//
+// DETERMINISM: among right rows sharing a (by, on) key, the match is a per-key max/min over a
+// total order of the output columns (`build_tie_cols`), not probe/merge order -- backward/nearest
+// keep the greatest such row, forward the least -- so it is independent of batch splitting, worker,
+// and shuffle order.
 
 pub(crate) struct AsofJoinBuildState {
     record_batches: Vec<RecordBatch>,
@@ -315,6 +321,9 @@ pub(crate) struct AsofJoinProbeState {
     best_match: Vec<Option<(u32, u32)>>,
     // Each entry pairs a pruned RecordBatch with its on_key Arrow array for cross-batch comparisons.
     right_rbs_and_on_keys: Vec<(RecordBatch, Arc<dyn Array>)>,
+    // Parallel to `right_rbs_and_on_keys`: each batch's tie-break columns (see `build_tie_cols`),
+    // used to break equal-on-key ties deterministically. `Arc` keeps the per-probe snapshot cheap.
+    right_tie_cols: Vec<Arc<Vec<Series>>>,
 }
 
 impl AsofJoinProbeState {
@@ -329,11 +338,15 @@ impl AsofJoinProbeState {
         let rb_idx = self.right_rbs_and_on_keys.len();
         let build_state = self.build_contents.clone();
 
-        let right_on_arr: Arc<dyn Array> = right_rb.eval_expression(right_on)?.to_arrow()?;
-        self.right_rbs_and_on_keys.push((
-            prune_right_batch(right_rb, right_cols_to_keep),
-            right_on_arr.clone(),
-        ));
+        let right_on_series = right_rb.eval_expression(right_on)?;
+        let right_on_arr: Arc<dyn Array> = right_on_series.to_arrow()?;
+        let pruned_rb = prune_right_batch(right_rb, right_cols_to_keep);
+        // Tie-break over the pruned (output) columns, which are already retained for the join
+        // output, so no extra buffers are pinned (see `build_tie_cols`).
+        self.right_tie_cols
+            .push(Arc::new(build_tie_cols(&right_on_series, &pruned_rb)));
+        self.right_rbs_and_on_keys
+            .push((pruned_rb, right_on_arr.clone()));
         // Build one comparator per by_key group: compares that group's sorted left on_key array
         // against the current right batch's on_key array, used for binary search.
         let grouped_on_key_cmps: Vec<DynPartialComparator> = build_state
@@ -373,13 +386,16 @@ impl AsofJoinProbeState {
             .as_ref()
             .map(|(h, eq)| (h, eq.as_ref()));
 
-        let right_on_key_arrs: Vec<Arc<dyn Array>> = self
-            .right_rbs_and_on_keys
-            .iter()
-            .map(|(_, on_key_arr)| on_key_arr.clone())
-            .collect();
+        // Owned snapshot (cheap Arc clones) so the per-row loop can hold `&mut self.best_match`.
+        let tie_cols: Vec<Arc<Vec<Series>>> = self.right_tie_cols.clone();
+        let mut cmp_cache: HashMap<(usize, usize), DynComparator> = HashMap::new();
 
         if dir == AsofJoinStrategy::Nearest {
+            let right_on_key_arrs: Vec<Arc<dyn Array>> = self
+                .right_rbs_and_on_keys
+                .iter()
+                .map(|(_, on_key_arr)| on_key_arr.clone())
+                .collect();
             let left_self_cmps: Vec<DynPartialComparator> = build_state
                 .grouped_sorted_materialized_on_keys
                 .iter()
@@ -411,23 +427,15 @@ impl AsofJoinProbeState {
                     update_nearest_match(
                         &mut self.best_match[bucket[pos] as usize],
                         &right_on_key_arrs,
+                        &tie_cols,
                         candidate,
+                        &mut cmp_cache,
                         sorted_on_key_arr.as_ref(),
                         pos,
                     )?;
                 }
             }
         } else {
-            let mut cmp_cache: HashMap<(usize, usize), DynPartialComparator> = HashMap::new();
-            cmp_cache.insert(
-                (rb_idx, rb_idx),
-                build_partial_compare_with_nulls(
-                    right_on_arr.as_ref(),
-                    right_on_arr.as_ref(),
-                    false,
-                )?,
-            );
-
             for right_idx in 0..right_rb.len() {
                 if !right_on_arr.is_valid(right_idx) {
                     continue;
@@ -451,7 +459,7 @@ impl AsofJoinProbeState {
                 };
                 update_best_match(
                     &mut self.best_match[matched_left_idx],
-                    &right_on_key_arrs,
+                    &tie_cols,
                     MatchCandidate {
                         rb_idx,
                         row_idx: right_idx,
@@ -472,11 +480,47 @@ struct MatchCandidate {
     row_idx: usize,
 }
 
+/// Columns for the equal-on-key tie-break: the on-key, then every totally-orderable column of the
+/// *pruned* (output) right batch in schema order. Only output columns matter -- two rows equal on
+/// them are interchangeable in the result -- and reusing the pruned batch pins no extra buffers.
+/// Non-orderable columns (nested, Python) are skipped, so candidates differing only in those keep
+/// an arbitrary pick, and the winner can change if the output columns change (not a cross-schema
+/// contract).
+fn build_tie_cols(on_key_series: &Series, pruned_rb: &RecordBatch) -> Vec<Series> {
+    let mut cols = vec![on_key_series.clone()];
+    for s in pruned_rb.as_materialized_series() {
+        if is_totally_ordered_scalar(s.data_type()) {
+            cols.push(s.clone());
+        }
+    }
+    cols
+}
+
+/// Whether a dtype has a total order the comparison kernels support (`make_daft_comparator`): the
+/// scalar, unambiguously-orderable types. Nested and Python types are excluded.
+fn is_totally_ordered_scalar(dtype: &DaftDataType) -> bool {
+    if let DaftDataType::Extension(_, inner, _) = dtype {
+        return is_totally_ordered_scalar(inner);
+    }
+    dtype.is_numeric()
+        || dtype.is_temporal()
+        || matches!(
+            dtype,
+            DaftDataType::Boolean
+                | DaftDataType::Utf8
+                | DaftDataType::Binary
+                | DaftDataType::FixedSizeBinary(_)
+                | DaftDataType::Decimal128(..)
+                | DaftDataType::Time(..)
+                | DaftDataType::Duration(..)
+        )
+}
+
 fn update_best_match(
     slot: &mut Option<(u32, u32)>,
-    on_key_arrs: &[Arc<dyn Array>],
+    tie_cols: &[Arc<Vec<Series>>],
     candidate: MatchCandidate,
-    cmp_cache: &mut HashMap<(usize, usize), DynPartialComparator>,
+    cmp_cache: &mut HashMap<(usize, usize), DynComparator>,
     dir: AsofJoinStrategy,
 ) -> DaftResult<()> {
     let preferred_ordering = match dir {
@@ -492,7 +536,7 @@ fn update_best_match(
                 rb_idx: existing_rb_idx as usize,
                 row_idx: existing_right_idx as usize,
             },
-            on_key_arrs,
+            tie_cols,
             cmp_cache,
             preferred_ordering,
         )?,
@@ -506,22 +550,42 @@ fn update_best_match(
 fn update_nearest_match(
     slot: &mut Option<(u32, u32)>,
     on_key_arrs: &[Arc<dyn Array>],
+    tie_cols: &[Arc<Vec<Series>>],
     candidate: MatchCandidate,
+    cmp_cache: &mut HashMap<(usize, usize), DynComparator>,
     left_on_arr: &dyn Array,
     left_on_idx: usize,
 ) -> DaftResult<()> {
-    let nearer = match *slot {
+    let take = match *slot {
         None => true,
-        Some((existing_rb_idx, existing_right_idx)) => is_nearer(
-            on_key_arrs[candidate.rb_idx].as_ref(),
-            candidate.row_idx,
-            on_key_arrs[existing_rb_idx as usize].as_ref(),
-            existing_right_idx as usize,
-            left_on_arr,
-            left_on_idx,
-        ),
+        Some((existing_rb_idx, existing_right_idx)) => {
+            let existing = MatchCandidate {
+                rb_idx: existing_rb_idx as usize,
+                row_idx: existing_right_idx as usize,
+            };
+            let is_nearer_arg = |a: MatchCandidate, b: MatchCandidate| {
+                is_nearer(
+                    on_key_arrs[a.rb_idx].as_ref(),
+                    a.row_idx,
+                    on_key_arrs[b.rb_idx].as_ref(),
+                    b.row_idx,
+                    left_on_arr,
+                    left_on_idx,
+                )
+            };
+            if is_nearer_arg(candidate, existing) {
+                true
+            } else if is_nearer_arg(existing, candidate) {
+                false
+            } else {
+                // Neither is nearer: identical distance and on-key. Break the tie deterministically
+                // by keeping the greater tie-break row (consistent with the forward/larger-wins
+                // convention `is_nearer` already applies to equal-distance, unequal-on-key pairs).
+                is_candidate_better(candidate, existing, tie_cols, cmp_cache, Ordering::Greater)?
+            }
+        }
     };
-    if nearer {
+    if take {
         *slot = Some((candidate.rb_idx as u32, candidate.row_idx as u32));
     }
     Ok(())
@@ -530,19 +594,26 @@ fn update_nearest_match(
 fn is_candidate_better(
     candidate: MatchCandidate,
     existing: MatchCandidate,
-    on_key_arrs: &[Arc<dyn Array>],
-    cmp_cache: &mut HashMap<(usize, usize), DynPartialComparator>,
+    tie_cols: &[Arc<Vec<Series>>],
+    cmp_cache: &mut HashMap<(usize, usize), DynComparator>,
     preferred_ordering: Ordering,
 ) -> DaftResult<bool> {
     let cmp = match cmp_cache.entry((candidate.rb_idx, existing.rb_idx)) {
         Entry::Occupied(e) => e.into_mut(),
-        Entry::Vacant(e) => e.insert(build_partial_compare_with_nulls(
-            on_key_arrs[candidate.rb_idx].as_ref(),
-            on_key_arrs[existing.rb_idx].as_ref(),
-            false,
-        )?),
+        Entry::Vacant(e) => {
+            let cand_cols = tie_cols[candidate.rb_idx].as_slice();
+            // Ascending, nulls-last on every column; the winner direction comes from
+            // `preferred_ordering` at the comparison below.
+            let descending = vec![false; cand_cols.len()];
+            e.insert(build_multi_array_bicompare(
+                cand_cols,
+                tie_cols[existing.rb_idx].as_slice(),
+                &descending,
+                &descending,
+            )?)
+        }
     };
-    Ok(cmp(candidate.row_idx, existing.row_idx) == Some(preferred_ordering))
+    Ok(cmp(candidate.row_idx, existing.row_idx) == preferred_ordering)
 }
 
 fn forward_fill(global_best: &mut [Option<(u32, u32)>], grouped_sorted_indices: &GroupIndices) {
@@ -796,6 +867,7 @@ impl JoinOperator for AsofJoinOperator {
             build_contents: finalized_build_state,
             best_match: vec![None::<(u32, u32)>; n],
             right_rbs_and_on_keys: Vec::new(),
+            right_tie_cols: Vec::new(),
         }
     }
 
@@ -878,6 +950,7 @@ impl JoinOperator for AsofJoinOperator {
 
                     let mut global_rb_offsets: Vec<usize> = Vec::with_capacity(states.len());
                     let mut global_right_on_key_arrs: Vec<Arc<dyn Array>> = Vec::new();
+                    let mut global_right_tie_cols: Vec<Arc<Vec<Series>>> = Vec::new();
                     let mut state_best_matches: Vec<Vec<Option<(u32, u32)>>> =
                         Vec::with_capacity(states.len());
                     let mut global_right_rbs: Vec<RecordBatch> = Vec::new();
@@ -890,10 +963,12 @@ impl JoinOperator for AsofJoinOperator {
                             global_right_on_key_arrs.push(on_key_arr);
                             global_right_rbs.push(rb);
                         }
+                        global_right_tie_cols.extend(state.right_tie_cols);
                         state_best_matches.push(state.best_match);
                     }
 
                     let global_right_on_key_arrs = Arc::new(global_right_on_key_arrs);
+                    let global_right_tie_cols = Arc::new(global_right_tie_cols);
                     let global_rb_offsets = Arc::new(global_rb_offsets);
                     let state_best_matches = Arc::new(state_best_matches);
 
@@ -907,12 +982,13 @@ impl JoinOperator for AsofJoinOperator {
                             let end = (start + rows_per_chunk).min(total_left_rows);
                             let mut chunk: Vec<Option<(u32, u32)>> = vec![None; end - start];
                             let global_right_on_key_arrs = global_right_on_key_arrs.clone();
+                            let global_right_tie_cols = global_right_tie_cols.clone();
                             let global_rb_offsets = global_rb_offsets.clone();
                             let state_best_matches = state_best_matches.clone();
                             let left_on_arr = left_on_arr.clone();
 
                             get_compute_runtime().spawn(async move {
-                                let mut cmp_cache: HashMap<(usize, usize), DynPartialComparator> =
+                                let mut cmp_cache: HashMap<(usize, usize), DynComparator> =
                                     HashMap::new();
 
                                 for (chunk_row_idx, curr_best_match) in chunk.iter_mut().enumerate()
@@ -938,7 +1014,9 @@ impl JoinOperator for AsofJoinOperator {
                                                 update_nearest_match(
                                                     curr_best_match,
                                                     &global_right_on_key_arrs,
+                                                    &global_right_tie_cols,
                                                     candidate,
+                                                    &mut cmp_cache,
                                                     left_on_arr
                                                         .as_deref()
                                                         .expect("left_on_arr required for Nearest"),
@@ -948,7 +1026,7 @@ impl JoinOperator for AsofJoinOperator {
                                             _ => {
                                                 update_best_match(
                                                     curr_best_match,
-                                                    &global_right_on_key_arrs,
+                                                    &global_right_tie_cols,
                                                     candidate,
                                                     &mut cmp_cache,
                                                     strategy,
