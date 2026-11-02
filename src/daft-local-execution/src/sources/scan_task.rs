@@ -614,14 +614,24 @@ async fn stream_scan_task(
 
     Ok(table_stream.map(move |table| {
         let table = table?;
+        // Partition values are generated per source and win over an initial default for
+        // the same column; initial defaults fill the remaining columns absent from the file.
+        let mut fill_map = scan_task
+            .partition_spec()
+            .map(|pspec| pspec.to_fill_map())
+            .unwrap_or_default();
+        if let SourceConfig::File(FileFormatConfig::Parquet(cfg)) = scan_task.source_config.as_ref()
+            && let Some(defaults) = cfg.field_defaults.as_ref()
+        {
+            for (name, value) in defaults.to_fill_map() {
+                fill_map.entry(name).or_insert(value);
+            }
+        }
+        let fill_map = (!fill_map.is_empty()).then_some(fill_map);
         #[allow(deprecated)]
         let casted_table = table.cast_to_schema_with_fill(
             scan_task.materialized_schema().as_ref(),
-            scan_task
-                .partition_spec()
-                .as_ref()
-                .map(|pspec| pspec.to_fill_map())
-                .as_ref(),
+            fill_map.as_ref(),
         )?;
 
         let stats = scan_task

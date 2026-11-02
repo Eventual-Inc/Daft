@@ -3,12 +3,13 @@ use std::{hash::Hash, sync::Arc};
 use common_file_formats::FileFormat;
 use common_py_serde::impl_bincode_py_state_serialization;
 use daft_avro::AvroSourceConfig;
-use daft_parquet::metadata::FieldIdMapping;
+use daft_parquet::metadata::{FieldDefaults, FieldIdMapping};
 use daft_schema::time_unit::TimeUnit;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
 use {
     common_py_serde::{deserialize_py_object, serialize_py_object},
+    daft_recordbatch::python::PyRecordBatch,
     daft_schema::python::{datatype::PyTimeUnit, field::PyField},
     pyo3::{
         Py, PyAny, PyResult, Python, exceptions::PyValueError, pyclass, pymethods,
@@ -99,6 +100,12 @@ pub struct ParquetSourceConfig {
     ///
     /// See: https://github.com/apache/parquet-format/blob/master/src/main/thrift/parquet.thrift#L456-L459
     pub field_id_mapping: Option<Arc<FieldIdMapping>>,
+    /// Values for columns absent from a file, as a single-row batch keyed by column name.
+    ///
+    /// Iceberg v3 `initial-default`: files written before a column was added do not
+    /// contain it, and their rows must read as the default rather than NULL. Only
+    /// columns missing from a given file are filled; present columns keep their values.
+    pub field_defaults: Option<Arc<FieldDefaults>>,
     pub row_groups: Option<Vec<Option<Vec<i64>>>>,
     pub chunk_size: Option<usize>,
     /// If true, corrupt or unreadable Parquet files are silently skipped instead of raising an
@@ -123,6 +130,18 @@ impl ParquetSourceConfig {
                     .fields
                     .iter()
                     .map(|(fid, f)| format!("{fid}: {f}"))
+                    .collect::<Vec<String>>()
+                    .join(",")
+            ));
+        }
+        if let Some(defaults) = &self.field_defaults {
+            res.push(format!(
+                "Field Defaults = {{{}}}",
+                defaults
+                    .values
+                    .columns()
+                    .iter()
+                    .map(|column| format!("{}: {:?}", column.name(), column))
                     .collect::<Vec<String>>()
                     .join(",")
             ));
@@ -155,6 +174,7 @@ impl Default for ParquetSourceConfig {
         Self {
             coerce_int96_timestamp_unit: TimeUnit::Nanoseconds,
             field_id_mapping: None,
+            field_defaults: None,
             row_groups: None,
             chunk_size: None,
             ignore_corrupt_files: false,
@@ -168,9 +188,11 @@ impl ParquetSourceConfig {
     /// Create a config for a Parquet data source.
     ///
     /// `name_mapping` is an Iceberg `schema.name-mapping.default` JSON string, used to resolve
-    /// the columns of files written without field IDs.
+    /// the columns of files written without field IDs. `field_defaults` is a single-row batch
+    /// holding Iceberg v3 `initial-default` values, keyed by column name; columns missing from
+    /// a file are filled with these values instead of NULL.
     #[new]
-    #[pyo3(signature = (coerce_int96_timestamp_unit=None, field_id_mapping=None, row_groups=None, chunk_size=None, ignore_corrupt_files=false, name_mapping=None))]
+    #[pyo3(signature = (coerce_int96_timestamp_unit=None, field_id_mapping=None, row_groups=None, chunk_size=None, ignore_corrupt_files=false, name_mapping=None, field_defaults=None))]
     fn new(
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
         field_id_mapping: Option<BTreeMap<i32, PyField>>,
@@ -178,6 +200,7 @@ impl ParquetSourceConfig {
         chunk_size: Option<usize>,
         ignore_corrupt_files: bool,
         name_mapping: Option<String>,
+        field_defaults: Option<PyRecordBatch>,
     ) -> PyResult<Self> {
         let name_mapping = name_mapping
             .map(|json| serde_json::from_str(&json))
@@ -193,6 +216,9 @@ impl ParquetSourceConfig {
                     name_mapping,
                 })
             }),
+            field_defaults: field_defaults
+                .map(|batch| Arc::new(FieldDefaults::new(batch.record_batch)))
+                .filter(|defaults| !defaults.is_empty()),
             row_groups,
             chunk_size,
             ignore_corrupt_files,

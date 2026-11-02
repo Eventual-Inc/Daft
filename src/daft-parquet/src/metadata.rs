@@ -1,9 +1,15 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashMap},
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
 
 use bytes::{Bytes, BytesMut};
 use common_runtime::get_io_runtime;
-use daft_core::datatypes::Field;
+use daft_core::{datatypes::Field, lit::Literal};
+use daft_dsl::{Expr, ExprRef};
 use daft_io::{GetRange, IOClient, IOStatsRef};
+use daft_recordbatch::RecordBatch;
 use parquet::{
     basic::{ConvertedType, LogicalType, Repetition},
     schema::types::{BasicTypeInfo, Type, TypePtr},
@@ -41,6 +47,74 @@ pub struct MappedField {
     pub names: Vec<String>,
     #[serde(default)]
     pub fields: Option<Vec<Self>>,
+}
+
+/// Fill values for columns that a Parquet file does not contain, as a single-row
+/// `RecordBatch` keyed by column name.
+///
+/// Iceberg v3 lets a column be added with an `initial-default`. Files written before the
+/// column was added do not contain it, and their rows must read as that default rather
+/// than NULL (spec: "Initial default value"). Only columns actually missing from a file
+/// are filled, so files that do contain a column keep their real values, nulls included.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FieldDefaults {
+    pub values: RecordBatch,
+}
+
+impl FieldDefaults {
+    #[must_use]
+    pub fn new(values: RecordBatch) -> Self {
+        Self { values }
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.values.num_columns() == 0
+    }
+
+    /// Literal expression for the initial default of `name`, if it has one.
+    #[must_use]
+    pub fn literal(&self, name: &str) -> Option<ExprRef> {
+        self.values
+            .columns()
+            .iter()
+            .find(|column| column.name() == name)
+            .map(literal_of)
+    }
+
+    /// Initial defaults keyed by column name.
+    #[must_use]
+    pub fn to_fill_map(&self) -> HashMap<&str, ExprRef> {
+        self.values
+            .columns()
+            .iter()
+            .map(|column| (column.name(), literal_of(column)))
+            .collect()
+    }
+}
+
+fn literal_of(column: &daft_recordbatch::column::Column) -> ExprRef {
+    Arc::new(Expr::Literal(
+        Literal::try_from_single_value_series(column.as_materialized_series())
+            .expect("initial-default columns must hold exactly one row"),
+    ))
+}
+
+impl PartialEq for FieldDefaults {
+    fn eq(&self, other: &Self) -> bool {
+        self.values.schema == other.values.schema && self.values.columns() == other.values.columns()
+    }
+}
+
+impl Eq for FieldDefaults {}
+
+impl Hash for FieldDefaults {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.values.schema.hash(state);
+        for column in self.values.columns() {
+            column.hash(state);
+        }
+    }
 }
 
 /// Extract the optional field ID from a parquet `BasicTypeInfo`.

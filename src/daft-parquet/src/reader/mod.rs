@@ -36,7 +36,7 @@ use crate::{
         substitute_missing_cols,
     },
     metadata::{
-        FieldIdMapping, apply_field_ids_to_arrowrs_parquet_metadata,
+        FieldDefaults, FieldIdMapping, apply_field_ids_to_arrowrs_parquet_metadata,
         strip_string_types_from_parquet_metadata,
     },
     read::{ParquetReadOptions, ParquetSchemaInferenceOptions, StringEncoding},
@@ -356,7 +356,11 @@ async fn build_rg_inputs(
     // Bind predicate once across all RGs — same chunk schema everywhere.
     let chunk_daft_schema = Arc::new(Schema::try_from(pred_arrow_schema.as_ref())?);
     let bound_pred = BoundExpr::try_new(
-        substitute_missing_cols(prefilter_predicate, &chunk_daft_schema)?,
+        substitute_missing_cols(
+            prefilter_predicate,
+            &chunk_daft_schema,
+            opts.field_defaults.as_deref(),
+        )?,
         &chunk_daft_schema,
     )?;
 
@@ -474,6 +478,7 @@ pub(super) struct RgTaskCtx {
     pub(super) arrow_schema: Arc<ArrowSchema>,
     pub(super) plan: ColumnPlan,
     pub(super) predicate: Option<ExprRef>,
+    pub(super) field_defaults: Option<Arc<FieldDefaults>>,
     pub(super) chunk_size: usize,
 }
 
@@ -595,6 +600,7 @@ pub async fn stream_parquet(
         opts.num_rows,
         opts.predicate.as_ref(),
         &plan.read_daft_schema,
+        opts.field_defaults.as_deref(),
         source.label(),
     )?;
     if rg_indices.is_empty() {
@@ -638,6 +644,7 @@ pub async fn stream_parquet(
         arrow_schema: prepared.arrow_schema,
         plan,
         predicate: opts.predicate.clone(),
+        field_defaults: opts.field_defaults.clone(),
         chunk_size,
     });
     let stream = build_rg_stream(ctx, rg_indices, rg_inputs);

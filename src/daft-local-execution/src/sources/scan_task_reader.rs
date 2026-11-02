@@ -150,6 +150,7 @@ async fn read_parquet(
         predicate: scan_task.pushdowns.filters.clone(),
         schema_infer: ParquetSchemaInferenceOptions::new(Some(cfg.coerce_int96_timestamp_unit)),
         field_id_mapping: cfg.field_id_mapping.clone(),
+        field_defaults: cfg.field_defaults.clone(),
         delete_rows: delete_map.as_ref().and_then(|m| m.get(url).cloned()),
         batch_size: cfg.chunk_size.or(Some(chunk_size)),
         metadata: scan_task
