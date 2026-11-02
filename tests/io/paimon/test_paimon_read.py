@@ -564,7 +564,7 @@ class TestCompositePrimaryKey:
 
 
 def test_get_catalog_options_accepts_options_object():
-    """pypaimon >= 1.4.1 exposes file_io.properties as an Options object, not a dict."""
+    """Pypaimon >= 1.4.1 exposes file_io.properties as an Options object, not a dict."""
     from types import SimpleNamespace
 
     from daft.io.paimon._paimon import _get_catalog_options
