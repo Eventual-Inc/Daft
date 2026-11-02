@@ -1,6 +1,77 @@
 from __future__ import annotations
 
-from daft.io.paimon._paimon import _convert_paimon_catalog_options_to_io_config
+from types import SimpleNamespace
+
+import pytest
+
+from daft.io.paimon._paimon import (
+    _catalog_options_from_table,
+    _convert_paimon_catalog_options_to_io_config,
+    _options_to_dict,
+)
+
+
+class _ConfigOptionLike:
+    """Stands in for ``pypaimon.common.options.ConfigOption``."""
+
+    def __init__(self, key: str) -> None:
+        self._key = key
+
+    def key(self) -> str:
+        return self._key
+
+
+class _OptionsLike:
+    """Stands in for ``pypaimon.common.options.Options`` (pypaimon >= 1.4).
+
+    Its ``get()`` only accepts a ``ConfigOption``; passing a string raises the
+    same ``AttributeError`` real pypaimon raises.
+    """
+
+    def __init__(self, data: dict) -> None:
+        self.data = data
+
+    def to_map(self) -> dict:
+        return self.data
+
+    def get(self, key, default=None):
+        if not isinstance(key, _ConfigOptionLike):
+            raise AttributeError(f"'{type(key).__name__}' object has no attribute 'key'")
+        return self.data.get(key.key(), default)
+
+
+class _CoreOptionsLike:
+    """Stands in for ``pypaimon.common.options.CoreOptions`` (pypaimon >= 1.4)."""
+
+    def __init__(self, options: _OptionsLike) -> None:
+        self.options = options
+
+
+def test_catalog_options_from_table_accepts_plain_dict():
+    table = SimpleNamespace(file_io=SimpleNamespace(properties={"warehouse": "s3://bucket/warehouse"}))
+
+    assert _catalog_options_from_table(table) == {"warehouse": "s3://bucket/warehouse"}
+
+
+def test_catalog_options_from_table_accepts_pypaimon_options():
+    properties = _OptionsLike({"warehouse": "s3://bucket/warehouse", "fs.s3.endpoint": "http://localhost:9000"})
+    table = SimpleNamespace(file_io=SimpleNamespace(properties=properties))
+
+    with pytest.raises(AttributeError):
+        properties.get("warehouse")
+
+    assert _catalog_options_from_table(table) == {
+        "warehouse": "s3://bucket/warehouse",
+        "fs.s3.endpoint": "http://localhost:9000",
+    }
+
+
+def test_catalog_options_from_table_without_file_io():
+    assert _catalog_options_from_table(SimpleNamespace()) == {}
+
+
+def test_options_to_dict_unwraps_core_options():
+    assert _options_to_dict(_CoreOptionsLike(_OptionsLike({"file.format": "parquet"}))) == {"file.format": "parquet"}
 
 
 def test_convert_paimon_s3_catalog_options_to_io_config():

@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 import daft
 from daft.dependencies import pa
 from daft.expressions import ExpressionsProjection
+from daft.io.paimon._paimon import _options_to_dict
 from daft.io.paimon._predicate_visitor import convert_filters_to_paimon
 from daft.io.partitioning import PartitionField
 from daft.io.source import DataSource, DataSourceTask
@@ -85,7 +86,7 @@ class PaimonDataSource(DataSource):
         warehouse = catalog_options.get("warehouse", "")
         self._warehouse_scheme = urlparse(warehouse).scheme
 
-        self._file_format = table.options.get("file.format", PAIMON_FILE_FORMAT_PARQUET).lower()
+        self._file_format = _options_to_dict(table.options).get("file.format", PAIMON_FILE_FORMAT_PARQUET).lower()
         self._use_native_parquet = self._file_format == PAIMON_FILE_FORMAT_PARQUET
 
         self._partition_field_arrow_types: dict[str, pa.DataType] = (

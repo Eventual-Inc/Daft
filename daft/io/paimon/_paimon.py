@@ -1,7 +1,8 @@
 # ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any
 
 from daft import context, runners
 from daft.api_annotations import PublicAPI
@@ -11,6 +12,35 @@ from daft.io import IOConfig, S3Config
 
 if TYPE_CHECKING:
     from pypaimon.table.table import Table as PaimonTable
+
+
+def _options_to_dict(options: Any) -> dict[str, str]:
+    """Normalize a pypaimon option container to a plain dict.
+
+    pypaimon <= 1.3.x exposes plain dicts, while >= 1.4 exposes an ``Options``
+    object (optionally wrapped in ``CoreOptions``) whose ``get()`` takes a
+    ``ConfigOption`` rather than a string key.
+    """
+    if options is None:
+        return {}
+    if isinstance(options, Mapping):
+        return dict(options)
+    to_map = getattr(options, "to_map", None)
+    if callable(to_map):
+        return dict(to_map() or {})
+    inner = getattr(options, "options", None)
+    if inner is not None:
+        return _options_to_dict(inner)
+    data = getattr(options, "data", None)
+    if isinstance(data, Mapping):
+        return dict(data)
+    return {}
+
+
+def _catalog_options_from_table(table: "PaimonTable") -> dict[str, str]:
+    """Read the catalog options used to create ``table``, across pypaimon versions."""
+    file_io = getattr(table, "file_io", None)
+    return _options_to_dict(getattr(file_io, "properties", None))
 
 
 def _convert_paimon_catalog_options_to_io_config(catalog_options: dict[str, str]) -> IOConfig | None:
@@ -137,9 +167,7 @@ def read_paimon(
 
     from daft.io.paimon.paimon_scan import PaimonDataSource
 
-    file_io = getattr(table, "file_io", None)
-    catalog_options = (getattr(file_io, "properties", None) or {}) if file_io is not None else {}
-
+    catalog_options = _catalog_options_from_table(table)
     # Infer IO config: user-provided > catalog options > default
     io_config = io_config or _convert_paimon_catalog_options_to_io_config(catalog_options)
     io_config = io_config or context.get_context().daft_planning_config.default_io_config
