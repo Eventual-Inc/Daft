@@ -79,9 +79,15 @@ impl Series {
                     TimeUnit::Milliseconds => 3_600_000,
                     TimeUnit::Seconds => 3_600,
                 };
-                let divider = Int64Array::from_slice("divider", &[unit_to_hours]);
-                let hours = (physical / &divider)?;
-                Ok(hours.into_series())
+                // Iceberg's hour transform floors, so timestamps before the epoch must
+                // round down to the previous hour (e.g. -1us is hour -1, not 0).
+                let hours = physical
+                    .into_iter()
+                    .map(|v| v.map(|v| v.div_euclid(unit_to_hours)));
+                Ok(
+                    Int64Array::from_iter(Field::new(physical.name(), DataType::Int64), hours)
+                        .into_series(),
+                )
             }
             _ => Err(DaftError::ComputeError(format!(
                 "Can only run partitioning_hours() operation on timestamp types, got {}",

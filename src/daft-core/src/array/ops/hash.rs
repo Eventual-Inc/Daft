@@ -225,10 +225,17 @@ impl Decimal128Array {
 
         let hashes = arr.into_iter().map(|d| {
             d.map(|d| {
-                let twos_compliment = u128::from_ne_bytes(d.to_ne_bytes());
-                let bits_needed = u128::BITS - twos_compliment.leading_zeros();
-                let bytes_needed = bits_needed.div_ceil(8) as usize;
-                let be_bytes = twos_compliment.to_be_bytes();
+                // The spec hashes the minimal two's-complement big-endian bytes of the
+                // unscaled value, keeping the sign bit. For example 128 is [0x00, 0x80],
+                // not [0x80], and -1 is [0xFF].
+                let magnitude = if d >= 0 {
+                    d as u128
+                } else {
+                    (d + 1).unsigned_abs()
+                };
+                let bits_needed = u128::BITS - magnitude.leading_zeros();
+                let bytes_needed = ((bits_needed + 8) / 8) as usize;
+                let be_bytes = d.to_be_bytes();
                 let unsigned =
                     mur3::murmurhash3_x86_32(&be_bytes[(be_bytes.len() - bytes_needed)..], 0);
                 i32::from_ne_bytes(unsigned.to_ne_bytes())

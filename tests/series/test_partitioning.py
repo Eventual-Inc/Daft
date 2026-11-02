@@ -96,12 +96,12 @@ def test_partitioning_years(input, dtype, expected):
         ([1512151975038194], DataType.timestamp(timeunit=TimeUnit.from_str("us")), [420042]),
         ([1512151975038], DataType.timestamp(timeunit=TimeUnit.from_str("ms")), [420042]),
         ([1512151975], DataType.timestamp(timeunit=TimeUnit.from_str("s")), [420042]),
-        ([-1], DataType.timestamp(timeunit=TimeUnit.from_str("us")), [0]),
-        ([-1], DataType.timestamp(timeunit=TimeUnit.from_str("us"), timezone="-08:00"), [0]),
+        ([-1], DataType.timestamp(timeunit=TimeUnit.from_str("us")), [-1]),
+        ([-1], DataType.timestamp(timeunit=TimeUnit.from_str("us"), timezone="-08:00"), [-1]),
         (
             [-3_600_000_000 + 1, -3_600_000_000, 3_600_000_000 + -1, 3_600_000_000 + 1],
             DataType.timestamp(timeunit=TimeUnit.from_str("us"), timezone="-08:00"),
-            [0, -1, 0, 1],
+            [-1, -1, 0, 1],
         ),
     ],
 )
@@ -170,6 +170,21 @@ def test_iceberg_bucketing_hash(input, expected):
     assert buckets.to_pylist() == [(expected & max_buckets) % max_buckets]
 
 
+@pytest.mark.parametrize(
+    "value,n,expected",
+    [
+        # unscaled 128 must hash as the two's-complement bytes [0x00, 0x80]
+        (Decimal("1.28"), 16, 5),
+        (Decimal("-1.28"), 16, 13),
+        (Decimal("0"), 16, 7),
+        (Decimal("-12.34"), 16, 2),
+    ],
+)
+def test_iceberg_bucketing_decimal(value, n, expected):
+    s = Series.from_pylist([value])
+    assert s.partitioning.iceberg_bucket(n).to_pylist() == [expected]
+
+
 def test_iceberg_truncate_decimal():
     data = ["12.34", "12.30", "12.29", "0.05", "-0.05"]
     data = [Decimal(v) for v in data] + [None]
@@ -229,5 +244,14 @@ def test_iceberg_truncate_str():
     expected = ["abcde", "abc", "abcde", None]
     s = Series.from_pylist(data)
     trunc = s.partitioning.iceberg_truncate(5)
+    assert trunc.datatype() == s.datatype()
+    assert trunc.to_pylist() == expected
+
+
+def test_iceberg_truncate_str_counts_code_points():
+    data = ["héllo", "hé", "日本語", "é", None]
+    expected = ["hé", "hé", "日本", "é", None]
+    s = Series.from_pylist(data)
+    trunc = s.partitioning.iceberg_truncate(2)
     assert trunc.datatype() == s.datatype()
     assert trunc.to_pylist() == expected
