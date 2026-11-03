@@ -11,7 +11,7 @@ Daft provides powerful classification functions for both text and images, making
 
 The `classify_text` function provides fast, efficient text classification using zero-shot models or fine-tuned classifiers. It's ideal for tasks like sentiment analysis, topic categorization, and intent detection where you have predefined labels.
 
-Use `provider="parallel"` for classification backed by Parallel Decisions and current web evidence. See [Using the Parallel Provider](providers.md#using-the-parallel-provider) for setup and batching details.
+Use `provider="parallel"` for classification backed by Parallel Decisions and current web evidence.
 
 ```python
 import daft
