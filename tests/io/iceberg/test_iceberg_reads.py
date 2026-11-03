@@ -448,8 +448,11 @@ def test_read_iceberg_filter_on_initial_default_without_file_columns(local_catal
     df = daft.read_iceberg(table)
     # The projection reads no physical file columns at all — `c` is filled from
     # its default — so the predicate must be evaluated against that default
-    # instead of being skipped along with the count-only read path. Modulus is
-    # deliberately not a predicate Iceberg can prune on, so it reaches the reader.
+    # instead of being skipped along with the count-only read path. Neither
+    # `is_null` nor modulus is a predicate Iceberg or row-group statistics can
+    # decide, so both reach the reader with only the defaulted column.
+    assert df.select("c").where((daft.col("c") + 1).is_null()).to_pydict() == {"c": []}
+    assert df.select("c").where((daft.col("c") + 1).not_null()).sort("c").to_pydict() == {"c": [5, 5]}
     assert df.select("c").where((daft.col("c") % 2) == 0).to_pydict() == {"c": []}
     assert df.select("c").where((daft.col("c") % 2) == 1).sort("c").to_pydict() == {"c": [5, 5]}
 
