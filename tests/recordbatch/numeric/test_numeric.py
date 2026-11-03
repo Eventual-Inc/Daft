@@ -1176,6 +1176,33 @@ def test_try_multiply_unsigned_overflow() -> None:
     assert result.get_column_by_name("result").to_pylist() == [None, 6]
 
 
+def test_try_arithmetic_null_operand() -> None:
+    # A null operand yields null and takes its type from the numeric side,
+    # like ordinary arithmetic.
+    table = MicroPartition.from_pydict({"a": [1, 2]})
+    for func in (try_add, try_subtract, try_multiply):
+        result = table.eval_expression_list([func(col("a"), lit(None)).alias("result")])
+        assert result.get_column_by_name("result").datatype() == DataType.int64()
+        assert result.get_column_by_name("result").to_pylist() == [None, None]
+
+        result = table.eval_expression_list([func(lit(None), col("a")).alias("result")])
+        assert result.get_column_by_name("result").datatype() == DataType.int64()
+        assert result.get_column_by_name("result").to_pylist() == [None, None]
+
+
+def test_try_arithmetic_all_null_column() -> None:
+    table = MicroPartition.from_pydict({"a": pa.nulls(2)})
+    result = table.eval_expression_list([try_add(col("a"), lit(1)).alias("result")])
+    assert result.get_column_by_name("result").datatype() == DataType.int64()
+    assert result.get_column_by_name("result").to_pylist() == [None, None]
+
+
+def test_try_arithmetic_both_null_is_an_error() -> None:
+    table = MicroPartition.from_pydict({"a": [1]})
+    with pytest.raises(ValueError, match="at least one numeric input"):
+        table.eval_expression_list([try_add(lit(None), lit(None))])
+
+
 def test_try_arithmetic_bad_dtype() -> None:
     table = MicroPartition.from_pydict({"a": ["1"], "b": [2]})
     for func in (try_add, try_subtract, try_multiply):

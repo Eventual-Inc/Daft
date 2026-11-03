@@ -323,8 +323,9 @@ def try_add(left: Expression, right: Expression) -> Expression:
     instead of wrapping around silently. Float inputs follow IEEE semantics:
     overflow produces infinity or NaN, never NULL.
 
-    Mixed signed/unsigned integer inputs follow Daft's usual ``float64``
-    promotion, so that case is not overflow-checked.
+    Mixed signed/unsigned integer inputs use Daft's usual common type. Narrower
+    combinations widen to a checked 64-bit integer, while ``int64`` mixed with
+    ``uint64`` promotes to ``float64`` and is therefore not overflow-checked.
 
     Args:
         left: The left operand.

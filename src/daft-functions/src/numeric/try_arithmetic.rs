@@ -148,7 +148,16 @@ fn try_arithmetic_field(
 }
 
 fn arithmetic_supertype(a: &DataType, b: &DataType, fn_name: &str) -> DaftResult<DataType> {
-    if !a.is_numeric() || !b.is_numeric() {
+    // A null literal or all-null column takes its type from the numeric
+    // operand, matching ordinary arithmetic. Two null inputs have nothing to
+    // infer a kernel from.
+    if matches!((a, b), (DataType::Null, DataType::Null)) {
+        return Err(DaftError::TypeError(format!(
+            "Expected at least one numeric input to {fn_name}, got null for both"
+        )));
+    }
+    let is_numeric_or_null = |dtype: &DataType| dtype.is_numeric() || *dtype == DataType::Null;
+    if !is_numeric_or_null(a) || !is_numeric_or_null(b) {
         return Err(DaftError::TypeError(format!(
             "Expected inputs to {fn_name} to be numeric, got {a} and {b}"
         )));
