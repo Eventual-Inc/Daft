@@ -10,6 +10,7 @@ from daft.ai.provider import (
     load_google,
     load_lm_studio,
     load_openai,
+    load_parallel,
     load_provider,
     load_transformers,
     load_vllm_prefix_caching,
@@ -48,6 +49,13 @@ def test_load_openai_import_error():
         with pytest.raises(ProviderImportError) as excinfo:
             load_openai()
         assert "daft[openai]" in str(excinfo.value)
+
+
+def test_load_parallel_import_error():
+    with patch.dict(sys.modules, {"daft.ai.parallel.provider": None}):
+        with pytest.raises(ProviderImportError) as excinfo:
+            load_parallel()
+        assert "daft[parallel]" in str(excinfo.value)
 
 
 def test_load_transformers_import_error():

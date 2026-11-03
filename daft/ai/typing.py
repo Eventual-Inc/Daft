@@ -60,6 +60,7 @@ class ClassifyTextOptions(TypedDict, total=False):
 
     Attributes:
         batch_size (int): Number of texts to process in a single batch.
+        concurrency (int): Maximum number of concurrent classifier instances.
         max_retries (int): Maximum number of retry attempts for failed requests.
         on_error (Literal["raise", "log", "ignore"]): Behavior when an error occurs.
 
@@ -69,6 +70,7 @@ class ClassifyTextOptions(TypedDict, total=False):
     """
 
     batch_size: int
+    concurrency: int
     max_retries: int
     on_error: Literal["raise", "log", "ignore"]
 

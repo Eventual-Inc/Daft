@@ -38,6 +38,39 @@ Daft supports the following [AI Providers](../api/ai.md#providers):
 - **[Transformers](https://huggingface.co/docs/transformers/index)** - Hugging Face models for local inference
 - **[Google](https://ai.google.dev/gemini-api/docs)** - Google's Gemini API
 - **[LM Studio](https://lmstudio.ai/)** - Run local models privately on your computer
+- **[Parallel](https://docs.parallel.ai/decisions/decisions-quickstart)** - Web-grounded text classification with the Decisions API
+
+## Using the Parallel Provider
+
+The Parallel provider implements `classify_text` with Decisions choice questions. Install the provider dependency, configure an API key, and select `parallel` as the provider:
+
+```bash
+pip install "daft[parallel]"
+export PARALLEL_API_KEY="..."
+```
+
+```python
+import daft
+from daft.functions import classify_text
+
+df = daft.from_pydict({
+    "ticket": [
+        "I was billed twice for my subscription.",
+        "Someone logged into my account from another country.",
+    ]
+})
+
+df = df.with_column(
+    "category",
+    classify_text(
+        daft.col("ticket"),
+        labels=["billing", "technical", "security", "sales"],
+        provider="parallel",
+    ),
+)
+```
+
+Parallel classifies up to 25 rows in each request by default. Set `batch_size` between 1 and 100 and `concurrency` to tune request throughput. Decisions also returns probabilities and request-level citations, but `classify_text` returns only the selected label to preserve its provider-independent String output.
 
 ## Setting a named OpenAI Provider within a Session
 

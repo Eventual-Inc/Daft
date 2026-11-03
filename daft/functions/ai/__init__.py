@@ -311,7 +311,9 @@ def classify_text(
     udf_options = text_classifier.get_udf_options()
     # Decorate the __call__ method with @daft.method to specify return_dtype
     _TextClassificationExpression.__call__ = method.batch(  # type: ignore[method-assign]
-        method=_TextClassificationExpression.__call__, return_dtype=DataType.string()
+        method=_TextClassificationExpression.__call__,
+        return_dtype=DataType.string(),
+        batch_size=udf_options.batch_size,
     )
     wrapped_cls = daft_cls(
         _TextClassificationExpression,

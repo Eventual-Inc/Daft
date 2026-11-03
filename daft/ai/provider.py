@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 
     from daft.ai.google.typing import GoogleProviderOptions
     from daft.ai.openai.typing import OpenAIProviderOptions
+    from daft.ai.parallel.typing import ParallelProviderOptions
     from daft.ai.protocols import (
         ImageClassifierDescriptor,
         ImageEmbedderDescriptor,
@@ -63,6 +64,15 @@ def load_openai(name: str | None = None, **options: Unpack[OpenAIProviderOptions
         raise ProviderImportError("openai") from e
 
 
+def load_parallel(name: str | None = None, **options: Unpack[ParallelProviderOptions]) -> Provider:
+    try:
+        from daft.ai.parallel.provider import ParallelProvider
+
+        return ParallelProvider(name, **options)
+    except ImportError as e:
+        raise ProviderImportError("parallel") from e
+
+
 def load_transformers(name: str | None = None, **options: Any) -> Provider:
     try:
         from daft.ai.transformers.provider import TransformersProvider
@@ -81,11 +91,12 @@ def load_vllm_prefix_caching(name: str | None = None, **options: Any) -> Provide
         raise ProviderImportError("vllm") from e
 
 
-ProviderType = Literal["google", "lm_studio", "openai", "transformers", "vllm-prefix-caching"]
+ProviderType = Literal["google", "lm_studio", "openai", "parallel", "transformers", "vllm-prefix-caching"]
 PROVIDERS: dict[ProviderType, Callable[..., Provider]] = {
     "google": load_google,
     "lm_studio": load_lm_studio,
     "openai": load_openai,
+    "parallel": load_parallel,
     "transformers": load_transformers,
     "vllm-prefix-caching": load_vllm_prefix_caching,
 }
