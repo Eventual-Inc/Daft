@@ -1,14 +1,18 @@
 use std::{cmp::Ordering, sync::Arc};
 
 use arrow::{
-    array::{Array, ArrayRef, ArrowPrimitiveType, PrimitiveArray, make_comparator},
+    array::{
+        Array, ArrayRef, ArrowPrimitiveType, FixedSizeListArray, LargeListArray, ListArray,
+        PrimitiveArray, StructArray, make_comparator,
+    },
     compute::{SortOptions, kernels::arity::unary},
     datatypes::*,
 };
 use common_error::DaftResult;
 use num_traits::Float;
 
-/// Canonicalize `-0.0` to `0.0` in float arrays.
+/// Canonicalize `-0.0` to `0.0` in float arrays, descending into lists and
+/// structs so nested float keys follow the same rule as top-level ones.
 ///
 /// Arrow's comparison kernels use IEEE totalOrder, which keeps `-0.0` and
 /// `0.0` distinct, while SQL, Python, and the rest of Daft treat them as
@@ -18,6 +22,12 @@ use num_traits::Float;
 /// The array is only rebuilt when it actually contains a negative zero;
 /// otherwise the input is returned unchanged.
 pub fn canonicalize_negative_zero(array: &ArrayRef) -> ArrayRef {
+    canonicalize_negative_zero_opt(array.as_ref()).unwrap_or_else(|| array.clone())
+}
+
+/// Returns `None` when `array` holds no negative zero, so callers can keep the
+/// original allocation (and pointer identity).
+fn canonicalize_negative_zero_opt(array: &dyn Array) -> Option<ArrayRef> {
     macro_rules! canon {
         ($t:ty, $zero:expr) => {{
             let arr = array.as_any().downcast_ref::<PrimitiveArray<$t>>().unwrap();
@@ -25,18 +35,73 @@ pub fn canonicalize_negative_zero(array: &ArrayRef) -> ArrayRef {
             // per element vectorizes better than comparing as floats.
             let neg_zero = (-$zero).to_bits();
             if !arr.values().iter().any(|v| v.to_bits() == neg_zero) {
-                return array.clone();
+                None
+            } else {
+                let normalized =
+                    unary::<$t, _, $t>(arr, |v| if v.to_bits() == neg_zero { $zero } else { v });
+                Some(Arc::new(normalized) as ArrayRef)
             }
-            let normalized =
-                unary::<$t, _, $t>(arr, |v| if v.to_bits() == neg_zero { $zero } else { v });
-            Arc::new(normalized) as ArrayRef
         }};
     }
     match array.data_type() {
         DataType::Float16 => canon!(Float16Type, half::f16::ZERO),
         DataType::Float32 => canon!(Float32Type, 0.0f32),
         DataType::Float64 => canon!(Float64Type, 0.0f64),
-        _ => array.clone(),
+        DataType::List(field) => {
+            let list = array.as_any().downcast_ref::<ListArray>()?;
+            let values = canonicalize_negative_zero_opt(list.values().as_ref())?;
+            Some(Arc::new(ListArray::new(
+                field.clone(),
+                list.offsets().clone(),
+                values,
+                list.nulls().cloned(),
+            )))
+        }
+        DataType::LargeList(field) => {
+            let list = array.as_any().downcast_ref::<LargeListArray>()?;
+            let values = canonicalize_negative_zero_opt(list.values().as_ref())?;
+            Some(Arc::new(LargeListArray::new(
+                field.clone(),
+                list.offsets().clone(),
+                values,
+                list.nulls().cloned(),
+            )))
+        }
+        DataType::FixedSizeList(field, size) => {
+            let list = array.as_any().downcast_ref::<FixedSizeListArray>()?;
+            let values = canonicalize_negative_zero_opt(list.values().as_ref())?;
+            Some(Arc::new(FixedSizeListArray::new(
+                field.clone(),
+                *size,
+                values,
+                list.nulls().cloned(),
+            )))
+        }
+        DataType::Struct(fields) => {
+            let struct_array = array.as_any().downcast_ref::<StructArray>()?;
+            let mut changed = false;
+            let columns: Vec<ArrayRef> = struct_array
+                .columns()
+                .iter()
+                .map(
+                    |column| match canonicalize_negative_zero_opt(column.as_ref()) {
+                        Some(normalized) => {
+                            changed = true;
+                            normalized
+                        }
+                        None => column.clone(),
+                    },
+                )
+                .collect();
+            changed.then(|| {
+                Arc::new(StructArray::new(
+                    fields.clone(),
+                    columns,
+                    struct_array.nulls().cloned(),
+                )) as ArrayRef
+            })
+        }
+        _ => None,
     }
 }
 
@@ -301,5 +366,46 @@ mod tests {
             .unwrap();
         assert!(values.value(0).is_sign_positive());
         assert_eq!(values.value(1), 1.0);
+    }
+
+    fn list_of_floats(values: Vec<f64>) -> ArrayRef {
+        use arrow::{
+            buffer::{OffsetBuffer, ScalarBuffer},
+            datatypes::Field,
+        };
+
+        let values: ArrayRef = Arc::new(PrimitiveArray::<Float64Type>::from(values));
+        let offsets = OffsetBuffer::new(ScalarBuffer::from(vec![0, 2]));
+        let field = Arc::new(Field::new(
+            "item",
+            arrow::datatypes::DataType::Float64,
+            true,
+        ));
+        Arc::new(arrow::array::ListArray::new(field, offsets, values, None))
+    }
+
+    #[test]
+    fn canonicalize_negative_zero_descends_into_lists() {
+        let array = list_of_floats(vec![-0.0, 1.0]);
+        let canonicalized = canonicalize_negative_zero(&array);
+        assert!(!Arc::ptr_eq(&array, &canonicalized));
+
+        let list = canonicalized
+            .as_any()
+            .downcast_ref::<arrow::array::ListArray>()
+            .unwrap();
+        let child = list
+            .values()
+            .as_any()
+            .downcast_ref::<PrimitiveArray<Float64Type>>()
+            .unwrap();
+        assert!(child.value(0).is_sign_positive());
+        assert_eq!(child.value(1), 1.0);
+    }
+
+    #[test]
+    fn canonicalize_negative_zero_keeps_lists_without_negative_zero() {
+        let array = list_of_floats(vec![0.0, 1.0]);
+        assert!(Arc::ptr_eq(&array, &canonicalize_negative_zero(&array)));
     }
 }

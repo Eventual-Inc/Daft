@@ -26,3 +26,19 @@ def test_negative_zero_equality_across_operators():
     left = daft.from_pydict({"k": [-0.0]})
     right = daft.from_pydict({"k": [0.0], "v": [1]})
     assert left.join(right, on="k").to_pydict()["v"] == [1]
+
+
+def test_negative_zero_equality_in_nested_keys():
+    # Join equality goes through Arrow's row format, which keeps the zeros
+    # distinct unless nested floats are canonicalized first.
+    left = daft.from_pydict({"k": [[-0.0], [1.0]]})
+    right = daft.from_pydict({"k": [[0.0], [2.0]], "v": [1, 2]})
+    assert left.join(right, on="k").to_pydict()["v"] == [1]
+
+    left = daft.from_pydict({"k": [{"a": -0.0}, {"a": 1.0}]})
+    right = daft.from_pydict({"k": [{"a": 0.0}, {"a": 2.0}], "v": [1, 2]})
+    assert left.join(right, on="k").to_pydict()["v"] == [1]
+
+    df = daft.from_pydict({"k": [[-0.0], [0.0], [1.0]]})
+    assert df.distinct().count_rows() == 2
+    assert sorted(df.groupby("k").count("k").to_pydict()["k"]) == [1, 2]
