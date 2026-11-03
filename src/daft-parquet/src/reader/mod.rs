@@ -614,6 +614,24 @@ pub async fn stream_parquet(
         ));
     }
     if plan.read_col_indices.is_empty() {
+        // No file columns are read: the projection holds only columns missing
+        // from this file (filled from defaults downstream). If a predicate is
+        // present it is constant here — every column reference is replaced by
+        // its initial default or NULL — so one probe row decides the file.
+        if let Some(predicate) = opts.predicate.as_ref() {
+            let empty_schema = Arc::new(Schema::empty());
+            let bound_pred = BoundExpr::try_new(
+                substitute_missing_cols(predicate, &empty_schema, opts.field_defaults.as_deref())?,
+                &empty_schema,
+            )?;
+            let probe = RecordBatch::new_with_size(empty_schema, Vec::new(), 1)?;
+            if !eval_predicate_mask(&probe, &bound_pred)?.value(0) {
+                return Ok((
+                    plan.return_daft_schema.clone(),
+                    futures::stream::empty().boxed(),
+                ));
+            }
+        }
         return count_only_stream(
             &prepared.parquet_metadata,
             &rg_indices,

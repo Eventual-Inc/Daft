@@ -5,6 +5,7 @@ use std::{
 };
 
 use bytes::{Bytes, BytesMut};
+use common_error::{DaftError, DaftResult};
 use common_runtime::get_io_runtime;
 use daft_core::{datatypes::Field, lit::Literal};
 use daft_dsl::{Expr, ExprRef};
@@ -62,9 +63,16 @@ pub struct FieldDefaults {
 }
 
 impl FieldDefaults {
-    #[must_use]
-    pub fn new(values: RecordBatch) -> Self {
-        Self { values }
+    /// Build fill values from a batch, which must hold exactly one row so each
+    /// column can be turned into a literal.
+    pub fn try_new(values: RecordBatch) -> DaftResult<Self> {
+        if values.num_columns() > 0 && values.num_rows() != 1 {
+            return Err(DaftError::ValueError(format!(
+                "field defaults must contain exactly one row, got {}",
+                values.num_rows()
+            )));
+        }
+        Ok(Self { values })
     }
 
     #[must_use]
@@ -768,10 +776,30 @@ mod tests {
     };
 
     use super::{
-        FieldIdMapping, MappedField, apply_field_ids_to_arrowrs_parquet_metadata,
+        FieldDefaults, FieldIdMapping, MappedField, apply_field_ids_to_arrowrs_parquet_metadata,
         read_parquet_metadata,
     };
     use crate::{Error, schema_inference::infer_schema_from_parquet_metadata_arrowrs};
+
+    #[test]
+    fn field_defaults_reject_batches_without_exactly_one_row() {
+        use daft_core::prelude::{IntoSeries, UInt64Array};
+        use daft_recordbatch::RecordBatch;
+
+        let batch = |rows: &[u64]| {
+            let field = Field::new("c", DataType::UInt64);
+            let column = UInt64Array::from_iter(field, rows.iter().map(|v| Some(*v))).into_series();
+            RecordBatch::from_nonempty_columns(vec![column]).unwrap()
+        };
+
+        assert!(FieldDefaults::try_new(batch(&[5])).is_ok());
+
+        let err = FieldDefaults::try_new(batch(&[5, 6])).unwrap_err();
+        assert!(err.to_string().contains("exactly one row"), "{err}");
+
+        let err = FieldDefaults::try_new(batch(&[])).unwrap_err();
+        assert!(err.to_string().contains("exactly one row"), "{err}");
+    }
 
     fn mapped(field_id: i32, names: &[&str], fields: Vec<MappedField>) -> MappedField {
         MappedField {

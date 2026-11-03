@@ -277,8 +277,8 @@ class IcebergDataSource(DataSource):
         if (nested_default := _nested_initial_default_path(iceberg_schema)) is not None:
             raise NotImplementedError(
                 f"Iceberg column {nested_default!r} has a nested `initial-default`, which Daft does not support "
-                "yet; reading it as NULL would silently return wrong values. Project it out, or read the table with "
-                "PyIceberg's scan."
+                "yet; reading it as NULL would silently return wrong values. Read the table with PyIceberg's "
+                "scan instead."
             )
         self._parquet_config = ParquetSourceConfig(
             field_id_mapping=field_id_mapping,

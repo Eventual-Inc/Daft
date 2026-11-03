@@ -217,7 +217,12 @@ impl ParquetSourceConfig {
                 })
             }),
             field_defaults: field_defaults
-                .map(|batch| Arc::new(FieldDefaults::new(batch.record_batch)))
+                .map(|batch| {
+                    FieldDefaults::try_new(batch.record_batch)
+                        .map(Arc::new)
+                        .map_err(|e| PyValueError::new_err(e.to_string()))
+                })
+                .transpose()?
                 .filter(|defaults| !defaults.is_empty()),
             row_groups,
             chunk_size,

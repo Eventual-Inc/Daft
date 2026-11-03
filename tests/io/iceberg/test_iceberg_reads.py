@@ -434,6 +434,26 @@ def test_read_iceberg_initial_default_for_columns_added_later(local_catalog):
         assert df.where(daft.col("id") < 3).select("c").sort("c").to_pydict() == {"c": [5, 5]}
 
 
+def test_read_iceberg_filter_on_initial_default_without_file_columns(local_catalog):
+    """A filter over columns filled purely from `initial-default` is still applied."""
+    table = local_catalog.create_table(
+        "default.initial_default_filter", Schema(NestedField(1, "id", LongType(), required=False))
+    )
+    _write(table, id=[1, 2])
+
+    with table.update_schema() as update:
+        update.add_column("c", LongType(), default_value=5)
+    table.refresh()
+
+    df = daft.read_iceberg(table)
+    # The projection reads no physical file columns at all — `c` is filled from
+    # its default — so the predicate must be evaluated against that default
+    # instead of being skipped along with the count-only read path. Modulus is
+    # deliberately not a predicate Iceberg can prune on, so it reaches the reader.
+    assert df.select("c").where((daft.col("c") % 2) == 0).to_pydict() == {"c": []}
+    assert df.select("c").where((daft.col("c") % 2) == 1).sort("c").to_pydict() == {"c": [5, 5]}
+
+
 def test_read_iceberg_nested_initial_default_raises(local_catalog):
     """A nested `initial-default` would silently read as NULL, so reading the table refuses instead."""
     schema = Schema(
