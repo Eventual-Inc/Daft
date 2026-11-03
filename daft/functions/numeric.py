@@ -315,6 +315,85 @@ def try_divide(dividend: Expression, divisor: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("try_divide", dividend, divisor)
 
 
+def try_add(left: Expression, right: Expression) -> Expression:
+    """Adds two numbers, returning NULL where the integer result would overflow.
+
+    Integer inputs are computed at 64-bit width (``int64`` for signed inputs,
+    ``uint64`` for unsigned), so a result that does not fit produces NULL
+    instead of wrapping around silently. Float inputs follow IEEE semantics:
+    overflow produces infinity or NaN, never NULL.
+
+    Mixed signed/unsigned integer inputs follow Daft's usual ``float64``
+    promotion, so that case is not overflow-checked.
+
+    Args:
+        left: The left operand.
+        right: The right operand.
+
+    Returns:
+        Expression: A numeric expression with overflowing rows set to NULL.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import try_add
+        >>> df = daft.from_pydict({"a": [2**63 - 1, 1]})
+        >>> df.select(try_add(df["a"], 1).alias("r")).to_pydict()["r"]
+        [None, 2]
+
+    """
+    return Expression._call_builtin_scalar_fn("try_add", left, right)
+
+
+def try_subtract(left: Expression, right: Expression) -> Expression:
+    """Subtracts two numbers, returning NULL where the integer result would overflow.
+
+    Integer inputs are computed at 64-bit width, so a result that does not fit
+    produces NULL instead of wrapping around silently. An unsigned result that
+    would be negative also produces NULL. Float inputs follow IEEE semantics.
+
+    Args:
+        left: The left operand.
+        right: The right operand.
+
+    Returns:
+        Expression: A numeric expression with overflowing rows set to NULL.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import try_subtract
+        >>> df = daft.from_pydict({"a": [1, -(2**63)]})
+        >>> df.select(try_subtract(df["a"], 1).alias("r")).to_pydict()["r"]
+        [0, None]
+
+    """
+    return Expression._call_builtin_scalar_fn("try_subtract", left, right)
+
+
+def try_multiply(left: Expression, right: Expression) -> Expression:
+    """Multiplies two numbers, returning NULL where the integer result would overflow.
+
+    Integer inputs are computed at 64-bit width, so a result that does not fit
+    produces NULL instead of wrapping around silently. Float inputs follow IEEE
+    semantics: overflow produces infinity, never NULL.
+
+    Args:
+        left: The left operand.
+        right: The right operand.
+
+    Returns:
+        Expression: A numeric expression with overflowing rows set to NULL.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import try_multiply
+        >>> df = daft.from_pydict({"a": [2**63 - 1, 3]})
+        >>> df.select(try_multiply(df["a"], 2).alias("r")).to_pydict()["r"]
+        [None, 6]
+
+    """
+    return Expression._call_builtin_scalar_fn("try_multiply", left, right)
+
+
 def is_nan(expr: Expression) -> Expression:
     """Checks if values are NaN (a special float value indicating not-a-number).
 

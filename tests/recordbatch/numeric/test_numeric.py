@@ -9,7 +9,7 @@ import pyarrow as pa
 import pytest
 
 from daft import DataType, col, lit
-from daft.functions import try_divide
+from daft.functions import try_add, try_divide, try_multiply, try_subtract
 from daft.recordbatch import MicroPartition
 from tests.recordbatch import daft_numeric_types
 
@@ -1108,6 +1108,79 @@ def test_try_divide_bad_dtype() -> None:
     table = MicroPartition.from_pydict({"a": ["1", "2"], "b": [1, 2]})
     with pytest.raises(ValueError, match="Expected inputs to try_divide to be numeric"):
         table.eval_expression_list([try_divide(col("a"), col("b"))])
+
+
+def test_try_add_int_overflow() -> None:
+    table = MicroPartition.from_pydict({"a": [2**63 - 1, 1, None], "b": [1, 1, 1]})
+    result = table.eval_expression_list([try_add(col("a"), col("b")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == [None, 2, None]
+
+
+def test_try_add_promotes_to_int64() -> None:
+    # Int32 inputs are widened to Int64, so the sum does not overflow Int32.
+    table = MicroPartition.from_pydict(
+        {"a": pa.array([2**31 - 1], type=pa.int32()), "b": pa.array([1], type=pa.int32())}
+    )
+    result = table.eval_expression_list([try_add(col("a"), col("b")).alias("result")])
+    assert result.get_column_by_name("result").datatype() == DataType.int64()
+    assert result.get_column_by_name("result").to_pylist() == [2**31]
+
+
+def test_try_add_broadcasts_scalar() -> None:
+    table = MicroPartition.from_pydict({"a": [1, 2, 3]})
+    result = table.eval_expression_list([try_add(col("a"), lit(10)).alias("result")])
+    assert result.get_column_by_name("result").to_pylist() == [11, 12, 13]
+
+    result = table.eval_expression_list([try_add(lit(10), col("a")).alias("result")])
+    assert result.get_column_by_name("result").to_pylist() == [11, 12, 13]
+
+
+def test_try_add_float_is_not_overflow_checked() -> None:
+    # IEEE semantics: float overflow yields inf, not NULL.
+    table = MicroPartition.from_pydict({"a": [1.0, 1e308], "b": [1.0, 1e308]})
+    result = table.eval_expression_list([try_add(col("a"), col("b")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values[0] == 2.0
+    assert math.isinf(values[1])
+
+
+def test_try_subtract_underflow() -> None:
+    table = MicroPartition.from_pydict({"a": [-(2**63), 1, None], "b": [1, 1, 1]})
+    result = table.eval_expression_list([try_subtract(col("a"), col("b")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == [None, 0, None]
+
+
+def test_try_subtract_unsigned_negative_is_null() -> None:
+    table = MicroPartition.from_pydict(
+        {"a": pa.array([0, 5], type=pa.uint64()), "b": pa.array([1, 2], type=pa.uint64())}
+    )
+    result = table.eval_expression_list([try_subtract(col("a"), col("b")).alias("result")])
+    assert result.get_column_by_name("result").datatype() == DataType.uint64()
+    assert result.get_column_by_name("result").to_pylist() == [None, 3]
+
+
+def test_try_multiply_overflow() -> None:
+    table = MicroPartition.from_pydict({"a": [2**63 - 1, 3, None], "b": [2, 2, 2]})
+    result = table.eval_expression_list([try_multiply(col("a"), col("b")).alias("result")])
+    values = result.get_column_by_name("result").to_pylist()
+    assert values == [None, 6, None]
+
+
+def test_try_multiply_unsigned_overflow() -> None:
+    table = MicroPartition.from_pydict(
+        {"a": pa.array([2**64 - 1, 3], type=pa.uint64()), "b": pa.array([2, 2], type=pa.uint64())}
+    )
+    result = table.eval_expression_list([try_multiply(col("a"), col("b")).alias("result")])
+    assert result.get_column_by_name("result").to_pylist() == [None, 6]
+
+
+def test_try_arithmetic_bad_dtype() -> None:
+    table = MicroPartition.from_pydict({"a": ["1"], "b": [2]})
+    for func in (try_add, try_subtract, try_multiply):
+        with pytest.raises(ValueError, match=f"Expected inputs to {func.__name__} to be numeric"):
+            table.eval_expression_list([func(col("a"), col("b"))])
 
 
 def test_hypot() -> None:
