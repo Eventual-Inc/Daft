@@ -21,15 +21,16 @@ class ParallelProvider(Provider):
     DEFAULT_MODE = "fast"
 
     def __init__(self, name: str | None = None, **options: Unpack[ParallelProviderOptions]):
-        from daft.dependencies import requests
-
-        if not requests.module_available():
+        try:
+            import requests  # noqa: F401
+        except ImportError:
             raise ProviderImportError("parallel")
 
         self._name = name or "parallel"
-        self._api_key = options.get("api_key") or os.environ.get("PARALLEL_API_KEY")
-        if not self._api_key:
+        api_key = options.get("api_key") or os.environ.get("PARALLEL_API_KEY")
+        if not api_key:
             raise ValueError("No Parallel API key was provided. Pass api_key or set PARALLEL_API_KEY.")
+        self._api_key = api_key
         self._base_url = (options.get("base_url") or "https://api.parallel.ai").rstrip("/")
         self._timeout = options.get("timeout", 30.0)
 
