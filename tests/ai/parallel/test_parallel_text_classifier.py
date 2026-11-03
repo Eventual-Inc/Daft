@@ -1,11 +1,52 @@
 from __future__ import annotations
 
+import json
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+import daft
 from daft.ai.parallel.protocols.text_classifier import ParallelTextClassifier
 from daft.ai.parallel.provider import ParallelProvider
+from daft.functions import classify_text
+from tests.conftest import get_tests_daft_runner_name
+
+
+class _FakeParallelDecisions(BaseHTTPRequestHandler):
+    def do_POST(self):
+        body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        self.server.requests.append(body)
+        answers = {
+            f"row_{index}": {
+                "type": "choice",
+                "choice": "even" if int(text.removeprefix("row-")) % 2 == 0 else "odd",
+                "probabilities": {},
+            }
+            for index, text in enumerate(body["state"]["texts"])
+        }
+        payload = json.dumps({"answers": answers}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def log_message(self, *args):
+        pass
+
+
+@pytest.fixture
+def parallel_server():
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _FakeParallelDecisions)
+    server.requests = []
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    yield server
+    server.shutdown()
+    server.server_close()
+    thread.join(timeout=5)
 
 
 def _classifier(response_payload):
@@ -45,6 +86,34 @@ def test_provider_validates_mode_and_batch_size():
         provider.get_text_classifier("other")
     with pytest.raises(ValueError, match="batch_size must be between 1 and 100"):
         provider.get_text_classifier(batch_size=101)
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local HTTP server is unavailable to Ray workers")
+def test_classify_text_respects_batch_size(parallel_server):
+    provider = ParallelProvider(
+        api_key="test-key",
+        base_url=f"http://127.0.0.1:{parallel_server.server_port}",
+    )
+    texts = [f"row-{index}" for index in range(7)]
+
+    result = (
+        daft.from_pydict({"text": texts})
+        .with_column(
+            "label",
+            classify_text(
+                daft.col("text"),
+                labels=["even", "odd"],
+                provider=provider,
+                batch_size=3,
+                concurrency=1,
+            ),
+        )
+        .to_pydict()
+    )
+
+    assert result["label"] == ["even", "odd", "even", "odd", "even", "odd", "even"]
+    assert sum(len(request["questions"]) for request in parallel_server.requests) == len(texts)
+    assert all(len(request["questions"]) <= 3 for request in parallel_server.requests)
 
 
 def test_classify_text_batches_questions_and_preserves_nulls():

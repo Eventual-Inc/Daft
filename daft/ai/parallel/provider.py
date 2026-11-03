@@ -9,6 +9,7 @@ if sys.version_info < (3, 11):
 else:
     from typing import Unpack
 
+from daft.ai.parallel.protocols.text_classifier import ParallelTextClassifierDescriptor
 from daft.ai.provider import Provider, ProviderImportError
 from daft.ai.typing import ClassifyTextOptions
 
@@ -41,8 +42,6 @@ class ParallelProvider(Provider):
     def get_text_classifier(
         self, model: str | None = None, **options: Unpack[ClassifyTextOptions]
     ) -> TextClassifierDescriptor:
-        from daft.ai.parallel.protocols.text_classifier import ParallelTextClassifierDescriptor
-
         mode = model or self.DEFAULT_MODE
         if mode != self.DEFAULT_MODE:
             raise ValueError(f"Unsupported Parallel Decisions mode {mode!r}; expected {self.DEFAULT_MODE!r}")
