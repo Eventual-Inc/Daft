@@ -110,7 +110,7 @@ impl TaskResultHandle for RayTaskResultHandle {
                             ip_address,
                             task_id,
                         ),
-                        stats: ExecutionStats::decode(&stats_serialized),
+                        stats: Box::new(ExecutionStats::decode(&stats_serialized)),
                     }
                 }
                 Ok(RayTaskResult::SuccessFlight(flight_part_refs, stats_serialized)) => {
@@ -123,7 +123,7 @@ impl TaskResultHandle for RayTaskResultHandle {
                             ip_address,
                             task_id,
                         ),
-                        stats: ExecutionStats::decode(&stats_serialized),
+                        stats: Box::new(ExecutionStats::decode(&stats_serialized)),
                     }
                 }
                 Ok(RayTaskResult::WorkerDied()) => TaskStatus::WorkerDied,
