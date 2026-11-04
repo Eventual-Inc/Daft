@@ -116,33 +116,30 @@ const columns = [
     cell: info => toHumanReadableDate(info.getValue()),
     sortingFn: "basic",
   }),
-  columnHelper.accessor("runner", {
+  columnHelper.accessor(row => row.runner.name, {
+    id: "runner",
     header: "Engine",
     cell: info => getEngineName(info.getValue()),
     sortingFn: "alphanumeric",
   }),
-  // @ts-ignore
-  columnHelper.accessor("ray_dashboard_url", {
-    header: "Ray UI",
+  columnHelper.display({
+    id: "dashboard_url",
+    header: "Dashboard",
     cell: info => {
-      let url = info.getValue();
-      if (url) {
-        if (!url.startsWith("http://") && !url.startsWith("https://")) {
-          url = "http://" + url;
-        }
-        return (
-          <a
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1 text-blue-500 hover:underline"
-            onClick={(e) => e.stopPropagation()}
-          >
-            Open Ray UI <ExternalLinkIcon className="h-4 w-4" />
-          </a>
-        );
-      }
-      return null;
+      const url = info.row.original.runner.dashboard_url;
+      if (!url) return null;
+      const href = url.startsWith("http://") || url.startsWith("https://") ? url : `http://${url}`;
+      return (
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1 text-blue-500 hover:underline"
+          onClick={(e) => e.stopPropagation()}
+        >
+          Open Dashboard <ExternalLinkIcon className="h-4 w-4" />
+        </a>
+      );
     },
     enableSorting: false,
   })

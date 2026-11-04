@@ -206,16 +206,22 @@ export type QueryState =
       marked_dead_sec: number;
     };
 
+export type RunnerInfo = {
+  name: string;
+  version?: string | null;
+  distributed: boolean;
+  dashboard_url?: string | null;
+  task_events_enabled?: boolean | null;
+};
+
 export type QueryInfo = {
   id: string;
   start_sec: number;
   last_heartbeat_sec: number;
   unoptimized_plan: string;
-  runner: string;
-  ray_dashboard_url?: string;
+  runner: RunnerInfo;
   entrypoint?: string;
   python_version?: string;
   daft_version?: string;
-  ray_version?: string;
   state: QueryState;
 };

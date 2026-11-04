@@ -253,19 +253,22 @@ impl DashboardSubscriber {
         if self.is_worker() {
             return Ok(());
         }
-
         self.enqueue_json(
             format!("engine/query/{}/start", query_id),
             "query_start",
             &daft_dashboard::engine::StartQueryArgs {
                 start_sec: secs_from_epoch(),
                 unoptimized_plan: metadata.unoptimized_plan.clone(),
-                runner: Some(metadata.runner.clone()),
-                ray_dashboard_url: metadata.ray_dashboard_url.clone(),
+                runner: daft_dashboard::engine::RunnerInfo {
+                    name: metadata.runner.name.clone(),
+                    version: metadata.runner.version.clone(),
+                    distributed: metadata.runner.distributed,
+                    dashboard_url: metadata.runner.dashboard_url.clone(),
+                    task_events_enabled: metadata.runner.task_events_enabled,
+                },
                 entrypoint: metadata.entrypoint.clone(),
                 python_version: metadata.python_version.clone(),
                 daft_version: metadata.daft_version.clone(),
-                ray_version: metadata.ray_version.clone(),
             },
         );
         Ok(())

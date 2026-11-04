@@ -15,9 +15,9 @@ use common_metrics::Stat;
 use crate::{
     engine::{
         ExecEmitStatsArgsRecv, ExecEndArgs, ExecStartArgs, FinalizeArgs, PlanEndArgs,
-        PlanStartArgs, StartQueryArgs, apply_emit_stats, apply_exec_end, apply_exec_start,
-        apply_operator_end, apply_operator_start, apply_plan_end, apply_plan_start,
-        apply_query_end, apply_query_start,
+        PlanStartArgs, RunnerInfo, StartQueryArgs, apply_emit_stats, apply_exec_end,
+        apply_exec_start, apply_operator_end, apply_operator_start, apply_plan_end,
+        apply_plan_start, apply_query_end, apply_query_start,
     },
     events::{Event, MetricValue},
     state::DashboardState,
@@ -133,11 +133,18 @@ fn import_event(event: &Event, state: &DashboardState) -> Result<(), EventLogErr
             StartQueryArgs {
                 start_sec: e.timestamp,
                 unoptimized_plan: e.plan.clone().into(),
-                runner: e.runner.clone(),
-                ray_dashboard_url: e.dashboard_url.clone(),
+                runner: RunnerInfo {
+                    name: e
+                        .runner
+                        .clone()
+                        .unwrap_or_else(|| "Native (Swordfish)".to_string()),
+                    version: e.runner_version.clone(),
+                    distributed: false,
+                    dashboard_url: e.dashboard_url.clone(),
+                    task_events_enabled: None,
+                },
                 entrypoint: e.entrypoint.clone(),
                 daft_version: e.daft_version.clone(),
-                ray_version: e.runner_version.clone(),
                 python_version: e.python_version.clone(),
             },
         ),
