@@ -159,7 +159,7 @@ def test_sort_on_sort_redundant_sort_eliminated():
     buf = io.StringIO()
     df2.explain(show_all=True, file=buf)
     optimized = buf.getvalue().split("== Optimized Logical Plan ==")[1].split("== Physical Plan ==")[0]
-    sort_count = len(re.findall(r"^\* Sort:", optimized, re.M))
+    sort_count = len(re.findall(r"^\* Sort:", optimized, re.MULTILINE))
     assert sort_count == 1, f"Expected 1 Sort after optimization, got {sort_count}"
     result = df2.to_pydict()
     assert result["ts"] == [1, 2, 3, 4, 5, 6]
@@ -274,7 +274,7 @@ def test_sort_on_sort_same_nulls_first_redundant_sort_eliminated():
     buf = io.StringIO()
     df2.explain(show_all=True, file=buf)
     optimized = buf.getvalue().split("== Optimized Logical Plan ==")[1].split("== Physical Plan ==")[0]
-    sort_count = len(re.findall(r"^\* Sort:", optimized, re.M))
+    sort_count = len(re.findall(r"^\* Sort:", optimized, re.MULTILINE))
     assert sort_count == 1, f"Expected 1 Sort after optimization, got {sort_count}"
     pytest.xfail(
         "pre-existing: the first sort's own shuffle already places nulls incorrectly "
