@@ -45,7 +45,7 @@
 
 ## Output Schema
 
-The `read_mcap` function returns a DataFrame with the following schema:
+`output_format` controls the column types returned by `read_mcap`. The default, `output_format="raw"`, returns:
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -56,7 +56,7 @@ The `read_mcap` function returns a DataFrame with the following schema:
 | `sequence` | `uint32` | Sequence number of the message |
 | `data` | `binary` | Raw message payload |
 
-If `use_legacy_types=True`, the DataFrame schema will match the legacy implementation.
+`output_format="raw_legacy"` matches the legacy (before v0.9.0) implementation:
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -67,10 +67,9 @@ If `use_legacy_types=True`, the DataFrame schema will match the legacy implement
 | `sequence` | `int32` | Sequence number of the message |
 | `data` | `string` | Message payload |
 
+!!! warning "Deprecated `output_format='raw_legacy'`"
 
-!!! warning "Deprecated `use_legacy_types=True` flag"
-
-    `use_legacy_types=True` is deprecated and will be removed in v0.9.0. Update your script to use the currently emitted column types.
+    `output_format="raw_legacy"` is deprecated and will be removed in v0.9.0. Update your script to use the currently emitted column types.
 
 ## Filtering Options
 

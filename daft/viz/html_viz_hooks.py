@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
 HookClass = TypeVar("HookClass")
 
-_VIZ_HOOKS_REGISTRY = {}
+_VIZ_HOOKS_REGISTRY: dict[type, Callable[[Any], str]] = {}
 _NUMPY_REGISTERED = False
 _PILLOW_REGISTERED = False
 

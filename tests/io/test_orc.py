@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 import math
+import sys
 import threading
 from decimal import Decimal
 from pathlib import Path
@@ -413,6 +414,16 @@ def test_orc_hive_real_file_pruning(tmp_path: Path, monkeypatch) -> None:
     assert [task._path for task in tasks] == [_native_file_uri(Path(paths[1]))]
     assert _batches(tasks[0])[0].to_pydict() == {"id": [2], "p": [2]}
     assert scanned == [_native_file_uri(Path(paths[1]))]
+
+
+@pytest.fixture(autouse=True)
+def limit_macos_scan_parallelism():
+    if sys.platform == "darwin":
+        # Avoid concurrent blocking file reads on the small macOS CI runner.
+        with daft.execution_config_ctx(scantask_max_parallel=1):
+            yield
+    else:
+        yield
 
 
 def _write_orc(path: Path, table: pa.Table, **kwargs) -> str:

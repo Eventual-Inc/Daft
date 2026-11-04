@@ -8,6 +8,7 @@ from urllib.parse import unquote, urlparse
 
 import pyarrow as pa
 import pyarrow.fs as pafs
+import pyarrow.parquet as pq
 import pytest
 
 from daft.daft import ScanTask
@@ -332,6 +333,42 @@ def test_iceberg_writer_empty_micropartition(tmp_path):
     assert len(result) == 0
     assert "data_file" in result.schema().column_names()
     assert not (tmp_path / writer.file_name).exists()
+
+
+def _write_and_read_back(local_catalog, name: str, properties: dict[str, str]) -> pq.ColumnChunkMetaData:
+    """Write one data file with Daft, check its rows with PyArrow, and return its column chunk metadata."""
+    data = list(range(10_000))
+    schema = Schema(NestedField(field_id=1, name="x", field_type=LongType(), required=False))
+    table = local_catalog.create_table(f"default.{name}", schema, properties=properties)
+    daft.from_pydict({"x": data}).write_iceberg(table)
+
+    (task,) = table.scan().plan_files()
+    parquet_file = pq.ParquetFile(unquote(urlparse(task.file.file_path).path))
+    assert parquet_file.read().column("x").to_pylist() == data
+    return parquet_file.metadata.row_group(0).column(0)
+
+
+@pytest.mark.parametrize(
+    ("codec", "expected"),
+    [(None, "ZSTD"), ("snappy", "SNAPPY"), ("gzip", "GZIP"), ("uncompressed", "UNCOMPRESSED")],
+)
+def test_write_honors_compression_codec_property(local_catalog, codec, expected):
+    properties = {} if codec is None else {"write.parquet.compression-codec": codec}
+
+    assert _write_and_read_back(local_catalog, "codec", properties).compression == expected
+
+
+def test_write_honors_compression_level_property(local_catalog):
+    level_1, level_9 = (
+        _write_and_read_back(
+            local_catalog,
+            f"level_{level}",
+            {"write.parquet.compression-codec": "gzip", "write.parquet.compression-level": level},
+        )
+        for level in ("1", "9")
+    )
+
+    assert level_1.total_compressed_size != level_9.total_compressed_size
 
 
 @pytest.fixture

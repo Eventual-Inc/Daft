@@ -180,24 +180,18 @@ fn init_otlp_metrics_provider(config: &Config, endpoint: &str, resource: Resourc
     assert!(mg.is_none(), "Expected meter provider to be None on init");
 
     let metrics_exporter = match config.otlp_protocol {
-        Protocol::Grpc => {
-            opentelemetry_otlp::MetricExporter::builder()
+        Protocol::Grpc => opentelemetry_otlp::MetricExporter::builder()
             .with_tonic()
             .with_endpoint(endpoint)
-            .build()
-        }
-        Protocol::HttpBinary => {
-            opentelemetry_otlp::MetricExporter::builder()
+            .build(),
+        Protocol::HttpBinary => opentelemetry_otlp::MetricExporter::builder()
             .with_http()
             .with_endpoint(endpoint)
             .with_protocol(config.otlp_protocol)
-            .build()
-        }
-        Protocol::HttpJson => {
-            // TODO: Support by enabling the `http/json` feature of the opentelemetry-otlp crate
-            panic!("`http/json` protocol is currently not supported for metrics exporter. Set `OTEL_EXPORTER_OTLP_PROTOCOL` to `grpc` or `http/protobuf` instead");
-        }
-    }.expect("Failed to build OTLP metric exporter for tracing");
+            .build(),
+        _ => unreachable!(),
+    }
+    .expect("Failed to build OTLP metric exporter for tracing");
 
     let metrics_reader = PeriodicReader::builder(metrics_exporter)
         .with_interval(config.metrics_export_interval())

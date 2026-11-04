@@ -123,6 +123,7 @@ class ParquetFileWriter(FileWriterBase):
         default_partition_fallback: str | None = None,
         metadata_collector: list[pq.FileMetaData] | None = None,
         column_compression: dict[str, str] | None = None,
+        compression_level: int | None = None,
     ):
         super().__init__(
             root_dir=root_dir,
@@ -138,6 +139,7 @@ class ParquetFileWriter(FileWriterBase):
         self.current_writer: pq.ParquetWriter | None = None
         self.metadata_collector: list[pq.FileMetaData] | None = metadata_collector
         self.column_compression = column_compression
+        self.compression_level = compression_level
 
     def _create_writer(self, schema: pa.Schema) -> pq.ParquetWriter:
         opts = {}
@@ -152,6 +154,7 @@ class ParquetFileWriter(FileWriterBase):
             self.full_path,
             schema,
             compression=compression,
+            compression_level=self.compression_level,
             use_compliant_nested_type=False,
             filesystem=self.fs,
             # When using Arrow 8, it defaults to parquet version 1.
@@ -333,11 +336,14 @@ class IcebergWriter(ParquetFileWriter):
     ):
         from pyiceberg.io.pyarrow import schema_to_pyarrow
 
+        codec = properties.get("write.parquet.compression-codec", "zstd")
+        level = properties.get("write.parquet.compression-level")
         super().__init__(
             root_dir=root_dir,
             file_idx=file_idx,
             partition_values=partition_values,
-            compression="zstd",
+            compression="none" if codec == "uncompressed" else codec,
+            compression_level=int(level) if level is not None else None,
             io_config=io_config,
             version=None,
             default_partition_fallback="null",

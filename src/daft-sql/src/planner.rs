@@ -921,7 +921,8 @@ impl SQLPlanner<'_> {
             use sqlparser::ast::{
                 JoinConstraint,
                 JoinOperator::{
-                    FullOuter, Inner, Join, Left, LeftAnti, LeftOuter, LeftSemi, Right, RightOuter,
+                    CrossJoin, FullOuter, Inner, Join, Left, LeftAnti, LeftOuter, LeftSemi, Right,
+                    RightOuter,
                 },
             };
 
@@ -933,6 +934,10 @@ impl SQLPlanner<'_> {
             }
 
             let (join_type, constraint) = match &join.join_operator {
+                CrossJoin(JoinConstraint::None) => {
+                    left_planner.update_plan(|plan| plan.cross_join(right_plan, join_options))?;
+                    continue;
+                }
                 Join(constraint) => (JoinType::Inner, constraint),
                 Inner(constraint) => (JoinType::Inner, constraint),
                 Left(constraint) => (JoinType::Left, constraint),
@@ -1668,10 +1673,11 @@ impl SQLPlanner<'_> {
                 let expr = self.plan_expr(expr)?;
                 Ok(expr.try_cast(&dtype))
             }
-            SQLExpr::IsFalse(expr) => Ok(self.plan_expr(expr)?.eq(lit(false))),
-            SQLExpr::IsNotFalse(_) => Ok(self.plan_expr(expr)?.eq(lit(false)).not()),
-            SQLExpr::IsTrue(expr) => Ok(self.plan_expr(expr)?.eq(lit(true))),
-            SQLExpr::IsNotTrue(expr) => Ok(self.plan_expr(expr)?.eq(lit(true)).not()),
+            // Null-safe so these never return NULL, per the SQL standard.
+            SQLExpr::IsFalse(expr) => Ok(self.plan_expr(expr)?.eq_null_safe(lit(false))),
+            SQLExpr::IsNotFalse(expr) => Ok(self.plan_expr(expr)?.eq_null_safe(lit(false)).not()),
+            SQLExpr::IsTrue(expr) => Ok(self.plan_expr(expr)?.eq_null_safe(lit(true))),
+            SQLExpr::IsNotTrue(expr) => Ok(self.plan_expr(expr)?.eq_null_safe(lit(true)).not()),
             SQLExpr::IsNull(expr) => Ok(self.plan_expr(expr)?.is_null()),
             SQLExpr::IsNotNull(expr) => Ok(self.plan_expr(expr)?.is_null().not()),
             SQLExpr::UnaryOp { op, expr } => self.plan_unary_op(op, expr),

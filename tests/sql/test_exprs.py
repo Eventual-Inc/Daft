@@ -191,6 +191,27 @@ def test_is_in_edge_cases():
 
 
 @pytest.mark.parametrize(
+    "op, expected",
+    [
+        ("IS TRUE", [True, False, False]),
+        ("IS FALSE", [False, True, False]),
+        ("IS NOT TRUE", [False, True, True]),
+        ("IS NOT FALSE", [True, False, True]),
+    ],
+)
+def test_is_true_false(op, expected):
+    df = daft.from_pydict({"x": [True, False, None]})  # noqa: F841
+    actual = daft.sql(f"SELECT x {op} AS r FROM df").collect().to_pydict()
+    assert actual == {"r": expected}
+
+
+def test_is_not_false_filter():
+    df = daft.from_pydict({"x": [True, False, None]})  # noqa: F841
+    actual = daft.sql("SELECT x FROM df WHERE x IS NOT FALSE").collect().to_pydict()
+    assert actual == {"x": [True, None]}
+
+
+@pytest.mark.parametrize(
     "date_values, ts_values, expected_intervals",
     [
         (
