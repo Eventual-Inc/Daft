@@ -206,8 +206,16 @@ class GlueCatalog(Catalog):
             raise NotFoundError(f"Table {identifier} not found")
 
     def _has_table(self, identifier: Identifier) -> bool:
+        if len(identifier) != 2:
+            raise ValueError(f"Expected identifier with form `<database_name>.<table_name>` but found {identifier}")
+        database_name: str = str(identifier[0])
+        name: str = str(identifier[1])
+
+        # Check existence directly rather than through _get_table, which converts
+        # EntityNotFoundException to NotFoundError and also fails for tables that
+        # exist but have no supported Daft table implementation.
         try:
-            self._get_table(identifier)
+            self._client.get_table(DatabaseName=database_name, Name=name)
             return True
         except self._client.exceptions.EntityNotFoundException:
             return False
