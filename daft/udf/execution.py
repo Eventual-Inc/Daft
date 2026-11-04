@@ -70,7 +70,7 @@ async def _retry_failed_rows(
             delay_ms = min(delay_ms * 2.0, _MAX_RETRY_DELAY_MS)
             try:
                 outputs[index] = await call_for_row(index)
-            except Exception as retry_error:  # noqa: BLE001 - user UDFs raise arbitrary exceptions
+            except Exception as retry_error:
                 error = retry_error
                 continue
             error = None

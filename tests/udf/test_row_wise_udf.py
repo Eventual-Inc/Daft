@@ -300,7 +300,9 @@ def test_async_rowwise_on_err_log_only_nulls_failed_rows(caplog):
     with caplog.at_level("WARNING"):
         actual = df.select(raise_on_five(col("value"))).to_pydict()
     assert actual == expected
-    assert "Python UDF error" in caplog.text
+    if get_tests_daft_runner_name() == "native":
+        # Under Ray the UDF runs in worker processes, so the log record never reaches the driver.
+        assert "Python UDF error" in caplog.text
 
 
 def test_async_rowwise_retries_only_failed_rows():
