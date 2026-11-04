@@ -38,7 +38,11 @@ from pyiceberg.utils.datetime import datetime_to_micros
 
 import daft
 from daft.datatype import DataType
-from daft.io.iceberg._expressions import convert_expression_to_iceberg
+from daft.io.iceberg._expressions import (
+    convert_expression_to_iceberg,
+    convert_filter,
+    convert_overwrite_filter,
+)
 from daft.io.iceberg._visitors import IcebergPredicateVisitor
 
 try:
@@ -193,10 +197,39 @@ def test_alias_ignored() -> None:
     assert result.term.name == "x"
 
 
-def test_cast_ignored() -> None:
-    result = convert_expression_to_iceberg(daft.col("x").cast(DataType.int64()) == daft.lit(5))
+def test_noop_cast_ignored(schema: Schema) -> None:
+    result = convert_expression_to_iceberg(daft.col("x").cast(DataType.int32()) == daft.lit(5), schema)
     assert isinstance(result, EqualTo)
     assert result.term.name == "x"
+
+
+def test_int_widening_cast_ignored(schema: Schema) -> None:
+    result = convert_expression_to_iceberg(daft.col("x").cast(DataType.int64()) == daft.lit(5), schema)
+    assert isinstance(result, EqualTo)
+    assert result.term.name == "x"
+
+
+def test_lossy_cast_raises(schema: Schema) -> None:
+    expr = daft.col("ts").cast(DataType.date()) == daft.lit(date(2024, 1, 1))
+    with pytest.raises(ValueError, match="cast can change values"):
+        convert_expression_to_iceberg(expr, schema)
+
+
+def test_cast_without_schema_raises() -> None:
+    expr = daft.col("x").cast(DataType.int32()) == daft.lit(5)
+    with pytest.raises(ValueError, match="cast can change values"):
+        convert_expression_to_iceberg(expr)
+
+
+def test_lossy_cast_filter_pushdown_skipped(schema: Schema) -> None:
+    expr = daft.col("ts").cast(DataType.date()) == daft.lit(date(2024, 1, 1))
+    assert convert_filter(expr._expr, schema) is None
+
+
+def test_lossy_cast_overwrite_filter_raises(schema: Schema) -> None:
+    expr = daft.col("ts").cast(DataType.date()) == daft.lit(date(2024, 1, 1))
+    with pytest.raises(ValueError, match="cast can change values"):
+        convert_overwrite_filter(expr, schema)
 
 
 def test_function_raises() -> None:

@@ -8,6 +8,7 @@ against a temporary SQLite-backed catalog so they run in the default unit test s
 
 from __future__ import annotations
 
+from datetime import date, datetime
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
@@ -24,7 +25,7 @@ from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import IdentityTransform
-from pyiceberg.types import LongType, NestedField, StringType
+from pyiceberg.types import DoubleType, LongType, NestedField, StringType, TimestampType
 
 
 @pytest.fixture
@@ -407,3 +408,34 @@ def test_read_add_files_table_split_by_row_groups(local_catalog, tmp_path):
         enable_scan_task_split_and_merge=True, scan_tasks_min_size_bytes=0, scan_tasks_max_size_bytes=1
     ):
         assert daft.read_iceberg(table).sort("a").to_pydict() == {"a": list(range(1_000))}
+
+
+def test_read_iceberg_cast_pushdown_does_not_drop_matching_rows(local_catalog):
+    """Casts that can change values must not be elided from the pushed-down predicate (#7562)."""
+    table = local_catalog.create_table(
+        "default.cast_pushdown",
+        Schema(
+            NestedField(1, "x", DoubleType(), required=False),
+            NestedField(2, "ts", TimestampType(), required=False),
+        ),
+    )
+    table.append(
+        pa.table(
+            {
+                "x": pa.array([3.7], type=pa.float64()),
+                "ts": pa.array([datetime(2024, 1, 1, 12, 0)], type=pa.timestamp("us")),
+            }
+        )
+    )
+    table.refresh()
+
+    df = daft.read_iceberg(table)
+    expected = {"x": [3.7], "ts": [datetime(2024, 1, 1, 12, 0)]}
+
+    int_pred = daft.col("x").cast(daft.DataType.int64()) == 3
+    assert df.where(int_pred).to_pydict() == expected
+    assert df.where(int_pred).count_rows() == 1
+
+    date_pred = daft.col("ts").cast(daft.DataType.date()) == date(2024, 1, 1)
+    assert df.where(date_pred).to_pydict() == expected
+    assert df.where(date_pred).count_rows() == 1
