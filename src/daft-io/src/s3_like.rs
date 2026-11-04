@@ -12,7 +12,9 @@ use std::{
 
 use async_recursion::async_recursion;
 use async_trait::async_trait;
-use aws_config::{BehaviorVersion, meta::region::ProvideRegion, timeout::TimeoutConfig};
+use aws_config::{
+    BehaviorVersion, ConfigLoader, SdkConfig, meta::region::ProvideRegion, timeout::TimeoutConfig,
+};
 use aws_credential_types::provider::error::CredentialsError;
 use aws_sdk_s3::{
     self as s3,
@@ -33,6 +35,7 @@ use aws_sdk_s3::{
 use aws_smithy_runtime_api::{
     client::retries::classifiers::RetryClassifierPriority, http::Response,
 };
+use aws_types::service_config::ServiceConfigKey;
 use bytes::Bytes;
 use common_io_config::S3Config;
 use common_runtime::get_io_pool_num_threads;
@@ -500,7 +503,59 @@ fn normalize_endpoint_url(url_str: &str) -> String {
     }
 }
 
+/// Neon Object Storage endpoints look like `https://<branch_id>.storage.<cell>.<region>.aws.neon.tech`.
+/// Neon only serves path-style requests: the TLS certificate covers `*.storage.<cell>.<region>.aws.neon.tech`,
+/// so a virtual-hosted `<bucket>.<branch_id>.storage...` host fails the handshake.
+fn is_neon_storage_endpoint(url_str: &str) -> bool {
+    url::Url::parse(&normalize_endpoint_url(url_str))
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_ascii_lowercase))
+        .is_some_and(|host| host.ends_with(".neon.tech") && host.contains(".storage."))
+}
+
+/// Path-style addressing is used for custom endpoints unless `force_virtual_addressing` is set,
+/// and always for Neon Object Storage, wherever its endpoint was configured.
+fn use_path_style(config: &S3Config, resolved_endpoint_url: Option<&str>) -> bool {
+    if resolved_endpoint_url.is_some_and(is_neon_storage_endpoint) {
+        if config.force_virtual_addressing {
+            log::warn!(
+                "Ignoring `force_virtual_addressing` for Neon Object Storage endpoint, which only supports path-style requests"
+            );
+        }
+        return true;
+    }
+    config.endpoint_url.is_some() && !config.force_virtual_addressing
+}
+
+/// The endpoint the S3 client will use, resolved the same way as `aws_sdk_s3::config::Builder::from`:
+/// an explicit endpoint first, then `AWS_ENDPOINT_URL_S3` (or a profile's `services` section),
+/// then `AWS_ENDPOINT_URL` (or a profile's `endpoint_url`).
+fn resolve_endpoint_url(sdk_config: &SdkConfig) -> Option<String> {
+    let shared_endpoint_url = sdk_config.endpoint_url().map(str::to_string);
+    if sdk_config.get_origin("endpoint_url").is_client_config() {
+        return shared_endpoint_url;
+    }
+    let s3_endpoint_key = ServiceConfigKey::builder()
+        .service_id("S3")
+        .env("AWS_ENDPOINT_URL")
+        .profile("endpoint_url")
+        .build()
+        .expect("all ServiceConfigKey fields are set");
+    sdk_config
+        .service_config()
+        .and_then(|service_config| service_config.load_config(s3_endpoint_key))
+        .or(shared_endpoint_url)
+}
+
 async fn build_s3_conf(config: &S3Config) -> super::Result<s3::Config> {
+    build_s3_conf_with_loader(config, aws_config::defaults(BehaviorVersion::latest())).await
+}
+
+/// Builds the S3 client config on top of `loader`. Tests pass a loader with a fake environment.
+async fn build_s3_conf_with_loader(
+    config: &S3Config,
+    mut loader: ConfigLoader,
+) -> super::Result<s3::Config> {
     const DEFAULT_REGION: Region = Region::from_static("us-east-1");
 
     let region = config
@@ -636,8 +691,6 @@ async fn build_s3_conf(config: &S3Config) -> super::Result<s3::Config> {
         .build();
 
     let sdk_config = {
-        let mut loader = aws_config::defaults(BehaviorVersion::latest());
-
         macro_rules! maybe_set_loader_value {
             ($method:ident, $value:expr) => {
                 if let Some($method) = $value {
@@ -674,7 +727,9 @@ async fn build_s3_conf(config: &S3Config) -> super::Result<s3::Config> {
 
     let mut builder = aws_sdk_s3::config::Builder::from(&sdk_config);
 
-    let force_path_style = config.endpoint_url.is_some() && !config.force_virtual_addressing;
+    // The endpoint may also come from `AWS_ENDPOINT_URL_S3` / `AWS_ENDPOINT_URL` and not `S3Config`.
+    let resolved_endpoint_url = resolve_endpoint_url(&sdk_config);
+    let force_path_style = use_path_style(config, resolved_endpoint_url.as_deref());
     builder = builder.force_path_style(force_path_style);
 
     // Add custom retry classifier for customized retry messages
@@ -1824,8 +1879,13 @@ mod tests {
     use common_io_config::S3Config;
 
     use crate::{
-        Result, S3LikeSource, integrations::test_full_get, object_io::ObjectSource,
-        s3_like::normalize_endpoint_url,
+        Result, S3LikeSource,
+        integrations::test_full_get,
+        object_io::ObjectSource,
+        s3_like::{
+            build_s3_conf_with_loader, is_neon_storage_endpoint, normalize_endpoint_url,
+            use_path_style,
+        },
     };
 
     #[test]
@@ -1886,6 +1946,204 @@ mod tests {
         // `Url::parse`, so the `Err(_)` fallback is exercised (and must not panic).
         assert_eq!(normalize_endpoint_url(""), "https://");
         assert_eq!(normalize_endpoint_url("a b.com"), "https://a b.com/");
+    }
+
+    #[test]
+    fn test_is_neon_storage_endpoint() {
+        assert!(is_neon_storage_endpoint(
+            "https://br-raspy-haze-b5ospiib.storage.c-7.us-east-2.aws.neon.tech"
+        ));
+        assert!(is_neon_storage_endpoint(
+            "https://br-raspy-haze-b5ospiib.storage.c-7.us-east-2.aws.neon.tech/"
+        ));
+        // Bare host, as an Iceberg REST catalog might vend it.
+        assert!(is_neon_storage_endpoint(
+            "br-raspy-haze-b5ospiib.storage.c-7.us-east-2.aws.neon.tech"
+        ));
+        assert!(is_neon_storage_endpoint(
+            "HTTPS://BR-RASPY-HAZE-B5OSPIIB.STORAGE.C-7.US-EAST-2.AWS.NEON.TECH"
+        ));
+
+        // Postgres hosts and look-alike domains are not storage endpoints.
+        assert!(!is_neon_storage_endpoint(
+            "https://ep-cool-sun-123456.c-7.us-east-2.aws.neon.tech"
+        ));
+        assert!(!is_neon_storage_endpoint(
+            "https://abc.storage.supabase.co/storage/v1/s3"
+        ));
+        assert!(!is_neon_storage_endpoint(
+            "https://br-x.storage.neon.tech.example.com"
+        ));
+        assert!(!is_neon_storage_endpoint(""));
+    }
+
+    #[test]
+    fn test_use_path_style() {
+        let neon = "https://br-raspy-haze-b5ospiib.storage.c-7.us-east-2.aws.neon.tech";
+        let minio = "http://localhost:9000";
+
+        // AWS S3 with no endpoint keeps virtual-hosted addressing.
+        assert!(!use_path_style(&S3Config::default(), None));
+
+        // Custom endpoints default to path-style, and `force_virtual_addressing` opts out.
+        let custom = S3Config {
+            endpoint_url: Some(minio.to_string()),
+            ..Default::default()
+        };
+        assert!(use_path_style(&custom, Some(minio)));
+        let custom_vhost = S3Config {
+            force_virtual_addressing: true,
+            ..custom
+        };
+        assert!(!use_path_style(&custom_vhost, Some(minio)));
+
+        // Neon is always path-style, even when the endpoint came from the environment
+        // (so `S3Config.endpoint_url` is unset) or virtual addressing was forced.
+        assert!(use_path_style(&S3Config::default(), Some(neon)));
+        let neon_vhost = S3Config {
+            endpoint_url: Some(neon.to_string()),
+            force_virtual_addressing: true,
+            ..Default::default()
+        };
+        assert!(use_path_style(&neon_vhost, Some(neon)));
+
+        // An endpoint from the environment that is not Neon keeps the existing behavior.
+        assert!(!use_path_style(&S3Config::default(), Some(minio)));
+    }
+
+    /// Builds the S3 client config from `config` and a fake environment (with no AWS config
+    /// files), sends a HeadObject for `my-bucket/my-key`, and returns the request URI.
+    async fn head_object_uri(config: S3Config, env: &[(&str, &str)]) -> String {
+        use aws_config::BehaviorVersion;
+        use aws_smithy_http_client::test_util::capture_request;
+        use aws_types::os_shim_internal::{Env, Fs};
+
+        // Fixed credentials and region keep the SDK from probing IMDS.
+        let config = S3Config {
+            key_id: Some("test-key-id".to_string()),
+            access_key: Some("test-secret".to_string().into()),
+            region_name: Some("us-east-1".to_string()),
+            ..config
+        };
+        let loader = aws_config::defaults(BehaviorVersion::latest())
+            .env(Env::from_slice(env))
+            .fs(Fs::from_slice(&[]));
+        let s3_conf = build_s3_conf_with_loader(&config, loader).await.unwrap();
+
+        let (http_client, request) = capture_request(None);
+        let client =
+            aws_sdk_s3::Client::from_conf(s3_conf.to_builder().http_client(http_client).build());
+        client
+            .head_object()
+            .bucket("my-bucket")
+            .key("my-key")
+            .send()
+            .await
+            .unwrap();
+        request.expect_request().uri().to_string()
+    }
+
+    const NEON: &str = "https://br-raspy-haze-b5ospiib.storage.c-7.us-east-2.aws.neon.tech";
+    const NEON_OBJECT: &str =
+        "https://br-raspy-haze-b5ospiib.storage.c-7.us-east-2.aws.neon.tech/my-bucket/my-key";
+
+    #[tokio::test]
+    async fn test_neon_endpoint_from_aws_endpoint_url_s3_is_path_style() {
+        let uri = head_object_uri(S3Config::default(), &[("AWS_ENDPOINT_URL_S3", NEON)]).await;
+        assert_eq!(uri, NEON_OBJECT);
+    }
+
+    #[tokio::test]
+    async fn test_neon_endpoint_from_aws_endpoint_url_is_path_style() {
+        let uri = head_object_uri(S3Config::default(), &[("AWS_ENDPOINT_URL", NEON)]).await;
+        assert_eq!(uri, NEON_OBJECT);
+    }
+
+    #[tokio::test]
+    async fn test_neon_endpoint_ignores_force_virtual_addressing() {
+        let config = S3Config {
+            endpoint_url: Some(NEON.to_string()),
+            force_virtual_addressing: true,
+            ..Default::default()
+        };
+        assert_eq!(head_object_uri(config, &[]).await, NEON_OBJECT);
+
+        let config = S3Config {
+            force_virtual_addressing: true,
+            ..Default::default()
+        };
+        let uri = head_object_uri(config, &[("AWS_ENDPOINT_URL_S3", NEON)]).await;
+        assert_eq!(uri, NEON_OBJECT);
+    }
+
+    #[tokio::test]
+    async fn test_endpoint_precedence_matches_sdk() {
+        // An explicit `endpoint_url` wins over both environment variables.
+        let config = S3Config {
+            endpoint_url: Some(NEON.to_string()),
+            ..Default::default()
+        };
+        let env = [
+            ("AWS_ENDPOINT_URL_S3", "https://s3.example.com"),
+            ("AWS_ENDPOINT_URL", "https://s3.example.com"),
+        ];
+        assert_eq!(head_object_uri(config, &env).await, NEON_OBJECT);
+
+        // `AWS_ENDPOINT_URL_S3` wins over `AWS_ENDPOINT_URL`.
+        let env = [
+            ("AWS_ENDPOINT_URL_S3", NEON),
+            ("AWS_ENDPOINT_URL", "https://s3.example.com"),
+        ];
+        assert_eq!(
+            head_object_uri(S3Config::default(), &env).await,
+            NEON_OBJECT
+        );
+
+        // A Neon `AWS_ENDPOINT_URL` does not leak into a non-Neon `AWS_ENDPOINT_URL_S3`,
+        // which keeps the existing virtual-hosted addressing.
+        let env = [
+            ("AWS_ENDPOINT_URL_S3", "https://s3.example.com"),
+            ("AWS_ENDPOINT_URL", NEON),
+        ];
+        assert_eq!(
+            head_object_uri(S3Config::default(), &env).await,
+            "https://my-bucket.s3.example.com/my-key"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_non_neon_endpoints_keep_existing_addressing() {
+        // AWS S3 is virtual-hosted.
+        assert_eq!(
+            head_object_uri(S3Config::default(), &[]).await,
+            "https://my-bucket.s3.us-east-1.amazonaws.com/my-key"
+        );
+
+        // A non-Neon endpoint from the environment stays virtual-hosted, as before.
+        let uri = head_object_uri(
+            S3Config::default(),
+            &[("AWS_ENDPOINT_URL_S3", "https://s3.example.com")],
+        )
+        .await;
+        assert_eq!(uri, "https://my-bucket.s3.example.com/my-key");
+
+        // An explicit non-Neon endpoint is path-style unless virtual addressing is forced.
+        let config = S3Config {
+            endpoint_url: Some("https://s3.example.com".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            head_object_uri(config.clone(), &[]).await,
+            "https://s3.example.com/my-bucket/my-key"
+        );
+        let config = S3Config {
+            force_virtual_addressing: true,
+            ..config
+        };
+        assert_eq!(
+            head_object_uri(config, &[]).await,
+            "https://my-bucket.s3.example.com/my-key"
+        );
     }
 
     #[tokio::test]

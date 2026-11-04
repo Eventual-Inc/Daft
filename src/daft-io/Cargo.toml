@@ -7,6 +7,7 @@ aws-credential-types = {version = "1.2.7", features = ["hardcoded-credentials"]}
 aws-sdk-s3 = {version = "1.152.0", features = ["default-https-client", "rt-tokio", "sigv4a"], default-features = false}
 aws-smithy-http-client = "1.1.2"
 aws-smithy-runtime-api = "1.8.0"
+aws-types = "1.6.0"
 azure_core = {version = "1.1.0", features = ["reqwest", "reqwest_rustls", "tokio", "hmac_rust", "xml"], default-features = false}
 azure_identity = {version = "1.0.0", features = ["tokio"], default-features = false}
 azure_storage_blob = {version = "1.1.0", default-features = false}
@@ -52,6 +53,8 @@ url = {workspace = true}
 uuid = {workspace = true}
 
 [dev-dependencies]
+aws-config = {version = "1.12.0", features = ["test-util"]}
+aws-smithy-http-client = {version = "1.1.2", features = ["test-util"]}
 md5 = "0.8.0"
 opendal = {version = "0.58", default-features = false, features = [
   "services-http"  # HTTP backend (used for stalled-response timeout tests)
