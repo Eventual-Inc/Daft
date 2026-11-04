@@ -15,17 +15,19 @@ use crate::{
     pattern::{match_pattern, parse_qualified_pattern},
 };
 
-type NamespaceTableMap = IndexMap<Option<String>, IndexMap<String, Arc<MemoryTable>>>;
+/// A namespace path. The root namespace is represented by an empty path.
+type Namespace = Vec<String>;
+type NamespaceTableMap = IndexMap<Namespace, IndexMap<String, Arc<MemoryTable>>>;
 type FunctionMap = IndexMap<String, FunctionRef>;
 
 /// A catalog entirely stored in-memory.
 ///
-/// Supports tables without namespaces or with a single level namespace.
+/// Supports tables without namespaces or nested namespaces of arbitrary depth.
 #[derive(Clone)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct MemoryCatalog {
     name: String,
-    /// map of optional namespace -> table name -> table
+    /// map of namespace path -> table name -> table
     tables: Arc<RwLock<NamespaceTableMap>>,
     /// map of function name -> function
     functions: Arc<RwLock<FunctionMap>>,
@@ -35,7 +37,7 @@ impl MemoryCatalog {
     pub fn new(name: String) -> Self {
         let mut tables = IndexMap::new();
 
-        tables.insert(None, IndexMap::new());
+        tables.insert(Vec::new(), IndexMap::new());
 
         Self {
             name,
@@ -44,23 +46,24 @@ impl MemoryCatalog {
         }
     }
 
-    /// Gets the optional namespace and table name from the ident
-    fn split_table_ident(ident: &Identifier) -> CatalogResult<(Option<String>, &str)> {
+    /// Splits a table identifier into its namespace path and table name.
+    fn split_table_ident(ident: &Identifier) -> (Namespace, &str) {
         let namespace = ident
             .qualifier()
-            .map(|q| {
-                if let [namespace] = q {
-                    Ok(namespace.clone())
-                } else {
-                    Err(CatalogError::unsupported(
-                        "MemoryCatalog does not support nested namespaces",
-                    ))
-                }
-            })
-            .transpose()?;
-        let table_name = ident.name();
+            .map(<[String]>::to_vec)
+            .unwrap_or_default();
 
-        Ok((namespace, table_name))
+        (namespace, ident.name())
+    }
+
+    /// Returns the full path of a namespace identifier.
+    fn namespace_path(ident: &Identifier) -> Namespace {
+        let mut path = ident
+            .qualifier()
+            .map(<[String]>::to_vec)
+            .unwrap_or_default();
+        path.push(ident.name().to_string());
+        path
     }
 }
 
@@ -106,28 +109,21 @@ impl Catalog for MemoryCatalog {
     }
 
     fn create_namespace(&self, ident: &Identifier) -> CatalogResult<()> {
-        if ident.has_qualifier() {
-            return Err(CatalogError::unsupported(
-                "MemoryCatalog does not support nested namespaces",
-            ));
+        let namespace = Self::namespace_path(ident);
+
+        let mut tables = self.tables.write().unwrap();
+
+        match tables.entry(namespace) {
+            Entry::Vacant(slot) => {
+                slot.insert(IndexMap::new());
+                Ok(())
+            }
+            Entry::Occupied(_) => Err(CatalogError::obj_already_exists("namespace", ident)),
         }
-
-        let namespace = Some(ident.name().to_string());
-
-        if self.tables.read().unwrap().contains_key(&namespace) {
-            return Err(CatalogError::obj_already_exists("namespace", ident));
-        }
-
-        self.tables
-            .write()
-            .unwrap()
-            .insert(namespace, IndexMap::new());
-
-        Ok(())
     }
 
     fn create_table(&self, ident: &Identifier, schema: SchemaRef) -> CatalogResult<TableRef> {
-        let (namespace, table_name) = Self::split_table_ident(ident)?;
+        let (namespace, table_name) = Self::split_table_ident(ident);
 
         // Build the table before taking the lock: MemoryTable::new registers
         // the partition set with the (Python) runner and can release the GIL,
@@ -146,7 +142,7 @@ impl Catalog for MemoryCatalog {
                 .get_mut(&namespace)
                 .ok_or_else(|| CatalogError::ObjectNotFound {
                     type_: "namespace".to_string(),
-                    ident: namespace.clone().unwrap(),
+                    ident: Identifier::new(namespace.clone()).to_string(),
                 })?;
 
         match namespace_tables.entry(table_name.to_string()) {
@@ -162,20 +158,30 @@ impl Catalog for MemoryCatalog {
     }
 
     fn drop_namespace(&self, ident: &Identifier) -> CatalogResult<()> {
-        if ident.has_qualifier() {
-            return Err(CatalogError::obj_not_found("namespace", ident));
-        }
+        let namespace = Self::namespace_path(ident);
 
-        let namespace = Some(ident.name().to_string());
+        let mut tables = self.tables.write().unwrap();
 
-        match self.tables.write().unwrap().shift_remove(&namespace) {
-            Some(_) => Ok(()),
-            None => Err(CatalogError::obj_not_found("namespace", ident)),
+        // Drop the namespace and every namespace nested beneath it.
+        let mut dropped = false;
+        tables.retain(|candidate, _| {
+            if candidate.len() >= namespace.len() && candidate[..namespace.len()] == namespace[..] {
+                dropped = true;
+                false
+            } else {
+                true
+            }
+        });
+
+        if dropped {
+            Ok(())
+        } else {
+            Err(CatalogError::obj_not_found("namespace", ident))
         }
     }
 
     fn drop_table(&self, ident: &Identifier) -> CatalogResult<()> {
-        let (namespace, table_name) = Self::split_table_ident(ident)?;
+        let (namespace, table_name) = Self::split_table_ident(ident);
 
         let mut tables = self.tables.write().unwrap();
         let Some(namespace_tables) = tables.get_mut(&namespace) else {
@@ -200,7 +206,7 @@ impl Catalog for MemoryCatalog {
     }
 
     fn get_table(&self, ident: &Identifier) -> CatalogResult<TableRef> {
-        let (namespace, table_name) = Self::split_table_ident(ident)?;
+        let (namespace, table_name) = Self::split_table_ident(ident);
 
         self.tables
             .read()
@@ -215,24 +221,13 @@ impl Catalog for MemoryCatalog {
     }
 
     fn has_namespace(&self, ident: &Identifier) -> CatalogResult<bool> {
-        if ident.has_qualifier() {
-            return Ok(false);
-        }
+        let namespace = Self::namespace_path(ident);
 
-        // works because we only support a single-level namespace
-        let namespace = ident.name();
-
-        Ok(self
-            .tables
-            .read()
-            .unwrap()
-            .contains_key(&Some(namespace.to_string())))
+        Ok(self.tables.read().unwrap().contains_key(&namespace))
     }
 
     fn has_table(&self, ident: &Identifier) -> CatalogResult<bool> {
-        let Ok((namespace, table_name)) = Self::split_table_ident(ident) else {
-            return Ok(false);
-        };
+        let (namespace, table_name) = Self::split_table_ident(ident);
 
         Ok(self
             .tables
@@ -248,14 +243,9 @@ impl Catalog for MemoryCatalog {
             .read()
             .unwrap()
             .keys()
-            .filter_map(|namespace| {
-                let ns = namespace.as_ref()?;
-                if pattern.is_none_or(|pat| match_pattern(ns, pat)) {
-                    Some(Identifier::simple(ns))
-                } else {
-                    None
-                }
-            })
+            .filter(|namespace| !namespace.is_empty())
+            .filter(|namespace| pattern.is_none_or(|pat| match_pattern(&namespace.join("."), pat)))
+            .map(|namespace| Identifier::new(namespace.clone()))
             .collect())
     }
 
@@ -270,45 +260,21 @@ impl Catalog for MemoryCatalog {
             None => (None, None),
         };
 
-        let ns_table_pairs: Vec<(Option<String>, String)> = match namespace_filter {
-            Some(ns_filter) => {
-                // Only list tables from the specified namespace
-                tables
-                    .get(&Some(ns_filter.to_string()))
-                    .iter()
-                    .flat_map(|namespace_tables| {
-                        namespace_tables
-                            .keys()
-                            .map(|table_name| (Some(ns_filter.to_string()), table_name.clone()))
-                    })
-                    .collect()
+        let mut result = Vec::new();
+        for (namespace, namespace_tables) in tables.iter() {
+            if namespace_filter.is_some_and(|filter| namespace.join(".") != filter) {
+                continue;
             }
-            None => {
-                // List tables from all namespaces
-                tables
-                    .iter()
-                    .flat_map(|(namespace, namespace_tables)| {
-                        namespace_tables
-                            .keys()
-                            .map(|table_name| (namespace.clone(), table_name.clone()))
-                    })
-                    .collect()
-            }
-        };
 
-        let result = ns_table_pairs
-            .iter()
-            .filter_map(|(namespace, table_name)| {
+            let parts = namespace.clone();
+            for table_name in namespace_tables.keys() {
                 if table_pattern.is_none_or(|pat| match_pattern(table_name, pat)) {
-                    Some(match namespace {
-                        Some(ns) => Identifier::new(vec![ns, table_name]),
-                        None => Identifier::simple(table_name),
-                    })
-                } else {
-                    None
+                    let mut parts = parts.clone();
+                    parts.push(table_name.clone());
+                    result.push(Identifier::new(parts));
                 }
-            })
-            .collect();
+            }
+        }
 
         Ok(result)
     }
