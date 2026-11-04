@@ -57,6 +57,42 @@ def test_wildcard_select_with_structs():
     }
 
 
+def test_wildcard_in_struct_constructor():
+    df = daft.from_pydict(
+        {
+            "a": [1, 2, 3],
+            "b": [4, 5, 6],
+        }
+    )
+
+    res = df.select(daft.functions.to_struct(col("*"))).to_pydict()
+    assert res == {
+        "struct": [
+            {"a": 1, "b": 4},
+            {"a": 2, "b": 5},
+            {"a": 3, "b": 6},
+        ]
+    }
+
+
+def test_wildcard_in_struct_constructor_with_other_fields():
+    df = daft.from_pydict(
+        {
+            "a": [1, 2, 3],
+            "b": [4, 5, 6],
+        }
+    )
+
+    res = df.select(daft.functions.to_struct(col("*"), doubled=col("a") * 2)).to_pydict()
+    assert res == {
+        "struct": [
+            {"a": 1, "b": 4, "doubled": 2},
+            {"a": 2, "b": 5, "doubled": 4},
+            {"a": 3, "b": 6, "doubled": 6},
+        ]
+    }
+
+
 @pytest.mark.skip(reason="Sorting by wildcard columns is not supported")
 def test_wildcard_sort():
     df = daft.from_pydict(

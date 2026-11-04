@@ -17,8 +17,60 @@ use daft_dsl::{
 
 use crate::LogicalPlanRef;
 
+fn is_wildcard(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Column(Column::Unresolved(UnresolvedColumn { name, .. })) if name.as_ref() == "*"
+    ) || matches!(
+        expr,
+        Expr::Function {
+            func: FunctionExpr::Struct(StructExpr::Get(name)),
+            ..
+        } if name == "*"
+    )
+}
+
+/// Expand wildcards nested inside `struct(...)` constructors in place, so that wildcard
+/// arguments become individual fields of a single struct rather than duplicating the
+/// whole constructor once per matching column.
+fn expand_struct_constructor_wildcards(
+    expr: ExprRef,
+    plan: &LogicalPlanRef,
+) -> DaftResult<ExprRef> {
+    expr.transform_down(|e| {
+        let Expr::ScalarFn(ScalarFn::Builtin(sf)) = e.as_ref() else {
+            return Ok(Transformed::no(e));
+        };
+        if sf.name() != "struct" {
+            return Ok(Transformed::no(e));
+        }
+
+        let inputs = sf.inputs.clone().into_inner();
+        if !inputs
+            .iter()
+            .any(|input| input.exists(|e| is_wildcard(e.as_ref())))
+        {
+            return Ok(Transformed::no(e));
+        }
+
+        let mut new_inputs = Vec::with_capacity(inputs.len());
+        for input in inputs {
+            new_inputs.extend(expand_wildcard(input, plan.clone())?);
+        }
+
+        let sf = BuiltinScalarFn {
+            func: sf.func.clone(),
+            inputs: FunctionArgs::new_unnamed(new_inputs),
+        };
+        Ok(Transformed::yes(sf.into()))
+    })
+    .map(|res| res.data)
+}
+
 /// Duplicate an expression tree for each wildcard match in a column or struct get.
 fn expand_wildcard(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<Vec<ExprRef>> {
+    let expr = expand_struct_constructor_wildcards(expr, &plan)?;
+
     let mut wildcard_expansion = None;
 
     fn set_wildcard_expansion<'a>(
