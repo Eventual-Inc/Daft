@@ -95,8 +95,9 @@ impl StatisticsSubscriber for DashboardStatisticsSubscriber {
             return Ok(());
         }
 
-        // Only process events if dashboard URL is configured
-        let should_notify = std::env::var("DAFT_DASHBOARD_URL").is_ok();
+        // Only process events if a dashboard is configured, either explicitly
+        // or through the URL published by `daft dashboard start`.
+        let should_notify = daft_context::subscribers::dashboard::resolve_dashboard_url().is_some();
         if !should_notify {
             return Ok(());
         }

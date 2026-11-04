@@ -16,6 +16,8 @@ use tracing_subscriber::{self, filter::Directive, layer::SubscriberExt, util::Su
 
 const ENV_DAFT_DASHBOARD_PID_DIR: &str = "DAFT_DASHBOARD_PID_DIR";
 const ENV_DAFT_DASHBOARD_LOG_DIR: &str = "DAFT_DASHBOARD_LOG_DIR";
+/// Must match `daft_context::subscribers::dashboard::DASHBOARD_URL_FILE_NAME`.
+const DASHBOARD_URL_FILE_NAME: &str = "daft_dashboard.url";
 
 /// Dashboard command: holds the start/stop subcommand.
 #[derive(Args)]
@@ -161,7 +163,7 @@ fn start(py: Python, opts: StartArgs) {
 
     print_addr_warning(server_options.addr());
 
-    let socket_addr = build_socket_addr(server_options.addr(), server_options.port());
+    let dashboard_url = dashboard_client_url(server_options.addr(), server_options.port());
 
     let _ = tracing_subscriber::registry()
         .with(
@@ -177,23 +179,21 @@ fn start(py: Python, opts: StartArgs) {
         .build()
         .expect("Failed to create tokio runtime");
 
+    let view_url = dashboard_url.clone();
+    let banner_url = dashboard_url.clone();
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
     runtime.spawn(async move {
         println!(
-            "{}  To get started, run your Daft script with env `{}`",
+            "{}  Daft scripts started on this machine now connect to the dashboard automatically.",
             console::style("█").magenta(),
-            console::style(format!(
-                "DAFT_DASHBOARD_URL=\"http://{}\" python ...",
-                socket_addr
-            ))
-            .bold(),
+        );
+        println!(
+            "   To point a script running elsewhere at it, use `{}`",
+            console::style(format!("DAFT_DASHBOARD_URL=\"{banner_url}\" python ...")).bold(),
         );
         println!(
             "✨ View the dashboard at {}. Press Ctrl+C to shutdown",
-            console::style(format!("http://{}", socket_addr))
-                .bold()
-                .magenta()
-                .underlined(),
+            console::style(view_url).bold().magenta().underlined(),
         );
         daft_dashboard::launch_server(server_options, async move { shutdown_rx.await.unwrap() })
             .await
@@ -206,6 +206,14 @@ fn start(py: Python, opts: StartArgs) {
             "⚠️ Failed to write PID {} to file '{}'",
             pid,
             pid_path.display()
+        );
+    }
+
+    let url_path = get_url_filepath(opts.pid_dir.clone());
+    if fs::write(url_path, &dashboard_url).is_err() {
+        eprintln!(
+            "⚠️ Failed to write dashboard URL to file '{}'",
+            url_path.display()
         );
     }
 
@@ -226,7 +234,7 @@ fn start(py: Python, opts: StartArgs) {
 
 fn stop(opts: StopArgs) {
     let pid_path = get_pid_filepath(opts.pid_dir.clone());
-    let pid = match read_pid(opts.pid_dir) {
+    let pid = match read_pid(opts.pid_dir.clone()) {
         Ok(pid) => pid,
         Err(err) if err.kind() == io::ErrorKind::NotFound => {
             println!(
@@ -248,6 +256,7 @@ fn stop(opts: StopArgs) {
         Ok(()) => {
             println!("Sent stop signal to daft dashboard (PID {}).", pid);
             let _ = fs::remove_file(pid_path);
+            clear_url_file(opts.pid_dir);
         }
         Err(err) => {
             #[cfg(unix)]
@@ -259,6 +268,7 @@ fn stop(opts: StopArgs) {
                         pid_path.display()
                     );
                     let _ = fs::remove_file(pid_path);
+                    clear_url_file(opts.pid_dir);
                     return;
                 }
             }
@@ -284,6 +294,31 @@ fn get_pid_filepath(pid_dir: Option<String>) -> &'static PathBuf {
     })
 }
 
+static URL_FILEPATH: OnceLock<PathBuf> = OnceLock::new();
+
+fn get_url_filepath(pid_dir: Option<String>) -> &'static PathBuf {
+    URL_FILEPATH.get_or_init(|| {
+        let dir = pid_dir
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os(ENV_DAFT_DASHBOARD_PID_DIR).map(PathBuf::from))
+            .unwrap_or_else(std::env::temp_dir);
+
+        if let Err(e) = fs::create_dir_all(&dir) {
+            eprintln!("Failed to create dashboard dir '{}': {e}", dir.display());
+        }
+
+        dir.join(DASHBOARD_URL_FILE_NAME)
+    })
+}
+
+fn clear_url_file(pid_dir: Option<String>) {
+    if let Err(e) = fs::remove_file(get_url_filepath(pid_dir))
+        && e.kind() != io::ErrorKind::NotFound
+    {
+        eprintln!("Warning: failed to remove daft dashboard URL file: {e}");
+    }
+}
+
 static LOG_FILEPATH: OnceLock<PathBuf> = OnceLock::new();
 
 fn get_log_filepath(log_dir: Option<String>) -> &'static PathBuf {
@@ -303,14 +338,17 @@ fn get_log_filepath(log_dir: Option<String>) -> &'static PathBuf {
 
 fn clear_pid_file_if_matches(pid: u32, pid_dir: Option<String>) {
     let path = get_pid_filepath(pid_dir.clone());
-    match read_pid(pid_dir) {
-        Ok(current_pid) if current_pid == pid => match fs::remove_file(path) {
-            Ok(()) => {}
-            Err(e) if e.kind() != io::ErrorKind::NotFound => {
-                eprintln!("Warning: failed to remove daft dashboard PID file: {e}");
+    match read_pid(pid_dir.clone()) {
+        Ok(current_pid) if current_pid == pid => {
+            match fs::remove_file(path) {
+                Ok(()) => {}
+                Err(e) if e.kind() != io::ErrorKind::NotFound => {
+                    eprintln!("Warning: failed to remove daft dashboard PID file: {e}");
+                }
+                Err(_) => {}
             }
-            Err(_) => {}
-        },
+            clear_url_file(pid_dir);
+        }
         _ => {}
     }
 }
@@ -329,8 +367,15 @@ fn print_addr_warning(addr: IpAddr) {
     }
 }
 
-fn build_socket_addr(addr: IpAddr, port: u16) -> SocketAddr {
-    SocketAddr::from((addr, port))
+/// URL that clients on this machine should use. A server bound to all
+/// interfaces is reachable through loopback, which also renders correctly in
+/// browsers.
+fn dashboard_client_url(addr: IpAddr, port: u16) -> String {
+    if addr.is_unspecified() {
+        format!("http://127.0.0.1:{port}")
+    } else {
+        format!("http://{}", SocketAddr::from((addr, port)))
+    }
 }
 
 #[cfg(unix)]

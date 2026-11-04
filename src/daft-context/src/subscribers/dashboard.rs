@@ -1,4 +1,5 @@
 use std::{
+    path::PathBuf,
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
@@ -60,6 +61,56 @@ impl From<&TaskSource> for daft_dashboard::engine::TaskSourceArgs {
 const DASHBOARD_EVENT_LIMIT: usize = 512;
 const DASHBOARD_SHUTDOWN_TIMEOUT_MS: u64 = 500;
 
+/// Name of the file `daft dashboard start` publishes its URL to, next to the PID file.
+pub const DASHBOARD_URL_FILE_NAME: &str = "daft_dashboard.url";
+
+const ENV_DAFT_DASHBOARD_URL: &str = "DAFT_DASHBOARD_URL";
+const ENV_DAFT_DASHBOARD_PID_DIR: &str = "DAFT_DASHBOARD_PID_DIR";
+
+/// Resolve the dashboard a client should publish to.
+///
+/// `DAFT_DASHBOARD_URL` takes precedence. Otherwise, fall back to the URL file
+/// written by `daft dashboard start`, so that a locally started dashboard is
+/// discovered automatically without any environment configuration.
+pub fn resolve_dashboard_url() -> Option<String> {
+    if let Ok(url) = std::env::var(ENV_DAFT_DASHBOARD_URL) {
+        let url = url.trim();
+        if !url.is_empty() {
+            return Some(url.to_string());
+        }
+    }
+    read_published_dashboard_url()
+}
+
+fn published_dashboard_url_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::with_capacity(2);
+    if let Some(dir) = std::env::var_os(ENV_DAFT_DASHBOARD_PID_DIR) {
+        dirs.push(PathBuf::from(dir));
+    }
+    let tmp_dir = std::env::temp_dir();
+    if !dirs.contains(&tmp_dir) {
+        dirs.push(tmp_dir);
+    }
+    dirs
+}
+
+fn read_published_dashboard_url() -> Option<String> {
+    read_published_dashboard_url_from(&published_dashboard_url_dirs())
+}
+
+fn read_published_dashboard_url_from(dirs: &[PathBuf]) -> Option<String> {
+    for dir in dirs {
+        let Ok(contents) = std::fs::read_to_string(dir.join(DASHBOARD_URL_FILE_NAME)) else {
+            continue;
+        };
+        let url = contents.trim();
+        if url.starts_with("http://") || url.starts_with("https://") {
+            return Some(url.to_string());
+        }
+    }
+    None
+}
+
 /// Get the number of seconds from the current time since the UNIX epoch
 fn secs_from_epoch() -> f64 {
     SystemTime::now()
@@ -109,7 +160,7 @@ impl std::fmt::Debug for DashboardSubscriber {
 
 impl DashboardSubscriber {
     pub fn try_new() -> DaftResult<Option<Self>> {
-        let Ok(url) = std::env::var("DAFT_DASHBOARD_URL") else {
+        let Some(url) = resolve_dashboard_url() else {
             return Ok(None);
         };
 
@@ -660,5 +711,67 @@ impl Subscriber for DashboardSubscriber {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_dir() -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("daft-dashboard-url-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn reads_published_dashboard_url() {
+        let dir = temp_dir();
+        std::fs::write(dir.join(DASHBOARD_URL_FILE_NAME), "http://127.0.0.1:3238\n").unwrap();
+
+        assert_eq!(
+            read_published_dashboard_url_from(std::slice::from_ref(&dir)),
+            Some("http://127.0.0.1:3238".to_string())
+        );
+
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn ignores_missing_or_invalid_dashboard_url_files() {
+        let empty_dir = temp_dir();
+        assert_eq!(
+            read_published_dashboard_url_from(std::slice::from_ref(&empty_dir)),
+            None
+        );
+
+        let invalid_dir = temp_dir();
+        std::fs::write(invalid_dir.join(DASHBOARD_URL_FILE_NAME), "not-a-url").unwrap();
+        assert_eq!(
+            read_published_dashboard_url_from(&[empty_dir.clone(), invalid_dir.clone()]),
+            None
+        );
+
+        std::fs::remove_dir_all(empty_dir).unwrap();
+        std::fs::remove_dir_all(invalid_dir).unwrap();
+    }
+
+    #[test]
+    fn prefers_first_directory_with_a_valid_url() {
+        let missing_dir = temp_dir();
+        let valid_dir = temp_dir();
+        std::fs::write(
+            valid_dir.join(DASHBOARD_URL_FILE_NAME),
+            "http://localhost:9999",
+        )
+        .unwrap();
+
+        assert_eq!(
+            read_published_dashboard_url_from(&[missing_dir.clone(), valid_dir.clone()]),
+            Some("http://localhost:9999".to_string())
+        );
+
+        std::fs::remove_dir_all(missing_dir).unwrap();
+        std::fs::remove_dir_all(valid_dir).unwrap();
     }
 }
