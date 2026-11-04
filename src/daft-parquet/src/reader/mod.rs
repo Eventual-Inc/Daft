@@ -4,7 +4,10 @@ mod pred_pipeline;
 mod rg_processor;
 mod util;
 
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashSet},
+    sync::Arc,
+};
 
 use arrow::{array::ArrayRef, datatypes::Schema as ArrowSchema};
 use chunk_source::{

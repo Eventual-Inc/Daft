@@ -25,6 +25,7 @@ tokio-stream = {workspace = true}
 
 [dev-dependencies]
 bincode = {workspace = true}
+common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper"}
 fastrand = "2.1.0"
 parquet = {workspace = true}
 tango-bench.workspace = true

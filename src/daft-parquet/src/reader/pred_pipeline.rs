@@ -689,28 +689,37 @@ mod tests {
 
     #[test]
     fn plan_rejects_udfs() {
-        use daft_dsl::functions::{
-            FunctionExpr,
-            python::{LegacyPythonUDF, MaybeInitializedUDF, RuntimePyObject},
+        use std::sync::Arc;
+
+        use common_hashable_float_wrapper::FloatWrapper;
+        use daft_dsl::{
+            Expr,
+            functions::{
+                python::{OnError, RuntimePyObject},
+                scalar::ScalarFn,
+            },
+            python_udf::{BatchPyFn, PyScalarFn},
         };
 
-        #[cfg(feature = "python")]
-        pyo3::Python::initialize();
-        let udf: ExprRef = Expr::Function {
-            func: FunctionExpr::Python(LegacyPythonUDF {
-                name: "batch_predicate".to_string().into(),
-                func: MaybeInitializedUDF::Initialized(RuntimePyObject::new_none()),
-                bound_args: RuntimePyObject::new_none(),
-                num_expressions: 1,
-                return_dtype: DataType::Boolean,
-                resource_request: None,
-                batch_size: None,
-                concurrency: None,
-                use_process: None,
-                ray_options: None,
-            }),
-            inputs: vec![col("b")],
-        }
+        let udf: ExprRef = Expr::ScalarFn(ScalarFn::Python(PyScalarFn::Batch(BatchPyFn {
+            func_id: Arc::from("batch_predicate"),
+            function_name: Arc::from("batch_predicate"),
+            cls: RuntimePyObject::new_none(),
+            method: RuntimePyObject::new_none(),
+            builtin_name: false,
+            is_async: false,
+            return_dtype: DataType::Boolean,
+            cpus: None,
+            gpus: FloatWrapper(0.0),
+            use_process: None,
+            max_concurrency: None,
+            batch_size: None,
+            original_args: RuntimePyObject::new_none(),
+            args: vec![col("b")],
+            max_retries: None,
+            on_error: OnError::Raise,
+            ray_options: None,
+        })))
         .into();
         let pred = col("a").eq(lit(1)).and(udf.not().alias("predicate"));
         assert!(plan_pred_groups(&pred).is_none());

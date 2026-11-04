@@ -3366,6 +3366,7 @@ dependencies = [
  "bytes",
  "common-arrow-ffi",
  "common-error",
+ "common-hashable-float-wrapper",
  "common-runtime",
  "daft-core",
  "daft-dsl",
