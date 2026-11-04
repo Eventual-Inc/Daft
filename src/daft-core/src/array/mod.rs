@@ -207,6 +207,16 @@ impl<T> DataArray<T> {
                 self.len()
             )));
         }
+        // Null arrays are entirely null and cannot carry a validity buffer;
+        // attaching one panics in arrow's NullArray constructor.
+        if self.data_type().is_null() {
+            return Ok(Self {
+                field: self.field.clone(),
+                data: self.data.clone(),
+                nulls: self.nulls.clone(),
+                marker_: PhantomData,
+            });
+        }
         let array_data = self.data.to_data();
         let mut builder = array_data.into_builder();
         builder = builder.nulls(nulls);
