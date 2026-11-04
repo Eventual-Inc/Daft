@@ -7,7 +7,7 @@ use daft_core::{
     join::JoinType,
     prelude::{Operator, SchemaRef},
 };
-use daft_dsl::{Column, Expr, ExprRef, ResolvedColumn, Subquery, resolved_col};
+use daft_dsl::{Column, Expr, ExprRef, ResolvedColumn, Subquery, lit, resolved_col};
 use itertools::multiunzip;
 use uuid::Uuid;
 
@@ -74,6 +74,7 @@ impl UnnestScalarSubquery {
     fn unnest_subqueries(
         input: LogicalPlanRef,
         exprs: &[ExprRef],
+        uncorrelated_join_type: JoinType,
     ) -> DaftResult<Transformed<(LogicalPlanRef, Vec<ExprRef>)>> {
         let mut subqueries = HashSet::new();
 
@@ -116,11 +117,31 @@ impl UnnestScalarSubquery {
                 // alias output column
                 let subquery_plan = Arc::new(LogicalPlan::Project(Project::try_new(
                     subquery_plan,
-                    vec![resolved_col(output_col.as_str()).alias(subquery_alias)],
+                    vec![resolved_col(output_col.as_str()).alias(subquery_alias.clone())],
                 )?));
 
-                let (decorrelated_subquery, subquery_on, input_on) =
+                let (decorrelated_subquery, mut subquery_on, mut input_on) =
                     pull_up_correlated_cols(subquery_plan)?;
+
+                // An uncorrelated scalar subquery used as a value must evaluate to NULL when the
+                // subquery has no rows, so the outer row has to survive. A cross join cannot express
+                // that, so join on a constant key instead.
+                let (curr_input, decorrelated_subquery) = if uncorrelated_join_type
+                    == JoinType::Left
+                    && subquery_on.is_empty()
+                    && input_on.is_empty()
+                {
+                    let left_key = format!("__scalar_subquery_left_key_{subquery_alias}");
+                    let right_key = format!("__scalar_subquery_right_key_{subquery_alias}");
+                    input_on.push(resolved_col(left_key.clone()));
+                    subquery_on.push(resolved_col(right_key.clone()));
+                    (
+                        add_constant_column(curr_input, &left_key)?,
+                        add_constant_column(decorrelated_subquery, &right_key)?,
+                    )
+                } else {
+                    (curr_input, decorrelated_subquery)
+                };
 
                 let on_expr =
                     combine_conjunction(input_on.into_iter().zip(subquery_on.into_iter()).map(
@@ -174,7 +195,7 @@ impl OptimizerRule for UnnestScalarSubquery {
                 input, predicate, ..
             }) => {
                 let unnest_result =
-                    Self::unnest_subqueries(input.clone(), &split_conjunction(predicate))?;
+                    Self::unnest_subqueries(input.clone(), &split_conjunction(predicate), JoinType::Inner)?;
 
                 if !unnest_result.transformed {
                     return Ok(Transformed::no(node));
@@ -202,7 +223,7 @@ impl OptimizerRule for UnnestScalarSubquery {
                 input, projection, ..
             }) => {
                 let unnest_result =
-                    Self::unnest_subqueries(input.clone(), projection)?;
+                    Self::unnest_subqueries(input.clone(), projection, JoinType::Left)?;
 
                 if !unnest_result.transformed {
                     return Ok(Transformed::no(node));
@@ -379,6 +400,18 @@ impl OptimizerRule for UnnestPredicateSubquery {
             _ => Ok(Transformed::no(node)),
         })
     }
+}
+
+fn add_constant_column(plan: LogicalPlanRef, name: &str) -> DaftResult<LogicalPlanRef> {
+    let mut projection = plan
+        .schema()
+        .field_names()
+        .map(resolved_col)
+        .collect::<Vec<_>>();
+    projection.push(lit(1i64).alias(name));
+    Ok(Arc::new(LogicalPlan::Project(Project::try_new(
+        plan, projection,
+    )?)))
 }
 
 fn pull_up_correlated_cols(
