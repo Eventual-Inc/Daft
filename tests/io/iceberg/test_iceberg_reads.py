@@ -12,9 +12,11 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
 import daft
+from tests.conftest import get_tests_daft_runner_name
 
 pyiceberg = pytest.importorskip("pyiceberg")
 
@@ -338,3 +340,70 @@ def test_count_rows_after_partition_field_is_dropped(local_catalog):
 
     assert df.count_rows() == 3
     assert df.count_rows() == len(df.to_pydict()["x"])
+
+
+def _add_files_table(local_catalog, tmp_path, data: pa.Table, **write_options):
+    """Register a parquet file written without field IDs, as add_files does when migrating Hive tables.
+
+    Its columns can only be resolved through the table's schema.name-mapping.default.
+    """
+    path = tmp_path / "no_field_ids.parquet"
+    pq.write_table(data, path, **write_options)
+    table = local_catalog.create_table("default.migrated", data.schema)
+    table.add_files([path.as_uri()])
+    return table
+
+
+def test_read_add_files_table(local_catalog, tmp_path):
+    table = _add_files_table(local_catalog, tmp_path, pa.table({"a": [1, 2, 3], "b": ["x", "y", "z"]}))
+    df = daft.read_iceberg(table)
+
+    assert df.sort("a").to_pydict() == {"a": [1, 2, 3], "b": ["x", "y", "z"]}
+    assert df.where(daft.col("a") > 1).select("b").sort("b").to_pydict() == {"b": ["y", "z"]}
+
+
+def test_read_add_files_table_after_rename(local_catalog, tmp_path):
+    """The file still says `b`; the name mapping keeps that alias for the renamed field."""
+    table = _add_files_table(local_catalog, tmp_path, pa.table({"a": [1, 2], "b": ["x", "y"]}))
+    with table.update_schema() as update:
+        update.rename_column("b", "c")
+
+    assert daft.read_iceberg(table).sort("a").to_pydict() == {"a": [1, 2], "c": ["x", "y"]}
+
+
+def test_read_add_files_table_with_nested_types(local_catalog, tmp_path):
+    data = pa.table(
+        {
+            "id": [1, 2],
+            "s": [{"x": 1, "y": "a"}, {"x": 2, "y": "b"}],
+            "l": [[1, 2], [3]],
+            "m": pa.array([[("k1", 1)], [("k2", 2)]], type=pa.map_(pa.string(), pa.int64())),
+            "ll": [[[1], [2, 3]], [[4]]],
+            "lm": pa.array([[[("k1", 1)]], [[("k2", 2)]]], type=pa.list_(pa.map_(pa.string(), pa.int64()))),
+        }
+    )
+    table = _add_files_table(local_catalog, tmp_path, data)
+
+    expected = daft.from_arrow(table.scan().to_arrow()).sort("id").to_pydict()
+    assert daft.read_iceberg(table).sort("id").to_pydict() == expected
+
+
+def test_read_add_files_table_mixed_with_field_id_files(local_catalog, tmp_path):
+    table = _add_files_table(local_catalog, tmp_path, pa.table({"a": [1, 2], "b": ["x", "y"]}))
+    _write(table, a=[3], b=["z"])
+
+    assert daft.read_iceberg(table).sort("a").to_pydict() == {"a": [1, 2, 3], "b": ["x", "y", "z"]}
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray", reason="Only the distributed runner splits scan tasks by row group"
+)
+def test_read_add_files_table_split_by_row_groups(local_catalog, tmp_path):
+    """Splitting a scan task reads the file's metadata during planning, which needs the name mapping too."""
+    data = pa.table({"a": list(range(1_000))})
+    table = _add_files_table(local_catalog, tmp_path, data, row_group_size=100)
+
+    with daft.execution_config_ctx(
+        enable_scan_task_split_and_merge=True, scan_tasks_min_size_bytes=0, scan_tasks_max_size_bytes=1
+    ):
+        assert daft.read_iceberg(table).sort("a").to_pydict() == {"a": list(range(1_000))}

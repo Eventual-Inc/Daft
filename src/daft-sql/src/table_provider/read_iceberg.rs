@@ -17,7 +17,7 @@ pub(super) struct SqlReadIceberg;
 /// The Daft-SQL `read_iceberg` table-value function arguments.
 struct SqlReadIcebergArgs {
     metadata_location: String,
-    snapshot_id: Option<usize>,
+    snapshot_id: Option<i64>,
     branch: Option<String>,
     tag: Option<String>,
     io_config: Option<IOConfig>,
@@ -54,7 +54,7 @@ impl TryFrom<SQLFunctionArguments> for SqlReadIcebergArgs {
         } else {
             invalid_operation_err!("path is required for `read_iceberg`")
         };
-        let snapshot_id: Option<usize> = args.try_get_named("snapshot_id")?;
+        let snapshot_id: Option<i64> = args.try_get_named("snapshot_id")?;
         let branch: Option<String> = args.try_get_named("branch")?;
         let tag: Option<String> = args.try_get_named("tag")?;
         // Keep `None` when unset so the scan can fall back to the table's FileIO

@@ -143,7 +143,7 @@ class File:
 
     @property
     def offset(self) -> int | None:
-        """Deprecated alias for `position`. The byte offset for range reads, or None for full-file reads."""
+        """Deprecated alias for `position`. The byte offset for range reads, or None for full-file reads. Will be removed in v0.9.0."""
         warnings.warn(
             "`File.offset` is deprecated; use `File.position` instead.",
             DeprecationWarning,
@@ -153,7 +153,7 @@ class File:
 
     @property
     def length(self) -> int | None:
-        """Deprecated alias for the byte-range read window size, or None for full-file reads.
+        """Deprecated alias for the byte-range read window size, or None for full-file reads Will be removed in v0.9.0.
 
         Note: this returns the requested range size (caller intent), not the derived file
         size. Use `File.size()` for the actual file size.

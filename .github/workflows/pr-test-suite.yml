@@ -105,7 +105,7 @@ jobs:
     steps:
     - name: Free Disk Space (Ubuntu)
       if: ${{ (runner.os == 'Linux') }}
-      uses: jlumbroso/free-disk-space@v1.3.1
+      uses: jlumbroso/free-disk-space@v2.0.0
       with:
         tool-cache: false
         android: true
@@ -487,7 +487,7 @@ jobs:
         daft-runner: [ray, native]
     steps:
     - name: Free Disk Space (Ubuntu)
-      uses: jlumbroso/free-disk-space@v1.3.1
+      uses: jlumbroso/free-disk-space@v2.0.0
       with:
         tool-cache: false
         android: true
@@ -539,11 +539,11 @@ jobs:
         mkdir -p /tmp/daft-integration-testing/nginx
         chmod +rw /tmp/daft-integration-testing/nginx
     - name: Spin up IO services
-      uses: isbang/compose-action@v3.1.0
+      uses: ./.github/actions/docker-image-cache
       with:
-        compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
-        up-flags: --wait --wait-timeout 600
-        down-flags: --volumes
+        key: io-images-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tests/integration/io/docker-compose/**') }}
+        pull_command: docker compose -f ./tests/integration/io/docker-compose/docker-compose.yml pull --ignore-buildable
+        command: docker compose -f ./tests/integration/io/docker-compose/docker-compose.yml up -d --wait --wait-timeout 600
     - name: Run IO integration tests
       run: |
         set -o pipefail
@@ -554,6 +554,14 @@ jobs:
         python tools/aggregate_test_durations.py io_integration_pytest_output.txt io_integration_pytest_output_2.txt io_integration_pytest_output_3.txt
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
+    - name: Show IO service diagnostics
+      if: failure()
+      run: |
+        docker compose -f ./tests/integration/io/docker-compose/docker-compose.yml ps -a || true
+        docker compose -f ./tests/integration/io/docker-compose/docker-compose.yml logs --no-color || true
+    - name: Stop IO services
+      if: always()
+      run: docker compose -f ./tests/integration/io/docker-compose/docker-compose.yml down --volumes || true
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v4.0.0
       if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
@@ -598,7 +606,7 @@ jobs:
   #     contents: read
   #   steps:
   #   - name: Free Disk Space (Ubuntu)
-  #     uses: jlumbroso/free-disk-space@v1.3.1
+  #     uses: jlumbroso/free-disk-space@v2.0.0
   #     with:
   #       tool-cache: false
   #       android: true
@@ -664,7 +672,7 @@ jobs:
   #       # workload_identity_provider: ${{ secrets.ACTIONS_GCP_WORKLOAD_IDENTITY_PROVIDER }}
   #       # service_account: ${{ secrets.ACTIONS_GCP_SERVICE_ACCOUNT }}
   #   - name: Spin up IO services
-  #     uses: isbang/compose-action@v3.1.0
+  #     uses: isbang/compose-action@v3.2.0
   #     with:
   #       compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
   #       down-flags: --volumes
@@ -709,7 +717,7 @@ jobs:
         daft-runner: [native, ray]
     steps:
     - name: Free Disk Space (Ubuntu)
-      uses: jlumbroso/free-disk-space@v1.3.1
+      uses: jlumbroso/free-disk-space@v2.0.0
       with:
         tool-cache: false
         android: true
@@ -808,7 +816,7 @@ jobs:
       package-name: daft
     steps:
     - name: Free Disk Space (Ubuntu)
-      uses: jlumbroso/free-disk-space@v1.3.1
+      uses: jlumbroso/free-disk-space@v2.0.0
       with:
         tool-cache: false
         android: true
@@ -828,7 +836,7 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
-    - uses: actions/setup-java@v5
+    - uses: actions/setup-java@v6
       with:
         distribution: "temurin"
         java-version: "17"
@@ -1084,7 +1092,7 @@ jobs:
         daft-runner: [ray, native]
     steps:
     - name: Free Disk Space (Ubuntu)
-      uses: jlumbroso/free-disk-space@v1.3.1
+      uses: jlumbroso/free-disk-space@v2.0.0
       with:
         tool-cache: false
         android: true
@@ -1449,7 +1457,7 @@ jobs:
       if: ${{ matrix.os != 'Windows' }}
     - name: Free Disk Space (Ubuntu)
       if: ${{ matrix.os == 'ubuntu' }}
-      uses: jlumbroso/free-disk-space@v1.3.1
+      uses: jlumbroso/free-disk-space@v2.0.0
       with:
         tool-cache: false
         android: true
@@ -1571,7 +1579,7 @@ jobs:
       python-version: "3.10"
     steps:
     - name: Free Disk Space (Ubuntu)
-      uses: jlumbroso/free-disk-space@v1.3.1
+      uses: jlumbroso/free-disk-space@v2.0.0
       with:
         tool-cache: false
         android: true

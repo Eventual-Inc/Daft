@@ -11,6 +11,10 @@
 //!   `azure_storage::authorization_policy`.
 //! - [`SasTokenPolicy`]: appends a shared access signature's query parameters
 //!   to each request.
+//! - [`ListBlobsDelimiterPolicy`]: adds the List Blobs `delimiter` query
+//!   parameter so the service returns virtual directories. The parameter has
+//!   to be on the URL before [`SharedKeyAuthorizationPolicy`] signs the
+//!   canonicalized resource.
 
 use std::sync::Arc;
 
@@ -125,6 +129,57 @@ impl Policy for SharedKeyAuthorizationPolicy {
 
         next[0].send(ctx, request, &next[1..]).await
     }
+}
+
+/// Value stored on the request [`Context`] so [`ListBlobsDelimiterPolicy`] adds
+/// a List Blobs `delimiter`.
+///
+/// Only List Blobs calls (`comp=list`) that carry this value are modified.
+#[derive(Debug, Clone)]
+pub(crate) struct ListBlobsDelimiter(pub String);
+
+/// A per-call pipeline [`Policy`] that appends `delimiter` to List Blobs URLs.
+///
+/// Register this on the client's per-call policies so it runs before per-try
+/// auth. SharedKey signatures include every query parameter, and a delimiter
+/// added after signing is rejected.
+#[derive(Debug, Clone)]
+pub(crate) struct ListBlobsDelimiterPolicy;
+
+impl ListBlobsDelimiterPolicy {
+    pub(crate) fn new() -> Arc<Self> {
+        Arc::new(Self)
+    }
+}
+
+#[async_trait]
+impl Policy for ListBlobsDelimiterPolicy {
+    async fn send(
+        &self,
+        ctx: &Context,
+        request: &mut Request,
+        next: &[Arc<dyn Policy>],
+    ) -> PolicyResult {
+        if let Some(ListBlobsDelimiter(delimiter)) = ctx.value::<ListBlobsDelimiter>() {
+            append_list_blobs_delimiter(request.url_mut(), delimiter);
+        }
+        next[0].send(ctx, request, &next[1..]).await
+    }
+}
+
+/// Add `delimiter` to a List Blobs URL. Other requests, and URLs that already
+/// have a delimiter, are left alone so retries do not duplicate the parameter.
+fn append_list_blobs_delimiter(url: &mut Url, delimiter: &str) {
+    let is_list = url
+        .query_pairs()
+        .any(|(key, value)| key == "comp" && value == "list");
+    if !is_list {
+        return;
+    }
+    if url.query_pairs().any(|(key, _)| key == "delimiter") {
+        return;
+    }
+    url.query_pairs_mut().append_pair("delimiter", delimiter);
 }
 
 /// A per-try pipeline [`Policy`] that appends a shared access signature's
@@ -344,6 +399,61 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(token.token.secret(), "my-fabric-token");
+    }
+
+    #[test]
+    fn list_blobs_delimiter_is_added_only_to_list_requests() {
+        let mut list_url = Url::parse(
+            "https://myaccount.blob.core.windows.net/mycontainer?comp=list&restype=container&prefix=a%2Fb",
+        )
+        .unwrap();
+        append_list_blobs_delimiter(&mut list_url, "/");
+        let pairs: Vec<_> = list_url
+            .query_pairs()
+            .map(|(key, value)| (key.into_owned(), value.into_owned()))
+            .collect();
+        assert!(pairs.contains(&("comp".to_string(), "list".to_string())));
+        assert!(pairs.contains(&("restype".to_string(), "container".to_string())));
+        assert!(pairs.contains(&("prefix".to_string(), "a/b".to_string())));
+        assert!(pairs.contains(&("delimiter".to_string(), "/".to_string())));
+
+        // Retries must not append a second delimiter.
+        append_list_blobs_delimiter(&mut list_url, "/");
+        assert_eq!(
+            list_url
+                .query_pairs()
+                .filter(|(key, _)| key == "delimiter")
+                .count(),
+            1
+        );
+
+        let original = "https://myaccount.blob.core.windows.net/mycontainer/blob?comp=metadata";
+        let mut other = Url::parse(original).unwrap();
+        append_list_blobs_delimiter(&mut other, "/");
+        assert_eq!(other.as_str(), original);
+    }
+
+    #[test]
+    fn string_to_sign_includes_list_blobs_delimiter() {
+        // SharedKey canonicalizes every query parameter. The delimiter policy
+        // has to run first or Azure rejects the signature.
+        let mut headers = Headers::new();
+        headers.insert(MS_DATE, "Wed, 05 Aug 2026 20:00:00 GMT");
+        headers.insert(
+            HeaderName::from_static("x-ms-version"),
+            "2025-01-05".to_string(),
+        );
+        let mut url = Url::parse(
+            "https://myaccount.blob.core.windows.net/mycontainer?comp=list&restype=container",
+        )
+        .unwrap();
+        append_list_blobs_delimiter(&mut url, "/");
+
+        let str_to_sign = string_to_sign(&headers, &url, &Method::Get, "myaccount");
+        assert!(
+            str_to_sign.contains("\ndelimiter:/\n"),
+            "string-to-sign missing delimiter:\n{str_to_sign}"
+        );
     }
 
     #[test]

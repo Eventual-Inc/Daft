@@ -39,10 +39,9 @@ services:
   # Use nginx to serve static files
   # Test fixtures should dump data in the `/tmp/daft-integration-testing/nginx` folder
   nginx:
-    build:
-      context: .
-      dockerfile: Dockerfile.nginx
+    image: nginx:1.30.6-alpine
     volumes:
+    - ./nginx-serve-static-files.conf:/etc/nginx/nginx.conf:ro
     - /tmp/daft-integration-testing/nginx:/app/static:rw
     ports:
     - 8080:8080
@@ -55,21 +54,24 @@ services:
     ports:
     - 8001:8000
 
-  # Bigtable emulator for integration testing
-  bigtable-emulator:
-    # Use Google's multi-arch emulator image for native ARM and x86-64 support.
-    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators@sha256:45a15cc163d2df13137478856b4b9bb90426100fa8aec542269460c10110b727
-    container_name: bigtable-emulator
-    ports:
-    - "127.0.0.1:8086:8086"
-    command: gcloud beta emulators bigtable start --host-port=0.0.0.0:8086
-    environment:
-    - BIGTABLE_EMULATOR_HOST=0.0.0.0:8086
-    healthcheck:
-      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8086'"]
-      interval: 2s
-      timeout: 2s
-      retries: 30
+  # Bigtable emulator is disabled while its startup flakes in CI.
+  # The image is large and `gcloud beta emulators bigtable start` often misses
+  # the healthcheck window, which fails `docker compose up --wait` for every
+  # IO integration job. Re-enable together with TestBigtableIntegration.
+  # bigtable-emulator:
+  #   # Use Google's multi-arch emulator image for native ARM and x86-64 support.
+  #   image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators@sha256:45a15cc163d2df13137478856b4b9bb90426100fa8aec542269460c10110b727
+  #   container_name: bigtable-emulator
+  #   ports:
+  #   - "127.0.0.1:8086:8086"
+  #   command: gcloud beta emulators bigtable start --host-port=0.0.0.0:8086
+  #   environment:
+  #   - BIGTABLE_EMULATOR_HOST=0.0.0.0:8086
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8086'"]
+  #     interval: 2s
+  #     timeout: 2s
+  #     retries: 30
 
   redpanda:
     image: redpandadata/redpanda:v25.1.3
