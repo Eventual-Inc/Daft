@@ -271,6 +271,60 @@ def test_async_rowwise_on_err_ignore():
     assert actual == expected
 
 
+def test_async_rowwise_on_err_ignore_only_nulls_failed_rows():
+    @daft.func(on_error="ignore")
+    async def raise_on_five(x) -> int:
+        if x == 5:
+            raise ValueError("This is an error")
+        return x * 10
+
+    df = daft.from_pydict({"value": list(range(10))})
+
+    expected = {"value": [0, 10, 20, 30, 40, None, 60, 70, 80, 90]}
+
+    actual = df.select(raise_on_five(col("value"))).to_pydict()
+    assert actual == expected
+
+
+def test_async_rowwise_on_err_log_only_nulls_failed_rows(caplog):
+    @daft.func(on_error="log")
+    async def raise_on_five(x) -> int:
+        if x == 5:
+            raise ValueError("This is an error")
+        return x * 10
+
+    df = daft.from_pydict({"value": list(range(10))})
+
+    expected = {"value": [0, 10, 20, 30, 40, None, 60, 70, 80, 90]}
+
+    with caplog.at_level("WARNING"):
+        actual = df.select(raise_on_five(col("value"))).to_pydict()
+    assert actual == expected
+    assert "Python UDF error" in caplog.text
+
+
+def test_async_rowwise_retries_only_failed_rows():
+    class RetryState:
+        def __init__(self):
+            self.failed = False
+
+    state = RetryState()
+
+    @daft.func(on_error="ignore", max_retries=1)
+    async def fail_once(x) -> int:
+        if x == 5 and not state.failed:
+            state.failed = True
+            raise ValueError("This is an error")
+        return x * 10
+
+    df = daft.from_pydict({"value": list(range(10))})
+
+    expected = {"value": [0, 10, 20, 30, 40, 50, 60, 70, 80, 90]}
+
+    actual = df.select(fail_once(col("value"))).to_pydict()
+    assert actual == expected
+
+
 def test_rowwise_retry():
     class RetryState:
         def __init__(self):

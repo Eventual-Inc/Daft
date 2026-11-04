@@ -181,7 +181,10 @@ impl RowWisePyFn {
         let name = args[0].name();
 
         let result = crate::python_udf::retry::retry_with_backoff_async(
-            || async { self.call_async_batch_once(args, num_rows, name).await },
+            || async {
+                self.call_async_batch_once(args, num_rows, name, max_retries)
+                    .await
+            },
             max_retries,
         )
         .await;
@@ -439,6 +442,7 @@ impl RowWisePyFn {
         args: &[Series],
         num_rows: usize,
         name: &str,
+        max_retries: usize,
     ) -> DaftResult<(Series, common_metrics::python::PyOperatorMetrics)> {
         use common_metrics::python::PyOperatorMetrics;
         use daft_core::python::PySeries;
@@ -449,6 +453,7 @@ impl RowWisePyFn {
         let original_args = self.original_args.clone();
         let args = args.to_vec();
         let return_dtype = self.return_dtype.clone();
+        let on_error = self.on_error;
 
         let (py_series, operator_metrics) = common_runtime::python::execute_python_coroutine::<
             _,
@@ -479,6 +484,8 @@ impl RowWisePyFn {
                 py_return_type,
                 original_args.as_ref(),
                 evaluated_args,
+                on_error.as_str(),
+                max_retries,
             ))?;
             Ok(coroutine)
         })
