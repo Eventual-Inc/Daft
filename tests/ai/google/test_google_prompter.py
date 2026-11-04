@@ -261,7 +261,8 @@ def test_google_prompter_records_usage_metrics():
             usage = Mock()
             usage.prompt_token_count = 10
             usage.candidates_token_count = 20
-            usage.total_token_count = 30
+            usage.thoughts_token_count = 5
+            usage.total_token_count = 35
             mock_response.usage_metadata = usage
 
             mock_client_instance.aio.models.generate_content = AsyncMock(return_value=mock_response)
@@ -299,10 +300,10 @@ def test_google_prompter_records_usage_metrics():
                     assert val == 10
                     has_input = True
                 elif name == "output tokens":
-                    assert val == 20
+                    assert val == 25  # candidates (20) + thoughts (5)
                     has_output = True
                 elif name == "total tokens":
-                    assert val == 30
+                    assert val == 35
                     has_total = True
 
             assert has_input and has_output and has_total
