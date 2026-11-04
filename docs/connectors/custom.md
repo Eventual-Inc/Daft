@@ -160,6 +160,158 @@ data_source = TextFileDataSource([sample_file])
 (Showing first 5 of 5 rows)
 ```
 
+### Optional: Applying Pushdowns
+
+Daft passes a [`Pushdowns`](../api/io.md#daft.io.pushdowns.Pushdowns) object to `get_tasks` describing the work your source can skip. Every field is optional:
+
+| Field | Description |
+| --- | --- |
+| `columns` | Columns the query needs. Reading only these saves I/O. |
+| `filters` | Predicate applied to rows. Use it to prune files, row groups, or tasks. |
+| `partition_filters` | Predicate resolved against partition values. |
+| `limit` | Maximum number of rows the query needs. |
+| `aggregation` | Count aggregation, for sources that implement count pushdowns. |
+
+Pushdowns are advisory: Daft always applies projections, filters, and limits after reading, so honoring a subset (or ignoring them entirely) never changes results. It only changes how much work your source does. Any pruning must therefore be conservative: skip a task only when the filter proves it cannot contain a matching row.
+
+Filters are regular Daft [`Expression`s](../api/expressions.md), so you can inspect them with [`ExpressionVisitor`](../api/expressions.md#daft.expressions.visitor.ExpressionVisitor). The visitor dispatches each node to a `visit_*` method and falls back to `visit_function(name, args)`. This visitor extracts `column == literal` conjuncts, which is enough to prune parts by an equality predicate:
+
+=== "🐍 Python"
+```python
+from typing import Any
+
+from daft.expressions import Expression, ExpressionVisitor
+
+
+class EqualityConstraints(ExpressionVisitor[dict[str, Any]]):
+    """Collect ``column == literal`` conjuncts from a filter expression."""
+
+    def visit_col(self, name: str) -> dict[str, Any]:
+        return {}
+
+    def visit_lit(self, value: Any) -> dict[str, Any]:
+        return {}
+
+    def visit_alias(self, expr: Expression, alias: str) -> dict[str, Any]:
+        return self.visit(expr)
+
+    def visit_cast(self, expr: Expression, dtype: Any) -> dict[str, Any]:
+        return {}
+
+    def visit_coalesce(self, args: list[Expression]) -> dict[str, Any]:
+        return {}
+
+    def visit_function(self, name: str, args: list[Expression]) -> dict[str, Any]:
+        if name == "and" and len(args) == 2:
+            return {**self.visit(args[0]), **self.visit(args[1])}
+        if name == "equal" and len(args) == 2:
+            left, right = args
+            if (column := left.column_name()) is not None and right.column_name() is None:
+                return {column: right.as_py()}
+            if (column := right.column_name()) is not None and left.column_name() is None:
+                return {column: left.as_py()}
+        return {}
+```
+
+When projecting, remember that a filter may reference a column the query does not return; `pushdowns.filter_required_column_names()` lists those columns so they are not dropped. Putting it together, this in-memory source prunes parts, projects columns, and truncates each task:
+
+=== "🐍 Python"
+```python
+from collections.abc import AsyncIterator
+
+import pyarrow as pa
+
+from daft.io.pushdowns import Pushdowns
+from daft.io.source import DataSource, DataSourceTask
+from daft.recordbatch import RecordBatch
+from daft.schema import Schema
+
+
+class InMemoryTableTask(DataSourceTask):
+    def __init__(self, table: pa.Table, columns: list[str] | None, limit: int | None):
+        self._table = table
+        self._columns = columns
+        self._limit = limit
+
+    @property
+    def schema(self) -> Schema:
+        table = self._table if self._columns is None else self._table.select(self._columns)
+        return Schema.from_pyarrow_schema(table.schema)
+
+    async def read(self) -> AsyncIterator[RecordBatch]:
+        table = self._table
+        if self._columns is not None:
+            table = table.select(self._columns)
+        if self._limit is not None:
+            table = table.slice(0, self._limit)
+        yield RecordBatch.from_arrow_table(table)
+
+
+class InMemoryTableSource(DataSource):
+    """A source over pyarrow tables keyed by a `year` column."""
+
+    def __init__(self, parts: dict[int, pa.Table]):
+        self._parts = parts
+
+    @property
+    def name(self) -> str:
+        return "in-memory table source"
+
+    @property
+    def schema(self) -> Schema:
+        return Schema.from_pyarrow_schema(next(iter(self._parts.values())).schema)
+
+    async def get_tasks(self, pushdowns: Pushdowns) -> AsyncIterator[DataSourceTask]:
+        columns = pushdowns.columns
+        if columns is not None:
+            # Keep columns that the filter needs even if the query does not return them.
+            columns = list(dict.fromkeys([*columns, *pushdowns.filter_required_column_names()]))
+        constraints = EqualityConstraints().visit(pushdowns.filters) if pushdowns.filters is not None else {}
+        for year, table in self._parts.items():
+            # Only skip a part when the filter proves its `year` cannot match.
+            if constraints.get("year", year) != year:
+                continue
+            yield InMemoryTableTask(table, columns, pushdowns.limit)
+```
+
+=== "🐍 Python"
+```python
+import pyarrow as pa
+from daft import col
+
+parts = {
+    2023: pa.table({"year": [2023] * 100, "id": list(range(100))}),
+    2024: pa.table({"year": [2024] * 100, "id": list(range(100, 200))}),
+}
+
+df = (
+    InMemoryTableSource(parts)
+    .read()
+    .where(col("year") == 2024)  # reaches get_tasks, so the 2023 part is never read
+    .select("id")
+    .limit(3)
+)
+df.show()
+```
+
+**Output:**
+
+```bash
+╭───────╮
+│ id    │
+│ ---   │
+│ Int64 │
+╞═══════╡
+│ 100   │
+├╌╌╌╌╌╌╌┤
+│ 101   │
+├╌╌╌╌╌╌╌┤
+│ 102   │
+╰───────╯
+
+(Showing first 3 of 3 rows)
+```
+
 ### Optional: Declaring Clustering to Skip Shuffles
 
 Clustering is an *execution-time* property: it describes how rows are distributed across the
