@@ -1,5 +1,6 @@
 pub mod builder;
 pub mod display;
+pub mod lineage;
 pub mod logical_plan;
 pub mod ops;
 pub mod optimization;
@@ -19,6 +20,7 @@ use daft_scan::{
     CsvSourceConfig, DatabaseSourceConfig, JsonSourceConfig, McapSourceConfig, ParquetSourceConfig,
     TextSourceConfig, WarcSourceConfig, python::PyFileFormatConfig,
 };
+pub use lineage::{Lineage, LineageInput, LineageOutput};
 pub use logical_plan::{LogicalPlan, LogicalPlanRef};
 pub use ops::join::JoinOptions;
 pub use partitioning::ClusteringSpec;
