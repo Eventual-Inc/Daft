@@ -114,11 +114,7 @@ mod tests {
 
     use common_error::DaftResult;
     use daft_core::prelude::*;
-    use daft_dsl::{
-        Expr,
-        functions::{FunctionExpr, python::LegacyPythonUDF},
-        lit, unresolved_col,
-    };
+    use daft_dsl::{Expr, ExprRef, lit, unresolved_col};
     use daft_functions::monotonically_increasing_id::monotonically_increasing_id;
 
     use crate::{
@@ -232,18 +228,43 @@ mod tests {
         Ok(())
     }
 
+    fn testing_udf(inputs: Vec<ExprRef>) -> ExprRef {
+        use common_hashable_float_wrapper::FloatWrapper;
+        use daft_dsl::{
+            functions::{
+                python::{OnError, RuntimePyObject},
+                scalar::ScalarFn,
+            },
+            python_udf::{BatchPyFn, PyScalarFn},
+        };
+
+        Expr::ScalarFn(ScalarFn::Python(PyScalarFn::Batch(BatchPyFn {
+            func_id: Arc::from("dummy_udf"),
+            function_name: Arc::from("dummy_udf"),
+            cls: RuntimePyObject::new_none(),
+            method: RuntimePyObject::new_none(),
+            builtin_name: false,
+            is_async: false,
+            return_dtype: DataType::Int64,
+            cpus: None,
+            gpus: FloatWrapper(0.0),
+            use_process: None,
+            max_concurrency: None,
+            batch_size: None,
+            original_args: RuntimePyObject::new_none(),
+            args: inputs,
+            max_retries: None,
+            on_error: OnError::Raise,
+            ray_options: None,
+        })))
+        .arced()
+    }
+
     /// A UDF nested under an alias can observe the inner sort before SplitUDFs runs.
     #[test]
     fn keeps_sort_blocked_by_udf_projection() -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
-        let udf = Expr::Function {
-            func: FunctionExpr::Python(LegacyPythonUDF {
-                concurrency: None,
-                ..LegacyPythonUDF::new_testing_udf()
-            }),
-            inputs: vec![unresolved_col("a")],
-        }
-        .arced();
+        let udf = testing_udf(vec![unresolved_col("a")]);
         let plan = dummy_scan_node(scan_op)
             .sort(vec![unresolved_col("a")], vec![false], vec![false])?
             .select(vec![unresolved_col("a"), udf.alias("b")])?
@@ -257,14 +278,7 @@ mod tests {
     #[test]
     fn keeps_sort_blocked_by_udf_filter() -> DaftResult<()> {
         let scan_op = dummy_scan_operator(vec![Field::new("a", DataType::Int64)]);
-        let udf = Expr::Function {
-            func: FunctionExpr::Python(LegacyPythonUDF {
-                concurrency: None,
-                ..LegacyPythonUDF::new_testing_udf()
-            }),
-            inputs: vec![unresolved_col("a")],
-        }
-        .arced();
+        let udf = testing_udf(vec![unresolved_col("a")]);
         let plan = dummy_scan_node(scan_op)
             .sort(vec![unresolved_col("a")], vec![false], vec![false])?
             .filter(udf.gt(lit(1)))?
