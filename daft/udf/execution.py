@@ -62,7 +62,7 @@ async def _retry_failed_rows(
             raise output
         if not isinstance(output, Exception):
             continue
-        error: Exception | None = output
+        error: Exception = output
         for _ in range(max_retries):
             delay_ms = _next_retry_delay_ms(error, delay_ms)
             jitter = random.uniform(0.0, delay_ms / 2.0)
@@ -72,10 +72,9 @@ async def _retry_failed_rows(
                 outputs[index] = await call_for_row(index)
             except Exception as retry_error:
                 error = retry_error
-                continue
-            error = None
-            break
-        if error is not None:
+            else:
+                break
+        else:
             if on_error == "log":
                 logger.warning("Python UDF error: %s", error, exc_info=error)
             outputs[index] = None
