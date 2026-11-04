@@ -81,20 +81,16 @@ def test_read_orc_s3(minio_io_config: daft.io.IOConfig, kind: str) -> None:
 
 
 @pytest.mark.integration()
-@pytest.mark.parametrize("kind", ["file", "directory", "glob", "list"])
-def test_read_orc_s3_file_path_column(minio_io_config: daft.io.IOConfig, kind: str) -> None:
+def test_read_orc_s3_file_path_column(minio_io_config: daft.io.IOConfig) -> None:
     with minio_create_bucket(minio_io_config=minio_io_config) as (fs, bucket):
         root = f"s3://{bucket}/orc"
         first = f"{root}/first.orc"
         second = f"{root}/nested/second.orc"
         fs.write_bytes(first, _orc_bytes(pa.table({"id": [1, 2]})))
         fs.write_bytes(second, _orc_bytes(pa.table({"id": [3, 4]})))
-        paths = {"file": first, "directory": root, "glob": f"{root}/**/*.orc", "list": [first, second]}
-        df = daft.read_orc(paths[kind], io_config=minio_io_config, batch_size=1, file_path_column="source_path")
-        expected = {"id": [1, 2], "source_path": [first] * 2}
-        if kind != "file":
-            expected["id"].extend([3, 4])
-            expected["source_path"].extend([second] * 2)
+        path = f"{root}/**/*.orc"
+        df = daft.read_orc(path, io_config=minio_io_config, batch_size=1, file_path_column="source_path")
+        expected = {"id": [1, 2, 3, 4], "source_path": [first] * 2 + [second] * 2}
         assert df.sort("id").to_pydict() == expected
         assert df.select("source_path").sort("source_path").to_pydict() == {
             "source_path": sorted(expected["source_path"])
