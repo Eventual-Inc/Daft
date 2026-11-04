@@ -151,6 +151,17 @@ def test_custom_base_url_passes_dimensions_param_through(mock_client):
     )
 
 
+def test_custom_base_url_custom_model_with_dimensions():
+    descriptor = OpenAITextEmbedderDescriptor(
+        provider_name="openai",
+        provider_options={"api_key": "test-key", "base_url": "http://localhost:1234/v1"},
+        model_name="BAAI/bge-m3",
+        dimensions=1024,
+    )
+
+    assert descriptor.get_dimensions() == EmbeddingDimensions(size=1024, dtype=DataType.float32())
+
+
 def test_instantiate():
     """Test to instantiate a proper OpenAITextEmbedder with no mocks."""
     descriptor = OpenAITextEmbedderDescriptor(
@@ -425,6 +436,24 @@ def test_embed_text_failure_with_zero_on_failure_and_dimensions(mock_text_embedd
     assert isinstance(result, np.ndarray)
     assert result.shape == (256,)
     assert np.all(result == 0)  # Should be zero array
+
+
+def test_embed_text_failure_with_zero_on_failure_custom_model(mock_client):
+    """Custom models behind a base_url have no profile; the requested dimensions are used."""
+    embedder = OpenAITextEmbedder(
+        provider_options={"api_key": "test-key", "base_url": "http://localhost:1234/v1"},
+        model="BAAI/bge-m3",
+        embed_options={},
+        dimensions=1024,
+        zero_on_failure=True,
+    )
+    embedder._client = mock_client
+    mock_client.embeddings.create.side_effect = Exception("API Error")
+
+    result = run(embedder._embed_text("Hello world"))
+
+    assert result.shape == (1024,)
+    assert np.all(result == 0)
 
 
 def test_embed_text_failure_without_zero_on_failure(mock_client):
