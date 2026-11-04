@@ -1,11 +1,27 @@
 # Working with Audio
 
-Daft supports working with audio natively via the new `daft.AudioFile` and its parent `daft.File`.
+Daft supports working with audio natively via `daft.AudioFile` and its parent `daft.File`.
 
 Audio data is usually stored in file formats such as MP3, WAV, or OGG. Audio files can grow large quickly since their size scales with duration. This can consume large amounts of RAM if processed all at once, so a common practice to reduce memory overhead is to process audio in buffered chunks via streaming. Similar to images, typically teams index audio files in tables instead of storing audio data as bytes directly.
 
+!!! note "Audio dependencies"
+
+    Audio support relies on optional dependencies:
+
+    - `soundfile` is required to construct an `AudioFile` from a URL and to inspect or decode audio files via `AudioFile.metadata()`, `AudioFile.to_numpy()`, `AudioFile.resample()`, and [`audio_metadata`](../api/functions/audio_metadata.md).
+    - `librosa` is additionally required by [`resample`](../api/functions/resample.md).
+
+    Install both with:
+
+    ```bash
+    pip install "daft[audio]"
+    ```
+
+    Using one of these APIs without its dependency raises an `ImportError`.
+
 !!! note "Contribute to `daft.AudioFile`"
-If you'd like to contribute new features to `daft.AudioFile`, please open an issue on [GitHub](https://github.com/Eventual-Inc/Daft/issues) or join our [Daft Slack Community](https://daft.ai/slack) and send us a message in #daft-dev. Daft team members will be happy to assign any issue to you and provide any guidance if needed. There are also dedicated discussion threads for `daft.AudioFile` in the [Discussions](https://github.com/Eventual-Inc/Daft/discussions/categories/audio-file).
+
+    If you'd like to contribute new features to `daft.AudioFile`, please open an issue on [GitHub](https://github.com/Eventual-Inc/Daft/issues) or join our [Daft Slack Community](https://daft.ai/slack) and send us a message in #daft-dev. Daft team members will be happy to assign any issue to you and provide any guidance if needed. There are also dedicated discussion threads for `daft.AudioFile` in the [Discussions](https://github.com/Eventual-Inc/Daft/discussions/categories/audio-file).
 
 In this guide, we'll cover how to work with audio using `daft.AudioFile` and `daft.File` to perform common use cases like:
 
@@ -56,6 +72,16 @@ df.show(3)
 
 (Showing first 3 rows)
 ```
+
+The `metadata` struct contains:
+
+- `sample_rate` (`Int64`): sample rate in Hz.
+- `channels` (`Int64`): number of channels.
+- `frames` (`Float64`): number of audio frames. Note that `AudioFile.metadata()` returns this as a Python `int`.
+- `format` (`String`): container format, such as `"MP3"`.
+- `subtype` (`String`): sample encoding; values may be null when the container does not report one.
+
+`resample` returns a `Tensor[Float64]` of audio samples. Resampling is only well-defined for mono files; for multichannel input the underlying `librosa` call uses its default axis, so resample each channel separately instead. `AudioFile.to_numpy()` likewise returns `float64` samples with shape `(frames,)` for mono files or `(frames, channels)` for multichannel files.
 
 ## Reading and Writing Audio Files
 

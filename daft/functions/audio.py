@@ -41,21 +41,26 @@ audio_metadata_fn = Func._from_func(
 def audio_metadata(
     file_expr: Expression,
 ) -> Expression:
-    """Get metadata for a audio file.
+    """Get metadata for an audio file.
+
+    Requires the ``soundfile`` package; install it with
+    ``pip install "daft[audio]"``. Calling this function without it raises an
+    ``ImportError``.
 
     Args:
         file_expr (AudioFile Expression): The audio file to get metadata for.
 
     Returns:
-        Expression (Struct Expression): A struct containing the metadata
-        of the audio file.
+        Expression (Struct Expression): A struct containing the metadata of the
+        audio file, with the following fields:
 
-        The struct contains the following fields:
-            - sample_rate: int - The sample rate of the audio file
-            - channels: int - The number of channels in the audio file
-            - frames: int - The number of frames in the audio file
-            - format: str - The format of the audio file
-            - subtype: str | None - The subtype of the audio file
+            - ``sample_rate`` (``Int64``): Sample rate in Hz.
+            - ``channels`` (``Int64``): Number of channels.
+            - ``frames`` (``Float64``): Number of audio frames. Note that
+              ``daft.AudioFile.metadata()`` returns this as a Python ``int``.
+            - ``format`` (``String``): Container format, for example ``"MP3"``.
+            - ``subtype`` (``String``): Sample encoding; values may be null when
+              the container does not report one.
 
     Examples:
         >>> import daft
@@ -123,14 +128,24 @@ def resample(
     file_expr: Expression,
     sample_rate: int,
 ) -> Expression:
-    """Resample a audio file.
+    """Resample an audio file.
+
+    Requires the ``soundfile`` and ``librosa`` packages; install them with
+    ``pip install "daft[audio]"``. Calling this function without either raises
+    an ``ImportError``.
+
+    Resampling is only well-defined for mono files. For multichannel input the
+    underlying ``librosa`` call uses its default axis, so the result should not
+    be relied on; resample each channel separately instead.
 
     Args:
         file_expr (AudioFile Expression): The audio file to resample.
-        sample_rate (int): The sample rate to resample to.
+        sample_rate (int): The target sample rate in Hz.
 
     Returns:
-        Expression (Tensor[Python] Expression): The resampled audio file.
+        Expression (Tensor[Float64] Expression): The resampled audio samples. A
+        mono file yields a tensor with shape ``(frames,)``; multichannel input
+        follows the ``librosa`` output shape.
 
     Example:
         >>> import daft
@@ -144,7 +159,7 @@ def resample(
         ...     .with_column("resampled", resample(daft.col("file"), sample_rate=16000))
         ...     .select("path", "size", "resampled")
         ... )
-        >>> df.show(3)
+        >>> df.show(3)  # doctest: +SKIP
         ╭────────────────────────────────┬─────────┬──────────────────────────╮
         │ path                           ┆ size    ┆ resampled                │
         │ ---                            ┆ ---     ┆ ---                      │

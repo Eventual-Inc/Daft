@@ -14,7 +14,17 @@ if TYPE_CHECKING:
 
 
 class AudioFile(File):
-    """An audio-specific file interface that provides audio operations."""
+    """An audio-specific file interface that provides audio operations.
+
+    Instances are usually created with :func:`daft.functions.audio_file`, or
+    directly with ``AudioFile(url)``. These optional dependencies are required:
+
+    - ``soundfile`` for construction, :meth:`metadata`, and :meth:`to_numpy`.
+    - ``librosa`` for :meth:`resample`.
+
+    Install both with ``pip install "daft[audio]"``. Using an operation whose
+    dependency is missing raises an ``ImportError``.
+    """
 
     @staticmethod
     def _from_file_reference(reference: PyFileReference) -> AudioFile:
@@ -36,13 +46,21 @@ class AudioFile(File):
     def metadata(self) -> AudioMetadata:
         """Extract basic audio metadata from container headers.
 
+        Requires the ``soundfile`` package (``pip install "daft[audio]"``).
+
         Returns:
-            AudioMetadata: Audio metadata object containing:
-                - sample_rate: int - The sample rate of the audio file
-                - channels: int - The number of channels in the audio file
-                - frames: int - The number of frames in the audio file
-                - format: str - The format of the audio file
-                - subtype: str | None - The subtype of the audio file
+            AudioMetadata: A dictionary with the following fields:
+
+                - ``sample_rate`` (``int``): Sample rate in Hz.
+                - ``channels`` (``int``): Number of channels.
+                - ``frames`` (``int``): Number of audio frames, that is, samples per channel.
+                - ``format`` (``str``): Container format, for example ``"MP3"`` or ``"WAV"``.
+                - ``subtype`` (``str | None``): Sample encoding, or ``None`` when the
+                  container does not report one.
+
+        Note:
+            The expression-level :func:`daft.functions.audio_metadata` exposes
+            ``frames`` as ``Float64``, while this method returns an ``int``.
         """
         with self.open(buffer_size=BUFFER_METADATA) as f, sf.SoundFile(f) as af:
             return AudioMetadata(
@@ -54,14 +72,16 @@ class AudioFile(File):
             )
 
     def to_numpy(self, buffer_size: int = BUFFER_COPY) -> np.ndarray[Any, np.dtype[np.float64]]:
-        """Convert the audio file to a numpy array.
+        """Convert the audio file to a NumPy array.
+
+        Requires the ``soundfile`` package (``pip install "daft[audio]"``).
 
         Args:
             buffer_size (int): The buffer size to use for the temporary file.
 
         Returns:
-            np.ndarray[Any, Any]: The audio data as a numpy array.
-
+            A ``float64`` NumPy array with shape ``(frames,)`` for mono files or
+            ``(frames, channels)`` for files with more than one channel.
         """
         with self.to_tempfile(buffer_size) as tmp:
             audio, _ = sf.read(tmp)
@@ -70,13 +90,23 @@ class AudioFile(File):
     def resample(self, sample_rate: int, buffer_size: int = BUFFER_COPY) -> np.ndarray[Any, np.dtype[np.float64]]:
         """Resample the audio file to the given sample rate.
 
+        Requires the ``soundfile`` and ``librosa`` packages
+        (``pip install "daft[audio]"``).
+
+        Resampling is only well-defined for mono files. For multichannel input
+        the underlying ``librosa`` call uses its default axis, so the result
+        should not be relied on; resample each channel separately instead. When
+        the file already has the requested sample rate, the decoded samples are
+        returned unchanged.
+
         Args:
-            sample_rate (int): The new sample rate.
+            sample_rate (int): The target sample rate in Hz.
             buffer_size (int): The buffer size to use for the temporary file.
 
         Returns:
-            AudioFile: The resampled audio file.
-
+            A ``float64`` NumPy array of resampled samples, with shape
+            ``(frames,)`` for mono input and the ``librosa`` output shape
+            otherwise.
         """
         if not librosa.module_available():
             raise ImportError(
