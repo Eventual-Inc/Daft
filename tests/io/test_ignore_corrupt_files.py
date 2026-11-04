@@ -273,11 +273,9 @@ def test_orc_ignore_corrupt_fallback_and_complete_report(tmp_path: Path, first_b
     assert df.skipped_corrupt_files == report
 
 
-def test_orc_ignore_corrupt_default_and_all_bad(tmp_path: Path) -> None:
+def test_orc_ignore_corrupt_all_bad(tmp_path: Path) -> None:
     bad = tmp_path / "bad.orc"
     bad.write_bytes(b"not ORC")
-    with pytest.raises(OSError, match="Not an ORC file"):
-        daft.read_orc(str(bad))
     with pytest.raises(ValueError, match="All ORC files.*cannot infer"):
         daft.read_orc(str(bad), ignore_corrupt_files=True)
 

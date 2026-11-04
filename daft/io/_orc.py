@@ -122,10 +122,11 @@ def _iter_orc_batches(
         try:
             fragment = pads.OrcFileFormat().make_fragment(file)
             physical_schema = fragment.physical_schema
+            columns = [name for name in schema.names if name in physical_schema.names]
             scanner = pads.Scanner.from_fragment(
                 fragment,
                 schema=physical_schema,
-                columns=[name for name in schema.names if name in physical_schema.names],
+                columns=columns,
                 batch_size=batch_size,
                 batch_readahead=0,
                 use_threads=False,
@@ -135,7 +136,6 @@ def _iter_orc_batches(
             raise OSError(f"Unable to read ORC file {path!r}: {error}") from error
 
         # Conversion errors are outside the file-decoding error boundary.
-        columns = [name for name in schema.names if name in physical_schema.names]
         target_schema = Schema.from_pyarrow_schema(schema)
         projection = ExpressionsProjection(
             [
