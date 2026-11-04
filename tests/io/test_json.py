@@ -128,3 +128,11 @@ def test_read_json_schema_hint_filter_with_count_rows(tmp_path):
         # select() drops "sound" from the schema, so a subsequent filter
         # referencing it must fail at plan construction time, not at execution.
         df.select("name", "id").where(daft.col("sound").not_null()).collect()
+
+
+def test_read_json_fixed_size_list_wrong_length_errors(tmp_path):
+    file_path = tmp_path / "fixed_list.jsonl"
+    file_path.write_text('{"xs": [1, 2, 3]}\n', encoding="utf-8")
+    schema = {"xs": daft.DataType.fixed_size_list(daft.DataType.int64(), 2)}
+    with pytest.raises(Exception, match="fixed-size list"):
+        daft.read_json(str(file_path), schema=schema).collect()
