@@ -6,10 +6,6 @@ Daft can display your DataFrame's schema without materializing it. Under the hoo
     options:
         filters: ["!^_"]
 
-!!! warning ""
+!!! note "Migrating from `daft.logical.schema`"
 
-    Schema has been moved to `daft.schema` but is still accessible at `daft.logical.schema`.
-
-::: daft.logical.schema.Schema
-    options:
-        filters: ["!^_"]
+    `Schema` has moved to `daft.schema`, which is the canonical import. The old import path `daft.logical.schema.Schema` still works as a compatibility alias.
