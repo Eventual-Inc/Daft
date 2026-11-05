@@ -2,22 +2,23 @@ use std::{
     fs,
     fs::File,
     io,
-    net::{IpAddr, SocketAddr},
-    path::PathBuf,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+    path::{Path, PathBuf},
     process,
     process::{Command, Stdio},
     str::FromStr,
-    sync::OnceLock,
 };
 
 use clap::{Args, Subcommand};
+use daft_context::subscribers::dashboard::{
+    DASHBOARD_PID_FILE_NAME, DASHBOARD_URL_FILE_NAME, DashboardStateLock, dashboard_state_dir,
+    prepare_dashboard_state_dir, write_dashboard_state_file,
+};
 use pyo3::prelude::*;
 use tracing_subscriber::{self, filter::Directive, layer::SubscriberExt, util::SubscriberInitExt};
 
 const ENV_DAFT_DASHBOARD_PID_DIR: &str = "DAFT_DASHBOARD_PID_DIR";
 const ENV_DAFT_DASHBOARD_LOG_DIR: &str = "DAFT_DASHBOARD_LOG_DIR";
-/// Must match `daft_context::subscribers::dashboard::DASHBOARD_URL_FILE_NAME`.
-const DASHBOARD_URL_FILE_NAME: &str = "daft_dashboard.url";
 
 /// Dashboard command: holds the start/stop subcommand.
 #[derive(Args)]
@@ -74,11 +75,18 @@ pub fn run(py: Python, args: DashboardArgs) {
 }
 
 fn start(py: Python, opts: StartArgs) {
-    let pid_path = get_pid_filepath(opts.pid_dir.clone());
-    if pid_path.exists() {
+    let dir = match state_dir(opts.pid_dir.clone()) {
+        Ok(dir) => dir,
+        Err(err) => {
+            eprintln!("Failed to prepare the daft dashboard state directory: {err}");
+            return;
+        }
+    };
+
+    if dir.join(DASHBOARD_PID_FILE_NAME).exists() {
         println!(
             "⚠️ PID file '{}' already exists. Is a daft dashboard instance already running?",
-            pid_path.display()
+            dir.join(DASHBOARD_PID_FILE_NAME).display()
         );
         return;
     }
@@ -109,15 +117,19 @@ fn start(py: Python, opts: StartArgs) {
                 cmd.arg("--verbose");
             }
 
-            if let Some(dir) = opts.pid_dir {
-                cmd.arg("--pid-dir").arg(&dir);
+            if let Some(dir) = opts.pid_dir.as_deref() {
+                cmd.arg("--pid-dir").arg(dir);
             }
 
-            if let Some(dir) = opts.log_dir.clone() {
-                cmd.arg("--log-dir").arg(&dir);
+            if let Some(dir) = opts.log_dir.as_deref() {
+                cmd.arg("--log-dir").arg(dir);
             }
 
-            let log_path = get_log_filepath(opts.log_dir);
+            if let Some(path) = opts.event_log_file.as_deref() {
+                cmd.arg("--event-log-file").arg(path);
+            }
+
+            let log_path = get_log_filepath(opts.log_dir.clone());
             let log_file = File::create(log_path)
                 .unwrap_or_else(|_| panic!("Failed to create log file: {}", log_path.display()));
             cmd.stdin(Stdio::null())
@@ -163,8 +175,6 @@ fn start(py: Python, opts: StartArgs) {
 
     print_addr_warning(server_options.addr());
 
-    let dashboard_url = dashboard_client_url(server_options.addr(), server_options.port());
-
     let _ = tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::builder()
@@ -179,9 +189,45 @@ fn start(py: Python, opts: StartArgs) {
         .build()
         .expect("Failed to create tokio runtime");
 
-    let view_url = dashboard_url.clone();
-    let banner_url = dashboard_url.clone();
+    // Bind before publishing discovery files so that only a live server is
+    // advertised, and so a `--port 0` launch publishes the actual port.
+    let listener = match runtime.block_on(tokio::net::TcpListener::bind((
+        server_options.addr(),
+        server_options.port(),
+    ))) {
+        Ok(listener) => listener,
+        Err(err) => {
+            eprintln!(
+                "{}",
+                console::style(format!("❌ Failed to bind the Daft dashboard: {err}"))
+                    .red()
+                    .bold()
+            );
+            return;
+        }
+    };
+
+    let bound_addr = match listener.local_addr() {
+        Ok(addr) => addr,
+        Err(err) => {
+            eprintln!(
+                "{}",
+                console::style(format!(
+                    "❌ Failed to read the Daft dashboard address: {err}"
+                ))
+                .red()
+                .bold()
+            );
+            return;
+        }
+    };
+
+    let dashboard_url = dashboard_client_url(bound_addr);
+    let remote_url = dashboard_remote_url(bound_addr);
+
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+    let (exit_tx, mut exit_rx) = tokio::sync::oneshot::channel();
+    let view_url = dashboard_url.clone();
     runtime.spawn(async move {
         println!(
             "{}  Daft scripts started on this machine now connect to the dashboard automatically.",
@@ -189,42 +235,65 @@ fn start(py: Python, opts: StartArgs) {
         );
         println!(
             "   To point a script running elsewhere at it, use `{}`",
-            console::style(format!("DAFT_DASHBOARD_URL=\"{banner_url}\" python ...")).bold(),
+            console::style(format!("DAFT_DASHBOARD_URL=\"{remote_url}\" python ...")).bold(),
         );
         println!(
             "✨ View the dashboard at {}. Press Ctrl+C to shutdown",
             console::style(view_url).bold().magenta().underlined(),
         );
-        daft_dashboard::launch_server(server_options, async move { shutdown_rx.await.unwrap() })
+        if let Err(err) =
+            daft_dashboard::launch_server_with_listener(server_options, listener, async move {
+                let _ = shutdown_rx.await;
+            })
             .await
-            .expect("Failed to launch dashboard server");
+        {
+            eprintln!("❌ Daft dashboard server stopped with an error: {err}");
+        }
+        let _ = exit_tx.send(());
     });
 
     let pid = process::id();
-    if fs::write(pid_path, pid.to_string()).is_err() {
-        eprintln!(
-            "⚠️ Failed to write PID {} to file '{}'",
-            pid,
-            pid_path.display()
-        );
-    }
-
-    let url_path = get_url_filepath(opts.pid_dir.clone());
-    if fs::write(url_path, &dashboard_url).is_err() {
-        eprintln!(
-            "⚠️ Failed to write dashboard URL to file '{}'",
-            url_path.display()
-        );
+    match DashboardStateLock::acquire(&dir) {
+        Ok(_lock) => {
+            if let Err(e) =
+                write_dashboard_state_file(&dir.join(DASHBOARD_PID_FILE_NAME), &pid.to_string())
+            {
+                eprintln!(
+                    "⚠️ Failed to write PID {} to file '{}': {e}",
+                    pid,
+                    dir.join(DASHBOARD_PID_FILE_NAME).display()
+                );
+            }
+            if let Err(e) =
+                write_dashboard_state_file(&dir.join(DASHBOARD_URL_FILE_NAME), &dashboard_url)
+            {
+                eprintln!(
+                    "⚠️ Failed to write dashboard URL to file '{}': {e}",
+                    dir.join(DASHBOARD_URL_FILE_NAME).display()
+                );
+            }
+        }
+        Err(e) => {
+            eprintln!(
+                "⚠️ Failed to lock the daft dashboard state directory '{}': {e}. Clients may not discover this dashboard.",
+                dir.display()
+            );
+        }
     }
 
     loop {
         if py.check_signals().is_err() {
             println!("👋 Thanks for using daft dashboard! Shutting down...");
-            shutdown_tx
-                .send(())
-                .expect("Failed to shutdown daft dashboard");
-            clear_pid_file_if_matches(pid, opts.pid_dir);
+            let _ = shutdown_tx.send(());
+            clear_dashboard_state_if_matches(&dir, pid);
             return;
+        }
+        match exit_rx.try_recv() {
+            Ok(()) | Err(tokio::sync::oneshot::error::TryRecvError::Closed) => {
+                clear_dashboard_state_if_matches(&dir, pid);
+                return;
+            }
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
         }
         py.detach(|| {
             std::thread::sleep(std::time::Duration::from_millis(100));
@@ -233,20 +302,38 @@ fn start(py: Python, opts: StartArgs) {
 }
 
 fn stop(opts: StopArgs) {
-    let pid_path = get_pid_filepath(opts.pid_dir.clone());
-    let pid = match read_pid(opts.pid_dir.clone()) {
+    let dir = match state_dir(opts.pid_dir.clone()) {
+        Ok(dir) => dir,
+        Err(err) => {
+            eprintln!("Failed to prepare the daft dashboard state directory: {err}");
+            return;
+        }
+    };
+
+    let _lock = match DashboardStateLock::acquire(&dir) {
+        Ok(lock) => lock,
+        Err(err) => {
+            eprintln!(
+                "Failed to lock the daft dashboard state directory '{}': {err}",
+                dir.display()
+            );
+            return;
+        }
+    };
+
+    let pid = match read_pid(&dir) {
         Ok(pid) => pid,
         Err(err) if err.kind() == io::ErrorKind::NotFound => {
             println!(
                 "Daft dashboard PID file '{}' not found. Is the dashboard running?",
-                pid_path.display()
+                dir.join(DASHBOARD_PID_FILE_NAME).display()
             );
             return;
         }
         Err(err) => {
             eprintln!(
                 "Failed to read daft dashboard PID from file '{}': {err}",
-                pid_path.display()
+                dir.join(DASHBOARD_PID_FILE_NAME).display()
             );
             return;
         }
@@ -255,20 +342,18 @@ fn stop(opts: StopArgs) {
     match send_sigint(pid) {
         Ok(()) => {
             println!("Sent stop signal to daft dashboard (PID {}).", pid);
-            let _ = fs::remove_file(pid_path);
-            clear_url_file(opts.pid_dir);
+            remove_state_files(&dir);
         }
         Err(err) => {
             #[cfg(unix)]
             {
                 if matches!(err.raw_os_error(), Some(code) if code == libc::ESRCH) {
                     println!(
-                        "No process with PID {} found. Removing stale daft dashboard PID file '{}'",
+                        "No process with PID {} found. Removing stale daft dashboard state files in '{}'",
                         pid,
-                        pid_path.display()
+                        dir.display()
                     );
-                    let _ = fs::remove_file(pid_path);
-                    clear_url_file(opts.pid_dir);
+                    remove_state_files(&dir);
                     return;
                 }
             }
@@ -277,49 +362,55 @@ fn stop(opts: StopArgs) {
     }
 }
 
-static PID_FILEPATH: OnceLock<PathBuf> = OnceLock::new();
+/// Resolve and prepare the directory shared by the dashboard CLI and clients.
+///
+/// A user-provided directory is trusted as-is; the default directory is
+/// per-user and must stay private so other local users cannot publish a URL
+/// that redirects query reports.
+fn state_dir(pid_dir: Option<String>) -> io::Result<PathBuf> {
+    let env_dir = std::env::var_os(ENV_DAFT_DASHBOARD_PID_DIR).filter(|dir| !dir.is_empty());
+    let explicitly_configured = pid_dir.is_some() || env_dir.is_some();
+    let dir = pid_dir
+        .map(PathBuf::from)
+        .or_else(|| env_dir.map(PathBuf::from))
+        .unwrap_or_else(dashboard_state_dir);
 
-fn get_pid_filepath(pid_dir: Option<String>) -> &'static PathBuf {
-    PID_FILEPATH.get_or_init(|| {
-        let pid_dir = pid_dir
-            .map(PathBuf::from)
-            .or_else(|| std::env::var_os(ENV_DAFT_DASHBOARD_PID_DIR).map(PathBuf::from))
-            .unwrap_or_else(std::env::temp_dir);
-
-        if let Err(e) = fs::create_dir_all(&pid_dir) {
-            eprintln!("Failed to create PID dir '{}': {e}", pid_dir.display());
-        }
-
-        pid_dir.join("daft_dashboard.pid")
-    })
+    prepare_dashboard_state_dir(&dir, !explicitly_configured)?;
+    Ok(dir)
 }
 
-static URL_FILEPATH: OnceLock<PathBuf> = OnceLock::new();
-
-fn get_url_filepath(pid_dir: Option<String>) -> &'static PathBuf {
-    URL_FILEPATH.get_or_init(|| {
-        let dir = pid_dir
-            .map(PathBuf::from)
-            .or_else(|| std::env::var_os(ENV_DAFT_DASHBOARD_PID_DIR).map(PathBuf::from))
-            .unwrap_or_else(std::env::temp_dir);
-
-        if let Err(e) = fs::create_dir_all(&dir) {
-            eprintln!("Failed to create dashboard dir '{}': {e}", dir.display());
-        }
-
-        dir.join(DASHBOARD_URL_FILE_NAME)
-    })
+fn read_pid(dir: &Path) -> io::Result<u32> {
+    let contents = fs::read_to_string(dir.join(DASHBOARD_PID_FILE_NAME))?;
+    contents
+        .trim()
+        .parse()
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
-fn clear_url_file(pid_dir: Option<String>) {
-    if let Err(e) = fs::remove_file(get_url_filepath(pid_dir))
-        && e.kind() != io::ErrorKind::NotFound
-    {
-        eprintln!("Warning: failed to remove daft dashboard URL file: {e}");
+fn remove_state_files(dir: &Path) {
+    for name in [DASHBOARD_PID_FILE_NAME, DASHBOARD_URL_FILE_NAME] {
+        match fs::remove_file(dir.join(name)) {
+            Ok(()) => {}
+            Err(e) if e.kind() != io::ErrorKind::NotFound => {
+                eprintln!("Warning: failed to remove daft dashboard file '{name}': {e}");
+            }
+            Err(_) => {}
+        }
     }
 }
 
-static LOG_FILEPATH: OnceLock<PathBuf> = OnceLock::new();
+fn clear_dashboard_state_if_matches(dir: &Path, pid: u32) {
+    let Ok(_lock) = DashboardStateLock::acquire(dir) else {
+        return;
+    };
+    // Another dashboard may have replaced the state files in the meantime.
+    if read_pid(dir).ok() != Some(pid) {
+        return;
+    }
+    remove_state_files(dir);
+}
+
+static LOG_FILEPATH: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 
 fn get_log_filepath(log_dir: Option<String>) -> &'static PathBuf {
     LOG_FILEPATH.get_or_init(|| {
@@ -334,23 +425,6 @@ fn get_log_filepath(log_dir: Option<String>) -> &'static PathBuf {
 
         log_dir.join("daft_dashboard.log")
     })
-}
-
-fn clear_pid_file_if_matches(pid: u32, pid_dir: Option<String>) {
-    let path = get_pid_filepath(pid_dir.clone());
-    match read_pid(pid_dir.clone()) {
-        Ok(current_pid) if current_pid == pid => {
-            match fs::remove_file(path) {
-                Ok(()) => {}
-                Err(e) if e.kind() != io::ErrorKind::NotFound => {
-                    eprintln!("Warning: failed to remove daft dashboard PID file: {e}");
-                }
-                Err(_) => {}
-            }
-            clear_url_file(pid_dir);
-        }
-        _ => {}
-    }
 }
 
 fn print_addr_warning(addr: IpAddr) {
@@ -370,11 +444,25 @@ fn print_addr_warning(addr: IpAddr) {
 /// URL that clients on this machine should use. A server bound to all
 /// interfaces is reachable through loopback, which also renders correctly in
 /// browsers.
-fn dashboard_client_url(addr: IpAddr, port: u16) -> String {
-    if addr.is_unspecified() {
-        format!("http://127.0.0.1:{port}")
+fn dashboard_client_url(addr: SocketAddr) -> String {
+    let ip = if addr.ip().is_unspecified() {
+        match addr.ip() {
+            IpAddr::V4(_) => IpAddr::V4(Ipv4Addr::LOCALHOST),
+            IpAddr::V6(_) => IpAddr::V6(Ipv6Addr::LOCALHOST),
+        }
     } else {
-        format!("http://{}", SocketAddr::from((addr, port)))
+        addr.ip()
+    };
+    format!("http://{}", SocketAddr::new(ip, addr.port()))
+}
+
+/// URL to advertise for scripts running on other machines. A wildcard bind
+/// address is not reachable remotely, so leave the host for the user to fill.
+fn dashboard_remote_url(addr: SocketAddr) -> String {
+    if addr.ip().is_unspecified() {
+        format!("http://<dashboard-host>:{}", addr.port())
+    } else {
+        dashboard_client_url(addr)
     }
 }
 
@@ -395,14 +483,4 @@ fn send_sigint(_pid: u32) -> io::Result<()> {
         io::ErrorKind::Other,
         "Stopping daft dashboard is not supported on this platform",
     ))
-}
-
-fn read_pid(pid_dir: Option<String>) -> io::Result<u32> {
-    let path = get_pid_filepath(pid_dir);
-    let contents = fs::read_to_string(path)?;
-    let pid: u32 = contents
-        .trim()
-        .parse()
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-    Ok(pid)
 }

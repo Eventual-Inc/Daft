@@ -2568,6 +2568,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "clap",
  "console",
+ "daft-context",
  "daft-dashboard",
  "libc",
  "pyo3",
@@ -2598,6 +2599,7 @@ dependencies = [
  "daft-micropartition",
  "daft-runners",
  "dashmap",
+ "libc",
  "log",
  "pyo3",
  "reqwest 0.13.4",

@@ -20,14 +20,22 @@ pub struct DashboardStatisticsSubscriber {
     query_id: QueryID,
     runtime_node_managers: Option<Arc<HashMap<NodeID, RuntimeNodeManager>>>,
     initialized_subscriber: Mutex<bool>,
+    /// Whether a dashboard was configured when this subscriber was created.
+    /// Resolved once so task events do not hit the filesystem each time.
+    dashboard_configured: bool,
 }
 
 impl DashboardStatisticsSubscriber {
     pub fn new(query_id: QueryID) -> Self {
+        // Only process events if a dashboard is configured, either explicitly
+        // or through the URL published by `daft dashboard start`.
+        let dashboard_configured =
+            daft_context::subscribers::dashboard::resolve_dashboard_url().is_some();
         Self {
             query_id,
             runtime_node_managers: None,
             initialized_subscriber: Mutex::new(false),
+            dashboard_configured,
         }
     }
 
@@ -95,10 +103,8 @@ impl StatisticsSubscriber for DashboardStatisticsSubscriber {
             return Ok(());
         }
 
-        // Only process events if a dashboard is configured, either explicitly
-        // or through the URL published by `daft dashboard start`.
-        let should_notify = daft_context::subscribers::dashboard::resolve_dashboard_url().is_some();
-        if !should_notify {
+        // Only process events if a dashboard was configured at startup.
+        if !self.dashboard_configured {
             return Ok(());
         }
 
