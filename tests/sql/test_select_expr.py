@@ -61,3 +61,29 @@ def test_select_struct_wildcard():
     expected = {"name": ["Alice", "Bob", "Charlie"], "age": [30, 25, 35]}
 
     assert actual == expected
+
+
+def test_select_empty_scalar_subquery_is_null():
+    actual = daft.sql("SELECT (SELECT 1 WHERE FALSE) AS x").collect().to_pydict()
+    assert actual == {"x": [None]}
+
+
+def test_select_empty_scalar_subquery_is_null_predicate():
+    actual = daft.sql("SELECT (SELECT 1 WHERE FALSE) IS NULL AS x").collect().to_pydict()
+    assert actual == {"x": [True]}
+
+
+def test_select_empty_scalar_subquery_preserves_outer_rows():
+    df = daft.from_pydict({"a": [1, 2]})  # noqa: F841
+    actual = daft.sql("SELECT a, (SELECT 1 WHERE FALSE) AS x FROM df").collect().to_pydict()
+    assert actual == {"a": [1, 2], "x": [None, None]}
+
+
+def test_select_scalar_subquery_with_rows():
+    actual = daft.sql("SELECT (SELECT 2) AS x").collect().to_pydict()
+    assert actual == {"x": [2]}
+
+
+def test_coalesce_empty_scalar_subquery_uses_non_empty_branch():
+    actual = daft.sql("SELECT coalesce((SELECT 1 WHERE FALSE), (SELECT 2)) AS x").collect().to_pydict()
+    assert actual == {"x": [2]}
