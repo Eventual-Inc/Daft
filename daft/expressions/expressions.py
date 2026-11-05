@@ -2017,6 +2017,14 @@ class Expression:
 
         return strip(self)
 
+    def btrim(self, trim_str: str | Expression) -> Expression:
+        """Strip a set of characters from both sides of a UTF-8 string.
+
+        Tip: See Also
+            [`daft.functions.btrim`](https://docs.daft.ai/en/stable/api/functions/btrim/)
+        """
+        return self._call_builtin_scalar_fn("btrim", self, trim_str)
+
     def reverse(self) -> Expression:
         """Reverse a UTF-8 string.
 
