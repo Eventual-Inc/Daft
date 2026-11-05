@@ -322,8 +322,8 @@ The parts and their return types:
 | `MINUTE` | Minute, 0–59 | `UInt32` |
 | `SECOND` | Second, 0–59 | `UInt32` |
 | `MILLISECOND` | Millisecond component, 0–999 | `UInt32` |
-| `MICROSECOND` | Microsecond component, 0–999 | `UInt32` |
-| `NANOSECOND` | Nanosecond component, 0–999 | `UInt32` |
+| `MICROSECOND` | Microsecond component, 0–999999 | `UInt32` |
+| `NANOSECOND` | Nanosecond component, 0–999999999 | `UInt32` |
 | `UNIX_DATE` | Days since the Unix epoch (timestamp inputs only) | `UInt64` |
 
 `YEAR`, `QUARTER`, `MONTH`, `DAY`, `DAY_OF_WEEK`, `DAY_OF_YEAR`, `WEEK_OF_YEAR`, and `DATE` accept both dates and timestamps. `HOUR`, `MINUTE`, `SECOND`, `MILLISECOND`, `MICROSECOND`, and `NANOSECOND` accept timestamps or times, and `UNIX_DATE` requires a timestamp. Other parts, such as `EPOCH`, are not supported and raise an error.
