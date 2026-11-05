@@ -129,7 +129,7 @@ fn start(py: Python, opts: StartArgs) {
                 cmd.arg("--event-log-file").arg(path);
             }
 
-            let log_path = get_log_filepath(opts.log_dir.clone());
+            let log_path = get_log_filepath(opts.log_dir);
             let log_file = File::create(log_path)
                 .unwrap_or_else(|_| panic!("Failed to create log file: {}", log_path.display()));
             cmd.stdin(Stdio::null())
@@ -302,7 +302,7 @@ fn start(py: Python, opts: StartArgs) {
 }
 
 fn stop(opts: StopArgs) {
-    let dir = match state_dir(opts.pid_dir.clone()) {
+    let dir = match state_dir(opts.pid_dir) {
         Ok(dir) => dir,
         Err(err) => {
             eprintln!("Failed to prepare the daft dashboard state directory: {err}");
