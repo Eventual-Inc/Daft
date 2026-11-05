@@ -41,9 +41,11 @@ class EqualityConstraints(ExpressionVisitor[dict[str, Any]]):
             return {**self.visit(args[0]), **self.visit(args[1])}
         if name == "equal" and len(args) == 2:
             left, right = args
-            if (column := left.column_name()) is not None and right.column_name() is None:
+            # A missing column name does not imply a literal: the other side
+            # may be an expression such as `col("id") + 2023`.
+            if (column := left.column_name()) is not None and right.is_literal():
                 return {column: right.as_py()}
-            if (column := right.column_name()) is not None and left.column_name() is None:
+            if (column := right.column_name()) is not None and left.is_literal():
                 return {column: left.as_py()}
         return {}
 
@@ -55,6 +57,9 @@ def test_equality_constraints_visitor():
     # Disjunctions cannot be treated as conjunctive constraints.
     assert constraints.visit((col("year") == 2024) | (col("year") == 2023)) == {}
     assert constraints.visit(col("year") > 2020) == {}
+    # Equality against a computed expression is not a literal constraint.
+    assert constraints.visit(col("year") == (col("id") + 2023)) == {}
+    assert constraints.visit((col("id") + 2023) == col("year")) == {}
 
 
 class InMemoryTableTask(DataSourceTask):
@@ -98,12 +103,15 @@ class InMemoryTableSource(DataSource):
             # Keep columns that the filter needs even if the query does not return them.
             columns = list(dict.fromkeys([*columns, *pushdowns.filter_required_column_names()]))
         constraints = EqualityConstraints().visit(pushdowns.filters) if pushdowns.filters is not None else {}
+        # Only truncate when the source applies every filter itself. Otherwise
+        # slicing before Daft filters the rows could discard matching rows.
+        limit = pushdowns.limit if pushdowns.filters is None else None
         for year, table in self._parts.items():
             # Only skip a part when the filter proves its `year` cannot match.
             if constraints.get("year", year) != year:
                 continue
             self.read_years.append(year)
-            yield InMemoryTableTask(table, columns, pushdowns.limit)
+            yield InMemoryTableTask(table, columns, limit)
 
 
 def _parts() -> dict[int, pa.Table]:
@@ -126,6 +134,15 @@ def test_filter_pushdown_keeps_filter_columns_out_of_projection():
     df = source.read().where(col("year") == 2024).select("id").limit(3)
 
     assert df.to_pydict() == {"id": [100, 101, 102]}
+
+
+def test_limit_is_not_applied_before_filter():
+    source = InMemoryTableSource(_parts())
+    df = source.read().where(col("id") > 150).select("id").limit(3)
+
+    # The source only prunes parts, so it must not truncate rows before Daft
+    # applies the filter: the first rows of the 2024 part do not match.
+    assert df.to_pydict() == {"id": [151, 152, 153]}
 
 
 def test_no_filter_reads_all_tasks():

@@ -172,7 +172,9 @@ Daft passes a [`Pushdowns`](../api/io.md#daft.io.pushdowns.Pushdowns) object to 
 | `limit` | Maximum number of rows the query needs. |
 | `aggregation` | Count aggregation, for sources that implement count pushdowns. |
 
-Pushdowns are advisory: Daft always applies projections, filters, and limits after reading, so honoring a subset (or ignoring them entirely) never changes results. It only changes how much work your source does. Any pruning must therefore be conservative: skip a task only when the filter proves it cannot contain a matching row.
+Pushdowns are advisory: Daft re-applies projections, filters, and limits after reading, so honoring a subset (or ignoring them entirely) never changes results. It only changes how much work your source does. Any pruning must therefore be conservative: skip a task only when the filter proves it cannot contain a matching row. Likewise, only truncate a task to `limit` when that task also applies every filter itself — slicing before a filter can discard rows that would have matched.
+
+A count aggregation is the exception. Once a source opts in through `supports_count_pushdown()`, `get_tasks` must produce the count result and honor the rest of the pushdowns itself: Daft does not reconstruct the count from scanned rows.
 
 Filters are regular Daft [`Expression`s](../api/expressions.md), so you can inspect them with [`ExpressionVisitor`](../api/expressions.md#daft.expressions.visitor.ExpressionVisitor). The visitor dispatches each node to a `visit_*` method and falls back to `visit_function(name, args)`. This visitor extracts `column == literal` conjuncts, which is enough to prune parts by an equality predicate:
 
@@ -206,9 +208,11 @@ class EqualityConstraints(ExpressionVisitor[dict[str, Any]]):
             return {**self.visit(args[0]), **self.visit(args[1])}
         if name == "equal" and len(args) == 2:
             left, right = args
-            if (column := left.column_name()) is not None and right.column_name() is None:
+            # A missing column name does not imply a literal: the other side
+            # may be an expression such as `col("id") + 2023`.
+            if (column := left.column_name()) is not None and right.is_literal():
                 return {column: right.as_py()}
-            if (column := right.column_name()) is not None and left.column_name() is None:
+            if (column := right.column_name()) is not None and left.is_literal():
                 return {column: left.as_py()}
         return {}
 ```
@@ -267,11 +271,14 @@ class InMemoryTableSource(DataSource):
             # Keep columns that the filter needs even if the query does not return them.
             columns = list(dict.fromkeys([*columns, *pushdowns.filter_required_column_names()]))
         constraints = EqualityConstraints().visit(pushdowns.filters) if pushdowns.filters is not None else {}
+        # Only truncate when the source applies every filter itself. Otherwise
+        # slicing before Daft filters the rows could discard matching rows.
+        limit = pushdowns.limit if pushdowns.filters is None else None
         for year, table in self._parts.items():
             # Only skip a part when the filter proves its `year` cannot match.
             if constraints.get("year", year) != year:
                 continue
-            yield InMemoryTableTask(table, columns, pushdowns.limit)
+            yield InMemoryTableTask(table, columns, limit)
 ```
 
 === "🐍 Python"
