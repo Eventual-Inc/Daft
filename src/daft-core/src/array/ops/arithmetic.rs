@@ -5,6 +5,7 @@ use std::{
 };
 
 use arrow::buffer::NullBuffer;
+use arrow_buffer::i256;
 use common_error::{DaftError, DaftResult};
 
 use super::{as_arrow::AsArrow, full::FullNull};
@@ -106,11 +107,97 @@ where
     }
 }
 
+/// Element-wise decimal arithmetic with broadcasting.
+///
+/// Computation goes through `i256` with checked operations. The inferred result
+/// type is capped at `Decimal128(38, s)`, but intermediates routinely exceed
+/// `i128` even when the answer fits: both operands are cast to the result
+/// scale, so multiplying two values of scale 20 squares the raw value to
+/// `10^40`. Genuine overflow (e.g. adding two values near `10^38`, or dividing
+/// by zero) yields null rather than a panic or a wrapped value.
+#[inline(never)]
+fn decimal_arithmetic_helper<F>(
+    lhs: &Decimal128Array,
+    rhs: &Decimal128Array,
+    operation: F,
+) -> DaftResult<Decimal128Array>
+where
+    F: Fn(i128, i128) -> Option<i128> + Copy,
+{
+    fn build(
+        field: Arc<Field>,
+        len: usize,
+        value_at: impl Fn(usize) -> Option<i128>,
+    ) -> DaftResult<Decimal128Array> {
+        let mut values = Vec::with_capacity(len);
+        let mut validity = Vec::with_capacity(len);
+        for i in 0..len {
+            let out = value_at(i);
+            values.push(out.unwrap_or(0));
+            validity.push(out.is_some());
+        }
+        let nulls = if validity.iter().all(|v| *v) {
+            None
+        } else {
+            Some(NullBuffer::from(validity))
+        };
+        DataArray::from_field_and_values(field, values).with_nulls(nulls)
+    }
+
+    let lhs_values = lhs.values();
+    let rhs_values = rhs.values();
+    let lhs_nulls = lhs.nulls();
+    let rhs_nulls = rhs.nulls();
+
+    match (lhs.len(), rhs.len()) {
+        (a, b) if a == b => build(lhs.field.clone(), a, |i| {
+            // Values behind nulls are unspecified; never compute on them.
+            if lhs_nulls.is_some_and(|n| n.is_null(i)) || rhs_nulls.is_some_and(|n| n.is_null(i)) {
+                None
+            } else {
+                operation(lhs_values[i], rhs_values[i])
+            }
+        }),
+        // broadcast right path
+        (_, 1) => match rhs.get(0) {
+            None => Ok(Decimal128Array::full_null(
+                lhs.name(),
+                lhs.data_type(),
+                lhs.len(),
+            )),
+            Some(r) => build(lhs.field.clone(), lhs.len(), |i| {
+                if lhs_nulls.is_some_and(|n| n.is_null(i)) {
+                    None
+                } else {
+                    operation(lhs_values[i], r)
+                }
+            }),
+        },
+        (1, _) => match lhs.get(0) {
+            None => Ok(Decimal128Array::full_null(
+                rhs.name(),
+                lhs.data_type(),
+                rhs.len(),
+            )),
+            Some(l) => build(lhs.field.clone(), rhs.len(), |i| {
+                if rhs_nulls.is_some_and(|n| n.is_null(i)) {
+                    None
+                } else {
+                    operation(l, rhs_values[i])
+                }
+            }),
+        },
+        (a, b) => Err(DaftError::ValueError(format!(
+            "Cannot apply operation on arrays of different lengths: {a} vs {b}"
+        ))),
+    }
+}
+
 impl Add for &Decimal128Array {
     type Output = DaftResult<Decimal128Array>;
     fn add(self, rhs: Self) -> Self::Output {
         assert_eq!(self.data_type(), rhs.data_type());
-        arithmetic_helper(self, rhs, |l, r| l + r)
+        decimal_arithmetic_helper(self, rhs, i128::checked_add)
     }
 }
 
@@ -118,7 +205,7 @@ impl Sub for &Decimal128Array {
     type Output = DaftResult<Decimal128Array>;
     fn sub(self, rhs: Self) -> Self::Output {
         assert_eq!(self.data_type(), rhs.data_type());
-        arithmetic_helper(self, rhs, |l, r| l - r)
+        decimal_arithmetic_helper(self, rhs, i128::checked_sub)
     }
 }
 
@@ -130,8 +217,13 @@ impl Mul for &Decimal128Array {
         let DataType::Decimal128(_, s) = self.data_type() else {
             unreachable!("This should always be a Decimal128")
         };
-        let scale = 10i128.pow(*s as u32);
-        arithmetic_helper(self, rhs, |l, r| (l * r) / scale)
+        let scale = i256::from_i128(10i128.pow(*s as u32));
+        decimal_arithmetic_helper(self, rhs, |l, r| {
+            i256::from_i128(l)
+                .checked_mul(i256::from_i128(r))?
+                .checked_div(scale)?
+                .to_i128()
+        })
     }
 }
 
@@ -324,39 +416,13 @@ impl Div for &Decimal128Array {
         let DataType::Decimal128(_, s) = self.data_type() else {
             unreachable!("This should always be a Decimal128")
         };
-        let scale = 10i128.pow(*s as u32);
-
-        if rhs.null_count() == 0 {
-            arithmetic_helper(self, rhs, |l, r| (l * scale) / r)
-        } else {
-            match (self.len(), rhs.len()) {
-                (a, b) if a == b => null_aware_binary(self, rhs, |l, r| (l * scale) / r),
-                // broadcast right path
-                (_, 1) => {
-                    let opt_rhs = rhs.get(0);
-                    match opt_rhs {
-                        None => Ok(DataArray::full_null(
-                            self.name(),
-                            self.data_type(),
-                            self.len(),
-                        )),
-                        Some(rhs) => self.apply(|lhs| (lhs * scale) / rhs),
-                    }
-                }
-                (1, _) => {
-                    let opt_lhs = self.get(0);
-                    Ok(match opt_lhs {
-                        None => DataArray::full_null(rhs.name(), rhs.data_type(), rhs.len()),
-                        Some(lhs_val) => {
-                            broadcast_left_null_aware(self, rhs, lhs_val, |l, r| (l * scale) / r)?
-                        }
-                    })
-                }
-                (a, b) => Err(DaftError::ValueError(format!(
-                    "Cannot apply operation on arrays of different lengths: {a} vs {b}"
-                ))),
-            }
-        }
+        let scale = i256::from_i128(10i128.pow(*s as u32));
+        decimal_arithmetic_helper(self, rhs, |l, r| {
+            i256::from_i128(l)
+                .checked_mul(scale)?
+                .checked_div(i256::from_i128(r))?
+                .to_i128()
+        })
     }
 }
 
