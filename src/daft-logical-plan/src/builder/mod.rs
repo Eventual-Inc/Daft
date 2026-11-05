@@ -366,7 +366,32 @@ impl LogicalPlanBuilder {
             .allow_explode(true)
             .build();
 
-        let columns = expr_resolver.resolve(columns, self.plan.clone())?;
+        let columns = columns
+            .into_iter()
+            .map(|column| {
+                let had_top_level_alias = matches!(column.as_ref(), Expr::Alias(..));
+                let resolved = expr_resolver.resolve(vec![column], self.plan.clone())?;
+
+                // A wildcard can expand one expression into several output columns. A
+                // with_column(s) alias names the single-expression case, but applying it to
+                // every expanded field creates duplicate column names. Preserve each expanded
+                // expression's field name instead.
+                if had_top_level_alias && resolved.len() > 1 {
+                    Ok(resolved
+                        .into_iter()
+                        .map(|expr| match expr.as_ref() {
+                            Expr::Alias(child, _) => child.clone(),
+                            _ => expr,
+                        })
+                        .collect::<Vec<_>>())
+                } else {
+                    Ok(resolved)
+                }
+            })
+            .collect::<DaftResult<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
 
         let schema = self.schema();
         let current_col_names = schema.field_names().collect::<HashSet<_>>();
