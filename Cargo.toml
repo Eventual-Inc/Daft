@@ -366,7 +366,7 @@ smallvec = {version = "1.15.1", features = ["serde"]}
 snafu = {version = "0.9.0", features = ["futures"]}
 sqlparser = "0.59.0"
 sysinfo = "0.39"
-tango-bench = "0.6.0"
+tango-bench = "0.9.0"
 test-log = "0.2.19"
 thiserror = "2.0.17"
 tiktoken-rs = "0.9.1"

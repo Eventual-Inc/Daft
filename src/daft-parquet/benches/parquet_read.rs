@@ -13,10 +13,7 @@ use parquet::{
     basic::{Compression, ZstdLevel},
     file::{properties::WriterProperties, reader::SerializedFileReader},
 };
-use tango_bench::{
-    Benchmark, DEFAULT_SETTINGS, IntoBenchmarks, MeasurementSettings, benchmark_fn,
-    tango_benchmarks, tango_main,
-};
+use tango_bench::{Benchmark, IntoBenchmarks, benchmark_fn, tango_benchmarks};
 
 const NUM_ROWS: usize = 100_000;
 const CHUNK_SIZE: usize = 10_000;
@@ -348,13 +345,4 @@ fn all_benchmarks() -> impl IntoBenchmarks {
     ]
 }
 
-const SETTINGS: MeasurementSettings = MeasurementSettings {
-    min_iterations_per_sample: 3,
-    cache_firewall: Some(64),
-    yield_before_sample: true,
-    randomize_stack: Some(4096),
-    ..DEFAULT_SETTINGS
-};
-
 tango_benchmarks!(all_benchmarks());
-tango_main!(SETTINGS);
