@@ -9,6 +9,7 @@ against a temporary SQLite-backed catalog so they run in the default unit test s
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import unquote, urlparse
 
 import pyarrow as pa
@@ -23,6 +24,7 @@ pyiceberg = pytest.importorskip("pyiceberg")
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
+from pyiceberg.table import Table
 from pyiceberg.transforms import IdentityTransform
 from pyiceberg.types import LongType, NestedField, StringType
 
@@ -407,3 +409,51 @@ def test_read_add_files_table_split_by_row_groups(local_catalog, tmp_path):
         enable_scan_task_split_and_merge=True, scan_tasks_min_size_bytes=0, scan_tasks_max_size_bytes=1
     ):
         assert daft.read_iceberg(table).sort("a").to_pydict() == {"a": list(range(1_000))}
+
+
+def test_limit_budgets_live_rows_with_positional_deletes(local_catalog, tmp_path, monkeypatch):
+    """limit(n) budgets rows surviving positional deletes, not physical row counts."""
+    table = local_catalog.create_table("default.limit_deletes", Schema(NestedField(1, "x", LongType(), required=False)))
+    table.append(pa.table({"x": pa.array(range(50), pa.int64())}))
+    table.append(pa.table({"x": pa.array(range(50, 100), pa.int64())}))
+
+    data_files = sorted(task.file.file_path for task in table.scan().plan_files())
+    assert len(data_files) == 2
+
+    delete_path = str(tmp_path / "deletes.parquet")
+    pq.write_table(
+        pa.table(
+            {
+                "file_path": [data_files[0]] * 40,
+                "pos": pa.array(range(40), pa.int64()),
+            }
+        ),
+        delete_path,
+    )
+    delete_files = [SimpleNamespace(file_path=delete_path, record_count=40)]
+
+    original_scan = Table.scan
+
+    class _ScanWithDeletes:
+        def __init__(self, inner):
+            self._inner = inner
+
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+        def plan_files(self):
+            return [
+                SimpleNamespace(
+                    file=task.file,
+                    delete_files=delete_files if task.file.file_path == data_files[0] else [],
+                )
+                for task in sorted(self._inner.plan_files(), key=lambda task: task.file.file_path)
+            ]
+
+    monkeypatch.setattr(
+        Table, "scan", lambda self, *args, **kwargs: _ScanWithDeletes(original_scan(self, *args, **kwargs))
+    )
+
+    assert len(daft.read_iceberg(table).to_pydict()["x"]) == 60
+    for n in (1, 20, 50, 55):
+        assert len(daft.read_iceberg(table).limit(n).to_pydict()["x"]) == min(n, 60)
