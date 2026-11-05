@@ -247,6 +247,7 @@ impl LogicalPlanToPipelineNodeTranslator {
                 left,
                 right,
                 output_schema,
+                self.select_backend(),
             )),
             &self.meter,
         ))

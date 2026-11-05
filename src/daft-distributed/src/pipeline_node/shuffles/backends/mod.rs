@@ -2,6 +2,7 @@ use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use daft_local_plan::{
     LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef, ShuffleBackend, ShuffleReadBackend,
+    SourceId,
 };
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
@@ -18,6 +19,30 @@ mod ray;
 
 fn make_shuffle_id(context: &PipelineNodeContext) -> u64 {
     ((context.query_idx as u64) << 32) | (context.node_id as u64)
+}
+
+/// The `shuffle_read` variant that reads back outputs written under `backend`.
+pub(crate) fn read_backend(backend: &ShuffleBackend) -> ShuffleReadBackend {
+    match backend {
+        ShuffleBackend::Ray => ShuffleReadBackend::Ray,
+        ShuffleBackend::Flight { .. } => ShuffleReadBackend::Flight,
+    }
+}
+
+/// Attach already-materialized refs to `builder` as the input for `source_id`, via
+/// the backend-appropriate API (`with_psets` / `with_flight_shuffle_reads`). For
+/// plans with several `shuffle_read` sources (e.g. joins) call this once per side.
+pub(crate) fn attach_refs(
+    builder: SwordfishTaskBuilder,
+    backend: &ShuffleBackend,
+    source_id: SourceId,
+    partition_refs: Vec<PartitionRef>,
+) -> SwordfishTaskBuilder {
+    match backend {
+        ShuffleBackend::Ray => builder.with_psets(source_id, partition_refs),
+        ShuffleBackend::Flight { .. } => builder
+            .with_flight_shuffle_reads(source_id, flight::read_inputs_from_refs(partition_refs)),
+    }
 }
 
 /// A shuffle node's resolved backend: the plan-level [`ShuffleBackend`] with this
@@ -122,7 +147,8 @@ impl ShuffleContext {
         }
     }
 
-    /// Group a stream of map-task outputs into per-partition read tasks.
+    /// Group a stream of map-task outputs into per-partition read tasks, applying
+    /// `wrap_plan(partition_idx, read_plan)` on top of each partition's read plan.
     ///
     /// The Ray backend transposes the full (tasks x partitions) matrix of object refs.
     /// The flight backend folds the stream into per-server map-input lists shared by
@@ -134,6 +160,9 @@ impl ShuffleContext {
         num_partitions: usize,
         node: &dyn PipelineNodeImpl,
         result_tx: Sender<SwordfishTaskBuilder>,
+        wrap_plan: &mut (
+                 dyn FnMut(usize, LocalPhysicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> + Send
+             ),
     ) -> DaftResult<()> {
         match &self.backend {
             ShuffleBackend::Ray => {
@@ -149,6 +178,7 @@ impl ShuffleContext {
                     partition_groups,
                     node,
                     result_tx,
+                    wrap_plan,
                 )
                 .await
             }
@@ -165,6 +195,7 @@ impl ShuffleContext {
                     read_inputs,
                     node,
                     result_tx,
+                    wrap_plan,
                 )
                 .await
             }
