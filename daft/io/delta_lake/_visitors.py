@@ -93,10 +93,8 @@ class DeltaStatsPredicateVisitor(PredicateVisitor[Any]):
         return self.visit(expr)
 
     def visit_cast(self, expr: Expression, dtype: DataType) -> Any:
-        inner = self.visit(expr)
-        if isinstance(inner, _Lit):
-            return inner
-        raise _Unsupported("cast on a column")
+        # A cast can change a literal just as it can change a column.
+        raise _Unsupported("cast in stats predicate")
 
     def visit_function(self, name: str, args: list[Expression]) -> Any:
         raise _Unsupported(f"function {name!r}")
@@ -215,7 +213,10 @@ class DeltaStatsPredicateVisitor(PredicateVisitor[Any]):
             if (value.tzinfo is None) != (dtype.tz is None):
                 raise _Unsupported("timezone mismatch")
         try:
-            return pa.scalar(value, type=dtype)
+            scalar = pa.scalar(value, type=dtype)
+            if scalar.as_py() != value:
+                raise _Unsupported("lossy literal conversion")
+            return scalar
         except (pa.ArrowInvalid, pa.ArrowTypeError, pa.ArrowNotImplementedError, OverflowError, TypeError) as e:
             raise _Unsupported(f"cannot convert {value!r} to {dtype}") from e
 
