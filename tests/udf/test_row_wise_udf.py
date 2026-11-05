@@ -11,6 +11,8 @@ import daft
 from daft import DataType, col
 from daft.ai.utils import RetryAfterError
 from daft.recordbatch import MicroPartition, RecordBatch
+from daft.series import Series
+from daft.udf.execution import call_async_func_batched
 from tests.conftest import get_tests_daft_runner_name
 
 
@@ -303,6 +305,76 @@ def test_async_rowwise_on_err_log_only_nulls_failed_rows(caplog):
     if get_tests_daft_runner_name() == "native":
         # Under Ray the UDF runs in worker processes, so the log record never reaches the driver.
         assert "Python UDF error" in caplog.text
+
+
+def test_async_rowwise_on_err_ignore_use_process_only_nulls_failed_rows():
+    @daft.func(on_error="ignore", use_process=True)
+    async def raise_on_five(x) -> int:
+        if x == 5:
+            raise ValueError("This is an error")
+        return x * 10
+
+    df = daft.from_pydict({"value": list(range(10))})
+
+    expected = {"value": [0, 10, 20, 30, 40, None, 60, 70, 80, 90]}
+
+    actual = df.select(raise_on_five(col("value"))).to_pydict()
+    assert actual == expected
+
+
+class _BatchedAsyncUdfCls:
+    def _daft_bind_method(self, method):
+        return method
+
+
+def test_async_batched_retries_failed_rows_independently():
+    calls: dict[int, int] = {}
+
+    async def method(x: int) -> int:
+        calls[x] = calls.get(x, 0) + 1
+        if x == 1 and calls[x] == 1:
+            raise ValueError("transient")
+        if x == 2:
+            raise ValueError("permanent")
+        return x * 10
+
+    series, _ = asyncio.run(
+        call_async_func_batched(
+            _BatchedAsyncUdfCls(),
+            method,
+            DataType.int64()._dtype,
+            ((), {}),
+            [[0], [1], [2], [3]],
+            on_error="ignore",
+            max_retries=1,
+        )
+    )
+
+    assert Series._from_pyseries(series).to_pylist() == [0, 10, None, 30]
+    # Successful rows are not retried; each failed row gets its own retry budget.
+    assert calls == {0: 1, 1: 2, 2: 2, 3: 1}
+
+
+def test_async_batched_returned_exception_is_data():
+    error = ValueError("returned as data")
+
+    async def method(x: int):
+        if x == 1:
+            return error
+        return x
+
+    for on_error in ("raise", "log", "ignore"):
+        series, _ = asyncio.run(
+            call_async_func_batched(
+                _BatchedAsyncUdfCls(),
+                method,
+                DataType.python()._dtype,
+                ((), {}),
+                [[0], [1], [2]],
+                on_error=on_error,
+            )
+        )
+        assert Series._from_pyseries(series).to_pylist() == [0, error, 2]
 
 
 def test_async_rowwise_retries_only_failed_rows():

@@ -50,6 +50,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction!(python::list_lit, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::row_wise_udf, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::batch_udf, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::log_python_udf_row_error, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::udaf_expr, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::eq, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::row_number, parent)?)?;

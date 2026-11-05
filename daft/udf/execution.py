@@ -6,6 +6,7 @@ import random
 from typing import TYPE_CHECKING, Any, Concatenate, TypeVar
 
 from daft import DataType
+from daft.daft import log_python_udf_row_error
 from daft.dependencies import np, pa
 from daft.expressions.expressions import Expression
 from daft.series import Series
@@ -44,40 +45,46 @@ def _next_retry_delay_ms(error: BaseException, delay_ms: float) -> float:
     return delay_ms
 
 
-async def _retry_failed_rows(
+async def _retry_row(
+    index: int,
+    error: Exception,
     outputs: list[Any],
     call_for_row: Callable[[int], Coroutine[Any, Any, Any]],
     on_error: str,
     max_retries: int,
 ) -> None:
-    """Retry rows that failed while the batch was gathered, then null the ones still failing.
-
-    Retries happen per row so one transient failure does not discard the other
-    rows in the batch. Mutates ``outputs`` in place.
-    """
     delay_ms = _INITIAL_RETRY_DELAY_MS
-    for index, output in enumerate(outputs):
-        if isinstance(output, BaseException) and not isinstance(output, Exception):
-            # Cancellation and similar control-flow exceptions still abort the batch.
-            raise output
-        if not isinstance(output, Exception):
-            continue
-        error: Exception = output
-        for _ in range(max_retries):
-            delay_ms = _next_retry_delay_ms(error, delay_ms)
-            jitter = random.uniform(0.0, delay_ms / 2.0)
-            await asyncio.sleep((delay_ms * 3.0 / 4.0 + jitter) / 1000.0)
-            delay_ms = min(delay_ms * 2.0, _MAX_RETRY_DELAY_MS)
-            try:
-                outputs[index] = await call_for_row(index)
-            except Exception as retry_error:
-                error = retry_error
-            else:
-                break
-        else:
-            if on_error == "log":
-                logger.warning("Python UDF error: %s", error, exc_info=error)
-            outputs[index] = None
+    for _ in range(max_retries):
+        delay_ms = _next_retry_delay_ms(error, delay_ms)
+        jitter = random.uniform(0.0, delay_ms / 2.0)
+        await asyncio.sleep((delay_ms * 3.0 / 4.0 + jitter) / 1000.0)
+        delay_ms = min(delay_ms * 2.0, _MAX_RETRY_DELAY_MS)
+        try:
+            outputs[index] = await call_for_row(index)
+            return
+        except Exception as retry_error:
+            error = retry_error
+    if on_error == "log":
+        logger.warning("Python UDF error: %s", error, exc_info=error)
+        # The batch itself succeeds, so Rust will not emit the OTel record for us.
+        log_python_udf_row_error(error)
+    outputs[index] = None
+
+
+async def _retry_failed_rows(
+    outputs: list[Any],
+    failed: list[tuple[int, Exception]],
+    call_for_row: Callable[[int], Coroutine[Any, Any, Any]],
+    on_error: str,
+    max_retries: int,
+) -> None:
+    """Retry failed rows concurrently, each with its own backoff.
+
+    Mutates ``outputs`` in place.
+    """
+    await asyncio.gather(
+        *(_retry_row(index, error, outputs, call_for_row, on_error, max_retries) for index, error in failed)
+    )
 
 
 async def call_async_func_batched(
@@ -99,19 +106,24 @@ async def call_async_func_batched(
 
     dtype = DataType._from_pydatatype(return_dtype)
     with _metrics_context() as metrics:
-        # Gather per-row results so a single failure does not abort the batch.
-        outputs = await asyncio.gather(
-            *(call_for_row(args) for args in evaluated_args_list),
-            return_exceptions=True,
-        )
-
         if on_error == "raise":
-            for output in outputs:
-                if isinstance(output, BaseException):
-                    raise output
+            # Fail fast on the first raised exception. Exception objects returned
+            # as row values are data and pass through unchanged.
+            outputs = await asyncio.gather(*(call_for_row(args) for args in evaluated_args_list))
         else:
+            outputs: list[Any] = [None] * len(evaluated_args_list)
+            failed: list[tuple[int, Exception]] = []
+
+            async def run_row(index: int) -> None:
+                try:
+                    outputs[index] = await call_for_row(evaluated_args_list[index])
+                except Exception as error:
+                    failed.append((index, error))
+
+            await asyncio.gather(*(run_row(index) for index in range(len(evaluated_args_list))))
             await _retry_failed_rows(
                 outputs,
+                failed,
                 lambda index: call_for_row(evaluated_args_list[index]),
                 on_error,
                 max_retries,
