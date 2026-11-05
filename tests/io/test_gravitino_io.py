@@ -140,6 +140,62 @@ class TestGravitinoIOIntegration:
             parts = gvfs_url.replace("gvfs://fileset/", "").split("/")
             assert len(parts) >= 4  # catalog/schema/fileset/path
 
+    def test_gvfs_uses_python_io_extension(self, mock_gravitino_client):
+        from daft.daft import io_get, io_glob, io_put
+
+        io_config = IOConfig(
+            gravitino=GravitinoConfig(
+                endpoint="http://python-io-extension-test",
+                metalake_name="test_metalake",
+            )
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            mock_gravitino_client.load_fileset.return_value.fileset_info.storage_location = f"file://{tmp_dir}"
+            source_path = os.path.join(tmp_dir, "source.bin")
+            with open(source_path, "wb") as file:
+                file.write(b"abcdef")
+            os.makedirs(os.path.join(tmp_dir, "nested"))
+            with open(os.path.join(tmp_dir, "nested", "other.bin"), "wb") as file:
+                file.write(b"other")
+            os.makedirs(os.path.join(tmp_dir, "second"))
+            with open(os.path.join(tmp_dir, "second", "another.bin"), "wb") as file:
+                file.write(b"another")
+            os.makedirs(os.path.join(tmp_dir, "dataset.bin"))
+            with open(os.path.join(tmp_dir, "dataset.bin", "part.bin"), "wb") as file:
+                file.write(b"part")
+
+            gvfs_source = "gvfs://fileset/catalog/schema/fileset/source.bin"
+            assert io_get(gvfs_source, io_config=io_config) == b"abcdef"
+            assert io_get(gvfs_source, io_config=io_config, range_start=1, range_end=4) == b"bcd"
+
+            gvfs_output = "gvfs://fileset/catalog/schema/fileset/output.bin"
+            io_put(gvfs_output, b"written through Python", io_config=io_config)
+            with open(os.path.join(tmp_dir, "output.bin"), "rb") as file:
+                assert file.read() == b"written through Python"
+
+            files = io_glob(
+                "gvfs://fileset/catalog/schema/fileset/**/*.bin",
+                io_config=io_config,
+                fanout_limit=1,
+            )
+            assert {file["path"] for file in files} == {
+                "gvfs://fileset/catalog/schema/fileset/source.bin",
+                "gvfs://fileset/catalog/schema/fileset/output.bin",
+                "gvfs://fileset/catalog/schema/fileset/nested/other.bin",
+                "gvfs://fileset/catalog/schema/fileset/second/another.bin",
+                "gvfs://fileset/catalog/schema/fileset/dataset.bin/part.bin",
+            }
+
+            directory_files = io_glob(
+                "gvfs://fileset/catalog/schema/fileset/dataset.bin",
+                io_config=io_config,
+            )
+            assert {file["path"] for file in directory_files} == {
+                "gvfs://fileset/catalog/schema/fileset/dataset.bin/part.bin"
+            }
+
+            mock_gravitino_client.load_fileset.assert_called_once_with("catalog.schema.fileset")
+
     def test_list_gvfs_directory_with_mock(self, mock_gravitino_client, gravitino_io_config):
         """Test listing files in a gvfs directory with mocked client."""
         # Create a temporary directory with some files
