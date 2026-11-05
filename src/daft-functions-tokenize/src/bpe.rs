@@ -231,9 +231,8 @@ impl DaftBPE {
         {
             Err(Error::BadToken { token: bad_token }.into())
         } else {
-            let casted_tokens = tokens.to_vec();
             self.bpe
-                .decode(casted_tokens)
+                .decode(tokens)
                 .map_err(|err| Error::Decode { err: err.into() }.into())
         }
     }
