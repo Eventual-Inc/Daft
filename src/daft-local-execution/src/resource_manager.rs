@@ -1,250 +1,144 @@
-use std::sync::{Arc, Mutex, OnceLock};
+//! Worker-wide memory and spill resources, with per-pipeline accounting scopes.
+//!
+//! Configuration is read once per process. `DAFT_MEMORY_LIMIT` is the total
+//! accounted budget in bytes (otherwise derived from system/container memory).
+//! `DAFT_SPILL_MEMORY_LIMIT` reserves part of it for spill encoding; by default
+//! this is the smaller of 64 MiB and one eighth of the total budget.
+//! `DAFT_SPILL_DIRS` is a platform path-list, defaulting to `daft-spill` under
+//! the system temporary directory. `DAFT_SPILL_IO_CONCURRENCY` bounds concurrent
+//! blocking file operations across pipelines (default: 2).
+//!
+//! Only explicit reservations consume this budget. Upstream buffers, Python
+//! heaps and operator state that has not adopted reservations are not covered.
+
+use std::sync::{Arc, OnceLock};
 
 use common_error::{DaftError, DaftResult};
 use common_system_info::SystemInfo;
-use tokio::sync::Notify;
+use daft_local_plan::InputId;
+pub(crate) use daft_memory::{MemoryManager, MemoryPool, MemoryPoolKind};
+use dashmap::{DashMap, mapref::entry::Entry};
 
-pub(crate) static MEMORY_MANAGER: OnceLock<Arc<MemoryManager>> = OnceLock::new();
+use crate::spilling::{DEFAULT_SPILL_MEMORY_BYTES, SpillError, SpillIoRuntime, SpillManager};
+
+static MEMORY_MANAGER: OnceLock<Result<Arc<MemoryManager>, String>> = OnceLock::new();
+static SPILL_IO_RUNTIME: OnceLock<Arc<SpillIoRuntime>> = OnceLock::new();
 
 fn custom_memory_limit() -> Option<u64> {
-    let memory_limit_var_name = "DAFT_MEMORY_LIMIT";
-    if let Ok(val) = std::env::var(memory_limit_var_name)
-        && let Ok(val) = val.parse::<u64>()
-    {
-        return Some(val);
-    }
-    None
+    std::env::var("DAFT_MEMORY_LIMIT")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
 }
 
-pub(crate) fn get_or_init_memory_manager() -> &'static Arc<MemoryManager> {
-    MEMORY_MANAGER.get_or_init(|| Arc::new(MemoryManager::new()))
+pub(crate) fn get_or_init_memory_manager() -> DaftResult<&'static Arc<MemoryManager>> {
+    MEMORY_MANAGER
+        .get_or_init(|| {
+            let limit = custom_memory_limit()
+                .unwrap_or_else(|| SystemInfo::default().calculate_total_memory());
+            let spill_bytes = match std::env::var("DAFT_SPILL_MEMORY_LIMIT") {
+                Ok(value) => value.parse::<u64>().map_err(|_| {
+                    "DAFT_SPILL_MEMORY_LIMIT must be an integer number of bytes".to_string()
+                })?,
+                Err(std::env::VarError::NotPresent) => DEFAULT_SPILL_MEMORY_BYTES.min(limit / 8),
+                Err(error) => return Err(error.to_string()),
+            };
+            MemoryManager::with_spill_reserve(limit, spill_bytes)
+                .map(Arc::new)
+                .map_err(|error| error.to_string())
+        })
+        .as_ref()
+        .map_err(|error| DaftError::ComputeError(error.clone()))
 }
 
-pub(crate) struct MemoryPermit<'a> {
-    bytes: u64,
-    manager: &'a MemoryManager,
-}
-
-impl Drop for MemoryPermit<'_> {
-    fn drop(&mut self) {
-        if self.bytes > 0 {
-            {
-                let mut state = self.manager.state.lock().unwrap();
-                state.available_bytes += self.bytes;
-            } // lock is released here
-            self.manager.notify.notify_waiters();
-        }
-    }
-}
-
-struct MemoryState {
-    available_bytes: u64,
-}
-
-pub(crate) struct MemoryManager {
-    total_bytes: u64,
-    state: Mutex<MemoryState>,
-    notify: Notify,
-}
-
-impl Default for MemoryManager {
-    fn default() -> Self {
-        let system_info = SystemInfo::default();
-        let total_mem = system_info.calculate_total_memory();
-        Self {
-            total_bytes: total_mem,
-            state: Mutex::new(MemoryState {
-                available_bytes: total_mem,
-            }),
-            notify: Notify::new(),
-        }
-    }
-}
-
-impl MemoryManager {
-    pub fn new() -> Self {
-        if let Some(custom_limit) = custom_memory_limit() {
-            Self {
-                total_bytes: custom_limit,
-                state: Mutex::new(MemoryState {
-                    available_bytes: custom_limit,
-                }),
-                notify: Notify::new(),
-            }
-        } else {
-            Self::default()
-        }
-    }
-
-    pub async fn request_bytes(&self, bytes: u64) -> DaftResult<MemoryPermit<'_>> {
-        if bytes == 0 {
-            return Ok(MemoryPermit {
-                bytes: 0,
-                manager: self,
-            });
-        }
-
-        if bytes > self.total_bytes {
-            return Err(DaftError::ComputeError(format!(
-                "Cannot request {} bytes, only {} available",
-                bytes, self.total_bytes
-            )));
-        }
-
-        loop {
-            if let Some(permit) = self.try_request_bytes(bytes) {
-                return Ok(permit);
-            }
-            self.notify.notified().await;
-        }
-    }
-
-    fn try_request_bytes(&self, bytes: u64) -> Option<MemoryPermit<'_>> {
-        let mut state = self.state.lock().unwrap();
-        if state.available_bytes >= bytes {
-            state.available_bytes -= bytes;
-            Some(MemoryPermit {
-                bytes,
-                manager: self,
+pub(crate) fn create_spill_manager(pipeline_id: impl ToString) -> Result<SpillManager, SpillError> {
+    let spill_pool = get_or_init_memory_manager()
+        .map_err(|error| SpillError::Memory(error.to_string()))?
+        .spill_pool();
+    let io_runtime = SPILL_IO_RUNTIME.get_or_init(|| {
+        let configured_directories: Vec<_> = std::env::var_os("DAFT_SPILL_DIRS")
+            .map(|value| {
+                std::env::split_paths(&value)
+                    .filter(|path| !path.as_os_str().is_empty())
+                    .collect()
             })
+            .unwrap_or_default();
+        let directories = if configured_directories.is_empty() {
+            vec![std::env::temp_dir().join("daft-spill")]
         } else {
-            None
-        }
-    }
+            configured_directories
+        };
+        let io_concurrency = std::env::var("DAFT_SPILL_IO_CONCURRENCY")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(2);
+        SpillIoRuntime::new(directories, io_concurrency, spill_pool)
+            .expect("the normalized spill directory list is non-empty")
+    });
+    Ok(SpillManager::for_execution(io_runtime.clone(), pipeline_id))
 }
 
-#[cfg(test)]
-mod tests {
-    use std::time::Duration;
+#[derive(Debug)]
+pub(crate) struct PipelineMemoryContext {
+    pipeline_pool: Arc<MemoryPool>,
+    node_shared_pools: DashMap<usize, Arc<MemoryPool>>,
+    input_pools: DashMap<InputId, Arc<MemoryPool>>,
+}
 
-    use tokio::time;
-
-    use super::*;
-
-    #[test]
-    fn test_get_or_init_memory_manager() {
-        let manager1 = get_or_init_memory_manager();
-        let manager2 = get_or_init_memory_manager();
-
-        // Verify we get the same instance
-        assert!(Arc::ptr_eq(manager1, manager2));
-    }
-
-    #[tokio::test]
-    async fn test_zero_byte_request() {
-        let manager = MemoryManager::new();
-        let permit = manager.request_bytes(0).await.unwrap();
-        assert_eq!(permit.bytes, 0);
-    }
-
-    #[tokio::test]
-    async fn test_excessive_memory_request() {
-        let manager = MemoryManager::new();
-        let result = manager.request_bytes(manager.total_bytes + 1).await;
-        assert!(result.is_err());
-        if let Err(DaftError::ComputeError(_)) = result {
-            // Expected error type
-        } else {
-            panic!("Expected ComputeError");
+impl PipelineMemoryContext {
+    pub(crate) fn new(pipeline_pool: Arc<MemoryPool>) -> Self {
+        debug_assert_eq!(pipeline_pool.kind(), MemoryPoolKind::Pipeline);
+        Self {
+            pipeline_pool,
+            node_shared_pools: DashMap::new(),
+            input_pools: DashMap::new(),
         }
     }
 
-    #[tokio::test]
-    async fn test_successful_memory_request() {
-        let manager = MemoryManager::new();
-        let total = manager.total_bytes;
-        let first_request_size = total / 2;
-        let second_request_size = total - first_request_size;
-
-        // First request should succeed
-        let permit1 = manager.request_bytes(first_request_size).await.unwrap();
-        assert_eq!(permit1.bytes, first_request_size);
-
-        // Second request should succeed
-        let permit2 = manager.request_bytes(second_request_size).await.unwrap();
-        assert_eq!(permit2.bytes, second_request_size);
-
-        // Third request should fail
-        let result = manager.try_request_bytes(1);
-        assert!(result.is_none());
+    pub(crate) fn pipeline_pool(&self) -> Arc<MemoryPool> {
+        self.pipeline_pool.clone()
     }
 
-    #[tokio::test]
-    async fn test_memory_release() {
-        let manager = MemoryManager::new();
-        let request_size = 1;
-        let permit = manager.request_bytes(request_size).await.unwrap();
-
-        // Verify available memory is reduced
-        {
-            let state = manager.state.lock().unwrap();
-            assert_eq!(state.available_bytes, manager.total_bytes - request_size);
-        }
-
-        // Drop the permit
-        drop(permit);
-
-        // Verify memory is released
-        {
-            let state = manager.state.lock().unwrap();
-            assert_eq!(state.available_bytes, manager.total_bytes);
+    pub(crate) fn node_shared_pool(&self, node_id: usize, node_name: &str) -> Arc<MemoryPool> {
+        match self.node_shared_pools.entry(node_id) {
+            Entry::Occupied(entry) => entry.get().clone(),
+            Entry::Vacant(entry) => entry
+                .insert(self.pipeline_pool.child(
+                    format!("node-{node_id}-{node_name}"),
+                    MemoryPoolKind::NodeShared,
+                    self.pipeline_pool.limit_bytes(),
+                ))
+                .clone(),
         }
     }
 
-    #[tokio::test]
-    async fn test_waiting_for_memory() {
-        let manager = Arc::new(MemoryManager::new());
-        let total = manager.total_bytes;
-
-        // Request all available memory
-        let permit = manager.request_bytes(total).await.unwrap();
-
-        // Spawn a task that waits for memory
-        let manager_clone = manager.clone();
-        let wait_handle = tokio::spawn(async move {
-            let _permit = manager_clone.request_bytes(total / 2).await.unwrap();
-        });
-
-        // Short delay to ensure the waiting task is actually waiting
-        time::sleep(Duration::from_millis(50)).await;
-
-        // Drop the original permit
-        drop(permit);
-
-        // The waiting task should now complete
-        wait_handle.await.unwrap();
+    pub(crate) fn input_pool(&self, input_id: InputId) -> Arc<MemoryPool> {
+        match self.input_pools.entry(input_id) {
+            Entry::Occupied(entry) => entry.get().clone(),
+            Entry::Vacant(entry) => entry
+                .insert(self.pipeline_pool.child(
+                    format!("input-{input_id}"),
+                    MemoryPoolKind::Input,
+                    self.pipeline_pool.limit_bytes(),
+                ))
+                .clone(),
+        }
     }
 
-    #[tokio::test]
-    async fn test_concurrent_memory_requests() {
-        let manager = Arc::new(MemoryManager::new());
-        let total = manager.total_bytes;
-        let mut task_set = tokio::task::JoinSet::new();
+    pub(crate) fn operator_pool(
+        &self,
+        input_id: InputId,
+        node_id: usize,
+        node_name: &str,
+    ) -> Arc<MemoryPool> {
+        let input_pool = self.input_pool(input_id);
+        input_pool.child(
+            format!("node-{node_id}-{node_name}"),
+            MemoryPoolKind::Operator,
+            input_pool.limit_bytes(),
+        )
+    }
 
-        // Four tasks that request all available memory
-        for _ in 0..4 {
-            let manager_clone = manager.clone();
-            task_set.spawn(async move {
-                let _permit = manager_clone.request_bytes(total).await.unwrap();
-            });
-        }
-
-        // Four tasks that request half the available memory
-        for _ in 0..4 {
-            let manager_clone = manager.clone();
-            task_set.spawn(async move {
-                let _permit = manager_clone.request_bytes(total / 2).await.unwrap();
-            });
-        }
-
-        // Four tasks that request a quarter of the available memory
-        for _ in 0..4 {
-            let manager_clone = manager.clone();
-            task_set.spawn(async move {
-                let _permit = manager_clone.request_bytes(total / 4).await.unwrap();
-            });
-        }
-
-        task_set.join_all().await;
+    pub(crate) fn finish_input(&self, input_id: InputId) {
+        self.input_pools.remove(&input_id);
     }
 }
