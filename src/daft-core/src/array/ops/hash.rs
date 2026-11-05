@@ -225,10 +225,17 @@ impl Decimal128Array {
 
         let hashes = arr.into_iter().map(|d| {
             d.map(|d| {
-                let twos_compliment = u128::from_ne_bytes(d.to_ne_bytes());
-                let bits_needed = u128::BITS - twos_compliment.leading_zeros();
-                let bytes_needed = bits_needed.div_ceil(8) as usize;
-                let be_bytes = twos_compliment.to_be_bytes();
+                // The spec hashes the minimal two's-complement big-endian bytes of the
+                // unscaled value, keeping the sign bit. For example 128 is [0x00, 0x80],
+                // not [0x80], and -1 is [0xFF].
+                let magnitude = if d >= 0 {
+                    d as u128
+                } else {
+                    (d + 1).unsigned_abs()
+                };
+                let bits_needed = u128::BITS - magnitude.leading_zeros();
+                let bytes_needed = ((bits_needed + 8) / 8) as usize;
+                let be_bytes = d.to_be_bytes();
                 let unsigned =
                     mur3::murmurhash3_x86_32(&be_bytes[(be_bytes.len() - bytes_needed)..], 0);
                 i32::from_ne_bytes(unsigned.to_ne_bytes())
@@ -861,22 +868,27 @@ mod tests {
 
     #[test]
     fn test_decimal_murmur3_values() {
-        let values: Vec<i128> = vec![100, 200];
+        // Expected values come from hashing the minimal two's-complement
+        // big-endian bytes of each unscaled value, as required by the Iceberg
+        // spec (e.g. 200 is [0x00, 0xC8], not [0xC8]).
+        let cases: Vec<(i128, i32)> = vec![
+            (100, 655955059),
+            (200, 766366823),
+            (128, 1544076949),
+            (0, 1364076727),
+            (-1, -43192051),
+            (-128, 267099677),
+            (-1234, -1304436926),
+        ];
+        let values: Vec<i128> = cases.iter().map(|(d, _)| *d).collect();
         let arr = Decimal128Array::from_field_and_values(
             Field::new("d", DataType::Decimal128(10, 2)),
-            values.clone(),
+            values,
         );
         let result = arr.murmur3_32().unwrap();
 
-        for (i, d) in values.iter().enumerate() {
-            let twos_compliment = u128::from_ne_bytes(d.to_ne_bytes());
-            let bits_needed = u128::BITS - twos_compliment.leading_zeros();
-            let bytes_needed = bits_needed.div_ceil(8) as usize;
-            let be_bytes = twos_compliment.to_be_bytes();
-            let unsigned =
-                mur3::murmurhash3_x86_32(&be_bytes[(be_bytes.len() - bytes_needed)..], 0);
-            let expected = i32::from_ne_bytes(unsigned.to_ne_bytes());
-            assert_eq!(result.get(i).unwrap(), expected);
+        for (i, (d, expected)) in cases.iter().enumerate() {
+            assert_eq!(result.get(i).unwrap(), *expected, "unscaled value {d}");
         }
     }
 
