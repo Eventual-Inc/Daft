@@ -27,12 +27,14 @@ from pyiceberg.expressions.literals import DateLiteral, Literal, StringLiteral, 
 from pyiceberg.types import TimestampType, TimestamptzType
 from pyiceberg.utils.datetime import date_to_days, datetime_to_micros, days_to_date
 
+from daft.datatype import DataType
 from daft.expressions.visitor import PredicateVisitor
+from daft.io.iceberg._metadata import convert_iceberg_data_type
 
 if TYPE_CHECKING:
     from pyiceberg.schema import Schema as IcebergSchema
+    from pyiceberg.types import IcebergType
 
-    from daft.datatype import DataType
     from daft.expressions import Expression
 
 try:
@@ -50,6 +52,22 @@ except ImportError:
     _TIMESTAMPTZ_TYPES = (TimestamptzType,)  # type: ignore[assignment]
 
 _DATE_ONLY_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def _cast_preserves_values(source_type: IcebergType, target: DataType) -> bool:
+    """Whether casting a column of ``source_type`` to ``target`` leaves every value unchanged.
+
+    Dropping a cast from a pushed-down predicate is only safe when it cannot change which
+    rows match: a lossy cast would make the pushed-down filter narrower than the user's
+    predicate, so Iceberg could prune files that contain matching rows.
+    """
+    source = convert_iceberg_data_type(source_type)
+    if source == target:
+        return True
+    # Integer widening is value-preserving, and pyiceberg binds integer literals against
+    # the narrower field type (returning AlwaysFalse for out-of-range literals), so
+    # comparisons keep the same semantics.
+    return source == DataType.int32() and target == DataType.int64()
 
 
 class IcebergPredicateVisitor(PredicateVisitor[BooleanExpression]):
@@ -70,10 +88,26 @@ class IcebergPredicateVisitor(PredicateVisitor[BooleanExpression]):
         return self.visit(expr)
 
     def visit_cast(self, expr: Expression, dtype: DataType) -> BooleanExpression:
-        return self.visit(expr)
+        return self._visit_cast(expr, dtype)
 
     def visit_try_cast(self, expr: Expression, dtype: DataType) -> BooleanExpression:
-        return self.visit(expr)
+        return self._visit_cast(expr, dtype)
+
+    def _visit_cast(self, expr: Expression, dtype: DataType) -> Reference:
+        ref = self.visit(expr)
+        if not isinstance(ref, Reference):
+            raise ValueError(f"Expected a column reference inside cast, got {type(ref).__name__}")
+        if self._schema is not None:
+            try:
+                source_type = self._schema.find_field(ref.name).field_type
+            except ValueError:
+                source_type = None
+            if source_type is not None and _cast_preserves_values(source_type, dtype):
+                return ref
+        raise ValueError(
+            f"Iceberg does not support cast(col({ref.name}) as {dtype}) in filter expressions: "
+            "the cast can change values, so the pushed-down predicate would miss matching rows"
+        )
 
     def visit_function(self, name: str, args: list[Expression]) -> BooleanExpression:
         # `is_nan`/`not_nan` have no dedicated `visit_*` hook on the base visitor,
