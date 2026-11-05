@@ -5,6 +5,7 @@ import pytest
 import daft
 from daft import col
 from daft.catalog import Catalog, Identifier, Table
+from daft.session import Session
 
 
 def test_table_from_pydict():
@@ -192,13 +193,92 @@ def test_namespace_errors():
     with pytest.raises(Exception):
         catalog.drop_namespace("nonexistent")
 
-    # Test nested namespaces not supported
+    # Nested namespaces are supported
+    catalog.create_namespace("ns1.ns2")
+    assert catalog.has_namespace("ns1.ns2")
     with pytest.raises(Exception):
         catalog.create_namespace("ns1.ns2")
 
     # Test accessing table in non-existent namespace
     with pytest.raises(Exception):
         catalog.create_table("nonexistent.table", daft.from_pydict({"a": [1]}))
+
+
+def test_nested_namespaces():
+    catalog = Catalog.from_pydict({}, "cat")
+
+    catalog.create_namespace("a.b.c")
+    assert catalog.has_namespace("a.b.c")
+    assert catalog.has_namespace(Identifier("a", "b", "c"))
+    assert catalog.list_namespaces() == [Identifier("a", "b", "c")]
+
+    data = {"a": [1, 2, 3]}
+    catalog.create_table("a.b.c.t1", daft.from_pydict(data))
+    assert catalog.has_table("a.b.c.t1")
+    assert not catalog.has_table("a.b.t1")
+    assert catalog.get_table("a.b.c.t1").read().to_pydict() == data
+
+    # Table identifiers retain the full qualifier rather than a dotted name.
+    tables = catalog.list_tables()
+    assert tables == [Identifier("a", "b", "c", "t1")]
+    assert len(tables[0]) == 4
+    assert catalog.list_tables("a.b.c.%") == [Identifier("a", "b", "c", "t1")]
+    assert catalog.list_tables("a.b.%") == []
+    assert catalog.list_tables("a.b.c.t%") == [Identifier("a", "b", "c", "t1")]
+
+    catalog.drop_table("a.b.c.t1")
+    assert not catalog.has_table("a.b.c.t1")
+    assert catalog.has_namespace("a.b.c")
+
+
+def test_catalog_from_pydict_nested_namespace():
+    data = {"a": [1, 2, 3], "b": ["x", "y", "z"]}
+    catalog = Catalog.from_pydict({Identifier("a", "b", "c", "t"): daft.from_pydict(data)}, "cat")
+
+    assert catalog.list_namespaces() == [Identifier("a", "b", "c")]
+    assert catalog.list_tables() == [Identifier("a", "b", "c", "t")]
+    assert catalog.get_table("a.b.c.t").read().to_pydict() == data
+
+
+def test_nested_namespace_sql():
+    data = {"a": [1, 2, 3], "b": ["x", "y", "z"]}
+    catalog = Catalog.from_pydict({Identifier("a", "b", "c", "t"): daft.from_pydict(data)}, "cat")
+
+    sess = Session()
+    sess.attach_catalog(catalog, alias="cat")
+    sess.set_catalog("cat")
+
+    assert sess.sql("SELECT * FROM a.b.c.t").to_pydict() == data
+
+
+def test_drop_nested_namespace_removes_descendants():
+    catalog = Catalog.from_pydict({}, "cat")
+    catalog.create_namespace("a")
+    catalog.create_namespace("a.b")
+    catalog.create_table("a.b.t", daft.from_pydict({"x": [1]}))
+
+    catalog.drop_namespace("a")
+
+    assert not catalog.has_namespace("a")
+    assert not catalog.has_namespace("a.b")
+    assert not catalog.has_table("a.b.t")
+    assert catalog.list_namespaces() == []
+    assert catalog.list_tables() == []
+
+
+def test_drop_missing_parent_namespace_preserves_descendants():
+    catalog = Catalog.from_pydict({}, "cat")
+    catalog.create_namespace("a.b")
+    catalog.create_table("a.b.t", daft.from_pydict({"x": [1]}))
+
+    # `a` was never created, so dropping it must fail without touching `a.b`.
+    with pytest.raises(Exception):
+        catalog.drop_namespace("a")
+
+    assert not catalog.has_namespace("a")
+    assert catalog.has_namespace("a.b")
+    assert catalog.has_table("a.b.t")
+    assert catalog.get_table("a.b.t").read().to_pydict() == {"x": [1]}
 
 
 def test_namespace_table_operations():
