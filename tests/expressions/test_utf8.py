@@ -280,3 +280,32 @@ def test_split_part_zero_errors():
     df = daft.from_pydict({"x": ["a,b,c"]})
     with pytest.raises(Exception, match="part must not be 0"):
         df.select(split_part(df["x"], ",", 0)).collect()
+
+
+@pytest.mark.parametrize(
+    ("text", "delimiter", "parts", "expected"),
+    [
+        ("a,b,c", ",", [1, 2, -1, -3, 4, None], ["a", "b", "c", "a", "", None]),
+        (None, ",", [1, 2], [None, None]),
+        ("a,b,c", None, [1, 2], [None, None]),
+        ("a,b,c", ",", [None, None], [None, None]),
+        ("a,b,c", ",", [], []),
+    ],
+)
+def test_split_part_scalar_strings_column_part(text, delimiter, parts, expected):
+    df = daft.from_pydict({"part": parts}).with_column("part", daft.col("part").cast(daft.DataType.int64()))
+    text_expr = daft.lit(text).cast(daft.DataType.string())
+    delimiter_expr = daft.lit(delimiter).cast(daft.DataType.string())
+    actual = df.select(split_part(text_expr, delimiter_expr, daft.col("part")).alias("value")).to_pydict()
+    assert actual == {"value": expected}
+
+    sql_text = "CAST(NULL AS STRING)" if text is None else f"'{text}'"
+    sql_delimiter = "CAST(NULL AS STRING)" if delimiter is None else f"'{delimiter}'"
+    actual = daft.sql(f"SELECT split_part({sql_text}, {sql_delimiter}, part) AS value FROM df").to_pydict()
+    assert actual == {"value": expected}
+
+
+def test_split_part_scalar_strings_zero_part_errors():
+    df = daft.from_pydict({"part": [1, 0, 2]})
+    with pytest.raises(Exception, match="part must not be 0"):
+        df.select(split_part(daft.lit("a,b,c"), ",", daft.col("part"))).collect()

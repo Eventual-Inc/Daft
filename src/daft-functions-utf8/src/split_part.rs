@@ -12,7 +12,7 @@ use daft_dsl::{
 use num_traits::NumCast;
 use serde::{Deserialize, Serialize};
 
-use crate::utils::{create_broadcasted_str_iter, parse_inputs};
+use crate::utils::create_broadcasted_str_iter;
 
 /// Spark-compatible `split_part` function.
 ///
@@ -46,7 +46,8 @@ impl ScalarUDF for SplitPart {
                         Ok(split_part_impl(arr, delim_arr, part.downcast::<<$T as DaftDataType>::ArrayType>()?)?.into_series())
                     })
                 } else if part.data_type().is_null() {
-                    Ok(Series::full_null(input.name(), &DataType::Utf8, input.len()))
+                    let part = part.cast(&DataType::Int64)?;
+                    Ok(split_part_impl(arr, delim_arr, part.i64()?)?.into_series())
                 } else {
                     Err(DaftError::TypeError(format!(
                         "split_part not implemented for part type {}",
@@ -97,26 +98,32 @@ where
     I: DaftIntegerType,
     <I as DaftNumericType>::Native: Ord + std::hash::Hash,
 {
-    let (is_full_null, expected_size) = parse_inputs(arr, &[delim_arr])
-        .map_err(|e| DaftError::ValueError(format!("Error in split_part: {e}")))?;
-    if is_full_null {
+    // Any argument can supply the non-scalar length, including `part`.
+    // Keep zero as a non-scalar length so scalar strings and empty indices
+    // produce an empty result rather than a length mismatch.
+    let lengths = [arr.len(), delim_arr.len(), part.len()];
+    let expected_size = lengths.into_iter().find(|&len| len != 1).unwrap_or(1);
+    ensure!(
+        lengths.into_iter().all(|len| len == 1 || len == expected_size),
+        ComputeError: "split_part: inputs have incompatible lengths: {}, {}, {}",
+        arr.len(),
+        delim_arr.len(),
+        part.len()
+    );
+
+    if expected_size == 0 {
+        return Ok(Utf8Array::empty(arr.name(), &DataType::Utf8));
+    }
+    if arr.null_count() == arr.len()
+        || delim_arr.null_count() == delim_arr.len()
+        || part.null_count() == part.len()
+    {
         return Ok(Utf8Array::full_null(
             arr.name(),
             &DataType::Utf8,
             expected_size,
         ));
     }
-    if expected_size == 0 {
-        return Ok(Utf8Array::empty(arr.name(), &DataType::Utf8));
-    }
-
-    ensure!(
-        part.len() == 1 || part.len() == expected_size,
-        ComputeError: "split_part: part array length ({}) is not broadcastable to expected size ({})",
-        part.len(),
-        expected_size
-    );
-
     let arr_iter = create_broadcasted_str_iter(arr, expected_size);
     let delim_iter = create_broadcasted_str_iter(delim_arr, expected_size);
 
@@ -297,6 +304,57 @@ mod tests {
         let result = split_part_impl(&arr, &delim, &part).unwrap();
         assert_eq!(result.get(0), Some("a"));
         assert_eq!(result.get(1), Some("z"));
+    }
+
+    #[test]
+    fn test_split_part_broadcast_scalar_strings() {
+        let arr = Utf8Array::from_iter("a", [Some("a,b,c")].into_iter());
+        let delim = Utf8Array::from_iter("delim", [Some(",")].into_iter());
+        let part = Int64Array::from_iter(
+            Field::new("part", DataType::Int64),
+            [Some(1), Some(2), Some(-1), Some(-3), Some(4), None].into_iter(),
+        );
+
+        let result = split_part_impl(&arr, &delim, &part).unwrap();
+        assert_eq!(
+            result.into_iter().collect::<Vec<_>>(),
+            vec![Some("a"), Some("b"), Some("c"), Some("a"), Some(""), None]
+        );
+    }
+
+    #[test]
+    fn test_split_part_broadcast_null_strings() {
+        let part = Int64Array::from_slice("part", &[1, 2]);
+        for (text, delimiter) in [(None, Some(",")), (Some("a,b,c"), None)] {
+            let arr = Utf8Array::from_iter("a", [text].into_iter());
+            let delim = Utf8Array::from_iter("delim", [delimiter].into_iter());
+
+            let result = split_part_impl(&arr, &delim, &part).unwrap();
+            assert_eq!(result.len(), 2);
+            assert_eq!(result.null_count(), 2);
+        }
+    }
+
+    #[test]
+    fn test_split_part_broadcast_empty_parts() {
+        let arr = Utf8Array::from_iter("a", [Some("a,b,c")].into_iter());
+        let delim = Utf8Array::from_iter("delim", [Some(",")].into_iter());
+        let part = Int64Array::empty("part", &DataType::Int64);
+
+        let result = split_part_impl(&arr, &delim, &part).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_split_part_rejects_mismatched_lengths_before_null_shortcut() {
+        let part = Int64Array::from_slice("part", &[1, 2, 3]);
+        let delim = Utf8Array::from_iter("delim", [Some(",")].into_iter());
+        for values in [[Some("a,b"), Some("c,d")], [None, None]] {
+            let arr = Utf8Array::from_iter("a", values.into_iter());
+
+            let error = split_part_impl(&arr, &delim, &part).unwrap_err();
+            assert!(error.to_string().contains("incompatible lengths: 2, 1, 3"));
+        }
     }
 
     #[test]
