@@ -8,8 +8,9 @@ use crate::{
         growable::make_growable,
         ops::{
             DaftApproxSketchAggable, DaftBoolAggable, DaftConcatAggable, DaftCountAggable,
-            DaftHllMergeAggable, DaftMeanAggable, DaftMergeSketchAggable, DaftPercentileAggable,
-            DaftProductAggable, DaftSetAggable, DaftSkewAggable, DaftStddevAggable, DaftSumAggable,
+            DaftHllMergeAggable, DaftMeanAggable, DaftMergeSketchAggable,
+            DaftMergeVarPartialAggable, DaftPercentileAggable, DaftProductAggable, DaftSetAggable,
+            DaftSkewAggable, DaftStddevAggable, DaftSumAggable, DaftVarPartialAggable,
             DaftVarianceAggable, GroupIndices,
         },
     },
@@ -509,6 +510,35 @@ impl Series {
         let casted = casted.f64()?;
         Ok(groups
             .map_or_else(|| casted.skew(), |groups| casted.grouped_skew(groups))?
+            .into_series())
+    }
+
+    pub fn var_partial(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
+        let target_type = try_variance_aggregation_supertype(self.data_type())?;
+        if !matches!(target_type, DataType::Float64) {
+            return Err(DaftError::not_implemented(format!(
+                "Variance partial is not implemented for {target_type}, source type: {}",
+                self.data_type()
+            )));
+        }
+
+        let casted = self.cast(&DataType::Float64)?;
+        let casted = casted.f64()?;
+        Ok(groups
+            .map_or_else(
+                || casted.var_partial(),
+                |groups| casted.grouped_var_partial(groups),
+            )?
+            .into_series())
+    }
+
+    pub fn merge_var_partial(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
+        let array = self.struct_()?;
+        Ok(groups
+            .map_or_else(
+                || array.merge_var_partial(),
+                |groups| array.grouped_merge_var_partial(groups),
+            )?
             .into_series())
     }
 }

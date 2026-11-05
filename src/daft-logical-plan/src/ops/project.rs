@@ -632,6 +632,14 @@ fn replace_column_with_semantic_id_aggexpr(
                 |_| e,
             )
         }
+        AggExpr::VarPartial(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::VarPartial, |_| e)
+        }
+        AggExpr::MergeVarPartial(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::MergeVarPartial, |_| e)
+        }
         AggExpr::Min(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::Min, |_| e)

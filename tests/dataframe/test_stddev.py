@@ -48,6 +48,9 @@ TESTS = [
     [100, 100, 100],
     [None, 100, None],
     [None] * 10 + [100],
+    # Large mean, tiny spread: E(x^2) - E(x)^2 collapses to 0 here (see #7468).
+    [1e9 + 1, 1e9 + 2, 1e9 + 3],
+    [1e12, 1e12 + 1, 1e12 + 2],
 ]
 
 
@@ -91,6 +94,8 @@ GROUPED_TESTS = [
     [("k0", 100), ("k0", 100), ("k0", 100)],
     [("k0", 0), ("k0", 1), ("k0", 2)],
     [("k0", None), ("k0", None), ("k0", 100)],
+    # Large mean, plus a single-row group that must stay NULL at ddof=1 (see #7468).
+    [("k0", 1e9 + 1), ("k0", 1e9 + 2), ("k1", 1e9 + 3)],
 ]
 
 
