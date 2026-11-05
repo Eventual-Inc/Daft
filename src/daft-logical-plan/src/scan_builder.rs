@@ -106,6 +106,7 @@ impl ParquetScanBuilder {
         let cfg = ParquetSourceConfig {
             coerce_int96_timestamp_unit: self.coerce_int96_timestamp_unit,
             field_id_mapping: self.field_id_mapping,
+            field_defaults: None,
             row_groups: self.row_groups,
             chunk_size: self.chunk_size,
             ignore_corrupt_files: self.ignore_corrupt_files,

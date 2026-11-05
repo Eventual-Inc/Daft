@@ -12,7 +12,10 @@ use daft_recordbatch::RecordBatch;
 use futures::{StreamExt, TryFutureExt, TryStreamExt, stream::BoxStream};
 use serde::{Deserialize, Serialize};
 
-use crate::{DaftParquetMetadata, infer_schema_from_daft_metadata, metadata::FieldIdMapping};
+use crate::{
+    DaftParquetMetadata, infer_schema_from_daft_metadata,
+    metadata::{FieldDefaults, FieldIdMapping},
+};
 
 /// (path, reason, partial). `partial=true` means some batches were already emitted before
 /// corruption was detected; the file is not fully skipped.
@@ -92,6 +95,9 @@ pub struct ParquetReadOptions {
     pub predicate: Option<ExprRef>,
     pub schema_infer: ParquetSchemaInferenceOptions,
     pub field_id_mapping: Option<Arc<FieldIdMapping>>,
+    /// Values used to fill columns that the file does not contain (Iceberg v3
+    /// `initial-default`). Absent columns read as NULL when this is not set.
+    pub field_defaults: Option<Arc<FieldDefaults>>,
     pub delete_rows: Option<Vec<i64>>,
     pub batch_size: Option<usize>,
     // TODO(arrow-rs): wire this through to the arrowrs reader to skip redundant footer reads.
@@ -169,6 +175,7 @@ fn single_opts_for(opts: &ParquetBulkReadOptions, i: usize) -> ParquetReadOption
         predicate: opts.predicate.clone(),
         schema_infer: opts.schema_infer,
         field_id_mapping: opts.field_id_mapping.clone(),
+        field_defaults: None,
         delete_rows: per.delete_rows,
         batch_size: opts.batch_size,
         metadata: per.metadata,

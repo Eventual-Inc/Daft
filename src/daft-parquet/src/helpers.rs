@@ -16,7 +16,7 @@ use parquet::{
     file::metadata::ParquetMetaData,
 };
 
-use crate::statistics::row_group_metadata_to_table_stats;
+use crate::{metadata::FieldDefaults, statistics::row_group_metadata_to_table_stats};
 
 /// Returns column names referenced by `predicate`, or `None` if the predicate
 /// is not pushable (no columns, or any column is missing from `daft_schema`).
@@ -31,9 +31,15 @@ pub fn predicate_pushable_cols(
     Some(cols.into_iter().collect())
 }
 
-/// Substitute null for any column reference not present in `schema` (Iceberg
-/// schema evolution). Null propagates conservatively — never falsely excludes.
-pub fn substitute_missing_cols(predicate: &ExprRef, schema: &Schema) -> DaftResult<ExprRef> {
+/// Substitute a fill value for any column reference not present in `schema` (Iceberg
+/// schema evolution). Missing columns fill with their initial default when one is
+/// provided, and with null otherwise; null propagates conservatively — never falsely
+/// excludes.
+pub fn substitute_missing_cols(
+    predicate: &ExprRef,
+    schema: &Schema,
+    field_defaults: Option<&FieldDefaults>,
+) -> DaftResult<ExprRef> {
     Ok(predicate
         .clone()
         .transform(|e| {
@@ -44,7 +50,10 @@ pub fn substitute_missing_cols(predicate: &ExprRef, schema: &Schema) -> DaftResu
                     _ => return Ok(Transformed::no(e)),
                 };
                 if schema.get_field(name).is_err() {
-                    return Ok(Transformed::yes(null_lit()));
+                    let fill = field_defaults
+                        .and_then(|defaults| defaults.literal(name))
+                        .unwrap_or_else(null_lit);
+                    return Ok(Transformed::yes(fill));
                 }
             }
             Ok(Transformed::no(e))
@@ -245,6 +254,7 @@ pub fn prune_row_groups(
     num_rows: Option<usize>,
     predicate: Option<&ExprRef>,
     schema: &Schema,
+    field_defaults: Option<&FieldDefaults>,
     uri: &str,
 ) -> DaftResult<Vec<usize>> {
     let num_row_groups = metadata.num_row_groups();
@@ -270,7 +280,7 @@ pub fn prune_row_groups(
 
     let bound_pred = match predicate {
         Some(pred) => {
-            let substituted = substitute_missing_cols(pred, schema)?;
+            let substituted = substitute_missing_cols(pred, schema, field_defaults)?;
             Some(BoundExpr::try_new(substituted, schema).map_err(|e| {
                 common_error::DaftError::ValueError(format!(
                     "Failed to bind predicate for row group pruning on '{}': {}",

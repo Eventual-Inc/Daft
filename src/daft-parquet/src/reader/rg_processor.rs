@@ -183,10 +183,11 @@ pub(super) async fn process_rg_with_data_cols(
         if let Some(pred) = ctx.predicate.as_ref()
             && !plan.predicate_pushed
         {
-            let eval = substitute_missing_cols(pred, &daft_batch.schema)
-                .and_then(|p| BoundExpr::try_new(p, &daft_batch.schema))
-                .and_then(|bound| daft_batch.eval_expression(&bound))
-                .and_then(|mask| daft_batch.mask_filter(&mask));
+            let eval =
+                substitute_missing_cols(pred, &daft_batch.schema, ctx.field_defaults.as_deref())
+                    .and_then(|p| BoundExpr::try_new(p, &daft_batch.schema))
+                    .and_then(|bound| daft_batch.eval_expression(&bound))
+                    .and_then(|mask| daft_batch.mask_filter(&mask));
             daft_batch = match eval {
                 Ok(b) => b,
                 Err(e) => return Some((Err(e), state)),
@@ -246,8 +247,12 @@ pub(super) async fn process_rg_predicate_only(
         Ok(s) => Arc::new(s),
         Err(e) => return err_stream(e),
     };
-    let bound_pred = match substitute_missing_cols(&predicate, &chunk_daft_schema)
-        .and_then(|p| BoundExpr::try_new(p, &chunk_daft_schema))
+    let bound_pred = match substitute_missing_cols(
+        &predicate,
+        &chunk_daft_schema,
+        ctx.field_defaults.as_deref(),
+    )
+    .and_then(|p| BoundExpr::try_new(p, &chunk_daft_schema))
     {
         Ok(b) => b,
         Err(e) => return err_stream(e),

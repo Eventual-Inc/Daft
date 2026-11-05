@@ -36,7 +36,7 @@ use crate::{
         substitute_missing_cols,
     },
     metadata::{
-        FieldIdMapping, apply_field_ids_to_arrowrs_parquet_metadata,
+        FieldDefaults, FieldIdMapping, apply_field_ids_to_arrowrs_parquet_metadata,
         strip_string_types_from_parquet_metadata,
     },
     read::{ParquetReadOptions, ParquetSchemaInferenceOptions, StringEncoding},
@@ -356,7 +356,11 @@ async fn build_rg_inputs(
     // Bind predicate once across all RGs — same chunk schema everywhere.
     let chunk_daft_schema = Arc::new(Schema::try_from(pred_arrow_schema.as_ref())?);
     let bound_pred = BoundExpr::try_new(
-        substitute_missing_cols(prefilter_predicate, &chunk_daft_schema)?,
+        substitute_missing_cols(
+            prefilter_predicate,
+            &chunk_daft_schema,
+            opts.field_defaults.as_deref(),
+        )?,
         &chunk_daft_schema,
     )?;
 
@@ -474,6 +478,7 @@ pub(super) struct RgTaskCtx {
     pub(super) arrow_schema: Arc<ArrowSchema>,
     pub(super) plan: ColumnPlan,
     pub(super) predicate: Option<ExprRef>,
+    pub(super) field_defaults: Option<Arc<FieldDefaults>>,
     pub(super) chunk_size: usize,
 }
 
@@ -595,6 +600,7 @@ pub async fn stream_parquet(
         opts.num_rows,
         opts.predicate.as_ref(),
         &plan.read_daft_schema,
+        opts.field_defaults.as_deref(),
         source.label(),
     )?;
     if rg_indices.is_empty() {
@@ -608,6 +614,24 @@ pub async fn stream_parquet(
         ));
     }
     if plan.read_col_indices.is_empty() {
+        // No file columns are read: the projection holds only columns missing
+        // from this file (filled from defaults downstream). If a predicate is
+        // present it is constant here — every column reference is replaced by
+        // its initial default or NULL — so one probe row decides the file.
+        if let Some(predicate) = opts.predicate.as_ref() {
+            let empty_schema = Arc::new(Schema::empty());
+            let bound_pred = BoundExpr::try_new(
+                substitute_missing_cols(predicate, &empty_schema, opts.field_defaults.as_deref())?,
+                &empty_schema,
+            )?;
+            let probe = RecordBatch::new_with_size(empty_schema, Vec::new(), 1)?;
+            if !eval_predicate_mask(&probe, &bound_pred)?.value(0) {
+                return Ok((
+                    plan.return_daft_schema.clone(),
+                    futures::stream::empty().boxed(),
+                ));
+            }
+        }
         return count_only_stream(
             &prepared.parquet_metadata,
             &rg_indices,
@@ -638,6 +662,7 @@ pub async fn stream_parquet(
         arrow_schema: prepared.arrow_schema,
         plan,
         predicate: opts.predicate.clone(),
+        field_defaults: opts.field_defaults.clone(),
         chunk_size,
     });
     let stream = build_rg_stream(ctx, rg_indices, rg_inputs);
