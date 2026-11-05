@@ -128,3 +128,18 @@ def test_read_json_schema_hint_filter_with_count_rows(tmp_path):
         # select() drops "sound" from the schema, so a subsequent filter
         # referencing it must fail at plan construction time, not at execution.
         df.select("name", "id").where(daft.col("sound").not_null()).collect()
+
+
+def test_read_json_filter_on_pruned_column(tmp_path):
+    # Regression test for https://github.com/Eventual-Inc/Daft/issues/6757.
+    # Filtering on a column that is then dropped by a following select() must
+    # still work: the optimizer has to keep reading the filtered column even
+    # though it is pruned from the output projection.
+    file_path = tmp_path / "filter_pruned.jsonl"
+    with file_path.open("w") as f:
+        for i in range(10):
+            f.write(json.dumps({"a": i, "b": i % 3, "c": f"row{i}"}) + "\n")
+
+    res = daft.read_json(str(file_path)).where(daft.col("b") < 1).select("a").collect()
+    assert res.column_names == ["a"]
+    assert res.to_pydict()["a"] == [0, 3, 6, 9]
