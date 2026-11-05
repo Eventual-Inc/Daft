@@ -57,6 +57,7 @@
         * Databases
             * [Bigtable](connectors/bigtable.md)
             * [ClickHouse](connectors/clickhouse.md)
+            * [Hologres](connectors/hologres.md)
             * [Postgres](connectors/postgres.md)
             * [SQL Databases](connectors/sql.md)
             * [Turbopuffer](connectors/turbopuffer.md)
