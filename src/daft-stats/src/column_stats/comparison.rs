@@ -149,3 +149,79 @@ impl ColumnRangeStatistics {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::TruthValue;
+
+    fn range(value: f64) -> ColumnRangeStatistics {
+        let series = Float64Array::from_slice("f", &[value]).into_series();
+        ColumnRangeStatistics::new(Some(series.clone()), Some(series)).unwrap()
+    }
+
+    /// Bounds as produced from Parquet metadata: the minimum is known, but NaN may be
+    /// present, which is recorded as an upper bound of NaN.
+    fn parquet_range(lower: f64) -> ColumnRangeStatistics {
+        let lower = Float64Array::from_slice("f", &[lower]).into_series();
+        let upper = Float64Array::from_slice("f", &[f64::NAN]).into_series();
+        ColumnRangeStatistics::new(Some(lower), Some(upper)).unwrap()
+    }
+
+    #[test]
+    fn nan_upper_bound_does_not_prune_inequality_or_greater_than() {
+        // A group holding [NaN, 5.0] may report this shape; NaN != 5.0 and NaN > 6.0
+        // both hold, so neither filter can rule the group out.
+        let bounds = parquet_range(5.0);
+        assert_eq!(
+            bounds.not_equal(&range(5.0)).unwrap().to_truth_value(),
+            TruthValue::Maybe
+        );
+        assert_eq!(
+            bounds.gt(&range(6.0)).unwrap().to_truth_value(),
+            TruthValue::Maybe
+        );
+        assert_eq!(
+            bounds.gte(&range(6.0)).unwrap().to_truth_value(),
+            TruthValue::Maybe
+        );
+        // Reversed operand order is just as conservative.
+        assert_eq!(
+            range(6.0).lt(&bounds).unwrap().to_truth_value(),
+            TruthValue::Maybe
+        );
+        assert_eq!(
+            range(6.0).lte(&bounds).unwrap().to_truth_value(),
+            TruthValue::Maybe
+        );
+        // `NOT (col == 5.0)` keeps NaN rows as well.
+        assert_eq!(
+            bounds
+                .equal(&range(5.0))
+                .unwrap()
+                .not()
+                .unwrap()
+                .to_truth_value(),
+            TruthValue::Maybe
+        );
+    }
+
+    #[test]
+    fn nan_upper_bound_still_prunes_less_than() {
+        let bounds = parquet_range(5.0);
+        // No value in the group (NaN included) is below 4.0.
+        assert_eq!(
+            bounds.lt(&range(4.0)).unwrap().to_truth_value(),
+            TruthValue::False
+        );
+        assert_eq!(
+            bounds.lte(&range(4.0)).unwrap().to_truth_value(),
+            TruthValue::False
+        );
+        // A NaN upper bound makes equality inconclusive, never pruned.
+        assert_eq!(
+            bounds.equal(&range(6.0)).unwrap().to_truth_value(),
+            TruthValue::Maybe
+        );
+    }
+}
