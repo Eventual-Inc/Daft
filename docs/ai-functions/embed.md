@@ -86,6 +86,25 @@ df = df.with_column(
 )
 ```
 
+### Embedding wire format
+
+Embedding vectors are requested as base64 by default, which the OpenAI SDK decodes with
+NumPy. Parsing JSON floats instead costs roughly one Python object per dimension, so on
+large batches it can dominate the time spent embedding. Set `encoding_format` to `"float"`
+only when a server does not support base64 responses:
+
+```python
+df = df.with_column(
+    "embedding",
+    embed_text(
+        daft.col("text"),
+        provider=provider,
+        model="BAAI/bge-m3",
+        encoding_format="float",
+    ),
+)
+```
+
 ## Image Embeddings
 
 The `embed_image` function generates embeddings from images using vision models. Daft natively supports images with the [Image DataType](../modalities/images.md), making multimodal preprocessing straightforward with built-in utilities like `decode_image`, `convert_image`, and `resize`.
