@@ -16,10 +16,12 @@ if TYPE_CHECKING:
 class AudioFile(File):
     """An audio-specific file interface that provides audio operations.
 
-    Instances are usually created with :func:`daft.functions.audio_file`, or
-    directly with ``AudioFile(url)``. These optional dependencies are required:
+    Instances are usually created with :func:`daft.functions.audio_file`, which
+    only creates a file reference, or directly with ``AudioFile(url)``. These
+    optional dependencies are required:
 
-    - ``soundfile`` for construction, :meth:`metadata`, and :meth:`to_numpy`.
+    - ``soundfile`` for direct construction with ``AudioFile(url)``,
+      :meth:`metadata`, and :meth:`to_numpy`.
     - ``librosa`` for :meth:`resample`.
 
     Install both with ``pip install "daft[audio]"``. Using an operation whose

@@ -8,7 +8,7 @@ Audio data is usually stored in file formats such as MP3, WAV, or OGG. Audio fil
 
     Audio support relies on optional dependencies:
 
-    - `soundfile` is required to construct an `AudioFile` from a URL and to inspect or decode audio files via `AudioFile.metadata()`, `AudioFile.to_numpy()`, `AudioFile.resample()`, and [`audio_metadata`](../api/functions/audio_metadata.md).
+    - `soundfile` is required to construct an `AudioFile` directly from a URL with `AudioFile(url)`, and to inspect or decode audio files via `AudioFile.metadata()`, `AudioFile.to_numpy()`, `AudioFile.resample()`, and [`audio_metadata`](../api/functions/audio_metadata.md). The [`audio_file`](../api/functions/audio_file.md) function only creates a file reference and does not require `soundfile`.
     - `librosa` is additionally required by [`resample`](../api/functions/resample.md).
 
     Install both with:
