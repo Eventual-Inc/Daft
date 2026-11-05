@@ -14,18 +14,15 @@ use daft_schema::schema::SchemaRef;
 use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
-        ClusteringStrategy, DistributedPipelineNode, MaterializedOutput, NodeID,
-        PipelineNodeConfig, PipelineNodeContext, shuffles::backends::ShuffleContext,
+        ClusteringStrategy, DistributedPipelineNode, NodeID, PipelineNodeConfig,
+        PipelineNodeContext, shuffles::backends::ShuffleContext,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::SchedulerHandle,
         task::{SwordfishTask, SwordfishTaskBuilder},
     },
-    utils::{
-        channel::{Sender, create_channel},
-        transpose::transpose_materialized_outputs_from_stream,
-    },
+    utils::channel::{Sender, create_channel},
 };
 
 pub(crate) struct RandomShuffleNode {
@@ -71,42 +68,6 @@ impl RandomShuffleNode {
         }
     }
 
-    fn local_sort_with_random_key(
-        &self,
-        partition_group: Vec<MaterializedOutput>,
-        partition_idx: usize,
-    ) -> DaftResult<SwordfishTaskBuilder> {
-        let partition_refs = partition_group
-            .into_iter()
-            .flat_map(|output| output.into_inner().0)
-            .collect::<Vec<_>>();
-
-        let partition_seed = self.seed.map(|s| {
-            let mut hasher = DefaultHasher::new();
-            s.hash(&mut hasher);
-            partition_idx.hash(&mut hasher);
-            hasher.finish()
-        });
-
-        let sort_by = BoundExpr::bind_all(
-            &[random_int_expr(i64::MIN, i64::MAX, partition_seed)],
-            &self.config.schema,
-        )?;
-        let node_id = self.node_id();
-        Ok(self
-            .shuffle_context
-            .build_refs_task_builder(partition_refs, self, |input| {
-                LocalPhysicalPlan::sort(
-                    input,
-                    sort_by,
-                    vec![false],
-                    vec![false],
-                    StatsState::NotMaterialized,
-                    LocalNodeContext::new(Some(node_id as usize)),
-                )
-            }))
-    }
-
     async fn execution_loop(
         self: Arc<Self>,
         input_node: TaskBuilderStream,
@@ -121,14 +82,37 @@ impl RandomShuffleNode {
             task_id_counter.clone(),
         );
 
-        let partition_groups =
-            transpose_materialized_outputs_from_stream(outputs, num_partitions).await?;
-
-        for (partition_idx, partition_group) in partition_groups.into_iter().enumerate() {
-            let task = self.local_sort_with_random_key(partition_group, partition_idx)?;
-            let _ = result_tx.send(task).await;
-        }
-        Ok(())
+        let seed = self.seed;
+        let schema = self.config.schema.clone();
+        let node_id = self.node_id();
+        self.shuffle_context
+            .emit_read_tasks_from_stream(
+                outputs,
+                num_partitions,
+                self.as_ref(),
+                result_tx,
+                &mut |partition_idx, input| {
+                    let partition_seed = seed.map(|s| {
+                        let mut hasher = DefaultHasher::new();
+                        s.hash(&mut hasher);
+                        partition_idx.hash(&mut hasher);
+                        hasher.finish()
+                    });
+                    let sort_by = BoundExpr::bind_all(
+                        &[random_int_expr(i64::MIN, i64::MAX, partition_seed)],
+                        &schema,
+                    )?;
+                    Ok(LocalPhysicalPlan::sort(
+                        input,
+                        sort_by,
+                        vec![false],
+                        vec![false],
+                        StatsState::NotMaterialized,
+                        LocalNodeContext::new(Some(node_id as usize)),
+                    ))
+                },
+            )
+            .await
     }
 }
 
