@@ -71,6 +71,73 @@ mod tests {
         arg2: T,
     }
 
+    #[derive(FunctionArgs)]
+    struct CustomArgs<T> {
+        a: T,
+        d: usize,
+        #[arg(optional)]
+        b: Option<T>,
+        #[arg(variadic)]
+        c: Vec<T>,
+        #[arg(name = "e2")]
+        e: T,
+    }
+
+    #[rstest]
+    #[case(
+        vec![
+            FunctionArg::unnamed(lit(1)),
+            FunctionArg::unnamed(lit(2)),
+            FunctionArg::unnamed(lit(3)),
+            FunctionArg::unnamed(lit(4)),
+            FunctionArg::unnamed(lit(5)),
+            FunctionArg::named("e2", lit(6)),
+        ],
+        Some(lit(3)),
+        vec![lit(4), lit(5)],
+    )]
+    #[case(
+        vec![
+            FunctionArg::unnamed(lit(1)),
+            FunctionArg::unnamed(lit(2)),
+            FunctionArg::named("e2", lit(6)),
+        ],
+        None,
+        vec![],
+    )]
+    fn test_documented_custom_args_valid(
+        #[case] args: Vec<FunctionArg<ExprRef>>,
+        #[case] expected_optional: Option<ExprRef>,
+        #[case] expected_variadic: Vec<ExprRef>,
+    ) {
+        let function_args = FunctionArgs::try_new(args).unwrap();
+        let parsed_args = CustomArgs::try_from(function_args).expect("should succeed");
+
+        assert_eq!(parsed_args.a, lit(1));
+        assert_eq!(parsed_args.d, 2);
+        assert_eq!(parsed_args.b, expected_optional);
+        assert_eq!(parsed_args.c, expected_variadic);
+        assert_eq!(parsed_args.e, lit(6));
+    }
+
+    #[test]
+    fn test_documented_custom_args_requires_named_e2() {
+        let function_args = FunctionArgs::try_new(vec![
+            FunctionArg::unnamed(lit(1)),
+            FunctionArg::unnamed(lit(2)),
+            FunctionArg::unnamed(lit(3)),
+            FunctionArg::unnamed(lit(4)),
+            FunctionArg::unnamed(lit(5)),
+            FunctionArg::unnamed(lit(6)),
+        ])
+        .unwrap();
+
+        let Err(DaftError::ValueError(message)) = CustomArgs::try_from(function_args) else {
+            panic!("expected ValueError for missing e2 after the variadic argument");
+        };
+        assert_eq!(message, "Required argument `e2` not found");
+    }
+
     #[rstest]
     #[case(vec![FunctionArg::unnamed(lit(1)), FunctionArg::unnamed(lit(2))])]
     #[case(vec![FunctionArg::unnamed(lit(1)), FunctionArg::named("arg2", lit(2))])]
