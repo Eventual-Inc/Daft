@@ -1,0 +1,614 @@
+[
+  {
+    "id": "csv-iris",
+    "category": "csv",
+    "repo": "scikit-learn/iris",
+    "kwargs": {
+      "format": "datasets",
+      "revision": "0bda0ce801be0fa2f464ff845a9d5ceae99aad7d",
+      "split": "train"
+    }
+  },
+  {
+    "id": "csv-deepsearch",
+    "category": "csv",
+    "repo": "google/deepsearchqa",
+    "kwargs": {
+      "format": "datasets",
+      "revision": "b2623f8653065c2672de6d941fc5434cd652376c",
+      "split": "eval"
+    }
+  },
+  {
+    "id": "csv-jailbreak",
+    "category": "csv",
+    "repo": "JailbreakBench/JBB-Behaviors",
+    "kwargs": {
+      "format": "datasets",
+      "revision": "886acc352a31533ffbcf4ef22c744658688086fc",
+      "config_name": "behaviors",
+      "split": "benign"
+    }
+  },
+  {
+    "id": "csv-capitals",
+    "category": "csv",
+    "repo": "hf-internal-testing/DatasetWithCapitalLetters",
+    "kwargs": {
+      "format": "datasets",
+      "revision": "70aa36264a6954920a13dd0465156a60b9f8af4b",
+      "split": "train"
+    }
+  },
+  {
+    "id": "csv-shakespeare",
+    "category": "csv",
+    "repo": "Trelis/tiny-shakespeare",
+    "kwargs": {
+      "format": "datasets",
+      "revision": "2225a5674b252d623cfb151ef099d179629c2f49",
+      "split": "test"
+    }
+  },
+  {
+    "id": "json-ifeval",
+    "category": "json",
+    "repo": "google/IFEval",
+    "kwargs": {
+      "format": "datasets",
+      "revision": "966cd89545d6b6acfd7638bc708b98261ca58e84",
+      "split": "train"
+    },
+    "columns": [
+      "prompt"
+    ]
+  },
+  {
+    "id": "json-math500",
+    "category": "json",
+    "repo": "HuggingFaceH4/MATH-500",
+    "kwargs": {
+      "format": "datasets",
+      "revision": "6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be",
+      "split": "test"
+    },
+    "columns": [
+      "problem",
+      "solution"
+    ]
+  },
+  {
+    "id": "json-aime25",
+    "category": "json",
+    "repo": "math-ai/aime25",
+    "kwargs": {
+      "format": "datasets",
+      "revision": "563bb8404243c5f09de6ec262f2db674fe5bce9b",
+      "split": "test"
+    }
+  },
+  {
+    "id": "json-supervised",
+    "category": "json",
+    "repo": "llamafactory/tiny-supervised-dataset",
+    "kwargs": {
+      "format": "datasets",
+      "revision": "2ff06c75e01ae4195ed34fe77606e15902ea0b0d",
+      "split": "train"
+    }
+  },
+  {
+    "id": "json-ds1000",
+    "category": "json",
+    "repo": "xlangai/DS-1000",
+    "kwargs": {
+      "format": "datasets",
+      "revision": "4416080ac5cb80bdf7576aefb8f9a0b4d5426a44",
+      "split": "test"
+    }
+  },
+  {
+    "id": "parquet-rotten-tomatoes",
+    "category": "parquet",
+    "repo": "cornell-movie-review-data/rotten_tomatoes",
+    "kwargs": {
+      "format": "parquet",
+      "revision": "aa13bc287fa6fcab6daf52f0dfb9994269ffea28",
+      "split": "test"
+    },
+    "columns": [
+      "text",
+      "label"
+    ]
+  },
+  {
+    "id": "parquet-mbpp",
+    "category": "parquet",
+    "repo": "google-research-datasets/mbpp",
+    "kwargs": {
+      "format": "parquet",
+      "revision": "4bb6404fdc6cacfda99d4ac4205087b89d32030c",
+      "config_name": "full",
+      "split": "test"
+    },
+    "columns": [
+      "text",
+      "code"
+    ]
+  },
+  {
+    "id": "parquet-sst2",
+    "category": "parquet",
+    "repo": "stanfordnlp/sst2",
+    "kwargs": {
+      "format": "parquet",
+      "revision": "8d51e7e4887a4caaa95b3fbebbf53c0490b58bbb",
+      "split": "validation"
+    },
+    "columns": [
+      "sentence",
+      "label"
+    ]
+  },
+  {
+    "id": "parquet-no-robots",
+    "category": "parquet",
+    "repo": "HuggingFaceH4/no_robots",
+    "kwargs": {
+      "format": "parquet",
+      "revision": "e6f9a4ac5c37faeb744ba9ecf0473184d7f8105b",
+      "split": "test"
+    },
+    "columns": [
+      "messages"
+    ]
+  },
+  {
+    "id": "parquet-alpaca",
+    "category": "parquet",
+    "repo": "HuggingFaceH4/testing_alpaca_small",
+    "kwargs": {
+      "format": "parquet",
+      "revision": "71a80d4ba17d70406a891b03e89f609ef0024b38",
+      "split": "test"
+    },
+    "columns": [
+      "prompt",
+      "completion"
+    ]
+  },
+  {
+    "id": "converted-ifeval",
+    "category": "optimized-parquet",
+    "repo": "google/IFEval",
+    "kwargs": {
+      "format": "parquet",
+      "revision": "bcf1317fc23a04c4e7a238d35b28355ef4a18b0e",
+      "data_dir": "default/train"
+    },
+    "columns": [
+      "prompt"
+    ],
+    "notes": "Pinned fully converted refs/convert/parquet snapshot; physical Parquet, not a separate parser."
+  },
+  {
+    "id": "converted-math500",
+    "category": "optimized-parquet",
+    "repo": "HuggingFaceH4/MATH-500",
+    "kwargs": {
+      "format": "parquet",
+      "revision": "bd7413c841fab3ceb10e5f1c4c5c4662d8e86542",
+      "data_dir": "default/test"
+    },
+    "columns": [
+      "problem",
+      "solution"
+    ]
+  },
+  {
+    "id": "converted-aime25",
+    "category": "optimized-parquet",
+    "repo": "math-ai/aime25",
+    "kwargs": {
+      "format": "parquet",
+      "revision": "315ceafc3c16addef60588b04be7acfac8462fd8",
+      "data_dir": "default/test"
+    }
+  },
+  {
+    "id": "converted-iris",
+    "category": "optimized-parquet",
+    "repo": "scikit-learn/iris",
+    "kwargs": {
+      "format": "parquet",
+      "revision": "2f090f19d72acd9d5ccd588461bae18f86155dcb",
+      "data_dir": "default/train"
+    }
+  },
+  {
+    "id": "converted-jailbreak",
+    "category": "optimized-parquet",
+    "repo": "JailbreakBench/JBB-Behaviors",
+    "kwargs": {
+      "format": "parquet",
+      "revision": "9dadc913ee045334e7ba9df408d154e065d075c1",
+      "data_dir": "behaviors/benign"
+    }
+  },
+  {
+    "id": "images-metadata",
+    "category": "imagefolder",
+    "repo": "hf-internal-testing/imagefolder_with_metadata",
+    "kwargs": {
+      "format": "datasets",
+      "revision": "507fa72044169a5a1802b7ac2d6bd38d5f310739",
+      "split": "test"
+    },
+    "columns": [
+      "image"
+    ],
+    "media": {
+      "kind": "image",
+      "column": "image"
+    }
+  },
+  {
+    "id": "images-brand-assets",
+    "category": "imagefolder",
+    "repo": "huggingface/brand-assets",
+    "kwargs": {
+      "format": "datasets",
+      "revision": "233827f481bf0f0f413795f1f3cd1b131f77e55a",
+      "split": "train"
+    },
+    "columns": [
+      "image"
+    ],
+    "media": {
+      "kind": "image",
+      "column": "image"
+    }
+  },
+  {
+    "id": "images-badges",
+    "category": "imagefolder",
+    "repo": "huggingface/badges",
+    "kwargs": {
+      "format": "datasets",
+      "revision": "66797a0ca9a49ffb301ed1fde920a5a4bb03ddf2",
+      "split": "train"
+    },
+    "columns": [
+      "image"
+    ],
+    "media": {
+      "kind": "image",
+      "column": "image"
+    }
+  },
+  {
+    "id": "images-smol-course",
+    "category": "imagefolder",
+    "repo": "smol-course/images",
+    "kwargs": {
+      "format": "datasets",
+      "revision": "ce9c68e6381265edb375ce362d2522f5703d74b5",
+      "split": "train"
+    },
+    "columns": [
+      "image"
+    ],
+    "media": {
+      "kind": "image",
+      "column": "image"
+    }
+  },
+  {
+    "id": "images-json-metadata",
+    "category": "imagefolder",
+    "repo": "nateraw/test-imagefolder-metadata",
+    "kwargs": {
+      "format": "datasets",
+      "revision": "3adb85380e4645c1fcf914a21ba4013410c0fa2b",
+      "split": "train"
+    },
+    "columns": [
+      "image"
+    ],
+    "media": {
+      "kind": "image",
+      "column": "image"
+    }
+  },
+  {
+    "id": "audio-two-configs",
+    "category": "audiofolder",
+    "repo": "hf-internal-testing/audiofolder_two_configs_in_metadata",
+    "kwargs": {
+      "format": "datasets",
+      "revision": "e71bce498e6c2bd2c58b20b097fdd3389793263f",
+      "config_name": "v1",
+      "split": "test"
+    },
+    "columns": [
+      "audio"
+    ],
+    "media": {
+      "kind": "audio",
+      "column": "audio"
+    }
+  },
+  {
+    "id": "audio-single-config",
+    "category": "audiofolder",
+    "repo": "hf-internal-testing/audiofolder_single_config_in_metadata",
+    "kwargs": {
+      "format": "datasets",
+      "revision": "1668dfc91efae975e44457cdabef60fb9200820a",
+      "config_name": "custom",
+      "split": "test"
+    },
+    "columns": [
+      "audio"
+    ],
+    "media": {
+      "kind": "audio",
+      "column": "audio"
+    }
+  },
+  {
+    "id": "audio-no-config",
+    "category": "audiofolder",
+    "repo": "hf-internal-testing/audiofolder_no_configs_in_metadata",
+    "kwargs": {
+      "format": "datasets",
+      "revision": "26cd5079bb0d3cd1521c6894765a0b8edb159d7f",
+      "data_dir": "v1",
+      "split": "test"
+    },
+    "columns": [
+      "audio"
+    ],
+    "media": {
+      "kind": "audio",
+      "column": "audio"
+    }
+  },
+  {
+    "id": "audio-default-config",
+    "category": "audiofolder",
+    "repo": "hf-internal-testing/audiofolder_two_configs_in_metadata_with_default",
+    "kwargs": {
+      "format": "datasets",
+      "revision": "38937109bb4dc7067f575fe6e7b420158eb9cf32",
+      "split": "test"
+    },
+    "columns": [
+      "audio"
+    ],
+    "media": {
+      "kind": "audio",
+      "column": "audio"
+    }
+  },
+  {
+    "id": "audio-impulse-responses",
+    "category": "audiofolder",
+    "repo": "davidscripka/MIT_environmental_impulse_responses",
+    "kwargs": {
+      "format": "datasets",
+      "revision": "b824a1ef2821f112fda0b9cb26e4278c62b425bb",
+      "split": "train"
+    },
+    "columns": [
+      "audio"
+    ],
+    "media": {
+      "kind": "audio",
+      "column": "audio"
+    }
+  },
+  {
+    "id": "text-multi-dir",
+    "category": "text",
+    "repo": "hf-internal-testing/multi_dir_dataset",
+    "kwargs": {
+      "format": "datasets",
+      "revision": "aaa2d4bdd1d877d1c6178562cfc584bdfa90f6dc",
+      "data_dir": "data1",
+      "split": "train"
+    },
+    "columns": [
+      "text"
+    ]
+  },
+  {
+    "id": "text-data-files",
+    "category": "text",
+    "repo": "hf-internal-testing/dataset_with_data_files",
+    "kwargs": {
+      "format": "datasets",
+      "revision": "c19550d35263090b1ec2bfefdbd737431fafec40",
+      "split": "train"
+    },
+    "columns": [
+      "text"
+    ]
+  },
+  {
+    "id": "text-test2",
+    "category": "text",
+    "repo": "lhoestq/test2",
+    "kwargs": {
+      "format": "datasets",
+      "revision": "dd797fcf8beacd44987048d5e2606edf1fe0a230",
+      "split": "train"
+    },
+    "columns": [
+      "text"
+    ]
+  },
+  {
+    "id": "text-folder",
+    "category": "text",
+    "repo": "hf-internal-testing/textfolder",
+    "kwargs": {
+      "format": "datasets",
+      "revision": "4083ad9a869bb3796f1a84950b68aeb025f6658a",
+      "split": "train"
+    },
+    "columns": [
+      "text"
+    ]
+  },
+  {
+    "id": "text-pypi",
+    "category": "text",
+    "repo": "strombergnlp/pypi-20230724",
+    "kwargs": {
+      "format": "datasets",
+      "revision": "f8a655988223dda70dd77e62be0ce4297e2be00e",
+      "split": "train"
+    },
+    "columns": [
+      "text"
+    ]
+  },
+  {
+    "id": "arrow-shakespeare",
+    "category": "arrow",
+    "repo": "winglian/tiny-shakespeare",
+    "kwargs": {
+      "format": "datasets",
+      "revision": "619106eee01474d8eaa5dd400b4b405eb3734ebe",
+      "data_dir": "test",
+      "split": "train"
+    },
+    "notes": "HF Arrow file loader calls the selected saved test directory train."
+  },
+  {
+    "id": "arrow-mmlu",
+    "category": "arrow",
+    "repo": "edinburgh-dawg/mmlu-redux-2.0",
+    "kwargs": {
+      "format": "datasets",
+      "revision": "372ea425445d51e1ba1188c56e5e893f8138621f",
+      "data_dir": "abstract_algebra",
+      "split": "train"
+    }
+  },
+  {
+    "id": "arrow-mmlu-mirror",
+    "category": "arrow",
+    "repo": "fxmarty/mmlu-redux-2.0-ok",
+    "kwargs": {
+      "format": "datasets",
+      "revision": "8dd06e599d20d57e83b590d497c95869a2d18781",
+      "data_dir": "abstract_algebra",
+      "split": "train"
+    }
+  },
+  {
+    "id": "arrow-lsat",
+    "category": "arrow",
+    "repo": "saumyamalik/lsat_logic_games-analytical_reasoning",
+    "kwargs": {
+      "format": "datasets",
+      "revision": "124e0a7ba54661d3da2b2cec4756b273658ed953",
+      "data_dir": "lsat_logic_games-analytical_reasoning",
+      "split": "train"
+    }
+  },
+  {
+    "id": "arrow-minecraft",
+    "category": "arrow",
+    "repo": "SkillFi/deepseek-v2-codder-minecraft-api",
+    "kwargs": {
+      "format": "datasets",
+      "revision": "b5f75917513b3dbc8e28e984d7053d1fb4b174cd",
+      "data_dir": "data",
+      "split": "train"
+    }
+  },
+  {
+    "id": "wds-doc-images",
+    "category": "webdataset",
+    "repo": "severo/doc-image-webdataset",
+    "kwargs": {
+      "format": "webdataset",
+      "revision": "4ec9913f53a07b4be90826b34b5b836998781baa"
+    },
+    "columns": [
+      "__key__",
+      "jpg",
+      "json"
+    ],
+    "media": {"kind": "image", "column": "jpg"}
+  },
+  {
+    "id": "wds-fer2013",
+    "category": "webdataset",
+    "repo": "clip-benchmark/wds_fer2013",
+    "kwargs": {
+      "format": "webdataset",
+      "revision": "9399b94167523fe5c40b3a857e24ef931ee4395b",
+      "data_dir": "test"
+    },
+    "columns": [
+      "__key__",
+      "jpg",
+      "cls"
+    ],
+    "media": {"kind": "image", "column": "jpg"}
+  },
+  {
+    "id": "wds-robot",
+    "category": "webdataset",
+    "repo": "YoelChornton/mock_robot_webdataset_1k_2",
+    "kwargs": {
+      "format": "webdataset",
+      "revision": "6dd2f64741ea85992d6e12bc02f66d56ea2ab243"
+    },
+    "columns": [
+      "__key__",
+      "npz",
+      "json"
+    ],
+    "payload_column": "npz"
+  },
+  {
+    "id": "wds-eurosat",
+    "category": "webdataset",
+    "repo": "clip-benchmark/wds_vtab-eurosat",
+    "kwargs": {
+      "format": "webdataset",
+      "revision": "8b9fc2f2ea9dcb1b70a56fc1ebe445492004c326",
+      "data_dir": "test"
+    },
+    "columns": [
+      "__key__",
+      "webp",
+      "cls"
+    ],
+    "media": {"kind": "image", "column": "webp"}
+  },
+  {
+    "id": "wds-mnist",
+    "category": "webdataset",
+    "repo": "clip-benchmark/wds_mnist",
+    "kwargs": {
+      "format": "webdataset",
+      "revision": "ba1491816962d0a3e81e178cf5f857f8ea5ebe1b",
+      "data_dir": "test"
+    },
+    "columns": [
+      "__key__",
+      "cls",
+      "webp"
+    ],
+    "media": {
+      "kind": "image",
+      "column": "webp"
+    }
+  }
+]

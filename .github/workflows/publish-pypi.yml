@@ -42,6 +42,13 @@ jobs:
         - lts: true
           arch: aarch64
 
+  huggingface-audit:
+    name: Hugging Face release audit
+    needs: build
+    permissions:
+      contents: read
+    uses: ./.github/workflows/huggingface-release-audit.yml
+
   publish:
     name: Publish wheels to PyPI
     runs-on: ubuntu-latest
@@ -49,7 +56,7 @@ jobs:
       name: pypi
     permissions:
       id-token: write # IMPORTANT: this permission is mandatory for trusted publishing. It is also tied to the name of the workflow file, so do not change the file name without changing the OIDC config.
-    needs: build
+    needs: [build, huggingface-audit]
     steps:
     - uses: actions/download-artifact@v8
       with:
@@ -64,7 +71,7 @@ jobs:
   on-failure:
     name: Send Slack notification on failure
     runs-on: ubuntu-latest
-    needs: [build, publish]
+    needs: [build, huggingface-audit, publish]
     if: ${{ failure() }}
 
     steps:
