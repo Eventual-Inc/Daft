@@ -162,22 +162,19 @@ impl Catalog for MemoryCatalog {
 
         let mut tables = self.tables.write().unwrap();
 
+        // Only drop descendants when the requested namespace itself exists.
+        // Otherwise a call like `drop_namespace("a")` would silently remove
+        // `a.b` even though `a` was never created.
+        if !tables.contains_key(&namespace) {
+            return Err(CatalogError::obj_not_found("namespace", ident));
+        }
+
         // Drop the namespace and every namespace nested beneath it.
-        let mut dropped = false;
         tables.retain(|candidate, _| {
-            if candidate.len() >= namespace.len() && candidate[..namespace.len()] == namespace[..] {
-                dropped = true;
-                false
-            } else {
-                true
-            }
+            !(candidate.len() >= namespace.len() && candidate[..namespace.len()] == namespace[..])
         });
 
-        if dropped {
-            Ok(())
-        } else {
-            Err(CatalogError::obj_not_found("namespace", ident))
-        }
+        Ok(())
     }
 
     fn drop_table(&self, ident: &Identifier) -> CatalogResult<()> {

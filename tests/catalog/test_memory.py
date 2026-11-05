@@ -5,6 +5,7 @@ import pytest
 import daft
 from daft import col
 from daft.catalog import Catalog, Identifier, Table
+from daft.session import Session
 
 
 def test_table_from_pydict():
@@ -240,8 +241,6 @@ def test_catalog_from_pydict_nested_namespace():
 
 
 def test_nested_namespace_sql():
-    from daft.session import Session
-
     data = {"a": [1, 2, 3], "b": ["x", "y", "z"]}
     catalog = Catalog.from_pydict({Identifier("a", "b", "c", "t"): daft.from_pydict(data)}, "cat")
 
@@ -265,6 +264,21 @@ def test_drop_nested_namespace_removes_descendants():
     assert not catalog.has_table("a.b.t")
     assert catalog.list_namespaces() == []
     assert catalog.list_tables() == []
+
+
+def test_drop_missing_parent_namespace_preserves_descendants():
+    catalog = Catalog.from_pydict({}, "cat")
+    catalog.create_namespace("a.b")
+    catalog.create_table("a.b.t", daft.from_pydict({"x": [1]}))
+
+    # `a` was never created, so dropping it must fail without touching `a.b`.
+    with pytest.raises(Exception):
+        catalog.drop_namespace("a")
+
+    assert not catalog.has_namespace("a")
+    assert catalog.has_namespace("a.b")
+    assert catalog.has_table("a.b.t")
+    assert catalog.get_table("a.b.t").read().to_pydict() == {"x": [1]}
 
 
 def test_namespace_table_operations():
