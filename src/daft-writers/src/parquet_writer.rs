@@ -17,7 +17,9 @@ use daft_recordbatch::RecordBatch;
 use parquet::{
     arrow::{
         ArrowSchemaConverter, add_encoded_arrow_schema_to_metadata,
-        arrow_writer::{ArrowColumnChunk, ArrowLeafColumn, compute_leaves, get_column_writers},
+        arrow_writer::{
+            ArrowColumnChunk, ArrowLeafColumn, ArrowRowGroupWriterFactory, compute_leaves,
+        },
     },
     basic::Compression,
     file::{
@@ -201,6 +203,8 @@ struct ParquetWriter<B: StorageBackend> {
     partition_values: Option<RecordBatch>,
     storage_backend: B,
     file_writer: Option<SerializedFileWriter<B::Writer>>,
+    row_group_writer_factory: Option<ArrowRowGroupWriterFactory>,
+    row_groups_written: usize,
     total_bytes_written: usize,
     overwrite_existing_target: bool,
 }
@@ -225,6 +229,8 @@ impl<B: StorageBackend> ParquetWriter<B> {
             partition_values,
             storage_backend,
             file_writer: None,
+            row_group_writer_factory: None,
+            row_groups_written: 0,
             total_bytes_written: 0,
             overwrite_existing_target,
         }
@@ -241,6 +247,10 @@ impl<B: StorageBackend> ParquetWriter<B> {
             self.writer_properties.clone(),
         )
         .map_err(|e| DaftError::ParquetError(e.to_string()))?;
+        self.row_group_writer_factory = Some(ArrowRowGroupWriterFactory::new(
+            &file_writer,
+            self.arrow_schema.clone(),
+        ));
         self.file_writer = Some(file_writer);
         Ok(())
     }
@@ -286,13 +296,14 @@ impl<B: StorageBackend> ParquetWriter<B> {
         record_batches: &[RecordBatch],
     ) -> DaftResult<VecDeque<Pin<Box<ColumnWriterFuture>>>> {
         // Get leaf column writers. For example, a struct<int, int> column produces two leaf column writers.
-        #[allow(deprecated)]
-        let column_writers = get_column_writers(
-            &self.parquet_schema,
-            &self.writer_properties,
-            &self.arrow_schema,
-        )
-        .map_err(|e| DaftError::ParquetError(e.to_string()))?;
+        let column_writers = self
+            .row_group_writer_factory
+            .as_ref()
+            .ok_or_else(|| {
+                DaftError::InternalError("Parquet row group writer factory not initialized".into())
+            })?
+            .create_column_writers(self.row_groups_written)
+            .map_err(|e| DaftError::ParquetError(e.to_string()))?;
 
         // Flatten record batches into per-leaf-column Arrow data chunks.
         let leaf_columns =
@@ -404,6 +415,7 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
         let bytes_written = file_writer.bytes_written() - self.total_bytes_written;
         self.total_bytes_written = file_writer.bytes_written();
         self.file_writer.replace(file_writer);
+        self.row_groups_written += 1;
 
         Ok(WriteResult {
             bytes_written,
