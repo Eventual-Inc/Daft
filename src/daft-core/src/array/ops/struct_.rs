@@ -81,4 +81,29 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_struct_get_null_child_with_parent_validity() -> DaftResult<()> {
+        let parent_nulls = NullBuffer::from(&[true, false, false, true]);
+        let child = Series::from_arrow(
+            Field::new("bar", DataType::Null),
+            std::sync::Arc::new(arrow::array::NullArray::new(4)),
+        )?;
+
+        let parent = StructArray::new(
+            Field::new(
+                "foo",
+                DataType::Struct(vec![Field::new("bar", DataType::Null)]),
+            ),
+            vec![child],
+            Some(parent_nulls),
+        );
+
+        let result = parent.get("bar")?;
+        assert_eq!(result.data_type(), &DataType::Null);
+        assert_eq!(result.len(), 4);
+        assert_eq!(result.to_arrow()?.logical_null_count(), 4);
+
+        Ok(())
+    }
 }
