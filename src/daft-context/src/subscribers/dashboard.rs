@@ -216,6 +216,7 @@ impl DashboardStateLock {
                 .create(true)
                 .read(true)
                 .write(true)
+                .truncate(false)
                 .mode(0o600)
                 .open(path)?;
 
