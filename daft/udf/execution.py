@@ -106,12 +106,13 @@ async def call_async_func_batched(
 
     dtype = DataType._from_pydatatype(return_dtype)
     with _metrics_context() as metrics:
+        outputs: list[Any]
         if on_error == "raise":
             # Fail fast on the first raised exception. Exception objects returned
             # as row values are data and pass through unchanged.
             outputs = await asyncio.gather(*(call_for_row(args) for args in evaluated_args_list))
         else:
-            outputs: list[Any] = [None] * len(evaluated_args_list)
+            outputs = [None] * len(evaluated_args_list)
             failed: list[tuple[int, Exception]] = []
 
             async def run_row(index: int) -> None:

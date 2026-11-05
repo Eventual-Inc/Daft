@@ -343,7 +343,7 @@ def test_async_batched_retries_failed_rows_independently():
             _BatchedAsyncUdfCls(),
             method,
             DataType.int64()._dtype,
-            ((), {}),
+            ((col("x"),), {}),
             [[0], [1], [2], [3]],
             on_error="ignore",
             max_retries=1,
@@ -369,7 +369,7 @@ def test_async_batched_returned_exception_is_data():
                 _BatchedAsyncUdfCls(),
                 method,
                 DataType.python()._dtype,
-                ((), {}),
+                ((col("x"),), {}),
                 [[0], [1], [2]],
                 on_error=on_error,
             )
