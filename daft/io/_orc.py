@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 
     from daft import DataFrame
     from daft.daft import IOConfig
+    from daft.datatype import DataType
     from daft.io.pushdowns import Pushdowns
 
 
@@ -81,7 +82,7 @@ def _infer_orc_schema(path: str, io_config: IOConfig | None) -> pa.Schema:
 
 def _iter_orc_batches(
     path: str,
-    schema: pa.Schema,
+    schema: Schema,
     io_config: IOConfig | None,
     batch_size: int,
 ) -> Generator[RecordBatch, None, None]:
@@ -89,12 +90,11 @@ def _iter_orc_batches(
         try:
             fragment = pads.OrcFileFormat().make_fragment(file)
             physical_schema = fragment.physical_schema
-            columns = [name for name in schema.names if name in physical_schema.names]
-            target_schema = Schema.from_pyarrow_schema(schema)
+            columns = [name for name in schema.column_names() if name in physical_schema.names]
             projection = ExpressionsProjection(
                 [
                     (col(field.name) if field.name in columns else lit(None)).cast(field.dtype).alias(field.name)
-                    for field in target_schema
+                    for field in schema
                 ]
             )
             scanner = pads.Scanner.from_fragment(
@@ -113,7 +113,7 @@ def _iter_orc_batches(
                     record_batch = RecordBatch.from_arrow_record_batches([batch], batch.schema)
                 # Match native file scans: cast and fill through Daft rather
                 # than Arrow, whose nested schema evolution varies by version.
-                if record_batch.schema() != target_schema:
+                if record_batch.schema() != schema:
                     record_batch = record_batch.eval_expression_list(projection)
                 yield record_batch
         except OSError as error:
@@ -125,6 +125,9 @@ def read_orc(
     path: str | list[str],
     io_config: IOConfig | None = None,
     batch_size: int = 128 * 1024,
+    *,
+    schema: dict[str, DataType] | None = None,
+    infer_schema: bool = True,
 ) -> DataFrame:
     """Creates a DataFrame from ORC file(s).
 
@@ -137,13 +140,19 @@ def read_orc(
             the planning context's default I/O configuration.
         batch_size: Maximum number of rows yielded per record batch. Defaults
             to 131072. This does not impose a fixed memory limit.
+        schema: Definitive output schema when ``infer_schema=False``. Otherwise,
+            hints that override inferred field types and append fields absent
+            from the first file, in the order provided.
+        infer_schema: Whether to infer the schema from the first matched file.
+            Defaults to True. When False, ``schema`` is required and its field
+            order determines the output order.
 
     Returns:
         DataFrame: parsed DataFrame.
 
     Note:
-        The schema is inferred from the first matched file. Later files are
-        aligned to that schema: missing fields become nulls and extra fields
+        By default, the schema is inferred from the first matched file. All
+        files are aligned to the output schema: missing fields become nulls and extra fields
         are excluded. Conversions follow Daft's rules, as with Parquet reads:
         unsupported conversions raise an error, while some invalid values
         (such as invalid numeric strings) become nulls. An empty ORC file with a valid
@@ -165,16 +174,39 @@ def read_orc(
         raise ValueError(f"batch_size must be a positive integer, received {batch_size!r}")
 
     io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
-    return OrcSource(path, io_config=io_config, batch_size=batch_size).read()
+    return OrcSource(path, io_config=io_config, batch_size=batch_size, schema=schema, infer_schema=infer_schema).read()
 
 
 class OrcSource(DataSource):
-    def __init__(self, path: str | list[str], io_config: IOConfig | None, batch_size: int) -> None:
+    def __init__(
+        self,
+        path: str | list[str],
+        io_config: IOConfig | None,
+        batch_size: int,
+        *,
+        schema: dict[str, DataType] | None = None,
+        infer_schema: bool = True,
+    ) -> None:
+        if not infer_schema and schema is None:
+            raise ValueError(
+                "Cannot read DataFrame with infer_schema=False and schema=None, please provide a schema or set infer_schema=True"
+            )
+
         self._paths = _resolve_orc_paths(path, io_config)
         self._io_config = io_config
         self._batch_size = batch_size
-        self._arrow_schema = _infer_orc_schema(self._paths[0], io_config)
-        self._schema = Schema.from_pyarrow_schema(self._arrow_schema)
+        hints = Schema.from_pydict(schema) if schema is not None else None
+        if infer_schema:
+            self._schema = Schema.from_pyarrow_schema(_infer_orc_schema(self._paths[0], io_config))
+            if hints is not None:
+                self._schema = self._schema.apply_hints(hints)
+                inferred_names = self._schema.to_name_set()
+                additional_fields = [field for field in hints if field.name not in inferred_names]
+                if additional_fields:
+                    self._schema = self._schema.union(Schema._from_fields(additional_fields))
+        else:
+            assert hints is not None
+            self._schema = hints
 
     @property
     def name(self) -> str:
@@ -186,10 +218,10 @@ class OrcSource(DataSource):
 
     async def get_tasks(self, pushdowns: Pushdowns) -> AsyncIterator[OrcSourceTask]:
         if pushdowns.columns is None:
-            schema = self._arrow_schema
+            schema = self._schema
         else:
             required = set(pushdowns.columns) | pushdowns.filter_required_column_names()
-            schema = pa.schema([field for field in self._arrow_schema if field.name in required])
+            schema = Schema._from_fields([field for field in self._schema if field.name in required])
         for path in self._paths:
             yield OrcSourceTask(path, schema, self._io_config, self._batch_size)
 
@@ -197,16 +229,16 @@ class OrcSource(DataSource):
 @dataclass
 class OrcSourceTask(DataSourceTask):
     _path: str
-    _arrow_schema: pa.Schema
+    _schema: Schema
     _io_config: IOConfig | None
     _batch_size: int
 
     @property
     def schema(self) -> Schema:
-        return Schema.from_pyarrow_schema(self._arrow_schema)
+        return self._schema
 
     async def read(self) -> AsyncIterator[RecordBatch]:
-        batches = _iter_orc_batches(self._path, self._arrow_schema, self._io_config, self._batch_size)
+        batches = _iter_orc_batches(self._path, self._schema, self._io_config, self._batch_size)
         try:
             while True:
                 pending = asyncio.create_task(asyncio.to_thread(next, batches, None))
