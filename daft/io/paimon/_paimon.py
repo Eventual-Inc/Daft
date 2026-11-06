@@ -115,19 +115,19 @@ def read_paimon(
         >>> df = daft.read_paimon(table)
         >>> df.show()
 
-        Read a table from an OSS-backed warehouse with custom IO config:
+        Read a table from an OSS-backed warehouse. Daft uses the catalog's OSS options
+        to configure its OpenDAL backend:
 
-        >>> from daft.io import S3Config, IOConfig
-        >>> io_config = IOConfig(s3=S3Config(endpoint_url="http://oss-cn-hangzhou.aliyuncs.com"))
         >>> catalog = pypaimon.CatalogFactory.create(
         ...     {
         ...         "warehouse": "oss://my-bucket/warehouse",
+        ...         "fs.oss.endpoint": "oss-cn-hangzhou.aliyuncs.com",
         ...         "fs.oss.accessKeyId": "...",
         ...         "fs.oss.accessKeySecret": "...",
         ...     }
         ... )
         >>> table = catalog.get_table("mydb.mytable")
-        >>> df = daft.read_paimon(table, io_config=io_config)
+        >>> df = daft.read_paimon(table)
         >>> df.show()
     """
     try:
