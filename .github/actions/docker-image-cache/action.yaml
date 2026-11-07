@@ -1,8 +1,8 @@
 name: Cache Docker images
 description: >
-  Load Docker images from the GitHub Actions cache, run a command, and save
-  images that command pulled or built when the cache missed. actions/cache
-  uploads the archive at the end of the job.
+  Load Docker images from the GitHub Actions cache and run a command. On a
+  cache miss, images that command pulled or built are saved only for pushes
+  to main. Pull requests restore main's cache and do not write their own.
 
 inputs:
   key:
@@ -75,9 +75,12 @@ runs:
 
   - name: Save Docker images
       # A failed pull has nothing new worth keeping. A failed command can still
-      # have pulled images that the next run should reuse. actions/cache uploads
-      # this archive from its post step only when the restore above was a miss.
-    if: always() && steps.cache.outputs.cache-hit != 'true' && steps.pull.outcome != 'failure' && (steps.pull.outcome == 'success' || steps.command.outcome == 'success')
+      # have pulled images that the next run should reuse. The archive is created
+      # only on main, so a pull request never writes a cache entry. actions/cache
+      # uploads it from its post step only when the restore above was a miss.
+      # lookup-only is not used here: it reports a hit without downloading the
+      # archive, which would skip pull_command and leave nothing to docker load.
+    if: always() && github.ref == 'refs/heads/main' && steps.cache.outputs.cache-hit != 'true' && steps.pull.outcome != 'failure' && (steps.pull.outcome == 'success' || steps.command.outcome == 'success')
     shell: bash
     run: |
       set -euo pipefail
