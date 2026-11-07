@@ -33,6 +33,7 @@ BATCH_ATTR = "_daft_batch_method"
 BATCH_SIZE_ATTR = "_daft_batch_size"
 MAX_RETRIES_ATTR = "_daft_max_retries"
 ON_ERROR_ATTR = "_daft_on_error"
+IS_CLS_METHOD_ATTR = "_daft_is_cls_method"
 
 P = ParamSpec("P")
 T = TypeVar("T")
@@ -141,6 +142,8 @@ class Func(Generic[P, T, C]):
         name_override: str | None = None,
         ray_options: dict[str, Any] | None = None,
     ) -> Func[P, T, C]:
+        setattr(method, IS_CLS_METHOD_ATTR, True)
+
         is_generator = inspect.isgeneratorfunction(method)
         is_async = inspect.iscoroutinefunction(method)
 
@@ -323,6 +326,7 @@ class Func(Generic[P, T, C]):
         # TODO: implement generator UDFs on the engine side
         if self.is_generator:
 
+            @functools.wraps(self._method)
             def method(s: C, *args: P.args, **kwargs: P.kwargs) -> list[Any]:
                 return list(self._method(s, *args, **kwargs))  # type: ignore[call-overload]
 
@@ -412,6 +416,7 @@ def mark_cls_method(
     setattr(method, BATCH_SIZE_ATTR, batch_size)
     setattr(method, MAX_RETRIES_ATTR, max_retries)
     setattr(method, ON_ERROR_ATTR, on_error)
+    setattr(method, IS_CLS_METHOD_ATTR, True)
     return method
 
 

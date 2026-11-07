@@ -130,3 +130,18 @@ def test_generator_udf_unnest_error_non_struct():
         def invalid_unnest_generator(n: int):
             for i in range(n):
                 yield str(i)
+
+
+def test_generator_udf_map_param_dict():
+    """A dict-annotated map parameter is converted to a Python dict for generator UDFs too."""
+    import pyarrow as pa
+
+    @daft.func
+    def map_gen(map_col: dict[str, int]) -> typing.Iterator[int]:
+        yield map_col.get("a")
+
+    pa_array = pa.array([[("a", 1)], [], [("b", 2)]], type=pa.map_(pa.string(), pa.int64()))
+    df = daft.from_arrow(pa.table({"map_col": pa_array}))
+    result = df.select(map_gen(df["map_col"]).alias("out")).to_pydict()
+
+    assert result == {"out": [1, None, None]}
