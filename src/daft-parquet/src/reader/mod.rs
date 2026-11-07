@@ -608,6 +608,15 @@ pub async fn stream_parquet(
         ));
     }
     if plan.read_col_indices.is_empty() {
+        if let Some(predicate) = &opts.predicate {
+            let schema = Schema::empty();
+            let bound = BoundExpr::try_new(substitute_missing_cols(predicate, &schema)?, &schema)?;
+            let one_row = RecordBatch::new_with_size(Arc::new(schema), Vec::new(), 1)?;
+            let mask = one_row.eval_expression(&bound)?;
+            if mask.data_type() == &DataType::Null || one_row.mask_filter(&mask)?.is_empty() {
+                return Ok((plan.return_daft_schema, futures::stream::empty().boxed()));
+            }
+        }
         return count_only_stream(
             &prepared.parquet_metadata,
             &rg_indices,
