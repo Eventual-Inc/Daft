@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import collections
+import functools
 import re
 import time
 
@@ -567,3 +569,129 @@ def test_row_wise_udf_kwargs_prefix_suffix_literals_and_exprs():
         "customized": ["$1010", "$2020", "$3030"],
     }
     assert result == expected
+
+
+def test_row_wise_udf_map_param_annotated_as_dict():
+    """A map column passed to a dict-annotated UDF parameter is converted to a Python dict."""
+    import pyarrow as pa
+
+    @daft.func
+    def map_udf(map_col: dict[str, int]) -> int:
+        return map_col.get("a")
+
+    pa_array = pa.array([[("a", 1)], [], [("b", 2)]], type=pa.map_(pa.string(), pa.int64()))
+    df = daft.from_arrow(pa.table({"map_col": pa_array}))
+    result = df.select(map_udf(col("map_col")).alias("out")).to_pydict()
+
+    assert result == {"out": [1, None, None]}
+
+
+def test_row_wise_udf_map_param_annotated_as_list_of_tuples_unchanged():
+    """Parameters annotated as list of tuples keep the raw representation."""
+    import pyarrow as pa
+
+    @daft.func
+    def map_udf(map_col: list[tuple[str, int]]) -> int:
+        return dict(map_col).get("a")
+
+    pa_array = pa.array([[("a", 1)], [], [("b", 2)]], type=pa.map_(pa.string(), pa.int64()))
+    df = daft.from_arrow(pa.table({"map_col": pa_array}))
+    result = df.select(map_udf(col("map_col")).alias("out")).to_pydict()
+
+    assert result == {"out": [1, None, None]}
+
+
+def test_row_wise_udf_map_param_dict_kwargs():
+    """dict-annotated map passed as a keyword argument is still converted."""
+    import pyarrow as pa
+
+    @daft.func
+    def map_udf(prefix: str, map_col: dict[str, int]) -> str:
+        return f"{prefix}{map_col.get('a')}"
+
+    pa_array = pa.array([[("a", 1)], []], type=pa.map_(pa.string(), pa.int64()))
+    df = daft.from_arrow(pa.table({"map_col": pa_array}))
+    result = df.select(map_udf("v=", map_col=col("map_col")).alias("out")).to_pydict()
+
+    assert result == {"out": ["v=1", "v=None"]}
+
+
+def test_row_wise_udf_map_param_dict_with_var_positional_args():
+    """Extra positional arguments are preserved alongside a dict-annotated map param."""
+    import pyarrow as pa
+
+    @daft.func
+    def map_udf(map_col: dict[str, int], *values: int) -> int:
+        return map_col.get("a", 0) + sum(values)
+
+    pa_array = pa.array([[("a", 1)], []], type=pa.map_(pa.string(), pa.int64()))
+    df = daft.from_arrow(pa.table({"map_col": pa_array}))
+    result = df.select(map_udf(col("map_col"), 10, 20).alias("out")).to_pydict()
+
+    # Row 1: {"a": 1} -> 1 + 10 + 20 = 31; Row 2: {} -> 0 + 30 = 30
+    assert result == {"out": [31, 30]}
+
+
+def test_row_wise_udf_map_param_dict_var_keyword():
+    """A dict-annotated **kwargs parameter converts each map value it captures."""
+    import pyarrow as pa
+
+    @daft.func
+    def map_udf(**maps: dict[str, int]) -> int:
+        return maps["m"].get("a")
+
+    pa_array = pa.array([[("a", 1)], [], [("b", 2)]], type=pa.map_(pa.string(), pa.int64()))
+    df = daft.from_arrow(pa.table({"m": pa_array}))
+    result = df.select(map_udf(m=col("m")).alias("out")).to_pydict()
+
+    assert result == {"out": [1, None, None]}
+
+
+def test_row_wise_udf_map_param_dict_positional_only_same_name_keyword():
+    """A keyword sharing a positional-only parameter's name does not break map conversion."""
+    import pyarrow as pa
+
+    @daft.func
+    def map_udf(m: dict[str, int], /, **extra: int) -> int:
+        assert extra == {"m": 0}
+        return m.get("a")
+
+    pa_array = pa.array([[("a", 1)], [], [("b", 2)]], type=pa.map_(pa.string(), pa.int64()))
+    df = daft.from_arrow(pa.table({"m": pa_array}))
+    result = df.select(map_udf(col("m"), m=0).alias("out")).to_pydict()
+
+    assert result == {"out": [1, None, None]}
+
+
+def test_row_wise_udf_map_param_dict_preserves_existing_dict():
+    """A dict-annotated argument that is already a dict keeps its behavior (e.g. defaultdict)."""
+
+    @daft.func
+    def map_udf(x: int, m: dict[str, int]) -> int:
+        return m["missing"]  # a copied plain dict would raise KeyError
+
+    df = daft.from_pydict({"x": [1, 2, 3]})
+    result = df.select(map_udf(col("x"), m=collections.defaultdict(int)).alias("out")).to_pydict()
+
+    assert result == {"out": [0, 0, 0]}
+
+
+def test_row_wise_udf_map_param_dict_cls_method_with_wraps():
+    """A @daft.cls method decorated with functools.wraps still converts its dict-annotated map."""
+    import pyarrow as pa
+
+    def _wrapped(self, map_col: dict[str, int]) -> int:
+        return map_col.get("a")
+
+    @daft.cls
+    class MapCls:
+        @daft.method
+        @functools.wraps(_wrapped)
+        def map_udf(self, map_col: dict[str, int]) -> int:
+            return map_col.get("a")
+
+    pa_array = pa.array([[("a", 1)], [], [("b", 2)]], type=pa.map_(pa.string(), pa.int64()))
+    df = daft.from_arrow(pa.table({"map_col": pa_array}))
+    result = df.select(MapCls().map_udf(col("map_col")).alias("out")).to_pydict()
+
+    assert result == {"out": [1, None, None]}
