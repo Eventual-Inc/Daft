@@ -8,6 +8,7 @@ against a temporary SQLite-backed catalog so they run in the default unit test s
 
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
@@ -146,17 +147,17 @@ def test_read_iceberg_schema_evolution_per_snapshot(local_catalog):
     assert historical.sort("x").to_pydict() == {"x": [1, 2]}
 
 
-@pytest.fixture(params=["added", "readded"])
+@pytest.fixture(params=["added", "re-added"])
 def table_with_missing_column(local_catalog, request):
     fields = [NestedField(1, "id", LongType(), required=False)]
     data = {"id": [0, 1, 2, 3]}
-    if request.param == "readded":
+    if request.param == "re-added":
         fields.append(NestedField(2, "z", LongType(), required=False))
         data["z"] = [10, 20, 60, 70]
     table = local_catalog.create_table("default.missing_column", Schema(*fields))
     table.append(pa.table(data))
 
-    if request.param == "readded":
+    if request.param == "re-added":
         with table.update_schema() as update:
             update.delete_column("z")
     with table.update_schema() as update:
@@ -192,8 +193,8 @@ def test_filter_on_missing_column(
         result = daft.sql(f"SELECT count(*) AS n FROM t WHERE {sql_predicate}", t=daft.read_iceberg(table))
         assert result.to_pydict() == {"n": [len(expected)]}
     else:
-        result = daft.read_iceberg(table).where(predicate).select("z").sort("z", nulls_first=True)
-        assert result.to_pydict() == {"z": expected}
+        result = daft.read_iceberg(table).where(predicate).select("z")
+        assert Counter(result.to_pydict()["z"]) == Counter(expected)
 
 
 def test_limit_with_predicate_on_missing_column(table_with_missing_column):
