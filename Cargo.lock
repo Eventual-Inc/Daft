@@ -3397,6 +3397,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "daft-pg-bridge"
+version = "0.3.0-dev0"
+dependencies = [
+ "arrow",
+ "common-error",
+ "common-treenode",
+ "daft-core",
+ "daft-dsl",
+ "daft-local-execution",
+ "daft-local-plan",
+ "daft-logical-plan",
+ "daft-micropartition",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tikv-jemalloc-ctl",
+ "typetag",
+]
+
+[[package]]
 name = "daft-recordbatch"
 version = "0.3.0-dev0"
 dependencies = [

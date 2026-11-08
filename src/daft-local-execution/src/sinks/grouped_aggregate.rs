@@ -379,12 +379,21 @@ impl BlockingSink for GroupedAggregateSink {
                                 partially_aggregated.extend(state.partially_aggregated);
                             }
 
+                            // GROUP BY over an empty input returns no rows.  A
+                            // PG-owned source can finish without sending any
+                            // Arrow batch, leaving both collections empty for
+                            // every hash partition.  Do not call concat([]) or
+                            // fabricate a global-aggregate row for this case.
+                            if unaggregated.is_empty() && partially_aggregated.is_empty() {
+                                return Ok(None);
+                            }
+
                             // If we have no partially aggregated partitions, aggregate the unaggregated partitions using the original aggregations
                             if params.partial_agg_exprs.is_empty() && !unaggregated.is_empty() {
                                 let concated = MicroPartition::concat(unaggregated)?;
                                 let agged = concated
                                     .agg(&params.original_aggregations, &params.group_by)?;
-                                Ok(agged)
+                                Ok(Some(agged))
                             }
                             // If we have no unaggregated partitions, finalize the partially aggregated partitions
                             else if unaggregated.is_empty() {
@@ -393,7 +402,7 @@ impl BlockingSink for GroupedAggregateSink {
                                     .agg(&params.final_agg_exprs, &params.final_group_by)?;
                                 let projected =
                                     agged.eval_expression_list(&params.final_projections)?;
-                                Ok(projected)
+                                Ok(Some(projected))
                             }
                             // Otherwise, partially aggregate the unaggregated partitions, concatenate them with the partially aggregated partitions, and finalize the result.
                             else {
@@ -405,7 +414,7 @@ impl BlockingSink for GroupedAggregateSink {
                                     .agg(&params.final_agg_exprs, &params.final_group_by)?;
                                 let projected =
                                     agged.eval_expression_list(&params.final_projections)?;
-                                Ok(projected)
+                                Ok(Some(projected))
                             }
                         });
                     }
@@ -413,7 +422,10 @@ impl BlockingSink for GroupedAggregateSink {
                         .join_all()
                         .await
                         .into_iter()
-                        .collect::<DaftResult<Vec<_>>>()?;
+                        .collect::<DaftResult<Vec<_>>>()?
+                        .into_iter()
+                        .flatten()
+                        .collect();
                     Ok(BlockingSinkOutput::Partitions(results))
                 },
                 Span::current(),

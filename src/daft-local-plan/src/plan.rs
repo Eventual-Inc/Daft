@@ -73,6 +73,7 @@ pub type LocalPhysicalPlanRef = Arc<LocalPhysicalPlan>;
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub enum LocalPhysicalPlan {
     InMemoryScan(InMemoryScan),
+    StreamingScan(StreamingScan),
     PhysicalScan(PhysicalScan),
     GlobScan(GlobScan),
     PlaceholderScan(PlaceholderScan),
@@ -158,6 +159,7 @@ impl LocalPhysicalPlan {
     pub fn get_stats_state(&self) -> &StatsState {
         match self {
             Self::InMemoryScan(InMemoryScan { stats_state, .. })
+            | Self::StreamingScan(StreamingScan { stats_state, .. })
             | Self::PhysicalScan(PhysicalScan { stats_state, .. })
             | Self::GlobScan(GlobScan { stats_state, .. })
             | Self::PlaceholderScan(PlaceholderScan { stats_state, .. })
@@ -211,6 +213,7 @@ impl LocalPhysicalPlan {
     pub fn context(&self) -> &LocalNodeContext {
         match self {
             Self::InMemoryScan(InMemoryScan { context, .. })
+            | Self::StreamingScan(StreamingScan { context, .. })
             | Self::PhysicalScan(PhysicalScan { context, .. })
             | Self::GlobScan(GlobScan { context, .. })
             | Self::PlaceholderScan(PlaceholderScan { context, .. })
@@ -261,6 +264,7 @@ impl LocalPhysicalPlan {
     pub fn context_mut(&mut self) -> &mut LocalNodeContext {
         match self {
             Self::InMemoryScan(InMemoryScan { context, .. })
+            | Self::StreamingScan(StreamingScan { context, .. })
             | Self::PhysicalScan(PhysicalScan { context, .. })
             | Self::GlobScan(GlobScan { context, .. })
             | Self::PlaceholderScan(PlaceholderScan { context, .. })
@@ -353,6 +357,21 @@ impl LocalPhysicalPlan {
             source_id,
             schema,
             size_bytes,
+            stats_state,
+            context,
+        })
+        .arced()
+    }
+
+    pub fn streaming_scan(
+        source_id: SourceId,
+        schema: SchemaRef,
+        stats_state: StatsState,
+        context: LocalNodeContext,
+    ) -> LocalPhysicalPlanRef {
+        Self::StreamingScan(StreamingScan {
+            source_id,
+            schema,
             stats_state,
             context,
         })
@@ -1180,6 +1199,8 @@ impl LocalPhysicalPlan {
             Self::PhysicalScan(PhysicalScan { schema, .. })
             | Self::GlobScan(GlobScan { schema, .. })
             | Self::PlaceholderScan(PlaceholderScan { schema, .. })
+            | Self::InMemoryScan(InMemoryScan { schema, .. })
+            | Self::StreamingScan(StreamingScan { schema, .. })
             | Self::Filter(Filter { schema, .. })
             | Self::IntoBatches(IntoBatches { schema, .. })
             | Self::Limit(Limit { schema, .. })
@@ -1264,7 +1285,8 @@ impl LocalPhysicalPlan {
             Self::PhysicalScan(_)
             | Self::GlobScan(_)
             | Self::PlaceholderScan(_)
-            | Self::InMemoryScan(_) => vec![],
+            | Self::InMemoryScan(_)
+            | Self::StreamingScan(_) => vec![],
             Self::Filter(Filter { input, .. })
             | Self::Limit(Limit { input, .. })
             | Self::IntoBatches(IntoBatches { input, .. })
@@ -1323,9 +1345,12 @@ impl LocalPhysicalPlan {
                 "LocalPhysicalPlan::with_new_children: Empty children not handled for ShuffleRead"
             ),
             [new_child] => match self {
-                Self::PhysicalScan(_) | Self::PlaceholderScan(_) | Self::InMemoryScan(_) => {
+                Self::PhysicalScan(_)
+                | Self::PlaceholderScan(_)
+                | Self::InMemoryScan(_)
+                | Self::StreamingScan(_) => {
                     panic!(
-                        "LocalPhysicalPlan::with_new_children: PhysicalScan, PlaceholderScan, and InMemoryScan do not have children"
+                        "LocalPhysicalPlan::with_new_children: PhysicalScan, PlaceholderScan, InMemoryScan, and StreamingScan do not have children"
                     )
                 }
                 Self::Filter(Filter {
@@ -1987,6 +2012,15 @@ pub struct InMemoryScan {
     pub source_id: SourceId,
     pub schema: SchemaRef,
     pub size_bytes: usize,
+    pub stats_state: StatsState,
+    pub context: LocalNodeContext,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct StreamingScan {
+    pub source_id: SourceId,
+    pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
 }

@@ -1,0 +1,46 @@
+[package]
+name = "daft-pg-bridge"
+version = "0.3.0-dev0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Bridge library for PostgreSQL ORCA integration with Daft execution"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Arrow C Data is imported with arrow-rs only; no Arrow C++ or Python ABI.
+arrow = { workspace = true, features = ["ffi"] }
+
+# Core Daft crates needed for plan translation
+daft-logical-plan = { path = "../daft-logical-plan", default-features = false }
+daft-local-plan = { path = "../daft-local-plan", default-features = false }
+daft-local-execution = { path = "../daft-local-execution", default-features = false }
+daft-dsl = { path = "../daft-dsl", default-features = false }
+daft-core = { path = "../daft-core", default-features = false }
+daft-micropartition = { path = "../daft-micropartition", default-features = false }
+
+# Common utilities
+common-error = { path = "../common/error", default-features = false }
+common-treenode = { path = "../common/treenode", default-features = false }
+
+# Serialization for IR exchange
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = "0.10"
+typetag = { workspace = true }
+
+# daft-local-execution pulls jemalloc statistics support.  The Bridge is
+# loaded with dlopen() after a PostgreSQL backend has forked, so jemalloc must
+# use dynamically allocated TLS rather than the initial-exec TLS model.
+tikv-jemalloc-ctl = { version = "0.7.0", features = ["disable_initial_exec_tls"] }
+
+[features]
+default = []
+python = []
+# Test-only, in-process one-shot failpoints.  Production builds do not compile
+# this module or any switch into the Bridge and expose no GUC/env/C ABI knob.
+failure-injection = []
+
+[dev-dependencies]
+hex = "0.4"

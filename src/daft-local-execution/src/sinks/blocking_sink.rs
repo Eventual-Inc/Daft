@@ -28,12 +28,14 @@ use crate::{
     },
     resource_manager::MemoryManager,
     runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
+    spill::SpillRun,
 };
 
 pub(crate) type BlockingSinkSinkResult<Op> =
     OperatorOutput<DaftResult<<Op as BlockingSink>::State>>;
 pub(crate) enum BlockingSinkOutput {
     Partitions(Vec<MicroPartition>),
+    Spilled(SpillRun),
     FlightPartitionRefs(Vec<FlightPartitionRef>),
 }
 pub(crate) type BlockingSinkFinalizeResult = OperatorOutput<DaftResult<BlockingSinkOutput>>;
@@ -264,6 +266,35 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                     }
 
                     for partition in partitions {
+                        per_input.runtime_stats.add_rows_out(partition.len() as u64);
+                        per_input
+                            .runtime_stats
+                            .add_bytes_out(partition.size_bytes() as u64);
+                        let _ = output_tx
+                            .send(PipelineMessage::Morsel {
+                                input_id,
+                                partition,
+                            })
+                            .await;
+                    }
+                }
+                BlockingSinkOutput::Spilled(run) => {
+                    if checkpoint.is_some() {
+                        return Err(DaftError::ComputeError(
+                            "PGDAFT_SPILL_CHECKPOINT_UNSUPPORTED".to_string(),
+                        ));
+                    }
+                    let mut reader = run.open()?;
+                    while let Some(batch) = reader.next_batch()? {
+                        if batch.num_rows() == 0 {
+                            continue;
+                        }
+                        let record_batch = daft_recordbatch::RecordBatch::try_from(&batch)?;
+                        let partition = MicroPartition::new_loaded(
+                            record_batch.schema.clone(),
+                            Arc::new(vec![record_batch]),
+                            None,
+                        );
                         per_input.runtime_stats.add_rows_out(partition.len() as u64);
                         per_input
                             .runtime_stats

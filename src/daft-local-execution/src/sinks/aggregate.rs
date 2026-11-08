@@ -42,6 +42,7 @@ impl AggregateState {
 }
 
 struct AggParams {
+    input_schema: SchemaRef,
     sink_agg_exprs: Vec<BoundAggExpr>,
     finalize_agg_exprs: Vec<BoundAggExpr>,
     final_projections: Vec<BoundExpr>,
@@ -70,6 +71,7 @@ impl AggregateSink {
         Ok(Self {
             aggregate_name,
             agg_sink_params: Arc::new(AggParams {
+                input_schema: input_schema.clone(),
                 sink_agg_exprs,
                 finalize_agg_exprs,
                 final_projections,
@@ -116,7 +118,22 @@ impl BlockingSink for AggregateSink {
                         .into_iter()
                         .flat_map(|mut state| state.finalize())
                         .collect();
-                    let concated = MicroPartition::concat(all_parts)?;
+                    // A PostgreSQL global Aggregate over an empty relation
+                    // still emits one row: COUNT is zero and nullable
+                    // aggregates are NULL.  With a PG-owned source, zero rows
+                    // arrive as Finish without any data batch, so there is no
+                    // partial partition to concatenate.  Preserve the input
+                    // schema and run the normal final aggregate over one
+                    // schema-carrying empty partition through the sink-stage
+                    // aggregates first, producing the same typed partial
+                    // states as a normal input batch, instead of failing
+                    // concat([]).  Non-empty input keeps the original path.
+                    let concated = if all_parts.is_empty() {
+                        MicroPartition::empty(Some(params.input_schema.clone()))
+                            .agg(&params.sink_agg_exprs, &[])?
+                    } else {
+                        MicroPartition::concat(all_parts)?
+                    };
                     let agged = concated.agg(&params.finalize_agg_exprs, &[])?;
                     let projected = agged.eval_expression_list(&params.final_projections)?;
                     Ok(BlockingSinkOutput::Partitions(vec![projected]))

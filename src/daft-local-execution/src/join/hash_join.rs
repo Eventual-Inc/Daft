@@ -161,7 +161,21 @@ impl JoinOperator for HashJoinOperator {
             .into()
     }
 
-    fn finalize_build(&self, state: Self::BuildState) -> FinalizeBuildResult<Self> {
+    fn finalize_build(&self, mut state: Self::BuildState) -> FinalizeBuildResult<Self> {
+        // ProbeableBuilder/GrowableTable needs one table even when the build
+        // source produced zero batches.  Materialize a schema-correct,
+        // zero-row table only for that case; non-empty joins are unchanged.
+        if state.tables.is_empty() {
+            let build_schema = if self.params.build_on_left {
+                self.params.left_schema.clone()
+            } else {
+                self.params.right_schema.clone()
+            };
+            let empty = MicroPartition::empty(Some(build_schema));
+            if let Err(error) = state.add_tables(&empty, &self.params) {
+                return Err(error).into();
+            }
+        }
         let finalized_probe_state = state.finalize();
         Ok(finalized_probe_state).into()
     }

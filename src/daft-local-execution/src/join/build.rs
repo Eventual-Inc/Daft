@@ -231,9 +231,29 @@ impl<Op: JoinOperator + 'static> BuildExecutionContext<Op> {
                     per_input.flush_pending(&mut tasks, &self.op, &self.task_spawner, input_id)?;
                 }
                 PipelineEvent::Flush(input_id) => {
-                    if let Some(p) = inputs.get_mut(&input_id) {
-                        p.flushed = true;
+                    // A streaming source is allowed to finish without ever
+                    // producing a morsel.  The probe side still needs a
+                    // finalized (empty) build state for that input_id;
+                    // otherwise it waits forever on BuildStateBridge.
+                    if !node_initialized {
+                        self.stats_manager.activate_node(self.node_id);
+                        node_initialized = true;
                     }
+                    let per_input = match inputs.entry(input_id) {
+                        Entry::Occupied(e) => e.into_mut(),
+                        Entry::Vacant(e) => {
+                            let runtime_stats =
+                                Arc::new(JoinStats::new(&self.meter, &self.node_info));
+                            self.stats_manager.register_runtime_stats(
+                                self.node_id,
+                                input_id,
+                                runtime_stats.clone(),
+                            );
+                            let state = self.op.make_build_state()?;
+                            e.insert(PerBuildInput::new(state, runtime_stats))
+                        }
+                    };
+                    per_input.flushed = true;
                     if inputs.get(&input_id).is_some_and(|p| p.ready_to_finalize()) {
                         self.try_finalize(inputs.remove(&input_id).unwrap(), input_id);
                     }

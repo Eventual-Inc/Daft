@@ -10,11 +10,13 @@ mod input_sender;
 mod intermediate_ops;
 mod join;
 mod pipeline;
+pub mod prepared_execution;
 mod resource_manager;
 mod run;
 mod runtime_stats;
 mod sinks;
-mod sources;
+pub mod sources;
+mod spill;
 mod streaming_sink;
 use std::{
     future::Future,
@@ -35,7 +37,7 @@ pub use run::ExecutionEngineResult;
 /// Used by `LocalSwordfishWorker` in `daft-distributed` to exercise real
 /// local execution without Ray.
 pub mod testing {
-    pub use super::run::NativeExecutor;
+    pub use super::{pipeline::PipelineMessage, run::NativeExecutor};
 }
 use runtime_stats::RuntimeStatsManagerHandle;
 use snafu::{ResultExt, Snafu, futures::TryFutureExt};

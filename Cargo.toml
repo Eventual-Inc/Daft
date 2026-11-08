@@ -228,6 +228,7 @@ members = [
   "src/daft-micropartition",
   "src/daft-parquet",
   "src/daft-partition-refs",
+  "src/daft-pg-bridge",
   "src/daft-runners",
   "src/daft-scan",
   "src/daft-session",

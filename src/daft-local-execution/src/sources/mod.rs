@@ -4,3 +4,4 @@ pub mod scan_task;
 mod scan_task_reader;
 pub mod shuffle_read;
 pub mod source;
+pub mod streaming;

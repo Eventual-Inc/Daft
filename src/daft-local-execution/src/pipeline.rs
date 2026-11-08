@@ -69,8 +69,9 @@ use crate::{
     },
     sources::{
         glob_scan::GlobScanSource, in_memory::InMemorySource, scan_task::ScanTaskSource,
-        shuffle_read::ShuffleReadSource, source::SourceNode,
+        shuffle_read::ShuffleReadSource, source::SourceNode, streaming::StreamingSource,
     },
+    spill::SpillManager,
     streaming_sink::{
         async_udf::AsyncUdfSink, base::StreamingSinkNode, limit::LimitSink,
         monotonically_increasing_id::MonotonicallyIncreasingIdSink, sample::SampleSink,
@@ -277,6 +278,9 @@ pub struct BuilderContext {
         )>,
     >,
     pub skipped_corrupt_files: std::sync::Arc<std::sync::Mutex<Vec<(String, String, bool)>>>,
+    streaming_queue_depth: usize,
+    blocking_sink_retained_limit_bytes: Option<usize>,
+    spill_manager: Option<Arc<SpillManager>>,
 }
 
 impl BuilderContext {
@@ -298,7 +302,33 @@ impl BuilderContext {
             shuffle_server,
             checkpoint: std::cell::RefCell::new(None),
             skipped_corrupt_files: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+            streaming_queue_depth: 8,
+            blocking_sink_retained_limit_bytes: None,
+            spill_manager: None,
         }
+    }
+
+    /// Configure the bounded queue used by every externally-driven source.
+    pub fn with_streaming_queue_depth(mut self, depth: usize) -> Self {
+        assert!(depth > 0, "streaming queue depth must be positive");
+        self.streaming_queue_depth = depth;
+        self
+    }
+
+    /// Bound data retained by a single blocking Sort/TopN sink. Normal Daft
+    /// execution keeps its existing behavior; the embedded PG bridge sets an
+    /// explicit per-fragment value before translating the physical plan.
+    pub fn with_blocking_sink_retained_limit_bytes(mut self, bytes: usize) -> Self {
+        assert!(bytes > 0, "blocking sink retained limit must be positive");
+        self.blocking_sink_retained_limit_bytes = Some(bytes);
+        self
+    }
+
+    /// Attach the execution-local spill manager used by spill-capable blocking
+    /// operators. It is intentionally absent from ordinary Daft execution.
+    pub(crate) fn with_spill_manager(mut self, manager: Arc<SpillManager>) -> Self {
+        self.spill_manager = Some(manager);
+        self
     }
 
     pub fn shuffle_server(&self) -> Option<(Arc<ShuffleFlightServer>, String)> {
@@ -487,6 +517,18 @@ fn physical_plan_to_pipeline(
                 stats_state.clone(),
                 ctx,
                 context,
+            )
+            .boxed()
+        }
+        LocalPhysicalPlan::StreamingScan(streaming_scan) => {
+            let (streaming_source, sender) =
+                StreamingSource::new(streaming_scan.schema.clone(), 1, ctx.streaming_queue_depth);
+            input_senders.insert(streaming_scan.source_id, InputSender::Streaming(sender));
+            SourceNode::new(
+                Box::new(streaming_source),
+                streaming_scan.stats_state.clone(),
+                ctx,
+                &streaming_scan.context,
             )
             .boxed()
         }
@@ -1042,7 +1084,13 @@ fn physical_plan_to_pipeline(
             context,
             ..
         }) => {
-            let sort_sink = SortSink::new(sort_by.clone(), descending.clone(), nulls_first.clone());
+            let sort_sink = SortSink::new(
+                sort_by.clone(),
+                descending.clone(),
+                nulls_first.clone(),
+                ctx.blocking_sink_retained_limit_bytes,
+                ctx.spill_manager.clone(),
+            );
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
             BlockingSinkNode::new(
                 Arc::new(sort_sink),
@@ -1070,6 +1118,7 @@ fn physical_plan_to_pipeline(
                 nulls_first.clone(),
                 *limit as usize,
                 offset.map(|x| x as usize),
+                ctx.blocking_sink_retained_limit_bytes,
             );
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
             BlockingSinkNode::new(

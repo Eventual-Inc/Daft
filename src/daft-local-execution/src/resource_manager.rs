@@ -39,6 +39,7 @@ impl Drop for MemoryPermit<'_> {
 
 struct MemoryState {
     available_bytes: u64,
+    peak_reserved_bytes: u64,
 }
 
 pub(crate) struct MemoryManager {
@@ -55,6 +56,7 @@ impl Default for MemoryManager {
             total_bytes: total_mem,
             state: Mutex::new(MemoryState {
                 available_bytes: total_mem,
+                peak_reserved_bytes: 0,
             }),
             notify: Notify::new(),
         }
@@ -68,11 +70,24 @@ impl MemoryManager {
                 total_bytes: custom_limit,
                 state: Mutex::new(MemoryState {
                     available_bytes: custom_limit,
+                    peak_reserved_bytes: 0,
                 }),
                 notify: Notify::new(),
             }
         } else {
             Self::default()
+        }
+    }
+
+    /// Create an execution-local manager with an explicit non-zero limit.
+    pub(crate) fn with_limit(total_bytes: u64) -> Self {
+        Self {
+            total_bytes,
+            state: Mutex::new(MemoryState {
+                available_bytes: total_bytes,
+                peak_reserved_bytes: 0,
+            }),
+            notify: Notify::new(),
         }
     }
 
@@ -103,6 +118,8 @@ impl MemoryManager {
         let mut state = self.state.lock().unwrap();
         if state.available_bytes >= bytes {
             state.available_bytes -= bytes;
+            let reserved_bytes = self.total_bytes - state.available_bytes;
+            state.peak_reserved_bytes = state.peak_reserved_bytes.max(reserved_bytes);
             Some(MemoryPermit {
                 bytes,
                 manager: self,
@@ -110,6 +127,19 @@ impl MemoryManager {
         } else {
             None
         }
+    }
+
+    /// Return execution-local current and peak reserved bytes.
+    ///
+    /// This is reservation accounting, not process RSS. The peak is monotonic
+    /// for the lifetime of this manager and is safe to expose after all permits
+    /// have been released.
+    pub(crate) fn reservation_snapshot(&self) -> (u64, u64) {
+        let state = self.state.lock().unwrap();
+        (
+            self.total_bytes - state.available_bytes,
+            state.peak_reserved_bytes,
+        )
     }
 }
 
@@ -189,6 +219,20 @@ mod tests {
             let state = manager.state.lock().unwrap();
             assert_eq!(state.available_bytes, manager.total_bytes);
         }
+        assert_eq!(manager.reservation_snapshot(), (0, request_size));
+    }
+
+    #[tokio::test]
+    async fn test_peak_reservation_is_monotonic() {
+        let manager = MemoryManager::with_limit(100);
+        let first = manager.request_bytes(40).await.unwrap();
+        assert_eq!(manager.reservation_snapshot(), (40, 40));
+        let second = manager.request_bytes(35).await.unwrap();
+        assert_eq!(manager.reservation_snapshot(), (75, 75));
+        drop(second);
+        assert_eq!(manager.reservation_snapshot(), (40, 75));
+        drop(first);
+        assert_eq!(manager.reservation_snapshot(), (0, 75));
     }
 
     #[tokio::test]

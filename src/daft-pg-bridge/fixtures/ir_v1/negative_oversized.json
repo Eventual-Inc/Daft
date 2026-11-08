@@ -1,0 +1,42 @@
+{
+  "capability_registry_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "required_runtime_capability_bits": 0,
+  "fragment_id": 1,
+  "root_node_id": 1,
+  "pg_source_drive_order": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64],
+  "sources": [
+    {
+      "source_id": 0,
+      "fields": [
+        {
+          "name": "_pgd_f1_s0_c0",
+          "type": {
+            "oid": 23,
+            "typmod": -1,
+            "collation": 0,
+            "nullable": false
+          }
+        }
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "node_type": "scan",
+      "node_id": 1,
+      "source_id": 0
+    }
+  ],
+  "output_schema": [
+    {
+      "name": "_pgd_f1_s0_c0",
+      "type": {
+        "oid": 23,
+        "typmod": -1,
+        "collation": 0,
+        "nullable": false
+      }
+    }
+  ],
+  "payload_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+}
