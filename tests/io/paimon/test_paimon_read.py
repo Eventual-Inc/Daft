@@ -383,6 +383,25 @@ class TestFilterPushdown:
         result = df.to_pydict()
         assert result["id"] == [2, 3, 4]
 
+    def test_filter_pushdown_skips_files(self, filter_table, monkeypatch):
+        """A row filter that no file can match plans no scan tasks (files are skipped by their statistics)."""
+        from daft.io.paimon.paimon_scan import PaimonDataSource
+
+        tasks = []
+        get_tasks = PaimonDataSource.get_tasks
+
+        async def recording_get_tasks(self, pushdowns):
+            async for task in get_tasks(self, pushdowns):
+                tasks.append(task)
+                yield task
+
+        monkeypatch.setattr(PaimonDataSource, "get_tasks", recording_get_tasks)
+
+        result = daft.read_paimon(filter_table).where(daft.col("id") > 99).to_pydict()
+
+        assert result == {"id": [], "value": []}
+        assert tasks == []
+
 
 # ---------------------------------------------------------------------------
 # Advanced data types
