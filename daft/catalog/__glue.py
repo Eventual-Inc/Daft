@@ -209,7 +209,7 @@ class GlueCatalog(Catalog):
         try:
             self._get_table(identifier)
             return True
-        except self._client.exceptions.EntityNotFoundException:
+        except NotFoundError:
             return False
 
     def _has_namespace(self, identifier: Identifier) -> bool:
