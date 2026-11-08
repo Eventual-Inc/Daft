@@ -122,11 +122,14 @@ class LocalVLLMExecutor(VLLMExecutor):
 
         self.running_task_count = 0
         self.task_count_lock = threading.Lock()
+        # First exception raised by a generate request; re-raised by poll() and all_tasks_finished().
+        self.error: BaseException | None = None
 
         self.completed_tasks: deque[tuple[str, RecordBatch]] = deque()
 
         self.last_log_time = time.perf_counter()
         self.last_log_lock = threading.Lock()
+        self._periodic_log_started = False
 
         self.use_threading = use_threading
         if self.use_threading:
@@ -144,27 +147,40 @@ class LocalVLLMExecutor(VLLMExecutor):
         asyncio.set_event_loop(self.loop)
         self.loop_ready.set()  # Signal that the loop is ready
         self.loop.run_forever()
-        self.loop.create_task(self._periodic_log())
 
     async def _periodic_log(self) -> None:
         while True:
             await asyncio.sleep(5)
             await self.llm.do_log_stats()
+            with self.last_log_lock:
+                self.last_log_time = time.perf_counter()
+            with self.task_count_lock:
+                if self.error is not None or (self._finished_submitting and self.running_task_count == 0):
+                    return
 
     async def _generate(self, prompt: str, row: RecordBatch) -> None:
-        with self.counter_lock:
-            id = self.counter
-            self.counter += 1
+        try:
+            with self.counter_lock:
+                id = self.counter
+                self.counter += 1
 
-        final_output = None
-        async for output in self.llm.generate(prompt, self.sampling_params, str(id), **self.generate_args):
-            final_output = output
+            final_output = None
+            async for output in self.llm.generate(prompt, self.sampling_params, str(id), **self.generate_args):
+                final_output = output
 
-        output_text: str = final_output.outputs[0].text  # type: ignore
-        self.completed_tasks.append((output_text, row))
-
-        with self.task_count_lock:
-            self.running_task_count -= 1
+            output_text: str = final_output.outputs[0].text  # type: ignore
+            self.completed_tasks.append((output_text, row))
+        except BaseException as e:
+            # Nothing awaits this task, so keep the error for poll() to raise.
+            with self.task_count_lock:
+                if self.error is None:
+                    self.error = e
+            if not isinstance(e, Exception):
+                raise
+            return
+        finally:
+            with self.task_count_lock:
+                self.running_task_count -= 1
 
         # Check if we need to log (in case periodic log isn't running in distributed mode)
         current_time = time.perf_counter()
@@ -184,6 +200,10 @@ class LocalVLLMExecutor(VLLMExecutor):
         with self.task_count_lock:
             self.running_task_count += len(prompts)
 
+        if not self._periodic_log_started:
+            self._periodic_log_started = True
+            asyncio.run_coroutine_threadsafe(self._periodic_log(), self.loop)
+
         for i in range(len(prompts)):
             prompt = prompts[i]
             row = rows.slice(i, i + 1)
@@ -202,6 +222,11 @@ class LocalVLLMExecutor(VLLMExecutor):
 
     def poll(self) -> tuple[list[str], RecordBatch] | None:
         """Poll the executor for completed tasks."""
+        with self.task_count_lock:
+            error = self.error
+        if error is not None:
+            raise error
+
         # Drain the queues (no lock needed - queues are thread-safe)
         completed_outputs = []
         completed_rows = []
@@ -225,7 +250,11 @@ class LocalVLLMExecutor(VLLMExecutor):
 
     def all_tasks_finished(self) -> bool:
         with self.task_count_lock:
-            return self._finished_submitting and self.running_task_count == 0 and len(self.completed_tasks) == 0
+            error = self.error
+            finished = self._finished_submitting and self.running_task_count == 0 and len(self.completed_tasks) == 0
+        if error is not None:
+            raise error
+        return finished
 
 
 class RemoteVLLMExecutor(VLLMExecutor):
