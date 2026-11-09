@@ -12,6 +12,11 @@ from daft.io import HTTPConfig, HuggingFaceConfig
 from daft.io.huggingface._metadata import parquet_files, read_json, source_files
 
 
+@pytest.fixture(autouse=True)
+def no_advisory_network(monkeypatch):
+    monkeypatch.setattr("daft.io.huggingface.warn_if_lerobot", lambda *args: None)
+
+
 def _file(config="default", split="train", *, partial=False):
     folder = f"partial-{split}" if partial else split
     return {
