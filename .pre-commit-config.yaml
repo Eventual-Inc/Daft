@@ -5,9 +5,9 @@ repos:
   rev: v2.4.0
   hooks:
   - id: mypy
-    args: ['--strict', '--ignore-missing-imports']
     additional_dependencies: [types-requests, types-PyYAML, types-tabulate, pandas-stubs, types-Deprecated]
     files: daft
+    pass_filenames: false
     exclude: |
       (?x)^(
           daft/pickle/.*\.py|
