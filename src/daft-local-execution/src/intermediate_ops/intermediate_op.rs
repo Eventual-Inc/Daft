@@ -243,7 +243,7 @@ impl<Op: IntermediateOperator + 'static> ExecutionContext<Op> {
                             .output_sender
                             .send(PipelineMessage::Flush(input_id))
                             .await;
-                        return Ok(());
+                        continue;
                     }
                     self.batch_manager.set_pending_flush(input_id);
                     self.try_dispatch()?;
