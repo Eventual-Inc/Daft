@@ -181,7 +181,7 @@ impl TaskResultHandle for LocalSwordfishTaskResultHandle {
             {
                 Ok((output, stats)) => TaskStatus::Success {
                     result: output,
-                    stats,
+                    stats: Box::new(stats),
                 },
                 Err(e) => TaskStatus::Failed { error: e },
             }
