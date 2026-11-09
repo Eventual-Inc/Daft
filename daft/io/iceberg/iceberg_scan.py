@@ -184,6 +184,18 @@ def _build_iceberg_data_source_task_stats(
     return stats
 
 
+def _live_row_count(data_file: DataFile, delete_files: set[DataFile]) -> int:
+    """Estimate the rows a data file contributes after positional deletes.
+
+    Delete-file record counts count rows deleted from every data file the file
+    applies to, so subtracting all of them here can only under-estimate the live
+    rows. That is safe for the limit budget: it may schedule extra files, but it
+    never stops before enough live rows have been planned.
+    """
+    deleted_rows = sum((delete_file.record_count or 0) for delete_file in delete_files)
+    return max(data_file.record_count - deleted_rows, 0)
+
+
 class IcebergDataSource(DataSource):
     """DataSource for Apache Iceberg tables.
 
@@ -358,7 +370,7 @@ class IcebergDataSource(DataSource):
                 storage_config=self._storage_config,
                 iceberg_delete_files=iceberg_delete_files if iceberg_delete_files else None,
             )
-            rows_left -= record_count
+            rows_left -= _live_row_count(file, task.delete_files)
 
     def _create_count_tasks(self, pushdowns: Pushdowns, field_name: str) -> Iterator[DataSourceTask]:
         """Create count pushdown task using Iceberg metadata."""
