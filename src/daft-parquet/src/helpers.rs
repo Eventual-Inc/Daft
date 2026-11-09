@@ -7,6 +7,7 @@ use daft_dsl::{
     Expr, ExprRef,
     common_treenode::{Transformed, TreeNode},
     expr::{Column, ResolvedColumn, UnresolvedColumn, bound_expr::BoundExpr},
+    functions::{FunctionExpr, struct_::StructExpr},
     null_lit,
     optimization::get_required_columns,
 };
@@ -32,7 +33,9 @@ pub fn predicate_pushable_cols(
 }
 
 /// Substitute null for any column reference not present in `schema` (Iceberg
-/// schema evolution). Null propagates conservatively — never falsely excludes.
+/// schema evolution), and for any struct field access (`s["y"]`) whose field is
+/// missing from the file's struct type or whose struct was itself substituted.
+/// Null propagates conservatively — never falsely excludes.
 pub fn substitute_missing_cols(predicate: &ExprRef, schema: &Schema) -> DaftResult<ExprRef> {
     Ok(predicate
         .clone()
@@ -44,6 +47,23 @@ pub fn substitute_missing_cols(predicate: &ExprRef, schema: &Schema) -> DaftResu
                     _ => return Ok(Transformed::no(e)),
                 };
                 if schema.get_field(name).is_err() {
+                    return Ok(Transformed::yes(null_lit()));
+                }
+            }
+            if let Expr::Function {
+                func: FunctionExpr::Struct(StructExpr::Get(field_name)),
+                inputs,
+            } = e.as_ref()
+                && let [input] = inputs.as_slice()
+            {
+                // Children are rewritten first, so a missing parent struct is
+                // already a null literal here.
+                let missing = *input == null_lit()
+                    || matches!(
+                        input.to_field(schema).map(|f| f.dtype),
+                        Ok(DataType::Struct(fields)) if fields.iter().all(|f| *f.name != **field_name)
+                    );
+                if missing {
                     return Ok(Transformed::yes(null_lit()));
                 }
             }
@@ -311,4 +331,49 @@ pub fn prune_row_groups(
         rows_remaining = rows_remaining.saturating_sub(contrib as i64);
     }
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use daft_dsl::{
+        expr::bound_expr::BoundExpr, functions::struct_::get as struct_get, null_lit,
+        unresolved_col,
+    };
+
+    use super::*;
+
+    fn file_schema() -> Schema {
+        Schema::new(vec![
+            Field::new("id", DataType::Int64),
+            Field::new(
+                "s",
+                DataType::Struct(vec![Field::new("x", DataType::Int64)]),
+            ),
+        ])
+    }
+
+    #[test]
+    fn missing_struct_field_is_substituted_with_null() {
+        let schema = file_schema();
+        let pred = struct_get(unresolved_col("s"), "y").is_null();
+        let out = substitute_missing_cols(&pred, &schema).unwrap();
+        assert_eq!(out, null_lit().is_null());
+        assert!(BoundExpr::try_new(out, &schema).is_ok());
+    }
+
+    #[test]
+    fn nested_access_under_missing_struct_is_substituted_with_null() {
+        let schema = file_schema();
+        let pred = struct_get(struct_get(unresolved_col("s"), "y"), "z").is_null();
+        let out = substitute_missing_cols(&pred, &schema).unwrap();
+        assert_eq!(out, null_lit().is_null());
+    }
+
+    #[test]
+    fn present_struct_field_is_left_alone() {
+        let schema = file_schema();
+        let pred = struct_get(unresolved_col("s"), "x").is_null();
+        let out = substitute_missing_cols(&pred, &schema).unwrap();
+        assert_eq!(out, pred);
+    }
 }
