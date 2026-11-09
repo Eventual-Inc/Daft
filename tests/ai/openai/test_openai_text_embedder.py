@@ -456,6 +456,25 @@ def test_embed_text_failure_with_zero_on_failure_custom_model(mock_client):
     assert np.all(result == 0)
 
 
+def test_embed_text_failure_with_zero_on_failure_custom_model_without_dimensions(mock_client):
+    """Preserve the original error when a custom model has no known dimensions."""
+    embedder = OpenAITextEmbedder(
+        provider_options={"api_key": "test-key", "base_url": "http://localhost:1234/v1"},
+        model="BAAI/bge-m3",
+        embed_options={},
+        dimensions=None,
+        zero_on_failure=True,
+    )
+    embedder._client = mock_client
+    error = Exception("API Error")
+    mock_client.embeddings.create.side_effect = error
+
+    with pytest.raises(Exception, match="API Error") as exc_info:
+        run(embedder._embed_text("Hello world"))
+
+    assert exc_info.value is error
+
+
 def test_embed_text_failure_without_zero_on_failure(mock_client):
     """Test that failures are re-raised when zero_on_failure is False."""
     embedder = OpenAITextEmbedder(
