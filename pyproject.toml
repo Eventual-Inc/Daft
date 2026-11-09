@@ -60,7 +60,7 @@ ray = [
 transformers = ["transformers<5.20.0", "sentence-transformers<5.7.0", "torch<2.15.0", "torchvision<0.30.0", "pillow<13"]
 # connectorx 0.4.4 is needed for pgvector support.
 sql = ["connectorx>=0.4.4,<0.5.0", "sqlalchemy<2.1.0", "sqlglot<30.9.0"]
-# ADBC drivers for read_sql(backend="adbc").
+# ADBC drivers for read_sql(backend="adbc") and DataFrame.write_sql(backend="adbc").
 sql-adbc = ["adbc-driver-manager>=1.0.0,<2.0.0", "adbc-driver-postgresql>=1.0.0,<2.0.0", "adbc-driver-sqlite>=1.0.0,<2.0.0", "sqlglot<30.9.0"]
 turbopuffer = ["turbopuffer<2.2.0"]
 unity = ["httpx<=0.28.1", "unitycatalog<0.2.0", "deltalake>=1.6.0,<1.7.0"]

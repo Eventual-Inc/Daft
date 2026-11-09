@@ -390,3 +390,93 @@ def test_write_sql_non_primitive_types_no_warning_explicit(test_db):
             x for x in w if issubclass(x.category, UserWarning) and "Detected non-primitive columns" in str(x.message)
         ]
         assert len(relevant_warnings) == 0
+
+
+@pytest.fixture()
+def postgres_adbc_db(test_db):
+    if not test_db.startswith("postgres"):
+        pytest.skip("ADBC integration tests run against PostgreSQL only")
+    pytest.importorskip("adbc_driver_postgresql")
+    return test_db
+
+
+@pytest.mark.integration()
+@pytest.mark.parametrize("write_mode", ["append", "overwrite", "fail"])
+def test_write_sql_adbc_write_modes(postgres_adbc_db, write_mode):
+    table_name = f"write_test_adbc_modes_{uuid.uuid4().hex}"
+
+    initial_df = daft.from_pydict({"id": [1], "name": ["A"]})
+    initial_df.write_sql(table_name, postgres_adbc_db, backend="adbc")
+    new_df = daft.from_pydict({"id": [2], "name": ["B"]})
+
+    if write_mode == "fail":
+        with pytest.raises(ValueError, match="Table .* already exists"):
+            new_df.write_sql(table_name, postgres_adbc_db, write_mode=write_mode, backend="adbc")
+        expected = {"id": [1], "name": ["A"]}
+    else:
+        new_df.write_sql(table_name, postgres_adbc_db, write_mode=write_mode, backend="adbc")
+        expected = {"id": [1, 2], "name": ["A", "B"]} if write_mode == "append" else {"id": [2], "name": ["B"]}
+
+    read_df = daft.read_sql(f"SELECT * FROM {table_name}", postgres_adbc_db).sort("id")
+    assert read_df.to_pydict() == expected
+
+
+@pytest.mark.integration()
+def test_write_sql_adbc_types_roundtrip(postgres_adbc_db):
+    table_name = f"write_test_adbc_types_{uuid.uuid4().hex}"
+    data = {
+        "id": [1, 2, 3],
+        "name": ["Alice", "Bob", None],
+        "score": [1.5, None, 3.25],
+        "flag": [True, False, None],
+        "day": [datetime.date(2024, 1, 1), datetime.date(2024, 1, 2), None],
+        "created_at": [
+            datetime.datetime(2024, 1, 1, 0, 0, 0),
+            datetime.datetime(2024, 1, 2, 12, 30, 0),
+            None,
+        ],
+        "payload": [b"\x00\x01", b"abc", None],
+    }
+    df = daft.from_pydict(data)
+
+    df.write_sql(table_name, postgres_adbc_db, backend="adbc")
+
+    read_df = daft.read_sql(f"SELECT * FROM {table_name}", postgres_adbc_db, backend="adbc").sort("id")
+    assert read_df.to_pydict() == data
+
+
+@pytest.mark.integration()
+def test_write_sql_adbc_matches_sqlalchemy(postgres_adbc_db):
+    num_rows = 2000
+    df = daft.from_pydict({"id": list(range(num_rows)), "val": [f"val_{i}" for i in range(num_rows)]})
+    adbc_table = f"write_test_adbc_cmp_{uuid.uuid4().hex}"
+    sqlalchemy_table = f"write_test_sa_cmp_{uuid.uuid4().hex}"
+
+    adbc_metrics = df.write_sql(adbc_table, postgres_adbc_db, backend="adbc").to_pydict()
+    sqlalchemy_metrics = df.write_sql(sqlalchemy_table, postgres_adbc_db).to_pydict()
+
+    assert adbc_metrics["total_written_rows"] == sqlalchemy_metrics["total_written_rows"] == [num_rows]
+    adbc_rows = daft.read_sql(f"SELECT * FROM {adbc_table}", postgres_adbc_db).sort("id").to_pydict()
+    sqlalchemy_rows = daft.read_sql(f"SELECT * FROM {sqlalchemy_table}", postgres_adbc_db).sort("id").to_pydict()
+    assert adbc_rows == sqlalchemy_rows
+
+
+@pytest.mark.integration()
+def test_write_sql_adbc_appends_to_sqlalchemy_table(postgres_adbc_db):
+    table_name = f"write_test_adbc_append_{uuid.uuid4().hex}"
+    daft.from_pydict({"id": [1], "name": ["A"]}).write_sql(table_name, postgres_adbc_db)
+    daft.from_pydict({"id": [2], "name": ["B"]}).write_sql(table_name, postgres_adbc_db, backend="adbc")
+
+    read_df = daft.read_sql(f"SELECT * FROM {table_name}", postgres_adbc_db).sort("id")
+    assert read_df.to_pydict() == {"id": [1, 2], "name": ["A", "B"]}
+
+
+@pytest.mark.integration()
+def test_write_sql_adbc_non_primitive_columns(postgres_adbc_db):
+    table_name = f"write_test_adbc_non_primitive_{uuid.uuid4().hex}"
+    df = daft.from_pydict({"id": [1, 2], "list_col": [[1, 2], [3]], "struct_col": [{"a": 1}, {"a": 2}]})
+
+    df.write_sql(table_name, postgres_adbc_db, non_primitive_handling="str", backend="adbc")
+
+    read_df = daft.read_sql(f"SELECT * FROM {table_name}", postgres_adbc_db).sort("id")
+    assert read_df.to_pydict() == {"id": [1, 2], "list_col": ["[1, 2]", "[3]"], "struct_col": ['{"a": 1}', '{"a": 2}']}
