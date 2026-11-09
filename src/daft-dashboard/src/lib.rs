@@ -327,6 +327,19 @@ pub async fn launch_server(
     options: ServerOptions,
     shutdown_fn: impl Future<Output = ()> + Send + 'static,
 ) -> std::io::Result<()> {
+    let listener = TcpListener::bind((options.addr, options.port)).await?;
+    launch_server_with_listener(options, listener, shutdown_fn).await
+}
+
+/// Serve the dashboard on an already-bound listener.
+///
+/// Callers that need the effective address (for example, when binding to port
+/// `0`) can bind first and inspect `listener.local_addr()` before calling this.
+pub async fn launch_server_with_listener(
+    options: ServerOptions,
+    listener: TcpListener,
+    shutdown_fn: impl Future<Output = ()> + Send + 'static,
+) -> std::io::Result<()> {
     // Import event log file if provided
     if let Some(path) = options.event_log_path.as_ref()
         && let Err(err) = import_event_log(path, GLOBAL_DASHBOARD_STATE.clone())
@@ -373,17 +386,13 @@ pub async fn launch_server(
     });
 
     // Start the server
-    let addr = options.addr;
-    let port = options.port;
-    let listener = TcpListener::bind((addr, port)).await?;
-    axum::serve(listener, app)
+    let serve_result = axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_fn)
-        .await
-        .unwrap();
+        .await;
 
     reaper.abort();
 
-    Ok(())
+    serve_result
 }
 
 #[cfg(feature = "python")]

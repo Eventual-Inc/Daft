@@ -1,4 +1,5 @@
 use std::{
+    path::{Path, PathBuf},
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
@@ -60,6 +61,243 @@ impl From<&TaskSource> for daft_dashboard::engine::TaskSourceArgs {
 const DASHBOARD_EVENT_LIMIT: usize = 512;
 const DASHBOARD_SHUTDOWN_TIMEOUT_MS: u64 = 500;
 
+/// Name of the file `daft dashboard start` publishes its URL to, next to the PID file.
+pub const DASHBOARD_URL_FILE_NAME: &str = "daft_dashboard.url";
+/// Name of the file holding the PID of a running dashboard.
+pub const DASHBOARD_PID_FILE_NAME: &str = "daft_dashboard.pid";
+const DASHBOARD_LOCK_FILE_NAME: &str = "daft_dashboard.lock";
+
+const ENV_DAFT_DASHBOARD_URL: &str = "DAFT_DASHBOARD_URL";
+const ENV_DAFT_DASHBOARD_PID_DIR: &str = "DAFT_DASHBOARD_PID_DIR";
+
+/// Directory used to exchange dashboard discovery files between the CLI and
+/// clients.
+///
+/// Defaults to a private per-user directory so another local user cannot plant
+/// a URL file that redirects query reports to their own server.
+pub fn dashboard_state_dir() -> PathBuf {
+    if let Some(dir) = std::env::var_os(ENV_DAFT_DASHBOARD_PID_DIR)
+        && !dir.is_empty()
+    {
+        return PathBuf::from(dir);
+    }
+
+    default_dashboard_state_dir()
+}
+
+#[cfg(unix)]
+fn default_dashboard_state_dir() -> PathBuf {
+    if let Some(dir) = std::env::var_os("XDG_RUNTIME_DIR") {
+        return PathBuf::from(dir).join("daft");
+    }
+
+    std::env::temp_dir().join(format!("daft-{}", unsafe { libc::geteuid() }))
+}
+
+#[cfg(not(unix))]
+fn default_dashboard_state_dir() -> PathBuf {
+    std::env::temp_dir().join("daft")
+}
+
+/// Create the dashboard state directory if needed.
+///
+/// When `require_private` is set (the default, user-scoped directory), the
+/// directory must be owned by the current user and inaccessible to others.
+pub fn prepare_dashboard_state_dir(dir: &Path, require_private: bool) -> std::io::Result<()> {
+    match std::fs::symlink_metadata(dir) {
+        Ok(meta) => {
+            if !meta.file_type().is_dir() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::AlreadyExists,
+                    format!("'{}' exists but is not a directory", dir.display()),
+                ));
+            }
+            if require_private {
+                validate_private_dir(dir, &meta)?;
+            }
+            Ok(())
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            if let Some(parent) = dir.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+
+            let mut builder = std::fs::DirBuilder::new();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::DirBuilderExt;
+                builder.mode(0o700);
+            }
+            builder.create(dir)?;
+
+            if require_private {
+                let meta = std::fs::symlink_metadata(dir)?;
+                validate_private_dir(dir, &meta)?;
+            }
+            Ok(())
+        }
+        Err(err) => Err(err),
+    }
+}
+
+#[cfg(unix)]
+fn validate_private_dir(dir: &Path, meta: &std::fs::Metadata) -> std::io::Result<()> {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+    if meta.uid() != unsafe { libc::geteuid() } || meta.permissions().mode() & 0o077 != 0 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            format!(
+                "dashboard state directory '{}' must be owned by the current user with mode 0700",
+                dir.display()
+            ),
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn validate_private_dir(_dir: &Path, _meta: &std::fs::Metadata) -> std::io::Result<()> {
+    Ok(())
+}
+
+/// Atomically write a discovery file, refusing to follow pre-existing symlinks.
+pub fn write_dashboard_state_file(path: &Path, contents: &str) -> std::io::Result<()> {
+    use std::io::Write;
+
+    let dir = path.parent().unwrap_or_else(|| Path::new("."));
+    let nonce = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or_default();
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("daft-dashboard");
+    let tmp_path = dir.join(format!(".{file_name}.{}.{nonce}.tmp", std::process::id()));
+
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+
+    let write_result = (|| {
+        let mut file = options.open(&tmp_path)?;
+        file.write_all(contents.as_bytes())
+    })();
+
+    match write_result.and_then(|()| std::fs::rename(&tmp_path, path)) {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            let _ = std::fs::remove_file(&tmp_path);
+            Err(err)
+        }
+    }
+}
+
+/// Serializes writers and cleanup of a dashboard instance's discovery files.
+pub struct DashboardStateLock {
+    #[cfg(unix)]
+    _file: std::fs::File,
+}
+
+impl DashboardStateLock {
+    pub fn acquire(dir: &Path) -> std::io::Result<Self> {
+        let path = dir.join(DASHBOARD_LOCK_FILE_NAME);
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::{fs::OpenOptionsExt, io::AsRawFd};
+
+            let file = std::fs::OpenOptions::new()
+                .create(true)
+                .read(true)
+                .write(true)
+                .truncate(false)
+                .mode(0o600)
+                .open(path)?;
+
+            if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) } != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+
+            Ok(Self { _file: file })
+        }
+
+        #[cfg(not(unix))]
+        {
+            let _ = path;
+            Ok(Self {})
+        }
+    }
+}
+
+#[cfg(unix)]
+impl Drop for DashboardStateLock {
+    fn drop(&mut self) {
+        use std::os::unix::io::AsRawFd;
+        unsafe {
+            libc::flock(self._file.as_raw_fd(), libc::LOCK_UN);
+        }
+    }
+}
+
+/// Resolve the dashboard a client should publish to.
+///
+/// `DAFT_DASHBOARD_URL` takes precedence. Otherwise, fall back to the URL file
+/// written by `daft dashboard start`, so that a locally started dashboard is
+/// discovered automatically without any environment configuration.
+pub fn resolve_dashboard_url() -> Option<String> {
+    if let Ok(url) = std::env::var(ENV_DAFT_DASHBOARD_URL) {
+        let url = url.trim();
+        if !url.is_empty() {
+            return Some(url.to_string());
+        }
+    }
+    read_published_dashboard_url()
+}
+
+fn read_published_dashboard_url() -> Option<String> {
+    read_published_dashboard_url_from(std::slice::from_ref(&dashboard_state_dir()))
+}
+
+fn read_published_dashboard_url_from(dirs: &[PathBuf]) -> Option<String> {
+    for dir in dirs {
+        let path = dir.join(DASHBOARD_URL_FILE_NAME);
+        let Some(contents) = read_trusted_state_file(&path) else {
+            continue;
+        };
+        let url = contents.trim();
+        if url.starts_with("http://") || url.starts_with("https://") {
+            return Some(url.to_string());
+        }
+    }
+    None
+}
+
+fn read_trusted_state_file(path: &Path) -> Option<String> {
+    let meta = std::fs::symlink_metadata(path).ok()?;
+    if !meta.file_type().is_file() {
+        return None;
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+        // Reject files owned or writable by other users; a shared temporary
+        // directory would otherwise allow redirecting dashboard reports.
+        if meta.uid() != unsafe { libc::geteuid() } || meta.permissions().mode() & 0o022 != 0 {
+            return None;
+        }
+    }
+
+    std::fs::read_to_string(path).ok()
+}
+
 /// Get the number of seconds from the current time since the UNIX epoch
 fn secs_from_epoch() -> f64 {
     SystemTime::now()
@@ -109,7 +347,7 @@ impl std::fmt::Debug for DashboardSubscriber {
 
 impl DashboardSubscriber {
     pub fn try_new() -> DaftResult<Option<Self>> {
-        let Ok(url) = std::env::var("DAFT_DASHBOARD_URL") else {
+        let Some(url) = resolve_dashboard_url() else {
             return Ok(None);
         };
 
@@ -660,5 +898,103 @@ impl Subscriber for DashboardSubscriber {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_dir() -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("daft-dashboard-url-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn reads_published_dashboard_url() {
+        let dir = temp_dir();
+        let url_path = dir.join(DASHBOARD_URL_FILE_NAME);
+        write_dashboard_state_file(&url_path, "http://127.0.0.1:3238\n").unwrap();
+
+        assert_eq!(
+            read_published_dashboard_url_from(std::slice::from_ref(&dir)),
+            Some("http://127.0.0.1:3238".to_string())
+        );
+
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn ignores_missing_or_invalid_dashboard_url_files() {
+        let empty_dir = temp_dir();
+        assert_eq!(
+            read_published_dashboard_url_from(std::slice::from_ref(&empty_dir)),
+            None
+        );
+
+        let invalid_dir = temp_dir();
+        write_dashboard_state_file(&invalid_dir.join(DASHBOARD_URL_FILE_NAME), "not-a-url")
+            .unwrap();
+        assert_eq!(
+            read_published_dashboard_url_from(&[empty_dir.clone(), invalid_dir.clone()]),
+            None
+        );
+
+        std::fs::remove_dir_all(empty_dir).unwrap();
+        std::fs::remove_dir_all(invalid_dir).unwrap();
+    }
+
+    #[test]
+    fn prefers_first_directory_with_a_valid_url() {
+        let missing_dir = temp_dir();
+        let valid_dir = temp_dir();
+        write_dashboard_state_file(
+            &valid_dir.join(DASHBOARD_URL_FILE_NAME),
+            "http://localhost:9999",
+        )
+        .unwrap();
+
+        assert_eq!(
+            read_published_dashboard_url_from(&[missing_dir.clone(), valid_dir.clone()]),
+            Some("http://localhost:9999".to_string())
+        );
+
+        std::fs::remove_dir_all(missing_dir).unwrap();
+        std::fs::remove_dir_all(valid_dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ignores_world_writable_url_files() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = temp_dir();
+        let url_path = dir.join(DASHBOARD_URL_FILE_NAME);
+        std::fs::write(&url_path, "http://127.0.0.1:3238").unwrap();
+        std::fs::set_permissions(&url_path, std::fs::Permissions::from_mode(0o666)).unwrap();
+
+        assert_eq!(
+            read_published_dashboard_url_from(std::slice::from_ref(&dir)),
+            None
+        );
+
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ignores_symlinked_url_files() {
+        let dir = temp_dir();
+        let target = dir.join("target");
+        std::fs::write(&target, "http://127.0.0.1:3238").unwrap();
+        std::os::unix::fs::symlink(&target, dir.join(DASHBOARD_URL_FILE_NAME)).unwrap();
+
+        assert_eq!(
+            read_published_dashboard_url_from(std::slice::from_ref(&dir)),
+            None
+        );
+
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

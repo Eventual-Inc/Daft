@@ -1,5 +1,6 @@
 [dependencies]
 clap = {version = "4.5", features = ["derive"], optional = true}
+daft-context = {path = "../daft-context", default-features = false, optional = true}
 daft-dashboard = {path = "../daft-dashboard", optional = true}
 console = {workspace = true}
 pyo3 = {workspace = true, optional = true}
@@ -10,7 +11,7 @@ tracing-subscriber = {workspace = true}
 libc = {workspace = true}
 
 [features]
-python = ["dep:pyo3", "dep:clap", "dep:tokio", "dep:daft-dashboard"]
+python = ["dep:pyo3", "dep:clap", "dep:tokio", "dep:daft-context", "dep:daft-dashboard"]
 
 [lints]
 workspace = true
