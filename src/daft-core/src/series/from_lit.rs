@@ -339,44 +339,59 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
             }
         }
         DataType::Tensor(_) => {
+            let mut any_valid = false;
             let (data, shapes) = values
                 .map(|(i, v)| {
-                    unwrap_inner!(v, i, Literal::Tensor { data, shape } => (data, shape)).unzip()
+                    let row =
+                        unwrap_inner!(v, i, Literal::Tensor { data, shape } => (data, shape));
+                    any_valid |= row.is_some();
+                    row.unzip()
                 })
                 .collect::<(Vec<_>, Vec<_>)>();
 
-            let data_array = ListArray::from_series("data", data)?.into_series();
-            let shape_array = ListArray::from_vec("shape", shapes).into_series();
+            if !any_valid {
+                Series::full_null("literal", &downcasted, len)
+            } else {
+                let data_array = ListArray::from_series("data", data)?.into_series();
+                let shape_array = ListArray::from_vec("shape", shapes).into_series();
 
-            let nulls = data_array.nulls().cloned();
-            let physical =
-                StructArray::new(field.to_physical(), vec![data_array, shape_array], nulls);
+                let nulls = data_array.nulls().cloned();
+                let physical =
+                    StructArray::new(field.to_physical(), vec![data_array, shape_array], nulls);
 
-            TensorArray::new(field, physical).into_series()
+                TensorArray::new(field, physical).into_series()
+            }
         }
         DataType::SparseTensor(..) => {
+            let mut any_valid = false;
             let (values, indices, shapes) = values
-
                 .map(|(i, v)| {
                     match unwrap_inner!(v, i, Literal::SparseTensor { values, indices, shape, .. } => (values, indices, shape)) {
-                        Some((v, i, s)) => (Some(v), Some(i), Some(s)),
+                        Some((v, i, s)) => {
+                            any_valid = true;
+                            (Some(v), Some(i), Some(s))
+                        }
                         None => (None, None, None)
                     }
                 })
                 .collect::<(Vec<_>, Vec<_>, Vec<_>)>();
 
-            let values_array = ListArray::from_series("values", values)?.into_series();
-            let indices_array = ListArray::from_series("indices", indices)?.into_series();
-            let shape_array = ListArray::from_vec("shape", shapes).into_series();
+            if !any_valid {
+                Series::full_null("literal", &downcasted, len)
+            } else {
+                let values_array = ListArray::from_series("values", values)?.into_series();
+                let indices_array = ListArray::from_series("indices", indices)?.into_series();
+                let shape_array = ListArray::from_vec("shape", shapes).into_series();
 
-            let nulls = values_array.nulls().cloned();
-            let physical = StructArray::new(
-                field.to_physical(),
-                vec![values_array, indices_array, shape_array],
-                nulls,
-            );
+                let nulls = values_array.nulls().cloned();
+                let physical = StructArray::new(
+                    field.to_physical(),
+                    vec![values_array, indices_array, shape_array],
+                    nulls,
+                );
 
-            SparseTensorArray::new(field, physical).into_series()
+                SparseTensorArray::new(field, physical).into_series()
+            }
         }
         DataType::Embedding(ref inner_dtype, ref size) => {
             let (nulls, data): (Vec<_>, Vec<_>) = values
@@ -401,10 +416,12 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
             key: ref key_dtype,
             value: ref value_dtype,
         } => {
+            let mut any_valid = false;
             let data = values
                 .map(|(i, v)| {
-                    unwrap_inner!(v, i, Literal::Map { keys, values } => (keys, values))
-                        .map(|(k, v)| {
+                    let row = unwrap_inner!(v, i, Literal::Map { keys, values } => (keys, values));
+                    any_valid |= row.is_some();
+                    row.map(|(k, v)| {
                             Ok(StructArray::new(
                                 field
                                     .to_physical()
@@ -422,9 +439,13 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 })
                 .collect::<DaftResult<Vec<_>>>()?;
 
-            let physical = ListArray::from_series("literal", data)?;
+            if !any_valid {
+                Series::full_null("literal", &downcasted, len)
+            } else {
+                let physical = ListArray::from_series("literal", data)?;
 
-            MapArray::new(field, physical).into_series()
+                MapArray::new(field, physical).into_series()
+            }
         }
         DataType::Image(image_mode) => {
             let data =
@@ -503,6 +524,7 @@ impl From<Literal> for Series {
 
 #[cfg(test)]
 mod test {
+    use common_error::DaftResult;
     use common_image::Image;
     use image::{GrayImage, RgbaImage};
     use indexmap::indexmap;
@@ -634,5 +656,48 @@ mod test {
         let values = vec![Literal::UInt64(1), Literal::Utf8("test".to_string())];
         let actual = Series::from_literals(values);
         assert!(actual.is_err());
+    }
+
+    #[rstest]
+    #[case::tensor(DataType::Tensor(Box::new(DataType::Float32)))]
+    #[case::sparse_tensor(DataType::SparseTensor(Box::new(DataType::Float32), false))]
+    #[case::map(DataType::Map { key: Box::new(DataType::Utf8), value: Box::new(DataType::Int64) })]
+    fn test_all_null_nested_literals(#[case] dtype: DataType) {
+        let values = vec![Literal::Null, Literal::Null];
+        let series = super::series_from_literals_iter(
+            values.into_iter().map(DaftResult::Ok),
+            Some(dtype.clone()),
+        )
+        .unwrap();
+
+        assert_eq!(series.data_type(), &dtype);
+        assert_eq!(series.len(), 2);
+        assert_eq!(
+            series.to_literals().collect::<Vec<_>>(),
+            vec![Literal::Null, Literal::Null]
+        );
+    }
+
+    #[rstest]
+    #[case::tensor(DataType::Tensor(Box::new(DataType::Float32)))]
+    #[case::sparse_tensor(DataType::SparseTensor(Box::new(DataType::Float32), false))]
+    #[case::map(DataType::Map { key: Box::new(DataType::Utf8), value: Box::new(DataType::Int64) })]
+    fn test_all_failed_nested_literals_surface_row_errors(#[case] dtype: DataType) {
+        let values: Vec<DaftResult<Literal>> = vec![
+            Err(common_error::DaftError::ValueError(
+                "udf failed on row 0".to_string(),
+            )),
+            Err(common_error::DaftError::ValueError(
+                "udf failed on row 1".to_string(),
+            )),
+        ];
+        let err = super::series_from_literals_iter(values.into_iter(), Some(dtype))
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("Error processing some rows"), "{err}");
+        assert!(err.contains("udf failed on row 0"), "{err}");
+        assert!(err.contains("udf failed on row 1"), "{err}");
+        assert!(!err.contains("concat"), "{err}");
     }
 }
