@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import warnings
 
 import pytest
@@ -142,3 +143,170 @@ def test_repr_does_not_leak_url():
     assert secret not in r
     assert "trino.example.com" not in r
     assert "alice" not in r
+
+
+@pytest.fixture()
+def adbc_sqlite():
+    return pytest.importorskip("adbc_driver_sqlite")
+
+
+def test_sql_read_adbc_basic(sqlite_db, adbc_sqlite):
+    df = daft.read_sql("SELECT * FROM test_table", sqlite_db, backend="adbc")
+    result = df.sort("id").to_pydict()
+    assert result["id"] == list(range(100))
+    assert result["value"] == [float(i) for i in range(100)]
+    assert result["label"] == [f"row_{i}" for i in range(100)]
+
+
+def test_sql_read_adbc_schema(sqlite_db, adbc_sqlite):
+    df = daft.read_sql("SELECT * FROM test_table", sqlite_db, backend="adbc")
+    assert df.schema()["id"].dtype == DataType.int64()
+    assert df.schema()["value"].dtype == DataType.float64()
+    assert df.schema()["label"].dtype == DataType.string()
+
+
+def test_sql_read_adbc_pushdowns(sqlite_db, adbc_sqlite):
+    df = daft.read_sql("SELECT * FROM test_table", sqlite_db, backend="adbc")
+    result = df.where(daft.col("id") >= 90).select("id", "label").sort("id").limit(5).to_pydict()
+    assert result == {"id": [90, 91, 92, 93, 94], "label": [f"row_{i}" for i in range(90, 95)]}
+
+
+@pytest.mark.parametrize("num_partitions", [2, 3, 4])
+@pytest.mark.parametrize("partition_bound_strategy", ["min-max", "percentile"])
+def test_sql_read_adbc_partitioned(sqlite_db, adbc_sqlite, num_partitions, partition_bound_strategy):
+    df = daft.read_sql(
+        "SELECT * FROM test_table",
+        sqlite_db,
+        partition_col="id",
+        num_partitions=num_partitions,
+        partition_bound_strategy=partition_bound_strategy,
+        backend="adbc",
+    )
+    result = df.sort("id").to_pydict()
+    assert result["id"] == list(range(100))
+    assert result["label"] == [f"row_{i}" for i in range(100)]
+
+
+@pytest.mark.parametrize("num_partitions", [2, 3])
+def test_sql_read_adbc_partitioned_null_partition_col(sqlite_null_partition_db, adbc_sqlite, num_partitions):
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        df = daft.read_sql(
+            "SELECT * FROM null_table",
+            sqlite_null_partition_db,
+            partition_col="id",
+            num_partitions=num_partitions,
+            schema={"id": DataType.int64(), "value": DataType.float64(), "label": DataType.string()},
+            backend="adbc",
+        )
+        result = df.to_pydict()
+
+    assert len(result["value"]) == 50
+    assert any("Falling back to a single scan task" in str(warning.message) for warning in w)
+
+
+def test_sql_read_adbc_url_with_query_options(sqlite_db, adbc_sqlite):
+    df = daft.read_sql("SELECT * FROM test_table", f"{sqlite_db}?timeout=10", backend="adbc")
+    assert df.sort("id").to_pydict()["id"] == list(range(100))
+
+
+def test_sql_read_adbc_url_with_sqlite_uri_options(sqlite_db, adbc_sqlite):
+    df = daft.read_sql("SELECT * FROM test_table", f"{sqlite_db}?mode=ro", backend="adbc")
+    assert df.sort("id").to_pydict()["id"] == list(range(100))
+
+
+def test_sql_read_adbc_schema_hint(sqlite_db, adbc_sqlite):
+    df = daft.read_sql(
+        "SELECT * FROM test_table",
+        sqlite_db,
+        schema={"id": DataType.int32()},
+        backend="adbc",
+    )
+    assert df.schema()["id"].dtype == DataType.int32()
+    assert df.sort("id").to_pydict()["id"] == list(range(100))
+
+
+def test_sql_read_adbc_matches_default_backend(sqlite_db, adbc_sqlite):
+    query = "SELECT id, value * 2 AS doubled FROM test_table WHERE id < 10"
+    expected = daft.read_sql(query, sqlite_db, backend="sqlalchemy").sort("id").to_pydict()
+    actual = daft.read_sql(query, sqlite_db, backend="adbc").sort("id").to_pydict()
+    assert actual == expected
+
+
+@pytest.mark.parametrize("num_partitions", [2, 3])
+def test_sql_read_forced_connectorx_partitioned_does_not_use_sqlalchemy(sqlite_db, num_partitions, monkeypatch):
+    pytest.importorskip("connectorx")
+
+    def fail(*args, **kwargs):
+        raise AssertionError("backend='connectorx' should not run queries through SQLAlchemy")
+
+    monkeypatch.setattr(SQLConnection, "_execute_sql_query_with_sqlalchemy", fail)
+    df = daft.read_sql(
+        "SELECT * FROM test_table",
+        sqlite_db,
+        partition_col="id",
+        num_partitions=num_partitions,
+        backend="connectorx",
+    )
+    result = df.sort("id").to_pydict()
+    assert result["id"] == list(range(100))
+    assert result["label"] == [f"row_{i}" for i in range(100)]
+
+
+def test_sql_connection_invalid_backend(sqlite_db):
+    with pytest.raises(ValueError, match="Invalid SQL backend"):
+        SQLConnection.from_url(sqlite_db, backend="odbc")
+
+
+@pytest.mark.parametrize("backend", ["adbc", "connectorx"])
+def test_sql_read_url_only_backend_rejects_connection_factory(sqlite_db, backend):
+    def create_conn():
+        return create_engine(sqlite_db).connect()
+
+    with pytest.raises(ValueError, match="requires a database URL"):
+        daft.read_sql("SELECT * FROM test_table", create_conn, backend=backend)
+
+
+def test_sql_read_adbc_unsupported_dialect():
+    with pytest.raises(ValueError, match="does not support the 'trino' dialect"):
+        daft.read_sql("SELECT 1", "trino://user@localhost:8080/memory/default", backend="adbc")
+
+
+def test_sql_read_connectorx_unsupported_dialect():
+    with pytest.raises(ValueError, match="backend='connectorx' does not support"):
+        daft.read_sql("SELECT 1", "trino://user@localhost:8080/memory/default", backend="connectorx")
+
+
+def test_sql_read_adbc_missing_driver(sqlite_db, monkeypatch):
+    # A None entry in sys.modules makes the import raise ImportError, as if the driver were not installed.
+    monkeypatch.setitem(sys.modules, "adbc_driver_sqlite.dbapi", None)
+    with pytest.raises(ImportError, match="pip install adbc-driver-sqlite"):
+        SQLConnection.from_url(sqlite_db, backend="adbc").execute_sql_query("SELECT 1")
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("sqlite:///relative.db", "relative.db"),
+        ("sqlite:////abs/path.db", "/abs/path.db"),
+        ("sqlite://", ":memory:"),
+        ("sqlite:///relative.db?timeout=10", "relative.db"),
+        ("sqlite:////abs/path.db?check_same_thread=false&timeout=5", "/abs/path.db"),
+        ("sqlite:///relative.db?mode=ro", "file:relative.db?mode=ro"),
+        ("sqlite:///file:relative.db?mode=ro&uri=true", "file:relative.db?mode=ro"),
+        ("postgresql://u:p@host:5432/db", "postgresql://u:p@host:5432/db"),
+        ("postgres://u:p@host:5432/db", "postgresql://u:p@host:5432/db"),
+        ("postgresql+psycopg2://u:p@host:5432/db?sslmode=require", "postgresql://u:p@host:5432/db?sslmode=require"),
+    ],
+)
+def test_adbc_uri(url, expected):
+    assert SQLConnection.from_url(url, backend="adbc")._adbc_uri() == expected
+
+
+def test_sql_read_adbc_error_does_not_leak_credentials():
+    pytest.importorskip("adbc_driver_postgresql")
+    secret = "super-secret-pw"
+    conn = SQLConnection.from_url(f"postgresql://alice:{secret}@127.0.0.1:1/nope", backend="adbc")
+    with pytest.raises(RuntimeError) as exc_info:
+        conn.execute_sql_query("SELECT 1")
+    assert secret not in str(exc_info.value)

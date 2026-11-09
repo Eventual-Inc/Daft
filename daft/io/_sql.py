@@ -15,7 +15,7 @@ from daft.dependencies import np, pa
 from daft.io.sink import DataSink, WriteResult
 from daft.logical.builder import LogicalPlanBuilder
 from daft.recordbatch.micropartition import MicroPartition
-from daft.sql.sql_connection import SQLConnection
+from daft.sql.sql_connection import SQLBackend, SQLConnection
 from daft.sql.sql_scan import PartitionBoundStrategy, SQLScanOperator
 
 if TYPE_CHECKING:
@@ -33,6 +33,7 @@ def read_sql(
     infer_schema: bool = True,
     infer_schema_length: int = 10,
     schema: dict[str, DataType] | None = None,
+    backend: SQLBackend | None = None,
 ) -> DataFrame:
     """Create a DataFrame from the results of a SQL query.
 
@@ -49,6 +50,9 @@ def read_sql(
         infer_schema_length (int): The number of rows to scan when inferring the schema, defaults to 10. If infer_schema is False, this parameter is ignored. Note that if Daft is able to use ConnectorX to infer the schema, this parameter is ignored as ConnectorX is an Arrow backed driver.
         schema (Optional[Dict[str, DataType]]): A mapping of column names to datatypes. If infer_schema is False, this schema is used as the definitive schema for the data, otherwise it is used as a schema hint that is applied after the schema is inferred (overriding the types of inferred columns, and appending any new columns not found during inference).
             This can be useful if the types can be more precisely determined than what the inference can provide (e.g., if a column can be declared as a fixed-sized list rather than a list).
+        backend (Optional[str]): Library used to run the queries: "adbc", "connectorx" or "sqlalchemy". Defaults to None, which picks ConnectorX when it supports the database URL and SQLAlchemy otherwise.
+            "adbc" uses [ADBC](https://arrow.apache.org/adbc/) for PostgreSQL and SQLite URLs and needs the driver package for the database
+            (`adbc-driver-postgresql` or `adbc-driver-sqlite`, both included in `daft[sql-adbc]`).
 
     Returns:
         DataFrame: Dataframe containing the results of the query
@@ -65,8 +69,9 @@ def read_sql(
             - `percentile`: Daft calculates the specified column's percentiles via a `PERCENTILE_DISC` function to determine partitions (e.g., for `num_partitions=3`, it uses the 33rd and 66th percentiles).
 
         3. **Execution**:
-            Daft executes SQL queries using using [ConnectorX](https://sfu-db.github.io/connector-x/intro.html) or [SQLAlchemy](https://docs.sqlalchemy.org/en/20/orm/quickstart.html#create-an-engine),
+            Daft executes SQL queries using [ConnectorX](https://sfu-db.github.io/connector-x/intro.html) or [SQLAlchemy](https://docs.sqlalchemy.org/en/20/orm/quickstart.html#create-an-engine),
             preferring ConnectorX unless a SQLAlchemy connection factory is specified or the database dialect is unsupported by ConnectorX.
+            Pass `backend="adbc"` to use [ADBC](https://arrow.apache.org/adbc/) instead, which returns Arrow data directly from PostgreSQL and SQLite.
 
         4. **Pushdowns**:
             Daft pushes down operations such as filtering, projections, and limits into the SQL query when possible.
@@ -92,6 +97,10 @@ def read_sql(
         >>> df = daft.read_sql(
         ...     "SELECT * FROM my_table", "sqlite:///my_database.db", partition_col="id", num_partitions=3
         ... )
+
+        Read data with ADBC:
+
+        >>> df = daft.read_sql("SELECT * FROM my_table", "sqlite:///my_database.db", backend="adbc")
     """
     if num_partitions is not None and partition_col is None:
         raise ValueError("Failed to execute sql: partition_col must be specified when num_partitions is specified")
@@ -104,7 +113,11 @@ def read_sql(
     io_config = context.get_context().daft_planning_config.default_io_config
     storage_config = StorageConfig(True, io_config)
 
-    sql_conn = SQLConnection.from_url(conn) if isinstance(conn, str) else SQLConnection.from_connection_factory(conn)
+    sql_conn = (
+        SQLConnection.from_url(conn, backend=backend)
+        if isinstance(conn, str)
+        else SQLConnection.from_connection_factory(conn, backend=backend)
+    )
     sql_operator = SQLScanOperator(
         sql,
         sql_conn,
