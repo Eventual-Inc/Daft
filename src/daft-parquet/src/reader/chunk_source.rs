@@ -282,7 +282,13 @@ impl ChunkSourceBuilder {
         rg_indices: &[usize],
     ) -> ChunkSource {
         match self {
-            Self::Local(cs) => ChunkSource::Local(cs),
+            Self::Local(mut cs) => {
+                // Leaf indices are resolved against `parquet_metadata`, which may have been
+                // rewritten (e.g. Iceberg field-id mapping drops renamed/removed columns).
+                // Read bytes with that same metadata instead of the footer as read from disk.
+                cs.metadata = parquet_metadata;
+                ChunkSource::Local(cs)
+            }
             Self::Remote(prep) => ChunkSource::Remote(RemoteChunkSource::from_ranged(
                 prep.path,
                 parquet_metadata,

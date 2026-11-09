@@ -24,7 +24,7 @@ from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import IdentityTransform
-from pyiceberg.types import LongType, NestedField, StringType
+from pyiceberg.types import IntegerType, LongType, NestedField, StringType
 
 
 @pytest.fixture
@@ -407,3 +407,35 @@ def test_read_add_files_table_split_by_row_groups(local_catalog, tmp_path):
         enable_scan_task_split_and_merge=True, scan_tasks_min_size_bytes=0, scan_tasks_max_size_bytes=1
     ):
         assert daft.read_iceberg(table).sort("a").to_pydict() == {"a": list(range(1_000))}
+
+
+def test_read_iceberg_after_dropping_and_readding_non_last_column(local_catalog):
+    """Old data files must stay readable after a non-last column is dropped and re-added (#7630)."""
+    table = local_catalog.create_table(
+        "default.drop_readd",
+        Schema(
+            NestedField(1, "id", LongType(), required=False),
+            NestedField(2, "z", IntegerType(), required=False),
+            NestedField(3, "w", StringType(), required=False),
+        ),
+    )
+    table.append(
+        pa.table(
+            {
+                "id": pa.array(range(100), pa.int64()),
+                "z": pa.array(range(100), pa.int32()),
+                "w": [f"w{i}" for i in range(100)],
+            }
+        )
+    )
+    table.refresh()
+
+    with table.update_schema() as update:
+        update.delete_column("z")
+    with table.update_schema() as update:
+        update.add_column("z", IntegerType())
+
+    result = daft.read_iceberg(table).sort("id").to_pydict()
+    assert result["id"] == list(range(100))
+    assert result["w"] == [f"w{i}" for i in range(100)]
+    assert result["z"] == [None] * 100
