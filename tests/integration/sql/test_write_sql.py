@@ -444,6 +444,35 @@ def test_write_sql_adbc_types_roundtrip(postgres_adbc_db):
     read_df = daft.read_sql(f"SELECT * FROM {table_name}", postgres_adbc_db, backend="adbc").sort("id")
     assert read_df.to_pydict() == data
 
+    # Check the stored values and column types independently of Daft's read path.
+    engine = sqlalchemy.create_engine(postgres_adbc_db)
+    try:
+        with engine.connect() as conn:
+            rows = conn.execute(sqlalchemy.text(f"SELECT * FROM {table_name} ORDER BY id")).fetchall()
+            column_types = dict(
+                conn.execute(
+                    sqlalchemy.text(
+                        "SELECT column_name, data_type FROM information_schema.columns WHERE table_name = :table_name"
+                    ),
+                    {"table_name": table_name},
+                ).fetchall()
+            )
+    finally:
+        engine.dispose()
+
+    stored = {column: [row[i] for row in rows] for i, column in enumerate(data)}
+    stored["payload"] = [bytes(value) if value is not None else None for value in stored["payload"]]
+    assert stored == data
+    assert column_types == {
+        "id": "bigint",
+        "name": "text",
+        "score": "double precision",
+        "flag": "boolean",
+        "day": "date",
+        "created_at": "timestamp without time zone",
+        "payload": "bytea",
+    }
+
 
 @pytest.mark.integration()
 def test_write_sql_adbc_matches_sqlalchemy(postgres_adbc_db):

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import datetime
+import sqlite3
+from contextlib import closing
 
 import pytest
 import sqlalchemy
@@ -16,14 +18,28 @@ def sqlite_url(tmp_path):
     return f"sqlite:///{tmp_path / 'write_test.db'}"
 
 
+def _query(url, sql):
+    """Run ``sql`` with Python's sqlite3 module, independently of Daft's read path."""
+    with closing(sqlite3.connect(url.removeprefix("sqlite:///"))) as conn:
+        cursor = conn.execute(sql)
+        columns = [description[0] for description in cursor.description]
+        rows = cursor.fetchall()
+    return {column: [row[i] for row in rows] for i, column in enumerate(columns)}
+
+
 def _read(table_name, url):
-    return daft.read_sql(f"SELECT * FROM {table_name}", url).sort("id").to_pydict()
+    return _query(url, f"SELECT * FROM {table_name} ORDER BY id")
 
 
 def test_write_sql_adbc_basic(sqlite_url):
     data = {"id": [1, 2, 3], "name": ["A", "B", "C"], "score": [1.5, 2.5, None]}
     daft.from_pydict(data).write_sql("users", sqlite_url, backend="adbc")
     assert _read("users", sqlite_url) == data
+    assert _query(sqlite_url, "SELECT typeof(id), typeof(name), typeof(score) FROM users ORDER BY id") == {
+        "typeof(id)": ["integer"] * 3,
+        "typeof(name)": ["text"] * 3,
+        "typeof(score)": ["real", "real", "null"],
+    }
 
 
 def test_write_sql_adbc_roundtrip_with_adbc_read(sqlite_url):
@@ -86,9 +102,7 @@ def test_write_sql_adbc_empty(sqlite_url):
     metrics = df.write_sql("users", sqlite_url, backend="adbc").to_pydict()
 
     assert metrics["total_written_rows"] == [0]
-    read_df = daft.read_sql("SELECT * FROM users", sqlite_url).collect()
-    assert len(read_df) == 0
-    assert read_df.column_names == ["id", "name"]
+    assert _read("users", sqlite_url) == {"id": [], "name": []}
 
 
 def test_write_sql_adbc_returns_metrics(sqlite_url):
@@ -110,6 +124,12 @@ def test_write_sql_adbc_temporal_types(sqlite_url):
     schema = {"id": daft.DataType.int64(), "day": daft.DataType.date(), "created_at": daft.DataType.timestamp("us")}
     df = daft.read_sql("SELECT * FROM events", sqlite_url, schema=schema)
     assert df.sort("id").to_pydict() == data
+    # SQLite has no date or timestamp storage class, so check what was stored independently too.
+    stored = _query(sqlite_url, "SELECT day, typeof(day), created_at, typeof(created_at) FROM events ORDER BY id")
+    assert stored["typeof(day)"] == ["text", "text"]
+    assert stored["typeof(created_at)"] == ["text", "text"]
+    assert [datetime.date.fromisoformat(v) for v in stored["day"]] == data["day"]
+    assert [datetime.datetime.fromisoformat(v) for v in stored["created_at"]] == data["created_at"]
 
 
 @pytest.mark.parametrize(
