@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import warnings
 
 import pytest
@@ -204,6 +205,16 @@ def test_sql_read_adbc_partitioned_null_partition_col(sqlite_null_partition_db, 
     assert any("Falling back to a single scan task" in str(warning.message) for warning in w)
 
 
+def test_sql_read_adbc_url_with_query_options(sqlite_db, adbc_sqlite):
+    df = daft.read_sql("SELECT * FROM test_table", f"{sqlite_db}?timeout=10", backend="adbc")
+    assert df.sort("id").to_pydict()["id"] == list(range(100))
+
+
+def test_sql_read_adbc_url_with_sqlite_uri_options(sqlite_db, adbc_sqlite):
+    df = daft.read_sql("SELECT * FROM test_table", f"{sqlite_db}?mode=ro", backend="adbc")
+    assert df.sort("id").to_pydict()["id"] == list(range(100))
+
+
 def test_sql_read_adbc_schema_hint(sqlite_db, adbc_sqlite):
     df = daft.read_sql(
         "SELECT * FROM test_table",
@@ -220,6 +231,26 @@ def test_sql_read_adbc_matches_default_backend(sqlite_db, adbc_sqlite):
     expected = daft.read_sql(query, sqlite_db, backend="sqlalchemy").sort("id").to_pydict()
     actual = daft.read_sql(query, sqlite_db, backend="adbc").sort("id").to_pydict()
     assert actual == expected
+
+
+@pytest.mark.parametrize("num_partitions", [2, 3])
+def test_sql_read_forced_connectorx_partitioned_does_not_use_sqlalchemy(sqlite_db, num_partitions, monkeypatch):
+    pytest.importorskip("connectorx")
+
+    def fail(*args, **kwargs):
+        raise AssertionError("backend='connectorx' should not run queries through SQLAlchemy")
+
+    monkeypatch.setattr(SQLConnection, "_execute_sql_query_with_sqlalchemy", fail)
+    df = daft.read_sql(
+        "SELECT * FROM test_table",
+        sqlite_db,
+        partition_col="id",
+        num_partitions=num_partitions,
+        backend="connectorx",
+    )
+    result = df.sort("id").to_pydict()
+    assert result["id"] == list(range(100))
+    assert result["label"] == [f"row_{i}" for i in range(100)]
 
 
 def test_sql_connection_invalid_backend(sqlite_db):
@@ -247,8 +278,6 @@ def test_sql_read_connectorx_unsupported_dialect():
 
 
 def test_sql_read_adbc_missing_driver(sqlite_db, monkeypatch):
-    import sys
-
     # A None entry in sys.modules makes the import raise ImportError, as if the driver were not installed.
     monkeypatch.setitem(sys.modules, "adbc_driver_sqlite.dbapi", None)
     with pytest.raises(ImportError, match="pip install adbc-driver-sqlite"):
@@ -261,6 +290,10 @@ def test_sql_read_adbc_missing_driver(sqlite_db, monkeypatch):
         ("sqlite:///relative.db", "relative.db"),
         ("sqlite:////abs/path.db", "/abs/path.db"),
         ("sqlite://", ":memory:"),
+        ("sqlite:///relative.db?timeout=10", "relative.db"),
+        ("sqlite:////abs/path.db?check_same_thread=false&timeout=5", "/abs/path.db"),
+        ("sqlite:///relative.db?mode=ro", "file:relative.db?mode=ro"),
+        ("sqlite:///file:relative.db?mode=ro&uri=true", "file:relative.db?mode=ro"),
         ("postgresql://u:p@host:5432/db", "postgresql://u:p@host:5432/db"),
         ("postgres://u:p@host:5432/db", "postgresql://u:p@host:5432/db"),
         ("postgresql+psycopg2://u:p@host:5432/db?sslmode=require", "postgresql://u:p@host:5432/db?sslmode=require"),

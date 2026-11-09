@@ -172,8 +172,11 @@ class SQLConnection:
     def execute_sql_query(self, sql: str, schema: pa.Schema | None = None) -> pa.Table:
         if self.backend == "adbc":
             return self._execute_sql_query_with_adbc(sql, schema=schema)
-        if schema is None and self._should_use_connectorx():
-            return self._execute_sql_query_with_connectorx(sql)
+        # Queries with a schema (e.g. the MIN/MAX partition bounds query) go through SQLAlchemy by
+        # default, but an explicit backend="connectorx" is honoured and the result cast to the schema.
+        if (schema is None or self.backend == "connectorx") and self._should_use_connectorx():
+            table = self._execute_sql_query_with_connectorx(sql)
+            return table if schema is None else _cast_to_schema(table, schema)
         else:
             return self._execute_sql_query_with_sqlalchemy(sql, schema=schema)
 
@@ -199,9 +202,7 @@ class SQLConnection:
         assert isinstance(self.conn, str)
         rest = self.conn.split("://", 1)[1] if "://" in self.conn else ""
         if self.dialect == "sqlite":
-            # sqlite:///relative.db -> relative.db, sqlite:////abs/path.db -> /abs/path.db, sqlite:// -> in-memory
-            path = rest[1:] if rest.startswith("/") else rest
-            return path or ":memory:"
+            return _sqlite_adbc_uri(rest)
         # Drop any SQLAlchemy driver suffix (e.g. postgresql+psycopg2://) since libpq only accepts postgresql://
         return f"postgresql://{rest}"
 
@@ -218,13 +219,7 @@ class SQLConnection:
             # back the connection URL.
             raise RuntimeError(f"Failed to execute sql: {sql}, error: {e}") from e
 
-        if schema is not None:
-            # Cast positionally into the requested schema, e.g. so that a MIN/MAX over an
-            # all-NULL column comes back with the partition column's type.
-            table = pa.Table.from_arrays(
-                [table.column(i).cast(field.type) for i, field in enumerate(schema)], schema=schema
-            )
-        return table
+        return table if schema is None else _cast_to_schema(table, schema)
 
     def _execute_sql_query_with_connectorx(self, sql: str) -> pa.Table:
         import connectorx as cx
@@ -262,3 +257,35 @@ class SQLConnection:
             # See note in `_execute_sql_query_with_connectorx`: don't echo
             # back the connection URL.
             raise RuntimeError(f"Failed to execute sql: {sql}, error: {e}") from e
+
+
+def _cast_to_schema(table: pa.Table, schema: pa.Schema) -> pa.Table:
+    """Cast a query result positionally into ``schema``.
+
+    For example, a MIN/MAX over an all-NULL column comes back as a null-typed column and needs
+    the partition column's type.
+    """
+    return pa.Table.from_arrays([table.column(i).cast(field.type) for i, field in enumerate(schema)], schema=schema)
+
+
+# Query parameters that SQLAlchemy's SQLite dialect consumes itself rather than passing to SQLite.
+_SQLALCHEMY_SQLITE_PARAMS = frozenset(
+    {"timeout", "check_same_thread", "isolation_level", "detect_types", "cached_statements", "factory", "uri"}
+)
+
+
+def _sqlite_adbc_uri(rest: str) -> str:
+    """Translate the part of a ``sqlite://`` URL after the scheme into an ADBC SQLite database name.
+
+    ``/relative.db`` -> ``relative.db``, ``//abs/path.db`` -> ``/abs/path.db`` and an empty path
+    -> ``:memory:``. SQLAlchemy driver options such as ``timeout`` are dropped. Any other query
+    parameters (e.g. ``mode=ro``) are SQLite URI options, so they are kept on a ``file:`` URI.
+    """
+    path, _, query = rest.partition("?")
+    path = path[1:] if path.startswith("/") else path
+    params = [p for p in query.split("&") if p and p.split("=", 1)[0] not in _SQLALCHEMY_SQLITE_PARAMS]
+    if not params:
+        return path or ":memory:"
+    if not path.startswith("file:"):
+        path = f"file:{path}"
+    return f"{path}?{'&'.join(params)}"
