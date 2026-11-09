@@ -176,6 +176,58 @@ def test_visitor_keeps_every_file_when_unprovable(expr):
     assert _kept(expr) == [0, 1, 2, 3]
 
 
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pytest.param(col("a") == daft.lit(16777217).cast(daft.DataType.float32()), id="cast_literal"),
+        pytest.param(col("a") != daft.lit(16777217).cast(daft.DataType.float32()), id="cast_literal_ne"),
+        pytest.param(col("a") == daft.lit(257).try_cast(daft.DataType.uint8()), id="try_cast_literal"),
+        pytest.param(col("a").between(daft.lit(16777217).cast(daft.DataType.float32()), 20), id="cast_between"),
+    ],
+)
+def test_visitor_keeps_files_for_cast_literals(expr):
+    assert _kept(expr) == [0, 1, 2, 3]
+
+
+@pytest.mark.parametrize("op", ["lt", "le", "gt", "ge", "eq", "ne"])
+def test_visitor_keeps_files_for_lossy_float_literal(op):
+    dtype = pa.float32()
+    stats_type = pa.struct([("f", dtype)])
+    stats = pa.table(
+        {
+            "min": pa.array([{"f": 1.0}], stats_type),
+            "max": pa.array([{"f": 1.0}], stats_type),
+        }
+    )
+    literal = 1.00000001
+    predicates = {
+        "lt": col("f") < literal,
+        "le": col("f") <= literal,
+        "gt": col("f") > literal,
+        "ge": col("f") >= literal,
+        "eq": col("f") == literal,
+        "ne": col("f") != literal,
+    }
+    predicate = convert_filter_to_stats_predicate(predicates[op], {"f": ("f", dtype)})
+    assert predicate is not None
+    assert stats.filter(predicate).num_rows == 1
+
+
+def test_visitor_cast_literal_in_compound_predicates():
+    unsafe = col("a") == daft.lit(16777217).cast(daft.DataType.float32())
+    assert _kept(unsafe & (col("a") == 5)) == [0, 2, 3]
+    assert _kept(unsafe | (col("a") == 5)) == [0, 1, 2, 3]
+
+
+def test_visitor_exact_float32_literal_still_prunes():
+    dtype = pa.float32()
+    stats_type = pa.struct([("f", dtype)])
+    stats = pa.table({"min": pa.array([{"f": 1.0}], stats_type), "max": pa.array([{"f": 1.0}], stats_type)})
+    predicate = convert_filter_to_stats_predicate(col("f") < 1.0, {"f": ("f", dtype)})
+    assert predicate is not None
+    assert stats.filter(predicate).num_rows == 0
+
+
 def test_visitor_opaque_branch_of_and_still_prunes_other_branch():
     assert _kept((col("a") == 100) & (col("a").cast(daft.DataType.string()) == "5")) == [2, 3]
 
@@ -225,6 +277,23 @@ def ranged_table(tmp_path):
 def test_stats_skip_files(ranged_table, predicate, num_tasks):
     assert len(_tasks(ranged_table, filters=predicate)) == num_tasks
     _assert_filter_matches_full_scan(ranged_table, predicate)
+
+
+def test_stats_skip_keeps_matching_cast_literal(tmp_path):
+    path = tmp_path / "cast_literal"
+    _write_files(path, [pa.table({"a": pa.array([16777216], pa.int64())})])
+    predicate = col("a") == daft.lit(16777217).cast(daft.DataType.float32())
+    assert len(_tasks(path, filters=predicate)) == 1
+    _assert_filter_matches_full_scan(path, predicate)
+    assert daft.read_deltalake(str(path)).where(predicate).to_pydict() == {"a": [16777216]}
+
+
+def test_stats_skip_keeps_matching_float32_boundary(tmp_path):
+    path = tmp_path / "float32_boundary"
+    _write_files(path, [pa.table({"f": pa.array([1.0], pa.float32())})])
+    predicate = col("f") < 1.00000001
+    _assert_filter_matches_full_scan(path, predicate)
+    assert daft.read_deltalake(str(path)).where(predicate).to_pydict() == {"f": [1.0]}
 
 
 def test_stats_skip_shows_in_plan(ranged_table):
