@@ -10,11 +10,11 @@ use opentelemetry_otlp::{
 };
 use opentelemetry_sdk::Resource;
 
-/// Environment variable for the general OTLP endpoint.
-pub const ENV_OLD_OTLP_ENDPOINT: &str = "DAFT_DEV_OTEL_EXPORTER_OTLP_ENDPOINT";
 /// Environment variable for metrics export interval in milliseconds.
 /// Mimics the official env since it's not exported out
 pub const ENV_METRICS_EXPORT_INTERVAL_MS: &str = "OTEL_METRIC_EXPORT_INTERVAL";
+/// Deprecated and removed Daft-specific environment variable
+const ENV_OLD_OTLP_ENDPOINT: &str = "DAFT_DEV_OTEL_EXPORTER_OTLP_ENDPOINT";
 
 fn parse_protocol(s: &str) -> Protocol {
     match s {
@@ -34,7 +34,7 @@ fn parse_protocol(s: &str) -> Protocol {
 /// OpenTelemetry/OTLP configuration loaded from environment variables.
 #[derive(Debug, Clone)]
 pub struct Config {
-    /// General OTLP endpoint (e.g. from `DAFT_DEV_OTEL_EXPORTER_OTLP_ENDPOINT`).
+    /// General OTLP endpoint (e.g. from `OTEL_EXPORTER_OTLP_ENDPOINT`).
     pub otlp_endpoint: Option<String>,
     /// Communication protocol for the OTLP endpoint.
     pub otlp_protocol: Protocol,
@@ -51,23 +51,17 @@ pub struct Config {
 impl Config {
     /// Load config from environment variables.
     pub fn from_env() -> Self {
-        let otlp_endpoint = if let Ok(endpoint) = std::env::var(OTEL_EXPORTER_OTLP_ENDPOINT) {
-            Some(endpoint)
-        } else if let Ok(endpoint) = std::env::var(ENV_OLD_OTLP_ENDPOINT) {
+        if let Ok(endpoint) = std::env::var(ENV_OLD_OTLP_ENDPOINT) {
             log::warn!(
-                "Using deprecated environment variable {} for OTLP endpoint. Use {} instead.",
-                ENV_OLD_OTLP_ENDPOINT,
-                OTEL_EXPORTER_OTLP_ENDPOINT
+                "Detected environment variable `{ENV_OLD_OTLP_ENDPOINT}={}***` in the process. This variable was deprecated and removed in v0.8.0. Use `OTEL_EXPORTER_OTLP_ENDPOINT` instead. This warning will be removed in v0.9.0.",
+                endpoint.chars().take(4).collect::<String>(),
             );
-            Some(endpoint)
-        } else {
-            None
-        };
+        }
 
         // Note that even though the OTEL SDK can detect these automatically, we still need them
         // to enable the OTLP exporters
         Self {
-            otlp_endpoint,
+            otlp_endpoint: std::env::var(OTEL_EXPORTER_OTLP_ENDPOINT).ok(),
             otlp_protocol: parse_protocol(
                 std::env::var(OTEL_EXPORTER_OTLP_PROTOCOL)
                     .ok()
