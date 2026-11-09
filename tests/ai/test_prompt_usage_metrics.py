@@ -6,6 +6,10 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
+import daft
+from daft.functions import prompt
+from tests.conftest import get_tests_daft_runner_name
+
 pytest.importorskip("google.genai")
 pytest.importorskip("openai")
 from google.genai.types import GenerateContentResponseUsageMetadata
@@ -14,7 +18,9 @@ from openai.types.responses import ResponseUsage
 from openai.types.responses.response_usage import OutputTokensDetails
 
 from daft.ai.google.protocols.prompter import GooglePrompter
+from daft.ai.google.provider import GoogleProvider
 from daft.ai.openai.protocols.prompter import OpenAIPrompter
+from daft.ai.openai.provider import OpenAIProvider
 from daft.udf.metrics import _metrics_context
 
 
@@ -90,11 +96,11 @@ def test_provider_to_native_counter(provider, thinking):
 
 @pytest.mark.parametrize("provider", ["google", "chat", "responses"])
 @pytest.mark.parametrize("thinking", [None, 0, 5])
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() == "ray",
+    reason="SDK constructor mocks are process-local and do not propagate to Ray workers",
+)
 def test_dataframe_prompt_records_thinking_tokens(provider, thinking):
-    import daft
-    from daft.ai.google.provider import GoogleProvider
-    from daft.ai.openai.provider import OpenAIProvider
-    from daft.functions import prompt
 
     client = Mock()
     if provider == "google":
