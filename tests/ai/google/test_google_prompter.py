@@ -248,7 +248,8 @@ def test_google_prompter_raises_retry_after(status: int):
     run_async(_test())
 
 
-def test_google_prompter_records_usage_metrics():
+@pytest.mark.parametrize("thinking_tokens", [None, 0, 5])
+def test_google_prompter_records_usage_metrics(thinking_tokens):
     """Ensure token/request counters fire."""
 
     async def _test():
@@ -261,8 +262,8 @@ def test_google_prompter_records_usage_metrics():
             usage = Mock()
             usage.prompt_token_count = 10
             usage.candidates_token_count = 20
-            usage.thoughts_token_count = 5
-            usage.total_token_count = 35
+            usage.thoughts_token_count = thinking_tokens
+            usage.total_token_count = 30 + (thinking_tokens or 0)
             mock_response.usage_metadata = usage
 
             mock_client_instance.aio.models.generate_content = AsyncMock(return_value=mock_response)
@@ -282,7 +283,7 @@ def test_google_prompter_records_usage_metrics():
 
             # Check counters
             calls = mock_counter.call_args_list
-            assert len(calls) == 4  # input, output, total, requests
+            assert len(calls) == 4 + (thinking_tokens is not None)
 
             # Check for specific calls
             has_input = False
@@ -300,13 +301,19 @@ def test_google_prompter_records_usage_metrics():
                     assert val == 10
                     has_input = True
                 elif name == "output tokens":
-                    assert val == 25  # candidates (20) + thoughts (5)
+                    assert val == 20 + (thinking_tokens or 0)
                     has_output = True
                 elif name == "total tokens":
-                    assert val == 35
+                    assert val == 30 + (thinking_tokens or 0)
                     has_total = True
 
             assert has_input and has_output and has_total
+            thinking_calls = [c for c in calls if c[0][0] == "thinking tokens"]
+            if thinking_tokens is None:
+                assert thinking_calls == []
+            else:
+                assert len(thinking_calls) == 1
+                assert thinking_calls[0][0][1] == thinking_tokens
 
     run_async(_test())
 

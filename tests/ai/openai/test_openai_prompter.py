@@ -214,12 +214,22 @@ def test_openai_prompter_plain_text_response():
     run_async(_test())
 
 
-def test_openai_prompter_records_usage_metrics_responses_api():
+@pytest.mark.parametrize("thinking_tokens", [None, 0, 2])
+def test_openai_prompter_records_usage_metrics_responses_api(thinking_tokens):
     """Ensure token/request counters fire for Responses API usage."""
 
     async def _test():
         mock_client = AsyncMock()
-        usage = ResponseUsage.model_construct(input_tokens=3, output_tokens=5, total_tokens=8)
+        usage = ResponseUsage.model_construct(
+            input_tokens=3,
+            output_tokens=5,
+            total_tokens=8,
+            output_tokens_details=(None if thinking_tokens is None else {"reasoning_tokens": thinking_tokens}),
+        )
+        if thinking_tokens is not None:
+            from openai.types.responses.response_usage import OutputTokensDetails
+
+            usage.output_tokens_details = OutputTokensDetails(reasoning_tokens=thinking_tokens)
         mock_response = Mock()
         mock_response.output_text = "Metrics test response."
         mock_response.usage = usage
@@ -241,18 +251,28 @@ def test_openai_prompter_records_usage_metrics_responses_api():
             call(INPUT_TOKENS_COUNTER_NAME, 3, attributes=expected_attrs),
             call(OUTPUT_TOKENS_COUNTER_NAME, 5, attributes=expected_attrs),
             call(TOTAL_TOKENS_COUNTER_NAME, 8, attributes=expected_attrs),
+            *(
+                [call("thinking tokens", thinking_tokens, attributes=expected_attrs)]
+                if thinking_tokens is not None
+                else []
+            ),
             call(REQUESTS_COUNTER_NAME, attributes=expected_attrs),
         ]
 
     run_async(_test())
 
 
-def test_openai_prompter_records_usage_metrics_chat_completions():
+@pytest.mark.parametrize("thinking_tokens", [None, 0, 2])
+def test_openai_prompter_records_usage_metrics_chat_completions(thinking_tokens):
     """Ensure token/request counters fire for Chat Completions usage."""
 
     async def _test():
         mock_client = AsyncMock()
         usage = CompletionUsage.model_construct(prompt_tokens=4, completion_tokens=6, total_tokens=10)
+        if thinking_tokens is not None:
+            from openai.types.completion_usage import CompletionTokensDetails
+
+            usage.completion_tokens_details = CompletionTokensDetails(reasoning_tokens=thinking_tokens)
         mock_choice = Mock()
         mock_message = Mock()
         mock_message.content = "Chat metrics response."
@@ -278,6 +298,11 @@ def test_openai_prompter_records_usage_metrics_chat_completions():
             call(INPUT_TOKENS_COUNTER_NAME, 4, attributes=expected_attrs),
             call(OUTPUT_TOKENS_COUNTER_NAME, 6, attributes=expected_attrs),
             call(TOTAL_TOKENS_COUNTER_NAME, 10, attributes=expected_attrs),
+            *(
+                [call("thinking tokens", thinking_tokens, attributes=expected_attrs)]
+                if thinking_tokens is not None
+                else []
+            ),
             call(REQUESTS_COUNTER_NAME, attributes=expected_attrs),
         ]
 

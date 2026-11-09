@@ -306,6 +306,7 @@ class OpenAIPrompter(Prompter):
         input_tokens: int,
         output_tokens: int,
         total_tokens: int,
+        thinking_tokens: int | None = None,
     ) -> None:
         record_token_metrics(
             protocol="prompt",
@@ -314,6 +315,7 @@ class OpenAIPrompter(Prompter):
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             total_tokens=total_tokens,
+            thinking_tokens=thinking_tokens,
         )
 
     async def _prompt_with_chat_completions(self, messages_list: list[dict[str, Any]]) -> Any:
@@ -345,6 +347,11 @@ class OpenAIPrompter(Prompter):
                 input_tokens=usage.prompt_tokens,
                 output_tokens=usage.completion_tokens,
                 total_tokens=usage.total_tokens,
+                thinking_tokens=(
+                    usage.completion_tokens_details.reasoning_tokens
+                    if usage.completion_tokens_details is not None
+                    else None
+                ),
             )
         return result
 
@@ -372,6 +379,11 @@ class OpenAIPrompter(Prompter):
                 input_tokens=usage.input_tokens,
                 output_tokens=usage.output_tokens,
                 total_tokens=usage.total_tokens,
+                thinking_tokens=(
+                    usage.output_tokens_details.reasoning_tokens
+                    if getattr(usage, "output_tokens_details", None) is not None
+                    else None
+                ),
             )
         return result
 
