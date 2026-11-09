@@ -101,7 +101,6 @@ def test_provider_to_native_counter(provider, thinking):
     reason="SDK constructor mocks are process-local and do not propagate to Ray workers",
 )
 def test_dataframe_prompt_records_thinking_tokens(provider, thinking):
-
     client = Mock()
     if provider == "google":
         usage = GenerateContentResponseUsageMetadata(
