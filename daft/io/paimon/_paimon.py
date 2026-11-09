@@ -13,6 +13,22 @@ if TYPE_CHECKING:
     from pypaimon.table.table import Table as PaimonTable
 
 
+def _get_catalog_options(table: "PaimonTable") -> dict[str, str]:
+    """Return the table's catalog options as a plain dict.
+
+    pypaimon >= 1.4.1 exposes ``file_io.properties`` as an ``Options`` object (whose ``get`` takes a
+    ``ConfigOption``) instead of a dict, so normalize it through ``to_map()`` when present.
+    """
+    file_io = getattr(table, "file_io", None)
+    properties = getattr(file_io, "properties", None) if file_io is not None else None
+    if properties is None:
+        return {}
+    to_map = getattr(properties, "to_map", None)
+    if callable(to_map):
+        properties = to_map()
+    return properties or {}
+
+
 def _convert_paimon_catalog_options_to_io_config(catalog_options: dict[str, str]) -> IOConfig | None:
     """Convert pypaimon catalog options to Daft IOConfig.
 
@@ -137,8 +153,7 @@ def read_paimon(
 
     from daft.io.paimon.paimon_scan import PaimonDataSource
 
-    file_io = getattr(table, "file_io", None)
-    catalog_options = (getattr(file_io, "properties", None) or {}) if file_io is not None else {}
+    catalog_options = _get_catalog_options(table)
 
     # Infer IO config: user-provided > catalog options > default
     io_config = io_config or _convert_paimon_catalog_options_to_io_config(catalog_options)
