@@ -640,3 +640,12 @@ df = df.with_column(
     )
 )
 ```
+
+## Thinking token metrics
+
+OpenAI-compatible and Google prompt providers report a `thinking tokens` counter
+when the provider supplies reasoning usage. This counter is a subset of
+`output tokens`, not an additional charge or extra tokens to add to `total tokens`.
+The existing input, output, and total counters are unchanged. A provider-reported
+zero is recorded; absent reasoning usage does not produce a counter and should
+not be interpreted as zero.

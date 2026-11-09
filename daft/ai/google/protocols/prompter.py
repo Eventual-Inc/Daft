@@ -178,6 +178,7 @@ class GooglePrompter(Prompter):
         input_tokens: int,
         output_tokens: int,
         total_tokens: int,
+        thinking_tokens: int | None = None,
     ) -> None:
         record_token_metrics(
             protocol="prompt",
@@ -186,6 +187,7 @@ class GooglePrompter(Prompter):
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             total_tokens=total_tokens,
+            thinking_tokens=thinking_tokens,
         )
 
     async def prompt(self, messages: tuple[Any, ...]) -> Any:
@@ -215,6 +217,7 @@ class GooglePrompter(Prompter):
                 output_tokens=(response.usage_metadata.candidates_token_count or 0)
                 + (response.usage_metadata.thoughts_token_count or 0),
                 total_tokens=response.usage_metadata.total_token_count or 0,
+                thinking_tokens=response.usage_metadata.thoughts_token_count,
             )
 
         # Parse result
