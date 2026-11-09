@@ -530,6 +530,7 @@ class FileInfos:
 class HTTPConfig:
     """I/O configuration for accessing HTTP systems."""
 
+    user_agent: str
     bearer_token: str | None
     retry_initial_backoff_ms: int
     connect_timeout_ms: int
@@ -543,6 +544,7 @@ class HTTPConfig:
         connect_timeout_ms: int | None = None,
         read_timeout_ms: int | None = None,
         num_tries: int | None = None,
+        user_agent: str | None = None,
     ): ...
 
 class S3Config:
