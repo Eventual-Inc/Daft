@@ -914,6 +914,7 @@ class DataFrame:
         write_mode: Literal["append", "overwrite", "fail"] = "append",
         column_types: dict[str, Any] | None = None,
         non_primitive_handling: Literal["bytes", "str", "error"] | None = None,
+        backend: Literal["adbc", "sqlalchemy"] | None = None,
     ) -> "DataFrame":
         """Write the DataFrame to a SQL database and return write metrics.
 
@@ -934,6 +935,8 @@ class DataFrame:
                 the table.
             non_primitive_handling (Literal["bytes", "str", "error"] | None):
                 Controls how non-primitive columns are normalized before reaching SQL; default ``None`` behaves like ``"str"``. Accepted values are ``"str"``, ``"bytes"``, and ``"error"``.
+            backend (Literal["adbc", "sqlalchemy"] | None): Library used to write. Defaults to None, which uses SQLAlchemy.
+                ``"adbc"`` bulk-loads Arrow data with [ADBC](https://arrow.apache.org/adbc/) instead of going through pandas. It needs a PostgreSQL or SQLite database URL and the ``daft[sql-adbc]`` extra, and does not accept ``column_types``.
 
         Returns:
             DataFrame: A single-row DataFrame containing aggregate write metrics with
@@ -979,6 +982,10 @@ class DataFrame:
 
             >>> df = daft.from_pydict({"id": [1], "name": ["Alice"]})
             >>> metrics_df = df.write_sql("users", "sqlite:///my_database.db", column_types=None)
+
+            Write to a SQL table with ADBC:
+
+            >>> metrics_df = df.write_sql("users_adbc", "sqlite:///my_database.db", backend="adbc")
         """
         from daft.io._sql import SQLDataSink
 
@@ -989,6 +996,7 @@ class DataFrame:
             column_types=column_types,
             df_schema=self.schema(),
             non_primitive_handling=non_primitive_handling,
+            backend=backend,
         )
 
         if non_primitive_handling is None:

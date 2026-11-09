@@ -78,6 +78,39 @@ You can also directly provide a SQL alchemy connection via a **connection factor
     df = daft.read_sql("SELECT * FROM books", create_connection)
     ```
 
+## Reading with ADBC
+
+[ADBC (Arrow Database Connectivity)](https://arrow.apache.org/adbc/) drivers return query results as Arrow data, so Daft can read them without converting rows in Python. Pass `backend="adbc"` to use ADBC for PostgreSQL and SQLite URLs:
+
+```bash
+pip install -U "daft[sql-adbc]"
+```
+
+=== "🐍 Python"
+
+    ```python
+    import daft
+
+    df = daft.read_sql("SELECT * FROM books", "sqlite:///example.db", backend="adbc")
+    ```
+
+Partitioning, pushdowns and schema hints work the same way as with the other backends. ADBC needs a database URL, so it can't be combined with a connection factory. You can also force a specific backend with `backend="connectorx"` or `backend="sqlalchemy"`; by default Daft picks ConnectorX when it supports the database and SQLAlchemy otherwise.
+
+## Writing to a SQL table
+
+[`df.write_sql()`][daft.DataFrame.write_sql] writes a DataFrame to a table and returns the number of rows and bytes written. By default it writes through SQLAlchemy. Pass `backend="adbc"` to bulk-load the Arrow data with ADBC instead, which skips the conversion to pandas:
+
+=== "🐍 Python"
+
+    ```python
+    import daft
+
+    df = daft.from_pydict({"title": ["Dune"], "author": ["Frank Herbert"], "year": [1965]})
+    df.write_sql("books", "sqlite:///example.db", backend="adbc")
+    ```
+
+`write_mode` (`"append"`, `"overwrite"` or `"fail"`) and `non_primitive_handling` behave the same with both backends. With ADBC, column types come from the DataFrame schema, so cast columns to the types you want instead of passing `column_types`. Like reads, ADBC writes need a PostgreSQL or SQLite database URL.
+
 ## Parallel + Distributed Reads
 
 For large datasets, Daft can parallelize SQL reads by using all local machine cores with its default multithreading runner, or all cores across multiple machines if using the [distributed Ray runner](../distributed/index.md).
@@ -155,5 +188,4 @@ You could modify the SQL query to add the filters and projections yourself, but 
 
 Here are the SQL features that are on our roadmap. Please let us know if you would like to see support for any of these features!
 
-1. Write support into SQL databases.
-2. Reads via [ADBC (Arrow Database Connectivity)](https://arrow.apache.org/docs/format/ADBC.html).
+1. ADBC support for more databases, such as Snowflake and Flight SQL.
