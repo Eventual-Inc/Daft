@@ -183,41 +183,36 @@ class GlueCatalog(Catalog):
     def _get_function(self, ident: Identifier) -> Function:
         raise NotFoundError(f"Function '{ident}' not found in catalog '{self.name}'")
 
-    def _get_table(self, identifier: Identifier) -> Table:
+    def _get_table_info(self, identifier: Identifier) -> GlueTableInfo:
         if len(identifier) != 2:
             raise ValueError(f"Expected identifier with form `<database_name>.<table_name>` but found {identifier}")
         database_name: str = str(identifier[0])
         name: str = str(identifier[1])
 
         try:
-            res = self._client.get_table(DatabaseName=database_name, Name=name)
-            tbl = res["Table"]
-            for impl in self._table_impls:
-                try:
-                    return impl.from_table_info(self, tbl)
-                except ValueError:
-                    pass
-            classification = tbl["Parameters"].get("classification", "unknown")
-            table_type = tbl["Parameters"].get("table_type", "unknown")
-            raise ValueError(
-                f"No supported table implementation for Table with classification='{classification}' and table_type='{table_type}'."
-            )
+            return self._client.get_table(DatabaseName=database_name, Name=name)["Table"]
         except self._client.exceptions.EntityNotFoundException:
             raise NotFoundError(f"Table {identifier} not found")
 
-    def _has_table(self, identifier: Identifier) -> bool:
-        if len(identifier) != 2:
-            raise ValueError(f"Expected identifier with form `<database_name>.<table_name>` but found {identifier}")
-        database_name: str = str(identifier[0])
-        name: str = str(identifier[1])
+    def _get_table(self, identifier: Identifier) -> Table:
+        tbl = self._get_table_info(identifier)
+        for impl in self._table_impls:
+            try:
+                return impl.from_table_info(self, tbl)
+            except ValueError:
+                pass
+        classification = tbl["Parameters"].get("classification", "unknown")
+        table_type = tbl["Parameters"].get("table_type", "unknown")
+        raise ValueError(
+            f"No supported table implementation for Table with classification='{classification}' and table_type='{table_type}'."
+        )
 
-        # Check existence directly rather than through _get_table, which converts
-        # EntityNotFoundException to NotFoundError and also fails for tables that
-        # exist but have no supported Daft table implementation.
+    def _has_table(self, identifier: Identifier) -> bool:
+        # Only check that the table exists, so tables Daft can't read yet still count.
         try:
-            self._client.get_table(DatabaseName=database_name, Name=name)
+            self._get_table_info(identifier)
             return True
-        except self._client.exceptions.EntityNotFoundException:
+        except NotFoundError:
             return False
 
     def _has_namespace(self, identifier: Identifier) -> bool:
