@@ -41,6 +41,7 @@ from daft.io.file_path import from_glob_path
 from daft.io.sink import DataSink
 from daft.io.source import DataSource, DataSourceTask
 from daft.io.av import read_video_frames
+from daft.io.extensions import IOExtension, IOFileInfo, IOFileType, IOListing, IOReadRange
 
 # Lance is lazy-loaded to keep `import daft` fast.
 if TYPE_CHECKING:
@@ -68,6 +69,11 @@ __all__ = [
     "HdfsConfig",
     "HuggingFaceConfig",
     "IOConfig",
+    "IOExtension",
+    "IOFileInfo",
+    "IOFileType",
+    "IOListing",
+    "IOReadRange",
     "S3Config",
     "S3Credentials",
     "TosConfig",

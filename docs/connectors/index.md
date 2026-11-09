@@ -13,6 +13,7 @@ Daft natively supports reading and writing data to major cloud object storage pr
 | [Google Cloud Storage](gcs.md) | `gs://`, `gcs://` | [`GCSConfig`][daft.io.GCSConfig] |
 | [Tencent Cloud COS](cos.md) | `cos://`, `cosn://` | [`CosConfig`][daft.io.CosConfig] |
 | [GooseFS](goosefs.md) | `goosefs://` | [`GooseFSConfig`][daft.io.GooseFSConfig] |
+| [Custom Python IO](python-io-extensions.md) | User-defined | [`IOExtension`][daft.io.IOExtension] |
 
 ## Table Formats
 
