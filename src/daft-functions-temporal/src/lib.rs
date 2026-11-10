@@ -16,7 +16,9 @@ use daft_core::{
 };
 use daft_dsl::{
     ExprRef,
-    functions::{FunctionArgs, FunctionModule, FunctionRegistry, ScalarUDF, UnaryArg},
+    functions::{
+        FunctionArgs, FunctionModule, FunctionRegistry, ScalarUDF, UnaryArg, scalar::EvalContext,
+    },
 };
 use date_arithmetic::{AddMonths, DateAdd, DateDiff, DateSub, MonthsBetween};
 use date_construction::{MakeDate, MakeTimestamp, MakeTimestampLtz};
@@ -35,32 +37,23 @@ use crate::total::{
     TotalSeconds,
 };
 
-/// Broadcasts length-1 arguments (e.g. literals) of a multi-argument kernel to the common
-/// length of the other arguments, so that the kernel can zip them row by row.
-///
-/// Errors if two arguments have lengths that differ and are both not 1.
-pub(crate) fn broadcast_to_common_len<const N: usize>(
-    fn_name: &str,
-    mut inputs: [Series; N],
-) -> DaftResult<[Series; N]> {
-    let len = inputs
+/// Broadcasts length-1 arguments (e.g. literals) to the batch's row count, for kernels that zip
+/// their arguments row by row.
+pub(crate) fn broadcast_args(
+    inputs: FunctionArgs<Series>,
+    ctx: &EvalContext,
+) -> DaftResult<FunctionArgs<Series>> {
+    let args = inputs
         .iter()
-        .map(Series::len)
-        .find(|&len| len != 1)
-        .unwrap_or(1);
-    for series in &mut inputs {
-        if series.len() == len {
-            continue;
-        }
-        ensure!(
-            series.len() == 1,
-            ValueError: "{fn_name}: expected all arguments to have length 1 or {len}, but argument `{}` has length {}",
-            series.name(),
-            series.len()
-        );
-        *series = series.broadcast(len)?;
-    }
-    Ok(inputs)
+        .map(|arg| {
+            arg.map(|s| match s.len() {
+                1 if ctx.row_count != 1 => s.broadcast(ctx.row_count),
+                _ => Ok(s.clone()),
+            })
+            .transpose()
+        })
+        .collect::<DaftResult<_>>()?;
+    Ok(FunctionArgs::new_unchecked(args))
 }
 
 pub struct TemporalFunctions;

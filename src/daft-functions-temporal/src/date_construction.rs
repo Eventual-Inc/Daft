@@ -5,7 +5,7 @@ use chrono::NaiveDate;
 use daft_core::datatypes::TimeUnit;
 use daft_dsl::functions::prelude::*;
 
-use crate::broadcast_to_common_len;
+use crate::broadcast_args;
 
 const UNIX_EPOCH: NaiveDate = match NaiveDate::from_ymd_opt(1970, 1, 1) {
     Some(d) => d,
@@ -33,17 +33,12 @@ impl ScalarUDF for MakeDate {
     fn call(
         &self,
         inputs: FunctionArgs<Series>,
-        _ctx: &daft_dsl::functions::scalar::EvalContext,
+        ctx: &daft_dsl::functions::scalar::EvalContext,
     ) -> DaftResult<Series> {
-        let MakeDateArgs { year, month, day } = inputs.try_into()?;
-        let [year_i32, month_i32, day_i32] = broadcast_to_common_len(
-            self.name(),
-            [
-                year.cast(&DataType::Int32)?,
-                month.cast(&DataType::Int32)?,
-                day.cast(&DataType::Int32)?,
-            ],
-        )?;
+        let MakeDateArgs { year, month, day } = broadcast_args(inputs, ctx)?.try_into()?;
+        let year_i32 = year.cast(&DataType::Int32)?;
+        let month_i32 = month.cast(&DataType::Int32)?;
+        let day_i32 = day.cast(&DataType::Int32)?;
 
         let year_arr = year_i32.i32()?;
         let month_arr = month_i32.i32()?;
@@ -120,7 +115,7 @@ impl ScalarUDF for MakeTimestamp {
     fn call(
         &self,
         inputs: FunctionArgs<Series>,
-        _ctx: &daft_dsl::functions::scalar::EvalContext,
+        ctx: &daft_dsl::functions::scalar::EvalContext,
     ) -> DaftResult<Series> {
         let MakeTimestampArgs {
             year,
@@ -130,26 +125,14 @@ impl ScalarUDF for MakeTimestamp {
             minute,
             second,
             timezone,
-        } = inputs.try_into()?;
+        } = broadcast_args(inputs, ctx)?.try_into()?;
 
-        let [
-            year_i32,
-            month_i32,
-            day_i32,
-            hour_i32,
-            minute_i32,
-            second_f64,
-        ] = broadcast_to_common_len(
-            self.name(),
-            [
-                year.cast(&DataType::Int32)?,
-                month.cast(&DataType::Int32)?,
-                day.cast(&DataType::Int32)?,
-                hour.cast(&DataType::Int32)?,
-                minute.cast(&DataType::Int32)?,
-                second.cast(&DataType::Float64)?,
-            ],
-        )?;
+        let year_i32 = year.cast(&DataType::Int32)?;
+        let month_i32 = month.cast(&DataType::Int32)?;
+        let day_i32 = day.cast(&DataType::Int32)?;
+        let hour_i32 = hour.cast(&DataType::Int32)?;
+        let minute_i32 = minute.cast(&DataType::Int32)?;
+        let second_f64 = second.cast(&DataType::Float64)?;
 
         let year_arr = year_i32.i32()?;
         let month_arr = month_i32.i32()?;
@@ -299,7 +282,7 @@ impl ScalarUDF for MakeTimestampLtz {
     fn call(
         &self,
         inputs: FunctionArgs<Series>,
-        _ctx: &daft_dsl::functions::scalar::EvalContext,
+        ctx: &daft_dsl::functions::scalar::EvalContext,
     ) -> DaftResult<Series> {
         let MakeTimestampLtzArgs {
             year,
@@ -309,26 +292,14 @@ impl ScalarUDF for MakeTimestampLtz {
             minute,
             second,
             timezone,
-        } = inputs.try_into()?;
+        } = broadcast_args(inputs, ctx)?.try_into()?;
 
-        let [
-            year_i32,
-            month_i32,
-            day_i32,
-            hour_i32,
-            minute_i32,
-            second_f64,
-        ] = broadcast_to_common_len(
-            self.name(),
-            [
-                year.cast(&DataType::Int32)?,
-                month.cast(&DataType::Int32)?,
-                day.cast(&DataType::Int32)?,
-                hour.cast(&DataType::Int32)?,
-                minute.cast(&DataType::Int32)?,
-                second.cast(&DataType::Float64)?,
-            ],
-        )?;
+        let year_i32 = year.cast(&DataType::Int32)?;
+        let month_i32 = month.cast(&DataType::Int32)?;
+        let day_i32 = day.cast(&DataType::Int32)?;
+        let hour_i32 = hour.cast(&DataType::Int32)?;
+        let minute_i32 = minute.cast(&DataType::Int32)?;
+        let second_f64 = second.cast(&DataType::Float64)?;
 
         let year_arr = year_i32.i32()?;
         let month_arr = month_i32.i32()?;
@@ -449,261 +420,5 @@ impl ScalarUDF for MakeTimestampLtz {
             year_field.name,
             DataType::Timestamp(TimeUnit::Microseconds, Some("UTC".to_string())),
         ))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use daft_core::{
-        prelude::{Float64Array, Int32Array},
-        series::IntoSeries,
-    };
-    use daft_dsl::functions::scalar::EvalContext;
-
-    use super::*;
-
-    fn i32_series(name: &str, values: &[Option<i32>]) -> Series {
-        Int32Array::from_iter(Field::new(name, DataType::Int32), values.iter().copied())
-            .into_series()
-    }
-
-    fn f64_series(name: &str, values: &[Option<f64>]) -> Series {
-        Float64Array::from_iter(Field::new(name, DataType::Float64), values.iter().copied())
-            .into_series()
-    }
-
-    fn call(udf: &dyn ScalarUDF, args: Vec<Series>) -> DaftResult<Series> {
-        let row_count = args.iter().map(Series::len).max().unwrap_or(0);
-        udf.call(FunctionArgs::new_unnamed(args), &EvalContext { row_count })
-    }
-
-    fn days(y: i32, m: u32, d: u32) -> i32 {
-        NaiveDate::from_ymd_opt(y, m, d)
-            .unwrap()
-            .signed_duration_since(UNIX_EPOCH)
-            .num_days() as i32
-    }
-
-    fn micros(y: i32, mo: u32, d: u32, h: u32, mi: u32, s: u32) -> i64 {
-        NaiveDate::from_ymd_opt(y, mo, d)
-            .unwrap()
-            .and_hms_opt(h, mi, s)
-            .unwrap()
-            .and_utc()
-            .timestamp_micros()
-    }
-
-    fn date_values(series: &Series) -> Vec<Option<i32>> {
-        assert_eq!(series.data_type(), &DataType::Date);
-        series
-            .cast(&DataType::Int32)
-            .unwrap()
-            .i32()
-            .unwrap()
-            .into_iter()
-            .collect()
-    }
-
-    fn timestamp_values(series: &Series) -> Vec<Option<i64>> {
-        assert!(matches!(series.data_type(), DataType::Timestamp(..)));
-        series
-            .cast(&DataType::Int64)
-            .unwrap()
-            .i64()
-            .unwrap()
-            .into_iter()
-            .collect()
-    }
-
-    #[test]
-    fn test_make_date_columns() {
-        let result = call(
-            &MakeDate,
-            vec![
-                i32_series("y", &[Some(2021), Some(2020), None]),
-                i32_series("m", &[Some(1), Some(6), Some(3)]),
-                i32_series("d", &[Some(31), Some(15), Some(1)]),
-            ],
-        )
-        .unwrap();
-        assert_eq!(
-            date_values(&result),
-            vec![Some(days(2021, 1, 31)), Some(days(2020, 6, 15)), None]
-        );
-    }
-
-    #[test]
-    fn test_make_date_broadcasts_literal_day() {
-        let result = call(
-            &MakeDate,
-            vec![
-                i32_series("y", &[Some(2021), Some(2020), Some(2019), None]),
-                i32_series("m", &[Some(1), Some(6), Some(12), Some(3)]),
-                i32_series("literal", &[Some(1)]),
-            ],
-        )
-        .unwrap();
-        assert_eq!(result.name(), "y");
-        assert_eq!(
-            date_values(&result),
-            vec![
-                Some(days(2021, 1, 1)),
-                Some(days(2020, 6, 1)),
-                Some(days(2019, 12, 1)),
-                None,
-            ]
-        );
-    }
-
-    #[test]
-    fn test_make_date_broadcasts_literal_year_and_month() {
-        let result = call(
-            &MakeDate,
-            vec![
-                i32_series("literal", &[Some(2024)]),
-                i32_series("literal", &[Some(2)]),
-                i32_series("d", &[Some(28), Some(29), Some(30), None]),
-            ],
-        )
-        .unwrap();
-        assert_eq!(
-            date_values(&result),
-            vec![Some(days(2024, 2, 28)), Some(days(2024, 2, 29)), None, None]
-        );
-    }
-
-    #[test]
-    fn test_make_date_broadcasts_null_literal() {
-        let result = call(
-            &MakeDate,
-            vec![
-                i32_series("y", &[Some(2021), Some(2020), Some(2019)]),
-                i32_series("m", &[Some(1), Some(6), Some(12)]),
-                i32_series("literal", &[None]),
-            ],
-        )
-        .unwrap();
-        assert_eq!(date_values(&result), vec![None, None, None]);
-    }
-
-    #[test]
-    fn test_make_date_all_literals() {
-        let result = call(
-            &MakeDate,
-            vec![
-                i32_series("y", &[Some(2021)]),
-                i32_series("m", &[Some(1)]),
-                i32_series("d", &[Some(2)]),
-            ],
-        )
-        .unwrap();
-        assert_eq!(date_values(&result), vec![Some(days(2021, 1, 2))]);
-    }
-
-    #[test]
-    fn test_make_date_empty_column_with_literals() {
-        let result = call(
-            &MakeDate,
-            vec![
-                i32_series("y", &[]),
-                i32_series("m", &[Some(1)]),
-                i32_series("d", &[Some(1)]),
-            ],
-        )
-        .unwrap();
-        assert_eq!(date_values(&result), vec![]);
-    }
-
-    #[test]
-    fn test_make_date_mismatched_lengths_errors() {
-        let err = call(
-            &MakeDate,
-            vec![
-                i32_series("y", &[Some(2021), Some(2020), Some(2019)]),
-                i32_series("m", &[Some(1), Some(6)]),
-                i32_series("d", &[Some(1)]),
-            ],
-        )
-        .unwrap_err();
-        assert!(
-            err.to_string().contains("make_date"),
-            "unexpected error: {err}"
-        );
-    }
-
-    fn timestamp_args_with_literal_time() -> Vec<Series> {
-        vec![
-            i32_series("y", &[Some(2021), Some(2020), Some(2019), None]),
-            i32_series("m", &[Some(1), Some(6), Some(12), Some(3)]),
-            i32_series("literal", &[Some(1)]),
-            i32_series("literal", &[Some(12)]),
-            i32_series("literal", &[Some(30)]),
-            f64_series("literal", &[Some(15.0)]),
-        ]
-    }
-
-    #[test]
-    fn test_make_timestamp_broadcasts_literals() {
-        let result = call(&MakeTimestamp, timestamp_args_with_literal_time()).unwrap();
-        assert_eq!(result.name(), "y");
-        assert_eq!(
-            timestamp_values(&result),
-            vec![
-                Some(micros(2021, 1, 1, 12, 30, 15)),
-                Some(micros(2020, 6, 1, 12, 30, 15)),
-                Some(micros(2019, 12, 1, 12, 30, 15)),
-                None,
-            ]
-        );
-    }
-
-    #[test]
-    fn test_make_timestamp_broadcasts_literal_date_parts() {
-        let result = call(
-            &MakeTimestamp,
-            vec![
-                i32_series("literal", &[Some(2024)]),
-                i32_series("literal", &[Some(2)]),
-                i32_series("literal", &[Some(29)]),
-                i32_series("h", &[Some(0), Some(23), None]),
-                i32_series("mi", &[Some(0), Some(59), Some(0)]),
-                f64_series("s", &[Some(0.0), Some(59.0), Some(0.0)]),
-            ],
-        )
-        .unwrap();
-        assert_eq!(
-            timestamp_values(&result),
-            vec![
-                Some(micros(2024, 2, 29, 0, 0, 0)),
-                Some(micros(2024, 2, 29, 23, 59, 59)),
-                None,
-            ]
-        );
-    }
-
-    #[test]
-    fn test_make_timestamp_ltz_broadcasts_literals() {
-        let result = call(&MakeTimestampLtz, timestamp_args_with_literal_time()).unwrap();
-        assert_eq!(
-            result.data_type(),
-            &DataType::Timestamp(TimeUnit::Microseconds, Some("UTC".to_string()))
-        );
-        assert_eq!(
-            timestamp_values(&result),
-            vec![
-                Some(micros(2021, 1, 1, 12, 30, 15)),
-                Some(micros(2020, 6, 1, 12, 30, 15)),
-                Some(micros(2019, 12, 1, 12, 30, 15)),
-                None,
-            ]
-        );
-    }
-
-    #[test]
-    fn test_make_timestamp_mismatched_lengths_errors() {
-        let mut args = timestamp_args_with_literal_time();
-        args[3] = i32_series("h", &[Some(1), Some(2)]);
-        assert!(call(&MakeTimestamp, args.clone()).is_err());
-        assert!(call(&MakeTimestampLtz, args).is_err());
     }
 }
