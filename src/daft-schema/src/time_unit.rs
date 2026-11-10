@@ -1,7 +1,10 @@
 use std::{fmt::Display, str::FromStr};
 
 use arrow_schema::TimeUnit as ArrowTimeUnit;
-use chrono::{LocalResult, TimeZone};
+use chrono::{
+    LocalResult, TimeZone,
+    format::{Fixed, Item, Numeric, strftime::StrftimeItems},
+};
 use common_error::DaftError;
 use serde::{Deserialize, Serialize};
 
@@ -81,15 +84,74 @@ pub fn infer_timeunit_from_format_string(format: &str) -> TimeUnit {
     }
 }
 
+/// Returns `(has_time, has_offset)` for a strftime format string. Tokenizing rather than substring
+/// matching keeps escaped literals (`%%z`) and padding modifiers (`%_H`) classified correctly.
+fn format_time_and_offset_flags(format: &str) -> (bool, bool) {
+    let mut has_time = false;
+    let mut has_offset = false;
+    for item in StrftimeItems::new(format) {
+        match item {
+            Item::Numeric(
+                Numeric::Hour
+                | Numeric::Hour12
+                | Numeric::Minute
+                | Numeric::Second
+                | Numeric::Nanosecond
+                | Numeric::Timestamp,
+                _,
+            ) => has_time = true,
+            Item::Fixed(
+                Fixed::LowerAmPm
+                | Fixed::UpperAmPm
+                | Fixed::Nanosecond
+                | Fixed::Nanosecond3
+                | Fixed::Nanosecond6
+                | Fixed::Nanosecond9,
+            ) => has_time = true,
+            // Full datetime directives carry both a time and an offset.
+            Item::Fixed(Fixed::RFC2822 | Fixed::RFC3339) => {
+                has_time = true;
+                has_offset = true;
+            }
+            Item::Fixed(
+                Fixed::TimezoneName
+                | Fixed::TimezoneOffset
+                | Fixed::TimezoneOffsetColon
+                | Fixed::TimezoneOffsetDoubleColon
+                | Fixed::TimezoneOffsetTripleColon
+                | Fixed::TimezoneOffsetColonZ
+                | Fixed::TimezoneOffsetZ,
+            ) => has_offset = true,
+            Item::Fixed(Fixed::Internal(ref inner)) => {
+                // `InternalFixed` is opaque, so compare against a tokenized `%#z` rather than its
+                // `Debug` output, whose shape chrono does not promise. The rest are `%3f`-style.
+                let is_permissive_offset = matches!(
+                    StrftimeItems::new("%#z").next(),
+                    Some(Item::Fixed(Fixed::Internal(ref permissive))) if permissive == inner
+                );
+                if is_permissive_offset {
+                    has_offset = true;
+                } else {
+                    has_time = true;
+                }
+            }
+            _ => {}
+        }
+        if has_time && has_offset {
+            break;
+        }
+    }
+    (has_time, has_offset)
+}
+
+#[must_use]
+pub fn format_string_has_time(format: &str) -> bool {
+    format_time_and_offset_flags(format).0
+}
+
 #[must_use]
 pub fn format_string_has_offset(format: &str) -> bool {
-    // These are all valid chrono formats that contain an offset
-    format.contains("%Z")
-        || format.contains("%z")
-        || format.contains("%:z")
-        || format.contains("%::z")
-        || format.contains("%#z")
-        || format == "%+"
+    format_time_and_offset_flags(format).1
 }
 
 /// Converts a timestamp in `time_unit` into [`chrono::NaiveDateTime`].
@@ -291,12 +353,65 @@ mod tests {
             ("%Y-%m-%d %H:%M:%S.%f", false),
             ("", false),
             ("random text", false),
-            ("%%z", true),
+            // Escaped `%%` is a literal percent sign, not a directive.
+            ("%%z", false),
+            ("%Y-%m-%d %%z", false),
+            ("%Y-%m-%d %#z", true),
         ];
 
         for (format, expected) in test_cases {
             assert_eq!(
                 format_string_has_offset(format),
+                expected,
+                "Failed for format: {}",
+                format
+            );
+        }
+    }
+
+    #[test]
+    fn test_format_string_has_time() {
+        let test_cases = vec![
+            ("%Y-%m-%d", false),
+            ("%Y/%m/%d", false),
+            ("%d-%b-%Y", false),
+            ("%F", false),
+            ("%x", false),
+            ("%v", false),
+            ("%D", false),
+            ("%Y-%m-%d %z", false),
+            ("%Y-%m-%d %:z", false),
+            ("%Y-%m-%d %#z", false),
+            ("%Y-%m-%d %%z", false),
+            ("%Y-%m-%d", false),
+            ("", false),
+            ("random text", false),
+            ("%%H %%M %%S", false),
+            ("%Y-%m-%d %H:%M:%S", true),
+            ("%Y-%m-%dT%H:%M:%S", true),
+            ("%H:%M:%S", true),
+            ("%H", true),
+            ("%k", true),
+            ("%I:%M %p", true),
+            ("%l:%M %P", true),
+            ("%R", true),
+            ("%T", true),
+            ("%X", true),
+            ("%r", true),
+            ("%c", true),
+            ("%+", true),
+            ("%s", true),
+            ("%Y-%m-%d %H", true),
+            ("%Y-%m-%d %.3f", true),
+            ("%Y-%m-%d %3f", true),
+            ("%Y-%m-%d %H:%M:%S%.3f", true),
+            ("%_H:%M", true),
+            ("%-M", true),
+        ];
+
+        for (format, expected) in test_cases {
+            assert_eq!(
+                format_string_has_time(format),
                 expected,
                 "Failed for format: {}",
                 format
