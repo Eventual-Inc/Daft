@@ -1260,7 +1260,7 @@ def date_trunc(interval: str, expr: Expression, relative_to: Expression | None =
     """Truncates the datetime column to the specified interval.
 
     Args:
-        interval: The interval to truncate to. Must be a string representing a valid interval in "{integer} {unit}" format, e.g. "1 day". Valid time units are: 'microsecond', 'millisecond', 'second', 'minute', 'hour', 'day', 'week'.
+        interval: The interval to truncate to. Must be a string representing a valid interval in "{integer} {unit}" format, e.g. "1 day". The count must be positive. Valid time units are: 'nanosecond', 'microsecond', 'millisecond', 'second', 'minute', 'hour', 'day', 'week'. The interval does not need to be a multiple of the column's time unit; if a bucket boundary is not representable in that unit, the result is rounded down to the nearest representable value.
         expr: The datetime expression to truncate.
         relative_to (optional): Timestamp to truncate relative to. If not provided, truncates to the start of the Unix epoch: 1970-01-01 00:00:00.
 

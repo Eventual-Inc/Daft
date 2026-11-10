@@ -19,7 +19,12 @@ use crate::{
     datatypes::{IntervalArray, prelude::*},
 };
 
-fn process_interval(interval: &str, timeunit: TimeUnit) -> DaftResult<i64> {
+/// Parses an interval string of the form `"<count> <unit>"` into a number of nanoseconds.
+///
+/// The result is an `i128` so that intervals that are finer than, or not a whole multiple of,
+/// a timestamp's time unit can be represented exactly, and so that large counts of coarse
+/// units (e.g. weeks) cannot overflow.
+fn process_interval(interval: &str) -> DaftResult<i128> {
     let (count_str, unit) = interval.split_once(' ').ok_or_else(|| {
         DaftError::ValueError(format!(
             "Invalid interval string: {interval}. Expected format: <count> <unit>"
@@ -30,15 +35,15 @@ fn process_interval(interval: &str, timeunit: TimeUnit) -> DaftResult<i64> {
         .parse::<i64>()
         .map_err(|e| DaftError::ValueError(format!("Invalid interval count: {e}")))?;
 
-    let duration = match unit {
-        "week" | "weeks" => Duration::weeks(count),
-        "day" | "days" => Duration::days(count),
-        "hour" | "hours" => Duration::hours(count),
-        "minute" | "minutes" => Duration::minutes(count),
-        "second" | "seconds" => Duration::seconds(count),
-        "millisecond" | "milliseconds" => Duration::milliseconds(count),
-        "microsecond" | "microseconds" => Duration::microseconds(count),
-        "nanosecond" | "nanoseconds" => Duration::nanoseconds(count),
+    let unit_nanos: i128 = match unit {
+        "week" | "weeks" => 7 * 24 * 60 * 60 * 1_000_000_000,
+        "day" | "days" => 24 * 60 * 60 * 1_000_000_000,
+        "hour" | "hours" => 60 * 60 * 1_000_000_000,
+        "minute" | "minutes" => 60 * 1_000_000_000,
+        "second" | "seconds" => 1_000_000_000,
+        "millisecond" | "milliseconds" => 1_000_000,
+        "microsecond" | "microseconds" => 1_000,
+        "nanosecond" | "nanoseconds" => 1,
         _ => {
             return Err(DaftError::ValueError(format!(
                 "Invalid interval unit: {unit}. Expected one of: week, day, hour, minute, second, millisecond, microsecond, nanosecond"
@@ -46,21 +51,68 @@ fn process_interval(interval: &str, timeunit: TimeUnit) -> DaftResult<i64> {
         }
     };
 
-    match timeunit {
-        TimeUnit::Seconds => Ok(duration.num_seconds()),
-        TimeUnit::Milliseconds => Ok(duration.num_milliseconds()),
-        TimeUnit::Microseconds => {
-            duration
-                .num_microseconds()
-                .ok_or(DaftError::ValueError(format!(
-                    "Interval is out of range for microseconds: {interval}"
-                )))
+    if count <= 0 {
+        return Err(DaftError::ValueError(format!(
+            "Invalid interval: {interval}. The interval must be positive"
+        )));
+    }
+
+    // Cannot overflow: |count| < 2^63 and unit_nanos < 2^50.
+    Ok(i128::from(count) * unit_nanos)
+}
+
+/// A truncation interval resolved against a time unit once per array, so that the common case
+/// (an interval that is a whole multiple of the unit) stays in `i64` arithmetic per value.
+#[derive(Clone, Copy)]
+enum TruncationGrid {
+    /// The interval evenly divides the time unit, so every value is already on the grid.
+    Unchanged,
+    /// The interval as a whole number of time units.
+    Units(i64),
+    /// The interval and the time unit in nanoseconds, for any other interval.
+    Nanos { interval: i128, unit: i128 },
+}
+
+impl TruncationGrid {
+    fn new(interval_nanos: i128, timeunit: TimeUnit) -> Self {
+        let unit: i128 = match timeunit {
+            TimeUnit::Seconds => 1_000_000_000,
+            TimeUnit::Milliseconds => 1_000_000,
+            TimeUnit::Microseconds => 1_000,
+            TimeUnit::Nanoseconds => 1,
+        };
+        if unit % interval_nanos == 0 {
+            return Self::Unchanged;
         }
-        TimeUnit::Nanoseconds => duration
-            .num_nanoseconds()
-            .ok_or(DaftError::ValueError(format!(
-                "Interval is out of range for nanoseconds: {interval}"
-            ))),
+        match i64::try_from(interval_nanos / unit) {
+            Ok(units) if interval_nanos % unit == 0 => Self::Units(units),
+            _ => Self::Nanos {
+                interval: interval_nanos,
+                unit,
+            },
+        }
+    }
+
+    /// Floors `ts` onto the grid anchored at `origin` (both in the time unit), or `None` if the
+    /// result is out of range. Values before the origin are floored, not truncated toward zero.
+    /// If a grid point falls between two representable values, the lower one is returned.
+    fn truncate(self, ts: i64, origin: i64) -> Option<i64> {
+        let floor = |ts: i128, offset: i128, interval: i128| ts - offset.rem_euclid(interval);
+        match self {
+            Self::Unchanged => Some(ts),
+            Self::Units(interval) => match ts.checked_sub(origin) {
+                Some(offset) => ts.checked_sub(offset.rem_euclid(interval)),
+                None => {
+                    let offset = i128::from(ts) - i128::from(origin);
+                    i64::try_from(floor(ts.into(), offset, interval.into())).ok()
+                }
+            },
+            Self::Nanos { interval, unit } => {
+                let ts_nanos = i128::from(ts) * unit;
+                let offset = ts_nanos - i128::from(origin) * unit;
+                i64::try_from(floor(ts_nanos, offset, interval).div_euclid(unit)).ok()
+            }
+        }
     }
 }
 
@@ -195,53 +247,58 @@ impl TimestampArray {
             unreachable!("Timestamp array must have Timestamp datatype")
         };
         let physical = self.physical.as_arrow()?;
-        let duration = process_interval(interval, *timeunit)?;
+        let grid = TruncationGrid::new(process_interval(interval)?, *timeunit);
         let tz_parsed = tz.as_deref().map(parse_timezone).transpose()?;
 
         fn truncate_single_ts<T>(
             ts: i64,
             tu: TimeUnit,
             tz: Option<T>,
-            duration: i64,
+            grid: TruncationGrid,
             relative_to: Option<i64>,
         ) -> DaftResult<i64>
         where
             T: chrono::TimeZone,
         {
+            let out_of_range = || {
+                DaftError::ValueError(format!(
+                    "Truncated timestamp is out of range for time unit {tu}"
+                ))
+            };
             match tz {
                 Some(tz) => {
+                    // Truncate the naive local time, then shift the original (time zone aware)
+                    // datetime back by the same amount.
                     let original_dt = timestamp_to_datetime(ts, tu, &tz);
                     let naive_ts = naive_datetime_to_timestamp(original_dt.naive_local(), tu)?;
-                    let mut truncate_by_amount = match relative_to {
+                    let naive_origin = match relative_to {
                         Some(rt) => {
                             let rt_dt = timestamp_to_datetime(rt, tu, &tz);
-                            let naive_rt_ts = naive_datetime_to_timestamp(rt_dt.naive_local(), tu)?;
-                            (naive_ts - naive_rt_ts) % duration
+                            naive_datetime_to_timestamp(rt_dt.naive_local(), tu)?
                         }
-                        None => naive_ts % duration,
+                        None => 0,
                     };
-                    if truncate_by_amount < 0 {
-                        truncate_by_amount += duration;
-                    }
+                    let truncated_naive_ts = grid
+                        .truncate(naive_ts, naive_origin)
+                        .ok_or_else(out_of_range)?;
+                    let truncate_by_amount = naive_ts
+                        .checked_sub(truncated_naive_ts)
+                        .ok_or_else(out_of_range)?;
                     let truncate_by_duration = match tu {
-                        TimeUnit::Seconds => Duration::seconds(truncate_by_amount),
-                        TimeUnit::Milliseconds => Duration::milliseconds(truncate_by_amount),
-                        TimeUnit::Microseconds => Duration::microseconds(truncate_by_amount),
-                        TimeUnit::Nanoseconds => Duration::nanoseconds(truncate_by_amount),
-                    };
-                    let truncated_dt = original_dt - truncate_by_duration;
+                        TimeUnit::Seconds => Duration::try_seconds(truncate_by_amount),
+                        TimeUnit::Milliseconds => Duration::try_milliseconds(truncate_by_amount),
+                        TimeUnit::Microseconds => Some(Duration::microseconds(truncate_by_amount)),
+                        TimeUnit::Nanoseconds => Some(Duration::nanoseconds(truncate_by_amount)),
+                    }
+                    .ok_or_else(out_of_range)?;
+                    let truncated_dt = original_dt
+                        .checked_sub_signed(truncate_by_duration)
+                        .ok_or_else(out_of_range)?;
                     datetime_to_timestamp(truncated_dt, tu)
                 }
-                None => {
-                    let mut truncate_by_amount = match relative_to {
-                        Some(rt) => (ts - rt) % duration,
-                        None => ts % duration,
-                    };
-                    if truncate_by_amount < 0 {
-                        truncate_by_amount += duration;
-                    }
-                    Ok(ts - truncate_by_amount)
-                }
+                None => grid
+                    .truncate(ts, relative_to.unwrap_or(0))
+                    .ok_or_else(out_of_range),
             }
         }
 
@@ -252,16 +309,16 @@ impl TimestampArray {
                 Some(ts) => {
                     let truncated_ts = match tz_parsed {
                         Some(ParsedTimezone::Fixed(offset)) => {
-                            truncate_single_ts(ts, *timeunit, Some(offset), duration, relative_to)
+                            truncate_single_ts(ts, *timeunit, Some(offset), grid, relative_to)
                         }
                         Some(ParsedTimezone::Tz(tz)) => {
-                            truncate_single_ts(ts, *timeunit, Some(tz), duration, relative_to)
+                            truncate_single_ts(ts, *timeunit, Some(tz), grid, relative_to)
                         }
                         None => truncate_single_ts(
                             ts,
                             *timeunit,
                             None::<chrono_tz::Tz>,
-                            duration,
+                            grid,
                             relative_to,
                         ),
                     };
@@ -510,5 +567,68 @@ impl TimeArray {
 
     pub fn nanosecond(&self) -> DaftResult<UInt32Array> {
         self.date_part_as_uint32(DatePart::Nanosecond)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use common_error::DaftResult;
+
+    use super::{TruncationGrid, process_interval};
+    use crate::prelude::TimeUnit;
+
+    #[test]
+    fn test_process_interval() -> DaftResult<()> {
+        assert_eq!(process_interval("1 nanosecond")?, 1);
+        assert_eq!(process_interval("2500 nanoseconds")?, 2500);
+        assert_eq!(process_interval("1 week")?, 604_800_000_000_000);
+        // Large counts of coarse units must not overflow or panic.
+        assert_eq!(
+            process_interval("9223372036854775807 weeks")?,
+            i128::from(i64::MAX) * 604_800_000_000_000
+        );
+        for interval in ["0 days", "-1 days", "1 year", "1"] {
+            assert!(process_interval(interval).is_err(), "{interval}");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_truncation_grid_units_matches_nanos() {
+        // The `i64` path for whole multiples of the unit must agree with exact nanosecond math.
+        for (unit, tu) in [
+            (1_000_000_000, TimeUnit::Seconds),
+            (1_000, TimeUnit::Microseconds),
+        ] {
+            for units in [2, 60, 86_400, 604_800] {
+                let interval = units * unit;
+                let grid = TruncationGrid::new(interval, tu);
+                assert!(matches!(grid, TruncationGrid::Units(_)));
+                let nanos = TruncationGrid::Nanos { interval, unit };
+                let bound = i64::MAX / unit as i64;
+                for origin in [0, 7, -13] {
+                    for ts in (-1_000..1_000).chain([bound, -bound]) {
+                        assert_eq!(
+                            grid.truncate(ts, origin),
+                            nanos.truncate(ts, origin),
+                            "ts={ts} origin={origin} interval={interval}"
+                        );
+                    }
+                }
+            }
+        }
+        // `ts - origin` overflowing `i64` falls back to `i128` instead of failing.
+        let (ts, origin) = (i64::MAX - 5, -10);
+        let expected = i128::from(ts) - (i128::from(ts) - i128::from(origin)).rem_euclid(60);
+        assert_eq!(
+            TruncationGrid::Units(60).truncate(ts, origin),
+            Some(i64::try_from(expected).unwrap())
+        );
+        // A result outside the `i64` range is reported, not a panic.
+        let weeks = i128::from(i64::MAX) * 604_800_000_000_000;
+        assert_eq!(
+            TruncationGrid::new(weeks, TimeUnit::Nanoseconds).truncate(-1, 0),
+            None
+        );
     }
 }

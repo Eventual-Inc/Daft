@@ -469,6 +469,78 @@ def test_series_timestamp_truncate_operation_invalid_interval(interval) -> None:
         input_series.dt.truncate(interval)
 
 
+@pytest.mark.parametrize("tz", [None, "UTC", "+09:00", "Europe/Berlin"])
+@pytest.mark.parametrize("interval", ["1 nanosecond", "500 nanoseconds", "1000 nanoseconds"])
+def test_series_timestamp_truncate_operation_interval_dividing_time_unit_is_noop(interval, tz) -> None:
+    # Every microsecond timestamp already lies on a grid that evenly divides 1us.
+    input_dt = [
+        ts_with_tz_maker(2021, 3, 1, 12, 34, 56, 49012, tz),
+        None,
+        ts_with_tz_maker(1969, 12, 31, 23, 59, 59, 999999, tz),
+    ]
+    input_series = Series.from_pylist(input_dt)
+    assert input_series.datatype().is_timestamp()
+
+    assert input_series.dt.truncate(interval).to_pylist() == input_series.to_pylist()
+
+
+@pytest.mark.parametrize("tz", [None, "UTC", "+09:00", "Europe/Berlin"])
+@pytest.mark.parametrize(
+    ["input", "interval", "expected"],
+    [
+        # Epoch-aligned 2500ns grid: ..., 49010us, 49012.5us, 49015us, ...
+        ((2021, 3, 1, 12, 34, 56, 49012), "2500 nanoseconds", (2021, 3, 1, 12, 34, 56, 49010)),
+        # 49013us falls in the bucket starting at 49012.5us, which is floored to 49012us.
+        ((2021, 3, 1, 12, 34, 56, 49013), "2500 nanoseconds", (2021, 3, 1, 12, 34, 56, 49012)),
+        ((2021, 3, 1, 12, 34, 56, 49998), "1500 nanoseconds", (2021, 3, 1, 12, 34, 56, 49997)),
+        # Pre-epoch timestamps are floored, not truncated toward zero.
+        ((1969, 12, 31, 23, 59, 59, 999999), "2500 nanoseconds", (1969, 12, 31, 23, 59, 59, 999997)),
+    ],
+)
+def test_series_timestamp_truncate_operation_interval_not_multiple_of_time_unit(input, interval, expected, tz) -> None:
+    input_series = Series.from_pylist([ts_with_tz_maker(*input, tz), None])
+    expected_series = Series.from_pylist([ts_with_tz_maker(*expected, tz), None])
+
+    assert input_series.dt.truncate(interval).to_pylist() == expected_series.to_pylist()
+
+
+def test_series_timestamp_truncate_operation_sub_unit_interval_on_second_column() -> None:
+    input_series = Series.from_pylist(
+        [datetime(1970, 1, 1, 0, 0, s) for s in (1, 2, 3)] + [datetime(1969, 12, 31, 23, 59, 59), None]
+    ).cast(DataType.timestamp(TimeUnit.s()))
+    expected = [datetime(1970, 1, 1, 0, 0, s) for s in (0, 1, 3)] + [datetime(1969, 12, 31, 23, 59, 58), None]
+
+    assert input_series.dt.truncate("1500 milliseconds").to_pylist() == expected
+    assert input_series.dt.truncate("1 millisecond").to_pylist() == input_series.to_pylist()
+
+
+@pytest.mark.parametrize("tz", [None, "UTC", "+09:00"])
+@pytest.mark.parametrize(
+    ["input", "expected"],
+    [
+        # Grid aligned to relative_to (midnight + 1us): ..., -1.5us, 1us, 3.5us, 6us, ...
+        ((2024, 1, 1, 0, 0, 0, 5), (2024, 1, 1, 0, 0, 0, 3)),
+        ((2024, 1, 1, 0, 0, 0, 6), (2024, 1, 1, 0, 0, 0, 6)),
+        ((2023, 12, 31, 23, 59, 59, 999999), (2023, 12, 31, 23, 59, 59, 999998)),
+    ],
+)
+def test_series_timestamp_truncate_operation_sub_unit_interval_with_relative_to(input, expected, tz) -> None:
+    input_series = Series.from_pylist([ts_with_tz_maker(*input, tz)])
+    relative_to = Series.from_pylist([ts_with_tz_maker(2024, 1, 1, 0, 0, 0, 1, tz)])
+    expected_series = Series.from_pylist([ts_with_tz_maker(*expected, tz)])
+
+    assert input_series.dt.truncate("2500 nanoseconds", relative_to).to_pylist() == expected_series.to_pylist()
+
+
+@pytest.mark.parametrize("tz", [None, "UTC", "Europe/Berlin"])
+@pytest.mark.parametrize("interval", ["0 days", "0 nanoseconds", "-1 days", "-500 nanoseconds"])
+def test_series_timestamp_truncate_operation_non_positive_interval(interval, tz) -> None:
+    input_series = Series.from_pylist([ts_with_tz_maker(2024, 1, 1, 1, 1, 1, 1, tz), None])
+
+    with pytest.raises(ValueError, match="must be positive"):
+        input_series.dt.truncate(interval)
+
+
 def test_series_timestamp_truncate_operation_invalid_relative_to() -> None:
     input_series = Series.from_pylist([datetime(2024, 1, 1, 1, 1, 1, 1)])
 
