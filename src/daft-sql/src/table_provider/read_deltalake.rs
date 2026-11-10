@@ -14,14 +14,14 @@ impl SQLTableFunction for ReadDeltalakeFunction {
         args: &TableFunctionArgs,
     ) -> SQLPlannerResult<LogicalPlanBuilder> {
         let (uri, io_config) = match args.args.as_slice() {
-            [uri] => (uri, daft_context::get_context().io_config()),
+            [uri] => (uri, super::resolve_io_config(None)?),
             [uri, io_config] => {
                 let args = planner.parse_function_args(
                     std::slice::from_ref(io_config),
                     &["io_config"],
                     0,
                 )?;
-                (uri, super::resolve_io_config(&args)?)
+                (uri, super::resolve_io_config(args.get_named("io_config"))?)
             }
             _ => unsupported_sql_err!("Expected one or two arguments"),
         };

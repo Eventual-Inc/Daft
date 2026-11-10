@@ -61,7 +61,7 @@ impl TryFrom<SQLFunctionArguments> for JsonScanBuilder {
             .map(try_parse_schema)
             .transpose()?
             .map(Arc::new);
-        let io_config = Some(super::resolve_io_config(&args)?);
+        let io_config = Some(super::resolve_io_config(args.get_named("io_config"))?);
         let skip_empty_files = args.try_get_named("skip_empty_files")?.unwrap_or(false);
 
         Ok(Self {

@@ -326,12 +326,28 @@ def test_sql_reader_uses_default_io_config(default_io_config_sample_files, funct
     assert sql_line == python_line
 
 
-def test_sql_read_deltalake_uses_default_io_config(tmp_path, monkeypatch):
-    """`read_deltalake` with no io_config resolves the context default, like the Python API.
+@pytest.mark.parametrize("function", ["read_parquet", "read_csv", "read_json"])
+def test_sql_reader_explicit_io_config_overrides_default(default_io_config_sample_files, function):
+    path = default_io_config_sample_files[function]
+    default = IOConfig(s3=S3Config(region_name="us-west-2"))
 
-    Delta's plan text does not surface the io_config, so we capture the StorageConfig handed to
-    the data source, the same way the read_iceberg default-io-config test does.
-    """
+    with daft.context.planning_config_ctx(default_io_config=default):
+        line = _io_config_line(
+            daft.sql(f"SELECT * FROM {function}('{path}', io_config := S3Config(region_name => 'eu-central-1'))")
+        )
+
+    assert line is not None
+    assert "eu-central-1" in line
+    assert "us-west-2" not in line
+
+
+@pytest.mark.parametrize(
+    "io_config_arg, expected_region",
+    [("", "us-west-2"), (", io_config := S3Config(region_name => 'eu-central-1')", "eu-central-1")],
+    ids=["context_default", "explicit_override"],
+)
+def test_sql_read_deltalake_io_config_resolution(tmp_path, monkeypatch, io_config_arg, expected_region):
+    """Delta's plan text omits io_config, so capture the StorageConfig handed to the data source."""
     deltalake = pytest.importorskip("deltalake")
     from daft.io.delta_lake import delta_lake_scan
 
@@ -349,11 +365,11 @@ def test_sql_read_deltalake_uses_default_io_config(tmp_path, monkeypatch):
 
     default = IOConfig(s3=S3Config(region_name="us-west-2"))
     with daft.context.planning_config_ctx(default_io_config=default):
-        daft.sql(f"SELECT * FROM read_deltalake('{path.as_posix()}')").collect()
+        daft.sql(f"SELECT * FROM read_deltalake('{path.as_posix()}'{io_config_arg})").collect()
 
     storage_config = captured["storage_config"]
     assert storage_config.io_config is not None
-    assert storage_config.io_config.s3.region_name == "us-west-2"
+    assert storage_config.io_config.s3.region_name == expected_region
 
 
 @pytest.fixture

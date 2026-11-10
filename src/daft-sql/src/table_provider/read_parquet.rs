@@ -50,7 +50,7 @@ impl TryFrom<SQLFunctionArguments> for ParquetScanBuilder {
             .map(try_parse_schema)
             .transpose()?
             .map(Arc::new);
-        let io_config = Some(super::resolve_io_config(&args)?);
+        let io_config = Some(super::resolve_io_config(args.get_named("io_config"))?);
 
         Ok(Self {
             glob_paths,

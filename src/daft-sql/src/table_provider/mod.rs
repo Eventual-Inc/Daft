@@ -23,7 +23,7 @@ use sqlparser::ast::TableFunctionArgs;
 
 use crate::{
     error::{PlannerError, SQLPlannerResult},
-    functions::{SQLFunctionArguments, SQLLiteral},
+    functions::SQLLiteral,
     invalid_operation_err,
     modules::config::expr_to_iocfg,
     planner::SQLPlanner,
@@ -126,8 +126,8 @@ where
 ///
 /// This lives in `daft-sql` rather than in the scan builders because `daft-context`
 /// depends on `daft-logical-plan`, so the reverse dependency would cycle.
-pub(crate) fn resolve_io_config(args: &SQLFunctionArguments) -> Result<IOConfig, PlannerError> {
-    match args.get_named("io_config") {
+pub(crate) fn resolve_io_config(arg: Option<&ExprRef>) -> Result<IOConfig, PlannerError> {
+    match arg {
         Some(expr) => expr_to_iocfg(expr),
         None => Ok(daft_context::get_context().io_config()),
     }
