@@ -16,12 +16,14 @@ use daft_core::{
     python::{PyDataType, PyField, PySchema, PySeries, PyTimeUnit},
     utils::stats,
 };
+use opentelemetry::logs::{Logger, LoggerProvider};
 use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     ExprRef,
     expr::{Expr, VLLMExpr, WindowExpr},
+    python_udf::RowWisePyFn,
     visitor::accept,
 };
 
@@ -249,6 +251,18 @@ pub fn row_wise_udf(
         )
         .into(),
     })
+}
+
+#[pyfunction]
+pub fn log_python_udf_row_error(py: Python, error: Bound<'_, PyAny>) {
+    let error = PyErr::from_value(error);
+    let logger_provider = common_tracing::GLOBAL_LOGGER_PROVIDER.lock().unwrap();
+    if let Some(logger_provider) = logger_provider.as_ref() {
+        let logger = logger_provider.logger("python-udf-error");
+        let mut log_record = logger.create_log_record();
+        RowWisePyFn::capture_exception_details(py, &error, &mut log_record);
+        logger.emit(log_record);
+    }
 }
 
 #[pyfunction]
