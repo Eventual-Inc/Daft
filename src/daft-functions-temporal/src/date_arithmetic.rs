@@ -8,6 +8,8 @@ use chrono::{Datelike, Months, NaiveDate, NaiveDateTime, Timelike};
 use daft_core::{datatypes::Int32Type, prelude::AsArrow};
 use daft_dsl::functions::prelude::*;
 
+use crate::broadcast_to_common_len;
+
 const UNIX_EPOCH: NaiveDate = match NaiveDate::from_ymd_opt(1970, 1, 1) {
     Some(d) => d,
     None => unreachable!(),
@@ -216,8 +218,10 @@ impl ScalarUDF for AddMonths {
         _ctx: &daft_dsl::functions::scalar::EvalContext,
     ) -> DaftResult<Series> {
         let AddMonthsArgs { input, months } = inputs.try_into()?;
-        let date_series = input.cast(&DataType::Date)?;
-        let months_i32 = months.cast(&DataType::Int32)?;
+        let [date_series, months_i32] = broadcast_to_common_len(
+            self.name(),
+            [input.cast(&DataType::Date)?, months.cast(&DataType::Int32)?],
+        )?;
         let date_arr = date_series.date()?;
         let dates = date_arr.as_arrow()?;
         let months_arr = months_i32
@@ -356,8 +360,10 @@ impl ScalarUDF for MonthsBetween {
         // always evaluated in UTC. Daft has no session-timezone concept, so this
         // matches Spark when the session is UTC.
         let ts_dtype = DataType::Timestamp(TimeUnit::Microseconds, None);
-        let end_ts = end_date.cast(&ts_dtype)?;
-        let start_ts = start_date.cast(&ts_dtype)?;
+        let [end_ts, start_ts] = broadcast_to_common_len(
+            self.name(),
+            [end_date.cast(&ts_dtype)?, start_date.cast(&ts_dtype)?],
+        )?;
 
         let end_ts_arr = end_ts.timestamp()?;
         let start_ts_arr = start_ts.timestamp()?;
@@ -406,5 +412,138 @@ impl ScalarUDF for MonthsBetween {
             start_field.dtype
         );
         Ok(Field::new(end_field.name, DataType::Float64))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use daft_core::{prelude::Int32Array, series::IntoSeries};
+    use daft_dsl::functions::scalar::EvalContext;
+
+    use super::*;
+
+    fn i32_series(name: &str, values: &[Option<i32>]) -> Series {
+        Int32Array::from_iter(Field::new(name, DataType::Int32), values.iter().copied())
+            .into_series()
+    }
+
+    fn date_series(name: &str, values: &[Option<(i32, u32, u32)>]) -> Series {
+        let days: Vec<Option<i32>> = values
+            .iter()
+            .map(|v| v.map(|(y, m, d)| date_to_days(NaiveDate::from_ymd_opt(y, m, d).unwrap())))
+            .collect();
+        i32_series(name, &days).cast(&DataType::Date).unwrap()
+    }
+
+    fn date_values(series: &Series) -> Vec<Option<i32>> {
+        assert_eq!(series.data_type(), &DataType::Date);
+        series
+            .cast(&DataType::Int32)
+            .unwrap()
+            .i32()
+            .unwrap()
+            .into_iter()
+            .collect()
+    }
+
+    fn call(udf: &dyn ScalarUDF, args: Vec<Series>) -> DaftResult<Series> {
+        let row_count = args.iter().map(Series::len).max().unwrap_or(0);
+        udf.call(FunctionArgs::new_unnamed(args), &EvalContext { row_count })
+    }
+
+    #[test]
+    fn test_add_months_broadcasts_literal_months() {
+        let dates = date_series(
+            "d",
+            &[
+                Some((2021, 1, 31)),
+                Some((2020, 6, 15)),
+                Some((2019, 12, 1)),
+                None,
+            ],
+        );
+        let result = call(&AddMonths, vec![dates, i32_series("literal", &[Some(1)])]).unwrap();
+        let expected = date_series(
+            "d",
+            &[
+                Some((2021, 2, 28)),
+                Some((2020, 7, 15)),
+                Some((2020, 1, 1)),
+                None,
+            ],
+        );
+        assert_eq!(result.name(), "d");
+        assert_eq!(date_values(&result), date_values(&expected));
+    }
+
+    #[test]
+    fn test_add_months_broadcasts_literal_date() {
+        let date = date_series("literal", &[Some((2021, 1, 31))]);
+        let months = i32_series("m", &[Some(1), Some(-2), None, Some(13)]);
+        let result = call(&AddMonths, vec![date, months]).unwrap();
+        let expected = date_series(
+            "literal",
+            &[
+                Some((2021, 2, 28)),
+                Some((2020, 11, 30)),
+                None,
+                Some((2022, 2, 28)),
+            ],
+        );
+        assert_eq!(date_values(&result), date_values(&expected));
+    }
+
+    #[test]
+    fn test_add_months_broadcasts_null_literal() {
+        let dates = date_series("d", &[Some((2021, 1, 31)), Some((2020, 6, 15))]);
+        let result = call(&AddMonths, vec![dates, i32_series("literal", &[None])]).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result.null_count(), 2);
+    }
+
+    #[test]
+    fn test_add_months_mismatched_lengths_errors() {
+        let dates = date_series("d", &[Some((2021, 1, 31)), Some((2020, 6, 15))]);
+        let months = i32_series("m", &[Some(1), Some(2), Some(3)]);
+        assert!(call(&AddMonths, vec![dates, months]).is_err());
+    }
+
+    fn f64_values(series: &Series) -> Vec<Option<f64>> {
+        series.f64().unwrap().into_iter().collect()
+    }
+
+    #[test]
+    fn test_months_between_broadcasts_literal_start() {
+        let end = date_series(
+            "d",
+            &[
+                Some((2021, 1, 31)),
+                Some((2020, 6, 15)),
+                Some((2019, 12, 1)),
+                None,
+            ],
+        );
+        let start = date_series("literal", &[Some((2019, 1, 1))]);
+        let result = call(&MonthsBetween, vec![end, start]).unwrap();
+        assert_eq!(result.name(), "d");
+        assert_eq!(
+            f64_values(&result),
+            vec![Some(24.96774194), Some(17.4516129), Some(11.0), None]
+        );
+    }
+
+    #[test]
+    fn test_months_between_broadcasts_literal_end() {
+        let end = date_series("literal", &[Some((2019, 1, 1))]);
+        let start = date_series("d", &[Some((2018, 1, 1)), Some((2019, 3, 1)), None]);
+        let result = call(&MonthsBetween, vec![end, start]).unwrap();
+        assert_eq!(f64_values(&result), vec![Some(12.0), Some(-2.0), None]);
+    }
+
+    #[test]
+    fn test_months_between_mismatched_lengths_errors() {
+        let end = date_series("e", &[Some((2019, 1, 1)), Some((2019, 2, 1))]);
+        let start = date_series("s", &[Some((2018, 1, 1)), Some((2018, 1, 1)), None]);
+        assert!(call(&MonthsBetween, vec![end, start]).is_err());
     }
 }

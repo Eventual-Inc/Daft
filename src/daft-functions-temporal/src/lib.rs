@@ -35,6 +35,34 @@ use crate::total::{
     TotalSeconds,
 };
 
+/// Broadcasts length-1 arguments (e.g. literals) of a multi-argument kernel to the common
+/// length of the other arguments, so that the kernel can zip them row by row.
+///
+/// Errors if two arguments have lengths that differ and are both not 1.
+pub(crate) fn broadcast_to_common_len<const N: usize>(
+    fn_name: &str,
+    mut inputs: [Series; N],
+) -> DaftResult<[Series; N]> {
+    let len = inputs
+        .iter()
+        .map(Series::len)
+        .find(|&len| len != 1)
+        .unwrap_or(1);
+    for series in &mut inputs {
+        if series.len() == len {
+            continue;
+        }
+        ensure!(
+            series.len() == 1,
+            ValueError: "{fn_name}: expected all arguments to have length 1 or {len}, but argument `{}` has length {}",
+            series.name(),
+            series.len()
+        );
+        *series = series.broadcast(len)?;
+    }
+    Ok(inputs)
+}
+
 pub struct TemporalFunctions;
 
 macro_rules! impl_temporal {
