@@ -1390,3 +1390,29 @@ def test_convert_timezone_sql() -> None:
     result = daft.sql("SELECT convert_timezone('America/New_York', ts) AS ny FROM df").to_pydict()
     expected = datetime(2021, 1, 1, 7, 0, tzinfo=timezone(timedelta(hours=-5)))
     assert result["ny"] == [expected]
+
+
+def test_date_trunc_interval_finer_than_time_unit() -> None:
+    # https://github.com/Eventual-Inc/Daft/issues/7713
+    df = daft.from_pydict(
+        {"t": [datetime(2021, 3, 1, 12, 34, 56, 49012), None, datetime(1969, 12, 31, 23, 59, 59, 999999)]}
+    )
+    result = df.select(
+        date_trunc("1 nanosecond", col("t")).alias("ns"),
+        date_trunc("2500 nanoseconds", col("t")).alias("ns2500"),
+    ).to_pydict()
+
+    assert result["ns"] == df.to_pydict()["t"]
+    assert result["ns2500"] == [
+        datetime(2021, 3, 1, 12, 34, 56, 49010),
+        None,
+        datetime(1969, 12, 31, 23, 59, 59, 999997),
+    ]
+
+
+@pytest.mark.parametrize("interval", ["0 days", "-1 hours"])
+def test_date_trunc_non_positive_interval(interval) -> None:
+    df = daft.from_pydict({"t": [datetime(2021, 3, 1, 12, 34, 56, 49012)]})
+
+    with pytest.raises(Exception, match="must be positive"):
+        df.select(date_trunc(interval, col("t"))).collect()
