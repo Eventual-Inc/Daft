@@ -8,6 +8,8 @@ use chrono::{Datelike, Months, NaiveDate, NaiveDateTime, Timelike};
 use daft_core::{datatypes::Int32Type, prelude::AsArrow};
 use daft_dsl::functions::prelude::*;
 
+use crate::broadcast_args;
+
 const UNIX_EPOCH: NaiveDate = match NaiveDate::from_ymd_opt(1970, 1, 1) {
     Some(d) => d,
     None => unreachable!(),
@@ -213,9 +215,9 @@ impl ScalarUDF for AddMonths {
     fn call(
         &self,
         inputs: FunctionArgs<Series>,
-        _ctx: &daft_dsl::functions::scalar::EvalContext,
+        ctx: &daft_dsl::functions::scalar::EvalContext,
     ) -> DaftResult<Series> {
-        let AddMonthsArgs { input, months } = inputs.try_into()?;
+        let AddMonthsArgs { input, months } = broadcast_args(inputs, ctx)?.try_into()?;
         let date_series = input.cast(&DataType::Date)?;
         let months_i32 = months.cast(&DataType::Int32)?;
         let date_arr = date_series.date()?;
@@ -342,14 +344,14 @@ impl ScalarUDF for MonthsBetween {
     fn call(
         &self,
         inputs: FunctionArgs<Series>,
-        _ctx: &daft_dsl::functions::scalar::EvalContext,
+        ctx: &daft_dsl::functions::scalar::EvalContext,
     ) -> DaftResult<Series> {
         use daft_core::prelude::TimeUnit;
 
         let MonthsBetweenArgs {
             end_date,
             start_date,
-        } = inputs.try_into()?;
+        } = broadcast_args(inputs, ctx)?.try_into()?;
 
         // Cast both inputs to a tz-naive microsecond Timestamp. Casting strips the
         // timezone label without shifting the underlying i64, so the comparison is

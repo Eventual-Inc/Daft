@@ -9,7 +9,7 @@ import pytest
 import pytz
 
 import daft
-from daft import DataType, col
+from daft import DataType, col, lit
 from daft.functions import (
     add_months,
     convert_timezone,
@@ -1033,6 +1033,38 @@ def test_make_date_invalid() -> None:
     assert result["dt"] == [None, None]
 
 
+@pytest.mark.parametrize(
+    "args, expected",
+    [
+        pytest.param(
+            (col("y"), col("m"), lit(1)),
+            [date(2021, 1, 1), date(2020, 6, 1), date(2019, 12, 1), None],
+            id="literal-day",
+        ),
+        pytest.param(
+            (lit(2020), col("m"), lit(15)),
+            [date(2020, 1, 15), date(2020, 6, 15), date(2020, 12, 15), date(2020, 3, 15)],
+            id="literal-year-and-day",
+        ),
+        pytest.param(
+            (lit(2024), lit(2), col("d")),
+            [date(2024, 2, 28), date(2024, 2, 29), None, None],
+            id="literal-year-and-month",
+        ),
+        pytest.param(
+            (col("y"), col("m"), lit(None).cast(DataType.int32())),
+            [None, None, None, None],
+            id="null-literal",
+        ),
+    ],
+)
+def test_make_date_with_literal_args(args, expected) -> None:
+    # Literal arguments must be broadcast to every row (issue #7712).
+    df = daft.from_pydict({"y": [2021, 2020, 2019, None], "m": [1, 6, 12, 3], "d": [28, 29, 30, None]})
+    result = df.select(make_date(*args).alias("dt")).to_pydict()
+    assert result["dt"] == expected
+
+
 # --- make_timestamp ---
 
 
@@ -1087,6 +1119,29 @@ def test_make_timestamp_ltz_with_timezone() -> None:
     result = df.to_pydict()
     # 12:00 EST = 17:00 UTC
     assert result["ts"] == [datetime(2021, 1, 1, 17, 0, 0, tzinfo=timezone.utc)]
+
+
+@pytest.mark.parametrize(
+    "fn, tzinfo",
+    [pytest.param(make_timestamp, None, id="make_timestamp"), pytest.param(make_timestamp_ltz, timezone.utc, id="ltz")],
+)
+def test_make_timestamp_with_literal_args(fn, tzinfo) -> None:
+    # Literal arguments must be broadcast to every row (issue #7712).
+    df = daft.from_pydict({"y": [2021, 2020, None], "m": [1, 6, 3], "h": [0, 23, None]})
+
+    result = df.select(fn(col("y"), col("m"), lit(1), lit(12), lit(30), lit(15.0)).alias("ts")).to_pydict()
+    assert result["ts"] == [
+        datetime(2021, 1, 1, 12, 30, 15, tzinfo=tzinfo),
+        datetime(2020, 6, 1, 12, 30, 15, tzinfo=tzinfo),
+        None,
+    ]
+
+    result = df.select(fn(lit(2024), lit(2), lit(29), col("h"), lit(59), lit(0.5)).alias("ts")).to_pydict()
+    assert result["ts"] == [
+        datetime(2024, 2, 29, 0, 59, 0, 500000, tzinfo=tzinfo),
+        datetime(2024, 2, 29, 23, 59, 0, 500000, tzinfo=tzinfo),
+        None,
+    ]
 
 
 # --- last_day ---
@@ -1169,6 +1224,48 @@ def test_add_months_null_propagation() -> None:
     df = daft.from_pydict({"d": [date(2021, 1, 15), None, date(2021, 1, 15)], "n": [1, 1, None]})
     df = df.with_column("result", add_months(col("d"), col("n")))
     assert df.to_pydict()["result"] == [date(2021, 2, 15), None, None]
+
+
+@pytest.mark.parametrize(
+    "start, months, expected",
+    [
+        pytest.param(
+            col("d"),
+            lit(1),
+            [date(2021, 2, 28), date(2020, 7, 15), date(2020, 1, 1), None],
+            id="literal-months",
+        ),
+        pytest.param(
+            lit(date(2021, 1, 31)),
+            col("n"),
+            [date(2021, 2, 28), date(2020, 11, 30), None, date(2022, 2, 28)],
+            id="literal-date",
+        ),
+        pytest.param(
+            col("ts"),
+            lit(-1),
+            [date(2020, 12, 31), date(2020, 5, 15), date(2019, 11, 1), None],
+            id="timestamp-input-literal-months",
+        ),
+        pytest.param(
+            col("d"),
+            lit(None).cast(DataType.int32()),
+            [None, None, None, None],
+            id="null-literal",
+        ),
+    ],
+)
+def test_add_months_with_literal_args(start, months, expected) -> None:
+    # Literal arguments must be broadcast to every row (issue #7712).
+    df = daft.from_pydict(
+        {
+            "d": [date(2021, 1, 31), date(2020, 6, 15), date(2019, 12, 1), None],
+            "ts": [datetime(2021, 1, 31, 12), datetime(2020, 6, 15, 12), datetime(2019, 12, 1, 12), None],
+            "n": [1, -2, None, 13],
+        }
+    )
+    result = df.select(add_months(start, months).alias("result")).to_pydict()
+    assert result["result"] == expected
 
 
 # --- months_between ---
@@ -1267,6 +1364,23 @@ def test_months_between_null_propagation() -> None:
     assert df.to_pydict()["diff"] == [None, None]
 
 
+def test_months_between_with_literal_args() -> None:
+    # Literal arguments must be broadcast to every row (issue #7712).
+    df = daft.from_pydict({"d": [date(2021, 1, 31), date(2020, 6, 15), date(2019, 12, 1), None]})
+
+    # 24 + 30/31, 17 + 14/31, same day of month -> 11
+    result = df.select(months_between(col("d"), lit(date(2019, 1, 1))).alias("diff")).to_pydict()["diff"]
+    assert result[:3] == pytest.approx([24.96774194, 17.4516129, 11.0], abs=1e-8)
+    assert result[3] is None
+
+    result = df.select(months_between(lit(date(2019, 1, 1)), col("d")).alias("diff")).to_pydict()["diff"]
+    assert result[:3] == pytest.approx([-24.96774194, -17.4516129, -11.0], abs=1e-8)
+    assert result[3] is None
+
+    result = df.select(months_between(col("d"), lit(None).cast(DataType.date())).alias("diff")).to_pydict()["diff"]
+    assert result == [None, None, None, None]
+
+
 # --- SQL integration ---
 
 
@@ -1297,6 +1411,31 @@ def test_add_months_months_between_sql() -> None:
     between_result = daft.sql('SELECT months_between("end", ref) as diff FROM df').to_pydict()
     # Pure-date inputs: 4 + (28 - 30) / 31 = 3.93548387
     assert between_result["diff"][0] == pytest.approx(3.93548387, abs=1e-8)
+
+
+def test_date_functions_sql_with_literal_args() -> None:
+    # Literal arguments must be broadcast to every row (issue #7712).
+    df = daft.from_pydict(  # noqa: F841
+        {
+            "y": [2021, 2020, 2019],
+            "m": [1, 6, 12],
+            "d": [date(2021, 1, 31), date(2020, 6, 15), date(2019, 12, 1)],
+        }
+    )
+    result = daft.sql(
+        """
+        SELECT
+            make_date(y, m, 1) AS md,
+            make_timestamp(y, m, 1, 0, 0, 0.0) AS mts,
+            add_months(d, 1) AS am,
+            months_between(d, DATE '2019-01-01') AS mb
+        FROM df
+        """
+    ).to_pydict()
+    assert result["md"] == [date(2021, 1, 1), date(2020, 6, 1), date(2019, 12, 1)]
+    assert result["mts"] == [datetime(2021, 1, 1), datetime(2020, 6, 1), datetime(2019, 12, 1)]
+    assert result["am"] == [date(2021, 2, 28), date(2020, 7, 15), date(2020, 1, 1)]
+    assert result["mb"] == pytest.approx([24.96774194, 17.4516129, 11.0], abs=1e-8)
 
 
 # --- from_utc_timestamp / to_utc_timestamp / convert_timezone ---

@@ -16,7 +16,9 @@ use daft_core::{
 };
 use daft_dsl::{
     ExprRef,
-    functions::{FunctionArgs, FunctionModule, FunctionRegistry, ScalarUDF, UnaryArg},
+    functions::{
+        FunctionArgs, FunctionModule, FunctionRegistry, ScalarUDF, UnaryArg, scalar::EvalContext,
+    },
 };
 use date_arithmetic::{AddMonths, DateAdd, DateDiff, DateSub, MonthsBetween};
 use date_construction::{MakeDate, MakeTimestamp, MakeTimestampLtz};
@@ -34,6 +36,25 @@ use crate::total::{
     TotalDays, TotalHours, TotalMicroseconds, TotalMilliseconds, TotalMinutes, TotalNanoseconds,
     TotalSeconds,
 };
+
+/// Broadcasts length-1 arguments (e.g. literals) to the batch's row count, for kernels that zip
+/// their arguments row by row.
+pub(crate) fn broadcast_args(
+    inputs: FunctionArgs<Series>,
+    ctx: &EvalContext,
+) -> DaftResult<FunctionArgs<Series>> {
+    let args = inputs
+        .iter()
+        .map(|arg| {
+            arg.map(|s| match s.len() {
+                1 if ctx.row_count != 1 => s.broadcast(ctx.row_count),
+                _ => Ok(s.clone()),
+            })
+            .transpose()
+        })
+        .collect::<DaftResult<_>>()?;
+    Ok(FunctionArgs::new_unchecked(args))
+}
 
 pub struct TemporalFunctions;
 
