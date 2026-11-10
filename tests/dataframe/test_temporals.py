@@ -38,6 +38,7 @@ from daft.functions import (
     timestamp_micros,
     timestamp_millis,
     timestamp_seconds,
+    to_datetime,
     to_utc_timestamp,
     trunc,
     weekofyear,
@@ -1390,3 +1391,15 @@ def test_convert_timezone_sql() -> None:
     result = daft.sql("SELECT convert_timezone('America/New_York', ts) AS ny FROM df").to_pydict()
     expected = datetime(2021, 1, 1, 7, 0, tzinfo=timezone(timedelta(hours=-5)))
     assert result["ny"] == [expected]
+
+
+def test_to_datetime_offset_format_partition_with_no_non_null_values() -> None:
+    # https://github.com/Eventual-Inc/Daft/issues/7470
+    # `concat` keeps partition boundaries, so the first partition has no non-null value.
+    fmt = "%Y-%m-%dT%H:%M:%S%z"
+    nulls = daft.from_pydict({"s": [None, None]}).with_column("s", col("s").cast(DataType.string()))
+    values = daft.from_pydict({"s": ["2020-01-01T01:02:03+0100"]})
+    df = nulls.concat(values).select(to_datetime(col("s"), fmt))
+
+    assert df.schema()["s"].dtype == DataType.timestamp("us", "UTC")
+    assert df.to_pydict() == {"s": [None, None, datetime(2020, 1, 1, 0, 2, 3, tzinfo=timezone.utc)]}
