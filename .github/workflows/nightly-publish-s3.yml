@@ -132,10 +132,6 @@ jobs:
         submodules: true
         fetch-depth: 0
 
-    - name: Install uv
-      uses: astral-sh/setup-uv@v7
-      with:
-        version: "0.6.17"
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:

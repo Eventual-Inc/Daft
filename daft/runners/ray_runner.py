@@ -67,6 +67,7 @@ from daft.runners.partitioning import (
     PartitionSet,
     PartitionSetCache,
 )
+from daft.runners.ray_compat import parse_ray_version
 from daft.runners.runner import Runner
 
 if TYPE_CHECKING:
@@ -85,7 +86,7 @@ except ImportError:
 
 from daft.logical.schema import Schema
 
-RAY_VERSION = tuple(int(s) for s in ray.__version__.split(".")[0:3])
+RAY_VERSION = parse_ray_version(ray.__version__)
 
 HEARTBEAT_INTERVAL_SEC = 10.0
 
@@ -102,7 +103,7 @@ try:
 except ImportError:
     _RAY_DATA_EXTENSIONS_AVAILABLE = False
 else:
-    _RAY_VERSION = tuple(int(s) for s in ray.__version__.split(".")[0:3])
+    _RAY_VERSION = RAY_VERSION
     try:
         # Variable-shaped tensor column support was added in Ray 2.1.0.
         if _RAY_VERSION >= (2, 2, 0):

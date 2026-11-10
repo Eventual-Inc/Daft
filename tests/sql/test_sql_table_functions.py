@@ -354,3 +354,40 @@ def test_sql_read_deltalake_uses_default_io_config(tmp_path, monkeypatch):
     storage_config = captured["storage_config"]
     assert storage_config.io_config is not None
     assert storage_config.io_config.s3.region_name == "us-west-2"
+
+
+@pytest.fixture
+def io_config_sample_parquet(tmp_path):
+    path = tmp_path / "a.parquet"
+    papq.write_table(pa.table({"x": [1, 2, 3]}), path)
+    return path.as_posix()
+
+
+@pytest.mark.parametrize(
+    "spelling", ["S3Config", "s3config", "S3CONFIG"], ids=["mixed_case", "lower_case", "upper_case"]
+)
+def test_sql_config_constructors_are_case_insensitive(io_config_sample_parquet, spelling):
+    """Config constructors resolve under any casing — mixed, lower, or upper."""
+    query = (
+        f"SELECT * FROM read_parquet('{io_config_sample_parquet}', "
+        f"io_config := {spelling}(region_name => 'eu-central-1'))"
+    )
+
+    assert "eu-central-1" in explain_to_text(daft.sql(query))
+
+
+@pytest.mark.parametrize(
+    "argument, expected",
+    [
+        ("retry_initial_backoff_ms => 500", "Retry initial backoff ms = 500"),
+        ("connect_timeout_ms => 1234", "Connect timeout ms = 1234"),
+        ("read_timeout_ms => 4321", "Read timeout ms = 4321"),
+        ("num_tries => 7", "Max retries = 7"),
+    ],
+    ids=["retry_initial_backoff_ms", "connect_timeout_ms", "read_timeout_ms", "num_tries"],
+)
+def test_sql_http_config_accepts_documented_arguments(io_config_sample_parquet, argument, expected):
+    """HTTPConfig accepts every argument it documents, not just user_agent and bearer_token."""
+    query = f"SELECT * FROM read_parquet('{io_config_sample_parquet}', io_config := HTTPConfig({argument}))"
+
+    assert expected in explain_to_text(daft.sql(query))

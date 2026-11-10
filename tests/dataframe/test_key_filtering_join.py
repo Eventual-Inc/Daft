@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -25,7 +26,8 @@ def helper_key_filtering_anti_join(
         how=JoinType.Anti,
         strategy=JoinStrategy.KeyFiltering,
         key_filtering_config=KeyFilteringConfig(
-            num_workers=2,
+            # Leave CPU capacity for execution on the three-CPU macOS CI runner.
+            num_workers=1 if sys.platform == "darwin" else 2,
             cpus_per_worker=1.0,
             keys_load_batch_size=16,
             max_concurrency_per_worker=1,
