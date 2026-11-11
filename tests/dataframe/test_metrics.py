@@ -136,3 +136,33 @@ def test_profile_rejects_binary_stream():
     df = daft.from_pydict({"id": [1]}).select("id").collect()
     with pytest.raises(TypeError):
         df.profile(file=io.BytesIO())
+
+
+def test_profile_join_counters(monkeypatch):
+    from daft.execution.metadata import ExecutionMetadata
+
+    class Batch:
+        def to_pylist(self):
+            counters = {
+                "build rows inserted": 2,
+                "probe rows in": 3,
+                "probe rows out": 4,
+                "bytes.join.build_inserted": 1024,
+                "bytes.join.probe_in": 2048,
+                "bytes.join.probe_out": 4096,
+            }
+            return [
+                {
+                    "name": "Join",
+                    "type": "HashJoin",
+                    "category": "Blocking",
+                    "stats": [(name, {"value": value, "unit": None}) for name, value in counters.items()],
+                }
+            ]
+
+    meta = ExecutionMetadata.__new__(ExecutionMetadata)
+    meta._query_id = "join"
+    monkeypatch.setattr(ExecutionMetadata, "to_recordbatch", lambda self: Batch())
+    text = meta.format_profile(show_details=True)
+    assert "rows in: 5, rows out: 4" in text
+    assert "bytes in/out: 3.00 KiB / 4.00 KiB" in text

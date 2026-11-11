@@ -197,6 +197,17 @@ class ExecutionMetadata:
         profile_nodes = []
         for row in self.to_recordbatch().to_pylist():
             stats = _stats_to_dict(row["stats"])
+            # Joins report separate build/probe counters instead of generic input/output metrics.
+            for name, keys in {
+                "rows.in": ("build rows inserted", "probe rows in"),
+                "rows.out": ("probe rows out",),
+                "bytes.in": ("bytes.join.build_inserted", "bytes.join.probe_in"),
+                "bytes.out": ("bytes.join.probe_out",),
+            }.items():
+                if name not in stats:
+                    values = [stats[key]["value"] for key in keys if key in stats]
+                    if values:
+                        stats[name] = {"value": sum(values), "unit": None}
             profile_nodes.append(
                 _ProfileNode(
                     name=str(row["name"]),
