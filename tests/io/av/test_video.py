@@ -11,6 +11,11 @@ import daft
 from daft.io.av._read_video_frames import _VideoFramesSourceTask
 
 
+@pytest.fixture(scope="module")
+def sample_video_path():
+    return "tests/assets/sample_video.mp4"
+
+
 def _make_mock_container(frame_times: list[float], key_frames: list[bool] | None = None):
     mock_container = MagicMock()
     mock_stream = MagicMock()
@@ -115,6 +120,37 @@ def test_read_video_frames_s3(pytestconfig):
     assert df["frame_index"] == list(range(231))
 
 
+@pytest.mark.parametrize(
+    ("is_key_frame", "expected_frames", "expected_keyframes"),
+    [
+        pytest.param(None, 290, 13, id="all_frames"),
+        pytest.param(True, 13, 13, id="only_keyframes"),
+        pytest.param(False, 277, 0, id="only_non_keyframes"),
+    ],
+)
+def test_read_video_frames_keyframe_filter(
+    sample_video_path,
+    is_key_frame,
+    expected_frames,
+    expected_keyframes,
+):
+    """Verify that `read_video_frames` applies `is_key_frame` filtering correctly."""
+    flags = (
+        daft.read_video_frames(
+            sample_video_path,
+            image_height=16,
+            image_width=16,
+            is_key_frame=is_key_frame,
+        )
+        .select("is_key_frame")
+        .to_pydict()["is_key_frame"]
+    )
+
+    # Each case checks both the returned frame count and keyframe count.
+    assert len(flags) == expected_frames
+    assert sum(flags) == expected_keyframes
+
+
 def test_list_frames_no_sampling_returns_all_frames():
     frame_times = [0.0, 0.5, 1.0, 1.5, 2.0]
     mock_container = _make_mock_container(frame_times)
@@ -180,28 +216,6 @@ def test_list_frames_sampling_by_seconds_filters_frames():
 
     sampled_times = [f.frame_time for f in frames]
     assert sampled_times == [0.0, 1.0, 2.0, 3.0]
-
-
-@pytest.mark.parametrize("is_key_frame", [None, True, False])
-def test_list_frames_is_key_frame_backward_compatible(is_key_frame):
-    frame_times = [0.0, 0.5, 1.0]
-    key_flags = [True, False, True]
-    mock_container = _make_mock_container(frame_times, key_frames=key_flags)
-
-    task = _VideoFramesSourceTask(
-        path="test.mp4",
-        image_height=480,
-        image_width=640,
-        is_key_frame=is_key_frame,
-        io_config=None,
-        sample_interval_seconds=None,
-    )
-
-    with patch("av.open", return_value=mock_container):
-        frames = list(task._list_frames("test.mp4", "dummy_file"))
-
-    assert [f.frame_time for f in frames] == frame_times
-    assert [f.is_key_frame for f in frames] == key_flags
 
 
 def test_list_frames_invalid_sample_interval_raises():
