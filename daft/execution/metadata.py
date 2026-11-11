@@ -66,7 +66,11 @@ def _format_bytes(value: float | None) -> str:
 
 
 def _stats_to_dict(stats: Metrics) -> dict[str, Metric]:
-    return {name: metric for name, metric in stats}
+    result: dict[str, Metric] = {}
+    for name, metric in stats:
+        # Built-in metrics precede user counters with the same name.
+        result.setdefault(name, metric)
+    return result
 
 
 def _metric_value(stats: dict[str, Metric], name: str) -> float | None:
@@ -92,7 +96,9 @@ def _metric_duration_us(stats: dict[str, Metric]) -> float:
         return value * 1_000
     if unit == "s":
         return value * 1_000_000
-    return value
+    if unit == "ns":
+        return value / 1_000
+    raise ValueError(f"Unknown duration unit: {unit!r}")
 
 
 def _traverse_plan(plan: PlanNode, metrics: dict[int, Metrics]) -> tuple[list[str], dict[int, int]]:
@@ -209,8 +215,7 @@ class ExecutionMetadata:
     def format_profile(self, top_n: int = 5, show_details: bool = False) -> str:
         """Return a concise query profile summary from execution metrics."""
         nodes = self._profile_nodes()
-        # total_operator_us is the sum of duration_us across all nodes, which may be less than total query duration
-        # due to missing metrics or unaccounted time (e.g. scheduling, network).
+        # Cumulative operator time is not wall time: operators can run concurrently.
         total_operator_us = sum(node.duration_us for node in nodes)
         source_nodes = [node for node in nodes if node.category.lower() == "source" or node.bytes_read is not None]
         rows_read = sum(node.rows_out or 0 for node in source_nodes)

@@ -1,10 +1,6 @@
-use std::sync::Arc;
-
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
-use daft_dsl::functions::{
-    BuiltinScalarFn, BuiltinScalarFnVariant, FunctionArg, prelude::*, scalar::ScalarFn,
-};
+use daft_dsl::functions::{prelude::*, scalar::ScalarFn};
 use daft_hash::HashFunctionKind;
 use serde::{Deserialize, Serialize};
 
@@ -109,19 +105,15 @@ impl ScalarUDF for HashFunction {
 
 #[must_use]
 pub fn hash(input: ExprRef, seed: Option<ExprRef>, hash_function: Option<ExprRef>) -> ExprRef {
-    let mut inputs = vec![FunctionArg::unnamed(input)];
+    let mut inputs = vec![input];
     if let Some(seed) = seed {
-        inputs.push(FunctionArg::named("seed", seed));
+        inputs.push(seed);
     }
     if let Some(hash_function) = hash_function {
-        inputs.push(FunctionArg::named("hash_function", hash_function));
+        inputs.push(hash_function);
     }
 
-    ScalarFn::Builtin(BuiltinScalarFn {
-        func: BuiltinScalarFnVariant::Sync(Arc::new(HashFunction)),
-        inputs: FunctionArgs::new_unchecked(inputs),
-    })
-    .into()
+    ScalarFn::builtin(HashFunction, inputs).into()
 }
 
 fn hash_with_seed(

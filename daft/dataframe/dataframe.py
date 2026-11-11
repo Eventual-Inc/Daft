@@ -16,7 +16,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import partial, reduce
-from typing import TYPE_CHECKING, Any, Concatenate, Literal, ParamSpec, TypeVar, Union, overload
+from typing import IO, TYPE_CHECKING, Any, Concatenate, Literal, ParamSpec, TypeVar, Union, overload
 
 from packaging.version import parse
 
@@ -426,13 +426,13 @@ class DataFrame:
     def profile(
         self,
         top_n: int = 5,
-        file: io.IOBase | None = None,
+        file: IO[str] | None = None,
         show_details: bool = False,
     ) -> None:
         """Prints a concise profile summary for a materialized DataFrame.
 
         The profile is based on the execution metrics collected when the DataFrame was materialized. This method does
-        not execute the DataFrame; call :meth:`collect`, :meth:`show`, or another materializing method first.
+        not execute the DataFrame; call :meth:`collect` first.
 
         Args:
             top_n: Number of slowest operators to show. Defaults to 5.
@@ -4497,11 +4497,7 @@ class DataFrame:
             Example with Null values and empty lists:
 
             >>> df2 = daft.from_pydict(
-            ...     {
-            ...         "id": [1, 2, 3, 4],
-            ...         "values": [[1, 2], [], None, [3]],
-            ...         "labels": [["a", "b"], [], None, ["c"]],
-            ...     }
+            ...     {"id": [1, 2, 3, 4], "values": [[1, 2], [], None, [3]], "labels": [["a", "b"], [], None, ["c"]]}
             ... )
             >>> df2.collect()
             ╭───────┬─────────────┬──────────────╮
@@ -5256,11 +5252,7 @@ class DataFrame:
             >>> import daft
             >>> from daft import col
             >>> df = daft.from_pydict(
-            ...     {
-            ...         "student_id": [1, 2, 3, 4],
-            ...         "test1": [0.5, 0.4, 0.6, 0.7],
-            ...         "test2": [0.9, 0.8, 0.7, 1.0],
-            ...     }
+            ...     {"student_id": [1, 2, 3, 4], "test1": [0.5, 0.4, 0.6, 0.7], "test2": [0.9, 0.8, 0.7, 1.0]}
             ... )
             >>> agg_df = df.agg(
             ...     df["test1"].mean(),

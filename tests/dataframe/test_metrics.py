@@ -45,3 +45,88 @@ def test_profile_validates_top_n() -> None:
 
     with pytest.raises(ValueError, match="top_n must be at least 1"):
         df.profile(top_n=0)
+
+
+@pytest.mark.parametrize("unit,expected", [("ns", 0.001), ("us", 1), ("µs", 1), ("ms", 1000), ("s", 1000000)])
+def test_profile_duration_units(unit, expected):
+    from daft.execution.metadata import _metric_duration_us
+
+    assert _metric_duration_us({"duration": {"value": 1, "unit": unit}}) == expected
+
+
+@pytest.mark.parametrize("unit", [None, "minutes"])
+def test_profile_rejects_invalid_duration_units(unit):
+    from daft.execution.metadata import _metric_duration_us
+
+    with pytest.raises(ValueError):
+        _metric_duration_us({"duration": {"value": 1, "unit": unit}})
+
+
+def test_profile_preserves_builtin_metrics():
+    from daft.execution.metadata import _metric_duration_us, _stats_to_dict
+
+    stats = _stats_to_dict(
+        [
+            ("duration", {"value": 2000, "unit": "us"}),
+            ("duration", {"value": 99, "unit": None}),
+        ]
+    )
+    assert _metric_duration_us(stats) == 2000
+
+
+def test_show_does_not_enable_profile():
+    df = daft.from_pydict({"id": [1, 2, 3]}).select("id")
+    df.show()
+    with pytest.raises(ValueError, match="materialized"):
+        df.profile()
+
+
+@pytest.mark.parametrize("show_details", [False, True])
+def test_profile_formats_metrics(monkeypatch, show_details):
+    from daft.execution.metadata import ExecutionMetadata
+
+    class Batch:
+        def to_pylist(self):
+            return [
+                {
+                    "name": "Scan",
+                    "type": "Scan",
+                    "category": "Source",
+                    "stats": [
+                        ("duration", {"value": 2, "unit": "ms"}),
+                        ("duration", {"value": 99, "unit": None}),
+                        ("rows.out", {"value": 3, "unit": None}),
+                        ("bytes.read", {"value": 1024, "unit": "bytes"}),
+                    ],
+                },
+                {
+                    "name": "Filter",
+                    "type": "Filter",
+                    "category": "Intermediate",
+                    "stats": [
+                        ("duration", {"value": 1, "unit": "ms"}),
+                    ],
+                },
+            ]
+
+    meta = ExecutionMetadata.__new__(ExecutionMetadata)
+    meta._query_id = "test"
+    monkeypatch.setattr(ExecutionMetadata, "to_recordbatch", lambda self: Batch())
+    text = meta.format_profile(top_n=1, show_details=show_details)
+    assert "Total operator time: 3.00 ms" in text
+    assert "Rows read: 3" in text
+    assert "Bytes scanned: 1.00 KiB" in text
+    assert "1. Scan (Scan) - 2.00 ms" in text
+    assert "2. Filter" not in text
+    assert ("rows out: 3" in text) is show_details
+
+
+def test_profile_empty_metrics(monkeypatch):
+    from daft.execution.metadata import ExecutionMetadata
+
+    meta = ExecutionMetadata.__new__(ExecutionMetadata)
+    meta._query_id = "empty"
+    monkeypatch.setattr(ExecutionMetadata, "_profile_nodes", lambda self: [])
+    text = meta.format_profile()
+    assert text.count("No execution metrics were recorded.") == 1
+    assert "No operator metrics were recorded." not in text
