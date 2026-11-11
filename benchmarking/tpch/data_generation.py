@@ -7,6 +7,7 @@ import os
 import shlex
 import sqlite3
 import subprocess
+import sys
 from glob import glob
 
 import daft
@@ -259,7 +260,10 @@ def gen_csv_files(basedir: str, num_parts: int, scale_factor: float) -> str:
         # Otherwise, check for SCALE_FACTOR env variable or default to 1
         logger.info("Cloning tpch dbgen repo")
         subprocess.check_output(shlex.split(f"git clone https://github.com/electrum/tpch-dbgen {cachedir}"))
-        subprocess.check_output("make", cwd=cachedir)
+        # dbgen uses pre-C23 function declarations; GCC 15 defaults to C23.
+        # Its default MAC config hides strdup on glibc via _POSIX_C_SOURCE=200112L.
+        machine = "LINUX" if sys.platform == "linux" else "MAC"
+        subprocess.check_output(["make", "CC=gcc -std=gnu17", f"MACHINE={machine}"], cwd=cachedir)
 
         logger.info("Generating %s for tpch", num_parts)
         subprocess.check_output(shlex.split(f"./dbgen -v -f -s {scale_factor}"), cwd=cachedir)

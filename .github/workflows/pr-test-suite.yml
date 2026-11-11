@@ -766,14 +766,15 @@ jobs:
           rm -rf daft
     - name: Install ODBC Driver 18 for SQL Server
       run: |
-        curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
-        sudo add-apt-repository https://packages.microsoft.com/ubuntu/$(lsb_release -rs)/prod
+        source /etc/os-release
+        curl -fsSL "https://packages.microsoft.com/config/ubuntu/${VERSION_ID}/packages-microsoft-prod.deb" -o "$RUNNER_TEMP/packages-microsoft-prod.deb"
+        sudo dpkg -i "$RUNNER_TEMP/packages-microsoft-prod.deb"
         sudo apt-get update
         sudo ACCEPT_EULA=Y apt-get install -y msodbcsql18
     - name: Spin up services
       run: |
         pushd ./tests/integration/sql/docker-compose/
-        docker compose -f ./docker-compose.yml up -d
+        docker compose -f ./docker-compose.yml up -d --wait --wait-timeout 120
         popd
 
     # Same tests as sequential native+ray, but parallel matrix jobs — matches integration-test-io.

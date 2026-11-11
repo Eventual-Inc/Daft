@@ -221,6 +221,8 @@ def test_write_sql_dtype_basic_types(test_db):
 
     read_df = daft.read_sql(f"SELECT * FROM {table_name}", test_db).sort("id").collect()
     expected_df = daft.from_pydict(data).sort("id").collect()
+    if test_db.startswith("postgres"):
+        expected_df = expected_df.with_column("id", daft.col("id").cast(daft.DataType.int32()))
 
     assert_df_equals(
         read_df.to_pandas(coerce_temporal_nanoseconds=True),
@@ -306,6 +308,8 @@ def test_write_sql_dtype_with_connection_factory(test_db):
 
     read_df = daft.read_sql(f"SELECT * FROM {table_name}", test_db).sort("id").collect()
     expected_df = daft.from_pydict(data).sort("id").collect()
+    if test_db.startswith("postgres"):
+        expected_df = expected_df.with_column("id", daft.col("id").cast(daft.DataType.int32()))
 
     assert_df_equals(
         read_df.to_pandas(coerce_temporal_nanoseconds=True),
@@ -332,6 +336,8 @@ def test_write_sql_dtype_with_chunking(test_db):
 
     read_df = daft.read_sql(f"SELECT * FROM {table_name}", test_db).sort("id").collect()
     expected_df = daft.from_pydict(data).sort("id").collect()
+    if test_db.startswith("postgres"):
+        expected_df = expected_df.with_column("id", daft.col("id").cast(daft.DataType.int32()))
 
     assert len(read_df) == num_rows
     assert_df_equals(
@@ -377,7 +383,7 @@ def test_write_sql_non_primitive_types_warning(test_db):
 
 @pytest.mark.integration()
 def test_write_sql_non_primitive_types_no_warning_explicit(test_db):
-    table_name = f"write_test_non_primitive_nowarn_{uuid.uuid4().hex}"
+    table_name = f"write_test_nonprim_nowarn_{uuid.uuid4().hex}"
 
     df = daft.from_pydict({"id": [1], "list_col": [[1, 2]]})
 
