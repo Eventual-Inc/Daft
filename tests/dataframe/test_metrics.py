@@ -130,3 +130,9 @@ def test_profile_empty_metrics(monkeypatch):
     text = meta.format_profile()
     assert text.count("No execution metrics were recorded.") == 1
     assert "No operator metrics were recorded." not in text
+
+
+def test_profile_rejects_binary_stream():
+    df = daft.from_pydict({"id": [1]}).select("id").collect()
+    with pytest.raises(TypeError):
+        df.profile(file=io.BytesIO())

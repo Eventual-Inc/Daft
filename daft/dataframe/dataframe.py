@@ -16,7 +16,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import partial, reduce
-from typing import IO, TYPE_CHECKING, Any, Concatenate, Literal, ParamSpec, TypeVar, Union, overload
+from typing import TYPE_CHECKING, Any, Concatenate, Literal, ParamSpec, TypeVar, Union, overload
 
 from packaging.version import parse
 
@@ -426,7 +426,7 @@ class DataFrame:
     def profile(
         self,
         top_n: int = 5,
-        file: IO[str] | None = None,
+        file: io.TextIOBase | None = None,
         show_details: bool = False,
     ) -> None:
         """Prints a concise profile summary for a materialized DataFrame.
