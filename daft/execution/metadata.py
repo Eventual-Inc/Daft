@@ -32,6 +32,8 @@ class _ProfileNode:
     bytes_read: float | None
     bytes_in: float | None
     bytes_out: float | None
+    rows_written: float | None
+    bytes_written: float | None
 
 
 def _format_duration(duration_us: float) -> str:
@@ -219,6 +221,8 @@ class ExecutionMetadata:
                     bytes_read=_metric_value(stats, "bytes.read"),
                     bytes_in=_metric_value(stats, "bytes.in"),
                     bytes_out=_metric_value(stats, "bytes.out"),
+                    rows_written=_metric_value(stats, "rows.written"),
+                    bytes_written=_metric_value(stats, "bytes.written"),
                 )
             )
         return profile_nodes
@@ -262,6 +266,10 @@ class ExecutionMetadata:
                             f"bytes in/out: {_format_bytes(node.bytes_in)} / {_format_bytes(node.bytes_out)}"
                         )
 
+                    if node.rows_written is not None:
+                        details.append(f"rows written: {_format_count(node.rows_written)}")
+                    if node.bytes_written is not None:
+                        details.append(f"bytes written: {_format_bytes(node.bytes_written)}")
                     lines.append(f"{title} - {', '.join(details)}")
                 else:
                     lines.append(f"{title} - {duration}")

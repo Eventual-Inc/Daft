@@ -166,3 +166,29 @@ def test_profile_join_counters(monkeypatch):
     text = meta.format_profile(show_details=True)
     assert "rows in: 5, rows out: 4" in text
     assert "bytes in/out: 3.00 KiB / 4.00 KiB" in text
+
+
+def test_profile_write_counters(monkeypatch):
+    from daft.execution.metadata import ExecutionMetadata
+
+    class Batch:
+        def to_pylist(self):
+            return [
+                {
+                    "name": "Write",
+                    "type": "Write",
+                    "category": "Sink",
+                    "stats": [
+                        ("rows.written", {"value": 3, "unit": None}),
+                        ("bytes.written", {"value": 2048, "unit": "bytes"}),
+                    ],
+                }
+            ]
+
+    meta = ExecutionMetadata.__new__(ExecutionMetadata)
+    meta._query_id = "write"
+    monkeypatch.setattr(ExecutionMetadata, "to_recordbatch", lambda self: Batch())
+    text = meta.format_profile(show_details=True)
+    assert "rows written: 3" in text
+    assert "bytes written: 2.00 KiB" in text
+    assert "rows written:" not in meta.format_profile(show_details=False)
