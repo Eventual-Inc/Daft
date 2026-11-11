@@ -169,6 +169,10 @@ class _VideoFramesSourceTask(DataSourceTask):
                 frame_time = frame.time
                 should_emit = True
 
+                if self.is_key_frame is False and frame.key_frame:
+                    frame_index += 1
+                    continue
+
                 if sample_interval is not None:
                     if frame_time is None:
                         # Skip frames without timestamps when sampling is enabled.
