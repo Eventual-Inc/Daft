@@ -12,7 +12,7 @@ from sqlalchemy import create_engine, text
 
 import daft
 from daft.catalog import Catalog, NotFoundError
-from tests.conftest import assert_df_equals
+from tests.conftest import assert_df_equals, get_tests_daft_runner_name
 from tests.integration.sql.conftest import TEST_TABLE_NAME
 
 
@@ -102,7 +102,8 @@ def test_postgres_table_read_with_options(test_db, pdf) -> None:
 
     # Test with partition.
     df = table.read(partition_col="id", num_partitions=2)
-    assert df.num_partitions() == 2
+    expected_partitions = None if get_tests_daft_runner_name() == "native" else 2
+    assert df.num_partitions() == expected_partitions
     assert_df_equals(df.to_pandas(coerce_temporal_nanoseconds=True), pdf, sort_key="id")
 
 
