@@ -64,8 +64,7 @@
 //! # Example Usage
 //!
 //! ```
-//! use std::hash::BuildHasherDefault;
-//! use mur3::murmurhash3_x86_32;
+//! use std::{collections::hash_map::DefaultHasher, hash::BuildHasherDefault};
 //! use daft_minhash::{load_simd, minhash};
 //!
 //! let perm_a = [1, 2, 3, 4];
@@ -76,7 +75,7 @@
 //! let text1 = "the quick brown fox";
 //! let text2 = "the lazy brown dog";
 //!
-//! let hasher = BuildHasherDefault::<ahash::AHasher>::default();
+//! let hasher = BuildHasherDefault::<DefaultHasher>::default();
 //!
 //! let hash1 = minhash(text1, (&perm_a_simd, &perm_b_simd), 4, 2, &hasher).unwrap();
 //! let hash2 = minhash(text2, (&perm_a_simd, &perm_b_simd), 4, 2, &hasher).unwrap();

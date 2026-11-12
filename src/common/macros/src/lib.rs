@@ -9,14 +9,18 @@ use proc_macro_error2::proc_macro_error;
 /// Tests are located at `src/daft-dsl/src/functions/macro_tests.rs`
 ///
 /// ## Example
-/// ```
+/// Using this macro requires `daft-dsl`, `daft-core`, and `common-error` in the consuming crate.
+///
+/// ```rust,ignore
+/// use common_macros::FunctionArgs;
+///
 /// #[derive(FunctionArgs)]
-/// impl CustomArgs<T> {
+/// struct CustomArgs<T> {
 ///     // expression/series arg
 ///     a: T,
 ///
 ///     // literal arg with type constraint
-///     d: usize
+///     d: usize,
 ///
 ///     // optional arg
 ///     #[arg(optional)]
@@ -28,9 +32,11 @@ use proc_macro_error2::proc_macro_error;
 ///
 ///     // renaming args
 ///     #[arg(name = "e2")]
-///     e: T
+///     e: T,
 /// }
 /// ```
+///
+/// Since `c` consumes the remaining positional arguments, supply `e` by name as `e2`.
 ///
 /// ## Typing
 /// If the type of a field matches the generic type of the struct, the field will be set to an
@@ -45,7 +51,7 @@ use proc_macro_error2::proc_macro_error;
 /// | Attribute              | Description                                                                                                                                          |
 /// |------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
 /// | `#[arg(required)]`     | (Default) Required argument.                                                                                                                         |
-/// | `#[arg(optional)`      | Optional argument.<br>- Field type must be `Option<...>`.                                                                                            |
+/// | `#[arg(optional)]`     | Optional argument.<br>- Field type must be `Option<...>`.                                                                                            |
 /// | `#[arg(variadic)]`     | Variadic argument (zero or more).<br>- Consumes all remaining unnamed arguments<br>- Cannot be assigned via name<br>- Field type must be `Vec<...>`. |
 /// | `#[arg(name = "...")]` | Override the name of an argument. By default, field name is used as argument.                                                                        |
 pub fn derive_function_args(input: proc_macro::TokenStream) -> proc_macro::TokenStream {

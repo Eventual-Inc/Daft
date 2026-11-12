@@ -19,8 +19,8 @@ use crate::{
 /// 1. The aggregation function `col("a").sum()` is stored in the `window_functions` vector
 /// 2. The window specification (partition by, order by, frame) is stored in the `window_spec` field
 ///
-/// For example, `df.select(col("a").sum().over(window.partition_by("b")))` becomes:
-/// ```
+/// For example, `df.select(col("a").sum().over(window.partition_by("b")))` becomes this logical plan (pseudocode):
+/// ```text
 /// Window {
 ///   window_functions = [col("a").sum()],
 ///   window_spec = WindowSpec { partition_by: [col("b")], ... }
