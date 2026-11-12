@@ -97,7 +97,7 @@ def process_markdown_content(content: str) -> str:
         title = match.group(2)
         # Remove the 4-space indentation from content
         content_lines = match.group(3).split("\n")
-        admon_content = "\n".join(line[4:] if line.startswith("    ") else line for line in content_lines)
+        admon_content = "\n".join(line.removeprefix("    ") for line in content_lines)
         return convert_admonition_to_html_direct(admonition_type, title, admon_content.strip())
 
     content = re.sub(admonition_pattern, replace_admonition, content)

@@ -56,7 +56,6 @@ def set_catalog_in_use(client, metalake: str, catalog_name: str, in_use: bool):
         print(f"[DEBUG] Catalog in-use updated: {catalog_name}")
     except Exception as e:
         print(f"[DEBUG] Failed to set catalog in-use (ignoring): {e}")
-        pass
 
 
 def delete_catalog(client, metalake: str, catalog_name: str):
@@ -70,7 +69,6 @@ def delete_catalog(client, metalake: str, catalog_name: str):
         print(f"[DEBUG] Catalog deleted: {catalog_name}")
     except Exception as e:
         print(f"[DEBUG] Failed to delete catalog (ignoring): {e}")
-        pass
 
 
 def delete_schema(client, metalake: str, catalog_name: str, schema_name: str, cascade: bool = False):
@@ -84,7 +82,6 @@ def delete_schema(client, metalake: str, catalog_name: str, schema_name: str, ca
         print(f"[DEBUG] Schema deleted: {schema_name}")
     except Exception as e:
         print(f"[DEBUG] Failed to delete schema (ignoring): {e}")
-        pass
 
 
 def create_catalog(
@@ -177,4 +174,3 @@ def delete_fileset(client, metalake: str, catalog_name: str, schema_name: str, f
         print(f"[DEBUG] Fileset deleted: {fileset_name}")
     except Exception as e:
         print(f"[DEBUG] Failed to delete fileset (ignoring): {e}")
-        pass

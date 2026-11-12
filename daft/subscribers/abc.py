@@ -42,7 +42,6 @@ class Subscriber(ABC):
 
         Override to release resources (file handles, connections, etc.).
         """
-        pass
 
     @on_event.register
     def _(self, event: QueryStarted) -> None:
@@ -90,43 +89,33 @@ class Subscriber(ABC):
 
     def on_operator_start(self, event: OperatorStarted) -> None:
         """Called when an operator has started executing."""
-        pass
 
     def on_operator_end(self, event: OperatorFinished) -> None:
         """Called when an operator has completed."""
-        pass
 
     def on_stats(self, event: Stats) -> None:
         """Called when emitting stats for all running operators in a query."""
-        pass
 
     def on_query_started(self, event: QueryStarted) -> None:
         """Called when starting the run for a new query."""
-        pass
 
     def on_query_heartbeat(self, event: QueryHeartbeat) -> None:
         """Called regularly while a query is running."""
-        pass
 
     def on_query_finished(self, event: QueryFinished) -> None:
         """Called when a query has completed."""
-        pass
 
     def on_optimization_completed(self, event: OptimizationCompleted) -> None:
         """Called when planning for a query has completed."""
-        pass
 
     def on_optimization_started(self, event: OptimizationStarted) -> None:
         """Called when planning for a query starts."""
-        pass
 
     def on_execution_started(self, event: ExecutionStarted) -> None:
         """Called when starting to execute a query."""
-        pass
 
     def on_execution_finished(self, event: ExecutionFinished) -> None:
         """Called when a query has finished executing."""
-        pass
 
     def on_query_start(self, query_id: str, metadata: PyQueryMetadata) -> None:
         """Called when starting the run for a new query."""
@@ -138,7 +127,6 @@ class Subscriber(ABC):
 
     def on_process_stats(self, event: ProcessStats) -> None:
         """Called with process-level stats on each tick."""
-        pass
 
 
 __all__ = ["StatType", "Subscriber"]

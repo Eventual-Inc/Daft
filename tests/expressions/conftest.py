@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 import pytest
@@ -12,13 +13,13 @@ from daft.recordbatch import RecordBatch
 def test_expression():
     def _test_expression(
         *,
-        expr_args: list[Expression] = [],
+        expr_args: Sequence[Expression] = (),
         data: list[Any],
         expected: list[Any],
         name: str,
         fn_name: str | None = None,
         sql_name: str | None = None,
-        args: list[Any] = [],
+        args: Sequence[Any] = (),
         kwargs: dict | None = None,
     ):
         fn_name = fn_name if fn_name else name

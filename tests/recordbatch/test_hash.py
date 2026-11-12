@@ -448,7 +448,7 @@ def test_table_expr_decimal_hash_scale_sensitive():
     # Raw value 123 with scale 0 -> "123"
     df_123_scale0 = daft.from_pydict(
         {
-            "dec": [decimal.Decimal("123")],
+            "dec": [decimal.Decimal(123)],
         }
     ).with_column("dec", col("dec"))
 
@@ -479,7 +479,7 @@ def test_table_expr_decimal_hash_scale_sensitive():
     # Test that different logical values also hash differently
     df_different = daft.from_pydict(
         {
-            "dec": [decimal.Decimal("124")],
+            "dec": [decimal.Decimal(124)],
         }
     ).with_column("dec", col("dec"))
     hash_different = df_different.select(col("dec").hash(hash_function="sha1")).to_pydict()["dec"][0]

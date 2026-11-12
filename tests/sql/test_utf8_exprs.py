@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 import daft
 from daft import col, lit
 
@@ -119,3 +121,40 @@ def test_utf8_exprs():
     )
     actual = actual.to_pydict()
     assert actual == expected
+
+
+@pytest.mark.parametrize(
+    "expr,expected",
+    [
+        ("substring(s FROM 2 FOR 3)", ["ell", "aft", "oré", None]),
+        ("substring(s FROM 2)", ["ello", "aft", "orém", None]),
+        ("substring(s FOR 4)", ["hell", "daft", "loré", None]),
+        ("substring(s, 2, 3)", ["ell", "aft", "oré", None]),
+        ("substring(s, 2)", ["ello", "aft", "orém", None]),
+    ],
+)
+def test_substring_syntax(expr, expected):
+    df = daft.from_pydict({"s": ["hello", "daft", "lorém", None]})
+    actual = daft.sql(f"SELECT {expr} AS out FROM df", df=df).to_pydict()
+    assert actual == {"out": expected}
+
+
+def test_substring_from_for_columns():
+    df = daft.from_pydict({"s": ["hello", "daft", "lorém"], "start": [1, 2, 3], "len": [2, 1, 3]})
+    actual = daft.sql("SELECT substring(s FROM start FOR len) AS out FROM df", df=df).to_pydict()
+    assert actual == {"out": ["he", "a", "rém"]}
+
+
+def test_substring_ansi_matches_comma_syntax():
+    df = daft.from_pydict({"s": ["hello", "daft", "lorém", None]})
+    actual = daft.sql(
+        "SELECT substring(s FROM 2 FOR 2) AS ansi, substring(s, 2, 2) AS comma FROM df",
+        df=df,
+    ).to_pydict()
+    assert actual["ansi"] == actual["comma"]
+
+
+def test_substring_without_start_or_length():
+    df = daft.from_pydict({"s": ["hello"]})
+    with pytest.raises(Exception, match="SUBSTRING requires a start position or a length"):
+        daft.sql("SELECT substring(s) FROM df", df=df).collect()

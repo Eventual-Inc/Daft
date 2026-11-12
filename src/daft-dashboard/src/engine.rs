@@ -210,7 +210,7 @@ struct PlanJsonConfig {
     #[serde(rename = "type")]
     pub node_type: Arc<str>,
     pub category: Arc<str>,
-    pub children: Option<Vec<PlanJsonConfig>>,
+    pub children: Option<Vec<Self>>,
 }
 
 fn parse_physical_plan(physical_plan: &QueryPlan) -> OperatorInfos {

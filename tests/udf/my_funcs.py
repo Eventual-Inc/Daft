@@ -8,14 +8,14 @@ def my_add_func(a: int, b: int) -> int:
     return a + b
 
 
-@daft.udf(return_dtype=daft.DataType.int64())
+@daft.func(return_dtype=daft.DataType.int64())
 def catalog_udf(x):
     return x
 
 
-@daft.udf(return_dtype=daft.DataType.int64())
+@daft.func(return_dtype=daft.DataType.int64())
 def double_value(x):
-    return [v * 2 for v in x.to_pylist()]
+    return x * 2
 
 
 @daft.cls

@@ -1,20 +1,18 @@
 from __future__ import annotations
 
-import warnings
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
-from daft.daft import ParquetSourceConfig, PyDataSourceTask, StorageConfig
+from daft.daft import McapSourceConfig, ParquetSourceConfig, PyDataSourceTask, StorageConfig
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Iterator
+    from collections.abc import AsyncIterator
 
     from daft.dataframe import DataFrame
     from daft.io.clustering import ClusteringKeys
     from daft.io.partitioning import PartitionField
     from daft.io.pushdowns import Pushdowns
     from daft.recordbatch import RecordBatch
-    from daft.recordbatch.micropartition import MicroPartition
     from daft.schema import Schema
 
 
@@ -83,6 +81,12 @@ class DataSource(ABC):
         task whose pushdowns carry the count aggregation; get_tasks is
         then responsible for producing the count result (e.g. from catalog
         metadata) instead of scanning data files.
+
+        A source that returns true must honor the rest of the pushdowns when it
+        produces that count. In particular `partition_filters` may be set while
+        `filters` is None, since the optimizer moves predicates it resolved
+        against partition values alone out of `filters`; counting without
+        applying them reports rows the query excluded.
         """
         return False
 
@@ -118,31 +122,16 @@ class DataSourceTask(ABC):
         """Returns the schema of the record batches produced by this task."""
         ...
 
+    @abstractmethod
     async def read(self) -> AsyncIterator[RecordBatch]:
         """Yields record batches. Called from an async execution context.
 
-        The default implementation delegates to the deprecated
-        get_micro_partitions for backwards compatibility.
-        New subclasses should override this method directly.
+        Subclasses must override this method. Each yielded batch must match :attr:`schema`.
         """
-        try:
-            parts = self.get_micro_partitions()
-        except NotImplementedError:
-            raise NotImplementedError(
-                f"{type(self).__name__} must implement async def read(self) -> AsyncIterator[RecordBatch]"
-            )
-        warnings.warn(
-            f"{type(self).__name__}.get_micro_partitions() is deprecated — override 'async def read()' instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        for mp in parts:
-            for rb in mp.get_record_batches():
-                yield rb
-
-    def get_micro_partitions(self) -> Iterator[MicroPartition]:
-        """Deprecated: override read instead."""
-        raise NotImplementedError
+        ...
+        # https://mypy.readthedocs.io/en/latest/more_types.html#typing-async-generators
+        # This tricks the type checker into treating this as an async generator.
+        yield  # type: ignore[misc]
 
     @staticmethod
     def parquet(
@@ -211,6 +200,32 @@ class DataSourceTask(ABC):
             stats=stats._recordbatch if stats is not None else None,
             storage_config=storage_config,
             iceberg_delete_files=iceberg_delete_files,
+        )
+
+        return _RustDataSourceTask(inner)
+
+    @staticmethod
+    def mcap(
+        path: str,
+        schema: Schema,
+        *,
+        mcap_config: McapSourceConfig | None = None,
+        pushdowns: Pushdowns | None = None,
+        num_rows: int | None = None,
+        size_bytes: int | None = None,
+        stats: RecordBatch | None = None,
+        storage_config: StorageConfig | None = None,
+    ) -> DataSourceTask:
+        """Create a task that reads an MCAP file using the native reader."""
+        inner = PyDataSourceTask.mcap(
+            path=path,
+            schema=schema._schema,
+            mcap_config=mcap_config,
+            pushdowns=pushdowns._to_pypushdowns() if pushdowns is not None else None,
+            num_rows=num_rows,
+            size_bytes=size_bytes,
+            stats=stats._recordbatch if stats is not None else None,
+            storage_config=storage_config,
         )
 
         return _RustDataSourceTask(inner)

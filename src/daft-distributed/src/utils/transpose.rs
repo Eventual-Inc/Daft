@@ -36,8 +36,10 @@ pub(crate) fn transpose_materialized_outputs_from_vec(
 /// from all input materialized outputs.
 ///
 /// # Arguments
-/// * `materialized_partitions` - A vector of materialized outputs, each containing `num_partitions` partitions
-/// * `num_partitions` - The number of partitions each materialized output should contain
+/// * `materialized_partitions` - A vector of materialized outputs, each containing `num_partitions`
+///   partitions, or no partitions at all when the producing task emitted no output (e.g. its input
+///   was cut to zero rows by a limit sitting below the shuffle).
+/// * `num_partitions` - The number of partitions each non-empty materialized output should contain
 ///
 /// # Returns
 /// * A vector of partition groups, where each group contains all materialized outputs for that partition
@@ -48,8 +50,8 @@ fn transpose_materialized_outputs(
     debug_assert!(
         materialized_partitions
             .iter()
-            .all(|mat| mat.len() == num_partitions),
-        "Expected all outputs to have {} partitions, got {}",
+            .all(|mat| mat.len() == num_partitions || mat.is_empty()),
+        "Expected all outputs to have {} partitions or none at all, got {}",
         num_partitions,
         materialized_partitions
             .iter()
@@ -61,7 +63,11 @@ fn transpose_materialized_outputs(
     for idx in 0..num_partitions {
         let mut partition_group = vec![];
         for materialized_partition in &materialized_partitions {
-            let part = &materialized_partition[idx];
+            // An output with no partitions carries no rows for any partition index,
+            // so it contributes nothing to any partition group.
+            let Some(part) = materialized_partition.get(idx) else {
+                continue;
+            };
             if part.num_rows() > 0 {
                 partition_group.push(part.clone());
             }

@@ -25,7 +25,7 @@ These tests exercise Daft's Gravitino connector end-to-end. To run them:
 ## Test Files
 
 - `test_gravitino_fileset.py` - Tests filesets with local file:// storage
-- `test_gravitino_fileset_s3.py` - Tests filesets with S3 storage (using MinIO)
+- `test_gravitino_fileset_s3.py` - Tests filesets with S3 storage (using SeaweedFS)
 - `test_gravitino_table.py` - Tests table catalog operations
 
 ## S3 Storage Tests
@@ -36,8 +36,8 @@ The S3 fileset tests (`test_gravitino_fileset_s3.py`) test Gravitino filesets ba
 
 
 The docker-compose setup includes:
-1. **MinIO**: S3-compatible storage on port 9000
-2. **Update fileset.conf**: To run with MinIO with s3 need to set a property in `/root/gravitino/catalogs/fileset/conf/fileset.conf`
+1. **SeaweedFS**: S3-compatible storage on port 9000
+2. **Update fileset.conf**: To run with S3, set a property in `/root/gravitino/catalogs/fileset/conf/fileset.conf`
 3. **Test Infrastructure**: Complete test suite for S3 filesets
 
 ### Running S3 Tests with External Gravitino
@@ -68,4 +68,4 @@ Optionally, configure `GRAVITINO_TEST_FILE` and `GRAVITINO_TEST_DIR` to point at
 your Gravitino deployment so that the gvfs:// IO tests can read concrete data.
 
 The catalog integration tests provision temporary catalog/schema/fileset via the Gravitino REST API and write
-test data to either local storage or MinIO. The tests clean up both the server-side metadata and storage when finished.
+test data to either local storage or SeaweedFS. The tests clean up both the server-side metadata and storage when finished.

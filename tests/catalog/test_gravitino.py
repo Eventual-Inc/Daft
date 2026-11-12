@@ -538,12 +538,14 @@ class TestGravitinoTable:
 
     def test_read_iceberg_table_pyiceberg_not_installed(self, mock_inner_table):
         """Test that _from_obj raises ImportError when pyiceberg is not installed."""
-        with patch(
-            "daft.catalog.__gravitino._catalog._open_iceberg_table",
-            side_effect=ImportError("No module named 'pyiceberg'"),
+        with (
+            patch(
+                "daft.catalog.__gravitino._catalog._open_iceberg_table",
+                side_effect=ImportError("No module named 'pyiceberg'"),
+            ),
+            pytest.raises(ImportError, match="No module named 'pyiceberg'"),
         ):
-            with pytest.raises(ImportError, match="No module named 'pyiceberg'"):
-                TableWrapper._from_obj(mock_inner_table)
+            TableWrapper._from_obj(mock_inner_table)
 
     def test_read_parquet_hive_table(self, mock_inner_table):
         """Test reading a Hive/Parquet table calls read_parquet with hive_partitioning."""

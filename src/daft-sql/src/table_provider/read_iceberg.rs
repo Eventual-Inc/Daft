@@ -7,6 +7,7 @@ use crate::{
     SQLPlanner,
     error::{PlannerError, SQLPlannerResult},
     functions::SQLFunctionArguments,
+    invalid_operation_err,
     modules::config::expr_to_iocfg,
 };
 
@@ -16,7 +17,7 @@ pub(super) struct SqlReadIceberg;
 /// The Daft-SQL `read_iceberg` table-value function arguments.
 struct SqlReadIcebergArgs {
     metadata_location: String,
-    snapshot_id: Option<usize>,
+    snapshot_id: Option<i64>,
     branch: Option<String>,
     tag: Option<String>,
     io_config: Option<IOConfig>,
@@ -29,6 +30,7 @@ impl SqlReadIcebergArgs {
         planner.plan_function_args(
             &args.args,
             &[
+                "path",
                 "snapshot_id",
                 "branch",
                 "tag",
@@ -45,10 +47,14 @@ impl TryFrom<SQLFunctionArguments> for SqlReadIcebergArgs {
 
     /// This is required to use `planner.plan_function_args`
     fn try_from(args: SQLFunctionArguments) -> Result<Self, Self::Error> {
-        let metadata_location: String = args
-            .try_get_positional(0)?
-            .expect("read_iceberg requires a path");
-        let snapshot_id: Option<usize> = args.try_get_named("snapshot_id")?;
+        let metadata_location: String = if let Some(path) = args.try_get_positional(0)? {
+            path
+        } else if let Some(path) = args.try_get_named("path")? {
+            path
+        } else {
+            invalid_operation_err!("path is required for `read_iceberg`")
+        };
+        let snapshot_id: Option<i64> = args.try_get_named("snapshot_id")?;
         let branch: Option<String> = args.try_get_named("branch")?;
         let tag: Option<String> = args.try_get_named("tag")?;
         // Keep `None` when unset so the scan can fall back to the table's FileIO
