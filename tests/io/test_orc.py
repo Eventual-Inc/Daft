@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import sys
 import threading
 from decimal import Decimal
 from pathlib import Path
@@ -16,6 +17,16 @@ from daft.io._orc import OrcSource, OrcSourceTask
 from daft.io.pushdowns import Pushdowns
 from daft.pickle import cloudpickle
 from daft.recordbatch import RecordBatch
+
+
+@pytest.fixture(autouse=True)
+def limit_macos_scan_parallelism():
+    if sys.platform == "darwin":
+        # Avoid concurrent blocking file reads on the small macOS CI runner.
+        with daft.execution_config_ctx(scantask_max_parallel=1):
+            yield
+    else:
+        yield
 
 
 def _write_orc(path: Path, table: pa.Table, **kwargs) -> str:

@@ -96,12 +96,12 @@ def test_partitioning_years(input, dtype, expected):
         ([1512151975038194], DataType.timestamp(timeunit=TimeUnit.from_str("us")), [420042]),
         ([1512151975038], DataType.timestamp(timeunit=TimeUnit.from_str("ms")), [420042]),
         ([1512151975], DataType.timestamp(timeunit=TimeUnit.from_str("s")), [420042]),
-        ([-1], DataType.timestamp(timeunit=TimeUnit.from_str("us")), [0]),
-        ([-1], DataType.timestamp(timeunit=TimeUnit.from_str("us"), timezone="-08:00"), [0]),
+        ([-1], DataType.timestamp(timeunit=TimeUnit.from_str("us")), [-1]),
+        ([-1], DataType.timestamp(timeunit=TimeUnit.from_str("us"), timezone="-08:00"), [-1]),
         (
             [-3_600_000_000 + 1, -3_600_000_000, 3_600_000_000 + -1, 3_600_000_000 + 1],
             DataType.timestamp(timeunit=TimeUnit.from_str("us"), timezone="-08:00"),
-            [0, -1, 0, 1],
+            [-1, -1, 0, 1],
         ),
     ],
 )
@@ -147,6 +147,11 @@ def test_iceberg_bucketing(input, n):
         (pa.array([34], type=pa.int32()), 2017239379),
         (pa.array([34], type=pa.int64()), 2017239379),
         (pa.array([Decimal("14.20")]), -500754589),
+        # Decimals whose minimal two's complement is negative or needs a sign byte.
+        (pa.array([Decimal("1.28")]), 1544076949),
+        (pa.array([Decimal("327.68")]), 623161056),
+        (pa.array([Decimal("-0.01")]), -43192051),
+        (pa.array([Decimal("0.00")]), 1364076727),
         (pa.array([date.fromisoformat("2017-11-16")]), -653330422),
         (pa.array([time.fromisoformat("22:31:08")]), -662762989),
         (pa.array([datetime.fromisoformat("2017-11-16T22:31:08")]), -2047944441),
@@ -225,8 +230,9 @@ def test_iceberg_truncate_all_int(dtype):
 
 
 def test_iceberg_truncate_str():
-    data = ["abcdefg", "abc", "abcde", None]
-    expected = ["abcde", "abc", "abcde", None]
+    # Truncation counts code points, not bytes.
+    data = ["abcdefg", "abc", "abcde", "héllo wörld", "日本語テキスト", "😀a😀b😀c", None]
+    expected = ["abcde", "abc", "abcde", "héllo", "日本語テキ", "😀a😀b😀", None]
     s = Series.from_pylist(data)
     trunc = s.partitioning.iceberg_truncate(5)
     assert trunc.datatype() == s.datatype()
