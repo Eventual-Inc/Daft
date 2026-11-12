@@ -774,7 +774,7 @@ jobs:
     - name: Spin up services
       run: |
         pushd ./tests/integration/sql/docker-compose/
-        docker compose -f ./docker-compose.yml up -d
+        docker compose -f ./docker-compose.yml up -d --wait --wait-timeout 120
         popd
 
     # Same tests as sequential native+ray, but parallel matrix jobs — matches integration-test-io.
