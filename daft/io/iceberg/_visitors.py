@@ -11,14 +11,17 @@ from pyiceberg.expressions import (
     GreaterThan,
     GreaterThanOrEqual,
     In,
+    IsNaN,
     IsNull,
     LessThan,
     LessThanOrEqual,
     Not,
     NotEqualTo,
+    NotNaN,
     NotNull,
     Or,
     Reference,
+    StartsWith,
 )
 from pyiceberg.expressions.literals import DateLiteral, Literal, StringLiteral, TimestampLiteral, literal
 from pyiceberg.types import TimestampType, TimestamptzType
@@ -73,6 +76,11 @@ class IcebergPredicateVisitor(PredicateVisitor[BooleanExpression]):
         return self.visit(expr)
 
     def visit_function(self, name: str, args: list[Expression]) -> BooleanExpression:
+        # `is_nan`/`not_nan` have no dedicated `visit_*` hook on the base visitor,
+        # so they arrive here as generic function calls with a single argument.
+        if name in ("is_nan", "not_nan") and len(args) == 1:
+            ref = self.visit_as_ref(args[0])
+            return IsNaN(term=ref) if name == "is_nan" else NotNaN(term=ref)
         raise ValueError(f"Iceberg does not support function '{name}' in filter expressions")
 
     def visit_coalesce(self, args: list[Expression]) -> BooleanExpression:
@@ -142,6 +150,11 @@ class IcebergPredicateVisitor(PredicateVisitor[BooleanExpression]):
 
     def visit_not_null(self, expr: Expression) -> BooleanExpression:
         return NotNull(term=self.visit_as_ref(expr))
+
+    def visit_starts_with(self, input: Expression, prefix: Expression) -> BooleanExpression:
+        ref = self.visit_as_ref(input)
+        lit = self.visit_as_lit(prefix)
+        return StartsWith(term=ref, literal=lit)
 
     ##
     # Helpers

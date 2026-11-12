@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 import pytest
 
 import daft
+from tests.conftest import get_tests_daft_runner_name
 
 
 def _wait_for_kafka_ready(bootstrap: str, timeout_s: int = 60) -> None:
@@ -196,7 +197,12 @@ def test_read_kafka_chunk_size_one(kafka_context: dict[str, object]) -> None:
         partitions=[0],
         chunk_size=1,
     ).collect()
-    assert len(list(df_all_p0.iter_partitions())) == 20
+    # Distributed runner coalesces small batch outputs before storing, so partition
+    # count is not a reliable signal for chunk_size under the distributed runner.
+    # Under the hood, it is still processing chunks of size 1 though.
+    if get_tests_daft_runner_name() == "native":
+        assert len(list(df_all_p0.iter_partitions())) == 20
+
     decoded = _decode_rows(df_all_p0.to_pylist())
     assert len(decoded) == 20
     assert {r["topic"] for r in decoded} == {topic}

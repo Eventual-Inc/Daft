@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import datetime
-import os
 import time
 import uuid
 
@@ -11,17 +10,15 @@ import daft
 from tests.conftest import get_tests_daft_runner_name
 
 
-def test_s3_credentials_refresh(aws_server, aws_server_ip, aws_server_port, aws_credentials):
+def test_s3_credentials_refresh(aws_server, aws_server_ip, aws_server_port, aws_credentials, monkeypatch):
     server_url = f"http://{aws_server_ip}:{aws_server_port}"
 
     bucket_name = "mybucket-" + str(uuid.uuid4())
     input_file_path = f"s3://{bucket_name}/input.parquet"
     output_file_path = f"s3://{bucket_name}/output.parquet"
 
-    old_env = os.environ.copy()
-    # Set required AWS environment variables before starting server.
     # Required to opt out of concurrent writing, since we don't provide a LockClient.
-    os.environ["AWS_S3_ALLOW_UNSAFE_RENAME"] = "true"
+    monkeypatch.setenv("AWS_S3_ALLOW_UNSAFE_RENAME", "true")
 
     s3 = boto3.resource(
         "s3",
@@ -99,6 +96,3 @@ def test_s3_credentials_refresh(aws_server, aws_server_ip, aws_server_port, aws_
 
     df2 = daft.read_parquet(output_file_path, io_config=static_config)
     assert df.to_arrow() == df2.to_arrow()
-
-    # Restore old set of environment variables.
-    os.environ = old_env

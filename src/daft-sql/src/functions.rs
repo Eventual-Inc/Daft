@@ -335,9 +335,21 @@ impl SQLLiteral for usize {
     where
         Self: Sized,
     {
-        expr.as_literal()
-            .and_then(|lit| lit.as_i64().map(|v| v as Self))
-            .ok_or_else(|| PlannerError::invalid_operation("Expected an integer literal"))
+        // Reuse daft-core's conversion policy rather than keeping a second one here:
+        // it accepts every integer width, where `as_i64` silently rejects unsigned
+        // literals. The message is ours because the core error mentions `usize`.
+        let lit = expr
+            .as_literal()
+            .ok_or_else(|| PlannerError::invalid_operation("Expected an integer literal"))?;
+        match lit.try_as_usize() {
+            Ok(Some(value)) => Ok(value),
+            Ok(None) => Err(PlannerError::invalid_operation(
+                "Expected an integer literal",
+            )),
+            Err(_) => Err(PlannerError::invalid_operation(format!(
+                "Expected a non-negative integer literal, got {lit}"
+            ))),
+        }
     }
 }
 
@@ -406,10 +418,14 @@ impl SQLFunctions {
     }
 
     /// Add a [FunctionExpr] to the [SQLFunctions] instance.
+    ///
+    /// The name is lowercased here because lookup lowercases the parsed function name,
+    /// so a mixed-case key would never be found.
     pub fn add_fn<F: SQLFunction + 'static>(&mut self, name: &str, func: F) {
+        let key = name.to_lowercase();
         self.docsmap
-            .insert(name.to_string(), (func.docstrings(name), func.arg_names()));
-        self.map.insert(name.to_string(), Arc::new(func));
+            .insert(key.clone(), (func.docstrings(name), func.arg_names()));
+        self.map.insert(key, Arc::new(func));
     }
 
     /// Get a function by name from the [SQLFunctions] instance.
@@ -524,8 +540,8 @@ impl SQLPlanner<'_> {
             }
         };
 
-        if func.over.is_some() {
-            let window_spec = Arc::new(self.parse_window_spec(func.over.as_ref().unwrap())?);
+        if let Some(over) = &func.over {
+            let window_spec = Arc::new(self.parse_window_spec(over)?);
             let window_fn = fn_match.to_expr(&args, self)?;
             Ok(match &*window_fn {
                 Expr::Agg(agg_expr) => {
@@ -747,21 +763,5 @@ impl SQLPlanner<'_> {
 
             _ => unsupported_sql_err!("Wildcard function args not yet supported"),
         }
-    }
-}
-
-/// A namespace for function argument parsing helpers.
-pub(crate) mod args {
-    use common_io_config::IOConfig;
-
-    use super::SQLFunctionArguments;
-    use crate::{error::PlannerError, modules::config::expr_to_iocfg};
-
-    /// Parses io_config which is used in several SQL functions.
-    pub(crate) fn parse_io_config(args: &SQLFunctionArguments) -> Result<IOConfig, PlannerError> {
-        args.get_named("io_config")
-            .map(expr_to_iocfg)
-            .transpose()
-            .map(|op| op.unwrap_or_default())
     }
 }

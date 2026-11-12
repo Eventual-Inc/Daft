@@ -108,6 +108,24 @@ def resolve_snapshot_id(
     return snapshot_id
 
 
+# Internal helper used by read_iceberg and the Rust SQL scan path; not a public API.
+def resolve_iceberg_io_config(table: "PyIcebergTable", io_config: IOConfig | None = None) -> IOConfig | None:
+    """Resolve the IOConfig for an Iceberg scan using the standard precedence.
+
+    Precedence: an explicitly-provided ``io_config`` wins; otherwise the table's PyIceberg
+    FileIO properties are translated (handling S3/Azure/GCS credentials and the ``oss://``
+    alias); otherwise the context ``default_io_config`` is used.
+
+    Shared by :func:`read_iceberg` and the Rust SQL ``read_iceberg`` scan path so both honor
+    table-embedded credentials and the globally-set default IOConfig.
+    """
+    if io_config is None:
+        io_config = _convert_iceberg_file_io_properties_to_io_config(table.io.properties, table.location())
+    if io_config is None:
+        io_config = context.get_context().daft_planning_config.default_io_config
+    return io_config
+
+
 @PublicAPI
 def read_iceberg(
     table: Union[str, os.PathLike[str], "PyIcebergTable"],
@@ -162,7 +180,7 @@ def read_iceberg(
     """
     from pyiceberg.table import StaticTable
 
-    from daft.io.iceberg.iceberg_scan import IcebergScanOperator
+    from daft.io.iceberg.iceberg_scan import IcebergDataSource
 
     # support for read_iceberg('path/to/metadata.json')
     if isinstance(table, (str, os.PathLike)):
@@ -170,21 +188,16 @@ def read_iceberg(
 
     snapshot_id = resolve_snapshot_id(table, snapshot_id, branch, tag)
 
-    io_config = (
-        _convert_iceberg_file_io_properties_to_io_config(table.io.properties, table.location())
-        if io_config is None
-        else io_config
-    )
-    io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
+    io_config = resolve_iceberg_io_config(table, io_config)
 
     multithreaded_io = runners.get_or_create_runner().name != "ray"
     storage_config = StorageConfig(multithreaded_io, io_config)
 
-    iceberg_operator = IcebergScanOperator(
+    iceberg_source = IcebergDataSource(
         table, snapshot_id=snapshot_id, storage_config=storage_config, ignore_corrupt_files=ignore_corrupt_files
     )
 
-    handle = ScanOperatorHandle.from_python_scan_operator(iceberg_operator)
+    handle = ScanOperatorHandle.from_data_source(iceberg_source)
     builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
     builder = attach_checkpoint(builder, checkpoint)
     return DataFrame(builder)

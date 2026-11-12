@@ -189,7 +189,7 @@ def test_keep_other_columns_when_using_min_with_groupby(repartition_nparts, with
 ###
 
 GROUPBY_DATA = {
-    "animal": "cat dog cat fish dog cat cat".split(),
+    "animal": ["cat", "dog", "cat", "fish", "dog", "cat", "cat"],
     "size": list("SSMMMLL"),
     "weight": [8, 10, 11, 1, 20, 12, 12],
     "adult": [False] * 5 + [True] * 2,

@@ -4,6 +4,9 @@ import importlib
 import io
 import random
 import struct
+import threading
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -189,6 +192,72 @@ def test_filesize_expr(tmp_path: Path):
 
     res = df.select(file_size(file(df["file"]))).to_pydict()["file"][0]
     assert res == 2048
+
+
+def test_filesize_expr_multiple_files_and_nulls(tmp_path: Path):
+    first_file = tmp_path / "first.bin"
+    first_file.write_bytes(b"abc")
+    second_file = tmp_path / "second.bin"
+    second_file.write_bytes(b"12345")
+
+    df = daft.from_pydict(
+        {
+            "file": [
+                str(first_file.absolute()),
+                None,
+                str(second_file.absolute()),
+            ]
+        }
+    )
+
+    result = df.select(file_size(file(df["file"]))).to_pydict()["file"]
+    assert result == [3, None, 5]
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local HTTP server is unavailable to Ray workers")
+def test_filesize_expr_uses_http_metadata_only(tmp_path: Path):
+    file_path = tmp_path / "test_file.bin"
+    file_path.write_bytes(b"metadata-only")
+    requests: list[str] = []
+
+    class RequestRecordingHandler(SimpleHTTPRequestHandler):
+        def do_GET(self):
+            requests.append("GET")
+            super().do_GET()
+
+        def do_HEAD(self):
+            requests.append("HEAD")
+            super().do_HEAD()
+
+        def log_message(self, format, *args):
+            pass
+
+    handler = partial(RequestRecordingHandler, directory=str(tmp_path))
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/{file_path.name}"
+        df = daft.from_pydict({"file": [url]})
+        result = df.select(file_size(file(df["file"]))).to_pydict()["file"]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert result == [len(b"metadata-only")]
+    assert requests == ["HEAD"]
+
+
+def test_filesize_expr_preserves_byte_range_size(tmp_path: Path):
+    file_path = tmp_path / "test_file.bin"
+    file_path.write_bytes(b"abcdef")
+
+    df = daft.from_pydict({"file": [daft.File(str(file_path), position=2, size=3)]})
+
+    result = df.select(file_size(df["file"])).to_pydict()["file"]
+    assert result == [3]
 
 
 def test_file_exists(tmp_path: Path):
@@ -486,14 +555,12 @@ def test_file_partial_range_raises(tmp_path: Path):
     path = str(temp_file.absolute())
 
     f_position_only = daft.File(path, position=10)
-    with pytest.raises(Exception):
-        with f_position_only.open() as fh:
-            fh.read()
+    with pytest.raises(Exception), f_position_only.open() as fh:
+        fh.read()
 
     f_size_only = daft.File(path, size=10)
-    with pytest.raises(Exception):
-        with f_size_only.open() as fh:
-            fh.read()
+    with pytest.raises(Exception), f_size_only.open() as fh:
+        fh.read()
 
 
 # ── buffer_size tests ──
@@ -530,3 +597,86 @@ def test_size_with_small_buffer(tmp_path: Path):
 
     f = daft.File(str(temp_file.absolute()))
     assert f.size() == 1024
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_read_seek_roundtrip_after_gil_fix(tmp_path: Path):
+    """Basic read/seek still works after py.detach() changes."""
+    data = b"abcdefghij"
+    temp_file = tmp_path / "roundtrip.bin"
+    temp_file.write_bytes(data)
+
+    f = daft.File(str(temp_file.absolute()))
+    with f.open() as fh:
+        assert fh.read(3) == b"abc"
+        assert fh.tell() == 3
+        fh.seek(0)
+        assert fh.tell() == 0
+        assert fh.read() == data
+        fh.seek(5)
+        assert fh.read(3) == b"fgh"
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_seek_end_works(tmp_path: Path):
+    """SeekFrom::End calls block_within_async_context — verify it still works."""
+    data = b"0123456789"
+    temp_file = tmp_path / "seek_end.bin"
+    temp_file.write_bytes(data)
+
+    f = daft.File(str(temp_file.absolute()))
+    with f.open() as fh:
+        fh.seek(0, 2)  # seek to end
+        pos = fh.tell()
+        assert pos == len(data)
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_multiple_files_concurrent_read(tmp_path: Path):
+    """Multiple files opened and read from threads — exercises GIL release under concurrency."""
+    import threading
+
+    files = []
+    for i in range(8):
+        p = tmp_path / f"file_{i}.bin"
+        p.write_bytes(bytes(range(256)) * 4)
+        files.append(str(p.absolute()))
+
+    results = {}
+    errors = []
+
+    def read_file(path, idx):
+        try:
+            f = daft.File(path)
+            with f.open() as fh:
+                data = fh.read()
+                results[idx] = len(data)
+        except (OSError, RuntimeError) as e:
+            errors.append((idx, e))
+
+    threads = [threading.Thread(target=read_file, args=(p, i)) for i, p in enumerate(files)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+
+    assert not errors, f"Errors during concurrent read: {errors}"
+    assert len(results) == 8
+    assert all(v == 1024 for v in results.values())
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() == "ray", reason="local only test")
+def test_read_after_eof_returns_empty(tmp_path: Path):
+    """Reading at EOF should return empty bytes, not error — cursor preserved."""
+    data = b"short"
+    temp_file = tmp_path / "eof.bin"
+    temp_file.write_bytes(data)
+
+    f = daft.File(str(temp_file.absolute()))
+    with f.open() as fh:
+        fh.read()  # read all
+        again = fh.read()  # read at EOF
+        assert again == b""
+        # file should still be usable
+        fh.seek(0)
+        assert fh.read() == data

@@ -5,6 +5,7 @@ import datetime
 import os
 import pathlib
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
 
 import pyarrow as pa
@@ -38,7 +39,11 @@ def test_read_input(tmpdir):
 
 
 @contextlib.contextmanager
-def _parquet_write_helper(data: pa.Table, row_group_size: int | None = None, papq_write_table_kwargs: dict = {}):
+def _parquet_write_helper(
+    data: pa.Table, row_group_size: int | None = None, papq_write_table_kwargs: Mapping | None = None
+):
+    papq_write_table_kwargs = papq_write_table_kwargs or {}
+
     with tempfile.TemporaryDirectory() as directory_name:
         file = os.path.join(directory_name, "tempfile")
         papq.write_table(data, file, row_group_size=row_group_size, **papq_write_table_kwargs)
@@ -286,8 +291,7 @@ def test_read_too_small_parquet_file(tmpdir, n_bytes):
     tmpdir = pathlib.Path(tmpdir)
     file_path = tmpdir / "file.parquet"
     with open(file_path, "wb") as f:
-        for _ in range(n_bytes):
-            f.write(b"0")
+        f.writelines(b"0" for _ in range(n_bytes))
     with pytest.raises(ValueError, match="smaller than the minimum size of 12 bytes"):
         MicroPartition.read_parquet(file_path.as_posix())
 

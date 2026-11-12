@@ -266,9 +266,8 @@ mod tests {
         let st = make_scan_task("file:///dev/null.jsonl", 10_000_000);
         let cfg = common_daft_config::DaftExecutionConfig::default();
         let iter = split_by_jsonl_ranges(Box::new(std::iter::once(Ok(Arc::new(st).into()))), &cfg);
-        let out = iter.collect::<Vec<_>>();
         // Should have exactly 1 task since input is a single task with .jsonl extension
-        assert_eq!(out.len(), 1);
+        assert_eq!(iter.count(), 1);
     }
 
     #[test]
@@ -356,9 +355,8 @@ mod tests {
         let st = make_scan_task("file:///tmp/f.jsonl.gz", 10_000_000);
         let cfg = common_daft_config::DaftExecutionConfig::default();
         let iter = split_by_jsonl_ranges(Box::new(std::iter::once(Ok(Arc::new(st).into()))), &cfg);
-        let out = iter.collect::<Vec<_>>();
         // Compressed files should not be split, exactly 1 task
-        assert_eq!(out.len(), 1);
+        assert_eq!(iter.count(), 1);
     }
 
     #[test]
@@ -366,9 +364,8 @@ mod tests {
         let st = make_scan_task("file:///tmp/data.json", 10_000_000);
         let cfg = common_daft_config::DaftExecutionConfig::default();
         let iter = split_by_jsonl_ranges(Box::new(std::iter::once(Ok(Arc::new(st).into()))), &cfg);
-        let out = iter.collect::<Vec<_>>();
         // .json files should not be split, exactly 1 task
-        assert_eq!(out.len(), 1);
+        assert_eq!(iter.count(), 1);
     }
 
     #[test]
@@ -390,8 +387,7 @@ mod tests {
             &cfg,
         );
 
-        let out = iter.collect::<Vec<_>>();
-        assert_eq!(out.len(), 3);
+        assert_eq!(iter.count(), 3);
     }
 
     #[test]

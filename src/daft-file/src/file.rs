@@ -8,6 +8,7 @@ use common_error::{DaftError, DaftResult};
 use daft_core::file::FileReference;
 use daft_io::{GetRange, IOConfig, IOStatsRef, ObjectSource};
 use daft_schema::media_type::MediaType;
+use tracing::{Instrument, Span};
 use url::Url;
 
 pub struct DaftFile {
@@ -185,18 +186,21 @@ impl ObjectSourceReader {
         let uri = self.uri.clone();
         let io_stats = self.io_stats.clone();
 
-        rt.block_within_async_context(async move {
-            let result = source
-                .get(&uri, None, io_stats)
-                .await
-                .map_err(map_get_error)?;
+        rt.block_within_async_context(
+            async move {
+                let result = source
+                    .get(&uri, None, io_stats)
+                    .await
+                    .map_err(map_get_error)?;
 
-            result
-                .bytes()
-                .await
-                .map(|b| b.to_vec())
-                .map_err(map_bytes_error)
-        })
+                result
+                    .bytes()
+                    .await
+                    .map(|b| b.to_vec())
+                    .map_err(map_bytes_error)
+            }
+            .instrument(Span::current()),
+        )
         .map_err(map_async_error)
         .flatten()
     }
@@ -233,32 +237,35 @@ impl Read for ObjectSourceReader {
         let uri = self.uri.clone();
         let io_stats = self.io_stats.clone();
         let bytes = rt
-            .block_within_async_context(async move {
-                match source.get(&uri, range, io_stats.clone()).await {
-                    Ok(result) => {
-                        let bytes = result.bytes().await.map_err(map_bytes_error)?;
-                        Ok(bytes.to_vec())
-                    }
-                    Err(e) => {
-                        let error_str = e.to_string();
-                        // Check if error suggests range requests aren't supported
-                        if error_str.contains("Requested Range Not Satisfiable")
-                            || error_str.contains("416")
-                        {
-                            // Fall back to reading the entire file
-                            let result = source
-                                .get(&uri, None, io_stats)
-                                .await
-                                .map_err(map_get_error)?;
-
+            .block_within_async_context(
+                async move {
+                    match source.get(&uri, range, io_stats.clone()).await {
+                        Ok(result) => {
                             let bytes = result.bytes().await.map_err(map_bytes_error)?;
                             Ok(bytes.to_vec())
-                        } else {
-                            Err(map_get_error(e))
+                        }
+                        Err(e) => {
+                            let error_str = e.to_string();
+                            // Check if error suggests range requests aren't supported
+                            if error_str.contains("Requested Range Not Satisfiable")
+                                || error_str.contains("416")
+                            {
+                                // Fall back to reading the entire file
+                                let result = source
+                                    .get(&uri, None, io_stats)
+                                    .await
+                                    .map_err(map_get_error)?;
+
+                                let bytes = result.bytes().await.map_err(map_bytes_error)?;
+                                Ok(bytes.to_vec())
+                            } else {
+                                Err(map_get_error(e))
+                            }
                         }
                     }
                 }
-            })
+                .instrument(Span::current()),
+            )
             .map_err(map_async_error)??;
 
         if bytes.is_empty() {

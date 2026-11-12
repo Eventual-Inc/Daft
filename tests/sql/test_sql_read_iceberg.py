@@ -7,12 +7,15 @@ import pyarrow as pa
 import pytest
 
 import daft
+from daft.io import IOConfig, S3Config
 
 pyiceberg = pytest.importorskip("pyiceberg")
 
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.schema import Schema
 from pyiceberg.types import LongType, NestedField, StringType
+
+from daft.io.iceberg import iceberg_scan
 
 
 def _metadata_path(metadata_location: str) -> str:
@@ -27,6 +30,52 @@ def _local_path(path: str) -> str:
 
 def _iceberg_data_file_local_paths(table) -> list[str]:
     return sorted(_local_path(task.file.file_path) for task in table.scan().plan_files())
+
+
+@pytest.fixture(params=[2**32 + 1, 2**63 - 1])
+def wide_snapshot_metadata(tmp_path, monkeypatch, request):
+    catalog = SqlCatalog(
+        "default",
+        uri=f"sqlite:///{tmp_path}/pyiceberg_catalog.db",
+        warehouse=f"file://{tmp_path}",
+    )
+    try:
+        catalog.create_namespace("default")
+        table = catalog.create_table("default.t", Schema(NestedField(1, "x", LongType())))
+        snapshot_id = request.param
+        # Cover the unsigned 32-bit boundary and the maximum signed 64-bit ID.
+        with monkeypatch.context() as patch:
+            patch.setattr("pyiceberg.table.metadata._generate_snapshot_id", lambda: snapshot_id)
+            table.append(pa.table({"x": pa.array([1, 2], type=pa.int64())}))
+        assert table.current_snapshot().snapshot_id == snapshot_id
+        yield _metadata_path(table.metadata_location), snapshot_id
+    finally:
+        catalog.engine.dispose()
+
+
+def test_sql_read_iceberg_wide_snapshot_id_matches_python(wide_snapshot_metadata):
+    metadata_location, snapshot_id = wide_snapshot_metadata
+    sql_df = daft.sql(f"SELECT * FROM read_iceberg('{metadata_location}', snapshot_id => {snapshot_id})")
+    python_df = daft.read_iceberg(metadata_location, snapshot_id=snapshot_id)
+    assert sql_df.sort("x").to_pydict() == python_df.sort("x").to_pydict() == {"x": [1, 2]}
+
+
+@pytest.mark.parametrize("snapshot_id", [-1, -(2**63 - 1)])
+def test_sql_read_iceberg_negative_snapshot_id_matches_python(wide_snapshot_metadata, snapshot_id):
+    metadata_location, _ = wide_snapshot_metadata
+    message = f"Snapshot not found: {snapshot_id}"
+    with pytest.raises(ValueError, match=message):
+        daft.read_iceberg(metadata_location, snapshot_id=snapshot_id)
+    with pytest.raises(Exception, match=message) as exc_info:
+        daft.sql(f"SELECT * FROM read_iceberg('{metadata_location}', snapshot_id => {snapshot_id})")
+    assert exc_info.type.__name__ == "InvalidSQLException"
+
+
+@pytest.mark.parametrize("snapshot_id", ["'1'", "1.5", "true", str(2**63), str(-(2**63) - 1)])
+def test_sql_read_iceberg_invalid_snapshot_id_rejected(snapshot_id):
+    with pytest.raises(Exception, match="Expected an integer literal") as exc_info:
+        daft.sql(f"SELECT * FROM read_iceberg('does_not_exist.metadata.json', snapshot_id => {snapshot_id})")
+    assert exc_info.type.__name__ == "InvalidSQLException"
 
 
 def test_sql_read_iceberg_branch_and_tag_with_schema_evolution(tmp_path):
@@ -137,6 +186,81 @@ def test_sql_read_iceberg_ignore_corrupt_files_skips_data_file(tmp_path):
         assert not partial
     finally:
         catalog.engine.dispose()
+
+
+def test_sql_read_iceberg_uses_default_io_config(tmp_path, monkeypatch):
+    """The SQL read_iceberg path resolves io_config like the Python API.
+
+    Without an explicit io_config, the context ``default_io_config`` must reach the scan's
+    StorageConfig (previously the SQL path used an empty default, ignoring it). We capture the
+    StorageConfig handed to the data source, since io_config is not surfaced in the plan text.
+    """
+    catalog = SqlCatalog(
+        "default",
+        uri=f"sqlite:///{tmp_path}/pyiceberg_catalog.db",
+        warehouse=f"file://{tmp_path}",
+    )
+    try:
+        catalog.create_namespace("default")
+        table = catalog.create_table("default.t_iocfg", Schema(NestedField(1, "x", LongType())))
+        daft.from_pydict({"x": [1, 2, 3]}).write_iceberg(table)
+        table.refresh()
+        metadata_location = _metadata_path(table.metadata_location)
+
+        captured: dict = {}
+        original_init = iceberg_scan.IcebergDataSource.__init__
+
+        def capturing_init(self, iceberg_table, snapshot_id, storage_config, ignore_corrupt_files=False):
+            captured["storage_config"] = storage_config
+            return original_init(self, iceberg_table, snapshot_id, storage_config, ignore_corrupt_files)
+
+        monkeypatch.setattr(iceberg_scan.IcebergDataSource, "__init__", capturing_init)
+
+        default = IOConfig(s3=S3Config(region_name="us-west-2"))
+        old = daft.context.get_context().daft_planning_config.default_io_config
+        daft.context.set_planning_config(default_io_config=default)
+        try:
+            df = daft.sql(f"SELECT * FROM read_iceberg('{metadata_location}')")
+            assert df.sort("x").to_pydict() == {"x": [1, 2, 3]}
+        finally:
+            daft.context.set_planning_config(default_io_config=old)
+
+        storage_config = captured["storage_config"]
+        assert storage_config.io_config is not None
+        assert storage_config.io_config.s3.region_name == "us-west-2"
+    finally:
+        catalog.engine.dispose()
+
+
+def test_sql_read_iceberg_accepts_named_path(tmp_path):
+    """`read_iceberg` takes the metadata location positionally or as a named `path` argument.
+
+    The other table functions (`read_parquet`, `read_csv`, `read_json`) already accept both forms.
+    """
+    catalog = SqlCatalog(
+        "default",
+        uri=f"sqlite:///{tmp_path}/pyiceberg_catalog.db",
+        warehouse=f"file://{tmp_path}",
+    )
+    try:
+        catalog.create_namespace("default")
+        table = catalog.create_table("default.t_named", Schema(NestedField(1, "x", LongType())))
+        daft.from_pydict({"x": [1, 2, 3]}).write_iceberg(table)
+        table.refresh()
+        metadata_location = _metadata_path(table.metadata_location)
+
+        positional = daft.sql(f"SELECT * FROM read_iceberg('{metadata_location}')")
+        named = daft.sql(f"SELECT * FROM read_iceberg(path => '{metadata_location}')")
+        assert named.sort("x").to_pydict() == positional.sort("x").to_pydict() == {"x": [1, 2, 3]}
+    finally:
+        catalog.engine.dispose()
+
+
+def test_sql_read_iceberg_missing_path_raises():
+    """A missing path is a planner error, not a Rust panic surfacing as PanicException."""
+    with pytest.raises(Exception, match="path is required for `read_iceberg`") as exc_info:
+        daft.sql("SELECT * FROM read_iceberg()")
+    assert exc_info.type.__name__ == "InvalidSQLException"
 
 
 @pytest.mark.skip(

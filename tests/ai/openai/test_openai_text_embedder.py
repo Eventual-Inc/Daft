@@ -114,9 +114,16 @@ def test_custom_base_url_dimensions_none_probes_for_non_native_model():
             provider_options={"api_key": "test-key", "base_url": base_url},
             model_name=model,
             dimensions=None,
+            embed_options={"extra_body": {"input_type": "passage"}},
         )
 
         assert descriptor.get_dimensions().size == 1024
+        mock_sync_client.embeddings.create.assert_called_once_with(
+            input="dimension probe",
+            model=model,
+            encoding_format="float",
+            extra_body={"input_type": "passage"},
+        )
 
 
 def test_custom_base_url_passes_dimensions_param_through(mock_client):
@@ -230,6 +237,45 @@ def test_embed_text_multiple_inputs(mock_text_embedder, mock_client):
         model="text-embedding-3-small",
         encoding_format="float",
         dimensions=omit,
+    )
+
+
+def test_embed_text_forwards_extra_body(mock_client):
+    extra_body = {
+        "truncate_prompt_tokens": 4096,
+        "truncation_side": "right",
+    }
+    embedder = OpenAITextEmbedder(
+        provider_options={"api_key": "test-key", "base_url": "http://localhost:8000/v1"},
+        model="BAAI/bge-m3",
+        embed_options={"extra_body": extra_body},
+        dimensions=1024,
+    )
+    embedder._client = mock_client
+
+    mock_response = Mock(spec=CreateEmbeddingResponse)
+    mock_embedding = Mock(spec=OpenAIEmbedding)
+    mock_embedding.embedding = np.array([0.1] * 1024, dtype=np.float32)
+    mock_response.data = [mock_embedding]
+    mock_client.embeddings.create.return_value = mock_response
+
+    run(embedder._embed_text_batch(["batch input"]))
+    mock_client.embeddings.create.assert_awaited_once_with(
+        input=["batch input"],
+        model="BAAI/bge-m3",
+        encoding_format="float",
+        dimensions=1024,
+        extra_body=extra_body,
+    )
+
+    mock_client.embeddings.create.reset_mock()
+    run(embedder._embed_text("single input"))
+    mock_client.embeddings.create.assert_awaited_once_with(
+        input="single input",
+        model="BAAI/bge-m3",
+        encoding_format="float",
+        dimensions=1024,
+        extra_body=extra_body,
     )
 
 

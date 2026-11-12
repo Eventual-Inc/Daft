@@ -32,7 +32,7 @@ VALID_INT_STRING_COMPARISONS = list(itertools.product(arrow_int_types + arrow_de
 )
 
 
-def make_array(data: list, type=None) -> pa.array:
+def make_array(data: list, type=None) -> pa.Array:
     if type is not None and (pa.types.is_string(type) or pa.types.is_large_string(type)):
         data = [str(x) if x is not None else None for x in data]
     return pa.array(data, type=type)

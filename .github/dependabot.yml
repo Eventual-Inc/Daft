@@ -4,11 +4,24 @@ updates:
   directory: /
   schedule:
     interval: monthly
+  exclude-paths:
+  - "benchmarking/**"
   groups:
     # Python updates are mainly dev-only, so we can group them together.
     all:
       patterns:
       - "*"
+
+# Example benchmark environments, not daft or development dependencies
+- package-ecosystem: pip
+  directories:
+  - "/benchmarking/ai/*"
+  - "/benchmarking/parquet"
+  schedule:
+    interval: monthly
+  open-pull-requests-limit: 0
+  ignore:
+  - dependency-name: "*"
 
 - package-ecosystem: cargo
   directory: /

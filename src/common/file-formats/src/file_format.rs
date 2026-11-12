@@ -22,6 +22,8 @@ pub enum FileFormat {
     Json,
     Warc,
     Text,
+    Mcap,
+    Avro,
 }
 
 #[cfg(feature = "python")]
@@ -34,6 +36,8 @@ impl FileFormat {
             Self::Json => "json",
             Self::Warc => "warc",
             Self::Text => "txt",
+            Self::Mcap => "mcap",
+            Self::Avro => "avro",
         }
     }
 }
@@ -42,7 +46,7 @@ impl FromStr for FileFormat {
     type Err = DaftError;
 
     fn from_str(file_format: &str) -> DaftResult<Self> {
-        use FileFormat::{Csv, Json, Parquet, Text, Warc};
+        use FileFormat::{Avro, Csv, Json, Mcap, Parquet, Text, Warc};
 
         if file_format.trim().eq_ignore_ascii_case("parquet") {
             Ok(Parquet)
@@ -54,6 +58,10 @@ impl FromStr for FileFormat {
             Ok(Warc)
         } else if file_format.trim().eq_ignore_ascii_case("txt") {
             Ok(Text)
+        } else if file_format.trim().eq_ignore_ascii_case("avro") {
+            Ok(Avro)
+        } else if file_format.trim().eq_ignore_ascii_case("mcap") {
+            Ok(Mcap)
         } else {
             Err(DaftError::TypeError(format!(
                 "FileFormat {file_format} not supported!"

@@ -4,16 +4,16 @@ use async_trait::async_trait;
 use common_io_config::GCSConfig;
 use common_runtime::get_io_pool_num_threads;
 use futures::{TryStreamExt, stream::BoxStream};
-use google_cloud_storage::{
+use gcloud_storage::{
     client::{Client, ClientConfig, google_cloud_auth::credentials::CredentialsFile},
     http::{
         Error as GError,
         objects::{delete::DeleteObjectRequest, get::GetObjectRequest, list::ListObjectsRequest},
     },
 };
-use google_cloud_token::{TokenSource, TokenSourceProvider};
 use regex::Regex;
 use snafu::{IntoError, ResultExt, Snafu};
+use token_source::{TokenSource, TokenSourceProvider};
 use tokio::sync::Semaphore;
 
 use crate::{
@@ -45,7 +45,7 @@ enum Error {
 
     #[snafu(display("Unable to load Credentials: {}", source))]
     UnableToLoadCredentials {
-        source: google_cloud_storage::client::google_cloud_auth::error::Error,
+        source: gcloud_storage::client::google_cloud_auth::error::Error,
     },
     #[snafu(display("Not a File: \"{}\"", path))]
     NotAFile { path: String },
@@ -177,7 +177,7 @@ struct GCSClientWrapper {
 
 fn parse_raw_uri(uri: &str) -> super::Result<(&str, &str)> {
     // We use regex here instead of the more robust url crate because we do not want to handle character escaping
-    // which is done by `google_cloud_storage::client::Client` already
+    // which is done by `gcloud_storage::client::Client` already
     let re = Regex::new(r"^gs://([^/]+)(?:/(.*))?$").unwrap();
 
     if let Some(cap) = re.captures(uri) {
@@ -228,7 +228,7 @@ impl GCSClientWrapper {
             object: key.into(),
             ..Default::default()
         };
-        use google_cloud_storage::http::objects::download::Range as GcsRange;
+        use gcloud_storage::http::objects::download::Range as GcsRange;
         let (grange, size) = if let Some(range) = range {
             range.validate().context(InvalidRangeRequestSnafu)?;
             match range {
@@ -385,6 +385,7 @@ impl GCSClientWrapper {
         Ok(LSResult {
             files: files.chain(dirs).collect(),
             continuation_token: ls_response.next_page_token,
+            not_found_if_empty: false,
         })
     }
 
@@ -413,7 +414,7 @@ impl GCSClientWrapper {
             } else {
                 format!("{}{GCS_DELIMITER}", key.trim_end_matches(GCS_DELIMITER))
             };
-            let forced_directory_ls_result = self
+            let mut forced_directory_ls_result = self
                 .ls_impl(
                     client,
                     bucket,
@@ -424,35 +425,31 @@ impl GCSClientWrapper {
                     io_stats.as_ref(),
                 )
                 .await?;
+            forced_directory_ls_result.not_found_if_empty = !key.is_empty();
 
-            // If no items were obtained, then this is actually a file and we perform a second ls to obtain just the file's
-            // details as the one-and-only-one entry
-            if forced_directory_ls_result.files.is_empty() {
-                let mut file_result = self
-                    .ls_impl(
-                        client,
-                        bucket,
-                        key,
-                        Some(GCS_DELIMITER),
-                        continuation_token,
-                        page_size,
-                        io_stats.as_ref(),
-                    )
-                    .await?;
+            if forced_directory_ls_result.files.is_empty()
+                && continuation_token.is_none()
+                && !key.is_empty()
+            {
+                // get_size() acquires its own connection permit.
+                drop(_permit);
 
-                // Only retain exact matches (since the API does prefix lists by default)
                 let target_path = format!("{GCS_SCHEME}://{bucket}/{key}");
-                file_result.files.retain(|fm| fm.filepath == target_path);
-
-                // Not dir and not file, so it is missing
-                if file_result.files.is_empty() {
-                    return Err(Error::NotFound {
-                        path: path.to_string(),
-                    }
-                    .into());
+                match self.get_size(&target_path, io_stats.clone()).await {
+                    Ok(size) => Ok(LSResult {
+                        files: vec![FileMetadata {
+                            filepath: target_path,
+                            size: Some(size as u64),
+                            filetype: FileType::File,
+                        }],
+                        continuation_token: forced_directory_ls_result.continuation_token,
+                        not_found_if_empty: forced_directory_ls_result.not_found_if_empty,
+                    }),
+                    // Keep the empty directory result. iter_dir will follow
+                    // its token before deciding whether the path is missing.
+                    Err(super::Error::NotFound { .. }) => Ok(forced_directory_ls_result),
+                    Err(error) => Err(error),
                 }
-
-                Ok(file_result)
             } else {
                 Ok(forced_directory_ls_result)
             }
@@ -525,7 +522,7 @@ impl GCSSource {
 
             let get_client_config = async || {
                 ClientConfig::default().with_auth().await.map_err(|e| {
-                    use google_cloud_storage::client::google_cloud_auth::error::Error::HttpError;
+                    use gcloud_storage::client::google_cloud_auth::error::Error::HttpError;
 
                     // retry when we may receive an error from hitting the credentials server too much
                     if let HttpError(reqwest_err) = &e
@@ -572,14 +569,14 @@ impl GCSSource {
                 .jitter(Jitter::Bounded)
                 .retry_bounds(
                     Duration::from_millis(config.retry_initial_backoff_ms),
-                    Duration::from_secs(60),
+                    Duration::from_mins(1),
                 )
                 .build_with_max_retries(config.num_tries);
 
             let base_client = reqwest_middleware::reqwest::ClientBuilder::default()
                 .connect_timeout(Duration::from_millis(config.connect_timeout_ms))
                 .read_timeout(Duration::from_millis(config.read_timeout_ms))
-                .pool_idle_timeout(Duration::from_secs(60))
+                .pool_idle_timeout(Duration::from_mins(1))
                 .pool_max_idle_per_host(70)
                 .build()
                 .context(UnableToCreateClientSnafu)?;
@@ -708,7 +705,7 @@ mod tests {
     use std::sync::Arc;
 
     use common_io_config::GCSConfig;
-    use google_cloud_storage::{
+    use gcloud_storage::{
         client::ClientConfig,
         http::objects::upload::{Media, UploadObjectRequest, UploadType},
     };

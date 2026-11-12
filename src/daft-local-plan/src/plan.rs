@@ -16,7 +16,7 @@ use daft_dsl::{
         BoundColumn, VLLMExpr,
         bound_expr::{BoundAggExpr, BoundExpr, BoundVLLMExpr, BoundWindowExpr},
     },
-    functions::python::{RuntimePyObject, UDFProperties, get_resource_request},
+    functions::python::{RuntimePyObject, UDFProperties},
 };
 use daft_logical_plan::{
     InMemoryInfo, OutputFileInfo,
@@ -2425,6 +2425,15 @@ pub enum ShuffleBackend {
         shuffle_dirs: Vec<String>,
         compression: Option<String>,
     },
+}
+
+impl ShuffleBackend {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Ray => "Ray",
+            Self::Flight { .. } => "Flight",
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]

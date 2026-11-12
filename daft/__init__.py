@@ -136,12 +136,14 @@ from daft.session import (
     set_session,
     write_table,
 )
-from daft.udf import udf, udaf, func, cls, method, metrics
+from daft.udf import udaf, func, cls, method, metrics
 from daft.io._range import _range
 from daft.io import (
     IOConfig,
     from_files,
     from_glob_path,
+    read_avro,
+    read_blob,
     read_csv,
     read_deltalake,
     read_hudi,
@@ -150,10 +152,12 @@ from daft.io import (
     read_json,
     read_kafka,
     read_parquet,
+    read_orc,
     read_sql,
     read_text,
     read_video_frames,
     read_warc,
+    read_webdataset,
     read_huggingface,
     read_mcap,
 )
@@ -277,6 +281,8 @@ __all__ = [
     "open_file",
     "planning_config_ctx",
     "range",
+    "read_avro",
+    "read_blob",
     "read_csv",
     "read_deltalake",
     "read_hudi",
@@ -286,6 +292,7 @@ __all__ = [
     "read_kafka",
     "read_lance",
     "read_mcap",
+    "read_orc",
     "read_paimon",
     "read_parquet",
     "read_sql",
@@ -293,6 +300,7 @@ __all__ = [
     "read_text",
     "read_video_frames",
     "read_warc",
+    "read_webdataset",
     "refresh_logger",
     "register_viz_hook",
     "runners",
@@ -309,7 +317,6 @@ __all__ = [
     "sql",
     "sql_expr",
     "udaf",
-    "udf",
     "with_subscriber",
     "write_table",
 ]

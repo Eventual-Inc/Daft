@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import os
+
 import pyarrow as pa
 import pyarrow.parquet as papq
 import pytest
 
 import daft
 from daft import DataType as dt
+from tests.utils import explain_to_text
 
 # TODO chore: make an asset fixture for all tests (beyond just sql).
 
@@ -132,6 +135,26 @@ def test_sql_read_parquet_file_options(tmp_path):
     assert actual.to_pydict() == expect.to_pydict()
 
 
+def test_sql_read_parquet_ignore_corrupt_files(tmp_path):
+    good_path = tmp_path / "good.parquet"
+    bad_path = tmp_path / "bad.parquet"
+    papq.write_table(pa.table({"x": [1, 2]}), good_path)
+    bad_path.write_bytes(b"PAR1" + b"\x00" * 20 + b"PAR1")
+
+    with pytest.raises(Exception):
+        daft.sql(f"SELECT * FROM read_parquet('{tmp_path.as_posix()}')").collect()
+
+    df = daft.sql(f"SELECT * FROM read_parquet('{tmp_path.as_posix()}', ignore_corrupt_files => true)").collect()
+
+    assert df.to_pydict() == {"x": [1, 2]}
+    skipped = df.skipped_corrupt_files
+    assert len(skipped) == 1
+    path, reason, partial = skipped[0]
+    assert os.path.basename(path) == "bad.parquet"
+    assert reason
+    assert not partial
+
+
 def test_sql_read_csv(sample_csv_path):
     actual = daft.sql(f"SELECT * FROM read_csv('{sample_csv_path}')")
     expect = daft.read_csv(sample_csv_path)
@@ -210,3 +233,93 @@ def test_sql_read_path_no_alias(sample_csv_path):
     # don't allow using paths as table names
     with pytest.raises(Exception, match="Table not found"):
         daft.sql(f""" SELECT "{sample_csv_path}".* FROM '{sample_csv_path}' """)
+
+
+def _write_corrupt_csv(path):
+    # Binary garbage that is not valid UTF-8, so the CSV reader treats it as corrupt.
+    path.write_bytes(b"\x00\x01\x02\x03\xff\xfe\xfd")
+
+
+def test_sql_read_csv_ignore_corrupt_files(tmp_path):
+    good1 = tmp_path / "good1.csv"
+    good2 = tmp_path / "good2.csv"
+    good1.write_text("a\n1\n2\n3\n")
+    good2.write_text("a\n4\n5\n6\n")
+    _write_corrupt_csv(tmp_path / "zzz_bad.csv")
+
+    dir_path = tmp_path.as_posix()
+
+    # Without ignore_corrupt_files the corrupt file surfaces as an error.
+    with pytest.raises(Exception):
+        daft.sql(f"SELECT * FROM read_csv('{dir_path}')").collect()
+
+    # With ignore_corrupt_files => true the corrupt file is skipped and the good
+    # rows are returned.
+    df = daft.sql(f"SELECT * FROM read_csv('{dir_path}', ignore_corrupt_files => true)").collect()
+    assert sorted(df.to_pydict()["a"]) == [1, 2, 3, 4, 5, 6]
+
+    skipped = df.skipped_corrupt_files
+    assert len(skipped) == 1
+    path, reason, _partial = skipped[0]
+    assert path.endswith("zzz_bad.csv")
+    assert reason
+
+
+@pytest.mark.parametrize(
+    ("function", "path", "option"),
+    [
+        ("read_parquet", "tests/assets/parquet-data/mvp.parquet", "chunk_size"),
+        ("read_csv", "tests/assets/mvp.csv", "buffer_size"),
+        ("read_csv", "tests/assets/mvp.csv", "chunk_size"),
+        ("read_json", "tests/assets/json-data/sample1.jsonl", "buffer_size"),
+        ("read_json", "tests/assets/json-data/sample1.jsonl", "chunk_size"),
+    ],
+)
+def test_sql_read_negative_size_option_rejected(function, path, option):
+    """Negative literals for unsigned options are rejected instead of wrapping around.
+
+    These options are parsed as `usize`, so a negative value used to be cast into a huge
+    positive one (e.g. -1 became 18446744073709551615) rather than reported to the user.
+    """
+    # `InvalidSQLException` is created by pyo3 at runtime and is not importable from
+    # `daft.exceptions`, so match on the name the way the other SQL tests do.
+    with pytest.raises(Exception, match="Expected a non-negative integer literal") as exc_info:
+        daft.sql(f"SELECT * FROM {function}('{path}', {option} => -1)")
+    assert exc_info.type.__name__ == "InvalidSQLException"
+
+
+@pytest.fixture
+def io_config_sample_parquet(tmp_path):
+    path = tmp_path / "a.parquet"
+    papq.write_table(pa.table({"x": [1, 2, 3]}), path)
+    return path.as_posix()
+
+
+@pytest.mark.parametrize(
+    "spelling", ["S3Config", "s3config", "S3CONFIG"], ids=["mixed_case", "lower_case", "upper_case"]
+)
+def test_sql_config_constructors_are_case_insensitive(io_config_sample_parquet, spelling):
+    """Config constructors resolve under any casing — mixed, lower, or upper."""
+    query = (
+        f"SELECT * FROM read_parquet('{io_config_sample_parquet}', "
+        f"io_config := {spelling}(region_name => 'eu-central-1'))"
+    )
+
+    assert "eu-central-1" in explain_to_text(daft.sql(query))
+
+
+@pytest.mark.parametrize(
+    "argument, expected",
+    [
+        ("retry_initial_backoff_ms => 500", "Retry initial backoff ms = 500"),
+        ("connect_timeout_ms => 1234", "Connect timeout ms = 1234"),
+        ("read_timeout_ms => 4321", "Read timeout ms = 4321"),
+        ("num_tries => 7", "Max retries = 7"),
+    ],
+    ids=["retry_initial_backoff_ms", "connect_timeout_ms", "read_timeout_ms", "num_tries"],
+)
+def test_sql_http_config_accepts_documented_arguments(io_config_sample_parquet, argument, expected):
+    """HTTPConfig accepts every argument it documents, not just user_agent and bearer_token."""
+    query = f"SELECT * FROM read_parquet('{io_config_sample_parquet}', io_config := HTTPConfig({argument}))"
+
+    assert expected in explain_to_text(daft.sql(query))

@@ -73,8 +73,8 @@ def test_bitwise_hamming_integer_types():
     )
     result = df.select(hamming_distance(col("a"), col("b"))).to_pydict()["a"]
     assert result[0] == 0
-    assert result[1] == bin(20 ^ 21).count("1")
-    assert result[2] == bin(30 ^ 31).count("1")
+    assert result[1] == (20 ^ 21).bit_count()
+    assert result[2] == (30 ^ 31).bit_count()
 
 
 def test_bitwise_hamming_fixed_size_binary_identical():
