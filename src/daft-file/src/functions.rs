@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     file::{BUFFER_SIZE_SNIFF, DaftFile, HDF5_MIME},
-    meta::file_exists,
+    meta::{file_exists, file_size},
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -484,13 +484,22 @@ impl ScalarUDF for FilePath {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Size;
 
+impl Size {
+    const DEFAULT_BATCH_SIZE: usize = 64;
+}
+
 #[typetag::serde]
-impl ScalarUDF for Size {
+#[async_trait::async_trait]
+impl AsyncScalarUDF for Size {
+    fn preferred_batch_size(&self, _inputs: FunctionArgs<ExprRef>) -> DaftResult<Option<usize>> {
+        Ok(Some(Self::DEFAULT_BATCH_SIZE))
+    }
+
     fn name(&self) -> &'static str {
         "file_size"
     }
 
-    fn call(
+    async fn call(
         &self,
         args: FunctionArgs<Series>,
         _ctx: &daft_dsl::functions::scalar::EvalContext,
@@ -499,20 +508,16 @@ impl ScalarUDF for Size {
 
         with_match_file_types!(input.data_type(), |$P| {
             let s = input.file::<$P>()?;
-            let len = s.len();
-            let mut out = Vec::with_capacity(len);
-            // TODO(cory): can likely optimize this a lot more than a naive for loop.
-            for i in 0..len {
-                let opt: Option<u64> = s
-                    .get(i)
-                    .map(|f| {
-                        let f = DaftFile::load_blocking(f, false, Some(BUFFER_SIZE_SNIFF))?;
-                        let size = f.size()?;
-                        DaftResult::Ok(size as _)
-                    })
-                    .transpose()?;
-                out.push(opt);
-            }
+
+            let out = futures::future::try_join_all(s.into_iter().map(|f| async {
+                if let Some(f) = f {
+                    file_size(f).await.map(|size| Some(size as u64))
+                } else {
+                    Ok(None)
+                }
+            }))
+            .await?;
+
             Ok(
                 daft_core::prelude::UInt64Array::from_iter(Field::new(s.name(), DataType::UInt64), out.into_iter())
                     .into_series(),

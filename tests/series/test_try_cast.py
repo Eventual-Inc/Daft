@@ -80,5 +80,5 @@ def test_try_cast_expression():
 def test_try_cast_sql():
     """Test TRY_CAST via SQL."""
     df = daft.from_pydict({"a": ["1", "abc", "3"]})
-    result = daft.sql("SELECT TRY_CAST(a AS BIGINT) AS a FROM df", **{"df": df}).collect()
+    result = daft.sql("SELECT TRY_CAST(a AS BIGINT) AS a FROM df", df=df).collect()
     assert result.to_pydict() == {"a": [1, None, 3]}

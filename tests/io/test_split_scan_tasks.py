@@ -177,8 +177,7 @@ def test_split_jsonl_byte_ranges(tmpdir):
     num_rows = 10_000
     payload = "x" * 150
     with open(str(path), "w", encoding="utf-8", newline="") as f:
-        for i in range(num_rows):
-            f.write(f'{{"id":{i},"payload":"{payload}"}}\n')
+        f.writelines(f'{{"id":{i},"payload":"{payload}"}}\n' for i in range(num_rows))
 
     with daft.execution_config_ctx(
         enable_scan_task_split_and_merge=True,

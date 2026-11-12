@@ -92,20 +92,96 @@ def test_series_list_take() -> None:
     assert result.to_pylist() == expected
 
 
-def test_series_fixed_size_list_take() -> None:
-    data = pa.array([[1, 2], [None, 4], None, [7, 8], [9, None], [11, 12]], type=pa.list_(pa.int64(), 2))
+@pytest.mark.parametrize("dtype", [pa.int64(), pa.float16(), pa.float32()])
+@pytest.mark.parametrize("dimension", [2, 768])
+@pytest.mark.parametrize("slice_source", ["none", "arrow", "series"])
+@pytest.mark.parametrize("nullable", [False, True])
+@pytest.mark.parametrize("null_indices", [False, True])
+def test_series_fixed_size_list_take(dtype, dimension, slice_source, nullable, null_indices) -> None:
+    pydata = [[1, 2], [3, 4], [5, 6], [7, 8], [9, 10], [11, 12]]
+    pydata = [row * (dimension // 2) for row in pydata]
+    if nullable:
+        pydata[1][0] = None
+        pydata[2] = None
+        pydata[4][1] = None
+    data = pa.array([[99] * dimension, *pydata, [99] * dimension], type=pa.list_(pa.int64(), dimension)).cast(
+        pa.list_(dtype, dimension)
+    )
 
-    s = Series.from_arrow(data)
-    pyidx = [2, 0, None, 5]
-    idx = Series.from_pylist(pyidx)
+    if slice_source == "series":
+        s = Series.from_arrow(data, name="vectors").slice(1, 7)
+    else:
+        data = (
+            data.slice(1, 6)
+            if slice_source == "arrow"
+            else pa.array(pydata, type=pa.list_(pa.int64(), dimension)).cast(pa.list_(dtype, dimension))
+        )
+        s = Series.from_arrow(data, name="vectors")
+    pyidx = [5, 2, 1, None if null_indices else 3, 4, 0, 5]
+    idx = Series.from_arrow(pa.array([99, *pyidx, 99], type=pa.uint64()).slice(1, len(pyidx)))
 
     result = s.take(idx)
     assert result.datatype() == s.datatype()
-    assert len(result) == 4
+    assert result.name() == s.name()
+    assert len(result) == len(pyidx)
 
-    original_data = s.to_pylist()
-    expected = [original_data[i] if i is not None else None for i in pyidx]
+    expected = [pydata[i] if i is not None else None for i in pyidx]
     assert result.to_pylist() == expected
+
+
+@pytest.mark.parametrize(
+    "child_dtype",
+    [pa.float16(), pa.float32(), pa.list_(pa.int64()), pa.list_(pa.int64(), 2), pa.struct({"a": pa.int64()})],
+)
+@pytest.mark.parametrize("empty_source", [False, True])
+@pytest.mark.parametrize("pyidx", [[], [None, None]])
+@pytest.mark.parametrize("dimension", [2, 32])
+def test_series_fixed_size_list_take_empty_or_null_indices(child_dtype, empty_source, pyidx, dimension) -> None:
+    data = pa.array([] if empty_source else [[None] * dimension], type=pa.list_(child_dtype, dimension))
+    s = Series.from_arrow(data, name="vectors")
+
+    result = s.take(Series.from_arrow(pa.array(pyidx, type=pa.uint64())))
+
+    assert result.datatype() == s.datatype()
+    assert result.name() == s.name()
+    assert result.to_pylist() == [None] * len(pyidx)
+
+
+@pytest.mark.parametrize(
+    "child_dtype, pydata",
+    [
+        (pa.list_(pa.int64()), [[[1, 2], None], None, [[], [3]], [[4], [5, None]]]),
+        (pa.list_(pa.int64(), 2), [[[1, 2], None], None, [[3, None], [5, 6]], [[7, 8], [9, 10]]]),
+        (
+            pa.struct({"a": pa.int64()}),
+            [[{"a": 1}, None], None, [{"a": None}, {"a": 2}], [{"a": 3}, {"a": 4}]],
+        ),
+    ],
+)
+@pytest.mark.parametrize("dimension", [2, 32])
+def test_series_fixed_size_list_take_nested_child(child_dtype, pydata, dimension) -> None:
+    pydata = [row * (dimension // 2) if row is not None else None for row in pydata]
+    data = pa.array(pydata, type=pa.list_(child_dtype, dimension))
+    s = Series.from_arrow(data, name="vectors").slice(1, 4)
+    pyidx = [2, 0, None, 1, 2]
+
+    result = s.take(Series.from_arrow(pa.array(pyidx, type=pa.uint64())))
+
+    assert result.datatype() == s.datatype()
+    assert result.name() == s.name()
+    expected = [pydata[1:4][i] if i is not None else None for i in pyidx]
+    assert result.to_pylist() == expected
+
+
+@pytest.mark.parametrize("dtype", [pa.float16(), pa.float32(), pa.null(), pa.bool_()])
+@pytest.mark.parametrize("empty_source, pyidx", [(True, [0]), (False, [1]), (False, [None, 1]), (False, [2**64 - 1])])
+@pytest.mark.parametrize("dimension", [2, 32])
+def test_series_fixed_size_list_take_out_of_bounds(dtype, empty_source, pyidx, dimension) -> None:
+    data = pa.array([] if empty_source else [[None] * dimension], type=pa.list_(dtype, dimension))
+    s = Series.from_arrow(data)
+
+    with pytest.raises(ValueError, match="out of bounds"):
+        s.take(Series.from_arrow(pa.array(pyidx, type=pa.uint64())))
 
 
 def test_series_struct_take() -> None:

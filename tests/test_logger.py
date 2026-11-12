@@ -32,13 +32,6 @@ def test_logger_initialization() -> None:
     assert rust_level == "WARN"
 
 
-def test_use_deprecated_method() -> None:
-    from daft.logging import setup_debug_logger
-
-    with pytest.warns(DeprecationWarning):
-        setup_debug_logger()
-
-
 def test_invalid_level_raises() -> None:
     from daft.logging import setup_logger
 

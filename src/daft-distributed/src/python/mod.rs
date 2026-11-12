@@ -241,9 +241,17 @@ struct PyDistributedPhysicalPlanRunner {
 #[pymethods]
 impl PyDistributedPhysicalPlanRunner {
     #[new]
-    #[pyo3(signature = (worker_startup_timeout = 120))]
-    fn new(worker_startup_timeout: usize) -> PyResult<Self> {
-        let worker_manager = Arc::new(RayWorkerManager::new(worker_startup_timeout));
+    #[pyo3(signature = (worker_startup_timeout = 120, autoscale_strategy = None, autoscale_bisect_timeout_secs = None))]
+    fn new(
+        worker_startup_timeout: usize,
+        autoscale_strategy: Option<String>,
+        autoscale_bisect_timeout_secs: Option<u64>,
+    ) -> PyResult<Self> {
+        let worker_manager = Arc::new(RayWorkerManager::new(
+            worker_startup_timeout,
+            autoscale_strategy.as_deref(),
+            autoscale_bisect_timeout_secs,
+        )?);
         Ok(Self {
             runner: Arc::new(PlanRunner::new(worker_manager)),
         })

@@ -87,7 +87,6 @@ def _test_charset_roundtrip(charset: str, input: bytes):
 def test_null_handling():
     import zlib
 
-    #
     df1 = daft.from_pydict({"v": [None, zlib.compress(TEXT)]})
     df2 = daft.from_pydict({"v": [zlib.compress(TEXT), None]})
     result1 = df1.select(col("v").decompress("zlib")).to_pydict()

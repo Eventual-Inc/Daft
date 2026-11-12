@@ -1,10 +1,10 @@
-use std::ops::Rem;
+use std::{ops::Rem, sync::Arc};
 
 use common_error::DaftResult;
 use num_traits::ToPrimitive;
 
 use crate::{
-    array::DataArray,
+    array::{DataArray, ops::as_arrow::AsArrow},
     datatypes::{
         DaftDataType, DaftNumericType, DataType, Decimal128Array, Field, Int8Type, Int16Type,
         Int32Type, Int64Type, UInt8Type, UInt16Type, UInt32Type, UInt64Type, Utf8Array,
@@ -57,13 +57,14 @@ impl Decimal128Array {
 
 impl Utf8Array {
     pub fn iceberg_truncate(&self, w: i64) -> DaftResult<Self> {
-        let substring = arrow::compute::kernels::substring::substring(
-            self.to_arrow().as_ref(),
+        // The spec truncates strings to `w` code points, not bytes.
+        let truncated = arrow::compute::kernels::substring::substring_by_char(
+            self.as_arrow()?,
             0,
             Some(w as _),
         )?;
 
-        Self::from_arrow(Field::new(self.name(), DataType::Utf8), substring)
+        Self::from_arrow(Field::new(self.name(), DataType::Utf8), Arc::new(truncated))
     }
 }
 

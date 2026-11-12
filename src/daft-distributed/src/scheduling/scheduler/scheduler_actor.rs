@@ -660,7 +660,7 @@ mod tests {
         let (cancel_notifier, cancel_receiver) = create_oneshot_channel();
         let task = MockTaskBuilder::new(partition_ref.clone())
             .with_cancel_notifier(cancel_notifier)
-            .with_sleep_duration(std::time::Duration::from_millis(1000))
+            .with_sleep_duration(std::time::Duration::from_secs(1))
             .build();
 
         let submittable_task = SubmittableTask::task_only(task);
@@ -702,7 +702,7 @@ mod tests {
                             .with_task_id(submitter_id * num_tasks_per_submitter + task_id);
 
                     if should_cancel {
-                        let task_duration = std::time::Duration::from_millis(1000);
+                        let task_duration = std::time::Duration::from_secs(1);
                         let (cancel_notifier, cancel_receiver) = create_oneshot_channel();
                         task = task
                             .with_cancel_notifier(cancel_notifier)

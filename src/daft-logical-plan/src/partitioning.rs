@@ -202,7 +202,7 @@ impl RangeRepartitionConfig {
             .by
             .iter()
             .zip(self.descending.iter())
-            .map(|(sb, d)| format!("({}, {})", sb, if *d { "descending" } else { "ascending" },))
+            .map(|(sb, d)| format!("({}, {})", sb, if *d { "descending" } else { "ascending" }))
             .join(", ");
         res.push(format!("Num partitions = {:?}", self.num_partitions));
         res.push(format!("By = {}", pairs));
@@ -373,7 +373,7 @@ impl<T: Display> RangeClusteringConfig<T> {
             .by
             .iter()
             .zip(self.descending.iter())
-            .map(|(sb, d)| format!("({}, {})", sb, if *d { "descending" } else { "ascending" },))
+            .map(|(sb, d)| format!("({}, {})", sb, if *d { "descending" } else { "ascending" }))
             .join(", ");
         res.push(format!("Num partitions = {}", self.num_partitions));
         res.push(format!("By = {}", pairs));

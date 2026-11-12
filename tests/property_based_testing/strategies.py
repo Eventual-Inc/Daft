@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+from collections.abc import Mapping
 
 from hypothesis.strategies import (
     SearchStrategy,
@@ -118,7 +119,7 @@ def series(
 @composite
 def columns_dict(
     draw,
-    generate_columns_with_type: dict[str, SearchStrategy[DataType]] = {},
+    generate_columns_with_type: Mapping[str, SearchStrategy[DataType]] | None = None,
     num_rows_strategy: SearchStrategy[int] = integers(min_value=0, max_value=8),
 ) -> dict[str, Series]:
     """Hypothesis composite strategy for generating in-memory Daft DataFrames.
@@ -129,6 +130,7 @@ def columns_dict(
         generate_columns_with_type: {col_name: column_strategy} for specific strategies (e.g. hashable columns, numeric columns etc)
     """
     df_len = draw(num_rows_strategy, label="Number of rows")
+    generate_columns_with_type = generate_columns_with_type or {}
 
     # Generate requested columns according to requested types
     requested_columns = {
@@ -140,7 +142,7 @@ def columns_dict(
     num_cols = draw(integers(min_value=0, max_value=2), label="Number of additional columns")
     additional_column_names = draw(
         lists(
-            text().filter(lambda name: name not in requested_columns.keys() and name != "*" and "\0" not in name),
+            text().filter(lambda name: name not in requested_columns and name != "*" and "\0" not in name),
             min_size=num_cols,
             max_size=num_cols,
             unique=True,

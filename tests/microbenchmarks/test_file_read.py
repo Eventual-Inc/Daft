@@ -24,8 +24,7 @@ def gen_simple_csvs(request) -> str:
         # Make one CSV file of the correct size.
         with open(os.path.join(tmpdirname, "file.csv"), "wb") as f:
             f.write(b"A,B\n")
-            for i in range(mibs_per_file):
-                f.write(_1mib)
+            f.writelines(_1mib for i in range(mibs_per_file))
 
         # Copy it to get the remaining number of desired files.
         for i in range(1, num_files):

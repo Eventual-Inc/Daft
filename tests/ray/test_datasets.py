@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
 import numpy as np
 import pandas as pd
 import pyarrow as pa
@@ -11,16 +9,17 @@ import ray
 
 import daft
 from daft import DataType
+from daft.runners.ray_compat import parse_ray_version
 from tests.conftest import get_tests_daft_runner_name
 
-RAY_VERSION = tuple(int(s) for s in ray.__version__.split(".")[0:3])
+RAY_VERSION = parse_ray_version(ray.__version__)
 
 
 class MyObj:
     def __init__(self, x: int):
         self._x = x
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         return isinstance(other, MyObj) and self._x == other._x
 
 

@@ -33,7 +33,8 @@ class DataSink(ABC, Generic[WriteResultType]):
 
     When a DataFrame is written using the `.write_sink()` method, the following sequence occurs:
 
-    1. The sink's `.start()` method is called once at the beginning of the write process.
+    1. The sink's `.start()` method is called once on the driver at the beginning of
+       the write process, before the sink is serialized to worker tasks.
     2. The DataFrame is executed, and its output is split into micropartitions.
     3. The sink's `.write()` method is invoked on each micropartition, potentially in parallel
        and distributed across multiple tasks or workers.
@@ -62,7 +63,6 @@ class DataSink(ABC, Generic[WriteResultType]):
         For example, this can be used to initialize resources, open connections, start a transaction etc.
         The default implementation does nothing.
         """
-        pass
 
     @abstractmethod
     def write(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteResult[WriteResultType]]:
