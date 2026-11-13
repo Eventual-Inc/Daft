@@ -150,6 +150,7 @@
         * [DESCRIBE](sql/statements/describe.md)
         * [SHOW](sql/statements/show.md)
         * [USE](sql/statements/use.md)
+    * [Functions](sql/functions.md)
     * [Data Types](sql/datatypes.md)
     * [Identifiers](sql/identifiers.md)
     * [Window Functions](sql/window_functions.md)

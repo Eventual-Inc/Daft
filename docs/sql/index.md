@@ -301,3 +301,7 @@ Here is an example of an equivalent function call in SQL vs Python:
 
 (Showing first 3 of 3 rows)
 ```
+
+See the [SQL Functions](functions.md) reference for the syntax of individual
+functions, such as [`EXTRACT`](functions.md#extracting-date-and-time-parts) for
+date and time parts.
