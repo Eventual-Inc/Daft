@@ -126,6 +126,16 @@ def test_str_strip():
     )
 
 
+def test_str_btrim():
+    s = Series.from_arrow(pa.array(["\ta\t", "\nb\n", "\vc\t", " c\t"]), name="arg")
+    assert_typing_resolve_vs_runtime_behavior(
+        data=[s],
+        expr=col(s.name()).btrim("\t\n\v "),
+        run_kernel=lambda: s.str.btrim("\t\n\v "),
+        resolvable=True,
+    )
+
+
 def test_str_reverse():
     s = Series.from_arrow(pa.array(["abc", "def", "ghi", None, ""]), name="arg")
     assert_typing_resolve_vs_runtime_behavior(
