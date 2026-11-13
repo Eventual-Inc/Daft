@@ -135,17 +135,13 @@ class GooglePrompter(Prompter):
         @_process_message.register(np.ndarray)
         def _process_image_message(self, msg: np.typing.NDArray[Any]) -> types.Part:
             """Handle numpy array messages (images)."""
-            import io
-
+            from daft.ai.utils import encode_image_array_as_png
             from daft.dependencies import pil_image
 
             if not pil_image.module_available():
                 raise ProviderImportError("google", function="prompt")
 
-            pil_image = pil_image.fromarray(msg)
-            bio = io.BytesIO()
-            pil_image.save(bio, "PNG")
-            return types.Part.from_bytes(data=bio.getvalue(), mime_type="image/png")
+            return types.Part.from_bytes(data=encode_image_array_as_png(msg), mime_type="image/png")
 
     def _guess_mime_type(self, msg: bytes) -> tuple[str, str | None]:
         from daft.daft import guess_mimetype_from_content

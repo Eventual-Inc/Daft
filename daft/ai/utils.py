@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
     import httpx
+    import numpy as np
     import requests
     import torch
 
@@ -118,3 +119,18 @@ def raise_retry_after_from_response(
         raise RetryAfterError(retry_after=retry_after, original=original) from original
     else:
         raise original
+
+
+def encode_image_array_as_png(image: np.ndarray) -> bytes:
+    """Encode an image array as PNG bytes.
+
+    Accepts the array layouts Daft image columns produce: uint8 L, LA, RGB and RGBA,
+    and uint16 L16. Callers must check that Pillow is installed.
+    """
+    import io
+
+    from daft.dependencies import pil_image
+
+    bio = io.BytesIO()
+    pil_image.fromarray(image).save(bio, "PNG")
+    return bio.getvalue()
