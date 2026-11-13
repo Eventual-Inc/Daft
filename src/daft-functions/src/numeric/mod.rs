@@ -18,6 +18,7 @@ pub mod round;
 pub mod sign;
 pub mod sqrt;
 pub mod trigonometry;
+pub mod try_arithmetic;
 pub mod try_divide;
 
 use abs::Abs;
@@ -45,6 +46,7 @@ use power::Power;
 use round::Round;
 use sign::{Negate, Sign};
 use sqrt::Sqrt;
+use try_arithmetic::{TryAdd, TryMultiply, TrySubtract};
 use try_divide::TryDivide;
 
 fn to_field_numeric(f: &dyn ScalarUDF, input: &Expr, schema: &Schema) -> DaftResult<Field> {
@@ -93,7 +95,10 @@ impl FunctionModule for NumericFunctions {
         parent.add_fn(Sign);
         parent.add_fn(Negate);
         parent.add_fn(Sqrt);
+        parent.add_fn(TryAdd);
         parent.add_fn(TryDivide);
+        parent.add_fn(TryMultiply);
+        parent.add_fn(TrySubtract);
 
         // trig functions
         use trigonometry::*;
