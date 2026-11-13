@@ -120,3 +120,39 @@ def test_decimal_grouped_stddev(prec, partitions) -> None:
     assert res.to_pydict() == {"group": [0, 1], "decimal128": [pytest.approx(7.792316), None]}
     schema = res.schema()
     assert schema["decimal128"].dtype == daft.DataType.float64()
+
+
+def test_decimal_multiply_precision_overflow_is_bounded() -> None:
+    # Multiplying two Decimal(20, 2) columns needs precision 40 (> 38). This previously failed to
+    # plan with "result precision: 40 exceed bounds of [1, 38]"; it should now bound the result to
+    # Decimal(38, 4) and compute correctly. Regression test for #7601 (TPC-H Q1 shape).
+    df = daft.from_pydict(
+        {
+            "a": [decimal.Decimal("100.00"), decimal.Decimal("200.00")],
+            "b": [decimal.Decimal("3.00"), decimal.Decimal("1.50")],
+        }
+    )
+    df = df.with_column("a", df["a"].cast(daft.DataType.decimal128(20, 2)))
+    df = df.with_column("b", df["b"].cast(daft.DataType.decimal128(20, 2)))
+    res = df.select((df["a"] * df["b"]).alias("product")).collect()
+
+    # 100.00 * 3.00 = 300.00 ; 200.00 * 1.50 = 300.00
+    assert res.to_pydict()["product"] == [decimal.Decimal("300.0000"), decimal.Decimal("300.0000")]
+    assert res.schema()["product"].dtype == daft.DataType.decimal128(38, 4)
+
+
+def test_decimal_subtract_precision_overflow_is_bounded() -> None:
+    # Decimal(38, 4) - Decimal(30, 4) needs precision 39 (> 38); it should bound to Decimal(38, 4)
+    # rather than failing to plan. Regression test for #7601 (TPC-H Q9 shape).
+    df = daft.from_pydict(
+        {
+            "a": [decimal.Decimal("100.0000"), decimal.Decimal("250.5000")],
+            "b": [decimal.Decimal("0.5000"), decimal.Decimal("50.2500")],
+        }
+    )
+    df = df.with_column("a", df["a"].cast(daft.DataType.decimal128(38, 4)))
+    df = df.with_column("b", df["b"].cast(daft.DataType.decimal128(30, 4)))
+    res = df.select((df["a"] - df["b"]).alias("diff")).collect()
+
+    assert res.to_pydict()["diff"] == [decimal.Decimal("99.5000"), decimal.Decimal("200.2500")]
+    assert res.schema()["diff"].dtype == daft.DataType.decimal128(38, 4)
