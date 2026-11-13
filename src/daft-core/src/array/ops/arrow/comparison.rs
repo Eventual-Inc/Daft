@@ -1,12 +1,15 @@
 use arrow::{
-    array::{Array, ArrayRef, ArrowPrimitiveType, PrimitiveArray, make_comparator},
+    array::{Array, ArrayRef, ArrowPrimitiveType, PrimitiveArray, make_array, make_comparator},
     compute::SortOptions,
     datatypes::{DataType, Float32Type, Float64Type},
 };
 use common_error::DaftResult;
 use num_traits::Float;
 
-use crate::{kernels::cmp::cmp_float, series::Series};
+use crate::{
+    kernels::cmp::{canonicalize_negative_zero, cmp_float},
+    series::Series,
+};
 
 fn build_is_equal_float<T>(
     left: &dyn Array,
@@ -50,7 +53,16 @@ fn build_is_equal_with_nan(
         // covers all cases. Return a trivially-true function that will never be called.
         (DataType::Null, DataType::Null) => Ok(Box::new(|_, _| true)),
         _ => {
-            let comp = make_comparator(left, right, SortOptions::new(false, false))?;
+            // Nested comparisons go through Arrow's row format, which compares
+            // floats with totalOrder and so keeps `-0.0` and `0.0` apart.
+            // Canonicalize them (including inside lists and structs) first.
+            let left = canonicalize_negative_zero(&make_array(left.to_data()));
+            let right = canonicalize_negative_zero(&make_array(right.to_data()));
+            let comp = make_comparator(
+                left.as_ref(),
+                right.as_ref(),
+                SortOptions::new(false, false),
+            )?;
             Ok(Box::new(move |i, j| comp(i, j).is_eq()))
         }
     }
