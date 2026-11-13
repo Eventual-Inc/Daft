@@ -269,6 +269,7 @@ class ParquetSourceConfig:
 
     coerce_int96_timestamp_unit: PyTimeUnit | None
     field_id_mapping: dict[int, PyField] | None
+    field_defaults: PyRecordBatch | None
     row_groups: list[list[int]] | None
     chunk_size: int | None
 
@@ -280,6 +281,7 @@ class ParquetSourceConfig:
         chunk_size: int | None = None,
         ignore_corrupt_files: bool = False,
         name_mapping: str | None = None,
+        field_defaults: PyRecordBatch | None = None,
     ): ...
 
 class CsvSourceConfig:

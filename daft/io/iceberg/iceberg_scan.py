@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from pyiceberg.conversions import from_bytes
 from pyiceberg.io.pyarrow import schema_to_pyarrow
 from pyiceberg.schema import visit
-from pyiceberg.types import PrimitiveType
+from pyiceberg.types import ListType, MapType, PrimitiveType, StructType
 
 import daft
 from daft.daft import (
@@ -41,6 +41,7 @@ if TYPE_CHECKING:
     from pyiceberg.table import Table
     from pyiceberg.typedef import Record
 
+    from daft.daft import PyRecordBatch
     from daft.io.pushdowns import Pushdowns
 
 logger = logging.getLogger(__name__)
@@ -110,6 +111,63 @@ def _iceberg_partition_field_to_daft_partition_field(
 
 def iceberg_partition_spec_to_fields(iceberg_schema: IcebergSchema, spec: IcebergPartitionSpec) -> list[PartitionField]:
     return [_iceberg_partition_field_to_daft_partition_field(iceberg_schema, field) for field in spec.fields]
+
+
+def _initial_default_values(iceberg_schema: IcebergSchema) -> PyRecordBatch | None:
+    """One-row batch of top-level Iceberg v3 `initial-default` values, keyed by column name.
+
+    Daft fills a column that a data file does not contain (i.e. a file written before the
+    column was added) with its default instead of NULL. Columns present in a file keep
+    their real values, nulls included.
+    """
+    arrays: dict[str, daft.Series] = {}
+    for field in iceberg_schema.fields:
+        if field.initial_default is None:
+            continue
+        arrays[field.name] = daft.Series.from_arrow(
+            pa.array([field.initial_default], type=schema_to_pyarrow(field.field_type)),
+            name=field.name,
+        )
+    if not arrays:
+        return None
+    return RecordBatch.from_pydict(arrays)._recordbatch
+
+
+def _is_nested_type(field_type: object) -> bool:
+    return isinstance(field_type, (StructType, ListType, MapType))
+
+
+def _find_nested_initial_default(path: tuple[str, ...], field_type: object) -> str | None:
+    """Dotted path of the first nested field carrying an `initial-default`, if any."""
+    if isinstance(field_type, StructType):
+        for field in field_type.fields:
+            child_path = (*path, field.name)
+            if field.initial_default is not None:
+                return ".".join(child_path)
+            found = _find_nested_initial_default(child_path, field.field_type)
+            if found is not None:
+                return found
+    elif isinstance(field_type, ListType):
+        found = _find_nested_initial_default((*path, "element"), field_type.element_field.field_type)
+        if found is not None:
+            return found
+    elif isinstance(field_type, MapType):
+        for name, field in (("key", field_type.key_field), ("value", field_type.value_field)):
+            found = _find_nested_initial_default((*path, name), field.field_type)
+            if found is not None:
+                return found
+    return None
+
+
+def _nested_initial_default_path(iceberg_schema: IcebergSchema) -> str | None:
+    for field in iceberg_schema.fields:
+        if _is_nested_type(field.field_type):
+            if field.initial_default is not None:
+                return field.name
+            found = _find_nested_initial_default((field.name,), field.field_type)
+            if found is not None:
+                return found
+    return None
 
 
 def _build_iceberg_data_source_task_stats(
@@ -213,8 +271,18 @@ class IcebergDataSource(DataSource):
 
         field_id_mapping = visit(iceberg_schema, SchemaFieldIdMappingVisitor())
         name_mapping = iceberg_table.name_mapping()
+        # A column added with an `initial-default` (Iceberg v3) must read as that default
+        # in files written before the column existed, not as NULL. Nested defaults are
+        # not supported yet; filling them with NULL would silently return wrong values.
+        if (nested_default := _nested_initial_default_path(iceberg_schema)) is not None:
+            raise NotImplementedError(
+                f"Iceberg column {nested_default!r} has a nested `initial-default`, which Daft does not support "
+                "yet; reading it as NULL would silently return wrong values. Read the table with PyIceberg's "
+                "scan instead."
+            )
         self._parquet_config = ParquetSourceConfig(
             field_id_mapping=field_id_mapping,
+            field_defaults=_initial_default_values(iceberg_schema),
             ignore_corrupt_files=ignore_corrupt_files,
             name_mapping=name_mapping.model_dump_json() if name_mapping is not None else None,
         )

@@ -965,6 +965,7 @@ mod test {
             row_groups: None,
             chunk_size: None,
             ignore_corrupt_files: false,
+            field_defaults: None,
         }));
 
         ScanTask::new(
@@ -984,6 +985,7 @@ mod test {
             row_groups: None,
             chunk_size: None,
             ignore_corrupt_files: false,
+            field_defaults: None,
         });
 
         let mut sources: Vec<String> = Vec::new();
@@ -1260,6 +1262,7 @@ mod test {
                     row_groups: None,
                     chunk_size: None,
                     ignore_corrupt_files: false,
+                    field_defaults: None,
                 },
             ))),
             schema,
@@ -1312,6 +1315,7 @@ mod test {
                     row_groups: None,
                     chunk_size: None,
                     ignore_corrupt_files: false,
+                    field_defaults: None,
                 },
             ))),
             schema,
@@ -1357,6 +1361,7 @@ mod test {
                     row_groups: None,
                     chunk_size: None,
                     ignore_corrupt_files: false,
+                    field_defaults: None,
                 },
             ))),
             schema,
@@ -1407,6 +1412,7 @@ mod test {
                     row_groups: None,
                     chunk_size: None,
                     ignore_corrupt_files: false,
+                    field_defaults: None,
                 },
             ))),
             schema,
@@ -1470,6 +1476,7 @@ mod test {
                     row_groups: None,
                     chunk_size: None,
                     ignore_corrupt_files: false,
+                    field_defaults: None,
                 },
             ))),
             schema,
@@ -1580,6 +1587,7 @@ mod test {
                     row_groups: None,
                     chunk_size: None,
                     ignore_corrupt_files: false,
+                    field_defaults: None,
                 },
             ))),
             schema,

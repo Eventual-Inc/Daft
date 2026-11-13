@@ -24,7 +24,7 @@ from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.partitioning import UNPARTITIONED_PARTITION_SPEC, PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.transforms import IdentityTransform
-from pyiceberg.types import LongType, NestedField, StringType
+from pyiceberg.types import LongType, NestedField, StringType, StructType
 
 
 @pytest.fixture
@@ -407,3 +407,73 @@ def test_read_add_files_table_split_by_row_groups(local_catalog, tmp_path):
         enable_scan_task_split_and_merge=True, scan_tasks_min_size_bytes=0, scan_tasks_max_size_bytes=1
     ):
         assert daft.read_iceberg(table).sort("a").to_pydict() == {"a": list(range(1_000))}
+
+
+def test_read_iceberg_initial_default_for_columns_added_later(local_catalog):
+    """Iceberg v3 `initial-default`: files written before a column was added read as its default."""
+    table = local_catalog.create_table(
+        "default.initial_default", Schema(NestedField(1, "id", LongType(), required=False))
+    )
+    _write(table, id=[1, 2])
+
+    with table.update_schema() as update:
+        update.add_column("c", LongType(), default_value=5)
+    table.refresh()
+    # One file with a real value and a real null; the earlier file has no `c` at all.
+    table.append(pa.table({"id": [3, 4], "c": pa.array([7, None], type=pa.int64())}))
+    table.refresh()
+
+    for df in (daft.read_iceberg(table), daft.read_iceberg(_metadata_path(table))):
+        assert df.sort("id").to_pydict() == {"id": [1, 2, 3, 4], "c": [5, 5, 7, None]}
+        # Projection keeps applying the default to rows from files without the column.
+        assert df.select("c").sort("c").to_pydict() == {"c": [5, 5, 7, None]}
+        # Filters see the default, not NULL, both when evaluated on the file and above the scan.
+        assert df.where(daft.col("c") == 5).sort("id").to_pydict() == {"id": [1, 2], "c": [5, 5]}
+        assert df.where(daft.col("c") > 5).sort("id").to_pydict() == {"id": [3], "c": [7]}
+        assert df.where(daft.col("c").is_null()).sort("id").to_pydict() == {"id": [4], "c": [None]}
+        assert df.where(daft.col("id") < 3).select("c").sort("c").to_pydict() == {"c": [5, 5]}
+
+
+def test_read_iceberg_filter_on_initial_default_without_file_columns(local_catalog):
+    """A filter over columns filled purely from `initial-default` is still applied."""
+    table = local_catalog.create_table(
+        "default.initial_default_filter", Schema(NestedField(1, "id", LongType(), required=False))
+    )
+    _write(table, id=[1, 2])
+
+    with table.update_schema() as update:
+        update.add_column("c", LongType(), default_value=5)
+    table.refresh()
+
+    df = daft.read_iceberg(table)
+    # The projection reads no physical file columns at all — `c` is filled from
+    # its default — so the predicate must be evaluated against that default
+    # instead of being skipped along with the count-only read path. Neither
+    # `is_null` nor modulus is a predicate Iceberg or row-group statistics can
+    # decide, so both reach the reader with only the defaulted column.
+    assert df.select("c").where((daft.col("c") + 1).is_null()).to_pydict() == {"c": []}
+    assert df.select("c").where((daft.col("c") + 1).not_null()).sort("c").to_pydict() == {"c": [5, 5]}
+    assert df.select("c").where((daft.col("c") % 2) == 0).to_pydict() == {"c": []}
+    assert df.select("c").where((daft.col("c") % 2) == 1).sort("c").to_pydict() == {"c": [5, 5]}
+
+
+def test_read_iceberg_nested_initial_default_raises(local_catalog):
+    """A nested `initial-default` would silently read as NULL, so reading the table refuses instead."""
+    schema = Schema(
+        NestedField(1, "id", LongType(), required=False),
+        NestedField(
+            2,
+            "s",
+            StructType(NestedField(3, "a", LongType(), required=False)),
+            required=False,
+        ),
+    )
+    table = local_catalog.create_table("default.nested_initial_default", schema)
+    _write(table, id=[1], s=[{"a": 1}])
+
+    with table.update_schema() as update:
+        update.add_column(("s", "b"), LongType(), default_value=5)
+    table.refresh()
+
+    with pytest.raises(NotImplementedError, match=r"s\.b.*initial-default"):
+        daft.read_iceberg(table)
