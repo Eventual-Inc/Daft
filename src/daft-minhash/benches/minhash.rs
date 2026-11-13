@@ -2,10 +2,7 @@ use std::{collections::VecDeque, hash::BuildHasher, iter::repeat_with};
 
 use daft_hash::MurBuildHasher;
 use daft_minhash::{load_simd, minhash_in};
-use tango_bench::{
-    Benchmark, DEFAULT_SETTINGS, IntoBenchmarks, MeasurementSettings, benchmark_fn,
-    tango_benchmarks, tango_main,
-};
+use tango_bench::{Benchmark, IntoBenchmarks, benchmark_fn, tango_benchmarks};
 use xxhash_rust::{xxh3::Xxh3DefaultBuilder, xxh64::Xxh64Builder};
 
 const N_TOKENS: usize = 10000;
@@ -70,19 +67,4 @@ fn all_benchmarks() -> impl IntoBenchmarks {
     ]
 }
 
-// Customized settings for stable measurements
-const SETTINGS: MeasurementSettings = MeasurementSettings {
-    // Increase minimum iterations for more stable results
-    min_iterations_per_sample: 1000,
-    // Enable cache firewall to reduce cache effects
-    cache_firewall: Some(64), // 64KB cache firewall
-    // Enable yielding to reduce scheduler effects
-    yield_before_sample: true,
-    // Enable stack randomization to reduce alignment effects
-    randomize_stack: Some(4096), // 4KB stack randomization
-    // Rest of settings from default
-    ..DEFAULT_SETTINGS
-};
-
 tango_benchmarks!(all_benchmarks());
-tango_main!(SETTINGS);
