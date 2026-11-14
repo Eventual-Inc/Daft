@@ -383,6 +383,47 @@ class TestFilterPushdown:
         result = df.to_pydict()
         assert result["id"] == [2, 3, 4]
 
+    def test_filter_pushdown_skips_files(self, filter_table, monkeypatch):
+        """A row filter that no file can match plans no scan tasks (files are skipped by their statistics)."""
+        from daft.io.paimon.paimon_scan import PaimonDataSource
+
+        tasks = []
+        get_tasks = PaimonDataSource.get_tasks
+
+        async def recording_get_tasks(self, pushdowns):
+            async for task in get_tasks(self, pushdowns):
+                tasks.append(task)
+                yield task
+
+        monkeypatch.setattr(PaimonDataSource, "get_tasks", recording_get_tasks)
+
+        result = daft.read_paimon(filter_table).where(daft.col("id") > 99).to_pydict()
+
+        assert result == {"id": [], "value": []}
+        assert tasks == []
+
+    def test_filter_pushdown_literal_on_left(self, filter_table):
+        """Comparisons with the literal on the left keep their meaning when pushed down."""
+        df = daft.read_paimon(filter_table).where(daft.lit(99) > daft.col("id"))
+        assert sorted(df.to_pydict()["id"]) == [1, 2, 3, 4, 5]
+
+        df = daft.read_paimon(filter_table).where(daft.lit(3) <= daft.col("id"))
+        assert sorted(df.to_pydict()["id"]) == [3, 4, 5]
+
+    def test_filter_pushdown_column_pattern(self, local_paimon_catalog):
+        """String predicates whose pattern is another column are evaluated by Daft, not pushed down."""
+        catalog, _ = local_paimon_catalog
+        pa_schema = pa.schema([("value", pa.string()), ("pattern", pa.string())])
+        paimon_schema = pypaimon.Schema.from_pyarrow_schema(pa_schema)
+        catalog.create_table("test_db.filter_column_pattern", paimon_schema, ignore_if_exists=True)
+        table = catalog.get_table("test_db.filter_column_pattern")
+        _write_to_paimon(table, pa.table({"value": ["alice", "bob"], "pattern": ["a", "x"]}))
+
+        df = daft.read_paimon(table)
+        assert df.where(daft.col("value").startswith(daft.col("pattern"))).to_pydict()["value"] == ["alice"]
+        assert df.where(daft.col("value").endswith(daft.col("pattern"))).to_pydict()["value"] == []
+        assert df.where(daft.col("value").contains(daft.col("pattern"))).to_pydict()["value"] == ["alice"]
+
 
 # ---------------------------------------------------------------------------
 # Advanced data types

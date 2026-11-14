@@ -140,11 +140,18 @@ class PaimonDataSource(DataSource):
         if pushdowns.limit is not None:
             read_builder = read_builder.with_limit(pushdowns.limit)
 
-        if self._paimon_predicate is not None:
-            read_builder = read_builder.with_filter(self._paimon_predicate)
+        # Daft hands a DataSource its row filters through `pushdowns.filters` (it does not call
+        # `push_filters`), so convert them here to let Paimon skip files by their statistics.
+        # Daft still evaluates the full filter on the rows that are read.
+        paimon_predicate = self._paimon_predicate
+        if paimon_predicate is None and pushdowns.filters is not None:
+            _, _, paimon_predicate = convert_filters_to_paimon(self._table, pushdowns.filters._expr)
+
+        if paimon_predicate is not None:
+            read_builder = read_builder.with_filter(paimon_predicate)
             logger.debug(
                 "Applied Paimon filter pushdown predicate: %s",
-                self._paimon_predicate,
+                paimon_predicate,
             )
 
         if self._table.partition_keys and pushdowns.partition_filters is None:
