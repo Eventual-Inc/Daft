@@ -31,10 +31,17 @@ class _ColRef:
     name: str
 
 
+@dataclass(frozen=True, slots=True)
+class _Lit:
+    """Literal value marker, so that only real literals (not columns or computed values) are pushed down."""
+
+    value: Any
+
+
 class PaimonPredicateVisitor(PredicateVisitor[Any]):
     """Tree fold visitor that converts Daft expressions to Paimon predicates.
 
-    Leaf nodes return their values (_ColRef for columns, raw values for literals).
+    Leaf nodes return markers (_ColRef for columns, _Lit for literals).
     Predicate nodes return Paimon Predicate objects, or None if unsupported.
 
     Supported operations:
@@ -54,8 +61,8 @@ class PaimonPredicateVisitor(PredicateVisitor[Any]):
     def visit_col(self, name: str) -> _ColRef:
         return _ColRef(name)
 
-    def visit_lit(self, value: Any) -> Any:
-        return value
+    def visit_lit(self, value: Any) -> _Lit:
+        return _Lit(value)
 
     def visit_alias(self, expr: Expression, alias: str) -> Any:
         return self.visit(expr)
@@ -93,32 +100,36 @@ class PaimonPredicateVisitor(PredicateVisitor[Any]):
 
     # -- Comparison operators --
 
-    def _cmp(self, left: Expression, right: Expression, fn: Any) -> Predicate | None:
-        """Fold a binary comparison: extract col ref and literal value, then apply fn."""
+    def _cmp(self, left: Expression, right: Expression, fn: Any, flipped_fn: Any) -> Predicate | None:
+        """Fold a binary comparison of a column and a literal.
+
+        ``fn`` handles ``col <op> lit`` and ``flipped_fn`` handles ``lit <op> col``
+        (``lit < col`` is ``col > lit``). Anything else, such as two columns, is not pushed down.
+        """
         lhs, rhs = self.visit(left), self.visit(right)
-        if isinstance(lhs, _ColRef) and not isinstance(rhs, _ColRef):
-            return fn(lhs.name, rhs)
-        if isinstance(rhs, _ColRef) and not isinstance(lhs, _ColRef):
-            return fn(rhs.name, lhs)
+        if isinstance(lhs, _ColRef) and isinstance(rhs, _Lit):
+            return fn(lhs.name, rhs.value)
+        if isinstance(lhs, _Lit) and isinstance(rhs, _ColRef):
+            return flipped_fn(rhs.name, lhs.value)
         return None
 
     def visit_equal(self, left: Expression, right: Expression) -> Predicate | None:
-        return self._cmp(left, right, self._builder.equal)
+        return self._cmp(left, right, self._builder.equal, self._builder.equal)
 
     def visit_not_equal(self, left: Expression, right: Expression) -> Predicate | None:
-        return self._cmp(left, right, self._builder.not_equal)
+        return self._cmp(left, right, self._builder.not_equal, self._builder.not_equal)
 
     def visit_less_than(self, left: Expression, right: Expression) -> Predicate | None:
-        return self._cmp(left, right, self._builder.less_than)
+        return self._cmp(left, right, self._builder.less_than, self._builder.greater_than)
 
     def visit_less_than_or_equal(self, left: Expression, right: Expression) -> Predicate | None:
-        return self._cmp(left, right, self._builder.less_or_equal)
+        return self._cmp(left, right, self._builder.less_or_equal, self._builder.greater_or_equal)
 
     def visit_greater_than(self, left: Expression, right: Expression) -> Predicate | None:
-        return self._cmp(left, right, self._builder.greater_than)
+        return self._cmp(left, right, self._builder.greater_than, self._builder.less_than)
 
     def visit_greater_than_or_equal(self, left: Expression, right: Expression) -> Predicate | None:
-        return self._cmp(left, right, self._builder.greater_or_equal)
+        return self._cmp(left, right, self._builder.greater_or_equal, self._builder.less_or_equal)
 
     # -- Set/range predicates --
 
@@ -128,18 +139,20 @@ class PaimonPredicateVisitor(PredicateVisitor[Any]):
             return None
         lower_val = self.visit(lower)
         upper_val = self.visit(upper)
-        if lower_val is None or upper_val is None:
+        if not isinstance(lower_val, _Lit) or not isinstance(upper_val, _Lit):
             return None
-        return self._builder.between(col.name, lower_val, upper_val)
+        if lower_val.value is None or upper_val.value is None:
+            return None
+        return self._builder.between(col.name, lower_val.value, upper_val.value)
 
     def visit_is_in(self, expr: Expression, items: list[Expression]) -> Predicate | None:
         col = self.visit(expr)
         if not isinstance(col, _ColRef):
             return None
         values = [self.visit(item) for item in items]
-        if any(v is None or isinstance(v, _ColRef) for v in values):
+        if any(not isinstance(v, _Lit) or v.value is None for v in values):
             return None
-        return self._builder.is_in(col.name, values)
+        return self._builder.is_in(col.name, [v.value for v in values])
 
     # -- Null predicates --
 
@@ -157,19 +170,28 @@ class PaimonPredicateVisitor(PredicateVisitor[Any]):
         col = self.visit(input)
         if not isinstance(col, _ColRef):
             return None
-        return self._builder.startswith(col.name, str(self.visit(prefix)))
+        pattern = self.visit(prefix)
+        if not isinstance(pattern, _Lit) or not isinstance(pattern.value, str):
+            return None
+        return self._builder.startswith(col.name, pattern.value)
 
     def visit_ends_with(self, input: Expression, suffix: Expression) -> Predicate | None:
         col = self.visit(input)
         if not isinstance(col, _ColRef):
             return None
-        return self._builder.endswith(col.name, str(self.visit(suffix)))
+        pattern = self.visit(suffix)
+        if not isinstance(pattern, _Lit) or not isinstance(pattern.value, str):
+            return None
+        return self._builder.endswith(col.name, pattern.value)
 
     def visit_contains(self, input: Expression, substring: Expression) -> Predicate | None:
         col = self.visit(input)
         if not isinstance(col, _ColRef):
             return None
-        return self._builder.contains(col.name, str(self.visit(substring)))
+        pattern = self.visit(substring)
+        if not isinstance(pattern, _Lit) or not isinstance(pattern.value, str):
+            return None
+        return self._builder.contains(col.name, pattern.value)
 
 
 def convert_filters_to_paimon(
