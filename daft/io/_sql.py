@@ -413,7 +413,7 @@ class SQLDataSink(DataSink[dict[str, Any] | None]):
             if engine is not None:
                 engine.dispose()
 
-    def _adbc_non_primitive_type(self) -> pa.DataType:
+    def _adbc_non_primitive_type(self) -> "pa.DataType":
         """Arrow type that non-primitive columns are written as with backend='adbc'."""
         if self.non_primitive_handling == "error" and self._non_primitive_columns:
             cols = ", ".join(self._non_primitive_columns)
@@ -428,7 +428,7 @@ class SQLDataSink(DataSink[dict[str, Any] | None]):
             return pa.string()
         raise ValueError(f"Invalid non_primitive_handling value: {self.non_primitive_handling!r}")
 
-    def _adbc_arrow_schema(self) -> pa.Schema:
+    def _adbc_arrow_schema(self) -> "pa.Schema":
         """Arrow schema of the target table: the DataFrame schema with non-primitive columns as text or bytes."""
         if not self._non_primitive_columns:
             return self.df_schema.to_pyarrow_schema()
@@ -443,7 +443,7 @@ class SQLDataSink(DataSink[dict[str, Any] | None]):
             ]
         )
 
-    def _to_adbc_arrow_table(self, micropartition: MicroPartition, target_schema: pa.Schema) -> pa.Table:
+    def _to_adbc_arrow_table(self, micropartition: MicroPartition, target_schema: "pa.Schema") -> "pa.Table":
         """Convert a MicroPartition to an Arrow table, normalizing non-primitive values like the SQLAlchemy path."""
         if not self._non_primitive_columns:
             return micropartition.to_arrow()
