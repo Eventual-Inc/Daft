@@ -404,3 +404,52 @@ def test_sql_unsupported_dialect() -> None:
             f"SELECT * FROM {TEST_TABLE_NAME}",
             "sqlheavy://user:password@localhost:5432/db",
         )
+
+
+@pytest.fixture()
+def postgres_adbc_db(test_db):
+    if not test_db.startswith("postgres"):
+        pytest.skip("ADBC integration tests run against PostgreSQL only")
+    pytest.importorskip("adbc_driver_postgresql")
+    return test_db
+
+
+@pytest.mark.integration()
+def test_postgres_adbc_read(postgres_adbc_db, pdf) -> None:
+    df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", postgres_adbc_db, backend="adbc")
+    assert_df_equals(df.to_pandas(coerce_temporal_nanoseconds=True), pdf, sort_key="id")
+
+
+@pytest.mark.integration()
+@pytest.mark.parametrize("num_partitions", [2, 3])
+@pytest.mark.parametrize("partition_col", ["id", "float_col", "date_col", "date_time_col"])
+@pytest.mark.parametrize("partition_bound_strategy", ["min-max", "percentile"])
+def test_postgres_adbc_partitioned_read(
+    postgres_adbc_db, num_partitions, partition_col, partition_bound_strategy, pdf
+) -> None:
+    df = daft.read_sql(
+        f"SELECT * FROM {TEST_TABLE_NAME}",
+        postgres_adbc_db,
+        partition_col=partition_col,
+        num_partitions=num_partitions,
+        partition_bound_strategy=partition_bound_strategy,
+        backend="adbc",
+    )
+    assert_df_equals(df.to_pandas(coerce_temporal_nanoseconds=True), pdf, sort_key="id")
+
+
+@pytest.mark.integration()
+def test_postgres_adbc_read_with_pushdowns(postgres_adbc_db, pdf) -> None:
+    df = daft.read_sql(f"SELECT * FROM {TEST_TABLE_NAME}", postgres_adbc_db, backend="adbc")
+    df = df.where(df["id"] > 100).select("id", "float_col", "string_col")
+
+    expected = pdf[pdf["id"] > 100][["id", "float_col", "string_col"]]
+    assert_df_equals(df.to_pandas(), expected, sort_key="id")
+
+
+@pytest.mark.integration()
+def test_postgres_adbc_matches_connectorx(postgres_adbc_db) -> None:
+    query = f"SELECT * FROM {TEST_TABLE_NAME}"
+    default = daft.read_sql(query, postgres_adbc_db).sort("id").to_pandas(coerce_temporal_nanoseconds=True)
+    adbc = daft.read_sql(query, postgres_adbc_db, backend="adbc").sort("id").to_pandas(coerce_temporal_nanoseconds=True)
+    assert_df_equals(adbc, default, sort_key="id")
