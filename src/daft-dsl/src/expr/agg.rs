@@ -42,6 +42,10 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
                     AggExpr::Stddev(Expr::Alias(e, name.clone()).into(), ddof)
                 }
                 AggExpr::Var(e, ddof) => AggExpr::Var(Expr::Alias(e, name.clone()).into(), ddof),
+                AggExpr::VarPartial(e) => AggExpr::VarPartial(Expr::Alias(e, name.clone()).into()),
+                AggExpr::MergeVarPartial(e) => {
+                    AggExpr::MergeVarPartial(Expr::Alias(e, name.clone()).into())
+                }
                 AggExpr::Min(e) => AggExpr::Min(Expr::Alias(e, name.clone()).into()),
                 AggExpr::Max(e) => AggExpr::Max(Expr::Alias(e, name.clone()).into()),
                 AggExpr::BoolAnd(e) => AggExpr::BoolAnd(Expr::Alias(e, name.clone()).into()),

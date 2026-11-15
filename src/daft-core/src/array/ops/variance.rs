@@ -1,13 +1,64 @@
+use std::sync::Arc;
+
 use common_error::DaftResult;
 
 use crate::{
     array::{
-        DataArray,
-        ops::{DaftVarianceAggable, GroupIndices},
+        DataArray, StructArray,
+        ops::{
+            DaftMergeVarPartialAggable, DaftVarPartialAggable, DaftVarianceAggable, GroupIndices,
+        },
     },
-    datatypes::Float64Type,
-    utils::stats,
+    datatypes::{DataType, Field, Float64Type, UInt64Type},
+    prelude::IntoSeries,
+    utils::stats::{self, VarPartialState},
 };
+
+fn build_var_partial_struct(
+    parent_name: &str,
+    states: Vec<VarPartialState>,
+) -> DaftResult<StructArray> {
+    let counts: Vec<Option<u64>> = states.iter().map(|s| Some(s.count)).collect();
+    let means: Vec<Option<f64>> = states
+        .iter()
+        .map(|s| (s.count > 0).then_some(s.mean))
+        .collect();
+    let m2s: Vec<Option<f64>> = states
+        .iter()
+        .map(|s| (s.count > 0).then_some(s.m2))
+        .collect();
+
+    let count_field = Arc::new(Field::new(stats::VAR_PARTIAL_COUNT_FIELD, DataType::UInt64));
+    let mean_field = Arc::new(Field::new(stats::VAR_PARTIAL_MEAN_FIELD, DataType::Float64));
+    let m2_field = Arc::new(Field::new(stats::VAR_PARTIAL_M2_FIELD, DataType::Float64));
+
+    let count_arr = DataArray::<UInt64Type>::from_iter(count_field, counts);
+    let mean_arr = DataArray::<Float64Type>::from_iter(mean_field, means);
+    let m2_arr = DataArray::<Float64Type>::from_iter(m2_field, m2s);
+
+    let parent_field = Arc::new(Field::new(parent_name, stats::var_partial_dtype()));
+    Ok(StructArray::new(
+        parent_field,
+        vec![
+            count_arr.into_series(),
+            mean_arr.into_series(),
+            m2_arr.into_series(),
+        ],
+        None,
+    ))
+}
+
+/// Reads rows of a `var_partial` struct. Null fields read as zero, so a null row is the empty state.
+fn var_partial_rows(array: &StructArray) -> DaftResult<impl Fn(usize) -> VarPartialState> {
+    let counts = array.get(stats::VAR_PARTIAL_COUNT_FIELD)?.u64()?.clone();
+    let means = array.get(stats::VAR_PARTIAL_MEAN_FIELD)?.f64()?.clone();
+    let m2s = array.get(stats::VAR_PARTIAL_M2_FIELD)?.f64()?.clone();
+    Ok(move |i| VarPartialState {
+        count: counts.get(i).unwrap_or(0),
+        mean: means.get(i).unwrap_or(0.0),
+        m2: m2s.get(i).unwrap_or(0.0),
+    })
+}
 
 impl DaftVarianceAggable for DataArray<Float64Type> {
     type Output = DaftResult<Self>;
@@ -31,5 +82,52 @@ impl DaftVarianceAggable for DataArray<Float64Type> {
             self.field().clone(),
             grouped_variances_iter,
         ))
+    }
+}
+
+impl DaftVarPartialAggable for DataArray<Float64Type> {
+    type Output = DaftResult<StructArray>;
+
+    fn var_partial(&self) -> Self::Output {
+        let stats = stats::calculate_stats(self)?;
+        let values = self.into_iter().flatten();
+        let state = stats::calculate_var_partial(stats, values);
+        build_var_partial_struct(self.name(), vec![state])
+    }
+
+    fn grouped_var_partial(&self, groups: &GroupIndices) -> Self::Output {
+        let states = stats::grouped_stats(self, groups)?
+            .map(|(stats, group)| {
+                let values = group.iter().filter_map(|&index| self.get(index as _));
+                stats::calculate_var_partial(stats, values)
+            })
+            .collect();
+        build_var_partial_struct(self.name(), states)
+    }
+}
+
+impl DaftMergeVarPartialAggable for StructArray {
+    type Output = DaftResult<Self>;
+
+    fn merge_var_partial(&self) -> Self::Output {
+        let row = var_partial_rows(self)?;
+        let merged = (0..self.len())
+            .map(row)
+            .fold(VarPartialState::default(), VarPartialState::merge);
+        build_var_partial_struct(self.name(), vec![merged])
+    }
+
+    fn grouped_merge_var_partial(&self, groups: &GroupIndices) -> Self::Output {
+        let row = var_partial_rows(self)?;
+        let states = groups
+            .iter()
+            .map(|group| {
+                group
+                    .iter()
+                    .map(|&index| row(index as usize))
+                    .fold(VarPartialState::default(), VarPartialState::merge)
+            })
+            .collect();
+        build_var_partial_struct(self.name(), states)
     }
 }
