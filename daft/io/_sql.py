@@ -462,6 +462,20 @@ class SQLDataSink(DataSink[dict[str, Any] | None]):
                 arrays.append(column.to_arrow())
         return pa.Table.from_arrays(arrays, schema=target_schema)
 
+    def _connect_adbc(self, sql_conn: SQLConnection) -> Any:
+        """Open an ADBC connection, letting SQLite writers wait for each other's locks.
+
+        Writers run in parallel and SQLite allows one writer at a time, so without a busy
+        timeout they fail with "database is locked". Like SQLAlchemy's SQLite dialect, honour
+        a ``timeout`` (seconds) in the URL and default to 5 seconds.
+        """
+        connection = sql_conn.connect_adbc()
+        if sql_conn.dialect == "sqlite":
+            timeout_ms = int(_sqlite_url_timeout(sql_conn.conn) * 1000)
+            with connection.cursor() as cursor:
+                cursor.execute(f"PRAGMA busy_timeout = {timeout_ms}")
+        return connection
+
     def _adbc_table_exists(self, connection: Any) -> bool:
         from adbc_driver_manager import AdbcStatusCode, ProgrammingError
 
@@ -479,7 +493,7 @@ class SQLDataSink(DataSink[dict[str, Any] | None]):
         """ADBC version of :meth:`start`: apply write_mode once by creating or replacing an empty table."""
         empty_table = pa.Table.from_batches([], schema=self._adbc_arrow_schema())
 
-        with sql_conn.connect_adbc() as connection:
+        with self._connect_adbc(sql_conn) as connection:
             table_exists = self._adbc_table_exists(connection)
             if self.write_mode == "fail" and table_exists:
                 raise ValueError(f"Table {self.table_name!r} already exists, cannot write with write_mode='fail'.")
@@ -501,7 +515,7 @@ class SQLDataSink(DataSink[dict[str, Any] | None]):
         """ADBC version of :meth:`write`: bulk-ingest each micropartition as Arrow data."""
         target_schema = self._adbc_arrow_schema()
 
-        with sql_conn.connect_adbc() as connection, connection.cursor() as cursor:
+        with self._connect_adbc(sql_conn) as connection, connection.cursor() as cursor:
             for micropartition in micropartitions:
                 if len(micropartition) == 0:
                     continue
@@ -532,3 +546,16 @@ class SQLDataSink(DataSink[dict[str, Any] | None]):
                 "total_written_bytes": [total_written_bytes],
             }
         )
+
+
+def _sqlite_url_timeout(url: Any, default: float = 5.0) -> float:
+    """Return the ``timeout`` query parameter of a ``sqlite://`` URL in seconds, or ``default``."""
+    from urllib.parse import parse_qs
+
+    if not isinstance(url, str) or "?" not in url:
+        return default
+    values = parse_qs(url.split("?", 1)[1]).get("timeout")
+    try:
+        return float(values[-1]) if values else default
+    except ValueError:
+        return default

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import sqlite3
+import threading
 from contextlib import closing
 
 import pytest
@@ -93,6 +94,37 @@ def test_write_sql_adbc_many_partitions(sqlite_url):
     result = _read("users", sqlite_url)
     assert result["id"] == list(range(num_rows))
     assert result["val"] == [f"val_{i}" for i in range(num_rows)]
+
+
+def test_write_sql_adbc_concurrent_sqlite_writers_wait_for_lock(sqlite_url):
+    daft.from_pydict({"id": [0]}).write_sql("users", sqlite_url, backend="adbc")
+
+    # Hold SQLite's write lock for a moment from another connection, as a parallel writer would.
+    blocker = sqlite3.connect(sqlite_url.removeprefix("sqlite:///"), isolation_level=None, check_same_thread=False)
+    blocker.execute("BEGIN IMMEDIATE")
+    timer = threading.Timer(2, blocker.rollback)
+    timer.start()
+    try:
+        daft.from_pydict({"id": [1]}).write_sql("users", sqlite_url, backend="adbc")
+    finally:
+        timer.join()
+        blocker.close()
+    assert _read("users", sqlite_url) == {"id": [0, 1]}
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("sqlite:///x.db", 5.0),
+        ("sqlite:///x.db?timeout=30", 30.0),
+        ("sqlite:///x.db?check_same_thread=false&timeout=0.5", 0.5),
+        ("sqlite:///x.db?timeout=abc", 5.0),
+    ],
+)
+def test_sqlite_url_timeout(url, expected):
+    from daft.io._sql import _sqlite_url_timeout
+
+    assert _sqlite_url_timeout(url) == expected
 
 
 def test_write_sql_adbc_empty(sqlite_url):
