@@ -98,9 +98,17 @@ enum Error {
     UnableToGrabSemaphore { source: tokio::sync::AcquireError },
 }
 
+enum AzureAuthority {
+    Bare,
+    ContainerAtHost { host: String },
+    HostFirst { host: String },
+}
+
 struct ParsedAzureUri {
     pub protocol: String,
+    pub authority: AzureAuthority,
     pub account_name: Option<String>,
+    pub is_fabric_endpoint: bool,
     pub container_and_key: Option<(String, String)>,
 }
 
@@ -108,8 +116,31 @@ impl ParsedAzureUri {
     fn new(protocol: impl Into<String>) -> Self {
         Self {
             protocol: protocol.into(),
+            authority: AzureAuthority::Bare,
             account_name: None,
+            is_fabric_endpoint: false,
             container_and_key: None,
+        }
+    }
+
+    fn root_uri(&self) -> String {
+        match &self.authority {
+            AzureAuthority::Bare | AzureAuthority::ContainerAtHost { .. } => {
+                format!("{}://", self.protocol)
+            }
+            AzureAuthority::HostFirst { host } => format!("{}://{host}/", self.protocol),
+        }
+    }
+
+    fn container_uri(&self, container_name: &str) -> String {
+        match &self.authority {
+            AzureAuthority::Bare => format!("{}://{container_name}", self.protocol),
+            AzureAuthority::ContainerAtHost { host } => {
+                format!("{}://{container_name}@{host}", self.protocol)
+            }
+            AzureAuthority::HostFirst { host } => {
+                format!("{}://{host}/{container_name}", self.protocol)
+            }
         }
     }
 }
@@ -134,23 +165,36 @@ fn parse_azure_uri(uri: &str) -> super::Result<ParsedAzureUri> {
     //
     // Microsoft Fabric / OneLake uses the same container@host form on its own host:
     // PROTOCOL://workspace@onelake.dfs.fabric.microsoft.com/lakehouse/path-part/file
-    if let Some(host) = uri.host_str() {
-        let account_name = host
-            .strip_suffix(AZURE_STORE_SUFFIX)
-            .or_else(|| host.strip_suffix(AZURE_FABRIC_SUFFIX));
+    if let Some(host) = uri.host_str().filter(|h| !h.is_empty()) {
+        let (account_name, is_fabric_endpoint) =
+            if let Some(account_name) = host.strip_suffix(AZURE_STORE_SUFFIX) {
+                (Some(account_name), false)
+            } else if let Some(account_name) = host.strip_suffix(AZURE_FABRIC_SUFFIX) {
+                (Some(account_name), true)
+            } else {
+                (None, false)
+            };
         if let Some(account_name) = account_name {
             match uri.username() {
                 "" => {
-                    if let Some((container, key)) = uri.path().split_once('/') {
+                    parsed.authority = AzureAuthority::HostFirst { host: host.into() };
+                    let trimmed = uri.path().trim_start_matches(AZURE_DELIMITER);
+                    if !trimmed.is_empty() {
+                        let (container, key) = match trimmed.find(AZURE_DELIMITER) {
+                            Some(idx) => (&trimmed[..idx], &trimmed[idx..]),
+                            None => (trimmed, ""),
+                        };
                         parsed.container_and_key = Some((container.into(), key.into()));
                     }
                 }
                 username => {
+                    parsed.authority = AzureAuthority::ContainerAtHost { host: host.into() };
                     parsed.container_and_key = Some((username.into(), uri.path().into()));
                 }
             }
 
             parsed.account_name = Some(account_name.into());
+            parsed.is_fabric_endpoint = is_fabric_endpoint;
         } else {
             parsed.container_and_key = Some((host.into(), uri.path().into()));
         }
@@ -239,45 +283,35 @@ async fn default_credential_chain() -> Option<Arc<dyn TokenCredential>> {
     None
 }
 
-fn container_to_file_metadata(protocol: &str, container: &ContainerItem) -> Option<FileMetadata> {
+fn container_to_file_metadata(root_uri: &str, container: &ContainerItem) -> Option<FileMetadata> {
     container.name.as_ref().map(|name| FileMetadata {
-        filepath: format!("{protocol}://{name}/"),
+        filepath: format!("{root_uri}{name}/"),
         size: None,
         filetype: FileType::Directory,
     })
 }
 
-fn blob_to_file_metadata(
-    protocol: &str,
-    container_name: &str,
-    blob: &BlobItem,
-) -> Option<FileMetadata> {
+fn blob_to_file_metadata(container_uri: &str, blob: &BlobItem) -> Option<FileMetadata> {
     blob.name.as_ref().map(|name| {
         file_metadata_for_blob(
-            protocol,
-            container_name,
+            container_uri,
             name,
             blob.properties.as_ref().and_then(|p| p.content_length),
         )
     })
 }
 
-fn file_metadata_for_blob(
-    protocol: &str,
-    container_name: &str,
-    name: &str,
-    size: Option<u64>,
-) -> FileMetadata {
+fn file_metadata_for_blob(container_uri: &str, name: &str, size: Option<u64>) -> FileMetadata {
     FileMetadata {
-        filepath: format!("{protocol}://{container_name}/{name}"),
+        filepath: format!("{container_uri}/{name}"),
         size,
         filetype: FileType::File,
     }
 }
 
-fn file_metadata_for_prefix(protocol: &str, container_name: &str, name: &str) -> FileMetadata {
+fn file_metadata_for_prefix(container_uri: &str, name: &str) -> FileMetadata {
     FileMetadata {
-        filepath: format!("{protocol}://{container_name}/{name}"),
+        filepath: format!("{container_uri}/{name}"),
         size: None,
         filetype: FileType::Directory,
     }
@@ -465,9 +499,10 @@ impl AzureBlobSource {
         } else {
             std::env::var("AZURE_ENDPOINT_URL").ok()
         };
+        let use_fabric_endpoint = config.use_fabric_endpoint || parsed_uri.is_fabric_endpoint;
         let endpoint = if let Some(endpoint_url) = endpoint_url {
             endpoint_url
-        } else if config.use_fabric_endpoint {
+        } else if use_fabric_endpoint {
             format!("https://{storage_account}.blob.fabric.microsoft.com")
         } else {
             format!("https://{storage_account}.blob.core.windows.net")
@@ -534,10 +569,10 @@ impl AzureBlobSource {
 
     async fn list_containers_stream(
         &self,
-        protocol: &str,
+        root_uri: &str,
         io_stats: Option<IOStatsRef>,
     ) -> BoxStream<'_, super::Result<FileMetadata>> {
-        let protocol = protocol.to_string();
+        let root_uri = root_uri.to_string();
         let blob_client = self.blob_client.clone();
 
         let s = async_stream::stream! {
@@ -557,7 +592,7 @@ impl AzureBlobSource {
                         Ok(body) => {
                             for container in &body.container_items {
                                 if let Some(file_metadata) =
-                                    container_to_file_metadata(&protocol, container)
+                                    container_to_file_metadata(&root_uri, container)
                                 {
                                     yield Ok(file_metadata);
                                 }
@@ -578,14 +613,14 @@ impl AzureBlobSource {
 
     async fn list_directory_stream(
         &self,
-        protocol: &str,
+        container_uri: &str,
         container_name: &str,
         prefix: &str,
         posix: bool,
         io_stats: Option<IOStatsRef>,
     ) -> BoxStream<'_, super::Result<FileMetadata>> {
         // Clone and own some references that we need for the lifetime of the stream.
-        let protocol = protocol.to_string();
+        let container_uri = container_uri.to_string();
         let container_name = container_name.to_string();
         let prefix = prefix.to_string();
 
@@ -599,13 +634,12 @@ impl AzureBlobSource {
             "{}{AZURE_DELIMITER}",
             prefix.trim_end_matches(&AZURE_DELIMITER)
         );
-        let full_path = format!("{protocol}://{container_name}{prefix}");
-        let full_path_with_trailing_delimiter =
-            format!("{}://{}{}", protocol, container_name, prefix_with_delimiter);
+        let full_path = format!("{container_uri}{prefix}");
+        let full_path_with_trailing_delimiter = format!("{container_uri}{prefix_with_delimiter}");
 
         let mut unchecked_results = self
             .list_directory_delimiter_stream(
-                &protocol,
+                &container_uri,
                 &container_name,
                 &prefix_with_delimiter,
                 posix,
@@ -655,7 +689,7 @@ impl AzureBlobSource {
                                 .trim_end_matches(|c: char| c.to_string() != AZURE_DELIMITER); // "/upper/"
 
                             let upper_results_stream = self.list_directory_delimiter_stream(
-                                &protocol,
+                                &container_uri,
                                 &container_name,
                                 upper_dir,
                                 posix,
@@ -702,7 +736,7 @@ impl AzureBlobSource {
 
     async fn list_directory_delimiter_stream(
         &self,
-        protocol: &str,
+        container_uri: &str,
         container_name: &str,
         prefix: &str,
         posix: bool,
@@ -712,7 +746,7 @@ impl AzureBlobSource {
         // and returns the result flattened and standardized into FileMetadata.
 
         // Clone and own some references that we need for the lifetime of the stream.
-        let protocol = protocol.to_string();
+        let container_uri = container_uri.to_string();
         let container_name = container_name.to_string();
         let prefix = prefix.to_string();
         // URI paths include a leading slash, but Azure blob names do not. Keep
@@ -727,7 +761,7 @@ impl AzureBlobSource {
                     return;
                 }
             };
-            let request_path = format!("{}://{}{}", protocol, container_name, prefix);
+            let request_path = format!("{container_uri}{prefix}");
             if posix {
                 // `delimiter` is directory-mode: one level of blobs and virtual directories.
                 // The per-call policy adds the query parameter when this context value is set.
@@ -762,15 +796,13 @@ impl AzureBlobSource {
                                 Ok(listing) => {
                                     for name in listing.prefixes {
                                         yield Ok(file_metadata_for_prefix(
-                                            &protocol,
-                                            &container_name,
+                                            &container_uri,
                                             &name,
                                         ));
                                     }
                                     for (name, size) in listing.blobs {
                                         yield Ok(file_metadata_for_blob(
-                                            &protocol,
-                                            &container_name,
+                                            &container_uri,
                                             &name,
                                             size,
                                         ));
@@ -819,7 +851,7 @@ impl AzureBlobSource {
                             Ok(body) => {
                                 for blob in body.blob_items {
                                     if let Some(file_metadata) =
-                                        blob_to_file_metadata(&protocol, &container_name, &blob)
+                                        blob_to_file_metadata(&container_uri, &blob)
                                     {
                                         yield Ok(file_metadata);
                                     }
@@ -1006,22 +1038,24 @@ impl ObjectSource for AzureBlobSource {
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<BoxStream<super::Result<FileMetadata>>> {
         let parsed_uri = parse_azure_uri(uri)?;
+        let root_uri = parsed_uri.root_uri();
 
-        match parsed_uri.container_and_key {
+        match &parsed_uri.container_and_key {
             // List containers.
-            None => Ok(self
-                .list_containers_stream(parsed_uri.protocol.as_str(), io_stats)
-                .await),
+            None => Ok(self.list_containers_stream(&root_uri, io_stats).await),
             // List a path within a container.
-            Some((container_name, key)) => Ok(self
-                .list_directory_stream(
-                    parsed_uri.protocol.as_str(),
-                    container_name.as_str(),
-                    key.as_str(),
-                    posix,
-                    io_stats,
-                )
-                .await),
+            Some((container_name, key)) => {
+                let container_uri = parsed_uri.container_uri(container_name);
+                Ok(self
+                    .list_directory_stream(
+                        &container_uri,
+                        container_name.as_str(),
+                        key.as_str(),
+                        posix,
+                        io_stats,
+                    )
+                    .await)
+            }
         }
     }
 
