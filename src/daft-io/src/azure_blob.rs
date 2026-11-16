@@ -1062,11 +1062,16 @@ impl ObjectSource for AzureBlobSource {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, Mutex};
+
     use azure_core::http::Url;
+    use common_io_config::AzureConfig;
+    use futures::TryStreamExt;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     use super::{
-        azure_blob_request_prefix, blob_url, ensure_trailing_slash, parse_azure_uri,
-        parse_hierarchical_listing_xml, unescape_xml,
+        AzureBlobSource, ObjectSource, azure_blob_request_prefix, blob_url, ensure_trailing_slash,
+        parse_azure_uri, parse_hierarchical_listing_xml, unescape_xml,
     };
 
     #[test]
@@ -1204,5 +1209,238 @@ mod tests {
         let (container, key) = parsed.container_and_key.unwrap();
         assert_eq!(container, "container");
         assert_eq!(key, "/path/f.parquet");
+    }
+
+    async fn spawn_mock_azure_server<F>(handler: F) -> (String, Arc<Mutex<Vec<String>>>)
+    where
+        F: Fn(&str) -> (u16, &'static str, String) + Send + Sync + 'static,
+    {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let seen_clone = seen.clone();
+        let handler = Arc::new(handler);
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                let seen = seen_clone.clone();
+                let handler = handler.clone();
+                tokio::spawn(async move {
+                    let mut buf = vec![0u8; 4096];
+                    let n = socket.read(&mut buf).await.unwrap_or(0);
+                    if n == 0 {
+                        return;
+                    }
+                    let req = String::from_utf8_lossy(&buf[..n]);
+                    let first_line = req.lines().next().unwrap_or("");
+                    let target = first_line.split_whitespace().nth(1).unwrap_or("");
+                    seen.lock().unwrap().push(target.to_string());
+                    let (status, content_type, body) = handler(target);
+                    let reason = if status == 200 { "OK" } else { "Not Found" };
+                    let resp = format!(
+                        "HTTP/1.1 {status} {reason}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    let _ = socket.write_all(resp.as_bytes()).await;
+                });
+            }
+        });
+        (format!("http://{addr}"), seen)
+    }
+
+    #[tokio::test]
+    async fn onelake_uri_uses_fabric_endpoint_by_default() {
+        let config = AzureConfig {
+            anonymous: true,
+            ..Default::default()
+        };
+        let container_at_host = AzureBlobSource::get_client(
+            &config,
+            "abfss://ws-guid@onelake.dfs.fabric.microsoft.com/lh-guid/Files/x.parquet",
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            container_at_host.blob_client.url().as_str(),
+            "https://onelake.blob.fabric.microsoft.com/"
+        );
+
+        let host_first = AzureBlobSource::get_client(
+            &config,
+            "abfss://onelake.dfs.fabric.microsoft.com/ws-guid/lh-guid/Files/x.parquet",
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            host_first.blob_client.url().as_str(),
+            "https://onelake.blob.fabric.microsoft.com/"
+        );
+
+        let standard_storage = AzureBlobSource::get_client(
+            &config,
+            "abfss://container@myaccount.dfs.core.windows.net/path/x.parquet",
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            standard_storage.blob_client.url().as_str(),
+            "https://myaccount.blob.core.windows.net/"
+        );
+    }
+
+    #[tokio::test]
+    async fn glob_preserves_authority_for_onelake_and_storage_hosts() {
+        let (endpoint, _seen) = spawn_mock_azure_server(|target| {
+            if target.starts_with("/ws-guid?") && target.contains("prefix=lh-guid%2FFiles%2F") {
+                let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<EnumerationResults>
+  <Blobs>
+    <Blob><Name>lh-guid/Files/part-0.parquet</Name><Properties><Content-Length>42</Content-Length></Properties></Blob>
+    <Blob><Name>lh-guid/Files/readme.txt</Name><Properties><Content-Length>10</Content-Length></Properties></Blob>
+  </Blobs>
+  <NextMarker />
+</EnumerationResults>"#;
+                (200, "application/xml", xml.to_string())
+            } else if target.starts_with("/container?") && target.contains("prefix=dir%2Fsub%2F") {
+                let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<EnumerationResults>
+  <Blobs>
+    <Blob><Name>dir/sub/data.parquet</Name><Properties><Content-Length>99</Content-Length></Properties></Blob>
+  </Blobs>
+  <NextMarker />
+</EnumerationResults>"#;
+                (200, "application/xml", xml.to_string())
+            } else if target.starts_with("/container?") && target.contains("prefix=dir%2F") {
+                let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<EnumerationResults>
+  <Blobs>
+    <BlobPrefix><Name>dir/sub/</Name></BlobPrefix>
+    <Blob><Name>dir/top.parquet</Name><Properties><Content-Length>12</Content-Length></Properties></Blob>
+  </Blobs>
+  <NextMarker />
+</EnumerationResults>"#;
+                (200, "application/xml", xml.to_string())
+            } else {
+                (404, "text/plain", String::new())
+            }
+        })
+        .await;
+
+        let config = AzureConfig {
+            anonymous: true,
+            storage_account: Some("onelake".to_string()),
+            endpoint_url: Some(endpoint),
+            ..Default::default()
+        };
+        let source = AzureBlobSource::get_client(&config, "az://ws-guid/")
+            .await
+            .unwrap();
+
+        let onelake_matches: Vec<String> = source
+            .clone()
+            .glob(
+                "abfss://ws-guid@onelake.dfs.fabric.microsoft.com/lh-guid/Files/*.parquet",
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap()
+            .map_ok(|fm| fm.filepath)
+            .try_collect()
+            .await
+            .unwrap();
+        assert_eq!(
+            onelake_matches,
+            vec!["abfss://ws-guid@onelake.dfs.fabric.microsoft.com/lh-guid/Files/part-0.parquet"]
+        );
+
+        let mut recursive_matches: Vec<String> = source
+            .clone()
+            .glob(
+                "abfss://container@myaccount.dfs.core.windows.net/dir/**/*.parquet",
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap()
+            .map_ok(|fm| fm.filepath)
+            .try_collect()
+            .await
+            .unwrap();
+        recursive_matches.sort();
+        assert_eq!(
+            recursive_matches,
+            vec![
+                "abfss://container@myaccount.dfs.core.windows.net/dir/sub/data.parquet",
+                "abfss://container@myaccount.dfs.core.windows.net/dir/top.parquet",
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn host_first_onelake_and_storage_uris_resolve_container_and_key() {
+        let (endpoint, seen) = spawn_mock_azure_server(|target| {
+            if target.starts_with("/ws-guid?") && target.contains("prefix=lh-guid%2FFiles%2F") {
+                let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<EnumerationResults>
+  <Blobs>
+    <Blob><Name>lh-guid/Files/part-0.parquet</Name><Properties><Content-Length>5</Content-Length></Properties></Blob>
+  </Blobs>
+  <NextMarker />
+</EnumerationResults>"#;
+                (200, "application/xml", xml.to_string())
+            } else if target == "/ws-guid/lh-guid/Files/part-0.parquet" {
+                (200, "application/octet-stream", "PAR1!".to_string())
+            } else {
+                (404, "text/plain", String::new())
+            }
+        })
+        .await;
+
+        let config = AzureConfig {
+            anonymous: true,
+            endpoint_url: Some(endpoint),
+            ..Default::default()
+        };
+        let uri = "abfss://onelake.dfs.fabric.microsoft.com/ws-guid/lh-guid/Files/part-0.parquet";
+        let source = AzureBlobSource::get_client(&config, uri).await.unwrap();
+
+        let matches: Vec<String> = source
+            .clone()
+            .glob(
+                "abfss://onelake.dfs.fabric.microsoft.com/ws-guid/lh-guid/Files/*.parquet",
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap()
+            .map_ok(|fm| fm.filepath)
+            .try_collect()
+            .await
+            .unwrap();
+        assert_eq!(matches, vec![uri]);
+
+        let bytes = source
+            .get(uri, None, None)
+            .await
+            .unwrap()
+            .bytes()
+            .await
+            .unwrap();
+        assert_eq!(bytes.as_ref(), b"PAR1!");
+        assert!(
+            seen.lock()
+                .unwrap()
+                .iter()
+                .any(|t| t == "/ws-guid/lh-guid/Files/part-0.parquet")
+        );
     }
 }
