@@ -18,7 +18,7 @@ impl DaftConcatAggable for ListArray {
     type Output = DaftResult<Self>;
     fn concat(&self) -> Self::Output {
         if self.null_count() == 0 {
-            let new_offsets = OffsetBuffer::new(vec![0, *self.offsets().last().unwrap()].into());
+            let new_offsets = OffsetBuffer::new(vec![0, self.offsets().last()].into());
 
             return Ok(Self::new(
                 self.field.clone(),
@@ -128,7 +128,7 @@ impl DaftConcatAggable for DataArray<Utf8Type> {
         };
 
         let arrow_array = self.as_arrow()?;
-        let total_len = arrow_array.offsets().last().copied().unwrap_or(0);
+        let total_len = arrow_array.offsets().last();
         let new_offsets = OffsetBuffer::new(ScalarBuffer::from(vec![0i64, total_len]));
         let result = LargeStringArray::new(new_offsets, arrow_array.values().clone(), new_nulls);
 

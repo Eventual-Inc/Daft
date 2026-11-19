@@ -1,7 +1,7 @@
 [dependencies]
 arrow = {workspace = true}
 arrow-array = {workspace = true}
-arrow-avro = {version = "59", default-features = false, features = ["async", "snappy", "deflate", "zstd", "bzip2"]}
+arrow-avro = {version = "60", default-features = false, features = ["async", "snappy", "deflate", "zstd", "bzip2"]}
 arrow-schema = {workspace = true}
 bytes = {workspace = true}
 common-error = {path = "../common/error", default-features = false}

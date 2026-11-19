@@ -1299,16 +1299,14 @@ fn agg_symbolized_path(
                 has_string_col = true;
                 let arrow_arr = col.utf8()?.as_arrow()?;
                 let offsets = arrow_arr.offsets();
-                let bytes =
-                    offsets.last().copied().unwrap_or(0) - offsets.first().copied().unwrap_or(0);
+                let bytes = offsets.last() - offsets.first();
                 total_string_bytes = total_string_bytes.saturating_add(bytes as usize);
             }
             DataType::Binary => {
                 has_string_col = true;
                 let arrow_arr = col.binary()?.as_arrow()?;
                 let offsets = arrow_arr.offsets();
-                let bytes =
-                    offsets.last().copied().unwrap_or(0) - offsets.first().copied().unwrap_or(0);
+                let bytes = offsets.last() - offsets.first();
                 total_string_bytes = total_string_bytes.saturating_add(bytes as usize);
             }
             _ => {}

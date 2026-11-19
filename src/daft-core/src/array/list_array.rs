@@ -53,9 +53,9 @@ impl ListArray {
                     flat_child.data_type(),
                 );
                 assert!(
-                    *offsets.last().unwrap() <= flat_child.len() as i64,
+                    offsets.last() <= flat_child.len() as i64,
                     "ListArray::new received offsets with last value {}, but child series has length {}",
-                    offsets.last().unwrap(),
+                    offsets.last(),
                     flat_child.len()
                 );
             }
