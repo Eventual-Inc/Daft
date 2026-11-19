@@ -5,6 +5,7 @@ import platform
 import types
 import warnings
 from contextvars import ContextVar, Token
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -71,6 +72,16 @@ __all__ = [
 _current_session: ContextVar[Session | None] = ContextVar("current_session", default=None)
 
 
+@dataclass(frozen=True)
+class _SessionContext:
+    session: Session
+    token: Token[Session | None]
+    parent: _SessionContext | None
+
+
+_session_context: ContextVar[_SessionContext | None] = ContextVar("session_context", default=None)
+
+
 def session() -> Session:
     """Creates a default daft session to be used with a context manager.
 
@@ -110,14 +121,14 @@ class Session:
 
     def __init__(self) -> None:
         self._session = PySession.empty()
-        self._token: Token[Session | None] | None = None
 
     ###
     # context manager methods
     ###
 
     def __enter__(self) -> Session:
-        self._token = _current_session.set(self)
+        # Keep entry tokens in the execution context, not on the shared Session.
+        _session_context.set(_SessionContext(self, _current_session.set(self), _session_context.get()))
         return self
 
     def __exit__(
@@ -126,8 +137,10 @@ class Session:
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        if self._token is not None:
-            _current_session.reset(self._token)
+        context = _session_context.get()
+        if context is not None and context.session is self:
+            _current_session.reset(context.token)
+            _session_context.set(context.parent)
 
     ###
     # factory methods
