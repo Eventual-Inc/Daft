@@ -144,6 +144,7 @@ impl BlockingSink for RepartitionSink {
         input: MicroPartition,
         mut state: Self::State,
         _runtime_stats: Arc<Self::Stats>,
+        _spill_scope: crate::spilling::SpillScopeId,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let buffer_threshold_bytes =
@@ -172,6 +173,7 @@ impl BlockingSink for RepartitionSink {
     fn finalize(
         &self,
         states: Vec<Self::State>,
+        _spill_scope: crate::spilling::SpillScopeId,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult {
         let num_partitions = self.num_partitions;
@@ -206,7 +208,7 @@ impl BlockingSink for RepartitionSink {
                             while let Some(output) = joinset.join_next().await {
                                 partitions.push(output??);
                             }
-                            Ok(BlockingSinkOutput::Partitions(partitions))
+                            Ok(BlockingSinkOutput::partitions(partitions))
                         }
                         LocalShuffleBackend::Flight(ctx) => {
                             let compression = parse_compression(ctx.compression.as_deref())?;

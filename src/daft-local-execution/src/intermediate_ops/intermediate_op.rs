@@ -410,7 +410,8 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
         let compute_runtime = get_compute_runtime();
         let task_spawner = ExecutionTaskSpawner::new(
             compute_runtime,
-            runtime_handle.memory_manager(),
+            runtime_handle.memory_pool(),
+            runtime_handle.spill_manager(),
             info_span!("IntermediateOp::execute"),
         );
 

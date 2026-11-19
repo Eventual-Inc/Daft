@@ -329,6 +329,7 @@ impl BlockingSink for GroupedAggregateSink {
         input: MicroPartition,
         mut state: Self::State,
         _runtime_stats: Arc<Self::Stats>,
+        _spill_scope: crate::spilling::SpillScopeId,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         let params = self.grouped_aggregate_params.clone();
@@ -348,6 +349,7 @@ impl BlockingSink for GroupedAggregateSink {
     fn finalize(
         &self,
         states: Vec<Self::State>,
+        _spill_scope: crate::spilling::SpillScopeId,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult {
         let params = self.grouped_aggregate_params.clone();
@@ -414,7 +416,7 @@ impl BlockingSink for GroupedAggregateSink {
                         .await
                         .into_iter()
                         .collect::<DaftResult<Vec<_>>>()?;
-                    Ok(BlockingSinkOutput::Partitions(results))
+                    Ok(BlockingSinkOutput::partitions(results))
                 },
                 Span::current(),
             )

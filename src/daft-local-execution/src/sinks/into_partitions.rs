@@ -190,6 +190,7 @@ impl BlockingSink for IntoPartitionsSink {
         input: MicroPartition,
         mut state: Self::State,
         _runtime_stats: Arc<Self::Stats>,
+        _spill_scope: crate::spilling::SpillScopeId,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         spawner
@@ -207,6 +208,7 @@ impl BlockingSink for IntoPartitionsSink {
     fn finalize(
         &self,
         states: Vec<Self::State>,
+        _spill_scope: crate::spilling::SpillScopeId,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult {
         let backend = self.backend.clone();
@@ -230,7 +232,7 @@ impl BlockingSink for IntoPartitionsSink {
                                 num_partitions,
                                 schema,
                             )?;
-                            Ok(BlockingSinkOutput::Partitions(outputs))
+                            Ok(BlockingSinkOutput::partitions(outputs))
                         }
                         LocalShuffleBackend::Flight(_) => {
                             debug_assert_eq!(

@@ -84,6 +84,7 @@ impl BlockingSink for PivotSink {
         input: MicroPartition,
         mut state: Self::State,
         _runtime_stats: Arc<Self::Stats>,
+        _spill_scope: crate::spilling::SpillScopeId,
         _spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         state.push(input);
@@ -94,6 +95,7 @@ impl BlockingSink for PivotSink {
     fn finalize(
         &self,
         states: Vec<Self::State>,
+        _spill_scope: crate::spilling::SpillScopeId,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult {
         let pivot_params = self.pivot_params.clone();
@@ -127,7 +129,7 @@ impl BlockingSink for PivotSink {
                         pivot_params.value_column.clone(),
                         pivot_params.names.clone(),
                     )?;
-                    Ok(BlockingSinkOutput::Partitions(vec![pivoted]))
+                    Ok(BlockingSinkOutput::partitions(vec![pivoted]))
                 },
                 Span::current(),
             )

@@ -9,12 +9,14 @@ mod dynamic_batching;
 mod input_sender;
 mod intermediate_ops;
 mod join;
+mod memory_size;
 mod pipeline;
 mod resource_manager;
 mod run;
 mod runtime_stats;
 mod sinks;
 mod sources;
+pub mod spilling;
 mod streaming_sink;
 use std::{
     future::Future,
@@ -27,7 +29,8 @@ use arc_swap::ArcSwap;
 use common_error::{DaftError, DaftResult};
 use common_runtime::{JoinSet, RuntimeRef, RuntimeTask};
 use console::style;
-use resource_manager::MemoryManager;
+use daft_memory::{MemoryPermit, MemoryPool};
+use resource_manager::PipelineMemoryContext;
 pub use run::ExecutionEngineResult;
 
 /// Helpers for distributed execution tests.
@@ -39,6 +42,7 @@ pub mod testing {
 }
 use runtime_stats::RuntimeStatsManagerHandle;
 use snafu::{ResultExt, Snafu, futures::TryFutureExt};
+use spilling::SpillManager;
 use tracing::Instrument;
 
 /// The `OperatorOutput` enum represents the output of an operator.
@@ -51,7 +55,7 @@ pub(crate) enum OperatorOutput<T> {
     Pending(#[pin] RuntimeTask<T>),
 }
 
-impl<T: Send + Sync + Unpin + 'static> Future for OperatorOutput<T> {
+impl<T: Send + Unpin + 'static> Future for OperatorOutput<T> {
     type Output = DaftResult<T>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -65,13 +69,13 @@ impl<T: Send + Sync + Unpin + 'static> Future for OperatorOutput<T> {
     }
 }
 
-impl<T: Send + Sync + 'static> From<T> for OperatorOutput<T> {
+impl<T: Send + 'static> From<T> for OperatorOutput<T> {
     fn from(value: T) -> Self {
         Self::Ready(Some(value))
     }
 }
 
-impl<T: Send + Sync + 'static> From<RuntimeTask<T>> for OperatorOutput<T> {
+impl<T: Send + 'static> From<RuntimeTask<T>> for OperatorOutput<T> {
     fn from(task: RuntimeTask<T>) -> Self {
         Self::Pending(task)
     }
@@ -89,19 +93,22 @@ impl<T> Future for SpawnedTask<T> {
 
 pub(crate) struct ExecutionRuntimeContext {
     worker_set: JoinSet<Result<()>>,
-    memory_manager: Arc<MemoryManager>,
+    memory_context: Arc<PipelineMemoryContext>,
+    pub(crate) spill_manager: SpillManager,
     stats_manager: RuntimeStatsManagerHandle,
 }
 
 impl ExecutionRuntimeContext {
     #[must_use]
     pub fn new(
-        memory_manager: Arc<MemoryManager>,
+        memory_pool: Arc<MemoryPool>,
+        spill_manager: SpillManager,
         stats_manager: RuntimeStatsManagerHandle,
     ) -> Self {
         Self {
             worker_set: JoinSet::new(),
-            memory_manager,
+            memory_context: Arc::new(PipelineMemoryContext::new(memory_pool)),
+            spill_manager,
             stats_manager,
         }
     }
@@ -147,34 +154,84 @@ impl ExecutionRuntimeContext {
     }
 
     #[must_use]
-    pub(crate) fn memory_manager(&self) -> Arc<MemoryManager> {
-        self.memory_manager.clone()
+    pub(crate) fn memory_pool(&self) -> Arc<MemoryPool> {
+        self.memory_context.pipeline_pool()
+    }
+
+    #[must_use]
+    pub(crate) fn memory_context(&self) -> Arc<PipelineMemoryContext> {
+        self.memory_context.clone()
     }
 
     #[must_use]
     pub(crate) fn stats_manager(&self) -> RuntimeStatsManagerHandle {
         self.stats_manager.clone()
     }
+
+    #[must_use]
+    pub(crate) fn spill_manager(&self) -> SpillManager {
+        self.spill_manager.clone()
+    }
 }
 
 #[derive(Clone)]
 pub(crate) struct ExecutionTaskSpawner {
     runtime_ref: RuntimeRef,
-    memory_manager: Arc<MemoryManager>,
+    memory_pool: Arc<MemoryPool>,
+    pub(crate) spill_manager: SpillManager,
     outer_span: tracing::Span,
 }
 
 impl ExecutionTaskSpawner {
     pub fn new(
         runtime_ref: RuntimeRef,
-        memory_manager: Arc<MemoryManager>,
+        memory_pool: Arc<MemoryPool>,
+        spill_manager: SpillManager,
         span: tracing::Span,
     ) -> Self {
         Self {
             runtime_ref,
-            memory_manager,
+            memory_pool,
+            spill_manager,
             outer_span: span,
         }
+    }
+
+    #[must_use]
+    pub fn with_memory_pool(&self, memory_pool: Arc<MemoryPool>) -> Self {
+        Self {
+            runtime_ref: self.runtime_ref.clone(),
+            memory_pool,
+            spill_manager: self.spill_manager.clone(),
+            outer_span: self.outer_span.clone(),
+        }
+    }
+
+    /// Reserves memory that may outlive a single spawned task.
+    ///
+    /// The caller can store the returned permit alongside operator state. The memory remains
+    /// accounted until the permit is dropped.
+    pub async fn reserve_memory(&self, bytes: u64) -> DaftResult<MemoryPermit> {
+        self.memory_pool
+            .reserve(bytes)
+            .await
+            .map_err(|error| DaftError::ComputeError(error.to_string()))
+    }
+
+    /// Attempts to reserve memory without waiting for another operator to release memory.
+    pub fn try_reserve_memory(&self, bytes: u64) -> DaftResult<Option<MemoryPermit>> {
+        self.memory_pool
+            .try_reserve(bytes)
+            .map_err(|error| DaftError::ComputeError(error.to_string()))
+    }
+
+    #[must_use]
+    pub fn memory_limit_bytes(&self) -> u64 {
+        self.memory_pool.limit_bytes()
+    }
+
+    pub fn register_release_target(&self, name: &str) -> daft_memory::MemoryReleaseTarget {
+        self.memory_pool.register_release_target(name)
     }
 
     pub fn spawn_with_memory_request<F, O>(
@@ -188,9 +245,9 @@ impl ExecutionTaskSpawner {
         O: Send + 'static,
     {
         let outer_span = self.outer_span.clone();
-        let memory_manager = self.memory_manager.clone();
+        let task_spawner = self.clone();
         self.runtime_ref.spawn(async move {
-            let _permit = memory_manager.request_bytes(memory_request).await?;
+            let _permit = task_spawner.reserve_memory(memory_request).await?;
             future.instrument(span).instrument(outer_span).await
         })
     }
