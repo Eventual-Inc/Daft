@@ -19,11 +19,11 @@ docker compose up
 ## Executing a job with opentelemetry enabled
 
 The opentelemetry collector exposes an OTLP gRPC endpoint on port 4317.
-To execute a job with opentelemetry enabled, set the `DAFT_DEV_OTEL_EXPORTER_OTLP_ENDPOINT` environment variable to `grpc://localhost:4317` and run the job.
+To execute a job with opentelemetry enabled, set the `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable to `grpc://localhost:4317` and run the job.
 
 Example:
 ```bash
-DAFT_DEV_OTEL_EXPORTER_OTLP_ENDPOINT=grpc://localhost:4317 python tools/observability/opentelemetry/example.py
+OTEL_EXPORTER_OTLP_ENDPOINT=grpc://localhost:4317 python tools/observability/opentelemetry/example.py
 ```
 
 ## Viewing the metrics
