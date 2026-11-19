@@ -448,6 +448,34 @@ class Catalog(ABC):
             raise ImportError("PostgreSQL support not installed: pip install -U 'daft[postgres]'")
 
     @staticmethod
+    def from_hologres(connection_string: str) -> Catalog:
+        """Create a Daft Catalog from a Hologres connection string.
+
+        Hologres is PostgreSQL-ecosystem compatible and uses the standard
+        PostgreSQL connection string format.
+
+        Args:
+            connection_string (str): a PostgreSQL connection string pointing
+                to a Hologres instance, e.g.
+                ``postgresql://user:password@host:80/database``.
+
+        Returns:
+            Catalog: a new Catalog instance to a Hologres database.
+
+        Warning:
+            This features is early in development and will likely experience API changes.
+
+        Examples:
+            >>> catalog = Catalog.from_hologres("postgresql://user:password@host:80/database")
+        """
+        try:
+            from daft.catalog.__hologres import HologresCatalog
+
+            return HologresCatalog.from_uri(connection_string)
+        except ImportError:
+            raise ImportError("Hologres support not installed: pip install -U 'daft[hologres]'")
+
+    @staticmethod
     def _from_obj(obj: object) -> Catalog:
         """Returns a Daft Catalog from a supported object type or raises a ValueError."""
         for factory in (Catalog.from_iceberg, Catalog.from_unity):
