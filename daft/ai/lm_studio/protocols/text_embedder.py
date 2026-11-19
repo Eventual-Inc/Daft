@@ -32,9 +32,8 @@ class LMStudioTextEmbedderDescriptor(TextEmbedderDescriptor):
     provider_options: OpenAIProviderOptions
     model_name: str
     dimensions: int | None = None
-    embed_options: EmbedTextOptions = field(
-        default_factory=lambda: EmbedTextOptions(batch_size=64, max_retries=3, on_error="raise")
-    )
+    # No defaults are declared here; see ``OpenAITextEmbedderDescriptor.embed_options``.
+    embed_options: EmbedTextOptions = field(default_factory=lambda: EmbedTextOptions())
 
     def __post_init__(self) -> None:
         if self.dimensions is None:
