@@ -22,25 +22,37 @@ class PyArrowFSWithExpiry:
     expiry: datetime | None
 
 
-_CACHED_FSES: dict[tuple[str, str], PyArrowFSWithExpiry] = {}
+_CACHED_FSES: dict[tuple[str, str, str | None], PyArrowFSWithExpiry] = {}
 
 
-def _io_config_cache_key(io_config: IOConfig | None) -> str:
+def _s3_endpoint_url(io_config: IOConfig | None) -> str | None:
+    if io_config is not None:
+        endpoint = io_config.s3.endpoint_url
+        if endpoint is not None:
+            return endpoint
+    if os.environ.get("AWS_IGNORE_CONFIGURED_ENDPOINT_URLS", "").lower() == "true":
+        return None
+    return os.environ.get("AWS_ENDPOINT_URL_S3") or os.environ.get("AWS_ENDPOINT_URL") or None
+
+
+def _filesystem_cache_key(protocol: str, io_config: IOConfig | None) -> tuple[str, str, str | None]:
     # IOConfig.__eq__ is identity-based on the PyO3 wrapper, so two semantically-equal
     # configs constructed at different times miss the dict. Key on the content-repr
     # instead; the cached entry's `expiry` field still drives refresh-credentials
     # invalidation.
-    return "None" if io_config is None else repr(io_config)
+    config_key = "None" if io_config is None else repr(io_config)
+    # Endpoint changes must not reuse a filesystem connected to the old store.
+    endpoint = _s3_endpoint_url(io_config) if protocol == "s3" else None
+    return protocol, config_key, endpoint
 
 
-def _get_fs_from_cache(protocol: str, io_config: IOConfig | None) -> pafs.FileSystem | None:
-    """Get an instantiated pyarrow filesystem from the cache based on the URI protocol.
+def _get_fs_from_cache(key: tuple[str, str, str | None]) -> pafs.FileSystem | None:
+    """Get an instantiated pyarrow filesystem for the captured cache key.
 
     Returns None if no such cache entry exists.
     """
     global _CACHED_FSES
 
-    key = (protocol, _io_config_cache_key(io_config))
     if key in _CACHED_FSES:
         fs = _CACHED_FSES[key]
 
@@ -50,11 +62,11 @@ def _get_fs_from_cache(protocol: str, io_config: IOConfig | None) -> pafs.FileSy
     return None
 
 
-def _put_fs_in_cache(protocol: str, fs: pafs.FileSystem, io_config: IOConfig | None, expiry: datetime | None) -> None:
-    """Put pyarrow filesystem in cache under provided protocol."""
+def _put_fs_in_cache(key: tuple[str, str, str | None], fs: pafs.FileSystem, expiry: datetime | None) -> None:
+    """Cache a pyarrow filesystem under the key captured before construction."""
     global _CACHED_FSES
 
-    _CACHED_FSES[(protocol, _io_config_cache_key(io_config))] = PyArrowFSWithExpiry(fs, expiry)
+    _CACHED_FSES[key] = PyArrowFSWithExpiry(fs, expiry)
 
 
 def get_filesystem(protocol: str, **kwargs: Any) -> fsspec.AbstractFileSystem:
@@ -189,10 +201,13 @@ def _resolve_paths_and_filesystem(
 
     protocol = next(iter(canonicalized_protocols))
 
-    fs = _get_fs_from_cache(protocol, io_config)
+    # Snapshot the endpoint once so environment changes during construction cannot
+    # put a filesystem connected to one store under another store's cache key.
+    cache_key = _filesystem_cache_key(protocol, io_config)
+    fs = _get_fs_from_cache(cache_key)
     if fs is None:
-        fs, expiry = _build_filesystem(protocol, io_config)
-        _put_fs_in_cache(protocol, fs, io_config, expiry)
+        fs, expiry = _build_filesystem(protocol, io_config, s3_endpoint_url=cache_key[2])
+        _put_fs_in_cache(cache_key, fs, expiry)
 
     return [_resolve_path(p, fs) for p in paths], fs
 
@@ -200,6 +215,8 @@ def _resolve_paths_and_filesystem(
 def _build_filesystem(
     protocol: str,
     io_config: IOConfig | None,
+    *,
+    s3_endpoint_url: str | None,
 ) -> tuple[pafs.FileSystem, datetime | None]:
     """Build a PyArrow filesystem for the given canonical protocol."""
 
@@ -214,9 +231,10 @@ def _build_filesystem(
     if protocol == "s3":
         translated_kwargs: dict[str, Any] = {}
         expiry: datetime | None = None
+        # PyArrow does not resolve these endpoint environment variables itself.
+        _set_if_not_none(translated_kwargs, "endpoint_override", s3_endpoint_url)
         if io_config is not None and io_config.s3 is not None:
             s3_config = io_config.s3
-            _set_if_not_none(translated_kwargs, "endpoint_override", s3_config.endpoint_url)
             _set_if_not_none(translated_kwargs, "access_key", s3_config.key_id)
             _set_if_not_none(translated_kwargs, "secret_key", s3_config.access_key)
             _set_if_not_none(translated_kwargs, "session_token", s3_config.session_token)
