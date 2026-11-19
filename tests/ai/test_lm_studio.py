@@ -77,6 +77,30 @@ def test_lm_studio_text_embedder(model, embedding_dim):
             assert all(len(embedding) == embedding_dim for embedding in embeddings)
 
 
+def test_lm_studio_dimension_probe_encoding_format():
+    """The probe omits encoding_format by default and forwards an explicit "float"."""
+    response = CreateEmbeddingResponse(
+        data=[OpenAIEmbedding(embedding=[0.1] * 1024, index=0, object="embedding")],
+        model="custom-model",
+        object="list",
+        usage={"prompt_tokens": 0, "total_tokens": 0},
+    )
+
+    with patch("openai.resources.embeddings.Embeddings.create", return_value=response) as mock_create:
+        assert LMStudioProvider().get_text_embedder(model="custom-model").get_dimensions().size == 1024
+        assert "encoding_format" not in mock_create.call_args[1]
+
+    with patch("openai.resources.embeddings.Embeddings.create", return_value=response) as mock_create:
+        descriptor = LMStudioProvider().get_text_embedder(model="custom-model", encoding_format="float")
+
+        assert descriptor.get_dimensions().size == 1024
+        mock_create.assert_called_once_with(
+            input="dimension probe",
+            model="custom-model",
+            encoding_format="float",
+        )
+
+
 def test_lm_studio_dimension_probe_forwards_extra_body():
     extra_body = {"input_type": "passage"}
     response = CreateEmbeddingResponse(
@@ -96,6 +120,5 @@ def test_lm_studio_dimension_probe_forwards_extra_body():
         mock_create.assert_called_once_with(
             input="dimension probe",
             model="custom-model",
-            encoding_format="float",
             extra_body=extra_body,
         )

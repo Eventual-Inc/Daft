@@ -23,6 +23,8 @@ class EmbedTextOptions(TypedDict, total=False):
         supports_overriding_dimensions (bool): Whether to include the dimension parameter in the request. Defaults to False.
         batch_token_limit (int): Maximum tokens allowed in a single batch request to the API. Defaults to 300,000 for OpenAI.
         extra_body (dict[str, Any]): Additional JSON properties to include in OpenAI-compatible embedding requests.
+        encoding_format (Literal["base64", "float"]): Wire format for embedding vectors. Defaults to "base64",
+            which is substantially cheaper to decode. Set to "float" only for servers that reject base64 responses.
 
     Note:
         Any additional arguments defined here will be forwarded directly to
@@ -35,6 +37,7 @@ class EmbedTextOptions(TypedDict, total=False):
     supports_overriding_dimensions: bool
     batch_token_limit: int
     extra_body: dict[str, Any]
+    encoding_format: Literal["base64", "float"]
 
 
 class EmbedImageOptions(TypedDict, total=False):

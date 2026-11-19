@@ -66,8 +66,22 @@ _models: dict[EmbeddingModel, _ModelProfile] = {
 
 
 def _embedding_request_options(embed_options: EmbedTextOptions) -> dict[str, Any]:
+    options: dict[str, Any] = {}
+
     extra_body = embed_options.get("extra_body")
-    return {} if extra_body is None else {"extra_body": extra_body}
+    if extra_body is not None:
+        options["extra_body"] = extra_body
+
+    # Leaving encoding_format unset lets the OpenAI SDK ask for base64 and decode it
+    # with numpy. Passing *any* value disables that fast path, and the SDK then builds
+    # one Python object per float, which dominates runtime on large batches. So the
+    # base64 setting is expressed by OMITTING the parameter: sending "base64" would
+    # make the SDK skip its own decoding and leave raw base64 strings behind.
+    encoding_format = embed_options.get("encoding_format", "base64")
+    if encoding_format != "base64":
+        options["encoding_format"] = encoding_format
+
+    return options
 
 
 def get_input_text_token_limit_for_model(model_name: str) -> int:
@@ -137,7 +151,6 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
                 response = client.embeddings.create(
                     input="dimension probe",
                     model=self.model_name,
-                    encoding_format="float",
                     **_embedding_request_options(self.embed_options),
                 )
                 size = len(response.data[0].embedding)
@@ -145,7 +158,8 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
             except Exception as ex:
                 raise ValueError(
                     "Failed to determine embedding dimensions from OpenAI-compatible embedding server. "
-                    "Specify `dimensions=...` or ensure the server supports embeddings.create."
+                    "Specify `dimensions=...`, or ensure the server supports embeddings.create. If it "
+                    'rejects base64 embedding responses, pass encoding_format="float".'
                 ) from ex
         else:
             return _models[self.model_name].dimensions
@@ -273,7 +287,6 @@ class OpenAITextEmbedder(TextEmbedder):
             response = await self._client.embeddings.create(
                 input=input_batch,
                 model=self._model,
-                encoding_format="float",
                 dimensions=dimensions,
                 **self._request_options,
             )
@@ -284,7 +297,10 @@ class OpenAITextEmbedder(TextEmbedder):
             # consider sleeping or other backoff mechanisms
             return await asyncio.gather(*(self._embed_text(text) for text in input_batch))
         except OpenAIError as ex:
-            raise ValueError("The `embed_text` method encountered an OpenAI error.") from ex
+            raise ValueError(
+                "The `embed_text` method encountered an OpenAI error. If the server does not "
+                'support base64 embedding responses, pass encoding_format="float".'
+            ) from ex
 
     async def _embed_text(self, input_text: str) -> Embedding:
         """Embeds a single text input and possibly returns a zero vector."""
@@ -293,7 +309,6 @@ class OpenAITextEmbedder(TextEmbedder):
             response: CreateEmbeddingResponse = await self._client.embeddings.create(
                 input=input_text,
                 model=self._model,
-                encoding_format="float",
                 dimensions=dimensions,
                 **self._request_options,
             )

@@ -69,13 +69,15 @@ class LMStudioTextEmbedderDescriptor(TextEmbedderDescriptor):
             response = client.embeddings.create(
                 input="dimension probe",
                 model=self.model_name,
-                encoding_format="float",
                 **_embedding_request_options(self.embed_options),
             )
             size = len(response.data[0].embedding)
             return EmbeddingDimensions(size=size, dtype=DataType.float32())
         except Exception as ex:
-            raise ValueError("Failed to determine embedding dimensions from LM Studio.") from ex
+            raise ValueError(
+                "Failed to determine embedding dimensions from LM Studio. If the server rejects "
+                'base64 embedding responses, pass encoding_format="float".'
+            ) from ex
 
     def instantiate(self) -> TextEmbedder:
         # Get batch_token_limit from embed_options, default to 300_000
