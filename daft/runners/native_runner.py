@@ -109,7 +109,6 @@ class NativeRunner(Runner[MicroPartition]):
                     output_schema._schema,
                     builder.repr_json(),
                     "Native (Swordfish)",
-                    ray_dashboard_url=None,
                     entrypoint=entrypoint,
                     python_version=python_version,
                     daft_version=daft_version,

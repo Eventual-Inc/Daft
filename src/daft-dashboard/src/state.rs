@@ -13,7 +13,7 @@ use serde::Serialize;
 use tokio::sync::{broadcast, watch};
 use uuid::Uuid;
 
-use crate::engine::TaskStatsEntry;
+use crate::engine::{RunnerInfo, TaskStatsEntry};
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub(crate) enum OperatorStatus {
@@ -696,17 +696,13 @@ pub(crate) struct QuerySummary {
     pub id: QueryID,
     pub start_sec: f64,
     pub status: QueryStatus,
-    pub runner: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ray_dashboard_url: Option<String>,
+    pub runner: RunnerInfo,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub entrypoint: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub python_version: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub daft_version: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ray_version: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -778,12 +774,10 @@ pub(crate) struct QueryInfo {
     pub start_sec: f64,
     pub last_heartbeat_sec: f64,
     pub unoptimized_plan: QueryPlan,
-    pub runner: String,
-    pub ray_dashboard_url: Option<String>,
+    pub runner: RunnerInfo,
     pub entrypoint: Option<String>,
     pub python_version: Option<String>,
     pub daft_version: Option<String>,
-    pub ray_version: Option<String>,
     pub state: QueryState,
 }
 
@@ -836,11 +830,9 @@ impl QueryInfo {
             start_sec: self.start_sec,
             status: self.status(),
             runner: self.runner.clone(),
-            ray_dashboard_url: self.ray_dashboard_url.clone(),
             entrypoint: self.entrypoint.clone(),
             python_version: self.python_version.clone(),
             daft_version: self.daft_version.clone(),
-            ray_version: self.ray_version.clone(),
         }
     }
 }
