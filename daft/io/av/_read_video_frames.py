@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import tempfile
+import threading
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, TypeAlias
@@ -266,7 +269,7 @@ class _VideoFramesSourceTask(DataSourceTask):
             if os.path.exists(temp_file):
                 os.remove(temp_file)
 
-    async def read(self) -> AsyncIterator[RecordBatch]:
+    def _read_record_batches(self) -> Generator[RecordBatch]:
         with self._open() as file:
             buffer = _VideoFramesBuffer(
                 image_height=self.image_height,
@@ -279,6 +282,59 @@ class _VideoFramesSourceTask(DataSourceTask):
                     buffer.clear()
             if buffer and buffer.size() > 0:
                 yield buffer.to_recordbatch()
+
+    async def read(self) -> AsyncIterator[RecordBatch]:
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue[RecordBatch | Exception | _VideoReadDone] = asyncio.Queue(maxsize=1)
+        stop_event = threading.Event()
+
+        def put(item: RecordBatch | Exception | _VideoReadDone) -> bool:
+            future = asyncio.run_coroutine_threadsafe(queue.put(item), loop)
+            while not stop_event.is_set():
+                try:
+                    future.result(timeout=0.1)
+                    return True
+                except FutureTimeoutError:
+                    continue
+            future.cancel()
+            return False
+
+        def produce() -> None:
+            try:
+                for batch in self._read_record_batches():
+                    if not put(batch):
+                        return
+            except Exception as error:
+                put(error)
+            finally:
+                put(_VIDEO_READ_DONE)
+
+        producer = asyncio.create_task(asyncio.to_thread(produce))
+        try:
+            while True:
+                item = await queue.get()
+                if isinstance(item, _VideoReadDone):
+                    break
+                if isinstance(item, Exception):
+                    raise item
+                yield item
+        finally:
+            stop_event.set()
+            if producer.done():
+                producer.result()
+            else:
+                producer.add_done_callback(_consume_task_result)
+
+
+class _VideoReadDone:
+    pass
+
+
+_VIDEO_READ_DONE = _VideoReadDone()
+
+
+def _consume_task_result(task: asyncio.Task[None]) -> None:
+    task.result()
 
 
 class _VideoFramesBuffer:
