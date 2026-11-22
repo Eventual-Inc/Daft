@@ -256,8 +256,8 @@ where
             };
 
             match (val, s, l) {
-                (Some(val), Some(s), Some(l)) => Ok(substring(val, s, Some(l))),
-                (Some(val), Some(s), None) => Ok(substring(val, s, None)),
+                (Some(val), Some(s), Some(l)) => Ok(Some(substring(val, s, Some(l)))),
+                (Some(val), Some(s), None) => Ok(Some(substring(val, s, None))),
                 _ => Ok(None),
             }
         })
@@ -266,29 +266,48 @@ where
     Ok(res.rename(name))
 }
 
-fn substring(s: &str, start: usize, len: Option<usize>) -> Option<&str> {
+/// Extract a Unicode-character substring.
+///
+/// Empty results (length 0, empty input, or start past the end) return `""` rather than
+/// null, matching [`left`](crate::left) with `n = 0`.
+fn substring(s: &str, start: usize, len: Option<usize>) -> &str {
     let mut char_indices = s.char_indices();
+    let Some((start_pos, _)) = char_indices.nth(start) else {
+        return "";
+    };
 
-    if let Some((start_pos, _)) = char_indices.nth(start) {
-        let len = match len {
-            Some(len) => {
-                if len == 0 {
-                    return None;
-                }
+    match len {
+        None => &s[start_pos..],
+        Some(0) => "",
+        Some(len) => {
+            let end_pos = char_indices
+                .nth(len.saturating_sub(1))
+                .map_or(s.len(), |(idx, _)| idx);
+            &s[start_pos..end_pos]
+        }
+    }
+}
 
-                len
-            }
-            None => {
-                return Some(&s[start_pos..]);
-            }
-        };
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-        let end_pos = char_indices
-            .nth(len.saturating_sub(1))
-            .map_or(s.len(), |(idx, _)| idx);
+    #[test]
+    fn test_substring_ascii() {
+        assert_eq!(substring("foobar", 0, Some(3)), "foo");
+        assert_eq!(substring("foobar", 3, Some(3)), "bar");
+        assert_eq!(substring("foobar", 3, None), "bar");
+        assert_eq!(substring("foobar", 0, Some(0)), "");
+        assert_eq!(substring("foobar", 10, Some(2)), "");
+        assert_eq!(substring("", 0, Some(5)), "");
+    }
 
-        Some(&s[start_pos..end_pos])
-    } else {
-        None
+    #[test]
+    fn test_substring_unicode() {
+        assert_eq!(substring("你好世界", 0, Some(2)), "你好");
+        assert_eq!(substring("你好世界", 2, Some(2)), "世界");
+        assert_eq!(substring("你好世界", 2, Some(0)), "");
+        assert_eq!(substring("a😀b", 1, Some(1)), "😀");
+        assert_eq!(substring("a😀b", 2, None), "b");
     }
 }
