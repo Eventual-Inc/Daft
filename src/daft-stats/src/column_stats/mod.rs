@@ -330,4 +330,72 @@ mod test {
 
         Ok(())
     }
+
+    fn int32_range(lower: i32, upper: i32) -> crate::Result<ColumnRangeStatistics> {
+        ColumnRangeStatistics::new(
+            Some(Int32Array::from_slice("lower", &[lower]).into_series()),
+            Some(Int32Array::from_slice("upper", &[upper]).into_series()),
+        )
+    }
+
+    #[test]
+    fn test_equal_and_not_equal_ranges() -> crate::Result<()> {
+        let cases = [
+            // Identical non-singleton ranges: values may differ row-by-row (e.g. [1, 2] vs [2, 1])
+            ((1, 2), (1, 2), TruthValue::Maybe, TruthValue::Maybe),
+            // Singleton overlapping non-singleton range
+            ((1, 1), (1, 2), TruthValue::Maybe, TruthValue::Maybe),
+            ((1, 2), (1, 1), TruthValue::Maybe, TruthValue::Maybe),
+            // Identical singletons: guaranteed equal on every row
+            ((5, 5), (5, 5), TruthValue::True, TruthValue::False),
+            // Disjoint ranges: guaranteed not equal on every row
+            ((1, 2), (3, 4), TruthValue::False, TruthValue::True),
+            ((3, 4), (1, 2), TruthValue::False, TruthValue::True),
+            // Partial overlap, boundary touch, containment
+            ((1, 3), (2, 4), TruthValue::Maybe, TruthValue::Maybe),
+            ((1, 2), (2, 3), TruthValue::Maybe, TruthValue::Maybe),
+            ((1, 4), (2, 3), TruthValue::Maybe, TruthValue::Maybe),
+        ];
+
+        for ((sl, su), (rl, ru), expected_eq, expected_neq) in cases {
+            let lhs = int32_range(sl, su)?;
+            let rhs = int32_range(rl, ru)?;
+            assert_eq!(
+                lhs.equal(&rhs)?.to_truth_value(),
+                expected_eq,
+                "equal([{sl}, {su}], [{rl}, {ru}])"
+            );
+            assert_eq!(
+                lhs.not_equal(&rhs)?.to_truth_value(),
+                expected_neq,
+                "not_equal([{sl}, {su}], [{rl}, {ru}])"
+            );
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_equal_and_not_equal_with_null_and_missing() -> crate::Result<()> {
+        let range = int32_range(1, 2)?;
+        let singleton = int32_range(5, 5)?;
+        let null_series = NullArray::full_null("null", &DataType::Null, 1).into_series();
+        let null_stats = ColumnRangeStatistics::new(Some(null_series.clone()), Some(null_series))?;
+        let missing = ColumnRangeStatistics::Missing;
+
+        for (lhs, rhs) in [
+            (&range, &missing),
+            (&missing, &range),
+            (&range, &null_stats),
+            (&null_stats, &range),
+            (&singleton, &null_stats),
+            (&null_stats, &singleton),
+            (&null_stats, &null_stats),
+        ] {
+            assert_eq!(lhs.equal(rhs)?.to_truth_value(), TruthValue::Maybe);
+            assert_eq!(lhs.not_equal(rhs)?.to_truth_value(), TruthValue::Maybe);
+        }
+
+        Ok(())
+    }
 }

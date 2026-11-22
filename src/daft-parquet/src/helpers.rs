@@ -312,3 +312,88 @@ pub fn prune_row_groups(
     }
     Ok(result)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use arrow::{
+        array::Int64Array as ArrowInt64Array,
+        datatypes::{DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema},
+        record_batch::RecordBatch as ArrowRecordBatch,
+    };
+    use bytes::Bytes;
+    use daft_dsl::resolved_col;
+    use parquet::{arrow::ArrowWriter, file::metadata::ParquetMetaDataReader};
+
+    use super::*;
+
+    fn build_metadata_for_row_groups(row_groups: &[(&[i64], &[i64])]) -> ParquetMetaData {
+        let arrow_schema = Arc::new(ArrowSchema::new(vec![
+            ArrowField::new("a", ArrowDataType::Int64, false),
+            ArrowField::new("b", ArrowDataType::Int64, false),
+        ]));
+        let mut buf = Vec::new();
+        {
+            let mut writer = ArrowWriter::try_new(&mut buf, arrow_schema.clone(), None).unwrap();
+            for &(a, b) in row_groups {
+                let batch = ArrowRecordBatch::try_new(
+                    arrow_schema.clone(),
+                    vec![
+                        Arc::new(ArrowInt64Array::from(a.to_vec())),
+                        Arc::new(ArrowInt64Array::from(b.to_vec())),
+                    ],
+                )
+                .unwrap();
+                writer.write(&batch).unwrap();
+                writer.flush().unwrap();
+            }
+            writer.close().unwrap();
+        }
+        ParquetMetaDataReader::new()
+            .parse_and_finish(&Bytes::from(buf))
+            .unwrap()
+    }
+
+    #[test]
+    fn test_prune_row_groups_column_not_equal_same_min_max() -> DaftResult<()> {
+        let metadata = build_metadata_for_row_groups(&[
+            // RG 0: a and b share [1, 2] min/max, but differ on every row
+            (&[1, 2], &[2, 1]),
+            // RG 1: a and b are both constant 5 ([5, 5] vs [5, 5])
+            (&[5, 5], &[5, 5]),
+            // RG 2: disjoint ranges [1, 2] vs [3, 4]
+            (&[1, 2], &[3, 4]),
+        ]);
+        let schema = Schema::new(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Int64),
+        ]);
+
+        let neq_pred = resolved_col("a").not_eq(resolved_col("b"));
+        let kept_neq = prune_row_groups(
+            &metadata,
+            None,
+            0,
+            None,
+            Some(&neq_pred),
+            &schema,
+            "test.parquet",
+        )?;
+        assert_eq!(kept_neq, vec![0, 2]);
+
+        let eq_pred = resolved_col("a").eq(resolved_col("b"));
+        let kept_eq = prune_row_groups(
+            &metadata,
+            None,
+            0,
+            None,
+            Some(&eq_pred),
+            &schema,
+            "test.parquet",
+        )?;
+        assert_eq!(kept_eq, vec![0, 1]);
+
+        Ok(())
+    }
+}

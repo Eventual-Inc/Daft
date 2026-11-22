@@ -397,4 +397,63 @@ mod test {
 
         Ok(())
     }
+
+    #[test]
+    fn test_column_to_column_eq_and_not_eq() -> crate::Result<()> {
+        // Same non-singleton [min, max] = [1, 2] on both columns, but a != b on every row
+        let table = RecordBatch::from_nonempty_columns(vec![
+            Int64Array::from_slice("a", &[1, 2]).into_series(),
+            Int64Array::from_slice("b", &[2, 1]).into_series(),
+        ])
+        .unwrap();
+        let stats = TableStatistics::from_table(&table);
+
+        let eq_expr = BoundExpr::try_new(resolved_col("a").eq(resolved_col("b")), &table.schema)
+            .context(DaftCoreComputeSnafu)?;
+        let neq_expr =
+            BoundExpr::try_new(resolved_col("a").not_eq(resolved_col("b")), &table.schema)
+                .context(DaftCoreComputeSnafu)?;
+        assert_eq!(
+            stats.eval_expression(&eq_expr)?.to_truth_value(),
+            TruthValue::Maybe
+        );
+        assert_eq!(
+            stats.eval_expression(&neq_expr)?.to_truth_value(),
+            TruthValue::Maybe
+        );
+
+        // Identical singletons [5, 5] vs [5, 5]: a == b is True, a != b is False
+        let table = RecordBatch::from_nonempty_columns(vec![
+            Int64Array::from_slice("a", &[5, 5]).into_series(),
+            Int64Array::from_slice("b", &[5, 5]).into_series(),
+        ])
+        .unwrap();
+        let stats = TableStatistics::from_table(&table);
+        assert_eq!(
+            stats.eval_expression(&eq_expr)?.to_truth_value(),
+            TruthValue::True
+        );
+        assert_eq!(
+            stats.eval_expression(&neq_expr)?.to_truth_value(),
+            TruthValue::False
+        );
+
+        // Disjoint ranges [1, 2] vs [3, 4]: a == b is False, a != b is True
+        let table = RecordBatch::from_nonempty_columns(vec![
+            Int64Array::from_slice("a", &[1, 2]).into_series(),
+            Int64Array::from_slice("b", &[3, 4]).into_series(),
+        ])
+        .unwrap();
+        let stats = TableStatistics::from_table(&table);
+        assert_eq!(
+            stats.eval_expression(&eq_expr)?.to_truth_value(),
+            TruthValue::False
+        );
+        assert_eq!(
+            stats.eval_expression(&neq_expr)?.to_truth_value(),
+            TruthValue::True
+        );
+
+        Ok(())
+    }
 }

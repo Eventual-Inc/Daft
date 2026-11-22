@@ -9,14 +9,16 @@ use crate::DaftCoreComputeSnafu;
 impl DaftCompare<&Self> for ColumnRangeStatistics {
     type Output = crate::Result<Self>;
     fn equal(&self, rhs: &Self) -> Self::Output {
-        // lower_bound: do they exactly overlap
-        // upper_bound: is there any overlap
+        // lower_bound: are both ranges the same single value (guaranteed equal on every row)
+        // upper_bound: is there any overlap (could be equal on some row)
 
         match (self, rhs) {
             (Self::Missing, _) | (_, Self::Missing) => Ok(Self::Missing),
             (Self::Loaded(s_lower, s_upper), Self::Loaded(r_lower, r_upper)) => {
-                let exactly_overlap = (s_lower.equal(r_lower).context(DaftCoreComputeSnafu)?)
-                    .and(&s_upper.equal(r_upper).context(DaftCoreComputeSnafu)?)
+                let always_equal = (s_lower.equal(s_upper).context(DaftCoreComputeSnafu)?)
+                    .and(&r_lower.equal(r_upper).context(DaftCoreComputeSnafu)?)
+                    .context(DaftCoreComputeSnafu)?
+                    .and(&s_lower.equal(r_lower).context(DaftCoreComputeSnafu)?)
                     .context(DaftCoreComputeSnafu)?
                     .into_series();
 
@@ -35,7 +37,7 @@ impl DaftCompare<&Self> for ColumnRangeStatistics {
                     .or(&rhs_lower_in_self_bounds)
                     .context(DaftCoreComputeSnafu)?
                     .into_series();
-                Ok(Self::Loaded(exactly_overlap, any_overlap))
+                Ok(Self::Loaded(always_equal, any_overlap))
             }
         }
     }
