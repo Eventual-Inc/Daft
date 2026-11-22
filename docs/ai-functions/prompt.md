@@ -271,7 +271,7 @@ df = df.with_column(
 )
 ```
 
-However, the Responses API uses different parameter names. For GPT-5 models, use `max_output_tokens` instead of `max_tokens`, and note that temperature is not supported:
+With GPT-6.1 Sol on the Responses API, use `max_output_tokens` instead of `max_tokens` and omit `temperature`:
 
 ```python
 import daft
@@ -283,13 +283,13 @@ df = daft.from_pydict({
     ]
 })
 
-# Prompt Usage for GPT-5 Responses
+# Prompt Usage for GPT-6.1 Sol Responses
 df = df.with_column(
     "result",
     prompt(
         messages=daft.col("prompt"),
         system_message="You are a helpful assistant.",
-        model="gpt-5",
+        model="gpt-6.1-sol",
         provider="openai",
         max_output_tokens=200,  # Specify max_output_tokens
     )
@@ -298,7 +298,7 @@ df = df.with_column(
 
 ### Reasoning Models
 
-GPT-5 and other reasoning-capable models support the `reasoning` parameter to control compute allocation. Pass it as you would in a `client.responses.create()` request:
+GPT-6.1 Sol and other reasoning-capable models support the `reasoning` parameter to control compute allocation. Pass it as you would in a `client.responses.create()` request:
 
 ```python
 import daft
@@ -310,13 +310,13 @@ df = daft.from_pydict({
     ]
 })
 
-# Prompt Usage for GPT-5 Responses
+# Prompt Usage for GPT-6.1 Sol Responses
 df = df.with_column(
     "result",
     prompt(
         messages=daft.col("prompt"),
         system_message="You are a helpful assistant.",
-        model="gpt-5-2025-08-07",
+        model="gpt-6.1-sol",
         provider="openai",
         reasoning={"effort": "high"},  # Adjust reasoning level
     )
@@ -345,7 +345,7 @@ df = df.with_column(
     "search_results",
     prompt(
         daft.col("query"),
-        model="gpt-5",
+        model="gpt-6.1-sol",
         tools=[{"type": "web_search"}],
     )
 )
@@ -378,13 +378,13 @@ df = df.with_column(
     daft.functions.file(daft.col("my_file"))
 )
 
-# Prompt Usage for GPT-5 Responses
+# Prompt Usage for GPT-6.1 Sol Responses
 df = df.with_column(
     "result",
     prompt(
         messages=[daft.col("prompt"), daft.col("my_image"), daft.col("my_file")],
         system_message="You are a helpful assistant.",
-        model="gpt-5-2025-08-07",
+        model="gpt-6.1-sol",
         provider="openai",
         reasoning={"effort": "high"},  # Adjust reasoning level
         tools=[{"type": "web_search"}],  # Leverage internal OpenAI Tools
@@ -421,12 +421,12 @@ df = (
     df
     # Create a daft.File column from the path
     .with_column("file", file(col("path")))
-    # Prompt GPT-5-nano with PDF files as context
+    # Prompt GPT-6 Luna with PDF files as context
     .with_column(
         "response",
         prompt(
             [lit("What are in the contents of this file?\n"), col("file")],
-            model="gpt-5-nano",
+            model="gpt-6-luna",
             provider="openai",
         )
     )
@@ -483,12 +483,12 @@ df = (
     df
     # Create a daft.File column from the path
     .with_column("file", file(col("path")))
-    # Prompt GPT-5-nano with markdown files as context
+    # Prompt GPT-6 Luna with markdown files as context
     .with_column(
         "response",
         prompt(
             messages=[lit("What are in the contents of this file?\n"), col("file")],
-            model="gpt-5-nano",
+            model="gpt-6-luna",
             provider="openai",
         )
     )
