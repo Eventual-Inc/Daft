@@ -40,6 +40,7 @@ class ComplexResponse(BaseModel):
 REQUESTS_COUNTER_NAME = "requests"
 INPUT_TOKENS_COUNTER_NAME = "input tokens"
 OUTPUT_TOKENS_COUNTER_NAME = "output tokens"
+THINKING_TOKENS_COUNTER_NAME = "thinking tokens"
 TOTAL_TOKENS_COUNTER_NAME = "total tokens"
 
 DEFAULT_MODEL_NAME = "gpt-4o-mini"
@@ -278,6 +279,86 @@ def test_openai_prompter_records_usage_metrics_chat_completions():
             call(INPUT_TOKENS_COUNTER_NAME, 4, attributes=expected_attrs),
             call(OUTPUT_TOKENS_COUNTER_NAME, 6, attributes=expected_attrs),
             call(TOTAL_TOKENS_COUNTER_NAME, 10, attributes=expected_attrs),
+            call(REQUESTS_COUNTER_NAME, attributes=expected_attrs),
+        ]
+
+    run_async(_test())
+
+
+def test_openai_prompter_records_usage_metrics_chat_completions_with_thinking_tokens():
+    """Ensure thinking tokens counter fires for Chat Completions usage when present."""
+
+    async def _test():
+        mock_client = AsyncMock()
+        details = Mock()
+        details.reasoning_tokens = 100
+        usage = CompletionUsage.model_construct(
+            prompt_tokens=10, completion_tokens=150, total_tokens=160, completion_tokens_details=details
+        )
+        mock_choice = Mock()
+        mock_message = Mock()
+        mock_message.content = "Chat metrics response."
+        mock_choice.message = mock_message
+        mock_response = Mock()
+        mock_response.choices = [mock_choice]
+        mock_response.usage = usage
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        prompter = create_prompter(use_chat_completions=True)
+        prompter.llm = mock_client
+
+        with patch("daft.ai.metrics.increment_counter") as mock_counter:
+            result = await prompter.prompt(("Chat metrics",))
+
+        assert result == "Chat metrics response."
+        expected_attrs = {
+            "model": "gpt-4o-mini",
+            "protocol": "prompt",
+            "provider": "openai",
+        }
+        assert mock_counter.call_args_list == [
+            call(INPUT_TOKENS_COUNTER_NAME, 10, attributes=expected_attrs),
+            call(OUTPUT_TOKENS_COUNTER_NAME, 150, attributes=expected_attrs),
+            call(THINKING_TOKENS_COUNTER_NAME, 100, attributes=expected_attrs),
+            call(TOTAL_TOKENS_COUNTER_NAME, 160, attributes=expected_attrs),
+            call(REQUESTS_COUNTER_NAME, attributes=expected_attrs),
+        ]
+
+    run_async(_test())
+
+
+def test_openai_prompter_records_usage_metrics_responses_api_with_thinking_tokens():
+    """Ensure thinking tokens counter fires for Responses API usage when present."""
+
+    async def _test():
+        mock_client = AsyncMock()
+        details = Mock()
+        details.reasoning_tokens = 100
+        usage = ResponseUsage.model_construct(
+            input_tokens=10, output_tokens=150, total_tokens=160, output_tokens_details=details
+        )
+        mock_response = Mock()
+        mock_response.output_text = "Metrics test response."
+        mock_response.usage = usage
+        mock_client.responses.create = AsyncMock(return_value=mock_response)
+
+        prompter = create_prompter()
+        prompter.llm = mock_client
+
+        with patch("daft.ai.metrics.increment_counter") as mock_counter:
+            result = await prompter.prompt(("Record metrics",))
+
+        assert result == "Metrics test response."
+        expected_attrs = {
+            "model": "gpt-4o-mini",
+            "protocol": "prompt",
+            "provider": "openai",
+        }
+        assert mock_counter.call_args_list == [
+            call(INPUT_TOKENS_COUNTER_NAME, 10, attributes=expected_attrs),
+            call(OUTPUT_TOKENS_COUNTER_NAME, 150, attributes=expected_attrs),
+            call(THINKING_TOKENS_COUNTER_NAME, 100, attributes=expected_attrs),
+            call(TOTAL_TOKENS_COUNTER_NAME, 160, attributes=expected_attrs),
             call(REQUESTS_COUNTER_NAME, attributes=expected_attrs),
         ]
 

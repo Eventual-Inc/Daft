@@ -10,6 +10,7 @@ def record_token_metrics(
     *,
     input_tokens: int | None = None,
     output_tokens: int | None = None,
+    thinking_tokens: int | None = None,
     total_tokens: int | None = None,
 ) -> None:
     attrs = {
@@ -21,6 +22,8 @@ def record_token_metrics(
         increment_counter("input tokens", input_tokens, attributes=attrs)
     if output_tokens is not None:
         increment_counter("output tokens", output_tokens, attributes=attrs)
+    if thinking_tokens is not None:
+        increment_counter("thinking tokens", thinking_tokens, attributes=attrs)
     if total_tokens is not None:
         increment_counter("total tokens", total_tokens, attributes=attrs)
     increment_counter("requests", attributes=attrs)
