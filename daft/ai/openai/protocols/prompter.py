@@ -306,6 +306,7 @@ class OpenAIPrompter(Prompter):
         input_tokens: int,
         output_tokens: int,
         total_tokens: int,
+        thinking_tokens: int | None = None,
     ) -> None:
         record_token_metrics(
             protocol="prompt",
@@ -313,6 +314,7 @@ class OpenAIPrompter(Prompter):
             provider=self.provider_name,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            thinking_tokens=thinking_tokens,
             total_tokens=total_tokens,
         )
 
@@ -341,10 +343,13 @@ class OpenAIPrompter(Prompter):
 
         usage = response.usage
         if usage is not None and isinstance(usage, CompletionUsage):
+            details = getattr(usage, "completion_tokens_details", None)
+            thinking_tokens = getattr(details, "reasoning_tokens", None) if details is not None else None
             self._record_usage_metrics(
                 input_tokens=usage.prompt_tokens,
                 output_tokens=usage.completion_tokens,
                 total_tokens=usage.total_tokens,
+                thinking_tokens=thinking_tokens,
             )
         return result
 
@@ -368,10 +373,13 @@ class OpenAIPrompter(Prompter):
 
         usage = response.usage
         if usage is not None and isinstance(usage, ResponseUsage):
+            details = getattr(usage, "output_tokens_details", None)
+            thinking_tokens = getattr(details, "reasoning_tokens", None) if details is not None else None
             self._record_usage_metrics(
                 input_tokens=usage.input_tokens,
                 output_tokens=usage.output_tokens,
                 total_tokens=usage.total_tokens,
+                thinking_tokens=thinking_tokens,
             )
         return result
 

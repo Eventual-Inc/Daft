@@ -178,6 +178,7 @@ class GooglePrompter(Prompter):
         input_tokens: int,
         output_tokens: int,
         total_tokens: int,
+        thinking_tokens: int | None = None,
     ) -> None:
         record_token_metrics(
             protocol="prompt",
@@ -185,6 +186,7 @@ class GooglePrompter(Prompter):
             provider=self.provider_name,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            thinking_tokens=thinking_tokens,
             total_tokens=total_tokens,
         )
 
@@ -209,12 +211,13 @@ class GooglePrompter(Prompter):
 
         # Record metrics
         if response.usage_metadata:
+            thinking_tokens = getattr(response.usage_metadata, "thoughts_token_count", None)
             self._record_usage_metrics(
                 input_tokens=response.usage_metadata.prompt_token_count or 0,
                 # Gemini thinking models report reasoning tokens separately from candidates
-                output_tokens=(response.usage_metadata.candidates_token_count or 0)
-                + (response.usage_metadata.thoughts_token_count or 0),
+                output_tokens=(response.usage_metadata.candidates_token_count or 0) + (thinking_tokens or 0),
                 total_tokens=response.usage_metadata.total_token_count or 0,
+                thinking_tokens=thinking_tokens,
             )
 
         # Parse result

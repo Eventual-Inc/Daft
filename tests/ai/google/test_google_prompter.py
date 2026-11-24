@@ -282,11 +282,12 @@ def test_google_prompter_records_usage_metrics():
 
             # Check counters
             calls = mock_counter.call_args_list
-            assert len(calls) == 4  # input, output, total, requests
+            assert len(calls) == 5  # input, output, thinking, total, requests
 
             # Check for specific calls
             has_input = False
             has_output = False
+            has_thinking = False
             has_total = False
 
             for c in calls:
@@ -302,11 +303,46 @@ def test_google_prompter_records_usage_metrics():
                 elif name == "output tokens":
                     assert val == 25  # candidates (20) + thoughts (5)
                     has_output = True
+                elif name == "thinking tokens":
+                    assert val == 5
+                    has_thinking = True
                 elif name == "total tokens":
                     assert val == 35
                     has_total = True
 
-            assert has_input and has_output and has_total
+            assert has_input and has_output and has_thinking and has_total
+
+    run_async(_test())
+
+
+def test_google_prompter_records_usage_metrics_no_thinking_tokens():
+    """Ensure thinking tokens counter does not fire when thoughts_token_count is absent."""
+
+    async def _test():
+        with patch("daft.ai.google.protocols.prompter.genai.Client") as MockClient:
+            mock_client_instance = MockClient.return_value
+            mock_response = Mock()
+            mock_response.text = "Metrics test response."
+
+            usage = Mock()
+            usage.prompt_token_count = 10
+            usage.candidates_token_count = 20
+            usage.thoughts_token_count = None
+            usage.total_token_count = 30
+            mock_response.usage_metadata = usage
+
+            mock_client_instance.aio.models.generate_content = AsyncMock(return_value=mock_response)
+
+            prompter = create_prompter()
+
+            with patch("daft.ai.metrics.increment_counter") as mock_counter:
+                result = await prompter.prompt(("Record metrics",))
+
+            assert result == "Metrics test response."
+
+            calls = mock_counter.call_args_list
+            assert len(calls) == 4  # input, output, total, requests
+            assert "thinking tokens" not in [c[0][0] for c in calls]
 
     run_async(_test())
 
