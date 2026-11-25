@@ -398,6 +398,10 @@ impl SQLPlanner<'_> {
     pub(crate) fn plan_query(&mut self, query: &Query) -> SQLPlannerResult<LogicalPlanBuilder> {
         check_query_features(query)?;
 
+        if let Some(with) = &query.with {
+            self.plan_ctes(with)?;
+        }
+
         let selection = match query.body.as_ref() {
             SetExpr::Select(selection) => selection,
             SetExpr::Query(_) => unsupported_sql_err!("Subqueries are not supported"),
@@ -429,7 +433,7 @@ impl SQLPlanner<'_> {
                 let left = self.new_with_context().plan_query(&make_query(left))?;
                 let right = self.new_with_context().plan_query(&make_query(right))?;
 
-                return match (op, set_quantifier) {
+                let plan: SQLPlannerResult<LogicalPlanBuilder> = match (op, set_quantifier) {
                     (Union, set_quantifier) => {
                         let (set_quantifier, strategy) = match set_quantifier {
                             SQLSetQuantifier::All => {
@@ -459,6 +463,27 @@ impl SQLPlanner<'_> {
                         unsupported_sql_err!("{op} {set_quantifier} is not supported.")
                     }
                 };
+                self.set_plan(plan?);
+
+                // ORDER BY on a set operation refers to its output columns,
+                // including when the columns are referenced by position.
+                let columns = self
+                    .current_plan_ref()
+                    .schema()
+                    .names()
+                    .iter()
+                    .map(|name| resolved_col(name.as_str()))
+                    .collect::<Vec<_>>();
+                if let Some(OrderByExprs {
+                    exprs,
+                    descending,
+                    nulls_first,
+                }) = self.plan_query_order_by(query.order_by.as_ref(), &columns)?
+                {
+                    self.update_plan(|plan| plan.sort(exprs, descending, nulls_first))?;
+                }
+                self.plan_query_limit(query.limit_clause.as_ref())?;
+                return Ok(self.current_plan_ref().clone());
             }
             SetExpr::Values(..) => unsupported_sql_err!("VALUES are not supported"),
             SetExpr::Insert(..) => unsupported_sql_err!("INSERT is not supported"),
@@ -468,10 +493,6 @@ impl SQLPlanner<'_> {
             SetExpr::Merge(..) => unsupported_sql_err!("MERGE is not supported"),
         };
         check_select_features(selection)?;
-
-        if let Some(with) = &query.with {
-            self.plan_ctes(with)?;
-        }
 
         // FROM/JOIN
         let from = selection.clone().from;
@@ -522,24 +543,7 @@ impl SQLPlanner<'_> {
         }
 
         // ORDER BY
-        let order_by = query
-            .order_by
-            .as_ref()
-            .map(|order_by| {
-                if order_by.interpolate.is_some() {
-                    unsupported_sql_err!("ORDER BY [query] [INTERPOLATE]");
-                }
-
-                match &order_by.kind {
-                    ast::OrderByKind::Expressions(exprs) => {
-                        self.plan_order_by_exprs(projections.as_slice(), exprs)
-                    }
-                    ast::OrderByKind::All(_) => {
-                        unsupported_sql_err!("ORDER BY ALL is not supported")
-                    }
-                }
-            })
-            .transpose()?;
+        let order_by = self.plan_query_order_by(query.order_by.as_ref(), &projections)?;
 
         let has_aggs = projections.iter().any(has_agg) || !groupby_exprs.is_empty();
 
@@ -569,10 +573,42 @@ impl SQLPlanner<'_> {
             None => {}
         }
 
-        // Daft's SQL dialect closely follows both DuckDB and PostgreSQL, So unlike DataFrame, when
+        self.plan_query_limit(query.limit_clause.as_ref())?;
+
+        Ok(self.current_plan_ref().clone())
+    }
+
+    fn plan_query_order_by(
+        &self,
+        order_by: Option<&ast::OrderBy>,
+        projections: &[ExprRef],
+    ) -> SQLPlannerResult<Option<OrderByExprs>> {
+        order_by
+            .map(|order_by| {
+                if order_by.interpolate.is_some() {
+                    unsupported_sql_err!("ORDER BY [query] [INTERPOLATE]");
+                }
+
+                match &order_by.kind {
+                    ast::OrderByKind::Expressions(exprs) => {
+                        self.plan_order_by_exprs(projections, exprs)
+                    }
+                    ast::OrderByKind::All(_) => {
+                        unsupported_sql_err!("ORDER BY ALL is not supported")
+                    }
+                }
+            })
+            .transpose()
+    }
+
+    fn plan_query_limit(
+        &mut self,
+        limit_clause: Option<&ast::LimitClause>,
+    ) -> SQLPlannerResult<()> {
+        // Daft's SQL dialect closely follows both DuckDB and PostgreSQL, so unlike DataFrame, when
         // LIMIT and OFFSET appear at the same time, we need to ignore the order of LIMIT and OFFSET
         // and ensure that OFFSET is a child node of LIMIT.
-        if let Some(limit_clause) = &query.limit_clause {
+        if let Some(limit_clause) = limit_clause {
             match limit_clause {
                 ast::LimitClause::LimitOffset { offset, limit, .. } => {
                     if let Some(offset) = offset {
@@ -609,7 +645,7 @@ impl SQLPlanner<'_> {
             }
         }
 
-        Ok(self.current_plan.clone().unwrap())
+        Ok(())
     }
 
     fn plan_group_by_items(
