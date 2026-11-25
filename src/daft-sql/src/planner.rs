@@ -433,7 +433,7 @@ impl SQLPlanner<'_> {
                 let left = self.new_with_context().plan_query(&make_query(left))?;
                 let right = self.new_with_context().plan_query(&make_query(right))?;
 
-                let plan: SQLPlannerResult<LogicalPlanBuilder> = match (op, set_quantifier) {
+                let plan = match (op, set_quantifier) {
                     (Union, set_quantifier) => {
                         let (set_quantifier, strategy) = match set_quantifier {
                             SQLSetQuantifier::All => {
@@ -449,40 +449,37 @@ impl SQLPlanner<'_> {
                                 (SetQuantifier::All, UnionStrategy::ByName)
                             }
                         };
-                        left.union(&right, set_quantifier, strategy)
-                            .map_err(|e| e.into())
+                        left.union(&right, set_quantifier, strategy)?
                     }
 
-                    (Intersect, SQLSetQuantifier::All) => {
-                        left.intersect(&right, true).map_err(|e| e.into())
-                    }
+                    (Intersect, SQLSetQuantifier::All) => left.intersect(&right, true)?,
                     (Intersect, SQLSetQuantifier::None | SQLSetQuantifier::Distinct) => {
-                        left.intersect(&right, false).map_err(|e| e.into())
+                        left.intersect(&right, false)?
                     }
                     (op, set_quantifier) => {
                         unsupported_sql_err!("{op} {set_quantifier} is not supported.")
                     }
                 };
-                self.set_plan(plan?);
+                self.set_plan(plan);
 
-                // ORDER BY on a set operation refers to its output columns,
-                // including when the columns are referenced by position.
-                let columns = self
-                    .current_plan_ref()
-                    .schema()
-                    .names()
-                    .iter()
-                    .map(|name| resolved_col(name.as_str()))
-                    .collect::<Vec<_>>();
-                if let Some(OrderByExprs {
-                    exprs,
-                    descending,
-                    nulls_first,
-                }) = self.plan_query_order_by(query.order_by.as_ref(), &columns)?
-                {
+                if let Some(order_by) = &query.order_by {
+                    // ORDER BY on a set operation refers to its output columns,
+                    // including when the columns are referenced by position.
+                    let columns = self
+                        .current_plan_ref()
+                        .schema()
+                        .names()
+                        .iter()
+                        .map(|name| resolved_col(name.as_str()))
+                        .collect::<Vec<_>>();
+                    let OrderByExprs {
+                        exprs,
+                        descending,
+                        nulls_first,
+                    } = self.plan_query_order_by(order_by, &columns)?;
                     self.update_plan(|plan| plan.sort(exprs, descending, nulls_first))?;
                 }
-                self.plan_query_limit(query.limit_clause.as_ref())?;
+                self.plan_query_limit_offset(query.limit_clause.as_ref())?;
                 return Ok(self.current_plan_ref().clone());
             }
             SetExpr::Values(..) => unsupported_sql_err!("VALUES are not supported"),
@@ -543,7 +540,11 @@ impl SQLPlanner<'_> {
         }
 
         // ORDER BY
-        let order_by = self.plan_query_order_by(query.order_by.as_ref(), &projections)?;
+        let order_by = query
+            .order_by
+            .as_ref()
+            .map(|order_by| self.plan_query_order_by(order_by, &projections))
+            .transpose()?;
 
         let has_aggs = projections.iter().any(has_agg) || !groupby_exprs.is_empty();
 
@@ -573,35 +574,27 @@ impl SQLPlanner<'_> {
             None => {}
         }
 
-        self.plan_query_limit(query.limit_clause.as_ref())?;
+        self.plan_query_limit_offset(query.limit_clause.as_ref())?;
 
         Ok(self.current_plan_ref().clone())
     }
 
     fn plan_query_order_by(
         &self,
-        order_by: Option<&ast::OrderBy>,
+        order_by: &ast::OrderBy,
         projections: &[ExprRef],
-    ) -> SQLPlannerResult<Option<OrderByExprs>> {
-        order_by
-            .map(|order_by| {
-                if order_by.interpolate.is_some() {
-                    unsupported_sql_err!("ORDER BY [query] [INTERPOLATE]");
-                }
+    ) -> SQLPlannerResult<OrderByExprs> {
+        if order_by.interpolate.is_some() {
+            unsupported_sql_err!("ORDER BY [query] [INTERPOLATE]");
+        }
 
-                match &order_by.kind {
-                    ast::OrderByKind::Expressions(exprs) => {
-                        self.plan_order_by_exprs(projections, exprs)
-                    }
-                    ast::OrderByKind::All(_) => {
-                        unsupported_sql_err!("ORDER BY ALL is not supported")
-                    }
-                }
-            })
-            .transpose()
+        match &order_by.kind {
+            ast::OrderByKind::Expressions(exprs) => self.plan_order_by_exprs(projections, exprs),
+            ast::OrderByKind::All(_) => unsupported_sql_err!("ORDER BY ALL is not supported"),
+        }
     }
 
-    fn plan_query_limit(
+    fn plan_query_limit_offset(
         &mut self,
         limit_clause: Option<&ast::LimitClause>,
     ) -> SQLPlannerResult<()> {

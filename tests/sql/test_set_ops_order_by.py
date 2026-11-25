@@ -46,6 +46,15 @@ def test_union_order_by_desc_nulls_first():
     assert result.to_pydict() == {"id": [None, 3, 2, 1]}
 
 
+def test_union_by_name_order_by_output_position():
+    result = daft.sql("""
+        SELECT 2 AS id, 'right' AS label
+        UNION ALL BY NAME SELECT 'left' AS label, 1 AS id
+        ORDER BY 1
+    """)
+    assert result.to_pydict() == {"id": [1, 2], "label": ["left", "right"]}
+
+
 def test_union_order_by_limit_offset():
     result = daft.sql("""
         SELECT 3 AS id UNION ALL SELECT 1 AS id UNION ALL SELECT 2 AS id
@@ -82,3 +91,11 @@ def test_set_operation_with_cte_and_order_by():
         SELECT id FROM input UNION ALL SELECT 1 AS id ORDER BY id
     """)
     assert result.to_pydict() == {"id": [1, 2]}
+
+
+def test_ordered_set_operation_inside_cte():
+    result = daft.sql("""
+        WITH input AS (SELECT 2 AS id UNION ALL SELECT 1 AS id ORDER BY id LIMIT 1)
+        SELECT id FROM input
+    """)
+    assert result.to_pydict() == {"id": [1]}
