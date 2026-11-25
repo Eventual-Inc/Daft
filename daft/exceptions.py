@@ -6,13 +6,9 @@ from __future__ import annotations
 class DaftCoreException(ValueError):
     """DaftCore Base Exception."""
 
-    pass
-
 
 class DaftTypeError(DaftCoreException):
     """Type Error that occurred in Daft Core."""
-
-    pass
 
 
 class DaftTransientError(DaftCoreException):
@@ -21,16 +17,12 @@ class DaftTransientError(DaftCoreException):
     This is typically raised when there is a network issue such as timeout or throttling. This can usually be retried.
     """
 
-    pass
-
 
 class ConnectTimeoutError(DaftTransientError):
     """Daft Connection Timeout Error.
 
     Daft client was not able to make a connection to the server in the connect timeout time.
     """
-
-    pass
 
 
 class ReadTimeoutError(DaftTransientError):
@@ -39,16 +31,12 @@ class ReadTimeoutError(DaftTransientError):
     Daft client was not able to read bytes from server under the read timeout time.
     """
 
-    pass
-
 
 class ByteStreamError(DaftTransientError):
     """Daft Byte Stream Error.
 
     Daft client had an error while reading bytes in a stream from the server.
     """
-
-    pass
 
 
 class SocketError(DaftTransientError):
@@ -57,8 +45,6 @@ class SocketError(DaftTransientError):
     Daft client had a socket error while reading bytes in a stream from the server.
     """
 
-    pass
-
 
 class ThrottleError(DaftTransientError):
     """Daft Throttle Error.
@@ -66,13 +52,9 @@ class ThrottleError(DaftTransientError):
     Daft client had a throttle error while making request to server.
     """
 
-    pass
-
 
 class MiscTransientError(DaftTransientError):
     """Daft Misc Transient Error.
 
     Daft client had a Misc Transient Error while making request to server.
     """
-
-    pass

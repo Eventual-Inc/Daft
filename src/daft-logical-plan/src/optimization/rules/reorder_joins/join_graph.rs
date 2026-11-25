@@ -28,13 +28,8 @@ use crate::{
 #[derive(Clone)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub(super) enum JoinOrderTree {
-    Relation(usize, usize), // (ID, cardinality).
-    Join(
-        Box<JoinOrderTree>,
-        Box<JoinOrderTree>,
-        Vec<JoinCondition>,
-        usize,
-    ), // (subtree, subtree, join conditions, cardinality).
+    Relation(usize, usize),                                // (ID, cardinality).
+    Join(Box<Self>, Box<Self>, Vec<JoinCondition>, usize), // (subtree, subtree, join conditions, cardinality).
 }
 
 impl JoinOrderTree {
@@ -622,13 +617,7 @@ impl JoinGraph {
             if seen.insert(current) {
                 // If this is a new node, add all its neighbors to the stack.
                 if let Some(neighbors) = self.adj_list.edges.get(current) {
-                    stack.extend(neighbors.iter().filter_map(|(neighbor, _)| {
-                        if !seen.contains(neighbor) {
-                            Some(neighbor)
-                        } else {
-                            None
-                        }
-                    }));
+                    stack.extend(neighbors.keys().filter(|neighbor| !seen.contains(neighbor)));
                 }
             }
         }
@@ -1101,7 +1090,7 @@ mod tests {
         // - a <-> c
         // - b <-> c
         // - b <-> d
-        assert!(join_graph.num_edges() == 6);
+        assert_eq!(join_graph.num_edges(), 6);
         assert!(join_graph.contains_edges(vec![
             "Source(a) <-> Source(b)",
             "Project(c) <-> Source(d)",
@@ -1168,7 +1157,7 @@ mod tests {
         // - a <-> c
         // - b <-> c
         // - b <-> d
-        assert!(join_graph.num_edges() == 6);
+        assert_eq!(join_graph.num_edges(), 6);
         assert!(join_graph.contains_edges(vec![
             "Source(a) <-> Source(b)",
             "Project(c) <-> Source(d)",
@@ -1233,7 +1222,7 @@ mod tests {
         // - a_beta <-> c
         // Plus 1 inferred edge:
         // - b <-> c
-        assert!(join_graph.num_edges() == 3);
+        assert_eq!(join_graph.num_edges(), 3);
         assert!(join_graph.contains_edges(vec![
             "Project(a_beta) <-> Source(b)",
             "Project(a_beta) <-> Source(c)",
@@ -1300,7 +1289,7 @@ mod tests {
         // - a <-> c
         // - b <-> c
         // - b <-> d
-        assert!(join_graph.num_edges() == 6);
+        assert_eq!(join_graph.num_edges(), 6);
         assert!(join_graph.contains_edges(vec![
             "Source(a) <-> Source(b)",
             "Project(c) <-> Source(d)",
@@ -1392,7 +1381,7 @@ mod tests {
         // - a <-> c
         // - b <-> c
         // - b <-> d
-        assert!(join_graph.num_edges() == 6);
+        assert_eq!(join_graph.num_edges(), 6);
         assert!(join_graph.contains_edges(vec![
             "Source(a) <-> Source(b)",
             "Filter(c) <-> Source(d)",
@@ -1480,7 +1469,7 @@ mod tests {
         // - a <-> c
         // - b <-> c
         // - b <-> d
-        assert!(join_graph.num_edges() == 6);
+        assert_eq!(join_graph.num_edges(), 6);
         assert!(join_graph.contains_edges(vec![
             "Aggregate(a) <-> Source(b)",
             "Project(c) <-> Source(d)",

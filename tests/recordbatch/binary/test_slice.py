@@ -210,11 +210,12 @@ def test_binary_slice_with_columns(
 
     table = MicroPartition.from_pydict(table_data)
     # Convert length to end index: end = start + length
-    if isinstance(start, Expression) and isinstance(length, Expression):
-        end = start + length
-    elif isinstance(start, Expression):
-        end = start + length
-    elif isinstance(length, Expression):
+    if (
+        isinstance(start, Expression)
+        and isinstance(length, Expression)
+        or isinstance(start, Expression)
+        or isinstance(length, Expression)
+    ):
         end = start + length
     else:
         end = start + length

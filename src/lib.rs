@@ -106,6 +106,11 @@ pub mod pylib {
         Ok(())
     }
 
+    #[pyfunction]
+    pub fn get_compute_runtime_num_worker_threads() -> usize {
+        common_runtime::get_compute_pool_num_threads()
+    }
+
     #[pymodule]
     fn daft(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         refresh_logger(py)?;
@@ -117,6 +122,7 @@ pub mod pylib {
         common_file_formats::python::register_modules(m)?;
         common_metrics::register_modules(m)?;
         daft_ai::register_modules(m)?;
+        daft_avro::register_modules(m)?;
         daft_catalog::register_modules(m)?;
         daft_checkpoint::register_modules(m)?;
         daft_context::register_modules(m)?;
@@ -144,6 +150,7 @@ pub mod pylib {
         let testing_module = PyModule::new(m.py(), "testing")?;
         m.add_submodule(&testing_module)?;
         daft_scan::python::register_testing_modules(&testing_module)?;
+        testing_module.add_wrapped(wrap_pyfunction!(get_compute_runtime_num_worker_threads))?;
 
         m.add_wrapped(wrap_pyfunction!(version))?;
         m.add_wrapped(wrap_pyfunction!(build_type))?;
@@ -179,7 +186,7 @@ pub mod pylib {
         functions_registry.add_fn(daft_file::File);
         functions_registry.add_fn(daft_file::FilePath);
         functions_registry.add_async_fn(daft_file::FileExists);
-        functions_registry.add_fn(daft_file::Size);
+        functions_registry.add_async_fn(daft_file::Size);
         functions_registry.add_fn(daft_file::VideoFile);
         functions_registry.add_fn(daft_file::AudioFile);
         functions_registry.add_fn(daft_file::ImageFile);

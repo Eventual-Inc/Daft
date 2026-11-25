@@ -32,3 +32,54 @@ def test_series_utf8_replace(expr, data, expected) -> None:
     table = MicroPartition.from_pydict({"col": data, "emptystrings": [""] * len(data)})
     result = table.eval_expression_list([expr])
     assert result.to_pydict() == {"col": expected}
+
+
+@pytest.mark.parametrize(
+    ["replacement", "expected"],
+    [
+        # `$n` and `\n` are both group references.
+        ("[$1]", "a[b]c"),
+        (r"[\1]", "a[b]c"),
+        ("$1", "abc"),
+        # Lone backslashes are preserved literally (not silently dropped).
+        (r"a\b", r"aa\bc"),
+        ("x\\", r"ax\c"),
+        # `\\` (two backslashes) is an escaped backslash -> one backslash.
+        (r"\\", r"a\c"),
+        # Escaped backslash + literal `1`, not a group reference.
+        (r"\\1", r"a\1c"),
+        # Escaped backslash + group reference.
+        (r"\\\1", r"a\bc"),
+        ("$$", "a$c"),
+        # `\n`/`\t` are a literal backslash plus a letter, never a newline/tab.
+        (r"\n", r"a\nc"),
+        (r"\t", r"a\tc"),
+        ("${1}", "abc"),
+        ("$", "a$c"),
+        # A literal `$` in front of a group reference must not be swallowed.
+        (r"$\1", "a$bc"),
+        # Only one digit is consumed: `\10` is group 1 then a literal `0`.
+        (r"\10", "ab0c"),
+        ("", "ac"),
+        (r"é\ü", r"aé\üc"),
+    ],
+)
+def test_series_utf8_regexp_replace_backslashes(replacement, expected) -> None:
+    # Regression test for https://github.com/Eventual-Inc/Daft/issues/7471.
+    table = MicroPartition.from_pydict({"col": ["abc"]})
+    result = table.eval_expression_list([col("col").regexp_replace("(b)", replacement)])
+    assert result.to_pydict() == {"col": [expected]}
+
+
+def test_series_utf8_replace_literal_keeps_template_chars() -> None:
+    # `replace` (non-regex) has no template semantics.
+    table = MicroPartition.from_pydict({"col": ["abc"]})
+    result = table.eval_expression_list([col("col").replace("b", r"\1$1\\")])
+    assert result.to_pydict() == {"col": [r"a\1$1\\c"]}
+
+
+def test_series_utf8_regexp_replace_per_row_replacement() -> None:
+    # The per-row path must not reuse a broadcast template.
+    table = MicroPartition.from_pydict({"col": ["abc", "abc"], "repl": [r"[\1]", "x\\"]})
+    result = table.eval_expression_list([col("col").regexp_replace("(b)", col("repl"))])
+    assert result.to_pydict() == {"col": ["a[b]c", r"ax\c"]}

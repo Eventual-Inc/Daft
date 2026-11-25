@@ -311,9 +311,9 @@ def test_partitioned_table_result_includes_partitioning_column(
     silently dropping the column when users flipped ``checkpoint=`` on a
     partitioned table.
 
-    Pins schema-level presence only. Value-level correctness of partition
-    extraction is inherited from the non-checkpoint path's ``getattr``
-    against ``data_file.partition`` and is a pyiceberg-internals concern.
+    Pins the reported partition values too: this branch builds the column from
+    ``data_file.partition`` the same way the non-checkpoint path does, and that
+    record is positional, so an attribute-based read silently yields all nulls.
     """
     df = daft.read_parquet(parquet_input, checkpoint=daft.CheckpointConfig(store=checkpoint_store, on="file_id"))
     result = df.write_iceberg(partitioned_iceberg_table, checkpoint=idempotent_commit)
@@ -322,6 +322,9 @@ def test_partitioned_table_result_includes_partitioning_column(
     assert {"operation", "rows", "file_size", "file_name", "partitioning"} <= cols, (
         f"expected partitioned-table result columns to include `partitioning`; got {cols}"
     )
+
+    reported = result.to_pydict()["partitioning"]
+    assert sorted(row["file_id"] for row in reported) == ["a", "b", "c"], reported
 
 
 def test_partitioned_table_recovery_branch_result_includes_partitioning_column(

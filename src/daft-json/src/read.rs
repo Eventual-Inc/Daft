@@ -828,7 +828,7 @@ mod tests {
 
     #[rstest]
     fn test_json_read_local_dtypes() -> DaftResult<()> {
-        let file = format!("{}/test/dtypes.jsonl", env!("CARGO_MANIFEST_DIR"),);
+        let file = format!("{}/test/dtypes.jsonl", env!("CARGO_MANIFEST_DIR"));
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
@@ -893,7 +893,7 @@ mod tests {
 
     #[test]
     fn test_json_read_local_limit() -> DaftResult<()> {
-        let file = format!("{}/test/iris_tiny.jsonl", env!("CARGO_MANIFEST_DIR"),);
+        let file = format!("{}/test/iris_tiny.jsonl", env!("CARGO_MANIFEST_DIR"));
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
@@ -929,7 +929,7 @@ mod tests {
 
     #[test]
     fn test_json_read_local_projection() -> DaftResult<()> {
-        let file = format!("{}/test/iris_tiny.jsonl", env!("CARGO_MANIFEST_DIR"),);
+        let file = format!("{}/test/iris_tiny.jsonl", env!("CARGO_MANIFEST_DIR"));
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
@@ -972,7 +972,7 @@ mod tests {
 
     #[test]
     fn test_json_read_local_larger_than_buffer_size() -> DaftResult<()> {
-        let file = format!("{}/test/iris_tiny.jsonl", env!("CARGO_MANIFEST_DIR"),);
+        let file = format!("{}/test/iris_tiny.jsonl", env!("CARGO_MANIFEST_DIR"));
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
@@ -1008,7 +1008,7 @@ mod tests {
 
     #[test]
     fn test_json_read_local_larger_than_chunk_size() -> DaftResult<()> {
-        let file = format!("{}/test/iris_tiny.jsonl", env!("CARGO_MANIFEST_DIR"),);
+        let file = format!("{}/test/iris_tiny.jsonl", env!("CARGO_MANIFEST_DIR"));
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
@@ -1044,7 +1044,7 @@ mod tests {
 
     #[test]
     fn test_json_read_local_throttled_streaming() -> DaftResult<()> {
-        let file = format!("{}/test/iris_tiny.jsonl", env!("CARGO_MANIFEST_DIR"),);
+        let file = format!("{}/test/iris_tiny.jsonl", env!("CARGO_MANIFEST_DIR"));
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
@@ -1080,7 +1080,7 @@ mod tests {
 
     #[test]
     fn test_json_read_local_nulls() -> DaftResult<()> {
-        let file = format!("{}/test/iris_tiny_nulls.jsonl", env!("CARGO_MANIFEST_DIR"),);
+        let file = format!("{}/test/iris_tiny_nulls.jsonl", env!("CARGO_MANIFEST_DIR"));
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
@@ -1249,7 +1249,7 @@ mod tests {
 
     #[test]
     fn test_json_read_local_wrong_type_yields_nulls() -> DaftResult<()> {
-        let file = format!("{}/test/iris_tiny.jsonl", env!("CARGO_MANIFEST_DIR"),);
+        let file = format!("{}/test/iris_tiny.jsonl", env!("CARGO_MANIFEST_DIR"));
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;

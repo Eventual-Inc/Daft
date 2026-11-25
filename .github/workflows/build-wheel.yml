@@ -67,7 +67,9 @@ jobs:
 
     - name: Patch package version
       run: |
-        VERSION="$(python -m setuptools_scm | sed 's/\.dev/-dev/'g)" # replace ".dev" with "-dev" to comply with Cargo SemVer rules
+        # Convert normalized Python prereleases (a, b, rc, dev) to Cargo SemVer.
+        # Only add a hyphen after the release number, so rc1.dev2 becomes -rc.1.dev2.
+        VERSION="$(python -m setuptools_scm | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+)(a|b|rc)/\1-\2./; s/^([0-9]+\.[0-9]+\.[0-9]+)\.dev/\1-dev/')"
         echo "Setting package version to: $VERSION"
         tomlq -i -t ".package.version = \"$VERSION\"" Cargo.toml
         tomlq -i -t ".workspace.package.version = \"$VERSION\"" Cargo.toml
@@ -88,7 +90,7 @@ jobs:
         fi
 
     - name: Setup Node
-      uses: actions/setup-node@v6
+      uses: actions/setup-node@v7
       with:
         node-version: "22"
         cache: "npm"
@@ -170,7 +172,7 @@ jobs:
         merge-multiple: true
         path: dist
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v6
+      uses: actions/setup-python@v7
       with:
         python-version: ${{ matrix.python-version }}
     - name: Setup Virtual Env

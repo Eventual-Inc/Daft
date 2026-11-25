@@ -170,7 +170,7 @@ pub fn build_table<S: AsRef<str>>(
                     {
                         str_val = format!(
                             "{}{DOTS}",
-                            &str_val
+                            str_val
                                 .char_indices()
                                 .take(max_width - DOTS.len())
                                 .map(|(_, c)| c)

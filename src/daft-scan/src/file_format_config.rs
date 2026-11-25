@@ -1,14 +1,20 @@
-use std::{collections::BTreeMap, hash::Hash, sync::Arc};
+use std::{hash::Hash, sync::Arc};
 
 use common_file_formats::FileFormat;
 use common_py_serde::impl_bincode_py_state_serialization;
-use daft_schema::{field::Field, time_unit::TimeUnit};
+use daft_avro::AvroSourceConfig;
+use daft_parquet::metadata::FieldIdMapping;
+use daft_schema::time_unit::TimeUnit;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "python")]
 use {
     common_py_serde::{deserialize_py_object, serialize_py_object},
     daft_schema::python::{datatype::PyTimeUnit, field::PyField},
-    pyo3::{Py, PyAny, PyResult, Python, pyclass, pymethods, types::PyAnyMethods},
+    pyo3::{
+        Py, PyAny, PyResult, Python, exceptions::PyValueError, pyclass, pymethods,
+        types::PyAnyMethods,
+    },
+    std::collections::BTreeMap,
 };
 
 /// Configuration for parsing a particular file format.
@@ -20,6 +26,8 @@ pub enum FileFormatConfig {
     Json(JsonSourceConfig),
     Warc(WarcSourceConfig),
     Text(TextSourceConfig),
+    Avro(AvroSourceConfig),
+    Mcap(McapSourceConfig),
 }
 #[cfg(not(debug_assertions))]
 impl std::fmt::Debug for FileFormatConfig {
@@ -42,6 +50,8 @@ impl FileFormatConfig {
             Self::Json(_) => "Json".to_string(),
             Self::Warc(_) => "Warc".to_string(),
             Self::Text(_) => "Text".to_string(),
+            Self::Avro(_) => "Avro".to_string(),
+            Self::Mcap(_) => "Mcap".to_string(),
         }
     }
 
@@ -53,6 +63,8 @@ impl FileFormatConfig {
             Self::Json(source) => source.multiline_display(),
             Self::Warc(source) => source.multiline_display(),
             Self::Text(source) => source.multiline_display(),
+            Self::Avro(source) => source.multiline_display(),
+            Self::Mcap(source) => source.multiline_display(),
         }
     }
 }
@@ -65,6 +77,8 @@ impl From<&FileFormatConfig> for FileFormat {
             FileFormatConfig::Json(_) => Self::Json,
             FileFormatConfig::Warc(_) => Self::Warc,
             FileFormatConfig::Text(_) => Self::Text,
+            FileFormatConfig::Avro(_) => Self::Avro,
+            FileFormatConfig::Mcap(_) => Self::Mcap,
         }
     }
 }
@@ -84,7 +98,7 @@ pub struct ParquetSourceConfig {
     /// data according to the provided field_ids.
     ///
     /// See: https://github.com/apache/parquet-format/blob/master/src/main/thrift/parquet.thrift#L456-L459
-    pub field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
+    pub field_id_mapping: Option<Arc<FieldIdMapping>>,
     pub row_groups: Option<Vec<Option<Vec<i64>>>>,
     pub chunk_size: Option<usize>,
     /// If true, corrupt or unreadable Parquet files are silently skipped instead of raising an
@@ -106,6 +120,7 @@ impl ParquetSourceConfig {
             res.push(format!(
                 "Field ID to Fields = {{{}}}",
                 mapping
+                    .fields
                     .iter()
                     .map(|(fid, f)| format!("{fid}: {f}"))
                     .collect::<Vec<String>>()
@@ -151,25 +166,37 @@ impl Default for ParquetSourceConfig {
 #[pymethods]
 impl ParquetSourceConfig {
     /// Create a config for a Parquet data source.
+    ///
+    /// `name_mapping` is an Iceberg `schema.name-mapping.default` JSON string, used to resolve
+    /// the columns of files written without field IDs.
     #[new]
-    #[pyo3(signature = (coerce_int96_timestamp_unit=None, field_id_mapping=None, row_groups=None, chunk_size=None, ignore_corrupt_files=false))]
+    #[pyo3(signature = (coerce_int96_timestamp_unit=None, field_id_mapping=None, row_groups=None, chunk_size=None, ignore_corrupt_files=false, name_mapping=None))]
     fn new(
         coerce_int96_timestamp_unit: Option<PyTimeUnit>,
         field_id_mapping: Option<BTreeMap<i32, PyField>>,
         row_groups: Option<Vec<Option<Vec<i64>>>>,
         chunk_size: Option<usize>,
         ignore_corrupt_files: bool,
-    ) -> Self {
-        Self {
+        name_mapping: Option<String>,
+    ) -> PyResult<Self> {
+        let name_mapping = name_mapping
+            .map(|json| serde_json::from_str(&json))
+            .transpose()
+            .map_err(|e| PyValueError::new_err(format!("Invalid name mapping: {e}")))?;
+        Ok(Self {
             coerce_int96_timestamp_unit: coerce_int96_timestamp_unit
                 .unwrap_or_else(|| TimeUnit::Nanoseconds.into())
                 .into(),
-            field_id_mapping: field_id_mapping
-                .map(|map| Arc::new(map.into_iter().map(|(k, v)| (k, v.field)).collect())),
+            field_id_mapping: field_id_mapping.map(|map| {
+                Arc::new(FieldIdMapping {
+                    fields: map.into_iter().map(|(k, v)| (k, v.field)).collect(),
+                    name_mapping,
+                })
+            }),
             row_groups,
             chunk_size,
             ignore_corrupt_files,
-        }
+        })
     }
 
     #[getter]
@@ -447,6 +474,74 @@ impl WarcSourceConfig {
 }
 
 impl_bincode_py_state_serialization!(WarcSourceConfig);
+
+/// Configuration for an MCAP data source.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "daft.daft", get_all, from_py_object)
+)]
+pub struct McapSourceConfig {
+    pub batch_size: usize,
+    pub start_time: Option<u64>,
+    pub end_time: Option<u64>,
+    pub topics: Option<Vec<String>>,
+}
+
+impl Default for McapSourceConfig {
+    fn default() -> Self {
+        Self {
+            batch_size: 1000,
+            start_time: None,
+            end_time: None,
+            topics: None,
+        }
+    }
+}
+
+impl McapSourceConfig {
+    #[must_use]
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![format!("Batch size = {}", self.batch_size)];
+        if let Some(start_time) = self.start_time {
+            res.push(format!("Start time = {start_time}"));
+        }
+        if let Some(end_time) = self.end_time {
+            res.push(format!("End time = {end_time}"));
+        }
+        if let Some(topics) = &self.topics {
+            res.push(format!("Topics = [{}]", topics.join(", ")));
+        }
+        res
+    }
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl McapSourceConfig {
+    /// Create a config for an MCAP data source.
+    #[new]
+    #[pyo3(signature = (batch_size=1000, start_time=None, end_time=None, topics=None))]
+    fn new(
+        batch_size: usize,
+        start_time: Option<u64>,
+        end_time: Option<u64>,
+        topics: Option<Vec<String>>,
+    ) -> PyResult<Self> {
+        if batch_size == 0 {
+            return Err(PyValueError::new_err("MCAP batch_size must be positive"));
+        }
+        Ok(Self {
+            batch_size,
+            start_time,
+            end_time,
+            topics,
+        })
+    }
+}
+
+impl_bincode_py_state_serialization!(McapSourceConfig);
 
 /// Configuration for a Text data source.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]

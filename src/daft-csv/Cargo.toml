@@ -1,7 +1,6 @@
 [dependencies]
 log = {workspace = true}
 arrow-schema = {workspace = true}
-async-compat = {workspace = true}
 async-stream = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 common-py-serde = {path = "../common/py-serde", default-features = false}
@@ -24,7 +23,7 @@ serde = {workspace = true}
 smallvec = {workspace = true}
 snafu = {workspace = true}
 tokio = {workspace = true}
-tokio-util = {workspace = true}
+tokio-util = {workspace = true, features = ["compat"]}
 
 [dev-dependencies]
 rstest = {workspace = true}

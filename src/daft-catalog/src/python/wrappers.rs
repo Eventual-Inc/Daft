@@ -106,14 +106,31 @@ impl Catalog for PyCatalogWrapper {
     fn create_table(&self, ident: &Identifier, schema: SchemaRef) -> CatalogResult<TableRef> {
         Python::attach(|py| {
             let catalog = self.0.bind(py);
-            let ident = PyIdentifier(ident.clone()).to_pyobj(py)?;
+            let ident_py = PyIdentifier(ident.clone()).to_pyobj(py)?;
             let schema = PySchema { schema };
             let schema_py = py
                 .import(intern!(py, "daft.schema"))?
                 .getattr(intern!(py, "Schema"))?
                 .call_method1(intern!(py, "_from_pyschema"), (schema,))?;
 
-            let table = catalog.call_method1(intern!(py, "_create_table"), (ident, schema_py))?;
+            let table =
+                match catalog.call_method1(intern!(py, "_create_table"), (ident_py, schema_py)) {
+                    Ok(table) => table,
+                    Err(err) => {
+                        // Translate the typed TableAlreadyExistsError back into
+                        // CatalogError::ObjectAlreadyExists so SQL callers can
+                        // match it precisely instead of inspecting messages.
+                        let already_exists_type = py
+                            .import(intern!(py, "daft.catalog"))
+                            .and_then(|m| m.getattr(intern!(py, "TableAlreadyExistsError")));
+                        if let Ok(already_exists_type) = already_exists_type
+                            && err.is_instance(py, &already_exists_type)
+                        {
+                            return Err(CatalogError::obj_already_exists("table", ident));
+                        }
+                        return Err(err.into());
+                    }
+                };
             Ok(Arc::new(PyTableWrapper(table.unbind())) as Arc<dyn Table>)
         })
     }

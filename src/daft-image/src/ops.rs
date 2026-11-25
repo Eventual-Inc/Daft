@@ -132,7 +132,7 @@ impl ImageOps for ImageArray {
 }
 
 fn bbox_from_u32_arrow_array(arr: &UInt32Array) -> BBox {
-    assert!(arr.len() == 4);
+    assert_eq!(arr.len(), 4);
 
     let slice = arr.as_slice();
 
@@ -979,7 +979,7 @@ fn dct1d_naive(x: &[f64]) -> Vec<f64> {
     for (k, out) in output.iter_mut().enumerate().take(n) {
         let mut sum = 0f64;
         for (i, &xi) in x.iter().enumerate() {
-            sum += xi * (pi_over_2n * (2 * i + 1) as f64 * k as f64).cos();
+            sum = xi.mul_add((pi_over_2n * (2 * i + 1) as f64 * k as f64).cos(), sum);
         }
         *out = 2.0 * sum;
     }

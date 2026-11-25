@@ -7,8 +7,9 @@
 
 Community extensions are reusable packages that add functionality to Daft
 outside of the core repository. They may be pure-Python UDF-based extensions,
-native ABI extensions, or higher-level domain libraries that combine Daft
-expressions, UDFs, file types, model calls, and distributed execution patterns.
+native ABI extensions, custom DataSource/DataSink connectors, or higher-level
+domain libraries that combine Daft expressions, UDFs, file types, model calls,
+and distributed execution patterns.
 
 Projects listed here are maintained independently of Daft's release cadence.
 Each project installs and versions independently of Daft.
@@ -20,6 +21,7 @@ Each project installs and versions independently of Daft.
 | [daft-html](#daft-html) | Native ABI | [daft-engine/daft-html](https://github.com/daft-engine/daft-html) | Native HTML document processing functions exposed as Daft expressions. |
 | [daft-geo](#daft-geo) | Native ABI / Datatypes | [daft-engine/daft-geo](https://github.com/daft-engine/daft-geo) | Geospatial prototype showing native functions and extension-backed datatypes. |
 | [daft-qdrant](#daft-qdrant) | Python UDF-based | [qdrant-labs/daft-qdrant](https://github.com/qdrant-labs/daft-qdrant) | Write vector embeddings and their payloads into [Qdrant](https://qdrant.tech/) collections. |
+| [daft-doris](#daft-doris) | Custom DataSource/DataSink | [jiangxt2/daft-doris](https://github.com/jiangxt2/daft-doris) | Apache Doris reads and HTTP Stream Load writes for Daft. |
 
 To propose a new extension for this list, open a PR against this page.
 
@@ -158,3 +160,69 @@ df.write_qdrant("my-collection", url="http://localhost:6333")
 ```
 
 See the [daft-qdrant README](https://github.com/qdrant-labs/daft-qdrant#readme) for embedding pipeline examples and additional options.
+
+## daft-doris
+
+`daft-doris` is an independently maintained Python custom connector for
+Apache Doris. It supports reads from Doris physical tables and batch writes
+through HTTP Stream Load. The read transport must be selected explicitly;
+Flight SQL is available as an opt-in experimental transport.
+
+```bash
+pip install "daft-doris[doris]"
+```
+
+For Flight SQL read support, install the optional Flight extra:
+
+```bash
+pip install "daft-doris[doris-flight]"
+```
+
+Read a Doris table:
+
+```python
+from daft_doris import read_doris
+
+df = read_doris(
+    host="doris-fe.example",
+    database="analytics",
+    table="events",
+    transport="mysql",
+)
+```
+
+Write a Daft DataFrame through Stream Load:
+
+```python
+import daft
+
+from daft_doris import DorisConnection, DorisTable, SecretRef, write_doris
+
+df = daft.from_pydict(
+    {
+        "event_id": [1, 2],
+        "score": [95.0, 88.0],
+    }
+)
+result = write_doris(
+    df,
+    connection=DorisConnection(
+        host="doris-fe.example.com",
+        username="daft_writer",
+        password=SecretRef.env("DORIS_PASSWORD"),
+        http_port=8030,
+        redirect_hosts=("doris-be.example.com",),
+        redirect_ports=(8040,),
+        redirect_policy="public",
+    ),
+    table=DorisTable(database="analytics", name="events"),
+    operation="load",
+)
+```
+
+The connector is currently in Alpha and is maintained independently of Daft's
+release cadence. The current release supports Python 3.12–3.13 and Daft
+0.7.23; its Daft dependency is bounded to `>=0.7.23,<0.7.24`, so installing it
+alongside a newer Daft release may cause the resolver to install Daft 0.7.23.
+See the [`daft-doris` repository](https://github.com/jiangxt2/daft-doris#readme)
+for supported scope, compatibility information, and limitations.

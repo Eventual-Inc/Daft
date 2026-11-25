@@ -66,6 +66,26 @@ df.show()
 (Showing first 1 of 1 rows)
 ```
 
+### Provider-specific request parameters
+
+OpenAI-compatible embedding servers can accept additional JSON request properties through `extra_body`. For example,
+vLLM can truncate long inputs from the right, keeping the first 4,096 tokens:
+
+```python
+df = df.with_column(
+    "embedding",
+    embed_text(
+        daft.col("text"),
+        provider=provider,
+        model="BAAI/bge-m3",
+        extra_body={
+            "truncate_prompt_tokens": 4096,
+            "truncation_side": "right",
+        },
+    ),
+)
+```
+
 ## Image Embeddings
 
 The `embed_image` function generates embeddings from images using vision models. Daft natively supports images with the [Image DataType](../modalities/images.md), making multimodal preprocessing straightforward with built-in utilities like `decode_image`, `convert_image`, and `resize`.

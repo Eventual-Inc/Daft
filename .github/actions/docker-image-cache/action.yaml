@@ -1,0 +1,103 @@
+name: Cache Docker images
+description: >
+  Load Docker images from the GitHub Actions cache and run a command. On a
+  cache miss, images that command pulled or built are saved only for pushes
+  to main. Pull requests restore main's cache and do not write their own.
+
+inputs:
+  key:
+    description: Cache key. Include the runner arch and a hash of the files that define the images.
+    required: true
+  command:
+    description: Command to run after cached images are loaded.
+    required: true
+  pull_command:
+    description: Command to run only on a cache miss, before command. Retried on failure.
+    required: false
+    default: ""
+  retry_attempts:
+    description: How many times to attempt pull_command.
+    required: false
+    default: "3"
+  retry_wait_seconds:
+    description: Seconds to wait between pull_command attempts.
+    required: false
+    default: "10"
+  timeout_minutes:
+    description: Time limit for each pull_command attempt.
+    required: false
+    default: "10"
+
+runs:
+  using: composite
+  steps:
+  - name: Record Docker images already on the runner
+    shell: bash
+    run: |
+      set -euo pipefail
+      # Digest-pinned images have no local tag, so .Tag is <none>. repo:<none>
+      # is not a reference docker save accepts.
+      docker image ls --filter dangling=false --format '{{.Repository}}|{{.Tag}}' \
+        | awk -F'|' '$1 != "<none>" && $2 != "<none>" && $2 != "" { print $1 ":" $2 }' \
+        | LC_ALL=C sort -u > "${{ runner.temp }}/docker-image-cache-before.txt"
+
+  - name: Restore cached Docker images
+    id: cache
+    uses: actions/cache@v6
+    with:
+      path: ${{ runner.temp }}/docker-image-cache.tar
+      key: ${{ inputs.key }}
+
+  - name: Load cached Docker images
+    shell: bash
+    run: |
+      set -euo pipefail
+      archive="${{ runner.temp }}/docker-image-cache.tar"
+      if [ -f "$archive" ]; then
+        docker load -i "$archive"
+      fi
+
+  - name: Pull Docker images
+    id: pull
+    if: steps.cache.outputs.cache-hit != 'true' && inputs.pull_command != ''
+    uses: nick-fields/retry@v4
+    with:
+      timeout_minutes: ${{ inputs.timeout_minutes }}
+      max_attempts: ${{ inputs.retry_attempts }}
+      retry_wait_seconds: ${{ inputs.retry_wait_seconds }}
+      command: ${{ inputs.pull_command }}
+
+  - name: Run command
+    id: command
+    if: steps.pull.outcome == 'success' || steps.pull.outcome == 'skipped'
+    shell: bash
+    run: ${{ inputs.command }}
+
+  - name: Save Docker images
+      # A failed pull has nothing new worth keeping. A failed command can still
+      # have pulled images that the next run should reuse. The archive is created
+      # only on main, so a pull request never writes a cache entry. actions/cache
+      # uploads it from its post step only when the restore above was a miss.
+      # lookup-only is not used here: it reports a hit without downloading the
+      # archive, which would skip pull_command and leave nothing to docker load.
+    if: always() && github.ref == 'refs/heads/main' && steps.cache.outputs.cache-hit != 'true' && steps.pull.outcome != 'failure' && (steps.pull.outcome == 'success' || steps.command.outcome == 'success')
+    shell: bash
+    run: |
+      set -euo pipefail
+      archive="${{ runner.temp }}/docker-image-cache.tar"
+      before="${{ runner.temp }}/docker-image-cache-before.txt"
+      current="$(mktemp)"
+      docker image ls --filter dangling=false --format '{{.Repository}}|{{.Tag}}' \
+        | awk -F'|' '$1 != "<none>" && $2 != "<none>" && $2 != "" { print $1 ":" $2 }' \
+        | LC_ALL=C sort -u > "$current"
+      mapfile -t names < <(comm -13 "$before" "$current")
+      rm -f "$current"
+      if [ "${#names[@]}" -eq 0 ]; then
+        echo "No new Docker images to cache"
+        exit 0
+      fi
+      echo "Saving ${#names[@]} Docker images"
+      printf '  %s\n' "${names[@]}"
+      # Save by name. docker save of an image ID omits repository tags, and
+      # docker load would restore untagged images that Compose cannot find.
+      docker save -o "$archive" "${names[@]}"

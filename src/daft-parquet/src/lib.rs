@@ -97,9 +97,17 @@ pub enum Error {
     #[snafu(display("Parquet reader invariant violated for {path}: {message}"))]
     ReaderInternal { path: String, message: String },
 
+    #[snafu(display(
+        "{path} carries no parquet field IDs and no name mapping was supplied, so every mapped \
+         column would read as null. Iceberg tables registered with `add_files` need the \
+         `schema.name-mapping.default` table property"
+    ))]
+    MissingParquetFieldIds { path: String },
+
     /// Remote fetch tasks store their results in a `Shared` future whose error
     /// type must be `Clone`, so we keep `Arc<Error>` internally and surface the
     /// typed source to every consumer.
+    #[allow(clippy::use_self)]
     #[snafu(display("Remote parquet fetch failed for {path}: {source}"))]
     RemoteFetchFailed {
         path: String,

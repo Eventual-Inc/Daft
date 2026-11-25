@@ -18,8 +18,6 @@ _T = TypeVar("_T")
 class _Sentinel:
     """Sentinel value for the queue to indicate the end of the iterator."""
 
-    pass
-
 
 _SENTINEL: _Sentinel = _Sentinel()
 

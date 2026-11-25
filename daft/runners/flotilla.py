@@ -586,6 +586,8 @@ class RemoteFlotillaRunner:
         dashboard_url: str | None = None,
         event_log_dir: str | None = None,
         worker_startup_timeout: int = DEFAULT_WORKER_STARTUP_TIMEOUT,
+        autoscale_strategy: str | None = None,
+        autoscale_bisect_timeout_secs: int | None = None,
     ) -> None:
         _load_extensions_from_env()
         if dashboard_url:
@@ -611,7 +613,11 @@ class RemoteFlotillaRunner:
 
         self.curr_plans: dict[str, DistributedPhysicalPlan] = {}
         self.curr_result_gens: dict[str, AsyncIterator[RayPartitionRef]] = {}
-        self.plan_runner = DistributedPhysicalPlanRunner(worker_startup_timeout)
+        self.plan_runner = DistributedPhysicalPlanRunner(
+            worker_startup_timeout=worker_startup_timeout,
+            autoscale_strategy=autoscale_strategy,
+            autoscale_bisect_timeout_secs=autoscale_bisect_timeout_secs,
+        )
         ray._private.worker.blocking_get_inside_async_warned = True
         set_event_loop(asyncio.get_running_loop())
 
@@ -735,7 +741,12 @@ class FlotillaRunner:
         the extension to existing workers.
     """
 
-    def __init__(self, worker_startup_timeout: int = DEFAULT_WORKER_STARTUP_TIMEOUT) -> None:
+    def __init__(
+        self,
+        worker_startup_timeout: int = DEFAULT_WORKER_STARTUP_TIMEOUT,
+        autoscale_strategy: str | None = None,
+        autoscale_bisect_timeout_secs: int | None = None,
+    ) -> None:
         head_node_id = get_head_node_id()
         dashboard_url = os.environ.get("DAFT_DASHBOARD_URL")
 
@@ -776,6 +787,8 @@ class FlotillaRunner:
             dashboard_url=dashboard_url,
             event_log_dir=event_log_dir,
             worker_startup_timeout=worker_startup_timeout,
+            autoscale_strategy=autoscale_strategy,
+            autoscale_bisect_timeout_secs=autoscale_bisect_timeout_secs,
         )
         self._init_extension_paths: frozenset[str] = frozenset(get_loaded_extension_paths())
 

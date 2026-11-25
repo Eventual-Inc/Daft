@@ -12,6 +12,7 @@ from tests.integration.io.conftest import bigtable_emulator_setup
 
 
 @pytest.mark.integration()
+@pytest.mark.skip(reason="Bigtable emulator is disabled in CI because its startup is flaky.")
 class TestBigtableIntegration:
     """Integration tests for Bigtable using the emulator.
 

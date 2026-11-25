@@ -35,3 +35,9 @@ def test_count_int() -> None:
     df = daft.from_pydict({"a": [1, 2, 3, 4], "b": [1, None, 3, None]})
     res = df.count(1).to_pydict()
     assert res == {"count": [4]}
+
+
+def test_count_null_struct_field() -> None:
+    df = daft.from_pydict({"a": [{"c": None}, None]})
+    assert df.select(col("a")["c"]).to_pydict() == {"c": [None, None]}
+    assert df.count(col("a")["c"]).to_pydict() == {"c": [0]}

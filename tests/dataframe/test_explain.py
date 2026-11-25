@@ -1,15 +1,9 @@
 from __future__ import annotations
 
-import warnings
-
 import pytest
 
-# This module tests legacy @daft.udf features (ray_options, override_options) with no new-API equivalent.
-warnings.filterwarnings("ignore", category=DeprecationWarning, message=r".*@daft\.udf.*")
-pytestmark = pytest.mark.filterwarnings(r"ignore:.*@daft\.udf.*:DeprecationWarning")
-
 import daft
-from daft import col, get_or_infer_runner_type, udf
+from daft import col, get_or_infer_runner_type
 from daft.dependencies import pa
 from daft.functions import format
 from tests.conftest import get_tests_daft_runner_name
@@ -254,12 +248,14 @@ def test_explain_with_sort_merged_join(small_df, large_df):
     assert clean_explain_output(expected) in clean_explain_output(explain_to_text(df, only_physical_plan=True))
 
 
-@udf(return_dtype=daft.DataType.string(), num_cpus=0.1, num_gpus=0)
-def gen_email(ids):
-    from faker import Faker
+@daft.cls(cpus=0.1, gpus=0, max_concurrency=1)
+class GenEmail:
+    @daft.method.batch(return_dtype=daft.DataType.string())
+    def gen(self, ids):
+        from faker import Faker
 
-    fake = Faker()
-    return [fake.email(domain="daft.ai") for _ in ids]
+        fake = Faker()
+        return [fake.email(domain="daft.ai") for _ in ids]
 
 
 @pytest.mark.skipif(
@@ -269,11 +265,11 @@ def gen_email(ids):
 def test_explain_with_ray_options(input_df_with_uri):
     input_df, dataset_uri = input_df_with_uri
 
+    gen_email = GenEmail()
+
     # Currently only supports 'conda' option
     with pytest.raises(ValueError) as exc_info:
-        gen_email_udf = gen_email.override_options(
-            ray_options={"runtime_env": {"conda": "daft", "working_dir": "/tmp/daft"}}
-        ).with_concurrency(1)
+        gen_email_udf = gen_email.gen.with_ray_options(runtime_env={"conda": "daft", "working_dir": "/tmp/daft"})
         input_df.with_column("email", gen_email_udf(col("id"))).collect()
 
     value = str(exc_info.value)
@@ -283,39 +279,39 @@ def test_explain_with_ray_options(input_df_with_uri):
     ) in value, f"Unexpected UDF Exception: {value}"
 
     # Configure via Conda Env Name
-    gen_email_udf = gen_email.override_options(ray_options={"runtime_env": {"conda": "punks"}}).with_concurrency(1)
+    # The explain printer wraps at terminal width and can split the ray_options dict repr
+    # across lines, so compare with whitespace/tree characters stripped.
+    gen_email_udf = gen_email.gen.with_ray_options(runtime_env={"conda": "punks"})
     df = input_df.with_column("email", gen_email_udf(col("id")))
-    text = explain_to_text(df)
-    assert "'runtime_env': {'conda': 'punks'}" in text, f"Unexpected Explain result: {text}"
+    text = clean_explain_output(explain_to_text(df))
+    assert clean_explain_output("'runtime_env': {'conda': 'punks'}") in text, f"Unexpected Explain result: {text}"
 
     # Configure via Conda YAML File
-    gen_email_udf = gen_email.override_options(
-        ray_options={"runtime_env": {"conda": "/tmp/daft/conda_env.yaml"}}
-    ).with_concurrency(1)
+    gen_email_udf = gen_email.gen.with_ray_options(runtime_env={"conda": "/tmp/daft/conda_env.yaml"})
     df = input_df.with_column("email", gen_email_udf(col("id")))
-    text = explain_to_text(df)
-    assert "'runtime_env': {'conda': '/tmp/daft/conda_env.yaml'}" in text, f"Unexpected Explain result: {text}"
+    text = clean_explain_output(explain_to_text(df))
+    assert clean_explain_output("'runtime_env': {'conda': '/tmp/daft/conda_env.yaml'}") in text, (
+        f"Unexpected Explain result: {text}"
+    )
 
     # Configure via Conda YAML Config
-    gen_email_udf = gen_email.override_options(ray_options={"runtime_env": {}}).with_concurrency(1)
+    gen_email_udf = gen_email.gen.with_ray_options(runtime_env={})
     df = input_df.with_column("email", gen_email_udf(col("id")))
-    text = explain_to_text(df)
-    assert "'runtime_env': {}" in text, f"Unexpected Explain result: {text}"
+    text = clean_explain_output(explain_to_text(df))
+    assert clean_explain_output("'runtime_env': {}") in text, f"Unexpected Explain result: {text}"
 
-    gen_email_udf = gen_email.override_options(
-        ray_options={
-            "runtime_env": {
-                "conda": {
-                    "name": "simple",
-                    "channels": ["conda-forge"],
-                }
+    gen_email_udf = gen_email.gen.with_ray_options(
+        runtime_env={
+            "conda": {
+                "name": "simple",
+                "channels": ["conda-forge"],
             }
         }
-    ).with_concurrency(1)
+    )
 
     df = input_df.with_column("email", gen_email_udf(col("id")))
-    text = explain_to_text(df)
-    assert "'runtime_env': {'conda': {'name': 'simple', 'channels': ['conda-forge']}}" in text, (
+    text = clean_explain_output(explain_to_text(df))
+    assert clean_explain_output("'runtime_env': {'conda': {'name': 'simple', 'channels': ['conda-forge']}}") in text, (
         f"Unexpected Explain result: {text}"
     )
 

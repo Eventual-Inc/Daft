@@ -108,9 +108,7 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
 
                     # Assert that a >= b, where the ordering is defined as: None > NaN > other values
                     # `continue` checking lex sort if values are equal, but `break` if they are not equal
-                    if a is None and b is None:
-                        continue
-                    elif _is_nan(a) and _is_nan(b):
+                    if a is None and b is None or _is_nan(a) and _is_nan(b):
                         continue
                     elif a is None and _is_nan(b):
                         break
@@ -173,10 +171,7 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
         if col_daft_type == DataType.bool():
             self.df = self.df.where(self.df[col_name_to_filter])
         # Reject if filtering on a null column - not a meaningful operation
-        elif col_daft_type == DataType.null():
-            reject()
-        # Reject for binary types because they are not comparable yet (TODO: https://github.com/Eventual-Inc/Daft/issues/688)
-        elif col_daft_type == DataType.binary():
+        elif col_daft_type == DataType.null() or col_daft_type == DataType.binary():
             reject()
         else:
             filter_value = data.draw(generate_data(col_daft_type), label="Filter value")

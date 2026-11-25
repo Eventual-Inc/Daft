@@ -30,8 +30,8 @@ MAX_UDFACTOR_ACTOR_TASK_RETRIES = 4
     max_task_retries=MAX_UDFACTOR_ACTOR_TASK_RETRIES,
 )
 class UDFActor:
-    def __init__(self, uninitialized_projection: ExpressionsProjection) -> None:
-        self.projection = ExpressionsProjection([e._initialize_udfs() for e in uninitialized_projection])
+    def __init__(self, projection: ExpressionsProjection) -> None:
+        self.projection = projection
 
     def get_node_id(self) -> str:
         return ray.get_runtime_context().get_node_id()

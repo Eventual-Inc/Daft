@@ -176,8 +176,18 @@ impl SQLFunction for HTTPConfigFunction {
         inputs: &[sqlparser::ast::FunctionArg],
         planner: &crate::planner::SQLPlanner,
     ) -> crate::error::SQLPlannerResult<daft_dsl::ExprRef> {
-        let args: SQLFunctionArguments =
-            planner.parse_function_args(inputs, &["user_agent", "bearer_token"], 0)?;
+        let args: SQLFunctionArguments = planner.parse_function_args(
+            inputs,
+            &[
+                "user_agent",
+                "bearer_token",
+                "retry_initial_backoff_ms",
+                "connect_timeout_ms",
+                "read_timeout_ms",
+                "num_tries",
+            ],
+            0,
+        )?;
 
         let user_agent = args.try_get_named::<String>("user_agent")?;
         let bearer_token = args.try_get_named::<String>("bearer_token")?;

@@ -18,18 +18,22 @@ import daft
 import daft.exceptions
 from daft import DataType
 from daft.daft import (
+    CountMode,
     ParquetSourceConfig,
     PyField,
     S3Config,
     StorageConfig,
 )
+from daft.dependencies import pa, pc
 from daft.expressions import ExpressionsProjection
 from daft.io.delta_lake._deltalake import delta_schema_to_pyarrow
+from daft.io.delta_lake._visitors import convert_filter_to_stats_predicate
 from daft.io.delta_lake.utils import construct_delta_file_path
 from daft.io.object_store_options import io_config_to_storage_options
 from daft.io.partitioning import PartitionField
 from daft.io.source import DataSource, DataSourceTask
 from daft.logical.schema import Schema
+from daft.recordbatch import RecordBatch
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Iterator
@@ -121,6 +125,24 @@ def get_s3_bucket_region(bucket_name: str) -> str | None:
             e,
         )
         return None
+
+
+class _DeltaCountTask(DataSourceTask):
+    """Metadata-only count result produced for count pushdown."""
+
+    def __init__(self, total_count: int, field_name: str) -> None:
+        self._total_count = total_count
+        self._field_name = field_name
+        self._arrow_schema = pa.schema([pa.field(field_name, pa.uint64())])
+        self._schema = Schema.from_pyarrow_schema(self._arrow_schema)
+
+    @property
+    def schema(self) -> Schema:
+        return self._schema
+
+    async def read(self) -> AsyncIterator[RecordBatch]:
+        batch = pa.RecordBatch.from_arrays([pa.array([self._total_count], type=pa.uint64())], [self._field_name])
+        yield RecordBatch.from_arrow_record_batches([batch], self._arrow_schema)
 
 
 class DeltaLakeDataSource(DataSource):
@@ -238,9 +260,77 @@ class DeltaLakeDataSource(DataSource):
     def get_partition_fields(self) -> list[PartitionField]:
         return self._partition_fields
 
-    async def get_tasks(self, pushdowns: Pushdowns) -> AsyncIterator[DataSourceTask]:
-        import pyarrow as pa
+    def supports_count_pushdown(self) -> bool:
+        # Record counts include rows a deletion vector removes.
+        return not self._deletion_vectors_enabled()
 
+    def supported_count_modes(self) -> list[CountMode]:
+        return [CountMode.All]
+
+    def _deletion_vectors_enabled(self) -> bool:
+        return self._table.metadata().configuration.get("delta.enableDeletionVectors", "false").lower() == "true"
+
+    def _stats_columns(self, add_actions: pa.Table) -> dict[str, tuple[str, pa.DataType]]:
+        """Map each logical column name to its physical stats name and stats type."""
+        if "min" not in add_actions.schema.names or "max" not in add_actions.schema.names:
+            return {}
+        min_type = add_actions.schema.field("min").type
+        return {
+            self._stats_physical_to_logical.get(f.name, f.name): (f.name, f.type)
+            for f in (min_type.field(i) for i in range(min_type.num_fields))
+        }
+
+    def _skip_files_by_stats(self, add_actions: pa.Table, pushdowns: Pushdowns) -> pa.Table:
+        if pushdowns.filters is None:
+            return add_actions
+        predicate = convert_filter_to_stats_predicate(pushdowns.filters, self._stats_columns(add_actions))
+        if predicate is None:
+            return add_actions
+        try:
+            return add_actions.filter(predicate)
+        except Exception as e:
+            logger.warning("Could not apply Delta stats predicate, skipping file pruning: %s", e)
+            return add_actions
+
+    async def get_tasks(self, pushdowns: Pushdowns) -> AsyncIterator[DataSourceTask]:
+        py_pushdowns = pushdowns._to_pypushdowns()
+        if (
+            py_pushdowns.aggregation is not None
+            and py_pushdowns.aggregation_count_mode() in self.supported_count_modes()
+            and py_pushdowns.aggregation_required_column_names()
+            and pushdowns.filters is None
+            and not self._deletion_vectors_enabled()
+        ):
+            total_count = self._count_from_metadata(pushdowns)
+            if total_count is not None:
+                yield _DeltaCountTask(total_count, py_pushdowns.aggregation_required_column_names()[0])
+                return
+
+        async for task in self._get_scan_tasks(pushdowns):
+            yield task
+
+    def _count_from_metadata(self, pushdowns: Pushdowns) -> int | None:
+        """Sum record counts of files matching the partition filter, or None if any file lacks a count."""
+        add_actions = pa.table(self._table.get_add_actions())
+        if "num_records" not in add_actions.schema.names:
+            return None
+        columns = {"__num_records": add_actions["num_records"]}
+        if pushdowns.partition_filters is not None:
+            if "partition" not in add_actions.schema.names:
+                return None
+            partition = add_actions["partition"]
+            for i, field in enumerate(partition.type):
+                columns[field.name] = pc.struct_field(partition, i)
+        files = RecordBatch.from_pydict({name: daft.Series.from_arrow(arr, name) for name, arr in columns.items()})
+        if pushdowns.partition_filters is not None:
+            # Exact: every row of a file whose partition values match also matches.
+            files = files.filter(ExpressionsProjection([pushdowns.partition_filters]))
+        counts = files.to_arrow_table()["__num_records"]
+        if counts.null_count > 0:
+            return None
+        return int(pc.sum(counts).as_py() or 0)
+
+    async def _get_scan_tasks(self, pushdowns: Pushdowns) -> AsyncIterator[DataSourceTask]:
         metadata = self._table.metadata()
         deletion_vectors_enabled = metadata.configuration.get("delta.enableDeletionVectors", "false").lower() == "true"
         # If deletion vectors are enabled and the deltalake library does not support propagation
@@ -254,9 +344,7 @@ class DeltaLakeDataSource(DataSource):
                     "Alternatively, you can set ignore_deletion_vectors=True to skip checking for deletion vectors."
                 )
 
-        # TODO(Clark): Push limit and filter expressions into deltalake action fetch, to prune the files returned.
-        # Issue: https://github.com/Eventual-Inc/Daft/issues/1953
-        add_actions = pa.table(self._table.get_add_actions())
+        add_actions = self._skip_files_by_stats(pa.table(self._table.get_add_actions()), pushdowns)
         if self._partition_fields and pushdowns.partition_filters is None:
             logger.warning(
                 "%s has partitioning keys = %s, but no partition filter was specified. This will result in a full table scan.",

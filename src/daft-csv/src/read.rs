@@ -2,7 +2,6 @@ use core::str;
 use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
 use arrow_schema::Field as ArrowField;
-use async_compat::{Compat, CompatExt};
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_io_runtime;
 use csv_async::{AsyncReader, AsyncReaderBuilder};
@@ -26,7 +25,10 @@ use tokio::{
     io::{AsyncBufRead, AsyncRead, BufReader},
     task::JoinHandle,
 };
-use tokio_util::io::StreamReader;
+use tokio_util::{
+    compat::{Compat, TokioAsyncReadCompatExt},
+    io::StreamReader,
+};
 
 use crate::{CsvConvertOptions, CsvParseOptions, CsvReadOptions, metadata::read_csv_schema_single};
 
@@ -719,7 +721,7 @@ where
             let delta = (bytes_read as f64) - mean;
             mean += delta / (total_rows_read as f64);
             let delta2 = (bytes_read as f64) - mean;
-            m2 += delta * delta2;
+            m2 = delta.mul_add(delta2, m2);
             estimated_mean_row_size = mean;
             estimated_std_row_size = (m2 / ((total_rows_read - 1) as f64)).sqrt();
 
@@ -1251,7 +1253,7 @@ mod tests {
 
     #[test]
     fn test_csv_read_local_escape() -> DaftResult<()> {
-        let file = format!("{}/test/iris_tiny_escape.csv", env!("CARGO_MANIFEST_DIR"),);
+        let file = format!("{}/test/iris_tiny_escape.csv", env!("CARGO_MANIFEST_DIR"));
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
@@ -1299,7 +1301,7 @@ mod tests {
 
     #[test]
     fn test_csv_read_local_comment() -> DaftResult<()> {
-        let file = format!("{}/test/iris_tiny_comment.csv", env!("CARGO_MANIFEST_DIR"),);
+        let file = format!("{}/test/iris_tiny_comment.csv", env!("CARGO_MANIFEST_DIR"));
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
@@ -1346,7 +1348,7 @@ mod tests {
     }
     #[test]
     fn test_csv_read_local_limit() -> DaftResult<()> {
-        let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"),);
+        let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"));
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
@@ -1394,7 +1396,7 @@ mod tests {
 
     #[test]
     fn test_csv_read_local_projection() -> DaftResult<()> {
-        let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"),);
+        let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"));
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
@@ -1506,7 +1508,7 @@ mod tests {
 
     #[test]
     fn test_csv_read_local_larger_than_buffer_size() -> DaftResult<()> {
-        let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"),);
+        let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"));
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
@@ -1554,7 +1556,7 @@ mod tests {
 
     #[test]
     fn test_csv_read_local_larger_than_chunk_size() -> DaftResult<()> {
-        let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"),);
+        let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"));
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
@@ -1602,7 +1604,7 @@ mod tests {
 
     #[test]
     fn test_csv_read_local_throttled_streaming() -> DaftResult<()> {
-        let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"),);
+        let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"));
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
@@ -1637,7 +1639,7 @@ mod tests {
 
     #[test]
     fn test_csv_read_local_nulls() -> DaftResult<()> {
-        let file = format!("{}/test/iris_tiny_nulls.csv", env!("CARGO_MANIFEST_DIR"),);
+        let file = format!("{}/test/iris_tiny_nulls.csv", env!("CARGO_MANIFEST_DIR"));
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;
@@ -1781,7 +1783,7 @@ mod tests {
 
     #[test]
     fn test_csv_read_local_wrong_type_yields_nulls() -> DaftResult<()> {
-        let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"),);
+        let file = format!("{}/test/iris_tiny.csv", env!("CARGO_MANIFEST_DIR"));
 
         let mut io_config = IOConfig::default();
         io_config.s3.anonymous = true;

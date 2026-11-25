@@ -24,6 +24,8 @@ impl RayRunner {
         address: Option<String>,
         force_client_mode: Option<bool>,
         worker_startup_timeout: Option<usize>,
+        autoscale_strategy: Option<String>,
+        autoscale_bisect_timeout_secs: Option<u64>,
     ) -> DaftResult<Self> {
         Python::attach(|py| {
             let ray_runner_module = py.import(intern!(py, "daft.runners.ray_runner"))?;
@@ -34,6 +36,11 @@ impl RayRunner {
             kwargs.set_item(
                 intern!(py, "worker_startup_timeout"),
                 worker_startup_timeout,
+            )?;
+            kwargs.set_item(intern!(py, "autoscale_strategy"), autoscale_strategy)?;
+            kwargs.set_item(
+                intern!(py, "autoscale_bisect_timeout_secs"),
+                autoscale_bisect_timeout_secs,
             )?;
 
             let instance = ray_runner.call((), Some(&kwargs))?;
@@ -178,6 +185,8 @@ impl RunnerConfig {
                 address,
                 force_client_mode,
                 worker_startup_timeout,
+                None,
+                None,
             )?)),
         }
     }

@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use common_checkpoint_config::CheckpointConfig;
-use educe::Educe;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -20,9 +19,8 @@ use crate::{
 /// must not move user operators below it, otherwise post-filter keys would
 /// be staged instead of post-anti-join keys, defeating source-oriented
 /// tracking.
-#[derive(Educe, Clone, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
-#[educe(PartialEq, Eq, Hash)]
 pub struct StageCheckpointKeys {
     pub plan_id: Option<usize>,
     pub node_id: Option<usize>,

@@ -50,7 +50,6 @@ class TurbopufferDataSink(DataSink[dict[str, Any]]):
             raise ValueError(
                 f"Namespace name can only contain alphanumeric characters, hyphens, underscores and periods. Got: {namespace_name}. For more details, see: https://turbopuffer.com/docs/write"
             )
-        return
 
     def __init__(
         self,

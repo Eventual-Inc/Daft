@@ -186,7 +186,6 @@ impl AsyncUdfSink {
 pub struct AsyncUdfState {
     udf_expr: BoundExpr,
     task_set: JoinSet<DaftResult<RecordBatch>>,
-    udf_initialized: bool,
 }
 
 impl StreamingSink for AsyncUdfSink {
@@ -208,15 +207,6 @@ impl StreamingSink for AsyncUdfSink {
                 .spawn(
                     {
                         async move {
-                            use daft_dsl::functions::python::initialize_udfs;
-
-                            if !state.udf_initialized {
-                                state.udf_expr = BoundExpr::new_unchecked(initialize_udfs(
-                                    state.udf_expr.inner().clone(),
-                                )?);
-                                state.udf_initialized = true;
-                            }
-
                             // Spawn tasks for each batch
                             for batch in input.record_batches() {
                                 let params = params.clone();
@@ -376,7 +366,6 @@ impl StreamingSink for AsyncUdfSink {
         Ok(AsyncUdfState {
             udf_expr: self.params.expr.clone(),
             task_set: JoinSet::new(),
-            udf_initialized: false,
         })
     }
 

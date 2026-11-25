@@ -15,7 +15,7 @@ def run_process(
     *,
     shell: bool = False,
     on_error: Literal["raise", "ignore", "log"] = "log",
-    return_dtype: DataTypeLike = DataType.string(),
+    return_dtype: DataTypeLike = DataType.string,
 ) -> Expression:
     """Returns an expression that runs an external process (optionally via a shell) and exposes its stdout as a column.
 
@@ -69,9 +69,7 @@ def run_process(
             proc = subprocess.run(tokens, shell=False, stdout=subprocess.PIPE, text=True, check=True)
         return proc.stdout
 
-    if isinstance(args, Expression):
-        args = [args]
-    elif not isinstance(args, list):
+    if isinstance(args, Expression) or not isinstance(args, list):
         args = [args]
 
     expr_args = [Expression._to_expression(v) for v in args]

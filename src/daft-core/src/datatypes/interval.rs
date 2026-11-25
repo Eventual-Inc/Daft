@@ -251,9 +251,9 @@ impl Display for IntervalValue {
         let remaining_nanos = nanos % Self::NANOS_PER_MILLIS;
 
         if years != 0 {
-            write!(f, "{years}y {months}m",)?;
+            write!(f, "{years}y {months}m")?;
         } else {
-            write!(f, "{months}m",)?;
+            write!(f, "{months}m")?;
         }
         write!(f, " {}d", days)?;
 

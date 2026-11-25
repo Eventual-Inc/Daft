@@ -36,6 +36,25 @@ class SampleSink(DataSink[None]):
         return result_table
 
 
+class LifecycleSink(DataSink[None]):
+    def __init__(self) -> None:
+        self.started = False
+
+    def schema(self) -> daft.Schema:
+        return daft.Schema.from_pydict({"started": daft.DataType.bool()})
+
+    def start(self) -> None:
+        self.started = True
+
+    def write(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteResult[None]]:
+        assert self.started
+        for _ in micropartitions:
+            yield WriteResult(result=None, bytes_written=0, rows_written=0)
+
+    def finalize(self, write_results: list[WriteResult[None]]) -> MicroPartition:
+        return MicroPartition.from_pydict({"started": [self.started]})
+
+
 def test_sink_raises_unserializable_exception():
     df = daft.from_pydict({"id": [1, 2, 3]})
     sink = SampleSink()
@@ -45,3 +64,9 @@ def test_sink_raises_unserializable_exception():
     e = exc_info.value
     assert isinstance(e, (RuntimeError, ray.exceptions.RayTaskError))
     assert "UnserializableException" in str(e)
+
+
+def test_sink_start_runs_before_write():
+    result = daft.from_pydict({"id": [1, 2, 3]}).write_sink(LifecycleSink())
+
+    assert result.to_pydict() == {"started": [True]}

@@ -79,8 +79,8 @@ impl Series {
                     TimeUnit::Milliseconds => 3_600_000,
                     TimeUnit::Seconds => 3_600,
                 };
-                let divider = Int64Array::from_slice("divider", &[unit_to_hours]);
-                let hours = (physical / &divider)?;
+                // Floor division, so timestamps before 1970 map to negative hours.
+                let hours = physical.apply(|v| v.div_euclid(unit_to_hours))?;
                 Ok(hours.into_series())
             }
             _ => Err(DaftError::ComputeError(format!(

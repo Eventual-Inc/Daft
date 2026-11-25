@@ -5,20 +5,16 @@ import platform
 import subprocess
 import sys
 import time
-import warnings
 
 import pytest
-
-# This module tests legacy @daft.udf features (ray_options, conda runtime_env) with no new-API equivalent.
-warnings.filterwarnings("ignore", category=DeprecationWarning, message=r".*@daft\.udf.*")
-pytestmark = pytest.mark.filterwarnings(r"ignore:.*@daft\.udf.*:DeprecationWarning")
 import ray._private.ray_constants as ray_constants
 
-from daft import DataType, col, get_or_infer_runner_type, udf
+from daft import DataType, col, get_or_infer_runner_type
+from daft.runners.ray_compat import parse_ray_version
 
 ray = pytest.importorskip("ray")
 RAY_VERSION = getattr(ray, "__version__", "0.0.0")
-RAY_VERSION_TUPLE = tuple(map(int, RAY_VERSION.split(".")[:3]))
+RAY_VERSION_TUPLE = parse_ray_version(RAY_VERSION)
 
 import daft
 
@@ -77,23 +73,15 @@ def test_label_selector_with_multi_group_cluster(multi_group_cluster):
     assert workers_per_group == 2
 
     # Test with label selectors
-    @udf(
-        return_dtype=daft.DataType.string(), ray_options={"label_selector": {"group": "0"}}, concurrency=2, num_cpus=0.5
-    )
+    @daft.cls(cpus=0.5, max_concurrency=2, ray_options={"label_selector": {"group": "0"}})
     class Group0UDF:
-        def __init__(self):
-            pass
-
+        @daft.method.batch(return_dtype=daft.DataType.string())
         def __call__(self, data):
             return [f"group0_processed_{item}" for item in data.to_pylist()]
 
-    @udf(
-        return_dtype=daft.DataType.string(), ray_options={"label_selector": {"group": "1"}}, concurrency=2, num_cpus=0.5
-    )
+    @daft.cls(cpus=0.5, max_concurrency=2, ray_options={"label_selector": {"group": "1"}})
     class Group1UDF:
-        def __init__(self):
-            pass
-
+        @daft.method.batch(return_dtype=daft.DataType.string())
         def __call__(self, data):
             return [f"group1_processed_{item}" for item in data.to_pylist()]
 
@@ -102,8 +90,8 @@ def test_label_selector_with_multi_group_cluster(multi_group_cluster):
     daft.set_runner_ray(address=cluster_address, noop_if_initialized=True)
     df = daft.from_pydict({"data": ["a", "b", "c"]})
 
-    df = df.with_column("p_group0", Group0UDF(df["data"]))
-    result_df = df.with_column("p_group1", Group1UDF(df["data"]))
+    df = df.with_column("p_group0", Group0UDF()(df["data"]))
+    result_df = df.with_column("p_group1", Group1UDF()(df["data"]))
 
     result = result_df.to_pydict()
 
@@ -115,12 +103,14 @@ def test_label_selector_with_multi_group_cluster(multi_group_cluster):
     assert result["p_group1"] == expected_group1
 
 
-@udf(return_dtype=daft.DataType.string(), num_cpus=0.1, num_gpus=0)
-def gen_email(names):
-    from faker import Faker
+@daft.cls(cpus=0.1, gpus=0, max_concurrency=1)
+class GenEmail:
+    @daft.method.batch(return_dtype=daft.DataType.string())
+    def gen(self, names):
+        from faker import Faker
 
-    fake = Faker()
-    return [fake.email(domain="daft.ai") for _ in names]
+        fake = Faker()
+        return [fake.email(domain="daft.ai") for _ in names]
 
 
 @pytest.mark.skipif(
@@ -136,39 +126,35 @@ def gen_email(names):
 def test_udf_with_conda_inject_dependencies(input_df):
     # missing required modules
     with pytest.raises(Exception) as exc_info:
-        gen_email_udf = gen_email.override_options(
-            ray_options={
-                "runtime_env": {
-                    "conda": {
-                        "name": "test",
-                        "channels": ["conda-forge", "defaults"],
-                        "dependencies": [
-                            "pip",
-                            {"pip": ["daft"]},
-                        ],
-                    }
+        gen_email_udf = GenEmail().gen.with_ray_options(
+            runtime_env={
+                "conda": {
+                    "name": "test",
+                    "channels": ["conda-forge", "defaults"],
+                    "dependencies": [
+                        "pip",
+                        {"pip": ["daft"]},
+                    ],
                 }
             }
-        ).with_concurrency(1)
+        )
         input_df.with_column("email", gen_email_udf(col("name"))).collect()
 
     value = str(exc_info.value)
     assert "No module named 'faker'" in value, f"Unexpected UDF Exception: {value}"
 
     # install required modules at runtime
-    gen_email_udf = gen_email.override_options(
-        ray_options={
-            "runtime_env": {
-                "conda": {
-                    "channels": ["conda-forge", "defaults"],
-                    "dependencies": [
-                        "pip",
-                        {"pip": ["daft", "faker"]},
-                    ],
-                }
+    gen_email_udf = GenEmail().gen.with_ray_options(
+        runtime_env={
+            "conda": {
+                "channels": ["conda-forge", "defaults"],
+                "dependencies": [
+                    "pip",
+                    {"pip": ["daft", "faker"]},
+                ],
             }
         }
-    ).with_concurrency(1)
+    )
     df = input_df.with_column("email", gen_email_udf(col("name"))).select("email")
     assert 1024 == df.count_rows()
 
@@ -211,9 +197,7 @@ def test_udf_with_prepared_conda_env(input_df):
         ]
         subprocess.run(" ".join(prepare_conda_env_cmd), check=True, capture_output=True, shell=True)
 
-        gen_email_udf = gen_email.override_options(
-            ray_options={"runtime_env": {"conda": conda_env_name}}
-        ).with_concurrency(1)
+        gen_email_udf = GenEmail().gen.with_ray_options(runtime_env={"conda": conda_env_name})
         df = input_df.with_column("email", gen_email_udf(col("name"))).select("email")
         assert 1024 == df.count_rows()
     except Exception as e:

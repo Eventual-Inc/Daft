@@ -654,8 +654,8 @@ mod tests {
         let io_config = Arc::new(IOConfig::default());
         let io_client = daft_io::get_io_client(true, io_config)?;
         let io_stats = IOStatsContext::new("test_warc_read");
-        let warc_file = format!("{}/test/example.warc", env!("CARGO_MANIFEST_DIR"),);
-        let warc_gz_file = format!("{}/test/example.warc.gz", env!("CARGO_MANIFEST_DIR"),);
+        let warc_file = format!("{}/test/example.warc", env!("CARGO_MANIFEST_DIR"));
+        let warc_gz_file = format!("{}/test/example.warc.gz", env!("CARGO_MANIFEST_DIR"));
 
         let convert_options = WarcConvertOptions {
             schema,

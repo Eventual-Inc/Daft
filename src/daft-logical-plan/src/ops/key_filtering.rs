@@ -1,13 +1,11 @@
 use common_error::{DaftError, DaftResult};
 use common_hashable_float_wrapper::FloatWrapper;
-use educe::Educe;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
-#[derive(Educe, Clone, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
-#[educe(PartialEq, Eq, Hash)]
 pub struct KeyFilteringConfig {
     pub left_key_columns: Vec<String>,
     pub right_key_columns: Vec<String>,

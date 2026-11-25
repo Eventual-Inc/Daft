@@ -39,7 +39,7 @@ use crate::{
     functions::{
         AggFnHandle, BuiltinScalarFn, FUNCTION_REGISTRY, FunctionArg, FunctionArgs,
         FunctionEvaluator, function_display_without_formatter, function_semantic_id,
-        python::{LegacyPythonUDF, RuntimePyObject},
+        python::RuntimePyObject,
         scalar::{ScalarFn, scalar_function_semantic_id},
         sketch::{HashableVecPercentiles, SketchExpr},
         struct_::StructExpr,
@@ -336,60 +336,6 @@ pub struct ApproxPercentileParams {
     pub force_list_output: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub enum MapGroupsFn {
-    /// Legacy @daft.udf entry point.
-    Legacy(LegacyPythonUDF),
-    /// New Python scalar UDF (@daft.func / @daft.cls) in batch mode.
-    Python(PyScalarFn),
-}
-
-impl MapGroupsFn {
-    pub fn display(&self, inputs: &[ExprRef]) -> std::result::Result<String, std::fmt::Error> {
-        match self {
-            Self::Legacy(udf) => {
-                let func = FunctionExpr::Python(udf.clone());
-                function_display_without_formatter(&func, inputs)
-            }
-            Self::Python(py_fn) => Ok(py_fn.to_string()),
-        }
-    }
-
-    pub fn semantic_id(&self, inputs: &[ExprRef], schema: &Schema) -> FieldID {
-        match self {
-            Self::Legacy(udf) => {
-                let func = FunctionExpr::Python(udf.clone());
-                function_semantic_id(&func, inputs, schema)
-            }
-            Self::Python(py_fn) => {
-                let inputs = inputs
-                    .iter()
-                    .map(|expr| expr.semantic_id(schema).id.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                FieldID::new(format!("PyScalarFn_{}({inputs})", py_fn.id()))
-            }
-        }
-    }
-
-    pub fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
-        match self {
-            Self::Legacy(udf) => {
-                let func = FunctionExpr::Python(udf.clone());
-                func.to_field(inputs, schema, &func)
-            }
-            Self::Python(py_fn) => py_fn.to_field(schema),
-        }
-    }
-
-    pub fn with_new_children(&self, children: Vec<ExprRef>) -> Self {
-        match self {
-            Self::Legacy(udf) => Self::Legacy(udf.clone()),
-            Self::Python(py_fn) => Self::Python(py_fn.with_new_children(children)),
-        }
-    }
-}
-
 #[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[allow(clippy::large_enum_variant)]
 pub enum AggExpr {
@@ -459,9 +405,9 @@ pub enum AggExpr {
     #[display("skew({_0}")]
     Skew(ExprRef),
 
-    #[display("{}", func.display(inputs)?)]
+    #[display("{}", func)]
     MapGroups {
-        func: MapGroupsFn,
+        func: PyScalarFn,
         inputs: Vec<ExprRef>,
     },
 
@@ -749,7 +695,14 @@ impl AggExpr {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_skew()"))
             }
-            Self::MapGroups { func, inputs } => func.semantic_id(inputs, schema),
+            Self::MapGroups { func, inputs } => {
+                let inputs = inputs
+                    .iter()
+                    .map(|expr| expr.semantic_id(schema).id.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                FieldID::new(format!("PyScalarFn_{}({inputs})", func.id()))
+            }
             Self::AggFn { handle, inputs } => {
                 let inputs_str = inputs
                     .iter()
@@ -1058,7 +1011,7 @@ impl AggExpr {
                 ))
             }
 
-            Self::MapGroups { func, inputs } => func.to_field(inputs.as_slice(), schema),
+            Self::MapGroups { func, inputs: _ } => func.to_field(schema),
             Self::AggFn { handle, inputs } => {
                 let input_fields: Vec<Field> = inputs
                     .iter()
@@ -2677,28 +2630,22 @@ pub fn has_agg(expr: &ExprRef) -> bool {
 
 #[inline]
 pub fn is_actor_pool_udf(expr: &ExprRef) -> bool {
-    matches!(
-        expr.as_ref(),
-        Expr::Function {
-            func: FunctionExpr::Python(LegacyPythonUDF {
-                concurrency: Some(_),
-                ..
-            }),
-            ..
+    match expr.as_ref() {
+        Expr::ScalarFn(ScalarFn::Python(py_fn)) => {
+            let (max_concurrency, is_async) = match py_fn {
+                PyScalarFn::RowWise(f) => (f.max_concurrency, f.is_async),
+                PyScalarFn::Batch(f) => (f.max_concurrency, f.is_async),
+            };
+            max_concurrency.is_some() && !is_async
         }
-    )
+        _ => false,
+    }
 }
 
 /// Check if the top-level expression is a UDF
 #[inline]
 pub fn is_udf(expr: &ExprRef) -> bool {
-    matches!(
-        expr.as_ref(),
-        Expr::Function {
-            func: FunctionExpr::Python(LegacyPythonUDF { .. }),
-            ..
-        } | Expr::ScalarFn(ScalarFn::Python(_))
-    )
+    matches!(expr.as_ref(), Expr::ScalarFn(ScalarFn::Python(_)))
 }
 
 pub fn estimated_selectivity(expr: &Expr, schema: &Schema) -> f64 {

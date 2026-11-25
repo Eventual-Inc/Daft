@@ -126,9 +126,8 @@ class SQLConnection:
             "redshift",
         }
 
-        if isinstance(self.conn, str):
-            if self.dialect in connectorx_supported_dbs and self.driver == "":
-                return True
+        if isinstance(self.conn, str) and self.dialect in connectorx_supported_dbs and self.driver == "":
+            return True
         return False
 
     def execute_sql_query(self, sql: str, schema: pa.Schema | None = None) -> pa.Table:

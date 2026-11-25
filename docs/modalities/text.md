@@ -146,7 +146,7 @@ pip install -U spacy
 python -m spacy download en_core_web_sm
 ```
 
-Then, create a [User-defined Function](../custom-code/udfs.md) that uses spaCy.
+Then, create a [User-defined Function](../custom-code/func.md) that uses spaCy.
 
 ```python
 import daft

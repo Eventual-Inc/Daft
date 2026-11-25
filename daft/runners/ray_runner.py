@@ -67,6 +67,7 @@ from daft.runners.partitioning import (
     PartitionSet,
     PartitionSetCache,
 )
+from daft.runners.ray_compat import parse_ray_version
 from daft.runners.runner import Runner
 
 if TYPE_CHECKING:
@@ -85,7 +86,7 @@ except ImportError:
 
 from daft.logical.schema import Schema
 
-RAY_VERSION = tuple(int(s) for s in ray.__version__.split(".")[0:3])
+RAY_VERSION = parse_ray_version(ray.__version__)
 
 HEARTBEAT_INTERVAL_SEC = 10.0
 
@@ -102,7 +103,7 @@ try:
 except ImportError:
     _RAY_DATA_EXTENSIONS_AVAILABLE = False
 else:
-    _RAY_VERSION = tuple(int(s) for s in ray.__version__.split(".")[0:3])
+    _RAY_VERSION = RAY_VERSION
     try:
         # Variable-shaped tensor column support was added in Ray 2.1.0.
         if _RAY_VERSION >= (2, 2, 0):
@@ -231,9 +232,7 @@ def _series_from_arrow_with_ray_data_extensions(
                 tensor_array = cast("ArrowTensorArray", array)
                 storage_series = _series_from_arrow_with_ray_data_extensions(tensor_array.storage, name=name)
                 # Ray 2.55.0 renamed `scalar_type` to `value_type` for all tensor extension types
-                arrow_scalar_type = getattr(tensor_array.type, "value_type", None) or getattr(
-                    tensor_array.type, "scalar_type"
-                )
+                arrow_scalar_type = getattr(tensor_array.type, "value_type", None) or tensor_array.type.scalar_type
                 series = storage_series.cast(
                     DataType.fixed_size_list(
                         _from_arrow_type_with_ray_data_extensions(arrow_scalar_type),
@@ -397,7 +396,7 @@ def _from_arrow_type_with_ray_data_extensions(arrow_type: pa.DataType) -> DataTy
     if _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(arrow_type, tuple(_TENSOR_EXTENSION_TYPES)):
         tensor_types = cast("ArrowTensorType | ArrowVariableShapedTensorType", arrow_type)
         # Ray 2.55.0 renamed `scalar_type` to `value_type` for all tensor extension types
-        arrow_scalar_type = getattr(tensor_types, "value_type", None) or getattr(tensor_types, "scalar_type")
+        arrow_scalar_type = getattr(tensor_types, "value_type", None) or tensor_types.scalar_type
         scalar_dtype = _from_arrow_type_with_ray_data_extensions(arrow_scalar_type)
         # Both ArrowTensorType and ArrowTensorTypeV2 have a shape attribute
         # ArrowVariableShapedTensorType does not
@@ -543,6 +542,8 @@ class RayRunner(Runner[ray.ObjectRef]):
         address: str | None,
         force_client_mode: bool = False,
         worker_startup_timeout: int | None = None,
+        autoscale_strategy: str | None = None,
+        autoscale_bisect_timeout_secs: int | None = None,
     ) -> None:
         super().__init__()
 
@@ -550,6 +551,8 @@ class RayRunner(Runner[ray.ObjectRef]):
         self.worker_startup_timeout = (
             worker_startup_timeout if worker_startup_timeout is not None else DEFAULT_WORKER_STARTUP_TIMEOUT
         )
+        self.autoscale_strategy = autoscale_strategy
+        self.autoscale_bisect_timeout_secs = autoscale_bisect_timeout_secs
 
         if ray.is_initialized():
             if address is not None:
@@ -659,6 +662,8 @@ class RayRunner(Runner[ray.ObjectRef]):
             if self.flotilla_plan_runner is None:
                 self.flotilla_plan_runner = FlotillaRunner(
                     worker_startup_timeout=self.worker_startup_timeout,
+                    autoscale_strategy=self.autoscale_strategy,
+                    autoscale_bisect_timeout_secs=self.autoscale_bisect_timeout_secs,
                 )
 
             total_rows = 0

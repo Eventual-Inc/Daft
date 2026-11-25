@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, Literal
 
 from daft.daft import (
@@ -368,7 +369,7 @@ class MicroPartition:
             self._micropartition.cross_join(right._micropartition, outer_loop_side=outer_loop_side)
         )
 
-    def partition_by_hash(self, exprs: ExpressionsProjection, num_partitions: int) -> list[MicroPartition]:
+    def partition_by_hash(self, exprs: Iterable[Expression], num_partitions: int) -> list[MicroPartition]:
         if not isinstance(num_partitions, int):
             raise TypeError(f"Expected a num_partitions to be int, got {type(num_partitions)}")
 

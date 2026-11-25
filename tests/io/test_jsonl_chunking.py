@@ -24,8 +24,7 @@ def _write_fixed_width_jsonl(path: str, *, rows: int, line_bytes: int, id_width:
     payload_len = line_bytes - min_bytes
     payload = "x" * payload_len
     with open(path, "w", encoding="utf-8", newline="") as f:
-        for i in range(rows):
-            f.write(f"{prefix}{str(i).zfill(id_width)}{mid}{payload}{suffix}")
+        f.writelines(f"{prefix}{str(i).zfill(id_width)}{mid}{payload}{suffix}" for i in range(rows))
 
 
 def _write_fixed_width_jsonl_gz(path: str, *, rows: int, line_bytes: int, id_width: int) -> None:
@@ -71,8 +70,7 @@ def test_jsonl_chunk_size_one_reads_correctly(tmp_path: os.PathLike[str]) -> Non
         {"id": 3, "payload": "ccc"},
     ]
     with open(file_path, "w", encoding="utf-8", newline="") as f:
-        for row in rows:
-            f.write(f'{{"id":{row["id"]},"payload":"{row["payload"]}"}}\n')
+        f.writelines(f'{{"id":{row["id"]},"payload":"{row["payload"]}"}}\n' for row in rows)
 
     df = daft.read_json(file_path, _chunk_size=1)
     partitions = list(df.iter_partitions())
@@ -97,8 +95,7 @@ def test_jsonl_chunk_size_mid_line_splits_correctly(tmp_path: os.PathLike[str]) 
         {"id": 5, "val": "baz"},
     ]
     with open(file_path, "w", encoding="utf-8", newline="") as f:
-        for row in rows:
-            f.write(f'{{"id":{row["id"]},"val":"{row["val"]}"}}\n')
+        f.writelines(f'{{"id":{row["id"]},"val":"{row["val"]}"}}\n' for row in rows)
 
     df = daft.read_json(file_path, _chunk_size=10)
     partitions = list(df.iter_partitions())
