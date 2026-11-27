@@ -74,4 +74,4 @@ The same `s3://` support works with S3-compatible object storage services, such 
 
 When `endpoint_url` is set, Daft uses path-style requests (`https://<endpoint>/<bucket>/<key>`). If the service requires virtual-hosted-style requests (`https://<bucket>.<endpoint>/<key>`), also set `force_virtual_addressing=True`.
 
-Daft also reads the endpoint from the `AWS_ENDPOINT_URL` environment variable, together with `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION`, so you can configure an S3-compatible service without changing code. As with other environment-based credentials, each worker in a distributed environment needs these variables set.
+Daft also reads the endpoint from the `AWS_ENDPOINT_URL` environment variable, together with `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION`, so you can configure an S3-compatible service without changing code. In that case Daft sends virtual-hosted-style requests, so the service must support them; set `endpoint_url` in `S3Config` if it needs path-style requests. As with other environment-based credentials, each worker in a distributed environment needs these variables set.
