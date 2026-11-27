@@ -48,3 +48,30 @@ Alternatively, Daft supports overriding the default IOConfig per-operation by pa
     # Perform some I/O operation but override the IOConfig
     df2 = daft.read_csv("s3://my_bucket/my_other_path/**/*", io_config=io_config)
     ```
+
+## S3-Compatible Object Storage
+
+The same `s3://` support works with S3-compatible object storage services, such as Backblaze B2, Cloudflare R2, and MinIO. Point [`daft.io.S3Config`][daft.io.S3Config] at the service with `endpoint_url` and set `region_name` to the region that the service expects:
+
+=== "🐍 Python"
+
+    ```python
+    import daft
+    from daft.io import IOConfig, S3Config
+
+    io_config = IOConfig(
+        s3=S3Config(
+            endpoint_url="https://s3.example-region.example.com",
+            region_name="example-region",
+            key_id="your-access-key-id",
+            access_key="your-secret-access-key",
+        )
+    )
+
+    df = daft.read_parquet("s3://my-bucket/my_path/**/*.parquet", io_config=io_config)
+    df.write_parquet("s3://my-bucket/my_output_path", io_config=io_config)
+    ```
+
+When `endpoint_url` is set, Daft uses path-style requests (`https://<endpoint>/<bucket>/<key>`). If the service requires virtual-hosted-style requests (`https://<bucket>.<endpoint>/<key>`), also set `force_virtual_addressing=True`.
+
+Daft also reads the endpoint from the `AWS_ENDPOINT_URL` environment variable, together with `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION`, so you can configure an S3-compatible service without changing code. In that case Daft sends virtual-hosted-style requests, so the service must support them; set `endpoint_url` in `S3Config` if it needs path-style requests. As with other environment-based credentials, each worker in a distributed environment needs these variables set.
